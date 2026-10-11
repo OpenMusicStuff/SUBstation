@@ -241,16 +241,16 @@ threshold, chunks render serially) and a little faster at 128 (13 → 9 µs).
 The C++ build on Linux (platform support, stage 1: the workers at real-time
 priority, `platform::ScopedRealtimePriority`). A 4-core cloud VM (Intel Xeon,
 2.1 GHz), Ubuntu 24.04, GCC, Release; 32 Synth tracks, 10 s, offline. "Real-time":
-the workers at `SCHED_FIFO` 70 (the process allowed to set it); "refused": the
-same as a user without rtprio or rtkit, the workers at normal priority. Through
-rtkit (`SCHED_RR` 20) it is the same as the first. Raw reports:
+the workers at `SCHED_FIFO` 70 (the process allowed to set it); "rtkit": a user
+without that, given `SCHED_RR` 20 by rtkit (and `RLIMIT_RTTIME` 200 ms); "refused":
+a user with neither, the workers at normal priority. Raw reports:
 `results/parallel-32-synth-linux-*.json`.
 
-| threads | real-time | speed-up | refused | speed-up |
-|---|---|---|---|---|
-| 1 | 1.953 s (5.1× realtime) | 1.00× | 1.858 s (5.4× realtime) | 1.00× |
-| 2 | 1.006 s | 1.94× | 1.015 s | 1.83× |
-| 4 | 0.543 s (18.4× realtime) | 3.59× | 0.565 s (17.7× realtime) | 3.29× |
+| threads | real-time | speed-up | rtkit | speed-up | refused | speed-up |
+|---|---|---|---|---|---|---|
+| 1 | 1.953 s (5.1× realtime) | 1.00× | 1.871 s (5.3× realtime) | 1.00× | 1.858 s (5.4× realtime) | 1.00× |
+| 2 | 1.006 s | 1.94× | 0.973 s | 1.92× | 1.015 s | 1.83× |
+| 4 | 0.543 s (18.4× realtime) | 3.59× | 0.543 s (18.4× realtime) | 3.45× | 0.565 s (17.7× realtime) | 3.29× |
 
 The speed-ups are those of Windows above (1.96× on 2 threads, 3.74× on 4), on
 slower cores. Live (`--live`) needs the fake ASIO driver, so it waits for the

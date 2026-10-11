@@ -62,7 +62,8 @@ system raised it; where it refuses, the thread stays as it was.
   (the calling thread's on Linux), not `pthread_getschedparam`: glibc keeps a copy of its own, which misses what
   rtkit sets from outside. libdbus is loaded when first needed (`dlopen("libdbus-1.so.3")`), so a build needs no D-Bus
   headers and a system without it only goes without; the requests go over a private connection of their own (not
-  libdbus's shared one, which Qt's D-Bus may use), one at a time. rtkit only raises a process that limits its
+  libdbus's shared one, which Qt's D-Bus may use), one at a time, each given 500 ms: a scheduler waits for its
+  workers' requests while live audio is held, so once one goes unanswered (rtkit hanging) rtkit isn't asked again. rtkit only raises a process that limits its
   real-time threads' time without blocking (`RLIMIT_RTTIME`, at most its `RTTimeUSecMax`, 200 ms by default; past it
   the kernel ends the process), so the limit is lowered to that first: the scheduler's workers block at least
   every 20 ms ([engine/scheduler.md](engine/scheduler.md#workers)). A thread that is real-time already is left as it

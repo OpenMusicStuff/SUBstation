@@ -1,0 +1,28 @@
+{
+  "tracks": 32,
+  "device": "synth",
+  "heavy": 0,
+  "heavy_otts": 8,
+  "cores": 4,
+  "offline": [
+    {
+      "threads": 1,
+      "ordering": "cost",
+      "seconds": 1.871109483,
+      "realtime": 5.344422702602486
+    },
+    {
+      "threads": 2,
+      "ordering": "cost",
+      "seconds": 0.973280868,
+      "realtime": 10.274526427863576
+    },
+    {
+      "threads": 4,
+      "ordering": "cost",
+      "seconds": 0.542750421,
+      "realtime": 18.424674791730837
+    }
+  ],
+  "live": []
+}

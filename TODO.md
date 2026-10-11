@@ -594,8 +594,10 @@ Stage 1 — The real-time base (both)
       `isb` on arm64): `Scheduler.cpp`, `Vst3Support.h`.
 - [ ] The workers' real-time priority (what MMCSS does on Windows:
       `platform::ScopedRealtimePriority`, `platform/src/platform/PlatformPosix.cpp`):
-  - [x] Linux: `SCHED_FIFO` through rtkit (or limits.conf), falling back to
-        normal priority with a warning in the audio settings.
+  - [x] Linux: `SCHED_FIFO` (70) set directly where limits.conf's rtprio or
+        CAP_SYS_NICE allows, else `SCHED_RR` (rtkit's maximum, 20 by default)
+        through rtkit; falling back to normal priority with a warning in the
+        audio settings.
   - [ ] macOS: time-constraint policy, and the workers join the device's
         audio workgroup (`os_workgroup`) so Apple Silicon doesn't park
         them on efficiency cores. (Written: `ScopedRealtimePriority`,

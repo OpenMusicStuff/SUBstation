@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -96,12 +97,12 @@ public:
     // thread; the priority given, or 0 if refused.
     int makeRealtime(int priority) {
         const std::lock_guard lock(mutex_);  // workers start together; one request at a time
-        if (!loaded_) return 0;
+        if (!loaded_ || unresponsive_) return 0;
         Connection bus(*this);
         if (!bus) return 0;
         if (!limitsRead_) {
             maxPriority_ = static_cast<int>(property(bus, "MaxRealtimePriority", kInt32));
-            rtTimeMax_ = property(bus, "RTTimeUSecMax", kInt64);
+            if (!unresponsive_) rtTimeMax_ = property(bus, "RTTimeUSecMax", kInt64);
             limitsRead_ = true;
         }
         priority = std::min(priority, maxPriority_);
@@ -139,7 +140,10 @@ private:
     static constexpr int kInvalid = 0, kInt32 = 'i', kInt64 = 'x', kUint32 = 'u', kUint64 = 't', kString = 's',
                          kVariant = 'v';
     static constexpr int kSystemBus = 1;
-    static constexpr int kTimeoutMs = 2000;
+    // rtkit answers within milliseconds (polkit's check included). A scheduler
+    // waits for its workers' requests, one at a time, while live audio is held:
+    // after one goes unanswered rtkit isn't asked again (`unresponsive_`).
+    static constexpr int kTimeoutMs = 500;
     static constexpr const char* kService = "org.freedesktop.RealtimeKit1";
     static constexpr const char* kPath = "/org/freedesktop/RealtimeKit1";
     static constexpr const char* kInterface = "org.freedesktop.RealtimeKit1";
@@ -211,6 +215,11 @@ private:
         Error error{};
         errorInit_(&error);
         void* reply = sendWithReply_(bus.get(), call.get(), kTimeoutMs, &error);
+        if (!reply && error.name &&
+            (std::strcmp(error.name, "org.freedesktop.DBus.Error.NoReply") == 0 ||
+             std::strcmp(error.name, "org.freedesktop.DBus.Error.Timeout") == 0)) {
+            unresponsive_ = true;
+        }
         errorFree_(&error);
         return reply;
     }
@@ -240,6 +249,7 @@ private:
     void* library_ = nullptr;
     bool loaded_ = false;
     bool limitsRead_ = false;
+    bool unresponsive_ = false;
     int maxPriority_ = 0;
     int64_t rtTimeMax_ = 0;
 

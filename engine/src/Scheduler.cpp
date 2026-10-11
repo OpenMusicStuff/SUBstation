@@ -18,7 +18,15 @@ constexpr int kPausesBeforeYield = 2000;
 // render) would keep it spinning from one to the next for good. A thread at
 // real-time priority has to block now and then: rtkit makes the process set
 // RLIMIT_RTTIME (Linux; 200 ms by default), past which the system ends it.
+// A worker that hasn't slept for this long takes a nap (kNap) before its next
+// run, open or not. (A single job longer than the limit, a plug-in
+// hanging, isn't bounded by this: the process ends then, as it would hang.)
 constexpr auto kAwakeAtMost = std::chrono::milliseconds(20);
+// A wait on state_ that took this long blocked (woken, not returning at once).
+constexpr auto kSleptAtLeast = std::chrono::microseconds(20);
+// Long enough that the thread is put to sleep: a microsecond's timer goes off
+// before it is (Linux, measured: never blocks at 1 µs, nearly always at 20 µs).
+constexpr auto kNap = std::chrono::microseconds(50);
 
 }  // namespace
 
@@ -196,8 +204,9 @@ void Scheduler::workerMain(int worker) noexcept {
         }
         uint64_t state = state_.load(std::memory_order_seq_cst);
         auto now = std::chrono::steady_clock::now();
-        if (now - lastSlept > kAwakeAtMost && state != kQuit && (!(state & 1) || state == joined)) {
-            std::this_thread::sleep_for(std::chrono::microseconds(1));  // blocks, however briefly
+        if (now - lastSlept > kAwakeAtMost && state != kQuit) {
+            // Even when the next run is open already (the others take its nodes meanwhile).
+            std::this_thread::sleep_for(kNap);
             lastSlept = now = std::chrono::steady_clock::now();
             state = state_.load(std::memory_order_seq_cst);
         }
@@ -219,9 +228,12 @@ void Scheduler::workerMain(int worker) noexcept {
             continue;
         }
         sleepers_.fetch_add(1, std::memory_order_seq_cst);
+        const auto waitFrom = std::chrono::steady_clock::now();
         state_.wait(state, std::memory_order_seq_cst);  // returns at once if a run opened meanwhile
         sleepers_.fetch_sub(1, std::memory_order_seq_cst);
-        lastSlept = std::chrono::steady_clock::now();
+        // Slept only if it waited for a wake-up: a wait that returned at once took under a microsecond.
+        const auto woke = std::chrono::steady_clock::now();
+        if (woke - waitFrom > kSleptAtLeast) lastSlept = woke;
     }
 }
 
