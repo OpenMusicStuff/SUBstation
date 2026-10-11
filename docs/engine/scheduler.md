@@ -61,14 +61,31 @@ workers rendered since the scheduler started (tests and benchmarks use it to see
 
 `Scheduler(threads)` starts `threads - 1` workers; `threads` counts the caller's.
 
-- Each worker holds the platform layer's `ScopedRealtimePriority` for its life ([platform.md](../platform.md)): on
-  Windows it joins MMCSS as "Pro Audio" (`AvSetMmThreadCharacteristicsW`); elsewhere workers keep the default
-  priority for now (Linux's `SCHED_FIFO` and macOS's audio workgroups go there). Every worker flushes denormals
-  while it renders (`ScopedNoDenormals`).
+- Each worker holds the platform layer's `ScopedRealtimePriority` for its life ([platform.md](../platform.md#threads)):
+  on Windows it joins MMCSS as "Pro Audio" (`AvSetMmThreadCharacteristicsW`), on Linux it is `SCHED_FIFO` (set directly)
+  or `SCHED_RR` (through rtkit), on macOS the time-constraint policy. Where the system refuses, the worker renders at normal
+  priority: `realtimeWorkers()` counts those it raised (`Engine::realtimeWorkers()`; the audio settings warn when
+  it is short). The constructor returns once every worker has asked, so the count is known by then. Every worker
+  flushes denormals while it renders (`ScopedNoDenormals`).
+- `setWorkgroup()` (not real-time) hands the workers the audio device's workgroup (`platform::AudioWorkgroup`: on
+  macOS the os_workgroup of Core Audio's I/O thread; empty elsewhere, and while no device is open). Each worker
+  checks its version as it wakes for a run, before rendering; one that sees a new version takes the workgroup under
+  `workgroupMutex_` only if it gets the lock at once (`try_lock`: it never waits), leaves the one it was in and
+  joins it (`platform::ScopedWorkgroupMembership`). The engine sets it when a device opens (before it starts), clears
+  it when the device closes, and gives it to a new scheduler when the number of threads changes
+  (`AudioBackend::workgroup()`, [audio-devices.md](audio-devices.md)).
 - Between runs a worker spins (with `cpuRelax()`: `PAUSE` on x86-64, `ISB` on arm64) for about 50 microseconds:
   consecutive chunks of one callback come within microseconds. Then it sleeps on `state_` (`std::atomic::wait`) until
   the next run opens. The caller only calls `notify_all()` if some worker is sleeping
-  (`sleepers_`).
+  (`sleepers_`). A worker that hasn't slept for 20 ms takes a 50 µs nap before its
+  next node or run, even inside a run or with the next one open already (the others take its nodes meanwhile; one
+  run of a render slower than real time can keep a worker busy for longer than the limit, node after node; the
+  calling thread never naps): a real-time thread must block now and then
+  (rtkit makes the process set `RLIMIT_RTTIME`, past which Linux ends it), and back to back runs (an offline render's
+  chunks follow each other within its spin) would keep it awake. A shorter nap doesn't block (a microsecond's timer
+  goes off before the thread is put to sleep), and a wait on `state_` counts as sleep only if it took over 20 µs (one
+  that returns at once doesn't block either). A single job longer than the limit (a plug-in hanging) isn't bounded
+  by this.
 - Inside a run, a worker waiting for a node to become ready pauses 2000 times, then yields.
 - A worker joining a run counts itself into `active_` first, then checks the run is still open;
   the caller closes the run and waits for `active_` to reach zero before returning, so no worker

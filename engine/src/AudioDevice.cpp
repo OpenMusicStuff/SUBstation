@@ -45,6 +45,8 @@ bool AudioDevice::isOpen() const { return current_ && current_->isOpen(); }
 
 DeviceState AudioDevice::state() const { return isOpen() ? current_->state() : DeviceState{}; }
 
+platform::AudioWorkgroup AudioDevice::workgroup() const { return isOpen() ? current_->workgroup() : platform::AudioWorkgroup{}; }
+
 DeviceConfig AudioDevice::resetConfig() {
     DeviceConfig config = config_;
     if (isOpen()) current_->adjustForReset(config);

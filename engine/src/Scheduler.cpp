@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 
-#include "platform/Threads.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -14,6 +14,27 @@ namespace {
 constexpr auto kSpinBeforeSleep = std::chrono::microseconds(50);
 // Inside a run, waiting for a node to become ready: pause, then give way.
 constexpr int kPausesBeforeYield = 2000;
+// The longest a worker stays awake between runs: back to back runs (an offline
+// render) would keep it spinning from one to the next for good. A thread at
+// real-time priority has to block now and then: rtkit makes the process set
+// RLIMIT_RTTIME (Linux; 200 ms by default), past which the system ends it.
+// A worker that hasn't slept for this long takes a nap (kNap) before its next
+// node or run. (A single job longer than the limit, a plug-in hanging, isn't
+// bounded by this: the process ends then, as it would hang.)
+constexpr auto kAwakeAtMost = std::chrono::milliseconds(20);
+// A wait on state_ that took this long blocked (woken, not returning at once).
+constexpr auto kSleptAtLeast = std::chrono::microseconds(20);
+// Long enough that the thread is put to sleep: a microsecond's timer goes off
+// before it is (Linux, measured: never blocks at 1 µs, nearly always at 20 µs).
+constexpr auto kNap = std::chrono::microseconds(50);
+
+// A pool worker that hasn't slept for kAwakeAtMost naps, between nodes or runs
+// (`lastSlept`: when it was last asleep, updated by the nap).
+void napIfAwakeTooLong(std::chrono::steady_clock::time_point& lastSlept) noexcept {
+    if (std::chrono::steady_clock::now() - lastSlept <= kAwakeAtMost) return;
+    std::this_thread::sleep_for(kNap);
+    lastSlept = std::chrono::steady_clock::now();
+}
 
 }  // namespace
 
@@ -95,6 +116,7 @@ Scheduler::Scheduler(int threads) {
     workers_.reserve(static_cast<size_t>(workers));
     try {
         for (int w = 1; w <= workers; ++w) workers_.emplace_back([this, w] { workerMain(w); });
+        for (int started = started_.load(); started < workers; started = started_.load()) started_.wait(started);
     } catch (...) {  // a thread couldn't start: those that did end (the destructor won't run)
         state_.store(kQuit, std::memory_order_seq_cst);
         state_.notify_all();
@@ -107,6 +129,13 @@ Scheduler::~Scheduler() {
     state_.store(kQuit, std::memory_order_seq_cst);
     state_.notify_all();
     for (auto& worker : workers_) worker.join();
+}
+
+void Scheduler::setWorkgroup(const platform::AudioWorkgroup& workgroup) {
+    const std::lock_guard lock(workgroupMutex_);
+    if (workgroup == workgroup_) return;
+    workgroup_ = workgroup;
+    workgroupVersion_.fetch_add(1, std::memory_order_release);
 }
 
 void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel) noexcept {
@@ -133,7 +162,7 @@ void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel) noe
     while (active_.load(std::memory_order_seq_cst) > 0) cpuRelax();
 }
 
-void Scheduler::work(int worker) noexcept {
+void Scheduler::work(int worker, std::chrono::steady_clock::time_point* lastSlept) noexcept {
     TaskGraph& graph = *graph_;
     const int size = graph.size();
     int idle = 0;
@@ -145,7 +174,8 @@ void Scheduler::work(int worker) noexcept {
             if (++idle < kPausesBeforeYield) {
                 cpuRelax();
             } else {
-                std::this_thread::yield();
+                std::this_thread::yield();  // (doesn't count as sleep: yielding to another real-time thread)
+                if (lastSlept) napIfAwakeTooLong(*lastSlept);
             }
             continue;
         }
@@ -160,14 +190,36 @@ void Scheduler::work(int worker) noexcept {
             if (graph.pending_[dests[d]].fetch_sub(1, std::memory_order_acq_rel) == 1) graph.push(dests[d]);
         }
         graph.done_.fetch_add(1, std::memory_order_release);
+        // Within a run too: one run of a heavy render (slower than real time) can
+        // keep a worker busy for longer than the limit, node after node.
+        if (lastSlept) napIfAwakeTooLong(*lastSlept);
     }
 }
 
 void Scheduler::workerMain(int worker) noexcept {
     const platform::ScopedRealtimePriority realtime;  // (MMCSS's "Pro Audio" on Windows, as the driver's thread)
+    if (realtime.active()) realtimeWorkers_.fetch_add(1, std::memory_order_release);
+    started_.fetch_add(1, std::memory_order_release);
+    started_.notify_all();
+    std::optional<platform::ScopedWorkgroupMembership> membership;  // (left before the priority goes back)
+    uint32_t joinedWorkgroup = 0;  // the version of the workgroup it is a member of (0: none)
+    auto lastSlept = std::chrono::steady_clock::now();
     uint64_t joined = 0;  // the last run it took part in
     for (;;) {
+        if (workgroupVersion_.load(std::memory_order_acquire) != joinedWorkgroup) {
+            const std::unique_lock lock(workgroupMutex_, std::try_to_lock);
+            if (lock.owns_lock()) {
+                membership.reset();
+                if (!workgroup_.empty()) membership.emplace(workgroup_);
+                joinedWorkgroup = workgroupVersion_.load(std::memory_order_relaxed);
+            }
+        }
         uint64_t state = state_.load(std::memory_order_seq_cst);
+        if (state != kQuit) {
+            // Even when the next run is open already (the others take its nodes meanwhile).
+            napIfAwakeTooLong(lastSlept);
+            state = state_.load(std::memory_order_seq_cst);
+        }
         const auto deadline = std::chrono::steady_clock::now() + kSpinBeforeSleep;
         for (int spins = 1; state != kQuit && (!(state & 1) || state == joined); ++spins) {
             if (spins % 64 == 0 && std::chrono::steady_clock::now() > deadline) break;
@@ -179,15 +231,19 @@ void Scheduler::workerMain(int worker) noexcept {
             active_.fetch_add(1, std::memory_order_seq_cst);
             if (state_.load(std::memory_order_seq_cst) == state) {  // still open: the run's data is valid
                 ScopedNoDenormals noDenormals;
-                work(worker);
+                work(worker, &lastSlept);
             }
             active_.fetch_sub(1, std::memory_order_seq_cst);
             joined = state;
             continue;
         }
         sleepers_.fetch_add(1, std::memory_order_seq_cst);
+        const auto waitFrom = std::chrono::steady_clock::now();
         state_.wait(state, std::memory_order_seq_cst);  // returns at once if a run opened meanwhile
         sleepers_.fetch_sub(1, std::memory_order_seq_cst);
+        // Slept only if it waited for a wake-up: a wait that returned at once took under a microsecond.
+        const auto woke = std::chrono::steady_clock::now();
+        if (woke - waitFrom > kSleptAtLeast) lastSlept = woke;
     }
 }
 

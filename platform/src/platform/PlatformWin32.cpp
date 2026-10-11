@@ -75,10 +75,20 @@ void enterBackgroundMode() { SetThreadPriority(GetCurrentThread(), THREAD_MODE_B
 ScopedRealtimePriority::ScopedRealtimePriority() noexcept {
     DWORD task = 0;
     handle_ = AvSetMmThreadCharacteristicsW(L"Pro Audio", &task);
+    active_ = handle_ != nullptr;
 }
 
 ScopedRealtimePriority::~ScopedRealtimePriority() {
     if (handle_) AvRevertMmThreadCharacteristics(handle_);
 }
+
+// No workgroups on Windows (MMCSS's task is the nearest): every one is empty.
+AudioWorkgroup::AudioWorkgroup(void*) noexcept {}
+AudioWorkgroup::AudioWorkgroup(const AudioWorkgroup&) noexcept {}
+AudioWorkgroup& AudioWorkgroup::operator=(const AudioWorkgroup&) noexcept { return *this; }
+AudioWorkgroup::~AudioWorkgroup() = default;
+
+ScopedWorkgroupMembership::ScopedWorkgroupMembership(const AudioWorkgroup&) noexcept {}
+ScopedWorkgroupMembership::~ScopedWorkgroupMembership() = default;
 
 }  // namespace sub::platform
