@@ -548,6 +548,10 @@ public:
     // Tracks the workers have rendered since the number of threads was last set
     // (tests and benchmarks see them work).
     uint64_t nodesOnWorkers();
+    // How many of the workers (audioThreads() - 1) run at real-time priority
+    // (Scheduler.h); the others were refused it and render at normal priority,
+    // which the audio settings warn of.
+    int realtimeWorkers();
     // Each track's render is timed. Tracks start with those with the most work
     // hanging off them (their own and the groups they go into), unless this is
     // off (for benchmarks): then in routing order. Results are the same either way.

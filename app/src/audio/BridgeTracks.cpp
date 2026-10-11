@@ -432,6 +432,8 @@ void EngineBridge::chooseAudioThreads(int threads) {
 
 int EngineBridge::audioThreads() const { return engine_.audioThreads(); }
 
+int EngineBridge::realtimeWorkers() const { return engine_.realtimeWorkers(); }
+
 int EngineBridge::defaultAudioThreads() { return sub::Engine::defaultAudioThreads(); }
 
 }  // namespace sub::app

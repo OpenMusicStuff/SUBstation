@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 
-#include "platform/Threads.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -14,6 +14,11 @@ namespace {
 constexpr auto kSpinBeforeSleep = std::chrono::microseconds(50);
 // Inside a run, waiting for a node to become ready: pause, then give way.
 constexpr int kPausesBeforeYield = 2000;
+// The longest a worker stays awake between runs: back to back runs (an offline
+// render) would keep it spinning from one to the next for good. A thread at
+// real-time priority has to block now and then: rtkit makes the process set
+// RLIMIT_RTTIME (Linux; 200 ms by default), past which the system ends it.
+constexpr auto kAwakeAtMost = std::chrono::milliseconds(20);
 
 }  // namespace
 
@@ -95,6 +100,7 @@ Scheduler::Scheduler(int threads) {
     workers_.reserve(static_cast<size_t>(workers));
     try {
         for (int w = 1; w <= workers; ++w) workers_.emplace_back([this, w] { workerMain(w); });
+        for (int started = started_.load(); started < workers; started = started_.load()) started_.wait(started);
     } catch (...) {  // a thread couldn't start: those that did end (the destructor won't run)
         state_.store(kQuit, std::memory_order_seq_cst);
         state_.notify_all();
@@ -107,6 +113,13 @@ Scheduler::~Scheduler() {
     state_.store(kQuit, std::memory_order_seq_cst);
     state_.notify_all();
     for (auto& worker : workers_) worker.join();
+}
+
+void Scheduler::setWorkgroup(const platform::AudioWorkgroup& workgroup) {
+    const std::lock_guard lock(workgroupMutex_);
+    if (workgroup == workgroup_) return;
+    workgroup_ = workgroup;
+    workgroupVersion_.fetch_add(1, std::memory_order_release);
 }
 
 void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel) noexcept {
@@ -165,10 +178,30 @@ void Scheduler::work(int worker) noexcept {
 
 void Scheduler::workerMain(int worker) noexcept {
     const platform::ScopedRealtimePriority realtime;  // (MMCSS's "Pro Audio" on Windows, as the driver's thread)
+    if (realtime.active()) realtimeWorkers_.fetch_add(1, std::memory_order_release);
+    started_.fetch_add(1, std::memory_order_release);
+    started_.notify_all();
+    std::optional<platform::ScopedWorkgroupMembership> membership;  // (left before the priority goes back)
+    uint32_t joinedWorkgroup = 0;  // the version of the workgroup it is a member of (0: none)
+    auto lastSlept = std::chrono::steady_clock::now();
     uint64_t joined = 0;  // the last run it took part in
     for (;;) {
+        if (workgroupVersion_.load(std::memory_order_acquire) != joinedWorkgroup) {
+            const std::unique_lock lock(workgroupMutex_, std::try_to_lock);
+            if (lock.owns_lock()) {
+                membership.reset();
+                if (!workgroup_.empty()) membership.emplace(workgroup_);
+                joinedWorkgroup = workgroupVersion_.load(std::memory_order_relaxed);
+            }
+        }
         uint64_t state = state_.load(std::memory_order_seq_cst);
-        const auto deadline = std::chrono::steady_clock::now() + kSpinBeforeSleep;
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastSlept > kAwakeAtMost && state != kQuit && (!(state & 1) || state == joined)) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1));  // blocks, however briefly
+            lastSlept = now = std::chrono::steady_clock::now();
+            state = state_.load(std::memory_order_seq_cst);
+        }
+        const auto deadline = now + kSpinBeforeSleep;
         for (int spins = 1; state != kQuit && (!(state & 1) || state == joined); ++spins) {
             if (spins % 64 == 0 && std::chrono::steady_clock::now() > deadline) break;
             cpuRelax();
@@ -188,6 +221,7 @@ void Scheduler::workerMain(int worker) noexcept {
         sleepers_.fetch_add(1, std::memory_order_seq_cst);
         state_.wait(state, std::memory_order_seq_cst);  // returns at once if a run opened meanwhile
         sleepers_.fetch_sub(1, std::memory_order_seq_cst);
+        lastSlept = std::chrono::steady_clock::now();
     }
 }
 

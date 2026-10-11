@@ -104,8 +104,11 @@ set flags. `Engine` implements it privately.
 **`AudioBackend`**: a driver type: `name()`, `devices()`, `open()` (opens but doesn't start; throws
 `std::runtime_error` with a message for the user, leaving nothing open), `start()`, `close()` (returns
 once the callback can no longer run), `isOpen()`, `state()`, and the optional `showControlPanel()` /
-`inControlPanel()`, `refreshLatencies()` (main-thread work after `LatencyChanged`) and
-`adjustForReset(DeviceConfig&)` (before a reset: what to open instead).
+`inControlPanel()`, `refreshLatencies()` (main-thread work after `LatencyChanged`),
+`adjustForReset(DeviceConfig&)` (before a reset: what to open instead) and `workgroup()` (the open device's
+audio workgroup, which the scheduler's workers join: [scheduler.md](scheduler.md#workers); empty by default, and
+for every backend there is now; Core Audio's will hand over its I/O thread's). `AudioDevice::workgroup()` is the
+open backend's.
 
 **`AudioDevice`**: the device the engine plays through. `open()` closes the open device (of any driver
 type), then opens the new one and remembers its config; `resetConfig()` returns that config adjusted by
@@ -338,7 +341,7 @@ silence.
   `hostTimeNs()`, and report events as flags. Add it to its system's `audioDriverNames()` and
   `makeAudioBackends()` ([AudioBackends.h](../../engine/src/backends/AudioBackends.h): a PipeWire backend goes in
   `AudioBackendsPosix.cpp`, on Linux, before "System"). Mind COM on Windows: if it initialises COM, do it after the
-  ASIO backend has.
+  ASIO backend has. A system with audio workgroups (macOS) returns the device's from `workgroup()`.
 - **WASAPI capture**: open miniaudio's duplex (or capture) device, fill `AudioIO::inputs`/`numInputs`,
   report `inputChannels`, `inputLatency` and input names in `state()`; recording and monitoring then
   work as they do for ASIO.

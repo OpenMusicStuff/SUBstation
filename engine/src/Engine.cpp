@@ -219,6 +219,7 @@ void Engine::setAudioThreads(int threads) {
     const bool suspended = liveSuspended_.exchange(true, std::memory_order_seq_cst);
     waitForCallbackLocked();
     auto old = std::exchange(scheduler_, std::make_unique<Scheduler>(threads));
+    scheduler_->setWorkgroup(device_.workgroup());
     renderer_.setScheduler(scheduler_.get());
     old.reset();  // its workers end
     if (!suspended) resumeLiveLocked();
@@ -232,6 +233,11 @@ int Engine::audioThreads() {
 uint64_t Engine::nodesOnWorkers() {
     std::lock_guard lock(mutex_);
     return scheduler_->nodesOnWorkers();
+}
+
+int Engine::realtimeWorkers() {
+    std::lock_guard lock(mutex_);
+    return scheduler_->realtimeWorkers();
 }
 
 void Engine::setCostOrdering(bool on) { renderer_.setCostOrdering(on); }  // offline renders copy it

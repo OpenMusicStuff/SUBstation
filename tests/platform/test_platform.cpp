@@ -1,13 +1,20 @@
 // The platform layer (platform/src/platform): what every layer needs from the
 // operating system, tested on whichever this is.
 
+#include <cstdio>
 #include <string>
+#include <thread>
 #include <vector>
+
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 #include "harness/Test.h"
 #include "platform/Bytes.h"
 #include "platform/Files.h"
 #include "platform/Paths.h"
+#include "platform/Threads.h"
 #include "platform/Unicode.h"
 
 using namespace sub::platform;
@@ -115,4 +122,53 @@ TEST_CASE("a file is written whole, its folder made, and read back") {
     REQUIRE(writeFileAtomically(file, "again"));
     CHECK_EQ(readFile(file).value_or(""), std::string("again"));
     CHECK(!readFile(file + ".tmp"));  // moved over the file, not left beside it
+}
+
+TEST_CASE("real-time priority while the object lives, where the system allows, and as before after") {
+    // On a thread of its own: the test's thread keeps its priority whatever happens.
+    // (CHECKs only in it: a REQUIRE's exception would end the program there.)
+    std::thread([] {
+#ifdef __linux__
+        // (The kernel's: glibc's pthread_getschedparam() misses what rtkit sets.)
+        const auto policyNow = [] { return sched_getscheduler(0) & ~SCHED_RESET_ON_FORK; };
+        const auto priorityNow = [] {
+            sched_param param{};
+            sched_getparam(0, &param);
+            return param.sched_priority;
+        };
+        const int policyBefore = policyNow();
+        const int priorityBefore = priorityNow();
+#endif
+        {
+            const ScopedRealtimePriority realtime;
+#ifdef __linux__
+            // Raised means SCHED_FIFO (set directly) or SCHED_RR (rtkit's); refused, as it was.
+            const int policy = policyNow();
+            CHECK_EQ(policy == SCHED_FIFO || policy == SCHED_RR, realtime.active());
+            if (realtime.active()) CHECK(priorityNow() > 0 && priorityNow() <= 70);
+#endif
+            std::printf("  real-time priority: %s\n", realtime.active() ? "granted" : "refused");
+        }
+#ifdef __linux__
+        CHECK_EQ(policyNow(), policyBefore);
+        CHECK_EQ(priorityNow(), priorityBefore);
+#endif
+    }).join();
+}
+
+TEST_CASE("an empty workgroup is joined by nobody; elsewhere than macOS every one is empty") {
+    const AudioWorkgroup none;
+    CHECK(none.empty());
+    CHECK(AudioWorkgroup(nullptr).empty());
+    const ScopedWorkgroupMembership member(none);
+    CHECK(!member.joined());
+    CHECK(!ScopedWorkgroupMembership().joined());
+#ifndef __APPLE__
+    int notAWorkgroup = 0;  // never dereferenced: there are none to hold
+    const AudioWorkgroup other(&notAWorkgroup);
+    CHECK(other.empty());
+    CHECK(other == none);
+    const ScopedWorkgroupMembership otherMember(other);
+    CHECK(!otherMember.joined());
+#endif
 }

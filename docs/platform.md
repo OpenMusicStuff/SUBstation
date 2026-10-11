@@ -21,9 +21,9 @@ Headers are included by their folder: `#include "platform/Paths.h"`.
 | [Paths.h](../platform/src/platform/Paths.h) | `NativeString` (UTF-16 on Windows, bytes elsewhere), `NativeChar`, `kSeparator`, `kCaseSensitivePaths`, `isSeparator()`, `appendName()`; `toNative()`/`fromNative()` and `toPath()`/`fromPath()` (a UTF-8 path as the system's calls and `std::filesystem` take it, and back); keys: `nameKey()`, `pathKey()`, `normalPath()`, `fileKey()`. |
 | [Files.h](../platform/src/platform/Files.h) / [Files.cpp](../platform/src/platform/Files.cpp) | By UTF-8 path: `FileStamp`/`stamp()` (size and last-write time), `replaceFile()`, `openFile()`, `readFile()` (a whole file), `writeFileAtomically()` (to `.tmp`, then over the file). |
 | [Bytes.h](../platform/src/platform/Bytes.h) | Binary files' fields, little-endian on every system: `ByteWriter`, `ByteReader` (a read past the end makes `ok()` false for good), and `fnv1a()`, their checksum (and a hash of keys). The browser's saved index and the sound similarity's store are made of these. |
-| [Threads.h](../platform/src/platform/Threads.h) | Priorities: `enterBackgroundMode()` (the browser's indexer, the sound similarity's threads) and `ScopedRealtimePriority` (the engine's render workers). |
+| [Threads.h](../platform/src/platform/Threads.h) | Priorities: `enterBackgroundMode()` (the browser's indexer, the sound similarity's threads) and `ScopedRealtimePriority` (the engine's render workers); audio workgroups: `AudioWorkgroup`, `ScopedWorkgroupMembership`. |
 | [PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) | Windows: `LCMapStringEx` for keys, the wide (`W`) file calls, `MoveFileExW`, `THREAD_MODE_BACKGROUND_BEGIN`, MMCSS (`AvSetMmThreadCharacteristicsW`, "Pro Audio"). |
-| [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) | Elsewhere: `stat`, `rename`, `fopen`; on Linux the thread's nice value and idle I/O class. No real-time priority yet. |
+| [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) | Elsewhere: `stat`, `rename`, `fopen`; on Linux the thread's nice value and idle I/O class, `SCHED_FIFO` and rtkit (libdbus, `dlopen`ed); on macOS the time-constraint policy and `os_workgroup`. |
 
 ## Paths
 
@@ -47,11 +47,35 @@ system's separators): the engine's decoded sources and loaded plug-in modules ar
 (`THREAD_MODE_BACKGROUND_BEGIN`), the lowest nice value and the idle I/O class on Linux (both per thread there). It
 does nothing yet on other systems.
 
-`ScopedRealtimePriority` raises the calling thread while it lives: the engine's render workers
-([engine/scheduler.md](engine/scheduler.md)) hold one for their lives. On Windows it is MMCSS's "Pro Audio" task, as
-the driver's own thread has; elsewhere it does nothing yet and `active()` is false. That is where Linux's `SCHED_FIFO`
-(through rtkit) and macOS's time-constraint policy and audio workgroups go ([TODO.md](../TODO.md), platform support,
-stage 1).
+`ScopedRealtimePriority` raises the calling thread while it lives, and puts it back as it was after: the engine's
+render workers ([engine/scheduler.md](engine/scheduler.md)) hold one for their lives. `active()` says whether the
+system raised it; where it refuses, the thread stays as it was.
+
+- **Windows**: MMCSS's "Pro Audio" task, as the driver's own thread has.
+- **Linux**: `SCHED_FIFO` at priority 70: under the audio servers' threads (PipeWire's data thread asks for 88),
+  which the workers wait on and must not preempt, and over everything that isn't audio. First set directly
+  (`pthread_setschedparam`), which works with `CAP_SYS_NICE` or up to `RLIMIT_RTPRIO` (`rtprio` in
+  `/etc/security/limits.conf`; a lower limit is used if that is all there is). Else it is asked of rtkit
+  (`org.freedesktop.RealtimeKit1.MakeThreadRealtime` on the system bus), lowered to its `MaxRealtimePriority`
+  (20 by default); rtkit sets `SCHED_RR` with `SCHED_RESET_ON_FORK`, which an unprivileged thread may not clear, so
+  going back keeps that flag. The thread's scheduling is read and set with `sched_getscheduler`/`sched_setscheduler`
+  (the calling thread's on Linux), not `pthread_getschedparam`: glibc keeps a copy of its own, which misses what
+  rtkit sets from outside. libdbus is loaded when first needed (`dlopen("libdbus-1.so.3")`), so a build needs no D-Bus
+  headers and a system without it only goes without; the requests go over a private connection of their own (not
+  libdbus's shared one, which Qt's D-Bus may use), one at a time. rtkit only raises a process that limits its
+  real-time threads' time without blocking (`RLIMIT_RTTIME`, at most its `RTTimeUSecMax`, 200 ms by default; past it
+  the kernel ends the process), so the limit is lowered to that first: the scheduler's workers block at least
+  every 20 ms ([engine/scheduler.md](engine/scheduler.md#workers)). A thread that is real-time already is left as it
+  is (`active()` true).
+- **macOS**: the Mach time-constraint policy (`THREAD_TIME_CONSTRAINT_POLICY`): a 2.9 ms period, computing for up
+  to 75% of it, done within 85%, preemptible (the values audio software commonly gives its audio threads).
+
+`AudioWorkgroup` is an audio device's workgroup: on macOS the `os_workgroup_t` of the device's I/O thread
+(`kAudioDevicePropertyIOThreadOSWorkgroup`, which the Core Audio backend will hand over); copies share it
+(`os_retain`/`os_release`). Threads that render for the device join it (`ScopedWorkgroupMembership`, real-time safe:
+`os_workgroup_join`/`leave`, macOS 11 and later), so the system schedules them with the device's thread, to its
+deadline, and on Apple Silicon keeps them on the performance cores. Other systems have none: every `AudioWorkgroup`
+is empty there and joining one does nothing.
 
 ## Performance
 

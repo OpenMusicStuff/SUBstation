@@ -13,15 +13,21 @@
 // that the result is the same with or without workers.
 //
 // Between runs workers spin briefly (consecutive chunks of a callback come
-// quickly), then sleep until the next run. They join MMCSS ("Pro Audio") and
-// flush denormals while they render.
+// quickly), then sleep until the next run. They run at real-time priority
+// (platform::ScopedRealtimePriority: MMCSS's "Pro Audio" on Windows, SCHED_FIFO
+// on Linux, the time-constraint policy on macOS) where the system allows, join
+// the audio device's workgroup where it has one (macOS), and flush denormals
+// while they render.
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "platform/Threads.h"
 
 namespace sub {
 
@@ -87,6 +93,7 @@ public:
     using Job = void (*)(void* context, int node, int worker) noexcept;
 
     // `threads` counts the caller's: 1 starts no workers (run() is serial).
+    // Returns once every worker has started (and asked for its priority).
     explicit Scheduler(int threads);
     ~Scheduler();
     Scheduler(const Scheduler&) = delete;
@@ -101,6 +108,14 @@ public:
 
     // Nodes the pool's workers have rendered, since the scheduler started (for tests).
     uint64_t nodesOnWorkers() const noexcept { return nodesOnWorkers_.load(std::memory_order_relaxed); }
+
+    // How many of the workers (threads() - 1) the system let run at real-time
+    // priority; the others render at normal priority.
+    int realtimeWorkers() const noexcept { return realtimeWorkers_.load(std::memory_order_acquire); }
+
+    // Not real-time: the audio device's workgroup (empty: none), which the
+    // workers join, leaving the one before, as they wake for their next run.
+    void setWorkgroup(const platform::AudioWorkgroup& workgroup);
 
 private:
     static constexpr uint64_t kQuit = ~uint64_t{0};
@@ -119,6 +134,13 @@ private:
     alignas(64) std::atomic<int> sleepers_{0};  // workers waiting on state_
     std::atomic<uint64_t> nodesOnWorkers_{0};
     uint64_t runs_ = 0;
+    std::atomic<int> started_{0};  // workers that have asked for their priority
+    std::atomic<int> realtimeWorkers_{0};
+    // The workgroup to join, and its version: a worker that sees a version it
+    // hasn't joined takes the workgroup if it gets the lock at once (never waits).
+    std::mutex workgroupMutex_;
+    platform::AudioWorkgroup workgroup_;
+    std::atomic<uint32_t> workgroupVersion_{0};
 };
 
 #ifdef _MSC_VER

@@ -6,12 +6,16 @@
 // is needed (test_parallel_live.cpp plays live, with the fake ASIO driver).
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <stdexcept>
 #include <thread>
 
 #include "Engine.h"
+#include "Scheduler.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 #include "harness/TaskGraphOrder.h"
@@ -237,6 +241,55 @@ TEST_CASE("the number of audio threads") {
     CHECK_EQ(engine.audioThreads(), 1);
     engine.setAudioThreads(1000);
     CHECK_EQ(engine.audioThreads(), 64);
+}
+
+TEST_CASE("the workers ask for real-time priority: those the system raised are counted") {
+    sub::Engine engine;
+    engine.setAudioThreads(kThreads);
+    const int realtime = engine.realtimeWorkers();  // (known as setAudioThreads returns: the workers have asked)
+    CHECK(realtime >= 0 && realtime <= kThreads - 1);
+    std::printf("  workers at real-time priority: %d of %d\n", realtime, kThreads - 1);
+    engine.setAudioThreads(1);  // no workers
+    CHECK_EQ(engine.realtimeWorkers(), 0);
+}
+
+TEST_CASE("back to back runs for longer than a worker stays awake, its workgroup changing") {
+    // Runs with no gap between them (as an offline render's chunks): the workers
+    // take a nap every few milliseconds (rtkit's RLIMIT_RTTIME) and go on taking
+    // part. Each run renders every node once, after its inputs.
+    constexpr int kNodes = 32;
+    std::vector<std::pair<int, int>> edges;
+    for (int i = 0; i + 1 < kNodes; ++i) {
+        if (i % 4 != 3) edges.emplace_back(i, (i / 4) * 4 + 3);  // groups of four: three into the fourth
+    }
+    sub::TaskGraph graph(kNodes, edges);
+    sub::Scheduler scheduler(kThreads);
+    struct Context {
+        std::atomic<int> rendered[kNodes] = {};
+        std::atomic<bool> outOfOrder{false};
+    } context;
+    const auto job = [](void* p, int node, int) noexcept {
+        auto& c = *static_cast<Context*>(p);
+        if (node % 4 == 3) {
+            const int pass = c.rendered[node].load();
+            for (int input = node - 3; input < node; ++input) {
+                if (c.rendered[input].load() != pass + 1) c.outOfOrder = true;
+            }
+        }
+        c.rendered[node].fetch_add(1);
+        volatile double spin = 0;  // a little work
+        for (int i = 0; i < 2000; ++i) spin = spin + i;
+    };
+    const auto start = std::chrono::steady_clock::now();
+    int runs = 0;
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(200)) {
+        if (runs % 500 == 250) scheduler.setWorkgroup({});  // (none here, or the same: nothing to rejoin)
+        scheduler.run(graph, job, &context, true);
+        ++runs;
+    }
+    for (int node = 0; node < kNodes; ++node) CHECK_EQ(context.rendered[node].load(), runs);
+    CHECK(!context.outOfOrder.load());
+    CHECK(scheduler.nodesOnWorkers() > 0);
 }
 
 TEST_CASE("a track renders the same on any thread") {

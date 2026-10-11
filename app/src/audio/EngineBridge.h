@@ -257,6 +257,7 @@ public:
     // the engine's default) and applied.
     Q_INVOKABLE void chooseAudioThreads(int threads);
     int audioThreads() const;  // the engine's now
+    int realtimeWorkers() const;  // of the helpers (audioThreads() - 1), those at real-time priority
     static int defaultAudioThreads();  // one per core but one
 
     // --- Meters and the scope -----------------------------------------------------------

@@ -594,13 +594,19 @@ Stage 1 — The real-time base (both)
       `isb` on arm64): `Scheduler.cpp`, `Vst3Support.h`.
 - [ ] The workers' real-time priority (what MMCSS does on Windows:
       `platform::ScopedRealtimePriority`, `platform/src/platform/PlatformPosix.cpp`):
-  - [ ] Linux: `SCHED_FIFO` through rtkit (or limits.conf), falling back to
+  - [x] Linux: `SCHED_FIFO` through rtkit (or limits.conf), falling back to
         normal priority with a warning in the audio settings.
   - [ ] macOS: time-constraint policy, and the workers join the device's
         audio workgroup (`os_workgroup`) so Apple Silicon doesn't park
-        them on efficiency cores.
+        them on efficiency cores. (Written: `ScopedRealtimePriority`,
+        `AudioWorkgroup`, `Scheduler::setWorkgroup()`, `AudioBackend::workgroup()`;
+        not yet built or run on a Mac.)
 - [ ] A benchmark run (`parallel_render_bench`) on each platform: no worse
       than Windows on comparable hardware.
+  - [x] Linux, offline (benchmarks/README.md: 3.59× on 4 threads, Windows'
+        3.74×; a 4-core VM, not the Windows machine).
+  - [ ] Linux live (with the PipeWire backend), and against Windows on the
+        same machine; macOS.
 
 Stage 2 — Audio backends (each listed and made by its system's file behind
 `backends/AudioBackends.h`: `AudioBackendsPosix.cpp` here, before "System")

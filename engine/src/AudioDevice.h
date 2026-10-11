@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+#include "platform/Threads.h"
+
 namespace sub {
 
 // The driver type every build has: WASAPI on Windows, miniaudio's default
@@ -125,6 +127,9 @@ public:
     // Before a reset (DeviceEvent::ResetRequest): what to open instead, if the
     // driver asked for another buffer size or changed its sample rate.
     virtual void adjustForReset(DeviceConfig&) {}
+    // The open device's workgroup, which the threads rendering for its callback
+    // join (Core Audio's I/O thread's; platform::AudioWorkgroup). Empty: none.
+    virtual platform::AudioWorkgroup workgroup() const { return {}; }
 };
 
 // The device the engine plays through, of any driver type.
@@ -146,6 +151,7 @@ public:
     void close();
     bool isOpen() const;
     DeviceState state() const;
+    platform::AudioWorkgroup workgroup() const;  // the open device's (empty: none, or nothing open)
 
     // The last device opened, with what its driver asked to change since (for a reset).
     bool hasConfig() const { return hasConfig_; }
