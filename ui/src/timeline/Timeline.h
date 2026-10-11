@@ -103,10 +103,17 @@ std::vector<GridLine> gridLines(const Timeline& view, double x0, double x1, doub
 // Beats between ruler labels: the grid step or a coarser musical unit, so
 // labels are at least 44 px apart.
 double labelStep(const Timeline& view, double step);
-// The grid lines between x0 and x1, from `top` to `bottom`. `overClip` draws
-// them as faint dark lines, so the grid shows through a clip of any colour.
+// The grid lines between x0 and x1, from `top` to `bottom`: the theme's
+// gridBar/Beat/Sub as they would be over its lane, drawn see-through, so they
+// show as well over a lighter ground (a selected track's lane, a selection's
+// tint drawn under them). `overClip` draws them as faint dark lines, so the
+// grid shows through a clip of any colour.
 void drawGrid(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom,
               bool overClip = false);
+// Every other block of bars between x0 and x1, from `top` to `bottom`, a
+// shade lighter (Theme::gridBand()): blocks of two ruler labels (of a bar
+// while the labels are closer than that), the first one plain, as Ableton's.
+void drawGridBands(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom);
 // The loop region (while the loop is on) between x0 and x1, from `top` to `bottom`.
 void drawLoopRegion(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom);
 // The playhead at `beat`, in an item `height` tall: a line down it, or on a

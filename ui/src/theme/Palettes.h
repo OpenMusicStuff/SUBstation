@@ -16,7 +16,7 @@ struct Palette {
     QColor window, panel, panelAlt, surface, surfaceHover, border;
     QColor text, textDim, textDisabled, accent, accentText;
     // Arrangement
-    QColor lane, laneSelected, emptyArea, gridBar, gridBeat, gridSub;
+    QColor lane, laneSelected, emptyArea, gridBar, gridBeat, gridSub, gridBand;
     QColor playhead, insertMarker, loopOn, loopOff, loopRegion;
     QColor selectionOutline;
     QColor selection;  // a time selection on the grid (selected clips are one), and automation ranges

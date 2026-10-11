@@ -558,9 +558,13 @@ private Q_SLOTS:
         // Its name column, in its colour (its name bar), and the inner group's.
         QCOMPARE(at(60, first.top + 1), color(outer));
         QCOMPARE(at(60, h_->rowOf(inner).top + 1), color(inner));
-        // A track's name bar is in its colour; below it, a dark shade of it.
+        // A track's name column is in its colour all the way down while its
+        // automation is hidden; while it shows (C), only its name bar is, a dark
+        // shade of it below.
         QCOMPARE(at(60, h_->rowOf(a).top + 1), color(a));
-        QVERIFY(at(60, h_->rowOf(a).top + 40) != color(a));
+        QCOMPARE(at(60, h_->rowOf(a).top + 40), color(a));
+        QCOMPARE(at(60, h_->rowOf(c).top + 1), color(c));
+        QVERIFY(at(60, h_->rowOf(c).top + h_->rowOf(c).mainHeight - 4) != color(c));
         // The inner group's: from its header to C's bottom, beside the outer one's.
         for (double y = h_->rowOf(inner).top; y < last.bottom() - 1; y += 1) QCOMPARE(at(band(1), y), color(inner));
         QVERIFY(at(band(1), h_->rowOf(a).top + 10) != color(inner));

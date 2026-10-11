@@ -35,6 +35,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QQuickWindow>
+#include <QTimer>
 #include <QUrl>
 #include <QWheelEvent>
 
@@ -79,6 +80,18 @@ constexpr QColor kFadeHandleEdge{20, 20, 20, 200};
 // The colour a clip is drawn in: its track's, or grey while it is deactivated.
 QColor clipColor(const QColor& trackColor, const app::Clip& clip) {
     return clip.muted ? Theme::deactivatedClip() : trackColor;
+}
+
+double luma(const QColor& c) { return 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF(); }
+
+// A clip's body on a track showing its automation (kAutomationBodyChroma).
+QColor automationBody(const QColor& color) {
+    const double lane = luma(Theme::lane());
+    const double target = lane < 0.5 ? lane * kAutomationBodyLift : lane / kAutomationBodyLift;
+    const double a = kAutomationBodyChroma;
+    const double grey = std::clamp((target - a * luma(color)) / (1.0 - a), 0.0, 1.0);
+    const auto mix = [&](double channel) { return std::clamp(a * channel + (1.0 - a) * grey, 0.0, 1.0); };
+    return QColor::fromRgbF(float(mix(color.redF())), float(mix(color.greenF())), float(mix(color.blueF())));
 }
 
 // What a clip's waveform or notes are drawn in (faded while it is deactivated).
@@ -155,6 +168,8 @@ ArrangementLanes::ArrangementLanes(QQuickItem* parent) : ArrangementItem(parent)
     setFlag(ItemIsFocusScope, false);
     setActiveFocusOnTab(true);
     if (QCoreApplication* app = QCoreApplication::instance()) app->installEventFilter(this);
+    edgeScroll_.setInterval(16);
+    connect(&edgeScroll_, &QTimer::timeout, this, &ArrangementLanes::edgeScrollTick);
 }
 
 ArrangementLanes::~ArrangementLanes() {
@@ -386,28 +401,49 @@ void ArrangementLanes::paint(SgPainter& p) {
         const QColor color = selectedTracks.contains(row.trackId) ? Theme::laneSelected() : Theme::lane();
         p.fillRect(QRectF(visible.left(), row.top - scroll, visible.width(), row.height()), color);
     }
-    // The grid goes all the way down: below the tracks too, where selecting works on it as well.
-    timeline::drawGrid(p, view, visible.left(), visible.right(), visible.top(), visible.bottom() + 1);
-    timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 0.0, height());
-
     const Gesture* gesture = gesture_.get();
     const std::optional<app::TimeRange> gestureRange = gesture ? gesture->timeRange() : std::nullopt;
     std::optional<app::TimeRange> timeRange = gestureRange ? gestureRange : selection.timeRange();
     if (timeRange && !gestureRange) timeRange->trackIds = selection.rangeRows();  // (the rows it shows over)
     const bool onLanes = timeRange && !selection.lanes().isEmpty() && !gestureRange;
-    QHash<QString, QRectF> tinted = !timeRange || onLanes ? QHash<QString, QRectF>() : selectedAreas(*timeRange);
+    // Where the time selection is tinted, by track: a clip range's stretch of
+    // each row, or a lane range's of each automation lane it covers. The tint
+    // goes on the ground, under the grid (which shows through it as anywhere)
+    // and under the clips; their bodies are tinted where it is, their title
+    // bars, waveforms, notes and envelopes stay as they are.
+    std::vector<std::pair<QString, QRectF>> lit;
+    if (timeRange && !onLanes) {
+        const QHash<QString, QRectF> areas = selectedAreas(*timeRange);
+        for (auto it = areas.constBegin(); it != areas.constEnd(); ++it) lit.emplace_back(it.key(), *it);
+    } else if (onLanes) {
+        const double x0 = view.beatToX(timeRange->start), x1 = view.beatToX(timeRange->end);
+        for (const EnvelopeArea& area : areas_) {
+            if (selection.lanes().contains(app::LaneRef{area.owner, area.key}))
+                lit.emplace_back(area.owner, QRectF(x0, area.rect.top(), x1 - x0, area.rect.height()));
+        }
+    }
+    for (const auto& [trackId, area] : lit) p.fillRect(area, Theme::selection());
+    // The grid goes all the way down: below the tracks too, where selecting works on it as well.
+    timeline::drawGridBands(p, view, visible.left(), visible.right(), visible.top(), visible.bottom() + 1);
+    timeline::drawGrid(p, view, visible.left(), visible.right(), visible.top(), visible.bottom() + 1);
+    // A track showing its automation over its clips: a line under the band their title bars take, as Ableton's.
+    static constexpr QColor kTitleDivider{0, 0, 0, 70};
+    for (int index : rows) {
+        const Row& row = layout.rows()[static_cast<size_t>(index)];
+        if (row.automation && !row.bars && row.mainHeight >= kMinTitleRow)
+            p.fillRect(QRectF(visible.left(), row.top - scroll + kTitleHeight + 1, visible.width(), 1), kTitleDivider);
+    }
+    timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 0.0, height());
+
     std::vector<Frame> frames;  // the clips drawn
 
     const QSet<QString> hidden = gesture ? gesture->hiddenIds() : QSet<QString>();
-    const QSet<app::ClipRef>& selectedClips = selection.clips();
     for (int index : rows) {
         const Row& row = layout.rows()[static_cast<size_t>(index)];
         const app::Track* track = project.findTrack(row.trackId);
         if (!track) continue;
         const double y = row.top - scroll;
         const bool bars = row.bars;
-        if (bars && tinted.contains(track->id))  // under its clips' bars, which stay as they are
-            p.fillRect(tinted.take(track->id), Theme::selection());
         if (track->isGroup()) drawGroupSummary(p, track->id, y, row.mainHeight, track->folded, visible);
         const QColor trackColor(track->color);
         for (const app::Clip& clip : track->clips) {
@@ -415,10 +451,9 @@ void ArrangementLanes::paint(SgPainter& p) {
             const QRectF rect = clipRect(clip, y, row.mainHeight);
             if (rect.left() > visible.right()) break;
             if (rect.right() < visible.left()) continue;
-            // The selected area is tinted; a folded track's bars show they are selected by their outline.
-            const bool selected = bars && selectedClips.contains(app::ClipRef{track->id, clip.id});
-            drawClip(p, trackColor, clip, rect, visible, selected, false, bars);
-            frames.push_back({track->id, trackColor, clip, rect, selected, false, bars});
+            // Only the selected area shows it is selected (tinted): never an outline around a whole clip.
+            drawClip(p, trackColor, clip, rect, visible, false, false, bars, row.automation);
+            frames.push_back({track->id, trackColor, clip, rect, false, false, bars, row.automation});
         }
         if (project.isFrozen(track->id))  // its clips play as frozen: tinted, as in Ableton
             p.fillRect(QRectF(visible.left(), y, visible.width(), row.mainHeight - 1), Theme::frozenTint());
@@ -434,24 +469,24 @@ void ArrangementLanes::paint(SgPainter& p) {
             const Row& row = allRows[static_cast<size_t>(kept.row)];
             if (row.hidden) continue;
             const QRectF rect = clipRect(kept.clip, row.top - scroll, row.mainHeight);
-            drawClip(p, kept.color, kept.clip, rect, visible, false, false, row.bars);
+            drawClip(p, kept.color, kept.clip, rect, visible, false, false, row.bars, row.automation);
             if (project.isFrozen(row.trackId)) p.fillRect(rect, Theme::frozenTint());  // (as its row's clips are)
-            frames.push_back({row.trackId, kept.color, kept.clip, rect, false, false, row.bars});
+            frames.push_back({row.trackId, kept.color, kept.clip, rect, false, false, row.bars, row.automation});
         }
         for (const GestureClip& ghost : gesture->ghosts()) {
             if (ghost.row < 0 || ghost.row >= static_cast<int>(allRows.size())) continue;
             const Row& row = allRows[static_cast<size_t>(ghost.row)];
             if (row.hidden) continue;
             const QRectF rect = clipRect(ghost.clip, row.top - scroll, row.mainHeight);
-            drawClip(p, ghost.color, ghost.clip, rect, visible, true, true, row.bars);
+            drawClip(p, ghost.color, ghost.clip, rect, visible, true, true, row.bars, row.automation);
             if (project.isFrozen(row.trackId)) p.fillRect(rect, Theme::frozenTint());
-            frames.push_back({row.trackId, ghost.color, ghost.clip, rect, true, true, row.bars});
+            frames.push_back({row.trackId, ghost.color, ghost.clip, rect, true, true, row.bars, row.automation});
         }
     }
     for (size_t i = 0; i < areas_.size() && i < looks_.size(); ++i) {
         const EnvelopeArea& area = areas_[i];
         envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
-                            hoverPoint_, area.lane < 0, gesture != nullptr);
+                            hoverPoint_, gesture != nullptr);
     }
     drawDropPreview(p);
 
@@ -462,15 +497,34 @@ void ArrangementLanes::paint(SgPainter& p) {
                    Theme::textDim(), uiFont(10));
     }
 
-    if (onLanes) envelopes::drawRange(p, view, selection, areas_, Theme::selection());  // on the automation lanes it covers
-    for (const QRectF& area : tinted) p.fillRect(area, Theme::selection());
-    // Over the tint, the clips' title bars (and outlines) as they were: selecting doesn't light them up.
+    // The clips' bodies where the selection is: drawn again with its tint
+    // between their ground and the rest (the grid, the waveforms or notes),
+    // their title bars and outlines over them, and the envelopes over those.
+    // (A folded track's bars stay as they are, over the tint.)
+    std::vector<QRectF> redrawn;
     for (const Frame& frame : frames) {
-        const auto area = tinted.constFind(frame.trackId);
-        if (area != tinted.constEnd() && area->intersects(frame.rect)) {
+        if (frame.folded) continue;
+        for (const auto& [trackId, area] : lit) {
+            if (trackId != frame.trackId || !area.intersects(frame.rect)) continue;
             p.save();
-            p.setClipRect(area->intersected(visible));
-            drawClipFrame(p, frame.color, frame.clip, frame.rect, frame.selected, frame.ghost, frame.folded);
+            p.setClipRect(area.intersected(visible));
+            drawBody(p, frame.color, frame.clip, frame.rect, visible, frame.ghost, frame.folded, frame.automation,
+                     Theme::selection());
+            drawClipFrame(p, frame.color, frame.clip, frame.rect, frame.selected, frame.ghost, frame.folded,
+                          frame.automation);
+            if (project.isFrozen(frame.trackId)) p.fillRect(frame.rect, Theme::frozenTint());  // (over all of it, as its row has)
+            p.restore();
+            redrawn.push_back(area.intersected(frame.rect));
+        }
+    }
+    for (const QRectF& rect : redrawn) {
+        for (size_t i = 0; i < areas_.size() && i < looks_.size(); ++i) {
+            const EnvelopeArea& area = areas_[i];
+            if (!area.rect.adjusted(0, -kPointRadius - 1, 0, kPointRadius + 1).intersects(rect)) continue;
+            p.save();
+            p.setClipRect(rect.intersected(visible));
+            envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
+                                hoverPoint_, gesture != nullptr);
             p.restore();
         }
     }
@@ -487,29 +541,43 @@ void ArrangementLanes::paint(SgPainter& p) {
 }
 
 void ArrangementLanes::drawClip(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
-                                const QRectF& visible, bool selected, bool ghost, bool folded) {
+                                const QRectF& visible, bool selected, bool ghost, bool folded, bool automation) {
     // A clip: its body (the waveform or notes), then its title bar and outline
     // (drawClipFrame). A folded track's clip is all title bar. A deactivated
-    // one is grey.
-    const double titleHeight = clipTitleHeight(rect.height(), folded);
-    const QRectF body = rect.adjusted(0, titleHeight, 0, 0);
+    // one is grey. As Ableton's: the body is the title bar's colour, a darker
+    // line between them; on a track showing its automation it is dark (the
+    // envelope over it), the grid faint over it.
     p.save();
     p.setClipRect(rect.intersected(visible).adjusted(-1, -1, 1, 1));
-    if (body.height() > 0) {
-        const QColor color = clipColor(trackColor, clip);
-        QColor bodyColor = color;
-        bodyColor.setHsvF(color.hsvHueF(), color.hsvSaturationF() * 0.6f, std::min(1.0f, color.valueF() * 0.78f));
-        if (ghost) bodyColor.setAlphaF(0.75f);
-        p.fillRect(body, bodyColor);
-        // The grid shows through the body, faintly (under the notes and the waveform);
-        // the title bar, where the clip is grabbed, stays solid.
-        timeline::drawGrid(p, arrangement()->view(), std::max(rect.left() + 1, visible.left()),
-                           std::min(rect.right() - 1, visible.right()), body.top(), body.bottom(), true);
-        drawContent(p, clip, rect, body, visible);
-        drawFades(p, clip, rect, body, visible, showsFadeHandles());
-    }
-    drawClipFrame(p, trackColor, clip, rect, selected, ghost, folded);
+    drawBody(p, trackColor, clip, rect, visible, ghost, folded, automation);
+    drawClipFrame(p, trackColor, clip, rect, selected, ghost, folded, automation);
     p.restore();
+}
+
+void ArrangementLanes::drawBody(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
+                                const QRectF& visible, bool ghost, bool folded, bool automation,
+                                const std::optional<QColor>& tint) {
+    const double titleHeight = clipTitleHeight(rect.height(), folded);
+    const QRectF body = rect.adjusted(0, titleHeight, 0, 0);
+    if (body.height() <= 0) return;
+    const QColor color = clipColor(trackColor, clip);
+    QColor bodyColor = color;
+    if (automation) bodyColor = automationBody(color);
+    if (ghost) bodyColor.setAlphaF(0.75f);
+    p.fillRect(body, bodyColor);
+    if (tint) p.fillRect(body, *tint);
+    // The grid through the body (under the waveform and notes): faint dark
+    // lines, fainter still over a track's automation's dark body.
+    p.save();
+    p.setOpacity(p.opacity() * (automation ? kAutomationGridOpacity : kClipGridOpacity));
+    timeline::drawGrid(p, arrangement()->view(), std::max(rect.left() + 1, visible.left()),
+                       std::min(rect.right() - 1, visible.right()), body.top(), body.bottom(), true);
+    p.restore();
+    if (titleHeight > 0)  // the line under the title bar
+        p.fillRect(QRectF(rect.left(), body.top(), rect.width(), 1),
+                   automation ? bodyColor.darker(150) : color.darker(160));
+    drawContent(p, clip, rect, body, visible);
+    drawFades(p, clip, rect, body, visible, showsFadeHandles());
 }
 
 void ArrangementLanes::drawFades(SgPainter& p, const app::Clip& clip, const QRectF& rect, const QRectF& body,
@@ -587,10 +655,11 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
 }
 
 void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
-                                     bool selected, bool ghost, bool folded) const {
+                                     bool selected, bool ghost, bool folded, bool automation) const {
     // A clip's title bar (its name, if there is room: an audio clip's; MIDI
-    // clips have none) and its outline: white if `selected`, and the trim
-    // handle under the mouse. Grey while it is deactivated.
+    // clips have none) and its outline: white if `selected`, none on a track
+    // showing its automation (as Ableton's), and the trim handle under the
+    // mouse. Grey while it is deactivated.
     const QColor color = clipColor(trackColor, clip);
     const double titleHeight = clipTitleHeight(rect.height(), folded);
     const QRectF title(rect.left(), rect.top(), rect.width(), titleHeight);
@@ -601,8 +670,10 @@ void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, con
         p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
                    SgPainter::elidedText(clip.name, font, std::floor(textRect.width())), Theme::accentText(), font);
     }
-    const QColor outline = selected ? Theme::selectionOutline() : color.darker(170);
-    p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), outline, 1);
+    if (selected || !automation) {
+        const QColor outline = selected ? Theme::selectionOutline() : color.darker(170);
+        p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), outline, 1);
+    }
     if (hoverEdge_ && hoverEdge_->first == clip.id && !ghost) {  // (Alt: a stretch, in the accent colour)
         const double x = hoverEdge_->second ? rect.left() : rect.right() - 2;
         p.fillRect(QRectF(x, rect.top(), 2, rect.height()), hoverStretch_ ? Theme::accent() : Theme::selectionOutline());
@@ -703,6 +774,7 @@ void ArrangementLanes::mousePressEvent(QMouseEvent* event) {
     // The press a double-click starts with: the double-click stands for it, as
     // with widgets (which never see it).
     if (event->flags() & Qt::MouseEventCreatedDoubleClick) return;
+    edgeScroll_.stop();  // (a drag before this one's: it doesn't scroll for this one)
     if (!ready()) return;
     const QPointF pos = event->position();
     if (event->button() == Qt::RightButton) {
@@ -812,8 +884,7 @@ void ArrangementLanes::click(const QPointF& pos, Qt::KeyboardModifiers mods, con
 void ArrangementLanes::mouseMoveEvent(QMouseEvent* event) {
     hoverPos_ = event->position();
     if (gesture_) {
-        gesture_->move(event->position(), event->modifiers());
-        repaint();
+        moveGesture(event->position(), event->modifiers());
         return;
     }
     updateHover(event->position(), event->modifiers());
@@ -821,6 +892,7 @@ void ArrangementLanes::mouseMoveEvent(QMouseEvent* event) {
 
 void ArrangementLanes::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) return;
+    edgeScroll_.stop();
     std::unique_ptr<Gesture> gesture = std::move(gesture_);
     if (gesture) gesture->finish();
     gesture_.reset();  // (a click in a clip range selects as elsewhere: no gesture follows it)
@@ -830,9 +902,75 @@ void ArrangementLanes::mouseReleaseEvent(QMouseEvent* event) {
 
 void ArrangementLanes::mouseUngrabEvent() {
     // The mouse was taken away mid-gesture (a popup): it ends where it is.
+    edgeScroll_.stop();
     if (!gesture_) return;
     std::unique_ptr<Gesture> gesture = std::move(gesture_);
     gesture->cancel();
+    repaint();
+}
+
+// A selecting drag goes on past the lanes' edges: up onto the ruler (or above)
+// it takes every track above, down past the arrangement (onto the device view)
+// every track below. Near an edge, in the lanes or over the returns and the
+// master below them, the lanes scroll that way, faster the nearer the mouse.
+namespace {
+constexpr double kEdgeZone = 32.0;  // pixels inside the lanes' top and bottom where a selecting drag scrolls
+constexpr int kEdgeStepMin = 1;     // pixels a tick (16 ms) at the zone's inner end
+constexpr int kEdgeStepMax = 6;     // and at its outer end
+constexpr qint64 kEdgeDelayMs = 350;  // how long the mouse is near the edge before it scrolls
+}  // namespace
+
+QPointF ArrangementLanes::selectingPos(const QPointF& pos) const {
+    const Arrangement& a = *arrangement();
+    const double bottom = height() + a.returnsHeight() + a.masterHeight();  // the arrangement's
+    if (pos.y() < 0) return {pos.x(), -a.scrollY() - 1.0};                        // before the first row
+    if (pos.y() >= bottom) return {pos.x(), double(a.layout().totalHeight() - a.scrollY())};  // after the last
+    if (pos.y() >= height()) return {pos.x(), height() - 1.0};  // (the rows below it show as they scroll in)
+    return pos;
+}
+
+int ArrangementLanes::edgeScrollStep(double y) const {
+    const Arrangement& a = *arrangement();
+    const double bottom = height() + a.returnsHeight() + a.masterHeight();
+    const auto step = [](double depth) {
+        return kEdgeStepMin + int(std::lround((kEdgeStepMax - kEdgeStepMin) * std::clamp(depth, 0.0, 1.0)));
+    };
+    if (y < 0 || y >= bottom) return 0;  // past the edges: everything that way is selected already
+    if (y < kEdgeZone) return -step((kEdgeZone - y) / kEdgeZone);
+    const double zoneTop = height() - kEdgeZone;
+    if (y >= zoneTop) return step((y - zoneTop) / std::max(1.0, bottom - zoneTop));
+    return 0;
+}
+
+void ArrangementLanes::moveGesture(const QPointF& pos, Qt::KeyboardModifiers modifiers) {
+    dragPos_ = pos;
+    dragModifiers_ = modifiers;
+    const bool selecting = gesture_->selectsRows();
+    gesture_->move(selecting ? selectingPos(pos) : pos, modifiers);
+    // (A gesture that just became a drag selects rows from this move on.)
+    if (gesture_->selectsRows() && edgeScrollStep(pos.y()) != 0) {
+        if (!edgeScroll_.isActive()) {
+            edgeWait_.start();
+            edgeScroll_.start();
+        }
+    } else {
+        edgeScroll_.stop();
+    }
+    repaint();
+}
+
+void ArrangementLanes::edgeScrollTick() {
+    const int step = gesture_ && gesture_->selectsRows() && ready() ? edgeScrollStep(dragPos_.y()) : 0;
+    if (step == 0) {
+        edgeScroll_.stop();
+        return;
+    }
+    if (edgeWait_.elapsed() < kEdgeDelayMs) return;  // (not yet: passing near the edge doesn't scroll)
+    Arrangement& a = *arrangement();
+    const int before = a.scrollY();
+    a.setScrollY(before + step);
+    if (a.scrollY() == before) return;  // (at the end: it waits, in case the mouse goes back)
+    gesture_->move(selectingPos(dragPos_), dragModifiers_);
     repaint();
 }
 
