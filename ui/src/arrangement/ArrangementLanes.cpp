@@ -763,6 +763,7 @@ void ArrangementLanes::mousePressEvent(QMouseEvent* event) {
     // The press a double-click starts with: the double-click stands for it, as
     // with widgets (which never see it).
     if (event->flags() & Qt::MouseEventCreatedDoubleClick) return;
+    edgeScroll_.stop();  // (a drag before this one's: it doesn't scroll for this one)
     if (!ready()) return;
     const QPointF pos = event->position();
     if (event->button() == Qt::RightButton) {
@@ -948,7 +949,7 @@ void ArrangementLanes::moveGesture(const QPointF& pos, Qt::KeyboardModifiers mod
 }
 
 void ArrangementLanes::edgeScrollTick() {
-    const int step = gesture_ && ready() ? edgeScrollStep(dragPos_.y()) : 0;
+    const int step = gesture_ && gesture_->selectsRows() && ready() ? edgeScrollStep(dragPos_.y()) : 0;
     if (step == 0) {
         edgeScroll_.stop();
         return;
