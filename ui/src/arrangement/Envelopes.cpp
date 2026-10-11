@@ -300,7 +300,10 @@ private:
 // A press on a lane off its breakpoints and its line: a click sets the
 // insert marker; a drag selects a time range on the automation lanes it
 // crosses (down over the tracks below too), and on the clips when it goes up
-// into their title band or above its track.
+// into their title band or above its track, or down past the last track (the
+// device view below the arrangement: every track from its own down, as a drag
+// from its clips would). The lanes scroll near their edges as for any drag
+// selecting time (Gesture::selectsRows).
 class LaneGesture : public Gesture {
 public:
     LaneGesture(LanesHost& host, const EnvelopeArea& area, const QPointF& press, Qt::KeyboardModifiers modifiers)
@@ -352,15 +355,19 @@ public:
         if (!active_) host_.hostSession()->selection()->setInsert(anchor_);
     }
 
+    bool selectsRows() const override { return active_ && clips_ != nullptr; }
+
 private:
-    // Whether the drag went up into the clips' title band or above its track.
+    // Whether the drag went up into the clips' title band or above its track,
+    // or down past the last track.
     bool overClips(const QPointF& pos) const {
         if (!clips_) return false;
         const Arrangement& arrangement = *host_.hostArrangement();
         const auto& rows = arrangement.layout().rows();
         if (clips_->anchorRow() < 0 || clips_->anchorRow() >= static_cast<int>(rows.size())) return false;
         const Row& row = rows[static_cast<size_t>(clips_->anchorRow())];
-        return host_.inClipBand(pos) || pos.y() + arrangement.scrollY() < row.top;
+        const double contentY = pos.y() + arrangement.scrollY();
+        return host_.inClipBand(pos) || contentY < row.top || contentY >= arrangement.layout().totalHeight();
     }
 
     LanesHost& host_;
@@ -667,12 +674,11 @@ void addMenuEntries(LanesHost& host, const EnvelopeArea& area, const QPointF& po
 
 void drawArea(SgPainter& p, const timeline::Timeline& view, const app::Selection& selection, const EnvelopeArea& area,
               const Envelope& points, const EnvelopeLook& look, const QRectF& visible, const std::optional<Hover>& hover,
-              bool shade, bool gestureActive) {
+              bool gestureActive) {
     const QRectF clip = area.rect.intersected(visible);
     if (clip.isEmpty()) return;
     p.save();
     p.setClipRect(clip.adjusted(0, -kPointRadius - 1, 0, kPointRadius + 1));
-    if (shade) p.fillRect(clip, kLaneBackground);
     p.setAntialiasing(true);
     const double x0 = clip.left() - 2, x1 = clip.right() + 2;
     if (points.empty()) {

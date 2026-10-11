@@ -137,6 +137,22 @@ double labelStep(const Timeline& view, double step) {
     return candidates.back();
 }
 
+namespace {
+
+double luma(const QColor& c) { return 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF(); }
+
+// A grid line's theme colour as an overlay: white (or black, for a line darker
+// than the lane) as see-through as makes it that colour over Theme::lane(). Over
+// a lighter ground (a selected track's lane, the selection's tint) it stays as
+// far from it, so the grid shows as well there as anywhere.
+QColor overLane(const QColor& line) {
+    const double lane = luma(Theme::lane()), value = luma(line);
+    if (value >= lane) return QColor(255, 255, 255, int(std::lround(255 * (value - lane) / std::max(1e-6, 1.0 - lane))));
+    return QColor(0, 0, 0, int(std::lround(255 * (lane - value) / std::max(1e-6, lane))));
+}
+
+}  // namespace
+
 void drawGrid(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom,
               bool overClip) {
     if (bottom <= top) return;
@@ -144,14 +160,29 @@ void drawGrid(SgPainter& painter, const Timeline& view, double x0, double x1, do
     static constexpr QColor kOverClipBar{0, 0, 0, 70};
     static constexpr QColor kOverClipBeat{0, 0, 0, 42};
     static constexpr QColor kOverClipSub{0, 0, 0, 24};
+    const QColor bar = overLane(Theme::gridBar()), beat = overLane(Theme::gridBeat()), sub = overLane(Theme::gridSub());
     for (const GridLine& line : gridLines(view, x0 - 1, x1 + 1)) {
         QColor color;
         switch (line.kind) {
-            case LineKind::Bar: color = overClip ? kOverClipBar : Theme::gridBar(); break;
-            case LineKind::Beat: color = overClip ? kOverClipBeat : Theme::gridBeat(); break;
-            case LineKind::Sub: color = overClip ? kOverClipSub : Theme::gridSub(); break;
+            case LineKind::Bar: color = overClip ? kOverClipBar : bar; break;
+            case LineKind::Beat: color = overClip ? kOverClipBeat : beat; break;
+            case LineKind::Sub: color = overClip ? kOverClipSub : sub; break;
         }
         painter.fillRect(QRectF(app::roundHalfEven(line.x), top, 1, bottom - top), color);
+    }
+}
+
+void drawGridBands(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom) {
+    if (bottom <= top || x1 <= x0) return;
+    const double bar = view.timeSignature().beatsPerBar();
+    const double label = labelStep(view, view.gridStep());
+    const double block = label >= bar ? 2 * label : bar;
+    const auto first = static_cast<long long>(std::max(0.0, std::floor(view.xToBeat(x0) / block)));
+    const auto last = static_cast<long long>(std::ceil(view.xToBeat(x1) / block));
+    for (long long k = first | 1; k <= last; k += 2) {
+        const double left = std::max(x0, app::roundHalfEven(view.beatToX(static_cast<double>(k) * block)));
+        const double right = std::min(x1, app::roundHalfEven(view.beatToX(static_cast<double>(k + 1) * block)));
+        if (right > left) painter.fillRect(QRectF(left, top, right - left, bottom - top), Theme::gridBand());
     }
 }
 
