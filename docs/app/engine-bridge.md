@@ -246,8 +246,8 @@ concerned (see [Freezing](#freezing)).
   (`Project::storePluginState`), for saving, copying devices, duplicating tracks and saving presets; it also records a
   moved plug-in's new path. `pluginState(track, device)` reads one directly; `applyPluginState` gives one a
   `.vstpreset` read from a file (the caller records the undo step).
-- **Presets**: `pluginPresetName(track, device)` is the preset a loaded plug-in says it has ("" if none, or not
-  loaded: [engine/plugins.md](../engine/plugins.md#preset-names)); `pluginPresetChanged` says when it is another.
+- **Presets**: `pluginPresetName(track, device)` is the preset a loaded plug-in says it has ("" if none; none if it
+  isn't loaded: [engine/plugins.md](../engine/plugins.md#preset-names)); `pluginPresetChanged` says when it is another.
 - **Parameters**: a model parameter change goes to the plug-in (`setProcessorParam`) unless the plug-in already has
   that value (an edit made in its own editor). Parameter ids, `ParamInfo`s and `ParamSpec`s are cached per processor
   and dropped when the plug-in reports that its parameter list changed.

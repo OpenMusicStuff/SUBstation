@@ -325,8 +325,8 @@ private Q_SLOTS:
         bridge.pollPlugins();
         QCOMPARE(preset.count(), 1);
         QCOMPARE(preset.first(), place);
-        QCOMPARE(bridge.pluginPresetName(track, device), QString());
-        QCOMPARE(bridge.pluginPresetName(track, QStringLiteral("nope")), QString());
+        QCOMPARE(bridge.pluginPresetName(track, device), std::optional<QString>(QString()));  // loaded, none told
+        QVERIFY(!bridge.pluginPresetName(track, QStringLiteral("nope")));                    // not loaded
 
         // Not while a plug-in's call runs a message loop: the reports wait.
         BridgeTestAccess::injectEvents(bridge, {report(Type::StateDirty, processor)});

@@ -82,9 +82,9 @@ std::optional<QByteArray> EngineBridge::pluginState(const QString& trackId, cons
     return stateData(engine_.processorState(*processorId));
 }
 
-QString EngineBridge::pluginPresetName(const QString& trackId, const QString& deviceId) {
+std::optional<QString> EngineBridge::pluginPresetName(const QString& trackId, const QString& deviceId) {
     const auto processorId = engineDeviceId(trackId, deviceId);
-    if (!processorId || !d_->pluginIds.contains(*processorId)) return {};
+    if (!processorId || !d_->pluginIds.contains(*processorId)) return std::nullopt;
     return QString::fromStdString(engine_.processorPresetName(*processorId));
 }
 

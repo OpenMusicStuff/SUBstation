@@ -209,7 +209,9 @@ private:
     // have changed (restored, setDirty, a restart saying values changed; at most
     // every kPresetCheckInterval), and every kPresetPollInterval while the editor
     // is open, where presets are picked. The poll scans the state only if its last
-    // scan found a name: a plug-in that keeps none there isn't read again and again.
+    // scan found a name: a plug-in that keeps none there isn't read again and again;
+    // nor at every setDirty of knobs turned in its editor (editedSincePresetCheck_),
+    // which wait for the poll unless the state was replaced (presetStateReplaced_).
     // Its program-change parameters (main thread) are found by buildParams().
     struct ProgramParam {
         Steinberg::Vst::ParamID id = 0;
@@ -219,6 +221,8 @@ private:
     std::vector<ProgramParam> programParams_;
     std::string presetName_;
     std::atomic<bool> presetStateChanged_{true};
+    std::atomic<bool> editedSincePresetCheck_{false};
+    bool presetStateReplaced_ = true;
     bool stateHasName_ = true;
     std::chrono::steady_clock::time_point lastPresetCheck_{};
 

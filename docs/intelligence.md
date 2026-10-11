@@ -502,8 +502,8 @@ application's thread. It tells the labeller what the project holds (`facts()`): 
 master, in the arrangement's order) with its name and whether the user gave it (`namedByUser()`: not one SUBstation
 gave after what it holds, its number, a file, an instrument, or a copy's " 2"); its devices and racks: a built-in
 device's parameters with their names, units and normalized values; a plug-in's name, vendor, VST3 category (from the
-plug-in index), its preset (as the plug-in says now, `EngineBridge::pluginPresetName()`; else as its saved state in the
-project says, `presetNameFromPreset()`) and the parameters the labeller reads (the engine's while it is loaded, else
+plug-in index), its preset (while it is loaded, as the plug-in says now, `EngineBridge::pluginPresetName()`, even ""; else as its
+saved state in the project says, `presetNameFromPreset()`: a loaded plug-in's saved state is only the last save's) and the parameters the labeller reads (the engine's while it is loaded, else
 `paramsInState()` of its saved state; a saved state is decoded once while it stays the same); a sampler's sample; the
 audio clips it plays (their files, their lengths in beats; not deactivated ones), its notes where they play
 (`Clip::heardNotes()`), its sends, fader, pan and mute.

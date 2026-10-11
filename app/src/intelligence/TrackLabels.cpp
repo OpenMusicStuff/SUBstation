@@ -195,9 +195,11 @@ labels::DeviceFact TrackLabels::deviceFacts(const QString& trackId, const Device
         facts.vendor = utf8(plugin.vendor);
         facts.category = utf8(categories_.value(plugin.uid));
         facts.instrument = plugin.instrument;
-        // Its preset as it says now, else as its saved state says.
-        const QString live = bridge_ ? bridge_->pluginPresetName(trackId, device.id) : QString();
-        facts.preset = utf8(live.isEmpty() ? saved(device).preset : live);
+        // Its preset as it says now while loaded (its saved state is the last save's), else as
+        // its saved state says (missing, frozen).
+        const std::optional<QString> live = bridge_ ? bridge_->pluginPresetName(trackId, device.id) : std::nullopt;
+        const bool loaded = live.has_value();
+        facts.preset = utf8(loaded ? *live : saved(device).preset);
         // An effect's amounts (its mix, its drive...): only those the labeller reads,
         // as it has them while loaded, else as its saved state has them.
         if (!plugin.instrument && bridge_) {
@@ -211,7 +213,7 @@ labels::DeviceFact TrackLabels::deviceFacts(const QString& trackId, const Device
                                         utf8(param.unit), utf8(bridge_->deviceParamText(trackId, device.id, i, *value))});
             }
         }
-        if (!plugin.instrument && facts.params.empty()) facts.params = saved(device).params;
+        if (!plugin.instrument && !loaded) facts.params = saved(device).params;
     } else if (device.isRack()) {
         facts.name = utf8(device.name.value_or(QString()));
         for (const Chain& chain : device.chains) {

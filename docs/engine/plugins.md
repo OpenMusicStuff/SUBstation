@@ -324,7 +324,10 @@ about 130 KB):
   `setState()` itself: a project's plug-ins are restored one after another, and some finish loading a state later and
   say so with `setDirty`, which is never lost);
 - when the plug-in says its state changed (`setDirty`, or a restart with `kParamValuesChanged` or `kReloadComponent`),
-  at most every 250 ms (not at every knob it turns);
+  at most every 250 ms (not at every knob it turns). A plug-in whose last read found no name and whose `setDirty`
+  came with edits of its own (`performEdit`: knobs turned in its editor) waits for the 2 s poll instead: its state,
+  maybe megabytes, isn't read four times a second while a knob turns. A restored state or a restart is looked at at
+  once still;
 - every 2 s while its editor is open, where presets are picked and not every plug-in says so. This poll reads the
   state only if the last read found a name there: a plug-in that keeps none isn't read again and again, until its
   state changes (an empty BBC SO, then an instrument loaded into it).

@@ -303,8 +303,8 @@ public:
     // A plug-in device's current state (a .vstpreset); none if it isn't loaded.
     std::optional<QByteArray> pluginState(const QString& trackId, const QString& deviceId);
     // The preset (patch, instrument) a loaded plug-in device says it has ("": none
-    // told, or not loaded): its program list's name or one in its state (Vst3Processor).
-    QString pluginPresetName(const QString& trackId, const QString& deviceId);
+    // told; none if it isn't loaded): its program list's name or one in its state (Vst3Processor).
+    std::optional<QString> pluginPresetName(const QString& trackId, const QString& deviceId);
     // Gives a loaded plug-in device a state (a .vstpreset read from a file) now,
     // as the plug-in's own (no undo step: the caller records one). "" if the
     // plug-in took it, else why not (another plug-in's settings, a broken file).

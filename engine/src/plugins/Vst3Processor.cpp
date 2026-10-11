@@ -73,6 +73,7 @@ public:
         return kResultOk;
     }
     tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) override {
+        owner_.editedSincePresetCheck_.store(true);  // (a knob turned: its setDirty isn't a preset picked)
         owner_.performEdit(id, valueNormalized);
         return kResultOk;
     }
@@ -830,17 +831,27 @@ bool Vst3Processor::idle() {
     // The preset: looked at again when the state may have changed (not at every
     // setDirty of a knob turned: at most every kPresetCheckInterval), and while the
     // editor is open, where presets are picked and not every plug-in says so.
+    // A plug-in that keeps no name in its state isn't read again at every knob turned
+    // in its editor (its state may be megabytes): its setDirty with edits waits for the poll.
     constexpr auto kPresetCheckInterval = std::chrono::milliseconds(250);
     constexpr auto kPresetPollInterval = std::chrono::seconds(2);
-    if (flags & (kParamValuesChanged | kReloadComponent)) presetStateChanged_.store(true);
+    if (flags & (kParamValuesChanged | kReloadComponent)) {
+        presetStateChanged_.store(true);
+        presetStateReplaced_ = true;
+    }
     const auto now = std::chrono::steady_clock::now();
     const auto since = now - lastPresetCheck_;
-    if (since >= kPresetCheckInterval && presetStateChanged_.exchange(false)) {
+    const bool knobsTurned = !presetStateReplaced_ && !stateHasName_ && editedSincePresetCheck_.load();
+    const auto check = [&](bool stateChanged) {
         lastPresetCheck_ = now;
-        refreshPresetName(true);
-    } else if (since >= kPresetPollInterval && isEditorOpen()) {
-        lastPresetCheck_ = now;
-        refreshPresetName(false);
+        presetStateReplaced_ = false;
+        editedSincePresetCheck_.store(false);
+        refreshPresetName(stateChanged);
+    };
+    if (since >= kPresetCheckInterval && !knobsTurned && presetStateChanged_.exchange(false)) {
+        check(true);
+    } else if (since >= kPresetPollInterval && (isEditorOpen() || (knobsTurned && presetStateChanged_.load()))) {
+        check(presetStateChanged_.exchange(false));
     }
     return latencyChanged;
 }
@@ -912,6 +923,7 @@ void Vst3Processor::setState(const std::vector<uint8_t>& state) {
     // Its preset: looked at in the next idle(), at once (not read again here: a project's
     // plug-ins are restored one after another, and some finish loading a state later).
     presetStateChanged_.store(true);
+    presetStateReplaced_ = true;
     lastPresetCheck_ = {};
     pushEvent({ProcessorEvent::Type::ParamsChanged});
 }

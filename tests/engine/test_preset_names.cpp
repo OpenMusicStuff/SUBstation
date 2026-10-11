@@ -197,3 +197,31 @@ TEST_CASE("a preset picked in a plug-in's editor") {
     engine.closeEditor(effect);
 #endif
 }
+
+TEST_CASE("a preset picked in a plug-in's editor after knobs turned") {
+#ifndef _WIN32
+    SKIP("plug-in editors are Windows only");
+#else
+    constexpr UINT kEditGain = WM_USER + 1, kDirty = WM_USER + 3, kPickPreset = WM_USER + 4;
+    sub::Engine engine;
+    const uint32_t track = engine.addTrack();
+    const uint32_t effect = addTestPlugin(engine, engine.trackChain(track), "SUB Test Effect");
+    REQUIRE(engine.openEditor(effect, 0, "SUB Test Effect - Knobs"));
+    const HWND frame = FindWindowW(L"SUBstationPluginEditor", L"SUB Test Effect - Knobs");
+    const HWND view = frame ? GetWindow(frame, GW_CHILD) : nullptr;
+    REQUIRE(frame && view);
+    engine.idle();  // (its state read: no name in it)
+    engine.takeProcessorEvents();
+
+    // Knobs turned (setDirty with edits): its state, with no name, isn't read at every
+    // one; a preset picked among them is found by the editor's poll all the same.
+    CHECK(SendMessageW(view, kEditGain, 0, 0) != 0);
+    CHECK(SendMessageW(view, kDirty, 0, 0) != 0);
+    CHECK(SendMessageW(view, kPickPreset, 0, 0) != 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+    engine.idle();
+    CHECK_EQ(engine.processorPresetName(effect), std::string("Hall"));
+    CHECK(hasEvent(engine.takeProcessorEvents(), EventType::PresetChanged));
+    engine.closeEditor(effect);
+#endif
+}
