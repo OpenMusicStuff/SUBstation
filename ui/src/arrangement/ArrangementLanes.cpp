@@ -510,9 +510,9 @@ void ArrangementLanes::paint(SgPainter& p) {
             p.setClipRect(area.intersected(visible));
             drawBody(p, frame.color, frame.clip, frame.rect, visible, frame.ghost, frame.folded, frame.automation,
                      Theme::selection());
-            if (project.isFrozen(frame.trackId)) p.fillRect(frame.rect, Theme::frozenTint());  // (as its row has)
             drawClipFrame(p, frame.color, frame.clip, frame.rect, frame.selected, frame.ghost, frame.folded,
                           frame.automation);
+            if (project.isFrozen(frame.trackId)) p.fillRect(frame.rect, Theme::frozenTint());  // (over all of it, as its row has)
             p.restore();
             redrawn.push_back(area.intersected(frame.rect));
         }
