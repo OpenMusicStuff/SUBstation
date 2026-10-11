@@ -164,7 +164,8 @@ private Q_SLOTS:
         f.project.storePluginState(midi, verb, savedState(R"(<ValhallaVintageVerb presetName="Default" Mix="0.5"/>)"), {});
 
         TrackLabels trackLabels(&f.project, nullptr, nullptr);
-        const labels::TrackFacts& facts = factsOf(trackLabels.facts(), midi);
+        const std::vector<labels::TrackFacts> all = trackLabels.facts();  // (kept: facts points into it)
+        const labels::TrackFacts& facts = factsOf(all, midi);
         QCOMPARE(facts.devices[0].preset, std::string("PLUCK - Dynasty"));
         QCOMPARE(facts.devices[1].preset, std::string("Default"));
         QCOMPARE(int(facts.devices[1].params.size()), 1);

@@ -318,14 +318,14 @@ void readInstrument(Description& d, const DeviceFact& device) {
         if (dash != std::string::npos) {
             const Reading first = readWords(device.preset.substr(0, dash), Source::Preset);
             const Reading rest = readWords(device.preset.substr(dash + 3), Source::Preset);
-            const bool category = !first.words.empty() && first.unknown.empty();
+            const bool categorised = !first.words.empty() && first.unknown.empty();  // ("PL - ...": a category first)
             addReading(d, first, kPresetNouns + kPresetCategory, kPresetAdjectives);
-            if (category) {
+            if (categorised) {
                 addReading(d, rest, kPresetNouns, kPresetFlavour, kPresetFlavour * 0.75);
             } else {
                 addReading(d, rest, kPresetNouns, kPresetAdjectives);
             }
-            d.distinctive.push_back(category ? trimmed(device.preset.substr(dash + 3)) : trimmed(device.preset));
+            d.distinctive.push_back(categorised ? trimmed(device.preset.substr(dash + 3)) : trimmed(device.preset));
         } else {
             addReading(d, readWords(device.preset, Source::Preset), kPresetNouns, kPresetAdjectives);
             d.distinctive.push_back(trimmed(device.preset));
