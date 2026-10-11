@@ -50,15 +50,15 @@ private Q_SLOTS:
         QVERIFY(defaults.outputChannels.empty() && defaults.inputChannels.empty());
         QVERIFY(defaults == AudioSettings{});
 
-        AudioSettings asio;
-        asio.driver = QStringLiteral("ASIO");
-        asio.deviceName = QStringLiteral("SUB Test ASIO");
-        asio.sampleRate = 48000;
-        asio.bufferFrames = 128;
-        asio.outputChannels = {2, 3};
-        asio.inputChannels = {0};
-        asio.save();
-        QVERIFY(AudioSettings::load() == asio);
+        AudioSettings other;  // ASIO on Windows, "System" elsewhere
+        other.driver = audioDrivers().back();
+        other.deviceName = QStringLiteral("SUB Test ASIO");
+        other.sampleRate = 48000;
+        other.bufferFrames = 128;
+        other.outputChannels = {2, 3};
+        other.inputChannels = {0};
+        other.save();
+        QVERIFY(AudioSettings::load() == other);
         const QSettings s;
         QCOMPARE(s.value("audio/output_channels").toString(), QStringLiteral("2,3"));
         QCOMPARE(s.value("audio/exclusive").toString(), QStringLiteral("false"));
@@ -74,7 +74,12 @@ private Q_SLOTS:
     void anUnknownDriverIsTheDefaultOne() {
         QSettings().setValue("audio/driver", "CoreAudio");
         QCOMPARE(AudioSettings::load().driver, defaultDriver());
-        QCOMPARE(audioDrivers(), QStringList({defaultDriver(), QStringLiteral("ASIO")}));
+#ifdef _WIN32
+        QCOMPARE(audioDrivers(), QStringList({defaultDriver(), QStringLiteral("ASIO")}));  // (ASIO built or not)
+#else
+        QCOMPARE(audioDrivers(), EngineBridge::driverTypes());  // PipeWire (Linux, built with it), System
+        QCOMPARE(audioDrivers().back(), systemDriver());
+#endif
         QSettings().setValue("audio/output_channels", "2,x");  // (edited by hand)
         QVERIFY(AudioSettings::load().outputChannels.empty());
     }
@@ -256,7 +261,8 @@ private Q_SLOTS:
     }
 
     void startingAudioFallsBackOrSaysSo() {
-        // The saved device is gone: the device's own settings, then the system default output.
+        // The saved device is gone: the device's own settings, then the system
+        // default output, then (where the default driver is PipeWire) the System driver's.
         Studio studio;
         EngineBridge& bridge = *studio.bridge;
         AudioSettings gone;
@@ -271,7 +277,9 @@ private Q_SLOTS:
         QVERIFY(!messages.isEmpty());
         const QString said = messages.last().first().toString();
         if (opened) {
-            QVERIFY2(said.endsWith("Using the system default output instead."), qPrintable(said));
+            QVERIFY2(said.endsWith("Using the system default output instead.") ||
+                         said.endsWith(QStringLiteral("Using the %1 driver instead.").arg(systemDriver())),
+                     qPrintable(said));
         } else {
             QVERIFY2(said.startsWith("Audio is off: ") && said.endsWith("Choose a device in Options > Preferences."),
                      qPrintable(said));

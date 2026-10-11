@@ -83,22 +83,31 @@ void EngineBridge::pushAllInputs() {
     for (const QString& trackId : ids) pushInput(trackId);
 }
 
-// An ASIO device that hasn't these inputs open opens again with them too.
+// A device (ASIO, PipeWire) that hasn't these inputs open opens again with them too.
 void EngineBridge::openInputs(const std::vector<int>& channels) {
     const sub::DeviceStatus status = engine_.deviceStatus();
     const std::set<int> open(status.inputChannels.begin(), status.inputChannels.end());
     const bool all = std::all_of(channels.begin(), channels.end(), [&](int c) { return open.count(c) > 0; });
-    if (!status.open || status.backend != "ASIO" || all) return;
+    const bool takesInputs = status.backend == "ASIO" || status.backend == "PipeWire";
+    if (!status.open || !takesInputs || all) return;
     const auto names = engine_.deviceCapabilities().inputNames;
     if (std::any_of(channels.begin(), channels.end(), [&](int c) { return c >= static_cast<int>(names.size()); })) {
         return;  // not this device's: silent until a device that has them
     }
-    // As it runs now (not as saved: it may have opened with its own settings instead).
+    // As it runs now (not as saved: it may have opened with its own settings
+    // instead). PipeWire's as it was opened: no name is the default device,
+    // which it goes on following, and its rate and buffer size are requests
+    // (the graph may run another quantum for a while), not what runs now.
     AudioSettings settings;
-    settings.driver = QStringLiteral("ASIO");
+    settings.driver = QString::fromStdString(status.backend);
     settings.deviceName = QString::fromStdString(status.name);
     settings.sampleRate = static_cast<int>(status.sampleRate);
     settings.bufferFrames = static_cast<int>(status.bufferFrames);
+    if (settings.driver != QStringLiteral("ASIO") && d_->opened && d_->opened->driver == settings.driver) {
+        settings.deviceName = d_->opened->deviceName;
+        settings.sampleRate = d_->opened->sampleRate;
+        settings.bufferFrames = d_->opened->bufferFrames;
+    }
     settings.outputChannels = status.outputChannels;
     std::set<int> inputs = open;
     inputs.insert(channels.begin(), channels.end());

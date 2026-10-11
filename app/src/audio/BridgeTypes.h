@@ -68,11 +68,12 @@ struct AudioDeviceStatus {
     Q_PROPERTY(QList<int> inputChannels MEMBER inputChannels)
     Q_PROPERTY(QList<int> outputChannels MEMBER outputChannels)
     Q_PROPERTY(bool exclusive MEMBER exclusive)
+    Q_PROPERTY(qint64 dropouts MEMBER dropouts)
 
 public:
     bool open = false;
     QString name;
-    QString backend;  // the driver type: "WASAPI" (or the default one) or "ASIO"
+    QString backend;  // the driver type: "WASAPI" or "ASIO" (Windows), "PipeWire" or "System"
     int sampleRate = 0;
     int bufferFrames = 0;
     double latencyMs = 0.0;  // output latency
@@ -80,6 +81,7 @@ public:
     QList<int> inputChannels;   // the device channels open, in the order the engine sees them
     QList<int> outputChannels;  // the master plays on the first two (or mixed to mono on one)
     bool exclusive = false;
+    qint64 dropouts = 0;  // since it opened (sub::DeviceStatus::dropouts)
 
     friend bool operator==(const AudioDeviceStatus&, const AudioDeviceStatus&) = default;
 };

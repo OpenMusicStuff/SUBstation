@@ -351,7 +351,8 @@ MIDI input called "Computer Keyboard" (`kComputerKeyboard`; every track on All I
 ## Preferences
 
 **Preferences › Audio** is `AudioPreferences` (`Session.audioPreferences`,
-[AudioPreferences.h](../../app/src/session/AudioPreferences.h)): the driver type, the device, its outputs (ASIO), sample
+[AudioPreferences.h](../../app/src/session/AudioPreferences.h)): the driver type, the device, its outputs (ASIO and PipeWire,
+whose devices name their channels: `listsChannels()`), sample
 rate, buffer size, exclusive mode (WASAPI), the audio threads, the driver's own settings (*Hardware Setup*), and a
 status line. Changes apply at once: what a device offers (its sample rates, buffer sizes and channels) is only known
 while it is open. Each change opens the device with the new settings (another driver or device: falling back to the
@@ -361,11 +362,14 @@ opens the same next time).
 The QML dialog calls `open()` when it shows and `close()` when it goes. Each combo box binds to a list of choices
 (`[{label, value, enabled, toolTip}]`: `driverChoices`, `deviceChoices`, `outputChoices`, `sampleRateChoices`,
 `bufferChoices`, `threadChoices`) and its current index (`driverIndex`...), and calls the matching `choose...(index)`
-with the index the user picked (the same index again does nothing). A driver this build hasn't (ASIO without the SDK)
-is listed disabled, saying why. `showControlPanel()` opens the ASIO driver's own settings (it may run a message loop:
+with the index the user picked (the same index again does nothing). The drivers are `audioDrivers()`: WASAPI and ASIO on Windows,
+where a build without the ASIO SDK lists it disabled, saying why; the engine's elsewhere (PipeWire, System). `showControlPanel()` opens the ASIO driver's own settings (it may run a message loop:
 the UI disables the dialog meanwhile). `status` is rich text: what runs, an error first in red, and a warning (in red too) when
 the system refused the audio threads beside the driver's own real-time priority (`EngineBridge::realtimeWorkers()`,
-with what to do about it: on Linux rtkit or `rtprio` in limits.conf).
+with what to do about it: on Linux rtkit or `rtprio` in limits.conf), and another when the device has dropped out
+since it opened (`AudioDeviceStatus::dropouts`: how many; a larger buffer may help; looked at once a second while the dialog
+shows, `kDropoutsInterval`, since dropouts come without an event). The latency shown is the
+output's, and the input's too where inputs are open (or the driver is ASIO).
 
 **Preferences › MIDI** is `MidiPreferences` (`Session.midiPreferences`): the MIDI inputs connected
 (`inputs: [{name, enabled, error}]`), each on (tracks can hear and record it) or off (`setInputEnabled`, saved);

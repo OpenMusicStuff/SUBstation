@@ -1,6 +1,6 @@
-// The audio device: opening it (WASAPI or ASIO, or the system's backend
-// elsewhere), resetting it when its driver asks, its control panel, and what
-// happens to it (stopped, rerouted).
+// The audio device: opening it (WASAPI or ASIO; PipeWire on Linux, the
+// system's backend elsewhere), resetting it when its driver asks, its control
+// panel, and what happens to it (stopped and back again, rerouted).
 
 #include "audio/BridgePrivate.h"
 
@@ -49,6 +49,7 @@ AudioDeviceStatus EngineBridge::deviceStatus() const {
     out.inputChannels = intList(status.inputChannels);
     out.outputChannels = intList(status.outputChannels);
     out.exclusive = status.exclusive;
+    out.dropouts = static_cast<qint64>(status.dropouts);
     return out;
 }
 
@@ -74,7 +75,12 @@ QString EngineBridge::openDevice(const AudioSettings& settings) {
     config.inputChannels = settings.inputChannels;
     config.outputChannels = settings.outputChannels;
     config.window = d_->ownerWindow();  // ASIO drivers own their dialogs by it
-    return changeDevice([&] { engine_.openDevice(config); });
+    const QString error = changeDevice([&] { engine_.openDevice(config); });
+    if (error.isEmpty()) {
+        d_->opened = settings;
+        d_->lost.reset();  // (another device is open now)
+    }
+    return error;
 }
 
 QString EngineBridge::resetDevice() {
@@ -136,10 +142,16 @@ bool EngineBridge::startAudio() {
     own.inputChannels.clear();
     AudioSettings system;
     system.bufferFrames = settings.bufferFrames;
-    const std::vector<std::pair<AudioSettings, QString>> fallbacks{
+    std::vector<std::pair<AudioSettings, QString>> fallbacks{
         {own, QStringLiteral("Using the device's own settings instead.")},
         {system, QStringLiteral("Using the system default output instead.")},
     };
+    // Where PipeWire doesn't run: miniaudio's choice of the system's backends.
+    if (defaultDriver() != systemDriver()) {
+        AudioSettings miniaudio = system;
+        miniaudio.driver = systemDriver();
+        fallbacks.emplace_back(miniaudio, QStringLiteral("Using the %1 driver instead.").arg(systemDriver()));
+    }
     for (const auto& [fallback, note] : fallbacks) {
         if (fallback != settings && openDevice(fallback).isEmpty()) {
             Q_EMIT statusMessage(error + QStringLiteral(". ") + note);
@@ -156,7 +168,12 @@ bool EngineBridge::startAudio() {
 void EngineBridge::pollDevice() {
     if (engine_.isRendering()) return;
     const std::string event = engine_.takeDeviceEvent();
-    if (event == "stopped") {
+    if (event.empty() && d_->lost) {
+        lookForLostDevice();
+    } else if (event == "stopped") {
+        // Looked for from now on: it opens again when it is back (plugged in again, the sound server restarted).
+        d_->lost = d_->opened;
+        d_->lostChecked.start();
         Q_EMIT statusMessage(QStringLiteral("The audio device stopped. Choose a device in Options > Preferences."));
         Q_EMIT deviceChanged();
     } else if (event == "rerouted") {
@@ -167,6 +184,26 @@ void EngineBridge::pollDevice() {
     } else if (event == "latency") {
         Q_EMIT deviceChanged();
     }
+}
+
+// The device that went away, once a second: opened again when its driver
+// lists it again (or, the default device, any).
+void EngineBridge::lookForLostDevice() {
+    if (engine_.deviceStatus().open) {
+        d_->lost.reset();
+        return;
+    }
+    if (d_->lostChecked.isValid() && d_->lostChecked.elapsed() < kLostDeviceInterval) return;
+    d_->lostChecked.start();
+    const AudioSettings lost = *d_->lost;
+    const QList<AudioDeviceEntry> devices = listDevices(lost.driver);
+    const bool back = lost.deviceName.isEmpty()
+                          ? !devices.isEmpty()
+                          : std::any_of(devices.begin(), devices.end(),
+                                        [&](const AudioDeviceEntry& entry) { return entry.name == lost.deviceName; });
+    if (!back || !openDevice(lost).isEmpty()) return;
+    const QString name = QString::fromStdString(engine_.deviceStatus().name);
+    Q_EMIT statusMessage(QStringLiteral("The audio device is back: %1.").arg(name));
 }
 
 }  // namespace sub::app

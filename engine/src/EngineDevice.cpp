@@ -60,6 +60,9 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
         rebuildSnapshotLocked();
         serviceTransportIfIdleLocked();
         pendingDeviceEvents_.store(0);  // about the device just closed
+        dropouts_.store(0);
+        nextSampleTime_ = -1;  // (the audio thread doesn't run until it starts)
+        lastLate_ = false;
         scheduler_->setWorkgroup(device_.workgroup());  // the workers join it before they render for it
         device_.start();
         deviceRunning_ = true;
@@ -108,6 +111,7 @@ DeviceStatus Engine::deviceStatus() {
         status.inputChannels = state.inputChannels;
         status.outputChannels = state.outputChannels;
         status.exclusive = state.exclusive;
+        status.dropouts = dropouts_.load(std::memory_order_relaxed);
     }
     return status;
 }
@@ -180,6 +184,11 @@ void Engine::audioCallback(const AudioIO& io) noexcept {
     ScopedNoDenormals noDenormals;
     const auto started = std::chrono::steady_clock::now();
     shared_.clock.update(io.hostTimeNs, io.sampleTime);
+    // The device's clock skipped: it lost samples (unless a late callback here already counted).
+    if (nextSampleTime_ >= 0 && io.sampleTime != nextSampleTime_ && !lastLate_) {
+        dropouts_.fetch_add(1, std::memory_order_relaxed);
+    }
+    nextSampleTime_ = io.sampleTime + io.frames;
     const uint32_t metered = std::min<uint32_t>(io.numInputs, SharedState::kMaxInputMeters);
     for (uint32_t c = 0; c < metered; ++c) {
         float peak = 0.f;
@@ -189,6 +198,7 @@ void Engine::audioCallback(const AudioIO& io) noexcept {
     // seq_cst pairs with the store/epoch-load sequence in rebuildSnapshotLocked().
     const RenderSnapshot* snap = snapshot_.load(std::memory_order_seq_cst);
     RecordingSession* recording = liveRecording_.load(std::memory_order_seq_cst);
+    lastLate_ = false;
     if (!snap || liveSuspended_.load(std::memory_order_seq_cst)) {
         for (uint32_t c = 0; c < io.numOutputs; ++c) std::fill_n(io.outputs[c], io.frames, 0.f);
     } else {
@@ -198,6 +208,10 @@ void Engine::audioCallback(const AudioIO& io) noexcept {
         const float load = static_cast<float>(elapsed / budget);
         const float previous = shared_.cpuLoad.load(std::memory_order_relaxed);
         shared_.cpuLoad.store(previous + 0.1f * (load - previous), std::memory_order_relaxed);
+        if (load > 1.f) {  // the buffer ran out before it was filled
+            dropouts_.fetch_add(1, std::memory_order_relaxed);
+            lastLate_ = true;
+        }
     }
     audioEpoch_.fetch_add(1, std::memory_order_seq_cst);
 }

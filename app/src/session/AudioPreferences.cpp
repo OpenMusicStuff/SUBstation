@@ -69,6 +69,11 @@ AudioPreferences::AudioPreferences(EngineBridge* bridge, QObject* parent) : QObj
     connect(bridge_, &EngineBridge::deviceChanged, this, [this] {
         if (following_) refresh();
     });
+    // Dropouts come without an event: looked at while the dialog shows.
+    dropoutsTimer_.setInterval(kDropoutsInterval);
+    connect(&dropoutsTimer_, &QTimer::timeout, this, [this] {
+        if (bridge_->deviceStatus().dropouts != dropoutsShown_) refresh();
+    });
 }
 
 QVariantList AudioPreferences::list(const std::vector<Choice>& choices) {
@@ -124,12 +129,16 @@ QStringList AudioPreferences::deviceNames(const QString& driver) const {
 
 void AudioPreferences::open() {
     following_ = true;
+    dropoutsTimer_.start();
     settings_ = currentSettings();
     showThreads();
     refresh();
 }
 
-void AudioPreferences::close() { following_ = false; }
+void AudioPreferences::close() {
+    following_ = false;
+    dropoutsTimer_.stop();
+}
 
 void AudioPreferences::showThreads() {
     threads_.clear();
@@ -176,7 +185,7 @@ void AudioPreferences::refresh(const QString& error) {
     }
 
     outputs_.clear();
-    for (const auto& [label, channels] : outputChoices(caps && isAsio ? caps->outputNames : QStringList())) {
+    for (const auto& [label, channels] : outputChoices(caps && listsChannels() ? caps->outputNames : QStringList())) {
         outputs_.push_back({label, channelsValue(channels)});
     }
     outputIndex_ = select(outputs_, running ? channelsValue(status.outputChannels) : channelsValue(s.outputChannels));
@@ -206,9 +215,10 @@ void AudioPreferences::refresh(const QString& error) {
 
     QStringList lines;
     if (!error.isEmpty()) lines.append(warning(error));
+    dropoutsShown_ = status.dropouts;
     if (status.open) {
         const QString latency =
-            status.backend == kAsio
+            status.backend == kAsio || !status.inputChannels.isEmpty()
                 ? QStringLiteral("input latency %1 ms · output latency %2 ms")
                       .arg(QString::number(status.inputLatencyMs, 'f', 1), QString::number(status.latencyMs, 'f', 1))
                 : QStringLiteral("~%1 ms output latency").arg(QString::number(status.latencyMs, 'f', 1));
@@ -216,6 +226,11 @@ void AudioPreferences::refresh(const QString& error) {
                          .arg(status.name.toHtmlEscaped(), status.backend, QString::number(status.sampleRate),
                               QString::number(status.bufferFrames), latency,
                               status.exclusive ? QStringLiteral(" · exclusive") : QString()));
+        if (status.dropouts > 0) {
+            lines.append(warning(QStringLiteral("%1 dropout%2 since it opened: a larger buffer may help.")
+                                     .arg(status.dropouts)
+                                     .arg(status.dropouts == 1 ? QString() : QStringLiteral("s"))));
+        }
     } else {
         lines.append(QStringLiteral("No audio device is open."));
     }
@@ -311,7 +326,7 @@ void AudioPreferences::settingChosen() {
     next.bufferFrames = value(buffers_, bufferIndex_).toInt();
     next.exclusive = settings_.exclusive && !isAsio;
     const QVariant outputs = value(outputs_, outputIndex_);
-    if (isAsio && !outputs.isNull()) next.outputChannels = channelsOf(outputs);
+    if (listsChannels() && !outputs.isNull()) next.outputChannels = channelsOf(outputs);
     openDevice(next);
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 // Preferences › Audio, without its widgets: the driver type, the device, its
-// outputs (ASIO), sample rate, buffer size, exclusive mode (WASAPI), the audio
+// outputs (ASIO, PipeWire), sample rate, buffer size, exclusive mode (WASAPI), the audio
 // threads, the driver's own settings, and a status line. Changes apply at once:
 // what a device offers (its sample rates, buffer sizes and channels, its
 // driver's own settings) is only known while it is open. Each change opens the
@@ -15,6 +15,7 @@
 // currentIndexChanged).
 
 #include <QObject>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -72,6 +73,7 @@ class AudioPreferences : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY changed)
 
 public:
+    static constexpr int kDropoutsInterval = 1000;  // ms between looks at the dropouts while open
     explicit AudioPreferences(EngineBridge* bridge, QObject* parent = nullptr);
 
     QVariantList driverChoices() const { return list(drivers_); }
@@ -83,7 +85,7 @@ public:
     bool controlPanelEnabled() const { return controlPanelEnabled_; }
     QVariantList outputChoiceList() const { return list(outputs_); }
     int outputIndex() const { return outputIndex_; }
-    bool outputsVisible() const { return asio(); }
+    bool outputsVisible() const { return listsChannels(); }
     QVariantList sampleRateChoices() const { return list(sampleRates_); }
     int sampleRateIndex() const { return sampleRateIndex_; }
     QVariantList bufferChoices() const { return list(buffers_); }
@@ -131,6 +133,8 @@ private:
     // there is none and `defaultLabel` is given; else the first (-1: none).
     static int select(std::vector<Choice>& choices, const QVariant& value, const QString& defaultLabel = {});
     bool asio() const { return settings_.driver == QStringLiteral("ASIO"); }
+    // Drivers whose devices name their channels, so the outputs can be chosen.
+    bool listsChannels() const { return asio() || settings_.driver == QStringLiteral("PipeWire"); }
     AudioSettings currentSettings() const;
     QStringList deviceNames(const QString& driver) const;
     void refresh(const QString& error = {});
@@ -141,6 +145,8 @@ private:
     EngineBridge* bridge_;
     AudioSettings settings_;
     bool following_ = false;
+    QTimer dropoutsTimer_;  // while open: the dropouts counted since (refresh() when they change)
+    qint64 dropoutsShown_ = 0;
     std::vector<Choice> drivers_;
     int driverIndex_ = -1;
     std::vector<Choice> devices_;

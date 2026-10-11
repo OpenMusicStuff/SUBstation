@@ -9,6 +9,7 @@
 #include "Engine.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QMap>
 #include <QSet>
@@ -111,6 +112,9 @@ struct EngineBridge::Private {
     QMap<QString, QMap<QString, double>> sendLevels;  // track id -> {return id: level dB} the engine has
     std::map<quint32, SidechainState> sidechains;  // processor -> the sidechain the engine has
     std::map<quint32, quint32> midiInputs;  // processor -> the engine track whose notes it takes, as the engine has it
+    std::optional<AudioSettings> opened;  // the device the bridge last opened (as asked)
+    std::optional<AudioSettings> lost;  // the device that went away, opened again when it is back
+    QElapsedTimer lostChecked;  // when it was last looked for
     int busy = 0;  // > 0 while a plug-in (or driver) call may run a message loop that calls us back
     QMap<QString, QString> pluginErrors;  // device id -> why its plug-in isn't loaded
     QMap<QString, QString> knownPlugins;  // plug-in uid -> file, from the scan: finds moved plug-ins

@@ -34,7 +34,7 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
   audio engine  │ Engine: edit model under a recursive mutex                          │
   (sub_engine)  │   └─ builds an immutable RenderSnapshot ─► one atomic pointer swap  │
                 │ Renderer + Scheduler (audio thread + workers) read it               │
-                │ audio devices (WASAPI, ASIO; System elsewhere), MIDI input,         │
+                │ audio devices (WASAPI, ASIO; PipeWire, System), MIDI input,         │
                 │ Recorder, processors: built-in devices, VST3 plug-ins               │
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐

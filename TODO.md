@@ -577,124 +577,146 @@ Later
 
 ---
 
-## Platform support (Linux, macOS)
+## Platform support (Linux)
 
-Windows stays as it is (WASAPI, ASIO, WinMM, Win32 editors). Linux and macOS
-get native backends of their own: **PipeWire** on Linux, **Core Audio** on
-macOS. Each platform's code is a file of its own behind the seams that exist
-(`AudioBackend`, `MidiInput`, `EditorWindow`, the platform layer `platform/`),
-never `#ifdef`s through the engine. Stages in order; each lands with its CI
-job green.
+Windows stays as it is (WASAPI, ASIO, WinMM, Win32 editors). Linux gets
+native backends of its own (**PipeWire**). Each platform's code is a file of
+its own behind the seams that exist (`AudioBackend`, `MidiInput`,
+`EditorWindow`, the platform layer `platform/`), never `#ifdef`s through the
+engine. Stages in order; each lands with its CI job green. macOS waits until
+there is a Mac to work on: [below](#macos-deferred-needs-a-mac).
 
-Stage 1 — The real-time base (both)
+Stage 1 — The real-time base
 - [x] arm64 builds: the AVX2 flags (`engine/CMakeLists.txt`) for x86_64 only;
       arm64 builds with its baseline (NEON).
 - [x] `ScopedNoDenormals` (`rt/RtUtils.h`) on arm64: FPCR's FZ bit instead of MXCSR.
 - [x] A `cpuRelax()` in `rt/` for the spin loops (`_mm_pause` on x86,
       `isb` on arm64): `Scheduler.cpp`, `Vst3Support.h`.
-- [ ] The workers' real-time priority (what MMCSS does on Windows:
+- [x] The workers' real-time priority on Linux (what MMCSS does on Windows:
       `platform::ScopedRealtimePriority`, `platform/src/platform/PlatformPosix.cpp`):
-  - [x] Linux: `SCHED_FIFO` (70) set directly where limits.conf's rtprio or
-        CAP_SYS_NICE allows, else `SCHED_RR` (rtkit's maximum, 20 by default)
-        through rtkit; falling back to normal priority with a warning in the
-        audio settings.
-  - [ ] macOS: time-constraint policy, and the workers join the device's
-        audio workgroup (`os_workgroup`) so Apple Silicon doesn't park
-        them on efficiency cores. (Written: `ScopedRealtimePriority`,
-        `AudioWorkgroup`, `Scheduler::setWorkgroup()`, `AudioBackend::workgroup()`;
-        not yet built or run on a Mac.)
-- [ ] A benchmark run (`parallel_render_bench`) on each platform: no worse
-      than Windows on comparable hardware.
+      `SCHED_FIFO` (70) set directly where limits.conf's rtprio or
+      CAP_SYS_NICE allows, else `SCHED_RR` (rtkit's maximum, 20 by default)
+      through rtkit; falling back to normal priority with a warning in the
+      audio settings.
+- [ ] A benchmark run (`parallel_render_bench`): no worse than Windows on
+      comparable hardware.
   - [x] Linux, offline (benchmarks/README.md: 3.59× on 4 threads, Windows'
         3.74×; a 4-core VM, not the Windows machine).
   - [ ] Linux live (with the PipeWire backend), and against Windows on the
-        same machine; macOS.
+        same machine.
 
 Stage 2 — Audio backends (each listed and made by its system's file behind
 `backends/AudioBackends.h`: `AudioBackendsPosix.cpp` here, before "System")
 - [ ] Linux: a PipeWire backend (`backends/PipeWireBackend.cpp`, libpipewire
       `pw_filter`): the driver every Linux build has, in place of miniaudio's
-      "System" there.
-  - [ ] Devices listed and chosen (sinks/sources); follows the default device.
-  - [ ] Block size and sample rate asked for (`node.latency`, `node.rate`);
+      "System" there. (Built when pkg-config finds libpipewire-0.3; it links
+      its ports to the device's itself, as JACK clients do.)
+  - [x] Devices listed and chosen (sinks/sources); follows the default device.
+  - [x] Block size and sample rate asked for (`node.latency`, `node.rate`);
         the quantum the graph actually runs reported as the buffer size.
-  - [ ] Planar float in and out, no interleaving and no extra buffering in
-        the callback; the worker group joined to PipeWire's data thread
-        priority.
-  - [ ] Inputs for recording (Phase 2's `AudioIO::inputs`), multichannel.
-  - [ ] Xruns counted and shown as on Windows; the device lost / back again.
-  - [ ] CI: the tests against a headless PipeWire (null sink).
-- [ ] macOS: a Core Audio backend (`backends/CoreAudioBackend.cpp`, an
-      `AudioDeviceIOProc` on the HAL device, not miniaudio).
-  - [ ] Devices listed and chosen; aggregate devices; follows the default device.
-  - [ ] Buffer size (`kAudioDevicePropertyBufferFrameSize`) and sample rate set;
-        latency reported from the device and stream latencies, safety offset.
-  - [ ] Planar or interleaved streams as the device has them; inputs for recording.
-  - [ ] The device's workgroup handed to the `Scheduler` (Stage 1).
-  - [ ] Device changes (unplugged, rate changed by another app) handled.
-  - [ ] Microphone permission asked (`NSMicrophoneUsageDescription`).
-- [ ] miniaudio's "System" driver (`MiniaudioBackend`) stays only as the
-      fallback when neither opens (no PipeWire daemon, a CI container).
+  - [x] Planar float in and out, no interleaving and no extra buffering in
+        the callback.
+  - [ ] The worker group joined to PipeWire's data thread priority. (The
+        workers are real-time already, Stage 1: SCHED_FIFO 70, or rtkit's
+        SCHED_RR 20; the data thread asks for 88. Matching it would need
+        the backend to read the data thread's policy and the scheduler to
+        move its workers to it.)
+  - [x] Inputs for recording (Phase 2's `AudioIO::inputs`), multichannel.
+  - [x] Xruns counted and shown as on Windows; the device lost / back again.
+        (The engine counts dropouts for every driver: late callbacks, and
+        gaps in the device's sample clock; Preferences › Audio shows them.
+        The bridge opens a lost device again when it is listed again.)
+  - [x] CI: the tests against a headless PipeWire (null sink). (A daemon of
+        the tests' own: tests/engine/harness/PipeWireDaemon.h.)
+- [x] miniaudio's "System" driver (`MiniaudioBackend`) only as the fallback
+      where PipeWire doesn't open (no PipeWire daemon, a CI container):
+      listed after PipeWire; start-up falls back to it.
 
 Stage 3 — MIDI (each a file behind `backends/MidiDriver.h`: the system's
 inputs listed and one opened; `MidiInputDevices` does the rest)
 - [ ] Linux: an ALSA sequencer backend (`backends/MidiAlsa.cpp`, as
       `MidiWinMM.cpp`): ports listed, hot-plug, timestamps. (PipeWire bridges
       ALSA MIDI, so this covers it.)
-- [ ] macOS: a CoreMIDI backend (`backends/MidiCoreMidi.cpp`): sources listed,
-      hot-plug, host-time timestamps converted to the engine's clock.
-- [ ] `MidiNone.cpp` only where neither builds.
+- [ ] `MidiNone.cpp` only where none builds.
 
 Stage 4 — Plug-ins
-- [ ] macOS: the VST3 SDK's `module_mac.mm` as the module loader; the scanner
-      loads `.vst3` bundles. (Their code's place, `Contents/MacOS`, and the
-      folders are `plugins/Vst3PlatformPosix.cpp`'s already.)
-- [ ] macOS: universal or arm64 plug-ins only; x86_64-only bundles listed as
-      unsupported (no Rosetta host).
-- [ ] Editors on macOS: `EditorWindowMac.mm` (its `EditorWindow::Native`,
-      beside `EditorWindowWin32.cpp`), an `NSWindow` holding the view
-      (`canHold()`: `kPlatformTypeNSView`), resizing, Retina scale
-      (`setContentScale()`), position remembered.
 - [ ] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),
       under XWayland on Wayland.
   - [ ] `Steinberg::Linux::IRunLoop` for the plug-ins: their fds and timers
         on Qt's event loop (`QSocketNotifier`, `QTimer`).
   - [ ] Resizing and content scale.
 - [ ] The main window's shortcuts while an editor has the focus
-      (`PluginEditorKeys`): an `NSEvent` local monitor on macOS, an xcb
-      native event filter on Linux. Same rules as on Windows.
+      (`PluginEditorKeys`): an xcb native event filter on Linux. Same rules
+      as on Windows.
 - [ ] The test plug-ins (`tests/vst3_plugins`) built as bundles there; the
-      editor tests run on Linux (Xvfb) and macOS.
+      editor tests run on Linux (Xvfb).
 
 Stage 5 — The rest of the platform layer
-- [ ] macOS file watching for the browser (`FolderWatcherNone.cpp` there now;
-      Linux's is `FolderWatcherInotify.cpp`): FSEvents, a `FolderWatcher` of
-      its own.
-- [ ] Thread priorities for the browser's and intelligence's background
-      threads on macOS (QoS classes): `enterBackgroundMode()` in
-      `platform/src/platform/PlatformPosix.cpp`, which both use.
-- [ ] Plug-in paths checked on macOS (`/Library/Audio/Plug-Ins/VST3`,
-      `~/Library/...`) and Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+- [ ] Plug-in paths checked on Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
 
 Stage 6 — Feeling native
-- [ ] macOS and Linux keep the system's window frame (`WindowFrame` is
-      Windows only); `TitleBar.qml` drops its window buttons there.
-- [ ] macOS: the menus in the global menu bar; the app menu (About,
-      Settings…, Quit).
-- [ ] Ctrl → Cmd on macOS: the QML's `ControlModifier` checks reviewed
-      (mouse modifiers: Cmd-click, Alt-drag), the shortcuts' texts in the menus.
-      (The C++ items read the modifiers' meanings from `ui/src/input/Modifiers.h`,
-      and the menus' shortcut texts and `PluginEditorKeys` read shortcuts as Qt
-      Quick binds them, `keySequences()`: both follow Qt's Command mapping.)
-- [ ] The audio settings show only the platform's drivers.
+- [ ] Linux keeps the system's window frame (`WindowFrame` is Windows only);
+      `TitleBar.qml` drops its window buttons there.
+- [x] The audio settings show only the platform's drivers (Linux: PipeWire,
+      System; Windows: WASAPI, ASIO).
 
 Stage 7 — Packaging and CI
-- [ ] CI: a macOS arm64 job (build + tests); the Linux job with PipeWire and
-      the editor tests.
-- [ ] macOS: an `.app` (macdeployqt), signed with the hardened runtime and
-      `disable-library-validation` (third-party plug-ins load), notarized, in a dmg.
+- [ ] CI: the Linux job with the editor tests. (PipeWire's are in.)
 - [ ] Linux: an AppImage (not Flatpak: its sandbox gets in the way of loading
       plug-ins from the system).
-- [ ] docs/building.md: macOS, and Linux's PipeWire dependency
-      (`libpipewire-0.3-dev`).
-- [ ] A round of real commercial plug-ins (editors, state, latency) on both.
+- [x] docs/building.md: Linux's PipeWire dependency (`libpipewire-0.3-dev`).
+- [ ] A round of real commercial plug-ins (editors, state, latency) on Linux.
+
+## macOS (deferred: needs a Mac)
+
+Not until there is a Mac to build, run and listen on. (A macOS CI runner
+could build and run the tests, but not hear the audio, open plug-in editors
+by hand, or sign and notarize.) The same seams as Linux; in the order of the
+stages above.
+
+- [ ] Real-time base: the time-constraint policy, and the workers join the
+      device's audio workgroup (`os_workgroup`) so Apple Silicon doesn't park
+      them on efficiency cores. (Written: `ScopedRealtimePriority`,
+      `AudioWorkgroup`, `Scheduler::setWorkgroup()`, `AudioBackend::workgroup()`;
+      not yet built or run on a Mac.)
+- [ ] The benchmark (`parallel_render_bench`), against Windows.
+- [ ] A Core Audio backend (`backends/CoreAudioBackend.cpp`, an
+      `AudioDeviceIOProc` on the HAL device, not miniaudio), before "System"
+      (which stays only as the fallback).
+  - [ ] Devices listed and chosen; aggregate devices; follows the default device.
+  - [ ] Buffer size (`kAudioDevicePropertyBufferFrameSize`) and sample rate set;
+        latency reported from the device and stream latencies, safety offset.
+  - [ ] Planar or interleaved streams as the device has them; inputs for recording.
+  - [ ] The device's workgroup handed to the `Scheduler`.
+  - [ ] Device changes (unplugged, rate changed by another app) handled.
+  - [ ] Microphone permission asked (`NSMicrophoneUsageDescription`).
+- [ ] A CoreMIDI backend (`backends/MidiCoreMidi.cpp`): sources listed,
+      hot-plug, host-time timestamps converted to the engine's clock.
+- [ ] Plug-ins: the VST3 SDK's `module_mac.mm` as the module loader; the
+      scanner loads `.vst3` bundles. (Their code's place, `Contents/MacOS`,
+      and the folders are `plugins/Vst3PlatformPosix.cpp`'s already.)
+      Universal or arm64 plug-ins only; x86_64-only bundles listed as
+      unsupported (no Rosetta host).
+- [ ] Editors: `EditorWindowMac.mm` (its `EditorWindow::Native`, beside
+      `EditorWindowWin32.cpp`), an `NSWindow` holding the view (`canHold()`:
+      `kPlatformTypeNSView`), resizing, Retina scale (`setContentScale()`),
+      position remembered; the main window's shortcuts while one has the focus
+      (an `NSEvent` local monitor); the editor tests.
+- [ ] File watching for the browser (`FolderWatcherNone.cpp` there now):
+      FSEvents, a `FolderWatcher` of its own.
+- [ ] Background threads' priority (QoS classes): `enterBackgroundMode()` in
+      `platform/src/platform/PlatformPosix.cpp`.
+- [ ] Plug-in paths checked (`/Library/Audio/Plug-Ins/VST3`, `~/Library/...`).
+- [ ] The system's window frame; the menus in the global menu bar; the app
+      menu (About, Settings…, Quit).
+- [ ] Ctrl → Cmd: the QML's `ControlModifier` checks reviewed (mouse
+      modifiers: Cmd-click, Alt-drag), the shortcuts' texts in the menus. (The
+      C++ items read the modifiers' meanings from `ui/src/input/Modifiers.h`,
+      and the menus' shortcut texts and `PluginEditorKeys` read shortcuts as
+      Qt Quick binds them, `keySequences()`: both follow Qt's Command mapping.)
+- [ ] CI: a macOS arm64 job (build + tests).
+- [ ] An `.app` (macdeployqt), signed with the hardened runtime and
+      `disable-library-validation` (third-party plug-ins load), notarized, in
+      a dmg.
+- [ ] docs/building.md: macOS.
+- [ ] A round of real commercial plug-ins on macOS.

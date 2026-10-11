@@ -127,9 +127,11 @@ The session connects the bridge to the rest (the editor's hooks, messages, plug-
 3. Opens the saved `AudioSettings`. If the device can't run as saved (an ASIO driver on another clock, fewer outputs),
    it opens with the device's own settings (rate, buffer, channels at their defaults: "Using the device's own
    settings instead."); if the driver is gone, the system's default output with the saved buffer size ("Using the
-   system default output instead."). If nothing opens, audio is off and the status line says to choose a device in
-   *Options > Preferences*. The first launch has no saved settings, so it uses the system default output. On Linux
-   with no sound server nothing opens: the application runs without audio and says so.
+   system default output instead."); where the default driver is PipeWire, then miniaudio's *System* driver
+   ("Using the System driver instead.": no PipeWire daemon, PulseAudio or ALSA only). If nothing opens, audio is off
+   and the status line says to choose a device in *Options > Preferences*. The first launch has no saved settings,
+   so it uses the system default output. On Linux with no sound server nothing opens: the application runs without
+   audio and says so.
 
 ### Shut-down
 
@@ -181,8 +183,9 @@ too, and loaded) and `engineChainId(chain)` (a rack chain's engine chain) give t
 - **Inputs**: `pushInput` sets device channels (`setTrackInput`) or another track's output (`setTrackInputTrack`;
   `kMaster` for resampling; tapped where `Track::inputTap` says, as a sidechain's tap: `engineTap`), the monitoring mode, arming and a MIDI track's MIDI input (`setTrackMidiInput(engine id,
   enabled, device, channel)`). A source the engine refuses for now (a cycle another change hasn't undone yet) leaves
-  the track with no input until that change comes. A track given ASIO input channels the device hasn't open makes the
-  device open again with them too (`openInputs`), as it runs now, and saves that, so they open next time too.
+  the track with no input until that change comes. A track given input channels the device hasn't open (ASIO, PipeWire) makes
+  the device open again with them too (`openInputs`), as it runs now (a PipeWire device opened without a name stays
+  so: the default, followed), and saves that, so they open next time too.
 - **Removing a track** removes its engine track (and its devices). The bridge then treats what went into it as going
   to the master, forgets sends into it, inputs from it, sidechains from it and its overrides; the model's own changes,
   in the same undo step, follow.
@@ -471,10 +474,16 @@ None of these wait for a render in the background (`Engine::isRendering`): it re
 
 | Event | Bridge |
 |---|---|
-| `"stopped"` | status: the device stopped, choose one; `deviceChanged` |
+| `"stopped"` | status: the device stopped, choose one; `deviceChanged`. The device last opened is looked for from then on (below) |
 | `"rerouted"` | status: output rerouted to another device; `deviceChanged` |
 | `"reset"` | `resetDevice()`: `Engine::reopenDevice` opens the driver again with the buffer size and rate it now has (an ASIO driver's settings changed in its control panel, or its clock) |
 | `"latency"` | `deviceChanged` (the status line shows the new latencies) |
+
+**Back again.** `openDevice` remembers the settings that opened (`Private::opened`). After `"stopped"` they are
+`Private::lost`: while no event is pending, `lookForLostDevice()` lists that driver's devices once a second
+(`kLostDeviceInterval`) and, when the device is listed again (unplugged and plugged in again, the sound server
+restarted; for the default device, any device), opens it as it was and says "The audio device is back: *name*."
+Any device that opens meanwhile ends the looking.
 
 `openDevice(settings)`, `resetDevice()` and `closeDevice()` go through `changeDevice`, which counts `busy` (a driver
 may show a dialog), decodes sources again if the rate changed and emits `deviceChanged`; `showDeviceControlPanel()`
@@ -519,13 +528,13 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 
 | Key | Holds | Code |
 |---|---|---|
-| `audio/driver` | `"WASAPI"` or `"ASIO"` on Windows (`"System"` elsewhere: `defaultDriver()`) | `AudioSettings` |
-| `audio/device` | device or driver name; empty: the system default (WASAPI), the first driver (ASIO) | |
+| `audio/driver` | `"WASAPI"` or `"ASIO"` on Windows; `"PipeWire"` or `"System"` on Linux (`defaultDriver()`, `systemDriver()`, `audioDrivers()`) | `AudioSettings` |
+| `audio/device` | device or driver name; empty: the system default (WASAPI, PipeWire, System), the first driver (ASIO) | |
 | `audio/sample_rate` | 0: the rate the device runs at | |
 | `audio/buffer_frames` | 0: the device's preferred size; default 256 | |
 | `audio/exclusive` | WASAPI exclusive mode (`"true"` / `"false"`) | |
 | `audio/output_channels` | `"2,3"`: the pair the master plays on; empty: the first two | |
-| `audio/input_channels` | ASIO inputs to open; none until something records | |
+| `audio/input_channels` | inputs to open (ASIO, PipeWire); none until something records | |
 | `audio/threads` | render threads; 0: the engine's default (one per core but one) | `audioThreads()` |
 | `midi/disabled_inputs` | MIDI inputs turned off (every other input is used, so a new one just plays) | `disabledMidiInputs()` |
 | `record/quantize` | record quantization grid in beats; 0: as played (`recordQuantizeChoices()` lists the choices) | `recordQuantize()` |
@@ -605,6 +614,8 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
   engine, takes.
 - [test_bridge_settings.cpp](../../tests/app/test_bridge_settings.cpp): `AudioSettings` and the other keys, the files'
   folders and names, `writeFloatWav`, the EQ's curve, device status, the scope, MIDI inputs, `startAudio`.
+- [test_bridge_pipewire.cpp](../../tests/app/test_bridge_pipewire.cpp) (Linux, with a PipeWire daemon of its own): a
+  device that went away opening again when it is back, a track's input opening the device again with it.
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp), [test_session_keyboard.cpp](../../tests/app/test_session_keyboard.cpp),
   [test_engine_render.cpp](../../tests/engine/test_engine_render.cpp) and the engine's MIDI input tests: the engine side
   of the same.
