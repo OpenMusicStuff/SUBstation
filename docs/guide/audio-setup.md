@@ -34,6 +34,21 @@ latency, or the error if it didn't open.
 workers: every track renders on the audio thread). Offline renders and exports use the
 same threads.
 
+The threads beside the driver's own run at real-time priority, as the driver's thread
+does: on Windows through the Multimedia Class Scheduler ("Pro Audio"), on Linux as
+`SCHED_FIFO` (or `SCHED_RR`, through rtkit), on macOS with the time-constraint policy (and in the audio device's
+workgroup). If the system refuses, they run at normal priority, where anything else
+running can hold them up and the audio drops out more easily at small buffer sizes; the
+line below the settings says so in red. On Linux, install rtkit (most desktops have it)
+or give your user a real-time priority limit in `/etc/security/limits.conf`, for example
+for the `audio` group:
+
+```
+@audio - rtprio 95
+```
+
+and log in again.
+
 ## ASIO
 
 ### Choosing a driver

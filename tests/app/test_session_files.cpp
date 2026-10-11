@@ -431,6 +431,24 @@ private Q_SLOTS:
         prefs.close();
     }
 
+    void audioPreferencesWarnOfThreadsAtNormalPriority() {
+        // The helpers the system refused real-time priority are said in the status
+        // line (as here when the tests run without rtkit or rtprio); none if all have it.
+        SessionFixture f;
+        AudioPreferences& prefs = *f.s().audioPreferences();
+        prefs.open();
+        const int defaultIndex = prefs.threadIndex();
+        prefs.chooseThreads(0);  // one thread ("1 (off)"): no helpers to warn of
+        QCOMPARE(f.bridge().audioThreads(), 1);
+        QVERIFY(!prefs.status().contains(QStringLiteral("normal priority")));
+        prefs.chooseThreads(1);  // two threads: one helper
+        QCOMPARE(f.bridge().audioThreads(), 2);
+        const bool refused = f.bridge().realtimeWorkers() < 1;
+        QCOMPARE(prefs.status().contains(QStringLiteral("normal priority")), refused);
+        prefs.chooseThreads(defaultIndex);
+        prefs.close();
+    }
+
     void audioPreferencesShowTheDevices() {
         SessionFixture f;
         AudioPreferences& prefs = *f.s().audioPreferences();
@@ -442,7 +460,7 @@ private Q_SLOTS:
         QCOMPARE(labels(prefs.driverChoices()).at(prefs.driverIndex()), prefs.settings().driver);
         QVERIFY(!prefs.outputsVisible() && prefs.exclusiveVisible() == (prefs.settings().driver == QStringLiteral("WASAPI")) && !prefs.controlPanelVisible());
         if (!f.bridge().deviceStatus().open) {
-            QCOMPARE(prefs.status(), QStringLiteral("No audio device is open."));
+            QVERIFY(prefs.status().startsWith(QStringLiteral("No audio device is open.")));
             // Without a device, the choices are the preferences' own, the saved ones current.
             QCOMPARE(values(prefs.sampleRateChoices()).at(prefs.sampleRateIndex()).toInt(), prefs.settings().sampleRate);
             QCOMPARE(labels(prefs.sampleRateChoices()).front(), QStringLiteral("Device Default"));

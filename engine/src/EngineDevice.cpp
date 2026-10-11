@@ -60,10 +60,12 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
         rebuildSnapshotLocked();
         serviceTransportIfIdleLocked();
         pendingDeviceEvents_.store(0);  // about the device just closed
+        scheduler_->setWorkgroup(device_.workgroup());  // the workers join it before they render for it
         device_.start();
         deviceRunning_ = true;
     } catch (...) {
         device_.close();
+        scheduler_->setWorkgroup({});
         deviceRunning_ = false;
         openInputs_ = 0;
         openInputChannels_.clear();
@@ -79,6 +81,7 @@ void Engine::closeDevice() {
 
 void Engine::closeDeviceLocked() {
     if (device_.isOpen()) device_.close();  // waits for the audio thread to exit
+    scheduler_->setWorkgroup({});
     shared_.clock.stop();  // MIDI input is dropped from here on
     deviceRunning_ = false;
     openInputs_ = 0;

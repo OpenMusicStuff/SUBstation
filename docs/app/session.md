@@ -363,7 +363,9 @@ The QML dialog calls `open()` when it shows and `close()` when it goes. Each com
 `bufferChoices`, `threadChoices`) and its current index (`driverIndex`...), and calls the matching `choose...(index)`
 with the index the user picked (the same index again does nothing). A driver this build hasn't (ASIO without the SDK)
 is listed disabled, saying why. `showControlPanel()` opens the ASIO driver's own settings (it may run a message loop:
-the UI disables the dialog meanwhile). `status` is rich text: what runs, an error first in red.
+the UI disables the dialog meanwhile). `status` is rich text: what runs, an error first in red, and a warning (in red too) when
+the system refused the audio threads beside the driver's own real-time priority (`EngineBridge::realtimeWorkers()`,
+with what to do about it: on Linux rtkit or `rtprio` in limits.conf).
 
 **Preferences › MIDI** is `MidiPreferences` (`Session.midiPreferences`): the MIDI inputs connected
 (`inputs: [{name, enabled, error}]`), each on (tracks can hear and record it) or off (`setInputEnabled`, saved);

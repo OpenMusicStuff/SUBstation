@@ -236,6 +236,27 @@ only 8 tracks to share). Live at 64 frames: 46 µs per buffer on one thread, 15 
 A project with two tracks renders at 32 frames as it did on one thread (below the
 threshold, chunks render serially) and a little faster at 128 (13 → 9 µs).
 
+### Linux, real-time workers
+
+The C++ build on Linux (platform support, stage 1: the workers at real-time
+priority, `platform::ScopedRealtimePriority`). A 4-core cloud VM (Intel Xeon,
+2.1 GHz), Ubuntu 24.04, GCC, Release; 32 Synth tracks, 10 s, offline. "Real-time":
+the workers at `SCHED_FIFO` 70 (the process allowed to set it); "rtkit": a user
+without that, given `SCHED_RR` 20 by rtkit (and `RLIMIT_RTTIME` 200 ms); "refused":
+a user with neither, the workers at normal priority. Raw reports:
+`results/parallel-32-synth-linux-*.json`.
+
+| threads | real-time | speed-up | rtkit | speed-up | refused | speed-up |
+|---|---|---|---|---|---|---|
+| 1 | 1.953 s (5.1× realtime) | 1.00× | 1.871 s (5.3× realtime) | 1.00× | 1.858 s (5.4× realtime) | 1.00× |
+| 2 | 1.006 s | 1.94× | 0.973 s | 1.92× | 1.015 s | 1.83× |
+| 4 | 0.543 s (18.4× realtime) | 3.59× | 0.543 s (18.4× realtime) | 3.45× | 0.565 s (17.7× realtime) | 3.29× |
+
+The speed-ups are those of Windows above (1.96× on 2 threads, 3.74× on 4), on
+slower cores. Live (`--live`) needs the fake ASIO driver, so it waits for the
+PipeWire backend (stage 2) on Linux; and the comparison on the same hardware, and
+on macOS, are still to do.
+
 ### Starting the heaviest tracks first
 
 `--heavy N` puts a chain of OTTs on the last N tracks (the last in routing order,
