@@ -401,6 +401,28 @@ void ArrangementLanes::paint(SgPainter& p) {
         const QColor color = selectedTracks.contains(row.trackId) ? Theme::laneSelected() : Theme::lane();
         p.fillRect(QRectF(visible.left(), row.top - scroll, visible.width(), row.height()), color);
     }
+    const Gesture* gesture = gesture_.get();
+    const std::optional<app::TimeRange> gestureRange = gesture ? gesture->timeRange() : std::nullopt;
+    std::optional<app::TimeRange> timeRange = gestureRange ? gestureRange : selection.timeRange();
+    if (timeRange && !gestureRange) timeRange->trackIds = selection.rangeRows();  // (the rows it shows over)
+    const bool onLanes = timeRange && !selection.lanes().isEmpty() && !gestureRange;
+    // Where the time selection is tinted, by track: a clip range's stretch of
+    // each row, or a lane range's of each automation lane it covers. The tint
+    // goes on the ground, under the grid (which shows through it as anywhere)
+    // and under the clips; their bodies are tinted where it is, their title
+    // bars, waveforms, notes and envelopes stay as they are.
+    std::vector<std::pair<QString, QRectF>> lit;
+    if (timeRange && !onLanes) {
+        const QHash<QString, QRectF> areas = selectedAreas(*timeRange);
+        for (auto it = areas.constBegin(); it != areas.constEnd(); ++it) lit.emplace_back(it.key(), *it);
+    } else if (onLanes) {
+        const double x0 = view.beatToX(timeRange->start), x1 = view.beatToX(timeRange->end);
+        for (const EnvelopeArea& area : areas_) {
+            if (selection.lanes().contains(app::LaneRef{area.owner, area.key}))
+                lit.emplace_back(area.owner, QRectF(x0, area.rect.top(), x1 - x0, area.rect.height()));
+        }
+    }
+    for (const auto& [trackId, area] : lit) p.fillRect(area, Theme::selection());
     // The grid goes all the way down: below the tracks too, where selecting works on it as well.
     timeline::drawGridBands(p, view, visible.left(), visible.right(), visible.top(), visible.bottom() + 1);
     timeline::drawGrid(p, view, visible.left(), visible.right(), visible.top(), visible.bottom() + 1);
@@ -413,12 +435,6 @@ void ArrangementLanes::paint(SgPainter& p) {
     }
     timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 0.0, height());
 
-    const Gesture* gesture = gesture_.get();
-    const std::optional<app::TimeRange> gestureRange = gesture ? gesture->timeRange() : std::nullopt;
-    std::optional<app::TimeRange> timeRange = gestureRange ? gestureRange : selection.timeRange();
-    if (timeRange && !gestureRange) timeRange->trackIds = selection.rangeRows();  // (the rows it shows over)
-    const bool onLanes = timeRange && !selection.lanes().isEmpty() && !gestureRange;
-    QHash<QString, QRectF> tinted = !timeRange || onLanes ? QHash<QString, QRectF>() : selectedAreas(*timeRange);
     std::vector<Frame> frames;  // the clips drawn
 
     const QSet<QString> hidden = gesture ? gesture->hiddenIds() : QSet<QString>();
@@ -428,8 +444,6 @@ void ArrangementLanes::paint(SgPainter& p) {
         if (!track) continue;
         const double y = row.top - scroll;
         const bool bars = row.bars;
-        if (bars && tinted.contains(track->id))  // under its clips' bars, which stay as they are
-            p.fillRect(tinted.take(track->id), Theme::selection());
         if (track->isGroup()) drawGroupSummary(p, track->id, y, row.mainHeight, track->folded, visible);
         const QColor trackColor(track->color);
         for (const app::Clip& clip : track->clips) {
@@ -483,29 +497,20 @@ void ArrangementLanes::paint(SgPainter& p) {
                    Theme::textDim(), uiFont(10));
     }
 
-    if (onLanes) envelopes::drawRange(p, view, selection, areas_, Theme::selection());  // on the automation lanes it covers
-    for (const QRectF& area : tinted) p.fillRect(area, Theme::selection());
-    // Over the tint (a clip range's, or a lane range's on a track's own lane,
-    // over its clips), the clips' waveforms or notes, title bars (and outlines)
-    // as they were, and the envelopes over them: selecting lights up only the
-    // bodies' ground.
-    std::vector<std::pair<QString, QRectF>> lit;  // (track id, where it is tinted)
-    for (auto it = tinted.constBegin(); it != tinted.constEnd(); ++it) lit.emplace_back(it.key(), *it);
-    if (onLanes) {
-        const double x0 = view.beatToX(selection.timeRange()->start), x1 = view.beatToX(selection.timeRange()->end);
-        for (const EnvelopeArea& area : areas_) {
-            if (area.lane < 0 && selection.lanes().contains(app::LaneRef{area.owner, area.key}))
-                lit.emplace_back(area.owner, QRectF(x0, area.rect.top(), x1 - x0, area.rect.height()));
-        }
-    }
+    // The clips' bodies where the selection is: drawn again with its tint
+    // between their ground and the rest (the grid, the waveforms or notes),
+    // their title bars and outlines over them, and the envelopes over those.
+    // (A folded track's bars stay as they are, over the tint.)
     std::vector<QRectF> redrawn;
     for (const Frame& frame : frames) {
+        if (frame.folded) continue;
         for (const auto& [trackId, area] : lit) {
             if (trackId != frame.trackId || !area.intersects(frame.rect)) continue;
             p.save();
             p.setClipRect(area.intersected(visible));
-            const QRectF body = frame.rect.adjusted(0, clipTitleHeight(frame.rect.height(), frame.folded), 0, 0);
-            if (body.height() > 0) drawContent(p, frame.clip, frame.rect, body, visible);
+            drawBody(p, frame.color, frame.clip, frame.rect, visible, frame.ghost, frame.folded, frame.automation,
+                     Theme::selection());
+            if (project.isFrozen(frame.trackId)) p.fillRect(frame.rect, Theme::frozenTint());  // (as its row has)
             drawClipFrame(p, frame.color, frame.clip, frame.rect, frame.selected, frame.ghost, frame.folded,
                           frame.automation);
             p.restore();
@@ -542,31 +547,37 @@ void ArrangementLanes::drawClip(SgPainter& p, const QColor& trackColor, const ap
     // one is grey. As Ableton's: the body is the title bar's colour, a darker
     // line between them; on a track showing its automation it is dark (the
     // envelope over it), the grid faint over it.
-    const double titleHeight = clipTitleHeight(rect.height(), folded);
-    const QRectF body = rect.adjusted(0, titleHeight, 0, 0);
     p.save();
     p.setClipRect(rect.intersected(visible).adjusted(-1, -1, 1, 1));
-    if (body.height() > 0) {
-        const QColor color = clipColor(trackColor, clip);
-        QColor bodyColor = color;
-        if (automation) bodyColor = automationBody(color);
-        if (ghost) bodyColor.setAlphaF(0.75f);
-        p.fillRect(body, bodyColor);
-        // The grid through the body (under the waveform and notes): faint dark
-        // lines, fainter still over a track's automation's dark body.
-        p.save();
-        p.setOpacity(p.opacity() * (automation ? kAutomationGridOpacity : kClipGridOpacity));
-        timeline::drawGrid(p, arrangement()->view(), std::max(rect.left() + 1, visible.left()),
-                           std::min(rect.right() - 1, visible.right()), body.top(), body.bottom(), true);
-        p.restore();
-        if (titleHeight > 0)  // the line under the title bar
-            p.fillRect(QRectF(rect.left(), body.top(), rect.width(), 1),
-                       automation ? bodyColor.darker(150) : color.darker(160));
-        drawContent(p, clip, rect, body, visible);
-        drawFades(p, clip, rect, body, visible, showsFadeHandles());
-    }
+    drawBody(p, trackColor, clip, rect, visible, ghost, folded, automation);
     drawClipFrame(p, trackColor, clip, rect, selected, ghost, folded, automation);
     p.restore();
+}
+
+void ArrangementLanes::drawBody(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
+                                const QRectF& visible, bool ghost, bool folded, bool automation,
+                                const std::optional<QColor>& tint) {
+    const double titleHeight = clipTitleHeight(rect.height(), folded);
+    const QRectF body = rect.adjusted(0, titleHeight, 0, 0);
+    if (body.height() <= 0) return;
+    const QColor color = clipColor(trackColor, clip);
+    QColor bodyColor = color;
+    if (automation) bodyColor = automationBody(color);
+    if (ghost) bodyColor.setAlphaF(0.75f);
+    p.fillRect(body, bodyColor);
+    if (tint) p.fillRect(body, *tint);
+    // The grid through the body (under the waveform and notes): faint dark
+    // lines, fainter still over a track's automation's dark body.
+    p.save();
+    p.setOpacity(p.opacity() * (automation ? kAutomationGridOpacity : kClipGridOpacity));
+    timeline::drawGrid(p, arrangement()->view(), std::max(rect.left() + 1, visible.left()),
+                       std::min(rect.right() - 1, visible.right()), body.top(), body.bottom(), true);
+    p.restore();
+    if (titleHeight > 0)  // the line under the title bar
+        p.fillRect(QRectF(rect.left(), body.top(), rect.width(), 1),
+                   automation ? bodyColor.darker(150) : color.darker(160));
+    drawContent(p, clip, rect, body, visible);
+    drawFades(p, clip, rect, body, visible, showsFadeHandles());
 }
 
 void ArrangementLanes::drawFades(SgPainter& p, const app::Clip& clip, const QRectF& rect, const QRectF& body,

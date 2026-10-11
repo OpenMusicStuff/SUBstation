@@ -83,6 +83,9 @@ void BusLane::paint(SgPainter& p) {
     p.fillRect(visible, Theme::lane());
     if (!ready()) return;
     const timeline::Timeline& view = arrangement()->view();
+    const app::Selection& selection = *session()->selection();
+    // The selected range under the grid and the envelopes, which show through it as anywhere.
+    envelopes::drawRange(p, view, selection, areas_, Theme::selection());
     timeline::drawGridBands(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawGrid(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 1, height());
@@ -90,13 +93,11 @@ void BusLane::paint(SgPainter& p) {
     for (const LaneRow& lane : rows_.lanes)
         p.fillRect(QRectF(visible.left(), lane.top - 1, visible.width(), 1), Theme::gridBar());
     const app::Project& project = *session()->project();
-    const app::Selection& selection = *session()->selection();
     for (size_t i = 0; i < areas_.size() && i < looks_.size(); ++i) {
         const EnvelopeArea& area = areas_[i];
         envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
                             hoverPoint_, gesture_ != nullptr);
     }
-    envelopes::drawRange(p, view, selection, areas_, Theme::selection());
     envelopes::drawReadout(p, width(), gesture_ ? gesture_->readout() : std::nullopt);
 }
 

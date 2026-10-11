@@ -103,8 +103,11 @@ std::vector<GridLine> gridLines(const Timeline& view, double x0, double x1, doub
 // Beats between ruler labels: the grid step or a coarser musical unit, so
 // labels are at least 44 px apart.
 double labelStep(const Timeline& view, double step);
-// The grid lines between x0 and x1, from `top` to `bottom`. `overClip` draws
-// them as faint dark lines, so the grid shows through a clip of any colour.
+// The grid lines between x0 and x1, from `top` to `bottom`: the theme's
+// gridBar/Beat/Sub as they would be over its lane, drawn see-through, so they
+// show as well over a lighter ground (a selected track's lane, a selection's
+// tint drawn under them). `overClip` draws them as faint dark lines, so the
+// grid shows through a clip of any colour.
 void drawGrid(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom,
               bool overClip = false);
 // Every other block of bars between x0 and x1, from `top` to `bottom`, a

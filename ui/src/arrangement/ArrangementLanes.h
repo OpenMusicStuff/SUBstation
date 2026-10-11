@@ -9,19 +9,21 @@
 // (ArrangementPlayhead, LiveTakes): they change every frame.
 //
 // Painting, in order: each row's background (lighter if its track is
-// selected); the grid all the way down (below the tracks too, where selecting
-// works as well) and the loop region; per row a folded track's tint (under its
-// clips' bars), a group's summary, its clips (but those the gesture hides), a
-// frozen track's tint, the lines between its automation lanes and its bottom
-// border; the gesture's previews (what stays of moved clips, and where they go,
+// selected); the time selection's tint (over the automation lanes it covers,
+// or the stretch of each row it covers; a group's tracks below the rows it
+// reaches aren't tinted, though it acts on them too), under the grid so the
+// grid shows through it; the grid all the way down (below the tracks too,
+// where selecting works as well; see-through lines, as clear on a lighter
+// ground) and the loop region; per row a group's summary, its clips (but those
+// the gesture hides; a folded track's bars over the tint), a frozen track's
+// tint, the lines between its automation lanes and its bottom border; the
+// gesture's previews (what stays of moved clips, and where they go,
 // translucent); the envelopes; a drop preview or the empty arrangement's hint;
-// the time selection (over the automation lanes it covers, or as a tint over
-// the stretch of each row it covers, with the title bars and outlines of the
-// clips there drawn again over it: selecting never lights up a title bar; a
-// group's tracks below the rows it reaches aren't tinted, though it acts on
-// them too); the insert
-// marker on the selected track (when nothing is selected); a breakpoint's
-// value while dragged.
+// the clips' bodies where the selection is, drawn again with its tint between
+// their ground and their grid, waveforms and notes, their title bars and
+// outlines and the envelopes over them (selecting never lights up a title bar
+// or what a clip shows); the insert marker on the selected track (when nothing
+// is selected); a breakpoint's value while dragged.
 //
 // Fades: an audio clip's fades are drawn over its body, a curve from silence
 // to full level with a veil over what it takes away. While F is held (the
@@ -287,6 +289,12 @@ private:
     QHash<QString, QRectF> selectedAreas(const app::TimeRange& range) const;
     void drawClip(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
                   const QRectF& visible, bool selected, bool ghost, bool folded, bool automation = false);
+    // A clip's body: its ground (with `tint` over it: the selection's), the
+    // grid through it, the line under its title bar, its waveform or notes and
+    // its fades.
+    void drawBody(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
+                  const QRectF& visible, bool ghost, bool folded, bool automation,
+                  const std::optional<QColor>& tint = std::nullopt);
     void drawContent(SgPainter& p, const app::Clip& clip, const QRectF& rect, const QRectF& body,
                      const QRectF& visible);
     void drawClipFrame(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
