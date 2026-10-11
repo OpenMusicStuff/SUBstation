@@ -6,6 +6,7 @@
 
 #include "model/Commands.h"
 #include "model/Devices.h"
+#include "model/Ids.h"
 
 #include <QUndoStack>
 
@@ -15,7 +16,6 @@ namespace sub::app {
 
 using editing::indexOfDevice;
 using editing::Macro;
-using editing::optionalId;
 
 namespace {
 
@@ -25,8 +25,7 @@ namespace {
 void pruneMacros(std::vector<Device>& devices) {
     for (Device* rack : iterDevices(devices)) {
         if (rack->macros.empty()) continue;
-        QSet<QString> inside = deviceIdsOf(*rack);
-        inside.remove(rack->id);
+        const QSet<QString> inside = innerDeviceIds(*rack);
         std::vector<MacroMapping> kept;
         for (const MacroMapping& m : rack->macros) {
             if (inside.contains(m.deviceId) && m.macro < macroCount(*rack)) kept.push_back(m);
@@ -52,11 +51,7 @@ QStringList outermost(const std::vector<Device>& devices, const QStringList& dev
         if (deviceIds.contains(d->id) && !deviceIsInstrument(*d)) found.push_back(d);
     }
     QSet<QString> inside;
-    for (const Device* d : found) {
-        QSet<QString> ids = deviceIdsOf(*d);
-        ids.remove(d->id);
-        inside.unite(ids);
-    }
+    for (const Device* d : found) inside.unite(innerDeviceIds(*d));
     QStringList result;
     for (const Device* d : found) {
         if (!inside.contains(d->id)) result.append(d->id);
@@ -161,11 +156,7 @@ std::vector<Device> ProjectEditor::copyDevices(const QString& trackId, const QSt
         if (deviceIds.contains(d->id)) found.push_back(d);
     }
     QSet<QString> inside;
-    for (const Device* d : found) {
-        QSet<QString> ids = deviceIdsOf(*d);
-        ids.remove(d->id);
-        inside.unite(ids);
-    }
+    for (const Device* d : found) inside.unite(innerDeviceIds(*d));
     std::vector<Device> copies;
     for (const Device* d : found) {
         if (!inside.contains(d->id)) copies.push_back(*d);
@@ -190,6 +181,9 @@ QStringList ProjectEditor::pasteDevices(const QString& trackId, const std::vecto
             if (sidechain && (!p.hasOwner(sidechain->trackId) || p.sidechainWouldCycle(trackId, sidechain->trackId))) {
                 inner[i]->sidechain.reset();
             }
+            // Notes from a MIDI track still there (onto that track itself: its own).
+            QString& midi = inner[i]->midiFrom;
+            if (!midi.isEmpty() && (!p.hasTrack(midi) || p.track(midi).kind != kMidiKind || midi == trackId)) midi.clear();
         }
         devices.push_back(std::move(holder.front()));
     }
@@ -235,7 +229,7 @@ bool ProjectEditor::moveDevices(const QString& trackId, const QStringList& devic
     std::vector<Device>* target = chainDevices(after, chainId);
     if (moving.isEmpty() || target == nullptr) return false;
     QSet<QString> inside;
-    for (const QString& id : moving) inside.unite(deviceIdsOf(*findDevice(after, id)));
+    for (const QString& id : moving) addDeviceIds(inside, *findDevice(after, id));
     if (chainId && inside.contains(project_->chainRack(trackId, *chainId).id)) return false;  // into itself
     const int depth = rackDepth(after, chainId);
     for (const QString& id : moving) {
@@ -290,7 +284,7 @@ bool ProjectEditor::moveDevicesToTrack(const QString& trackId, const QStringList
     const int size = static_cast<int>(target->size());
     const int at = index < 0 ? size : std::max(startsWithInstrument(*target) ? 1 : 0, std::min(index, size));
     QSet<QString> movedIds;
-    for (const Device& d : moved) movedIds.unite(deviceIdsOf(d));
+    for (const Device& d : moved) addDeviceIds(movedIds, d);
     target->insert(target->begin() + at, std::make_move_iterator(moved.begin()), std::make_move_iterator(moved.end()));
     pruneMacros(source);
     pruneMacros(targetDevices);
@@ -302,14 +296,25 @@ bool ProjectEditor::moveDevicesToTrack(const QString& trackId, const QStringList
         const auto device = automation::keyDevice(key);
         if (device && movedIds.contains(*device)) envelopes.emplace_back(key, points);
     }
+    // The outputs going into them that would close a cycle where they go (that
+    // track, or one it feeds, takes what they put out) go into their groups.
+    QSet<QString> cycling;
+    for (const Track* t : p.senders()) {
+        if (t->output.to == Output::To::Sidechain && movedIds.contains(t->output.id) &&
+            p.outputWouldCycle(t->id, Output::track(toTrackId))) {
+            cycling.insert(t->output.id);
+        }
+    }
     auto command = std::make_unique<SetChainsCommand>(project_, before, after, text);
-    if (envelopes.empty()) return push(std::move(command));
+    if (envelopes.empty() && cycling.isEmpty()) return push(std::move(command));
     if (const auto problem = frozenProblem(*command)) {
         Q_EMIT refused(*problem);
         return false;
     }
     Macro macro(undoStack_, text);
+    dropOutputs({}, cycling, text);
     push(std::move(command));
+    if (envelopes.empty()) return true;
     QMap<LaneRef, Envelope> old;
     QMap<LaneRef, Envelope> nw;
     for (const auto& [key, points] : envelopes) {
@@ -369,8 +374,15 @@ bool ProjectEditor::setDevices(const QString& trackId, const std::vector<Device>
             orphans.append(key);
         }
     }
-    if (orphans.isEmpty()) return push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, text));
+    const std::vector<const Track*> senders = project_->senders();
+    const bool into = std::any_of(senders.begin(), senders.end(), [&](const Track* t) {
+        return t->output.to == Output::To::Sidechain && gone.contains(t->output.id);
+    });
+    if (orphans.isEmpty() && !into) {
+        return push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, text));
+    }
     Macro macro(undoStack_, text);
+    dropOutputs({}, gone, text);  // (the outputs into them go into their groups)
     push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, text));
     for (const QString& key : orphans) {
         push(std::make_unique<SetEnvelopeCommand>(project_, trackId, key, project_->envelope(trackId, key), Envelope{},

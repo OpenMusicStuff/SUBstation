@@ -1,9 +1,13 @@
 #include "io/Serialization.h"
 
+#include "io/Json.h"
 #include "model/Automation.h"
+#include "model/Devices.h"
+#include "model/Edits.h"
 #include "model/Errors.h"
 #include "model/Keys.h"
 #include "model/Notes.h"
+#include "model/Paths.h"
 #include "model/Project.h"
 #include "model/Routing.h"
 #include "model/TrackNames.h"
@@ -14,7 +18,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSet>
 #include <QVariant>
 
@@ -86,18 +89,6 @@ QJsonObject objectOr(const QJsonObject& object, const QString& key) {
         damaged(QStringLiteral("%1 is %2, not an object").arg(quoted(key), QLatin1String(typeName(*it))));
     }
     return it->toObject();
-}
-
-// Whether a value counts as true (as a condition would take it).
-bool truthy(const QJsonValue& value) {
-    switch (value.type()) {
-    case QJsonValue::Bool: return value.toBool();
-    case QJsonValue::Double: return value.toDouble() != 0.0;
-    case QJsonValue::String: return !value.toString().isEmpty();
-    case QJsonValue::Array: return !value.toArray().isEmpty();
-    case QJsonValue::Object: return !value.toObject().isEmpty();
-    default: return false;
-    }
 }
 
 // An object, or empty for nothing (null, a missing field, an empty value).
@@ -197,10 +188,6 @@ std::optional<QString> stringOrNone(const QJsonValue& value) {
     return value.toString();
 }
 
-QJsonValue optionalString(const std::optional<QString>& text) {
-    return text ? QJsonValue(*text) : QJsonValue(QJsonValue::Null);
-}
-
 double clamped(double value, double low, double high) { return std::max(low, std::min(high, value)); }
 
 // --- Paths ---
@@ -210,8 +197,7 @@ QString baseOf(const QString& projectFile) { return projectFile.isEmpty() ? QStr
 
 QJsonValue relative(const QString& path, const QString& base) {
     if (base.isEmpty() || path.isEmpty()) return QJsonValue::Null;
-    const QString absolute = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
-    const QString rel = QDir(QFileInfo(base).absoluteFilePath()).relativeFilePath(absolute);
+    const QString rel = QDir(QFileInfo(base).absoluteFilePath()).relativeFilePath(absoluteCleanPath(path));
     if (QDir::isAbsolutePath(rel)) return QJsonValue::Null;  // another drive
     return rel;
 }
@@ -229,16 +215,53 @@ QString resolveClipPath(const QJsonObject& data, const QString& base, const QStr
 
 // The file's name without its last extension ("kick.wav": "kick").
 QString stemOf(const QString& path) {
-    QString name = path;
-#ifdef Q_OS_WIN
-    name.replace(u'\\', u'/');
-#endif
+    QString name = QDir::fromNativeSeparators(path);
     name = name.mid(name.lastIndexOf(u'/') + 1);
     const qsizetype dot = name.lastIndexOf(u'.');
     return (dot > 0 && dot < name.size() - 1) ? name.left(dot) : name;
 }
 
 // --- Writing ---
+
+// A note's bend: {"bend": [[time, semitones, curve], ...], "vibrato": [[start,
+// length, depth, rate, fade], ...]}, either left out when it has none.
+QJsonObject bendToJson(const Note& note) {
+    QJsonObject data;
+    if (!note.bend.empty()) {
+        QJsonArray points;
+        for (const BendPoint& p : note.bend) points.append(QJsonArray{p.time, p.semitones, p.curve});
+        data[QStringLiteral("bend")] = points;
+    }
+    if (!note.vibrato.empty()) {
+        QJsonArray vibratos;
+        for (const Vibrato& v : note.vibrato) vibratos.append(QJsonArray{v.start, v.length, v.depth, v.rate, v.fade});
+        data[QStringLiteral("vibrato")] = vibratos;
+    }
+    return data;
+}
+
+void bendFromJson(const QJsonObject& data, Note& note) {
+    // (toFloat takes "nan" and "inf" as text: a bend holds neither, or the pitch played would.)
+    const auto finite = [](const QJsonValue& value) {
+        const double number = toFloat(value);
+        if (!std::isfinite(number)) damaged(QStringLiteral("a bend's value isn't a finite number"));
+        return number;
+    };
+    for (const QJsonValue& entry : listOr(data, QStringLiteral("bend"))) {
+        const QJsonArray p = entry.toArray();
+        if (!entry.isArray() || p.size() != 3) damaged(QStringLiteral("a bend's point isn't [time, semitones, curve]"));
+        note = notes::withBendPoint(note, {finite(p.at(0)), finite(p.at(1)), finite(p.at(2))});
+    }
+    for (const QJsonValue& entry : listOr(data, QStringLiteral("vibrato"))) {
+        const QJsonArray v = entry.toArray();
+        if (!entry.isArray() || v.size() != 5) damaged(QStringLiteral("a vibrato isn't [start, length, depth, rate, fade]"));
+        const Vibrato vibrato{finite(v.at(0)), finite(v.at(1)),
+                              std::clamp(finite(v.at(2)), -notes::kMaxBendSemitones, notes::kMaxBendSemitones),
+                              finite(v.at(3)), std::clamp(finite(v.at(4)), 0.0, 1.0)};
+        if (vibrato.length > 0 && vibrato.rate > 0) note.vibrato.push_back(vibrato);  // (as saved: past its end too)
+    }
+    std::sort(note.vibrato.begin(), note.vibrato.end(), [](const Vibrato& a, const Vibrato& b) { return a.start < b.start; });
+}
 
 QJsonObject clipToJson(const Clip& clip, const QString& base) {
     QJsonObject data;
@@ -252,7 +275,8 @@ QJsonObject clipToJson(const Clip& clip, const QString& base) {
         QJsonArray notes;
         for (const Note& n : clip.notes) {
             QJsonArray note{n.pitch, n.start, n.length, n.velocity};
-            if (n.muted) note.append(true);  // (deactivated)
+            if (n.muted || n.bent()) note.append(n.muted);  // (deactivated)
+            if (n.bent()) note.append(bendToJson(n));
             notes.append(note);
         }
         data[QStringLiteral("notes")] = notes;
@@ -349,6 +373,24 @@ QJsonObject masterToJson(const Track& master) {
             {QStringLiteral("automation_view"), viewToJson(master.automationView)}};
 }
 
+// Where a track's output goes, unless into its group (the default: none).
+std::optional<QJsonObject> outputToJson(const Output& output) {
+    switch (output.to) {
+    case Output::To::Group: return std::nullopt;
+    case Output::To::Master: return QJsonObject{{QStringLiteral("to"), QStringLiteral("master")}};
+    case Output::To::None: return QJsonObject{{QStringLiteral("to"), QStringLiteral("none")}};
+    case Output::To::Track:
+        return QJsonObject{{QStringLiteral("to"), QStringLiteral("track")}, {QStringLiteral("track"), output.id}};
+    case Output::To::Sidechain:
+        return QJsonObject{{QStringLiteral("to"), QStringLiteral("sidechain")}, {QStringLiteral("device"), output.id}};
+    }
+    return std::nullopt;
+}
+
+void addOutput(QJsonObject& data, const Output& output) {
+    if (const auto json = outputToJson(output)) data[QStringLiteral("output")] = *json;
+}
+
 QJsonObject trackToJson(const Track& t, const QString& base) {
     QJsonObject data;
     data[QStringLiteral("id")] = t.id;
@@ -370,6 +412,7 @@ QJsonObject trackToJson(const Track& t, const QString& base) {
     for (int channel : t.input) input.append(channel);
     data[QStringLiteral("input")] = input;
     if (t.inputTrack) data[QStringLiteral("input_track")] = *t.inputTrack;
+    if (t.inputTap != kPostFader) data[QStringLiteral("input_tap")] = t.inputTap;
     if (t.isMidi()) {
         data[QStringLiteral("midi_input")] =
             t.midiInput ? QJsonValue(midiInputToJson(*t.midiInput)) : QJsonValue(QJsonValue::Null);
@@ -379,6 +422,7 @@ QJsonObject trackToJson(const Track& t, const QString& base) {
     data[QStringLiteral("parent")] = optionalString(t.parent);
     data[QStringLiteral("folded")] = t.folded;
     data[QStringLiteral("sends")] = sendsToJson(t.sends);
+    addOutput(data, t.output);
     addFreeze(data, t.frozen, base);
     return data;
 }
@@ -397,11 +441,30 @@ QJsonObject returnToJson(const Track& t, const QString& base) {
                      {QStringLiteral("automation"), automationToJson(t.automation)},
                      {QStringLiteral("automation_view"), viewToJson(t.automationView)},
                      {QStringLiteral("sends"), sendsToJson(t.sends)}};
+    addOutput(data, t.output);
     addFreeze(data, t.frozen, base);
     return data;
 }
 
 // --- Reading ---
+
+// Where a track's output goes (into its group: none there, or one this version doesn't know).
+Output outputFromJson(const QJsonValue& value) {
+    if (!value.isObject()) return {};
+    const QJsonObject data = value.toObject();
+    const QString to = data.value(QStringLiteral("to")).toString();
+    if (to == u"master") return Output::master();
+    if (to == u"none") return Output::none();
+    const QJsonValue track = data.value(QStringLiteral("track")), device = data.value(QStringLiteral("device"));
+    if (to == u"track" && track.isString()) return Output::track(track.toString());
+    if (to == u"sidechain" && device.isString()) return Output::sidechain(device.toString());
+    return {};
+}
+
+QString inputTapFromJson(const QJsonValue& value) {
+    const QString tap = value.toString();
+    return tap == kPreFader || tap == kPreFx ? tap : kPostFader;
+}
 
 std::optional<Sidechain> sidechainFromJson(const QJsonValue& value) {
     if (!value.isObject()) return std::nullopt;
@@ -517,8 +580,7 @@ std::optional<Freeze> freezeFromJson(const QJsonValue& value, const QString& bas
                 continue;
             }
         }
-        std::stable_sort(clips.begin(), clips.end(),
-                         [](const Clip& a, const Clip& b) { return a.startBeat < b.startBeat; });
+        edits::sortByStart(clips);
         freeze.segments = std::move(clips);
     }
     return freeze;
@@ -570,16 +632,19 @@ Clip midiClipFromJson(const QJsonValue& value) {
     const QJsonObject c = asObject(value);
     std::vector<Note> notes;
     for (const QJsonValue& entry : listOr(c, QStringLiteral("notes"))) {
-        if (!entry.isArray() || entry.toArray().size() < 4 || entry.toArray().size() > 5) {
-            damaged(QStringLiteral("a note isn't [pitch, start, length, velocity] (and deactivated)"));
+        if (!entry.isArray() || entry.toArray().size() < 4 || entry.toArray().size() > 6 ||
+            (entry.toArray().size() > 5 && !entry.toArray().at(5).isObject())) {
+            damaged(QStringLiteral("a note isn't [pitch, start, length, velocity] (and deactivated, and its bend)"));
         }
         const QJsonArray n = entry.toArray();
         const double length = toFloat(n.at(2));
         if (length > 0) {
-            notes.push_back(Note{static_cast<int>(std::clamp<long long>(toInt(n.at(0)), 0, 127)),
-                                 std::max(0.0, toFloat(n.at(1))), length,
-                                 static_cast<int>(std::clamp<long long>(toInt(n.at(3)), 1, 127)),
-                                 n.size() > 4 && truthy(n.at(4))});
+            Note note{static_cast<int>(std::clamp<long long>(toInt(n.at(0)), 0, 127)),
+                      std::max(0.0, toFloat(n.at(1))), length,
+                      static_cast<int>(std::clamp<long long>(toInt(n.at(3)), 1, 127)),
+                      n.size() > 4 && truthy(n.at(4))};
+            if (n.size() > 5) bendFromJson(n.at(5).toObject(), note);
+            notes.push_back(std::move(note));
         }
     }
     Clip clip;
@@ -647,6 +712,7 @@ Track returnFromJson(const QJsonValue& value, const QString& base) {
     track.automation = automationFromJson(t.value(QStringLiteral("automation")));
     track.automationView = viewFromJson(t.value(QStringLiteral("automation_view")));
     track.sends = sendsFromJson(t.value(QStringLiteral("sends")));
+    track.output = outputFromJson(t.value(QStringLiteral("output")));
     track.frozen = freezeFromJson(t.value(QStringLiteral("frozen")), base);
     return track;
 }
@@ -674,11 +740,9 @@ QJsonValue parseJson(const QByteArray& bytes, const QString& path) {
 
 // Writes `data` to `path` without ever leaving a half-written file behind.
 void writeJson(const QJsonObject& data, const QString& path) {
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(data).toJson(QJsonDocument::Indented)) < 0 ||
-        !file.commit()) {
-        throw ProjectFileError(
-            QStringLiteral("Could not save %1: %2").arg(QFileInfo(path).fileName(), file.errorString()));
+    QString error;
+    if (!writeJsonFile(path, data, &error)) {
+        throw ProjectFileError(QStringLiteral("Could not save %1: %2").arg(QFileInfo(path).fileName(), error));
     }
 }
 
@@ -709,6 +773,7 @@ QJsonObject deviceToJson(const Device& device) {
         data[QStringLiteral("sidechain")] = QJsonObject{{QStringLiteral("track"), device.sidechain->trackId},
                                                         {QStringLiteral("tap"), device.sidechain->tap}};
     }
+    if (!device.midiFrom.isEmpty()) data[QStringLiteral("midi_from")] = device.midiFrom;
     if (device.isRack()) {
         QJsonArray chains;
         for (const Chain& c : device.chains) {
@@ -758,13 +823,10 @@ Device deviceFromJson(const QJsonValue& value) {
     for (auto it = params.constBegin(); it != params.constEnd(); ++it) device.params.insert(it.key(), toFloat(*it));
     device.state = stringOrNone(d.value(QStringLiteral("state")));
     device.sidechain = sidechainFromJson(d.value(QStringLiteral("sidechain")));
+    device.midiFrom = d.value(QStringLiteral("midi_from")).toString();
     if (device.isRack()) {
         for (const QJsonValue& c : listOr(d, QStringLiteral("chains"))) device.chains.push_back(chainFromJson(c));
-        QSet<QString> inside;
-        for (const Chain& c : device.chains) {
-            for (const Device* inner : iterDevices(c.devices)) inside.insert(inner->id);
-        }
-        inside.remove(device.id);
+        const QSet<QString> inside = innerDeviceIds(device);
         std::vector<MacroMapping> mappings;
         for (const QJsonValue& m : listOr(d, QStringLiteral("macros"))) {
             const QJsonObject mapping = asObject(m);
@@ -837,6 +899,37 @@ void repairRouting(std::vector<Track>& tracks, std::vector<Track>& returns, Trac
             }
         }
     }
+    // Outputs into the master, or nowhere, are kept; into a track or a device's
+    // sidechain if it is there (the track an audio track, not the one's own
+    // group), one by one unless they close a cycle with those before them.
+    std::vector<Output> outputs;
+    for (auto* list : {&tracks, &returns}) {
+        for (Track& t : *list) {
+            outputs.push_back(t.output);
+            t.output = {};
+        }
+    }
+    QSet<QString> audioTracks, deviceIds;
+    for (const Track& t : tracks) {
+        if (t.isAudio()) audioTracks.insert(t.id);
+    }
+    for (const auto* list : {&tracks, &returns}) {
+        for (const Track& t : *list) addDeviceIds(deviceIds, t.devices);
+    }
+    if (master != nullptr) addDeviceIds(deviceIds, master->devices);
+    {
+        size_t i = 0;
+        for (auto* list : {&tracks, &returns}) {
+            for (Track& t : *list) {
+                Output output = outputs[i++];
+                if (isDefaultOutput(output, t.parent)) output = {};  // (the same)
+                const bool there = output.to == Output::To::Track       ? audioTracks.contains(output.id) && output.id != t.id
+                                   : output.to == Output::To::Sidechain ? deviceIds.contains(output.id)
+                                                                        : true;
+                if (there && !outputWouldCycle(tracks, returns, t.id, output)) t.output = output;
+            }
+        }
+    }
     QSet<QString> sources = ids;
     for (const Track& t : tracks) sources.insert(t.id);
     sources.insert(kMaster);
@@ -870,14 +963,25 @@ void repairRouting(std::vector<Track>& tracks, std::vector<Track>& returns, Trac
             entry.device->sidechain = entry.sidechain;
         }
     }
+    // A device's MIDI input names a MIDI track there (not its own: that is what it hears without one).
+    QSet<QString> midiTracks;
+    for (const Track& t : tracks) {
+        if (t.kind == kMidiKind) midiTracks.insert(t.id);
+    }
+    const auto repairMidi = [&](Track& owner) {
+        for (Device* device : iterDevices(owner.devices)) {
+            if (!midiTracks.contains(device->midiFrom) || device->midiFrom == owner.id) device->midiFrom.clear();
+        }
+    };
+    for (Track& t : tracks) repairMidi(t);
+    for (Track& t : returns) repairMidi(t);
+    if (master != nullptr) repairMidi(*master);
 }
 
 QJsonObject projectToJson(const Project& project, const QString& projectFile) {
     const QString base = baseOf(projectFile);
     QSet<QString> deviceIds;
-    for (const Track* t : project.allTracks()) {
-        for (const Device* d : iterDevices(t->devices)) deviceIds.insert(d->id);
-    }
+    for (const Track* t : project.allTracks()) addDeviceIds(deviceIds, t->devices);
     // View state of the devices there are, sorted.
     const auto present = [&](const QSet<QString>& ids) {
         QStringList kept;
@@ -935,14 +1039,14 @@ std::vector<Track> tracksFromJson(const QJsonObject& data, const QString& projec
             for (const QJsonValue& c : listOr(t, QStringLiteral("clips"))) {
                 track.clips.push_back(kind == kMidiKind ? midiClipFromJson(c) : audioClipFromJson(c, base));
             }
-            std::stable_sort(track.clips.begin(), track.clips.end(),
-                             [](const Clip& a, const Clip& b) { return a.startBeat < b.startBeat; });
+            edits::sortByStart(track.clips);
         }
         track.kind = kind;
         track.automation = automationFromJson(t.value(QStringLiteral("automation")));
         track.automationView = viewFromJson(t.value(QStringLiteral("automation_view")));
         track.input = inputFromJson(t.value(QStringLiteral("input")));
         track.inputTrack = stringOrNone(t.value(QStringLiteral("input_track")));
+        track.inputTap = inputTapFromJson(t.value(QStringLiteral("input_tap")));
         // MIDI tracks saved before there was MIDI input hear every input.
         track.midiInput = kind == kMidiKind ? midiInputFromJson(t.value(QStringLiteral("midi_input"))) : MidiInput{};
         const QJsonValue monitor = t.value(QStringLiteral("monitor"));
@@ -952,6 +1056,7 @@ std::vector<Track> tracksFromJson(const QJsonObject& data, const QString& projec
         track.parent = stringOrNone(t.value(QStringLiteral("parent")));
         track.folded = truthy(t.value(QStringLiteral("folded")));
         track.sends = sendsFromJson(t.value(QStringLiteral("sends")));
+        track.output = outputFromJson(t.value(QStringLiteral("output")));
         track.frozen = freezeFromJson(t.value(QStringLiteral("frozen")), base);
         // Saved before tracks were numbered by their place, as new ones were named ("3 Audio"): so now.
         // (Since then, such a name is one typed: it stays.)
@@ -1038,11 +1143,29 @@ void loadProject(Project& project, const QString& path) {
     project.replaceContents(std::move(contents));
 }
 
+void saveTemplate(const Project& project, const QString& path) {
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    writeJson(projectToJson(project), path);  // (its files by their absolute paths only: it moves nowhere)
+}
+
+void loadTemplate(Project& project, const QString& path) {
+    const QJsonValue data = parseJson(readFile(path), path);
+    if (!data.isObject()) throw ProjectFileError(QStringLiteral("The template is not a SUBstation project"));
+    ProjectContents contents;
+    try {
+        contents = contentsFromJson(data.toObject(), QString());  // untitled: no file of its own
+    } catch (const Damaged& error) {
+        throw ProjectFileError(QStringLiteral("The template is damaged: %1").arg(error.detail()));
+    }
+    project.replaceContents(std::move(contents));
+}
+
 // --- Presets ---
 
 QJsonObject deviceToPreset(const Device& device) {
     std::function<void(QJsonObject&)> strip = [&](QJsonObject& d) {
         d.remove(QStringLiteral("sidechain"));
+        d.remove(QStringLiteral("midi_from"));
         if (!d.contains(QStringLiteral("chains"))) return;
         QJsonArray chains = d.value(QStringLiteral("chains")).toArray();
         for (qsizetype c = 0; c < chains.size(); ++c) {
@@ -1083,7 +1206,10 @@ Device presetDevice(const QJsonValue& data) {
     if (rackHeight(device) > kMaxRackDepth) throw ProjectFileError(QStringLiteral("The preset nests racks too deep"));
     std::vector<Device> holder;
     holder.push_back(std::move(device));
-    for (Device* inner : iterDevices(holder)) inner->sidechain.reset();
+    for (Device* inner : iterDevices(holder)) {
+        inner->sidechain.reset();
+        inner->midiFrom.clear();
+    }
     refreshIds(holder.front());
     return std::move(holder.front());
 }

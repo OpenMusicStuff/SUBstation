@@ -9,8 +9,9 @@
 // loop), EditorClips.cpp (clips and time selections), EditorDeviceChains.cpp
 // (devices in chains), EditorRacks.cpp (racks, their chains and macros),
 // EditorDeviceSettings.cpp (a device's parameters, state, presets, switch and
-// sidechain), EditorAutomation.cpp (envelopes and the lanes shown) and
-// EditorFreezing.cpp (freezing, flattening, and what frozen tracks refuse).
+// sidechain), EditorAutomation.cpp (envelopes and the lanes shown),
+// EditorFreezing.cpp (freezing, flattening, and what frozen tracks refuse) and
+// EditorFiles.cpp (the files clips and devices play: replaced, found again).
 // Kinds of devices and new devices are in model/Devices.h.
 //
 // Some changes are view state, saved with the project but not undone (as in
@@ -41,6 +42,7 @@
 #include "editor/CopiedTracks.h"
 #include "editor/TimeRange.h"
 #include "editor/TrackPlace.h"
+#include "files/ProjectFiles.h"
 #include "model/Automation.h"
 #include "model/Clip.h"
 #include "model/Device.h"
@@ -200,8 +202,21 @@ public:
     // instead of device channels; none: no input. EditError for a source it
     // can't take (itself, one it feeds: a cycle; not an audio track).
     void setTrackInputTrack(const QString& trackId, const std::optional<QString>& sourceId);
+    // Where an input from a track's output is taken: kPostFader (Ableton's Post
+    // Mixer), kPreFader (Post FX) or kPreFx (Pre FX: a MIDI track's after its
+    // instrument). EditError for another.
+    void setTrackInputTap(const QString& trackId, const QString& tap);
     // One of kMonitorModes; EditError for another.
     void setTrackMonitor(const QString& trackId, const QString& mode);
+
+    // Outputs.
+    // Where a track's (or a return's) output goes (Ableton's Audio To): into
+    // its group (outside one, the master), the master, an audio track's input
+    // (Track In; its own group stands for "into its group"), a device's sidechain
+    // input (on a track, a return or the master), or nowhere (Sends Only).
+    // EditError for one it can't go into: itself, a device on itself, one it
+    // feeds (a cycle), a track that isn't an audio track, a device that isn't there.
+    void setTrackOutput(const QString& trackId, const Output& output);
     // A MIDI track's MIDI input (none: none). EditError for a channel out of 0..16.
     void setTrackMidiInput(const QString& trackId, const std::optional<MidiInput>& midiInput);
 
@@ -365,6 +380,26 @@ public:
     // deactivated (a deactivated clip doesn't play; see Clip::muted). One undo
     // step. The clips changed (none if refused: on a frozen track).
     ClipRefs setRangeActive(double start, double end, const QStringList& trackIds, bool active);
+
+    // --- Files (EditorFiles.cpp) ---
+
+    // Puts the file `path` (`seconds` long) in place of whatever these clips
+    // and devices play (the File Manager's Replace, a hot swap), as one undo
+    // step: each clip as edits::replaceFile has it (one that runs into the next
+    // clip is trimmed there), each device's state naming it. Uses on frozen
+    // tracks are refused (`refused`): leave them out (changeableUses). With a
+    // merge key, a hot swap's replacements are one undo step, each worked out
+    // from the clips as they were before it began (so a long sample tried and
+    // left doesn't leave its clips trimmed). False if nothing changed (or it
+    // was refused).
+    bool replaceFile(const FileUses& uses, const QString& path, double seconds, const QString& text,
+                     const QString& mergeKey = {});
+    // Files found somewhere else (missing ones located): each old path -> its
+    // new one, wherever a clip plays it (or was reversed from it) and a device
+    // names it; on frozen tracks too, as it is the same audio. One undo step;
+    // false if nothing changed.
+    bool relinkFiles(const QMap<QString, QString>& moved,
+                     const QString& text = QStringLiteral("Locate Missing Files"));
 
     // --- Devices in chains (EditorDeviceChains.cpp) ---
 
@@ -547,6 +582,11 @@ public:
     // take (the master, its own track, or one its track feeds: a cycle) or a
     // tap after a device that isn't on the source.
     void setDeviceSidechain(const QString& trackId, const QString& deviceId, const std::optional<Sidechain>& sidechain);
+    // A device's MIDI input: the MIDI track whose notes it plays instead of its
+    // own track's ("" or its own track: its own track's). EditError for a source
+    // that isn't a MIDI track. (Whether the device plays notes at all is its
+    // processor's: EngineBridge::acceptsMidi.)
+    void setDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId);
 
     // --- Automation (EditorAutomation.cpp) ---
     // Envelopes are normalized (see model/Automation.h); an owner is a track id
@@ -643,12 +683,17 @@ public:
     // sourceId "": no input.
     Q_INVOKABLE bool trySetTrackInputTrack(const QString& trackId, const QString& sourceId);
     Q_INVOKABLE bool trySetTrackMonitor(const QString& trackId, const QString& mode);
+    Q_INVOKABLE bool trySetTrackInputTap(const QString& trackId, const QString& tap);
+    // to: "group", "master", "track" (id: the track's), "sidechain" (id: the device's) or "none".
+    Q_INVOKABLE bool trySetTrackOutput(const QString& trackId, const QString& to, const QString& id = {});
     // `enabled` false: no MIDI input. device "": every input; channel 0: every channel.
     Q_INVOKABLE bool trySetTrackMidiInput(const QString& trackId, bool enabled, const QString& device = {},
                                           int channel = 0);
     // sourceTrackId "": none. tap: kPostFader, kPreFader, kPreFx or a device id.
     Q_INVOKABLE bool trySetDeviceSidechain(const QString& trackId, const QString& deviceId,
                                            const QString& sourceTrackId, const QString& tap = QStringLiteral("post"));
+    // sourceId "": its own track's notes.
+    Q_INVOKABLE bool trySetDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId);
     Q_INVOKABLE QString tryAddRackChain(const QString& trackId, const QString& rackId, int index = -1,
                                         const QString& name = {});
     Q_INVOKABLE bool tryMapMacro(const QString& trackId, const QString& rackId, int index, const QString& deviceId,
@@ -692,7 +737,12 @@ private:
                              const QString& text);
     void setInput(const QString& trackId, const std::vector<int>& channels, const std::optional<QString>& sourceId);
     void dropInputs(const QSet<QString>& sourceIds, const QString& text);
+    // The outputs into these tracks, or into these devices (or devices on these
+    // tracks), go into their groups.
+    void dropOutputs(const QSet<QString>& trackIds, const QSet<QString>& deviceIds, const QString& text);
     void dropSidechains(const QSet<QString>& sourceIds, const QString& text);
+    // Devices taking these tracks' notes take their own track's again.
+    void dropMidiInputs(const QSet<QString>& sourceIds, const QString& text);
     Clip recordedMidiClip(const RecordedTake& take, double quantize) const;
 
     // Settings.
@@ -709,6 +759,9 @@ private:
     };
     QMap<LaneRef, Envelope> carriedAutomation(const std::vector<Span>& spans, double deltaBeats, bool copyClips) const;
     QMap<LaneRef, Envelope> clearedAutomation(double start, double end, const QStringList& trackIds) const;
+    // What of the frozen audio holding these tracks (frozenRenders) plays with
+    // the range between two beats taken out: render -> its segments.
+    QMap<QString, std::vector<Clip>> frozenWithout(const QStringList& trackIds, double start, double end) const;
     // The clips of these tracks with the stretch between two beats of each
     // `chosen` clip split off (at the range's edges) and changed by `change`
     // (a clip wholly inside keeps its id), for reverseRange and setRangeActive:

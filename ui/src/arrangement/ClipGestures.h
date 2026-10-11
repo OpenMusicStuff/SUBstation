@@ -188,6 +188,7 @@ public:
     TimeSelectGesture(LanesHost& host, const QPointF& press, bool bypassSnap);
 
     void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override;
+    bool selectsRows() const override { return active_; }
 
     double anchor() const { return anchor_; }
     void setAnchorRow(int row) { anchorRow_ = row; }
@@ -217,6 +218,7 @@ public:
     static std::unique_ptr<ExtendGesture> start(LanesHost& host, const QPointF& press, Qt::KeyboardModifiers modifiers);
 
     void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override;
+    bool selectsRows() const override { return true; }
 
 private:
     explicit ExtendGesture(LanesHost& host) : host_(host) {}
@@ -243,9 +245,6 @@ private:
     double scrollBeats_ = 0.0;
     int scrollY_ = 0;
 };
-
-// Ctrl+Alt: drag to scroll the arrangement, as in Ableton.
-bool isPanModifier(Qt::KeyboardModifiers modifiers);
 
 // Select the time from `start` to `end` on the rows from `firstRow` to
 // `lastRow` (indices into the layout's rows, either way round): a clip range

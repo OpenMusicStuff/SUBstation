@@ -19,6 +19,10 @@ QString formatValue(double value, const QString& unit) {
     if (unit.isEmpty()) return value != 0.0 ? formatFixed(value, 2, true) : QStringLiteral("0.00");
     if (unit == u":1") return formatFixed(value, 1) + QStringLiteral(":1");  // a ratio
     if (unit == u"note") return notes::noteName(static_cast<int>(roundHalfEven(value)));  // a MIDI key
+    if (unit == u"stages") {  // a count (the Disperser's)
+        const auto whole = static_cast<long long>(roundHalfEven(value));
+        return countText(whole, QStringLiteral("stage"), QStringLiteral("stages"));
+    }
     if (unit == u"st" || unit == u"ct") {  // semitones, cents
         const auto whole = static_cast<long long>(roundHalfEven(value));
         if (whole == 0) return QStringLiteral("0 ") + unit;
@@ -30,8 +34,27 @@ QString formatValue(double value, const QString& unit) {
     }
     if (unit == u"ms") {
         if (value >= 1000) return formatFixed(value / 1000, 2) + QStringLiteral(" s");
+        if (value < 1) return formatFixed(value, 2) + QStringLiteral(" ms");  // (a gate's attack: 0.02 ms)
         return value < 10 ? formatFixed(value, 1) + QStringLiteral(" ms") : formatFixed(value, 0) + QStringLiteral(" ms");
     }
+    if (unit == u"#") return QString::number(static_cast<long long>(roundHalfEven(value)));  // a count
+    if (unit == u"beats") {  // a length: in bars of 4 where it is whole bars
+        const auto beats = static_cast<long long>(roundHalfEven(value));
+        if (beats > 0 && beats % 4 == 0) return countText(beats / 4, QStringLiteral("Bar"), QStringLiteral("Bars"));
+        return countText(beats, QStringLiteral("Beat"), QStringLiteral("Beats"));
+    }
+    // An angle (a phase offset): "180°".
+    if (unit == u"\u00B0") return formatFixed(value, 0) + QStringLiteral("\u00B0");
+    // A slope (the Spectral Compressor's Tilt): "-1.5 dB/oct".
+    if (unit == u"dB/oct") return formatFixed(value, 1) + QStringLiteral(" dB/oct");
+    if (unit == u"ratio") {  // a ratio either side of 1, as Live writes it: "1:4.00", "1:66.7", "1:100", "1:0.500"
+        // Three significant digits, counted on the value as rounded: 9.996 is "1:10.0", not "1:10.00".
+        int decimals = value < 1.0 ? 3 : (value < 10.0 ? 2 : (value < 100.0 ? 1 : 0));
+        if (decimals > 0 && formatFixed(value, decimals).toDouble() >= std::pow(10.0, 3 - decimals)) --decimals;
+        return QStringLiteral("1:") + formatFixed(value, decimals);
+    }
+    if (unit == u"dial") return formatFixed(value, 1);  // an amp's 0..10 dial: "5.0"
+    if (unit == u"size") return formatFixed(value, 2);  // a room's size, a bare number (the Reverb's, as Live's)
     return formatFixed(value, 2) + u' ' + unit;
 }
 
@@ -95,28 +118,44 @@ bool ParamSpec::operator==(const ParamSpec& other) const {
            scale == other.scale && steps == other.steps && labels == other.labels;
 }
 
+namespace {
+
+// A fader's level in dB (a mixer's, a send's, a chain's): silence (kMinVolumeDb) to kMaxVolumeDb.
+ParamSpec volumeSpec(const QString& key, const QString& name, const QString& group, double defaultDb) {
+    ParamSpec spec;
+    spec.key = key;
+    spec.name = name;
+    spec.group = group;
+    spec.minimum = automation::kMinVolumeDb;
+    spec.maximum = automation::kMaxVolumeDb;
+    spec.defaultValue = defaultDb;
+    spec.unit = QStringLiteral("dB");
+    spec.scale = ParamSpec::Scale::Fader;
+    spec.text = formatDb;
+    return spec;
+}
+
+// A pan, -1 (left) to 1 (right).
+ParamSpec panSpec(const QString& key, const QString& name, const QString& group) {
+    ParamSpec spec;
+    spec.key = key;
+    spec.name = name;
+    spec.group = group;
+    spec.minimum = -1.0;
+    spec.maximum = 1.0;
+    spec.defaultValue = 0.0;
+    spec.text = formatPan;
+    return spec;
+}
+
+}  // namespace
+
 std::vector<ParamSpec> mixerSpecs(bool master, const std::vector<std::pair<QString, QString>>& sends) {
     const QString who = master ? QStringLiteral("Master") : QStringLiteral("Track");
-    ParamSpec volume;
-    volume.key = automation::kMixerVolume;
-    volume.name = who + QStringLiteral(" Volume");
-    volume.group = QStringLiteral("Mixer");
-    volume.minimum = automation::kMinVolumeDb;
-    volume.maximum = automation::kMaxVolumeDb;
-    volume.defaultValue = 0.0;
-    volume.unit = QStringLiteral("dB");
-    volume.scale = ParamSpec::Scale::Fader;
-    volume.text = formatDb;
-    ParamSpec pan;
-    pan.key = automation::kMixerPan;
-    pan.name = who + QStringLiteral(" Pan");
-    pan.group = QStringLiteral("Mixer");
-    pan.minimum = -1.0;
-    pan.maximum = 1.0;
-    pan.defaultValue = 0.0;
-    pan.text = formatPan;
-    std::vector<ParamSpec> specs{volume, pan};
-    if (!master) specs.push_back(switchSpec(automation::kMixerOn, QStringLiteral("Track Activator"), volume.group));
+    const QString group = QStringLiteral("Mixer");
+    std::vector<ParamSpec> specs{volumeSpec(automation::kMixerVolume, who + QStringLiteral(" Volume"), group, 0.0),
+                                 panSpec(automation::kMixerPan, who + QStringLiteral(" Pan"), group)};
+    if (!master) specs.push_back(switchSpec(automation::kMixerOn, QStringLiteral("Track Activator"), group));
     for (const auto& [returnId, letter] : sends) specs.push_back(sendSpec(returnId, letter));
     return specs;
 }
@@ -139,17 +178,8 @@ ParamSpec deviceOnSpec(const QString& deviceId, const QString& group) {
 }
 
 ParamSpec sendSpec(const QString& returnId, const QString& letter) {
-    ParamSpec spec;
-    spec.key = automation::sendKey(returnId);
-    spec.name = QStringLiteral("Send ") + letter;
-    spec.group = QStringLiteral("Mixer");
-    spec.minimum = automation::kMinVolumeDb;
-    spec.maximum = automation::kMaxVolumeDb;
-    spec.defaultValue = automation::kMinVolumeDb;
-    spec.unit = QStringLiteral("dB");
-    spec.scale = ParamSpec::Scale::Fader;
-    spec.text = formatDb;
-    return spec;
+    return volumeSpec(automation::sendKey(returnId), QStringLiteral("Send ") + letter, QStringLiteral("Mixer"),
+                      automation::kMinVolumeDb);
 }
 
 std::vector<ParamSpec> macroSpecs(const QString& rackId, const QStringList& names, const QString& group) {
@@ -169,26 +199,10 @@ std::vector<ParamSpec> chainSpecs(const QString& rackId, const std::vector<std::
                                   const QString& group) {
     std::vector<ParamSpec> specs;
     for (const auto& [chainId, name] : chains) {
-        ParamSpec volume;
-        volume.key = automation::chainKey(rackId, chainId, automation::kChainVolume);
-        volume.name = name + QStringLiteral(" Volume");
-        volume.group = group;
-        volume.minimum = automation::kMinVolumeDb;
-        volume.maximum = automation::kMaxVolumeDb;
-        volume.defaultValue = 0.0;
-        volume.unit = QStringLiteral("dB");
-        volume.scale = ParamSpec::Scale::Fader;
-        volume.text = formatDb;
-        specs.push_back(volume);
-        ParamSpec pan;
-        pan.key = automation::chainKey(rackId, chainId, automation::kChainPan);
-        pan.name = name + QStringLiteral(" Pan");
-        pan.group = group;
-        pan.minimum = -1.0;
-        pan.maximum = 1.0;
-        pan.defaultValue = 0.0;
-        pan.text = formatPan;
-        specs.push_back(pan);
+        specs.push_back(volumeSpec(automation::chainKey(rackId, chainId, automation::kChainVolume),
+                                   name + QStringLiteral(" Volume"), group, 0.0));
+        specs.push_back(panSpec(automation::chainKey(rackId, chainId, automation::kChainPan), name + QStringLiteral(" Pan"),
+                                group));
     }
     return specs;
 }

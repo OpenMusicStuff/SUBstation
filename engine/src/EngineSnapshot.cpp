@@ -7,6 +7,7 @@
 #include <functional>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "Rack.h"
 #include "Routing.h"
@@ -42,6 +43,29 @@ void ensureDelay(std::shared_ptr<DelayLine>& delay, int samples) {
     }
 }
 
+// A note's bend in samples (null: it doesn't bend): its points sorted, its
+// vibratos' rates in cycles a sample; those that can't swing left out.
+std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, double samplesPerBeat, double sampleRate) {
+    const bool bends = std::any_of(note.bend.begin(), note.bend.end(), [](const BendPoint& p) { return p.semitones != 0.0; });
+    const auto swings = [](const VibratoSpan& v) { return v.length > 0.0 && v.depth != 0.0 && v.rate > 0.0; };
+    if (!bends && std::none_of(note.vibrato.begin(), note.vibrato.end(), swings)) return nullptr;
+    auto render = std::make_shared<NoteBendRender>();
+    for (const BendPoint& point : note.bend) {
+        render->points.push_back({point.time * samplesPerBeat,  // (before the note's start: where it starts from)
+                                  std::clamp(point.semitones, -kMaxBendSemitones, kMaxBendSemitones),
+                                  std::clamp(point.curve, -1.0, 1.0)});
+    }
+    std::stable_sort(render->points.begin(), render->points.end(),
+                     [](const BendPoint& a, const BendPoint& b) { return a.time < b.time; });
+    for (const VibratoSpan& vibrato : note.vibrato) {
+        if (!swings(vibrato)) continue;
+        render->vibrato.push_back({vibrato.start * samplesPerBeat, vibrato.length * samplesPerBeat,
+                                   std::clamp(vibrato.depth, -kMaxBendSemitones, kMaxBendSemitones),
+                                   vibrato.rate / sampleRate, vibrato.fade});
+    }
+    return render;
+}
+
 // A rack chain's fader lane: "chain:<chain id>:volume" (or ":pan") of the rack.
 std::string chainLaneParam(uint32_t chainId, const char* control) {
     return "chain:" + std::to_string(chainId) + ":" + control;
@@ -68,14 +92,14 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
     const ChainModel& chain = chains_.at(chainId);
     out.inserts = chain.inserts;
     const std::vector<StripSlot>& slots = *build.slots;
-    std::vector<int> sidechains(chain.inserts.size(), -1);
+    std::vector<std::vector<int>> sidechains(chain.inserts.size());
     std::vector<std::shared_ptr<const RackRender>> racks(chain.inserts.size());
     bool anySidechain = false, anyRack = false;
     for (size_t i = 0; i < chain.inserts.size(); ++i) {
         const auto found = build.slotOf.find(chain.inserts[i].get());
         if (found == build.slotOf.end()) continue;
         const auto s = static_cast<size_t>(found->second);
-        if (s < build.sidechainOf.size() && build.sidechainOf[s] >= 0) {
+        if (s < build.sidechainOf.size() && !build.sidechainOf[s].empty()) {
             sidechains[i] = build.sidechainOf[s];
             anySidechain = true;
         }
@@ -118,6 +142,16 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
     }
     if (anySidechain) out.sidechains = std::move(sidechains);
     if (anyRack) out.racks = std::move(racks);
+    // The devices taking another track's notes (the prologue finds the track by its id).
+    for (size_t i = 0; i < chain.inserts.size(); ++i) {
+        const auto slot = build.slotOf.find(chain.inserts[i].get());
+        if (slot == build.slotOf.end()) continue;
+        const ProcessorEntry& entry = processors_.at(slots[static_cast<size_t>(slot->second)].processorId);
+        if (entry.midiSource == 0 || !entry.midiFeed) continue;
+        if (out.midiFeeds.empty()) out.midiFeeds.resize(chain.inserts.size());
+        out.midiFeeds[i] = entry.midiFeed;
+        snap.midiFeeds.push_back({static_cast<int>(entry.midiSource), entry.midiFeed});
+    }
 
     // The envelopes of the chain's devices' parameters (and switches), each as
     // late as the strip's input plus the latency before its device.
@@ -169,6 +203,10 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
 // Snapshot publishing
 
 void Engine::rebuildSnapshotLocked() {
+    for (auto& [id, entry] : processors_) {
+        if (!entry.rack) entry.alignedLatency = insertLatency(*entry.processor);
+    }
+    dropGoneOutputSidechainsLocked();
     auto snap = std::make_shared<RenderSnapshot>();
     snap->sampleRate = sampleRate_;
     snap->tempo = tempo_;
@@ -192,6 +230,7 @@ void Engine::rebuildSnapshotLocked() {
         assert(false && "the routing graph has a cycle");
         for (TrackModel& track : tracks_) {
             track.output = kMaster;
+            track.outputProcessor = 0;
             track.sends.clear();
             if (track.inputTrack != kMaster) track.inputTrack.reset();
         }
@@ -294,6 +333,7 @@ void Engine::rebuildSnapshotLocked() {
     std::unordered_map<uint32_t, std::vector<int>> chainTaps;  // rack chain -> the taps after its devices
     std::vector<std::vector<std::pair<int, int>>> sidechains(tracks_.size() + 1);       // (device, edge), the master last
     std::vector<int> inputEdge(tracks_.size(), -1);  // by snapshot index: the input edge it takes, if any
+    std::vector<int> inputArrival(tracks_.size(), 0);  // by snapshot index: how late that edge leaves its source
     std::vector<std::pair<int, int>> graphEdges;
     snap->edges.reserve(edges.size());
     for (const int t : order) {
@@ -307,42 +347,69 @@ void Engine::rebuildSnapshotLocked() {
             edge.from = position[static_cast<size_t>(t)];
             edge.to = route.to >= 0 ? position[static_cast<size_t>(route.to)] : -1;
             edge.compensation = aligned.compensation[static_cast<size_t>(e)];
-            if (send == kInputEdge) {  // the destination's input: not summed, nor delayed
-                edge.kind = EdgeRender::Kind::Input;
-                edge.state = tracks_[static_cast<size_t>(origin.track)].inputState;
-                inputEdge[static_cast<size_t>(edge.to)] = index;
-            } else if (send == kSidechainEdge) {  // into one of the destination's devices
-                SidechainModel& sidechain = *processors_.at(origin.processor).sidechain;
-                edge.kind = EdgeRender::Kind::Sidechain;
-                edge.state = sidechain.state;
-                // After a device (in the source's own chain, or in a rack's chain
-                // there: that chain writes it), or before them all (also while the
-                // source plays without its devices); else before or after the fader.
-                std::optional<uint32_t> tapChain;
+            // Where a tap leaves the source: after a device (in the source's own
+            // chain, or in a rack's chain there: that chain writes it), or before
+            // them all (also while the source plays without its devices); else
+            // before or after the fader.
+            const auto tapAt = [&](SidechainTap where) {
                 if (route.tap >= 0) {
                     edge.tap = EdgeRender::Tap::AfterDevice;
                     const auto& sourceSlots = slotsOf[static_cast<size_t>(t)];
+                    std::optional<uint32_t> tapChain;
                     if (route.tap > 0 && static_cast<size_t>(route.tap) <= sourceSlots.size()) {
                         const StripSlot& slot = sourceSlots[static_cast<size_t>(route.tap) - 1];
                         edge.tapDevice = slot.index;
                         if (slot.rack >= 0) tapChain = slot.chainId;
                     }
+                    if (tapChain) {
+                        chainTaps[*tapChain].push_back(index);
+                    } else {
+                        deviceTaps[static_cast<size_t>(edge.from)].push_back(index);
+                    }
                 } else {
-                    edge.tap = sidechain.tap == SidechainTap::PostFader ? EdgeRender::Tap::PostFader
-                                                                         : EdgeRender::Tap::PreFader;
+                    edge.tap = where == SidechainTap::PostFader ? EdgeRender::Tap::PostFader : EdgeRender::Tap::PreFader;
                 }
+            };
+            // Into one of the destination's devices: lined up with its signal there.
+            const auto intoDevice = [&](ProcessorEntry& device) {
+                edge.kind = EdgeRender::Kind::Sidechain;
                 edge.device = origin.device;
                 edge.deviceDelay = aligned.deviceDelay[static_cast<size_t>(e)];
-                ensureDelay(sidechain.delay, edge.compensation);
-                ensureDelay(sidechain.deviceDelay, edge.deviceDelay);
-                edge.delay = sidechain.delay;
-                edge.deviceDelayLine = sidechain.deviceDelay;
+                ensureDelay(device.sidechainWait, edge.deviceDelay);
+                edge.deviceDelayLine = device.sidechainWait;
                 sidechains[edge.to >= 0 ? static_cast<size_t>(edge.to) : tracks_.size()].emplace_back(edge.device, index);
-                if (tapChain) {
-                    chainTaps[*tapChain].push_back(index);
-                } else if (edge.tap == EdgeRender::Tap::AfterDevice) {
-                    deviceTaps[static_cast<size_t>(edge.from)].push_back(index);
+            };
+            if (send == kInputEdge) {  // the destination's input: not summed, nor delayed
+                TrackModel& to = tracks_[static_cast<size_t>(origin.track)];
+                edge.kind = EdgeRender::Kind::Input;
+                if (to.inputTap != SidechainTap::PostFader && to.inputState->left.empty()) {
+                    to.inputState = std::make_shared<EdgeState>(Renderer::kMaxBlock);  // (a signal of its own now)
                 }
+                edge.state = to.inputState;
+                tapAt(to.inputTap);
+                inputEdge[static_cast<size_t>(edge.to)] = index;
+                // How late it leaves the source (a take of it is placed by that).
+                const auto from = static_cast<size_t>(route.from);
+                int arrival = aligned.inputLatency[from] + aligned.deviceLatency[from].back();
+                if (route.tap == 0) {
+                    arrival = aligned.inputLatency[from];
+                } else if (route.tap > 0 && static_cast<size_t>(route.tap) <= aligned.deviceOut[from].size()) {
+                    arrival = aligned.inputLatency[from] + aligned.deviceOut[from][static_cast<size_t>(route.tap) - 1];
+                }
+                inputArrival[static_cast<size_t>(edge.to)] = arrival;
+            } else if (send == kSidechainEdge) {
+                ProcessorEntry& device = processors_.at(origin.processor);
+                SidechainModel& sidechain = *device.sidechain;
+                edge.state = sidechain.state;
+                tapAt(sidechain.tap);
+                intoDevice(device);
+                ensureDelay(sidechain.delay, edge.compensation);
+                edge.delay = sidechain.delay;
+            } else if (send == kOutputSidechainEdge) {  // its output, after its fader
+                intoDevice(processors_.at(origin.processor));
+                edge.state = track.outputState;
+                ensureDelay(track.delay, edge.compensation);
+                edge.delay = track.delay;
             } else {
                 std::shared_ptr<DelayLine>& delay =
                     send == kOutputEdge ? track.delay : track.sends[static_cast<size_t>(send)].delay;
@@ -351,6 +418,7 @@ void Engine::rebuildSnapshotLocked() {
             }
             if (send == kOutputEdge) {
                 edge.state = track.outputState;
+                if (!route.sums && edge.to >= 0) edge.kind = EdgeRender::Kind::TrackIn;
             } else if (send >= 0) {
                 const SendModel& model = track.sends[static_cast<size_t>(send)];
                 edge.kind = EdgeRender::Kind::Send;
@@ -393,10 +461,10 @@ void Engine::rebuildSnapshotLocked() {
         build.deviceLatency = &aligned.deviceLatency[node];
         build.chainEnd = &aligned.chainEnd[node];
         build.chainCompensation = &aligned.chainCompensation[node];
-        build.sidechainOf.assign(slotsOf[node].size(), -1);
+        build.sidechainOf.assign(slotsOf[node].size(), {});
         for (const auto& [device, edge] : sidechains[strip]) {
             if (device >= 0 && static_cast<size_t>(device) < build.sidechainOf.size()) {
-                build.sidechainOf[static_cast<size_t>(device)] = edge;
+                build.sidechainOf[static_cast<size_t>(device)].push_back(edge);
             }
         }
         build.samplesPerBeat = spb;
@@ -417,6 +485,10 @@ void Engine::rebuildSnapshotLocked() {
     const auto rate = static_cast<uint32_t>(sampleRate_);
     const int64_t clipFade = std::llround(clipFadeMs_ * 0.001 * sampleRate_);  // against clicks where clips cut
     std::array<size_t, kNumStretchConfigs> voicesNeeded{};
+    std::unordered_set<uint32_t> fedTracks;  // tracks whose notes a device takes
+    for (const auto& [id, entry] : processors_) {
+        if (entry.midiSource != 0) fedTracks.insert(entry.midiSource);
+    }
     snap->tracks.reserve(tracks_.size());
     for (const int t : order) {
         TrackModel& track = tracks_[t];
@@ -436,14 +508,20 @@ void Engine::rebuildSnapshotLocked() {
         render.buffers = track.buffers;
         render.input = inputEdgeLocked(track);
         render.input.edge = inputEdge[at];
+        render.input.arrival = inputArrival[at];
+        render.trackIn = std::any_of(render.incoming.begin(), render.incoming.end(), [&](int e) {
+            return snap->edges[static_cast<size_t>(e)].kind == EdgeRender::Kind::TrackIn;
+        });
         render.midiInput = track.midiInput;
         render.monitor = track.frozen ? MonitorMode::Off : track.monitor;
         render.armed = track.armed && !track.frozen;
         // Its devices hear the timeline as late as its input; its fader after them
         // (its edges are delayed after the fader, to line up where they go).
         buildAutomationLocked(build, render.inputLatency + render.latency, render);
+        // (A track left out keeps its notes while a device elsewhere takes them.)
         static const std::vector<NoteDesc> kNoNotes;
-        const std::vector<NoteDesc>& notes = silent[static_cast<size_t>(t)] ? kNoNotes : track.notes;
+        const bool fed = fedTracks.count(track.id) > 0;
+        const std::vector<NoteDesc>& notes = silent[static_cast<size_t>(t)] && !fed ? kNoNotes : track.notes;
         render.notes.reserve(notes.size());
         for (const NoteDesc& note : notes) {
             NoteRender nr;
@@ -451,7 +529,8 @@ void Engine::rebuildSnapshotLocked() {
             nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
             nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
             nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
-            render.notes.push_back(nr);
+            nr.bend = noteBend(note, spb, sampleRate_);
+            render.notes.push_back(std::move(nr));
         }
         std::sort(render.notes.begin(), render.notes.end(), [](const NoteRender& a, const NoteRender& b) {
             return a.start != b.start ? a.start < b.start : a.key < b.key;
@@ -538,6 +617,13 @@ void Engine::rebuildSnapshotLocked() {
     }
     ensureWarpVoicesLocked(voicesNeeded);
     snap->warpVoices = warpVoices_;
+    // The devices taking other tracks' notes: from which snapshot track (they were listed by track id).
+    for (MidiFeedRender& feed : snap->midiFeeds) {
+        const auto id = static_cast<uint32_t>(feed.source);
+        const auto found = std::find_if(snap->tracks.begin(), snap->tracks.end(),
+                                        [id](const TrackRender& track) { return track.id == id; });
+        feed.source = found != snap->tracks.end() ? static_cast<int>(found - snap->tracks.begin()) : -1;
+    }
 
     std::shared_ptr<const RenderSnapshot> old = std::move(snapshotHold_);
     snapshotHold_ = snap;

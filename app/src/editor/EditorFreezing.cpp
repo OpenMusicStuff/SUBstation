@@ -7,6 +7,7 @@
 #include "editor/ProjectEditor.h"
 
 #include "model/Commands.h"
+#include "model/Devices.h"
 #include "model/Ids.h"
 
 #include <QHash>
@@ -17,20 +18,9 @@
 
 namespace sub::app {
 
+using editing::distinct;
+using editing::frozenText;
 using editing::Macro;
-
-namespace {
-
-// Track ids, each once, in their order.
-QStringList distinct(const QStringList& ids) {
-    QStringList result;
-    for (const QString& id : ids) {
-        if (!result.contains(id)) result.append(id);
-    }
-    return result;
-}
-
-}  // namespace
 
 QStringList ProjectEditor::freezeTracks(const OrderedMap<QString, Freeze>& freezes) {
     const Project& p = *project_;
@@ -83,6 +73,10 @@ QStringList ProjectEditor::flattenTracks(const QStringList& trackIds) {
     if (flat.isEmpty()) return {};
     const QString text = flat.size() == 1 ? QStringLiteral("Flatten Track") : QStringLiteral("Flatten Tracks");
     Macro macro(undoStack_, text);
+    QSet<QString> devices;  // (the outputs into their sidechains go into their groups)
+    for (const QString& id : flat) addDeviceIds(devices, p.track(id).devices);
+    dropOutputs({}, devices, text);
+    dropMidiInputs(QSet<QString>(flat.begin(), flat.end()), text);  // (audio tracks now: no notes)
     for (const QString& id : flat) {
         const Track track = p.track(id);
         Track after = track;
@@ -113,7 +107,7 @@ QStringList ProjectEditor::flattenTracks(const QStringList& trackIds) {
 std::optional<QString> ProjectEditor::frozenProblem(const QUndoCommand& command) const {
     // Why a command can't be made: it changes the clips, devices or device
     // automation of a frozen track (or of a track in a frozen group); none: it
-    // can. (Taking away a sidechain whose source goes is fine.)
+    // can. (Taking away a sidechain or a MIDI input whose source goes is fine.)
     // A clip change carrying the frozen audio of every frozen track holding the
     // clips' tracks along (a time selection's edit) is fine.
     const Project& p = *project_;
@@ -126,8 +120,17 @@ std::optional<QString> ProjectEditor::frozenProblem(const QUndoCommand& command)
             if (changed && !carriesFrozen(it.key(), carried)) tracks.append(it.key());
         }
         what = QStringLiteral("clips");
+    } else if (const auto* files = dynamic_cast<const ReplaceFilesCommand*>(&command)) {
+        // (A file found somewhere else is the same audio: frozen tracks take it.)
+        if (!files->relink()) {
+            for (auto it = files->after().constBegin(); it != files->after().constEnd(); ++it) {
+                if (files->before().value(it.key()) != it.value()) tracks.append(it.key());
+            }
+            for (const auto& device : files->statesAfter().keys()) tracks.append(device.first);
+        }
+        what = QStringLiteral("files");
     } else if (const auto* chains = dynamic_cast<const SetChainsCommand*>(&command)) {
-        tracks = chains->after().keys();
+        tracks = chains->newValue().keys();
     } else if (const auto* param = dynamic_cast<const SetDeviceParamCommand*>(&command)) {
         tracks = {param->trackId()};
     } else if (const auto* params = dynamic_cast<const SetDeviceParamsCommand*>(&command)) {
@@ -136,6 +139,8 @@ std::optional<QString> ProjectEditor::frozenProblem(const QUndoCommand& command)
         tracks = {chain->trackId()};
     } else if (const auto* sidechain = dynamic_cast<const SetDeviceSidechainCommand*>(&command)) {
         if (sidechain->newValue()) tracks = {sidechain->trackId()};
+    } else if (const auto* midi = dynamic_cast<const SetDeviceMidiFromCommand*>(&command)) {
+        if (!midi->newValue().isEmpty()) tracks = {midi->trackId()};  // (one whose source goes may go)
     } else if (const auto* devices = dynamic_cast<const SetDevicesCommand*>(&command)) {
         tracks = {devices->trackId()};
     } else if (const auto* enabled = dynamic_cast<const SetDeviceEnabledCommand*>(&command)) {
@@ -157,7 +162,7 @@ std::optional<QString> ProjectEditor::frozenProblem(const QUndoCommand& command)
     }
     for (const QString& id : tracks) {
         if (!p.hasOwner(id) || !p.isFrozen(id)) continue;
-        return QStringLiteral("%1 is frozen: unfreeze it to change its %2").arg(p.track(*p.frozenBy(id)).name, what);
+        return frozenText(p.track(*p.frozenBy(id)).name, QStringLiteral("its ") + what);
     }
     return std::nullopt;
 }
@@ -243,9 +248,7 @@ std::optional<QString> ProjectEditor::heldProblem(const QStringList& trackIds) c
     const Project& p = *project_;
     for (const QString& id : trackIds) {
         const auto holder = p.frozenBy(id);
-        if (holder && *holder != id) {
-            return QStringLiteral("%1 is frozen: unfreeze it to change what is in it").arg(p.track(*holder).name);
-        }
+        if (holder && *holder != id) return frozenText(p.track(*holder).name, QStringLiteral("what is in it"));
     }
     return std::nullopt;
 }
@@ -273,9 +276,7 @@ std::optional<QString> ProjectEditor::arrangementProblem(const TrackTree& tree, 
         if (entry.parent == before.value(entry.id)) continue;
         auto frozen = holder(entry.id, before);
         if (!frozen) frozen = holder(entry.id, after);
-        if (frozen) {
-            return QStringLiteral("%1 is frozen: unfreeze it to change what is in it").arg(p.track(*frozen).name);
-        }
+        if (frozen) return frozenText(p.track(*frozen).name, QStringLiteral("what is in it"));
     }
     return std::nullopt;
 }

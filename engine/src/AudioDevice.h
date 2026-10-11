@@ -1,7 +1,9 @@
 #pragma once
-// Audio devices. Each driver type is an AudioBackend: WASAPI (through
-// miniaudio), and ASIO when the engine is built with Steinberg's ASIO SDK. The
-// engine only talks to AudioDevice, which opens a device of either.
+// Audio devices. Each driver type is an AudioBackend: on Windows WASAPI
+// (through miniaudio), and ASIO when the engine is built with Steinberg's ASIO
+// SDK; elsewhere miniaudio's "System". Which ones a build has is one file per
+// system (backends/AudioBackends.h). The engine only talks to AudioDevice,
+// which opens a device of any.
 //
 // Devices run duplex: each callback gets the open input channels and fills the
 // open output channels, as separate (non-interleaved) float buffers of the same
@@ -18,10 +20,12 @@
 #include <string>
 #include <vector>
 
+#include "platform/Threads.h"
+
 namespace sub {
 
 // The driver type every build has: WASAPI on Windows, miniaudio's default
-// backend ("System") elsewhere (backends/WasapiBackend.h).
+// backend ("System") elsewhere (backends/MiniaudioBackend.h).
 #ifdef _WIN32
 inline constexpr const char* kDefaultDriver = "WASAPI";
 #else
@@ -123,6 +127,9 @@ public:
     // Before a reset (DeviceEvent::ResetRequest): what to open instead, if the
     // driver asked for another buffer size or changed its sample rate.
     virtual void adjustForReset(DeviceConfig&) {}
+    // The open device's workgroup, which the threads rendering for its callback
+    // join (Core Audio's I/O thread's; platform::AudioWorkgroup). Empty: none.
+    virtual platform::AudioWorkgroup workgroup() const { return {}; }
 };
 
 // The device the engine plays through, of any driver type.
@@ -134,7 +141,7 @@ public:
     AudioDevice& operator=(const AudioDevice&) = delete;
 
     // The driver types this engine was built with: kDefaultDriver ("WASAPI" on
-    // Windows), and "ASIO".
+    // Windows) first, then "ASIO" if built with it (backends/AudioBackends.h).
     static std::vector<std::string> driverTypes();
     std::vector<AudioDeviceInfo> devices(const std::string& driver);
 
@@ -144,6 +151,7 @@ public:
     void close();
     bool isOpen() const;
     DeviceState state() const;
+    platform::AudioWorkgroup workgroup() const;  // the open device's (empty: none, or nothing open)
 
     // The last device opened, with what its driver asked to change since (for a reset).
     bool hasConfig() const { return hasConfig_; }

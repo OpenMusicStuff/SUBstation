@@ -3,6 +3,7 @@
 #include "arrangement/TrackLayout.h"
 #include "model/Project.h"
 #include "sg/SgPainter.h"
+#include "theme/Theme.h"
 
 #include <QColor>
 #include <QRectF>
@@ -27,6 +28,7 @@ void GroupBands::connectSession(app::Session* session) {
 void GroupBands::connectArrangement(Arrangement* arrangement) {
     connect(arrangement, &Arrangement::layoutChanged, this, &QQuickItem::update);
     connect(arrangement, &Arrangement::vscrollChanged, this, &QQuickItem::update);
+    connect(arrangement, &Arrangement::headerSelectionChanged, this, &QQuickItem::update);
 }
 
 void GroupBands::paint(SgPainter& p) {
@@ -44,13 +46,24 @@ void GroupBands::paint(SgPainter& p) {
         // where the next shown row starts, with no height).
         size_t end = i + 1;
         while (end < rows.size() && rows[end].depth > row.depth) ++end;
-        const double top = row.top - scroll;
+        // From under its colour in its header (its fold button is on that): its
+        // name bar and the row under it while its choosers show, else all of it.
+        const double colored = row.automation ? arrangement::kGroupBlock : row.mainHeight - 1;
+        const double top = row.top + colored - scroll;
         const double bottom = rows[end - 1].bottom() - 1 - scroll;  // (the line under the group shows)
-        if (bottom <= 0 || top >= h) continue;
+        if (bottom <= top || bottom <= 0 || top >= h) continue;
         // Its left edge: the column's line (as each header has it) stays.
         const double left = std::max(1, row.depth * arrangement::kGroupIndent);
         const double right = row.depth * arrangement::kGroupIndent + arrangement::kGroupBand;
-        p.fillRect(QRectF(left, top, right - left, bottom - top), QColor(group->color));
+        // Lit up with its header's name column (TrackHeaderItem::barColor): in
+        // the selection's colour, opaque, while a click on its name selects it.
+        QColor color(group->color);
+        if (arrangement()->headerSelected(group->id) && !row.automation) {
+            color = Theme::selection();
+            color.setAlpha(255);
+        }
+        p.fillRect(QRectF(left, top, right - left, bottom - top), color);
+        p.fillRect(QRectF(right - 1, top, 1, bottom - top), Theme::border());  // its outline
     }
 }
 

@@ -20,14 +20,17 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 |---|---|
 | [Arrangement](guide/arrangement.md) | timeline, clips, selection, tracks and their headers, groups, folding, the master |
 | [Mixing](guide/mixing.md) | solo and mute, return tracks and sends, sidechains, delay compensation |
-| [Devices](guide/devices.md) | the device view, built-in devices, racks, macros and presets |
+| [Devices](guide/devices.md) | the device view, built-in devices, racks, macros and presets, MIDI from another track |
 | [Plug-ins](guide/plugins.md) | VST3: finding, using, editors, presets, latency |
 | [Audio clips](guide/audio-clips.md) | the clip view, warping, transposing, tempo and key from file names |
-| [MIDI](guide/midi.md) | MIDI clips, the piano roll, MIDI input, the computer MIDI keyboard |
+| [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
 | [Recording](guide/recording.md) | arming, inputs, monitoring, count-in, takes, resampling |
 | [Automation](guide/automation.md) | lanes, editing envelopes, locking, overrides |
 | [Browser](guide/browser.md) | places, search, preview, ranking, finding similar sounds |
+| [Importing Ableton Live Sets](guide/ableton-import.md) | what of a Live Set comes across, and what doesn't |
+| [File Manager and hot swap](guide/file-manager.md) | the project's files, finding missing ones, replacing a file everywhere, hot-swapping samples |
 | [Audio setup](guide/audio-setup.md) | ASIO and WASAPI, sample rate, buffers, audio threads, MIDI inputs |
+| [Look and Feel](guide/look-and-feel.md) | the themes: Default, Disableton (Ableton's), Flashbang (light), Gay (rainbow) |
 | [Keyboard shortcuts](guide/shortcuts.md) | every shortcut |
 | [Limitations](guide/limitations.md) | what isn't implemented yet |
 
@@ -45,7 +48,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Scheduler](engine/scheduler.md) | rendering the graph on several threads, deterministically |
 | [Audio devices](engine/audio-devices.md) | WASAPI and ASIO backends, driver events |
 | [Recording](engine/recording.md) | the recorder, take placement, input monitoring, resampling |
-| [MIDI](engine/midi.md) | MIDI playback and MIDI input |
+| [MIDI](engine/midi.md) | MIDI playback, per-note pitch bends (MIDI 2.0), MIDI input, devices taking another track's notes |
 | [Automation](engine/automation.md) | envelopes, normalized parameters, sample-accurate playback |
 | [Warping and sources](engine/warp.md) | time stretching, Re-Pitch, decoding, peaks |
 | [Devices](engine/devices.md) | the `Processor` interface and the built-in devices; adding one |
@@ -59,8 +62,9 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 |---|---|
 | [Model](app/model.md) | `model/`, `editor/`: the project, its types and signals, pure edit maths, the editor, undo commands |
 | [Serialization](app/serialization.md) | `io/`: `.gilproj` projects, `.gilpreset` presets, the preset library |
+| [Importing Ableton Live Sets](app/live-import.md) | `io/LiveSet`, `io/LiveImport`: reading a Live Set and translating it into a project |
 | [Engine bridge](app/engine-bridge.md) | `audio/`: mirroring the project into the engine, transport, plug-ins, recording, renders, settings |
-| [Session](app/session.md) | `session/`: the main window's logic: files, transport, Edit and Create commands, renders, preferences |
+| [Session](app/session.md) | `session/`, `files/`: the main window's logic: files, transport, Edit and Create commands, renders, preferences; the File Manager (missing files found, files replaced) and hot swaps |
 | [Plug-in scanner](app/plugin-scanner.md) | `plugins/`, `tools/scanner`: finding and reading VST3 plug-ins in child processes |
 | [Analysis](app/analysis.md) | `analysis/`: signal maths for the devices' editors (the Sidechain's fit, spectra) |
 
@@ -72,8 +76,17 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 |---|---|
 | [UI overview](ui/README.md) | the main window, transport bar, dialogs, controls, the scene-graph painter, theme |
 | [Arrangement view](ui/arrangement.md) | ruler, lanes, headers, automation lanes |
-| [Piano roll](ui/piano-roll.md) | the piano roll: notes, keys, velocity lane, note tools |
+| [Piano roll](ui/piano-roll.md) | the piano roll: notes, keys, velocity lane, note tools, bend mode and vibrato |
 | [Device view](ui/device-view.md) | the device panel, racks, built-in devices' editors, the clip view |
+
+### Platform
+
+[platform/src](../platform/src), no Qt: what the engine, the browser and the intelligence module need from the
+operating system.
+
+| Page | Covers |
+|---|---|
+| [Platform layer](platform.md) | paths in the system's form and their keys, files, binary fields and checksums, threads' priorities; one file per system |
 
 ### Browser
 

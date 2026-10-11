@@ -6,13 +6,15 @@
 #   browser_backend_bench   the browser's backend on a large synthetic library,
 #                           checked against the reference the tests use (it
 #                           needs the application layer: SUBSTATION_BUILD_APP)
+#   builtin_devices_bench   each built-in audio effect alone: what it costs a
+#                           core, at its defaults or at settings given
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
 #                           library: speed, and how often a one-shot's nearest
 #                           sounds are of its kind (the intelligence module alone)
 
 add_executable(parallel_render_bench parallel_render_bench.cpp Json.h)
 target_include_directories(parallel_render_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                           ${PROJECT_SOURCE_DIR}/tests/engine/harness)
+                           ${PROJECT_SOURCE_DIR}/tests/engine)  # harness/...: never the harness folder, whose Signal.h is <signal.h> where names ignore case
 target_link_libraries(parallel_render_bench PRIVATE sub_engine)
 sub_project_warnings(parallel_render_bench)
 # Live runs play through the fake ASIO driver the tests build (Windows, with the ASIO SDK).
@@ -20,6 +22,11 @@ if (TARGET sub_test_asio)
     add_dependencies(parallel_render_bench sub_test_asio)
     target_compile_definitions(parallel_render_bench PRIVATE SUBSTATION_TEST_ASIO_DRIVER="$<TARGET_FILE:sub_test_asio>")
 endif()
+
+add_executable(builtin_devices_bench builtin_devices_bench.cpp Json.h)
+target_include_directories(builtin_devices_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(builtin_devices_bench PRIVATE sub_engine)
+sub_project_warnings(builtin_devices_bench)
 
 add_executable(sound_similarity_bench sound_similarity_bench.cpp)
 target_link_libraries(sound_similarity_bench PRIVATE sub_intelligence)
@@ -35,7 +42,7 @@ if (SUBSTATION_BUILD_APP)
         ${PROJECT_SOURCE_DIR}/tests/app/support/BrowserReference.cpp
         ${PROJECT_SOURCE_DIR}/tests/app/support/BrowserReference.h)
     target_include_directories(browser_backend_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                               ${PROJECT_SOURCE_DIR}/tests/app/support ${PROJECT_SOURCE_DIR}/tests/engine/harness)
+                               ${PROJECT_SOURCE_DIR}/tests/app/support ${PROJECT_SOURCE_DIR}/tests/engine)
     target_link_libraries(browser_backend_bench PRIVATE sub_app)
     sub_project_warnings(browser_backend_bench)
 else()

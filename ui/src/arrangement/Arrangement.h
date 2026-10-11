@@ -217,6 +217,13 @@ public:
     void dragTracks(const QStringList& trackIds, double y);
     // Dropped: moved there (if they can go). The marker goes.
     void dropTracks(const QStringList& trackIds, double y);
+    // The tracks selected by clicks on their headers' names (Shift and Ctrl
+    // too): their name columns light up. Any other change of the selection
+    // (a click in the lanes, a device, the empty headers) puts them out. A
+    // header wraps its selecting in begin/endHeaderClick().
+    bool headerSelected(const QString& trackId) const { return headerSelected_.contains(trackId); }
+    void beginHeaderClick() { headerClick_ = true; }
+    void endHeaderClick();
     bool dropMarkerVisible() const { return marker_.has_value(); }
     bool dropMarkerInto() const { return marker_ && marker_->into; }
     double dropMarkerY() const { return marker_ ? marker_->y : 0.0; }
@@ -235,9 +242,12 @@ Q_SIGNALS:
     void scrollBarsChanged();
     void playheadChanged();
     void dropMarkerChanged();
+    void headerSelectionChanged();
     void statusMessage(const QString& message);
     // Start renaming this track (or return) in place (its header does).
     void renameRequested(const QString& trackId);
+    // A header's Configure...: show the preferences' Audio page (0) or MIDI page (1).
+    void preferencesRequested(int page);
 
 private:
     struct Marker {
@@ -258,8 +268,11 @@ private:
     void moved();     // ViewState.changed
     void vscrolled(); // ViewState.vscroll_changed
     void invalidateGraph() { graphDirty_ = true; }
+    void setHeaderSelected(const QStringList& trackIds);
 
     QPointer<app::Session> session_;
+    QStringList headerSelected_;
+    bool headerClick_ = false;
     timeline::Timeline view_;
     bool follow_ = true;
     bool followPaused_ = false;

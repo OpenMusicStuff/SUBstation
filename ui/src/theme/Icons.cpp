@@ -8,8 +8,11 @@
 #include <QUrlQuery>
 #include <QVariant>
 
+#include <algorithm>
+#include <cmath>
 #include <functional>
 #include <map>
+#include <vector>
 
 namespace sub::ui {
 
@@ -18,7 +21,7 @@ namespace {
 using Draw = std::function<void(QPainter&, const QColor&, bool on)>;
 
 struct Icon {
-    QColor color;  // its default colour
+    QColor (*color)();  // its default colour, the current theme's
     Draw draw;
 };
 
@@ -35,11 +38,13 @@ QPainterPath path(std::initializer_list<QPointF> points, bool close) {
     return result;
 }
 
+QColor appAccent() { return palettes().front().colors.accent; }
+
 // The icons, one function each.
 const std::map<QString, Icon>& icons() {
     static const std::map<QString, Icon> table = [] {
         std::map<QString, Icon> t;
-        const QColor text = Theme::kText, dim = Theme::kTextDim;
+        const auto text = &Theme::text, dim = &Theme::textDim;
 
         t[QStringLiteral("play")] = {text, [](QPainter& p, const QColor& c, bool) {
                                          p.fillPath(path({{18, 12}, {52, 32}, {18, 52}}, true), c);
@@ -47,7 +52,7 @@ const std::map<QString, Icon>& icons() {
         t[QStringLiteral("stop")] = {text, [](QPainter& p, const QColor& c, bool) {
                                          p.fillRect(QRectF(16, 16, 32, 32), c);
                                      }};
-        t[QStringLiteral("record")] = {QColor(0xff, 0x5a, 0x4d), [](QPainter& p, const QColor& c, bool) {
+        t[QStringLiteral("record")] = {&Theme::recordOn, [](QPainter& p, const QColor& c, bool) {
                                            p.setBrush(c);
                                            p.setPen(Qt::NoPen);
                                            p.drawEllipse(QRectF(16, 16, 32, 32));
@@ -148,7 +153,7 @@ const std::map<QString, Icon>& icons() {
                                               p.drawPath(path({{26, 20}, {38, 32}, {26, 44}}, false));
                                           }};
         // Six spokes with a pair of twigs each: a frozen track.
-        t[QStringLiteral("snowflake")] = {Theme::kFrozen, [](QPainter& p, const QColor& c, bool) {
+        t[QStringLiteral("snowflake")] = {&Theme::frozen, [](QPainter& p, const QColor& c, bool) {
                                               p.setPen(pen(c, 4.5, Qt::RoundCap));
                                               p.translate(32, 32);
                                               for (int i = 0; i < 6; ++i) {
@@ -227,6 +232,117 @@ const std::map<QString, Icon>& icons() {
                                                  p.drawRoundedRect(QRectF(15, 18, 15, 28), 3, 3);
                                                  p.drawRoundedRect(QRectF(34, 18, 15, 28), 3, 3);
                                              }};
+        // The Sampler's modes: Classic (a loop), 1-Shot (an arrow to its end), Slice (cuts).
+        t[QStringLiteral("sampler_classic")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                                    p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                                    p.setBrush(Qt::NoBrush);
+                                                    p.drawArc(QRectF(12, 12, 40, 40), 100 * 16, 290 * 16);
+                                                    p.setPen(Qt::NoPen);
+                                                    p.setBrush(c);
+                                                    p.drawPath(path({{24, 4}, {38, 13}, {25, 22}}, true));
+                                                }};
+        t[QStringLiteral("sampler_oneshot")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                                    p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                                    p.drawLine(QPointF(8, 32), QPointF(40, 32));
+                                                    p.drawPath(path({{30, 20}, {42, 32}, {30, 44}}, false));
+                                                    p.drawLine(QPointF(52, 14), QPointF(52, 50));
+                                                }};
+        t[QStringLiteral("sampler_slice")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                                  p.setPen(pen(c, 5, Qt::RoundCap));
+                                                  for (const qreal x : {12.0, 32.0, 52.0})
+                                                      p.drawLine(QPointF(x, 12), QPointF(x, 52));
+                                                  p.setPen(pen(c, 3, Qt::RoundCap));
+                                                  for (const qreal x : {22.0, 42.0})
+                                                      p.drawLine(QPointF(x, 24), QPointF(x, 40));
+                                              }};
+        // Filter shapes: low-pass, high-pass, band-pass, notch.
+        const auto curve = [](std::initializer_list<QPointF> through) {
+            return [points = std::vector<QPointF>(through)](QPainter& p, const QColor& c, bool) {
+                QPainterPath shape(points.front());
+                for (size_t i = 1; i + 1 < points.size(); i += 2)
+                    shape.quadTo(points[i], points[i + 1]);
+                p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                p.setBrush(Qt::NoBrush);
+                p.drawPath(shape);
+            };
+        };
+        t[QStringLiteral("filter_lowpass")] = {text, curve({{6, 26}, {30, 26}, {38, 22}, {46, 18}, {58, 54}})};
+        t[QStringLiteral("filter_highpass")] = {text, curve({{6, 54}, {18, 18}, {26, 22}, {34, 26}, {58, 26}})};
+        t[QStringLiteral("filter_bandpass")] = {text, curve({{6, 54}, {20, 54}, {26, 36}, {32, 14}, {38, 36},
+                                                             {44, 54}, {58, 54}})};
+        t[QStringLiteral("filter_notch")] = {text, curve({{6, 18}, {20, 18}, {26, 34}, {32, 54}, {38, 34},
+                                                          {44, 18}, {58, 18}})};
+        // LFO shapes: sine, triangle, saw up, saw down, square, random.
+        const auto line = [](std::initializer_list<QPointF> through) {
+            return [points = std::vector<QPointF>(through)](QPainter& p, const QColor& c, bool) {
+                QPainterPath shape(points.front());
+                for (size_t i = 1; i < points.size(); ++i)
+                    shape.lineTo(points[i]);
+                p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                p.setBrush(Qt::NoBrush);
+                p.drawPath(shape);
+            };
+        };
+        t[QStringLiteral("wave_sine")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                              QPainterPath shape(QPointF(6, 32));
+                                              shape.cubicTo(QPointF(14, 4), QPointF(24, 4), QPointF(32, 32));
+                                              shape.cubicTo(QPointF(40, 60), QPointF(50, 60), QPointF(58, 32));
+                                              p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                              p.setBrush(Qt::NoBrush);
+                                              p.drawPath(shape);
+                                          }};
+        t[QStringLiteral("wave_triangle")] = {text, line({{6, 32}, {19, 12}, {45, 52}, {58, 32}})};
+        t[QStringLiteral("wave_saw_up")] = {text, line({{6, 52}, {32, 12}, {32, 52}, {58, 12}})};
+        t[QStringLiteral("wave_saw_down")] = {text, line({{6, 12}, {32, 52}, {32, 12}, {58, 52}})};
+        t[QStringLiteral("wave_square")] = {text, line({{6, 52}, {6, 12}, {32, 12}, {32, 52}, {58, 52}, {58, 12}})};
+        t[QStringLiteral("wave_random")] = {text, line({{6, 40}, {17, 40}, {17, 14}, {28, 14}, {28, 50}, {39, 50},
+                                                        {39, 26}, {50, 26}, {50, 44}, {58, 44}})};
+        // A quaver: synced to the song's tempo.
+        t[QStringLiteral("note")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                         p.setPen(Qt::NoPen);
+                                         p.setBrush(c);
+                                         p.drawEllipse(QRectF(12, 38, 20, 16));
+                                         p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                         p.setBrush(Qt::NoBrush);
+                                         p.drawPath(path({{30, 46}, {30, 10}, {48, 22}}, false));
+                                     }};
+        // A note bending up: the piano roll's bend mode (its notes' pitch curves).
+        t[QStringLiteral("bend")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                         p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                         p.setBrush(Qt::NoBrush);
+                                         QPainterPath curve(QPointF(8, 48));
+                                         curve.lineTo(22, 48);
+                                         curve.cubicTo(QPointF(34, 48), QPointF(36, 18), QPointF(48, 18));
+                                         curve.lineTo(56, 18);
+                                         p.drawPath(curve);
+                                         p.setPen(Qt::NoPen);
+                                         p.setBrush(c);
+                                         p.drawEllipse(QPointF(22, 48), 5, 5);
+                                         p.drawEllipse(QPointF(48, 18), 5, 5);
+                                     }};
+        // A line swinging, wider as it goes: drawing vibrato onto a note.
+        t[QStringLiteral("vibrato")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                            p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                            p.setBrush(Qt::NoBrush);
+                                            QPainterPath wave(QPointF(6, 32));
+                                            for (int x = 7; x <= 58; ++x) {
+                                                const double swell = std::min(1.0, (x - 6) / 26.0);
+                                                wave.lineTo(x, 32 - 16 * swell * std::sin((x - 6) * 0.36));
+                                            }
+                                            p.drawPath(wave);
+                                        }};
+        // A note sliding up into the next: drawing a slide (a glissando) onto a note.
+        t[QStringLiteral("glide")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                          p.setPen(Qt::NoPen);
+                                          p.setBrush(c);
+                                          p.drawRoundedRect(QRectF(4, 41, 22, 10), 3, 3);
+                                          p.drawRoundedRect(QRectF(38, 13, 22, 10), 3, 3);
+                                          p.setPen(pen(c, 4, Qt::RoundCap, Qt::RoundJoin));
+                                          p.setBrush(Qt::NoBrush);
+                                          QPainterPath slide(QPointF(20, 46));
+                                          slide.cubicTo(QPointF(34, 46), QPointF(30, 18), QPointF(44, 18));
+                                          p.drawPath(slide);
+                                      }};
         // A device's fold button: a triangle pointing down while it is open, right while folded.
         t[QStringLiteral("fold")] = {text, [](QPainter& p, const QColor& c, bool folded) {
                                          p.fillPath(folded ? path({{22, 14}, {46, 32}, {22, 50}}, true)
@@ -239,12 +355,32 @@ const std::map<QString, Icon>& icons() {
                                            p.drawEllipse(QRectF(10, 10, 30, 30));
                                            p.drawLine(QPointF(37, 37), QPointF(54, 54));
                                        }};
-        // The application's own icon: its colours are its own, even disabled.
-        t[QStringLiteral("app_icon")] = {Theme::kAccent, [](QPainter& p, const QColor&, bool) {
-                                             p.setBrush(Theme::kPanelAlt);
+        // Two arrows, one each way: a hot swap (what the browser selects plays in its place).
+        t[QStringLiteral("hotswap")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                            p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                            p.setBrush(Qt::NoBrush);
+                                            p.drawLine(QPointF(10, 21), QPointF(52, 21));
+                                            p.drawPath(path({{41, 10}, {52, 21}, {41, 32}}, false));
+                                            p.drawLine(QPointF(54, 43), QPointF(12, 43));
+                                            p.drawPath(path({{23, 32}, {12, 43}, {23, 54}}, false));
+                                        }};
+        // A warning triangle: a file that isn't there any more.
+        t[QStringLiteral("missing")] = {&Theme::recordOn, [](QPainter& p, const QColor& c, bool) {
+                                            p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
+                                            p.setBrush(Qt::NoBrush);
+                                            p.drawPath(path({{32, 8}, {58, 54}, {6, 54}}, true));
+                                            p.drawLine(QPointF(32, 24), QPointF(32, 38));
+                                            p.setBrush(c);
+                                            p.setPen(Qt::NoPen);
+                                            p.drawEllipse(QPointF(32, 46), 3.5, 3.5);
+                                        }};
+        // The application's own icon: its colours are its own (the Default
+        // theme's, whatever the theme), even disabled.
+        t[QStringLiteral("app_icon")] = {appAccent, [](QPainter& p, const QColor&, bool) {
+                                             p.setBrush(palettes().front().colors.panelAlt);
                                              p.setPen(Qt::NoPen);
                                              p.drawRoundedRect(QRectF(2, 2, 60, 60), 12, 12);
-                                             p.setPen(pen(Theme::kAccent, 6, Qt::RoundCap));
+                                             p.setPen(pen(appAccent(), 6, Qt::RoundCap));
                                              const qreal bars[][2] = {{14, 12}, {24, 30}, {34, 40}, {44, 22}, {52, 10}};
                                              for (const auto& bar : bars)
                                                  p.drawLine(QPointF(bar[0], 32 - bar[1] / 2),
@@ -270,7 +406,7 @@ bool Icons::has(const QString& name) { return icons().count(name) > 0; }
 
 QColor Icons::defaultColor(const QString& name) {
     const auto it = icons().find(name);
-    return it == icons().end() ? QColor() : it->second.color;
+    return it == icons().end() ? QColor() : it->second.color();
 }
 
 bool Icons::draw(QPainter& painter, const QString& name, const QColor& color, bool on) {
@@ -279,7 +415,7 @@ bool Icons::draw(QPainter& painter, const QString& name, const QColor& color, bo
         return false;
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
-    it->second.draw(painter, color.isValid() ? color : it->second.color, on);
+    it->second.draw(painter, color.isValid() ? color : it->second.color(), on);
     painter.restore();
     return true;
 }
@@ -291,7 +427,7 @@ QImage Icons::image(const QString& name, int pixels, const QColor& color, bool o
     image.fill(Qt::transparent);
     QPainter painter(&image);
     painter.scale(qreal(pixels) / kGrid, qreal(pixels) / kGrid);
-    draw(painter, name, disabled ? QColor(Theme::kTextDisabled) : color, on);
+    draw(painter, name, disabled ? QColor(Theme::textDisabled()) : color, on);
     return image;
 }
 
@@ -306,6 +442,10 @@ QString Icons::url(const QString& name, const QVariant& color, bool on, bool dis
         query.addQueryItem(QStringLiteral("state"), QStringLiteral("on"));
     if (disabled)
         query.addQueryItem(QStringLiteral("mode"), QStringLiteral("disabled"));
+    // Each theme's icons are pictures of their own to QML's image cache: the
+    // default colours and the disabled one are the theme's.
+    if (Theme::name() != palettes().front().name)
+        query.addQueryItem(QStringLiteral("theme"), Theme::name());
     QUrl url;
     url.setScheme(QStringLiteral("image"));
     url.setHost(QStringLiteral("icons"));

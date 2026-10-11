@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "Routing.h"
+#include "Ump.h"
 
 namespace sub {
 
@@ -24,20 +25,26 @@ void Engine::setTrackInput(uint32_t trackId, const std::vector<int>& channels) {
     rebuildSnapshotLocked();
 }
 
-void Engine::setTrackInputTrack(uint32_t trackId, uint32_t sourceTrackId) {
+void Engine::setTrackInputTrack(uint32_t trackId, uint32_t sourceTrackId, SidechainTap tap, uint32_t tapProcessorId) {
     std::lock_guard lock(mutex_);
     TrackModel& track = arrangementTrackLocked(trackId);
     if (sourceTrackId != kMaster) {
         arrangementTrackLocked(sourceTrackId);
-        if (wouldCycle(static_cast<int>(tracks_.size()), routeEdgesLocked(), trackIndexLocked(sourceTrackId),
+        if (track.inputTrack != sourceTrackId &&
+            wouldCycle(static_cast<int>(tracks_.size()), routeEdgesLocked(), trackIndexLocked(sourceTrackId),
                        trackIndexLocked(trackId))) {
             throw std::invalid_argument("Track " + std::to_string(trackId) + " can't take its input from track " +
                                         std::to_string(sourceTrackId) + ": it feeds that track");
         }
     }
-    if (track.inputTrack == sourceTrackId) return;
+    if (sourceTrackId == kMaster) tap = SidechainTap::PostFader;  // (resampling: the mix as it is heard)
+    tapProcessorId = tapProcessorLocked(tap, tapProcessorId, sourceTrackId);
+    if (track.inputTrack == sourceTrackId && track.inputTap == tap && track.inputTapProcessor == tapProcessorId) return;
     track.inputTrack = sourceTrackId;
-    if (!track.inputState) track.inputState = std::make_shared<EdgeState>(0);  // (it never needs a signal of its own)
+    track.inputTap = tap;
+    track.inputTapProcessor = tapProcessorId;
+    // A signal of its own only when tapped before the source's fader (the snapshot sees to it).
+    if (!track.inputState) track.inputState = std::make_shared<EdgeState>(0);
     rebuildSnapshotLocked();
 }
 
@@ -92,11 +99,9 @@ void Engine::startRecording(const std::vector<RecordTarget>& targets, double cou
     const auto lag = static_cast<int64_t>(snapshotHold_->outputLatency());
     const int64_t devicePlacement = lag + state.inputLatency + state.outputLatency;
     const int64_t midiPlacement = lag + state.outputLatency + shared_.midiInputDelay.load();
-    const auto arrival = [this](uint32_t trackId) -> int64_t {
-        for (const TrackRender& render : snapshotHold_->tracks) {
-            if (render.id == trackId) return render.inputLatency + render.latency;
-        }
-        return 0;
+    const auto arrival = [this](uint32_t trackId) -> int64_t {  // (the track recording: where its input edge leaves its source)
+        const TrackRender* render = snapshotHold_->findTrack(trackId);
+        return render ? render->input.arrival : 0;
     };
     std::vector<std::unique_ptr<RecordingTake>> takes;
     std::vector<std::unique_ptr<MidiRecordingTake>> midiTakes;
@@ -127,7 +132,7 @@ void Engine::startRecording(const std::vector<RecordTarget>& targets, double cou
             case InputEdge::Source::Track:
                 takes.push_back(std::make_unique<RecordingTake>(target.trackId, target.path,
                                                                 RecordingTake::Source::Track, *track.inputTrack,
-                                                                ringFrames, arrival(*track.inputTrack)));
+                                                                ringFrames, arrival(target.trackId)));
                 break;
             case InputEdge::Source::Master:
                 takes.push_back(std::make_unique<RecordingTake>(target.trackId, target.path,
@@ -246,28 +251,49 @@ void Engine::sendMidiInput(const std::string& device, const std::vector<uint8_t>
     midiInput(port, message.data(), static_cast<int>(message.size()), hostTime != 0 ? hostTime : hostTimeNs());
 }
 
+void Engine::sendUmp(const std::string& device, const std::vector<uint32_t>& words, int64_t hostTime) {
+    uint16_t port = 0;
+    {
+        std::lock_guard lock(mutex_);
+        port = midiPortLocked(device);
+    }
+    umpInput(port, words.data(), static_cast<int>(words.size()), hostTime != 0 ? hostTime : hostTimeNs());
+}
+
 void Engine::midiInput(uint16_t port, const uint8_t* message, int size, int64_t hostTime) noexcept {
-    // Where on the device's clock this arrived, from the last callback's start;
-    // it plays one MIDI delay (a buffer) later, in the next block.
-    const AudioClock::Reading clock = shared_.clock.read();
-    if (!clock.running || size < 1) return;
-    const double elapsed = static_cast<double>(hostTime - clock.hostTimeNs) * 1e-9;
+    if (size < 1) return;
     MidiInputEvent event;
-    event.time = clock.sampleTime + std::llround(elapsed * shared_.midiSampleRate.load(std::memory_order_relaxed)) +
-                 shared_.midiInputDelay.load(std::memory_order_relaxed);
-    event.port = port;
     event.status = message[0];
     event.data1 = size > 1 ? message[1] : 0;
     event.data2 = size > 2 ? message[2] : 0;
+    queueMidiInput(port, event, hostTime);
+}
+
+void Engine::umpInput(uint16_t port, const uint32_t* words, int count, int64_t hostTime) noexcept {
+    for (int i = 0; i < count;) {
+        const int size = ump::packetWords(words[i]);
+        if (i + size > count) return;  // (not a whole packet)
+        MidiInputEvent event;
+        if (ump::decode(words + i, size, event)) queueMidiInput(port, event, hostTime);
+        i += size;
+    }
+}
+
+void Engine::queueMidiInput(uint16_t port, MidiInputEvent event, int64_t hostTime) noexcept {
+    // Where on the device's clock this arrived, from the last callback's start;
+    // it plays one MIDI delay (a buffer) later, in the next block.
+    const AudioClock::Reading clock = shared_.clock.read();
+    if (!clock.running) return;
+    const double elapsed = static_cast<double>(hostTime - clock.hostTimeNs) * 1e-9;
+    event.time = clock.sampleTime + std::llround(elapsed * shared_.midiSampleRate.load(std::memory_order_relaxed)) +
+                 shared_.midiInputDelay.load(std::memory_order_relaxed);
+    event.port = port;
     std::lock_guard lock(shared_.midiInputMutex);  // the producers' side only: the audio thread never waits
     shared_.midiInput.push(event);                  // full: dropped
 }
 
 void Engine::discardMidiInputLocked() {
-    // Only while no callback runs (it is the queue's consumer otherwise).
-    MidiInputEvent event;
-    while (shared_.midiInput.pop(event)) {
-    }
+    shared_.midiInput.clear();  // only while no callback runs (it is the queue's consumer otherwise)
 }
 
 AudioClockStatus Engine::audioClock() const {

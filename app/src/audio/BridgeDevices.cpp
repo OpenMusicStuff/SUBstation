@@ -32,8 +32,6 @@ std::optional<QByteArray> fromBase64(const QString& text) {
     return *decoded;
 }
 
-std::vector<uint8_t> bytes(const QByteArray& data) { return {data.begin(), data.end()}; }
-
 }  // namespace
 
 // Every chain in the project the engine has, by key: (its track, its devices).
@@ -136,7 +134,7 @@ void EngineBridge::syncDevices(const QString& trackId) {
     }
     if (project_->hasOwner(trackId)) pushEnabled(trackId);
     pushChainMixers(trackId);
-    pushSidechains();  // (the new processors', or a sidechain changed)
+    pushRoutes();  // (the new processors': outputs into their sidechains, inputs after them, theirs)
 }
 
 // A chain's devices into its engine chain (in no particular order yet), then
@@ -271,28 +269,30 @@ bool EngineBridge::hasSidechainInput(const QString& trackId, const QString& devi
 
 // The sidechain the engine should give a device's processor (none: none, or
 // one from a track the engine hasn't yet).
+std::pair<sub::SidechainTap, quint32> EngineBridge::engineTap(const QString& sourceId, const QString& tap) {
+    if (tap == kPostFader) return {sub::SidechainTap::PostFader, 0};
+    if (tap == kPreFx) {
+        // A MIDI track's own audio is its instrument's (or its instrument rack's): before its effects.
+        const Track* sourceTrack = project_->findTrack(sourceId);
+        if (sourceTrack != nullptr && !sourceTrack->devices.empty() && deviceIsInstrument(sourceTrack->devices.front())) {
+            if (const auto instrument = engineDeviceId(sourceId, sourceTrack->devices.front().id)) {
+                return {sub::SidechainTap::AfterDevice, *instrument};
+            }
+        }
+        return {sub::SidechainTap::PreFx, 0};
+    }
+    const std::optional<quint32> tapped = tap == kPreFader ? std::nullopt : engineDeviceId(sourceId, tap);
+    if (!tapped) return {sub::SidechainTap::PreFader, 0};  // before the fader (also while that device isn't on the source)
+    return {sub::SidechainTap::AfterDevice, *tapped};
+}
+
 std::optional<EngineBridge::SidechainState> EngineBridge::wantedSidechain(const Device& device, quint32 processorId) {
     if (!device.sidechain || device.sidechain->trackId == kMaster) return std::nullopt;
     const Sidechain sidechain = *device.sidechain;
     const auto source = engineTrackId(sidechain.trackId);
     if (!source || !engine_.processorInfo(processorId).hasSidechain) return std::nullopt;
-    if (sidechain.tap == kPostFader) return SidechainState{*source, sub::SidechainTap::PostFader, 0};
-    if (sidechain.tap == kPreFx) {
-        // A MIDI track's own audio is its instrument's (or its instrument rack's): before its effects.
-        const Track* sourceTrack = project_->findTrack(sidechain.trackId);
-        if (sourceTrack != nullptr && !sourceTrack->devices.empty() && deviceIsInstrument(sourceTrack->devices.front())) {
-            if (const auto instrument = engineDeviceId(sidechain.trackId, sourceTrack->devices.front().id)) {
-                return SidechainState{*source, sub::SidechainTap::AfterDevice, *instrument};
-            }
-        }
-        return SidechainState{*source, sub::SidechainTap::PreFx, 0};
-    }
-    const std::optional<quint32> tapped =
-        sidechain.tap == kPreFader ? std::nullopt : engineDeviceId(sidechain.trackId, sidechain.tap);
-    if (!tapped) {  // before the fader (also while the device it is taken after isn't on the source)
-        return SidechainState{*source, sub::SidechainTap::PreFader, 0};
-    }
-    return SidechainState{*source, sub::SidechainTap::AfterDevice, *tapped};
+    const auto [tap, tapProcessor] = engineTap(sidechain.trackId, sidechain.tap);
+    return SidechainState{*source, tap, tapProcessor};
 }
 
 // Every device's sidechain to the engine (devices in racks too): those
@@ -338,6 +338,40 @@ void EngineBridge::pushSidechains() {
 
 void EngineBridge::dropSidechain(quint32 processorId) {
     if (d_->sidechains.erase(processorId) > 0) engine_.clearProcessorSidechain(processorId);
+}
+
+bool EngineBridge::acceptsMidi(const QString& trackId, const QString& deviceId) {
+    const auto processorId = engineDeviceId(trackId, deviceId);
+    return processorId && engine_.processorInfo(*processorId).acceptsMidi;
+}
+
+// Every device's MIDI input from another track to the engine (devices in racks
+// too): those whose processor plays notes, from tracks the engine has.
+void EngineBridge::pushMidiInputs() {
+    Private& d = *d_;
+    std::map<quint32, quint32> wanted;  // processor -> its source's engine track
+    for (const Track* track : project_->allTracks()) {
+        for (const Device* device : iterDevices(track->devices)) {
+            if (device->midiFrom.isEmpty()) continue;
+            const auto processorId = engineDeviceId(track->id, device->id);
+            const auto source = engineTrackId(device->midiFrom);
+            if (processorId && source && engine_.processorInfo(*processorId).acceptsMidi) wanted[*processorId] = *source;
+        }
+    }
+    for (auto it = d.midiInputs.begin(); it != d.midiInputs.end();) {
+        if (wanted.count(it->first) > 0) {
+            ++it;
+            continue;
+        }
+        engine_.setProcessorMidiInput(it->first, 0);
+        it = d.midiInputs.erase(it);
+    }
+    for (const auto& [processorId, source] : wanted) {
+        const auto had = d.midiInputs.find(processorId);
+        if (had != d.midiInputs.end() && had->second == source) continue;
+        engine_.setProcessorMidiInput(processorId, source);
+        d.midiInputs[processorId] = source;
+    }
 }
 
 // The devices switched on or off as the model has them; those whose switch's
@@ -446,16 +480,20 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
     // Its state as it was when the device went away (undo), else as saved.
     const std::optional<QString> saved = device.state;
     quint32 processorId = 0;
-    ++d_->busy;
-    try {
-        processorId = engine_.addPluginProcessor(chainId, plugin.format.toStdString(), path->toStdString(),
-                                                 plugin.uid.toStdString(), -1);
-    } catch (const std::exception& error) {
-        --d_->busy;
-        pluginFailed(deviceId, plugin.name + QStringLiteral(" could not be loaded: ") + QString::fromStdString(error.what()));
+    std::optional<QString> failure;
+    {
+        const BusyScope busy(d_->busy);
+        try {
+            processorId = engine_.addPluginProcessor(chainId, plugin.format.toStdString(), path->toStdString(),
+                                                     plugin.uid.toStdString(), -1);
+        } catch (const std::exception& error) {
+            failure = QString::fromStdString(error.what());
+        }
+    }
+    if (failure) {
+        pluginFailed(deviceId, plugin.name + QStringLiteral(" could not be loaded: ") + *failure);
         return std::nullopt;
     }
-    --d_->busy;
     d_->pluginIds.insert(processorId, *path);
     d_->pluginErrors.remove(deviceId);
     std::optional<QByteArray> state;
@@ -471,14 +509,13 @@ void EngineBridge::pluginFailed(const QString& deviceId, const QString& message)
 }
 
 void EngineBridge::setPluginState(quint32 processorId, const QString& name, const QByteArray& state) {
-    ++d_->busy;
+    const BusyScope busy(d_->busy);
     try {
-        engine_.setProcessorState(processorId, bytes(state));
+        engine_.setProcessorState(processorId, stateBytes(state));
     } catch (const std::exception& error) {
         Q_EMIT statusMessage(name + QStringLiteral(": its settings could not be restored (") +
                              QString::fromStdString(error.what()) + u')');
     }
-    --d_->busy;
 }
 
 // A device's processor goes away (with its track if not `remove`; a rack with
@@ -504,15 +541,14 @@ void EngineBridge::forgetProcessor(const QString& deviceId, std::optional<quint3
     d.hiddenEditors.erase(std::remove(d.hiddenEditors.begin(), d.hiddenEditors.end(), id), d.hiddenEditors.end());
     if (d.pluginIds.contains(id)) {
         try {
-            const std::vector<uint8_t> state = engine_.processorState(id);
-            d.pluginStates.insert(deviceId, QByteArray(reinterpret_cast<const char*>(state.data()),
-                                                       static_cast<qsizetype>(state.size())));
+            d.pluginStates.insert(deviceId, stateData(engine_.processorState(id)));
         } catch (const std::exception&) {
         }
         d.pluginIds.remove(id);
     }
     d.enabled.remove(id);
     d.sidechains.erase(id);
+    d.midiInputs.erase(id);
     d.paramIds.remove(id);
     d.paramInfos.remove(id);
     d.paramSpecs.remove(id);
@@ -582,7 +618,7 @@ void EngineBridge::pushDeviceState(const QString& trackId, const QString& device
 void EngineBridge::setBuiltinState(quint32 processorId, const Device& device) {
     std::vector<uint8_t> state;
     if (device.state && !device.state->isEmpty()) {
-        if (const auto decoded = fromBase64(*device.state)) state = bytes(*decoded);
+        if (const auto decoded = fromBase64(*device.state)) state = stateBytes(*decoded);
     }
     const QString name = deviceName(device);
     // (The bridge waits for these before it goes: a failure is said on the main thread, if it is still there.)

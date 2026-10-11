@@ -1,7 +1,8 @@
 # Audio setup
 
 *Options › Preferences* (**Ctrl+,**, or click the audio device's name at the right of
-the transport bar) chooses the audio device, the MIDI inputs and the plug-in folders.
+the transport bar) chooses the audio device, the MIDI inputs and the plug-in folders
+(and the theme: [look-and-feel.md](look-and-feel.md)).
 SUBstation plays through ASIO drivers, or WASAPI shared or exclusive, with the sample
 rate and buffer size you choose. On Linux it plays through the *System* driver instead
 (see [below](#on-linux)).
@@ -32,6 +33,21 @@ latency, or the error if it didn't open.
 *Audio Threads* sets how many threads render (one per core but one by default; 1 = no
 workers: every track renders on the audio thread). Offline renders and exports use the
 same threads.
+
+The threads beside the driver's own run at real-time priority, as the driver's thread
+does: on Windows through the Multimedia Class Scheduler ("Pro Audio"), on Linux as
+`SCHED_FIFO` (or `SCHED_RR`, through rtkit), on macOS with the time-constraint policy (and in the audio device's
+workgroup). If the system refuses, they run at normal priority, where anything else
+running can hold them up and the audio drops out more easily at small buffer sizes; the
+line below the settings says so in red. On Linux, install rtkit (most desktops have it)
+or give your user a real-time priority limit in `/etc/security/limits.conf`, for example
+for the `audio` group:
+
+```
+@audio - rtprio 95
+```
+
+and log in again.
 
 ## ASIO
 

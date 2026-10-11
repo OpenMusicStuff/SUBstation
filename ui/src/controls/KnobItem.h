@@ -24,7 +24,9 @@
 // was a drag or wheel (rather than typed or reset).
 
 #include "controls/DragCursor.h"
+#include "input/GestureKey.h"
 #include "sg/SgCanvas.h"
+#include "theme/Theme.h"
 
 #include <QColor>
 #include <QJSValue>
@@ -88,7 +90,8 @@ public:
     void setStep(qreal step);
     bool wheel() const { return wheel_; }
     void setWheel(bool wheel);
-    QColor color() const { return color_; }
+    // The value arc's colour: the theme's knob() unless set.
+    QColor color() const { return color_.isValid() ? color_ : Theme::knob(); }
     void setColor(const QColor& color);
     QString automation() const { return automation_; }
     void setAutomation(const QString& state);  // "", "on" or "off"
@@ -176,8 +179,5 @@ private:
     std::optional<Drag> drag_;
     DragCursor cursor_;
 };
-
-// A gesture key: a new undo merge key for one drag (or notch, or reset).
-QString newGestureKey();
 
 }  // namespace sub::ui

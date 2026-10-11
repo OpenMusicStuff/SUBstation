@@ -12,10 +12,11 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
   Project (Qt signals)              EngineBridge                     sub::Engine (Engine.h)
   trackInserted / returnInserted ─► addEngineTrack ───────────────► addTrack, trackChain, ...
   trackRemoved / returnRemoved   ─► onTrackRemoved ───────────────► removeTrack
-  trackChanged                   ─► onTrackChanged: mixer, input,
-                                    sends, editor titles ─────────► setTrackGain/Pan/Mute/Solo, setTrackInput...,
-                                                                    setTrackSend / removeTrackSend
-  tracksArranged                 ─► pushOutputs ──────────────────► setTrackOutput
+  trackChanged                   ─► onTrackChanged: mixer, sends,
+                                    routes, editor titles ────────► setTrackGain/Pan/Mute/Solo, setTrackInput...,
+                                                                    setTrackSend / removeTrackSend, setTrackOutput...
+  tracksArranged                 ─► pushRoutes ───────────────────► setTrackOutput, setTrackOutputSidechain,
+                                                                    setTrackInMonitored, setTrackInputTrack...
   clipsChanged                   ─► pushClips ────────────────────► setTrackClips / setTrackNotes (+ decoding)
   devicesChanged                 ─► syncDevices ──────────────────► addBuiltinProcessor, addPluginProcessor,
                                                                     moveProcessor, setChainOrder, addRack,
@@ -41,7 +42,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
   and queues (see [architecture.md](../architecture.md#real-time-rules-and-the-boundary-with-the-audio-thread) and
   [engine/README.md](../engine/README.md)).
 - The bridge only pushes what changed: it keeps the last value it gave the engine for mixers, inputs, outputs, sends,
-  sidechains, device on/off and rack chain mixers, and compares before calling.
+  sidechains, MIDI inputs, device on/off and rack chain mixers, and compares before calling.
 - Its slots never let an exception reach Qt: each runs inside `guarded()`, which logs what was thrown
   (`qWarning`) and goes on.
 
@@ -51,7 +52,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 |---|---|
 | [EngineBridge.h](../../app/src/audio/EngineBridge.h) | `EngineBridge`: its whole API, signals and QML properties; its header comment is the design. Constants: `kComputerKeyboard`, `kFreezeTailSeconds`, `kMaxHiddenEditors`, `kPluginGapMs`, `kPluginRetryMs`, `kPositionPollMs`, `kMeterPollMs`. |
 | [EngineBridge.cpp](../../app/src/audio/EngineBridge.cpp) | Start-up (the project's signals it listens to, its timers and pools), `shutdown()`, the ids |
-| [BridgePrivate.h](../../app/src/audio/BridgePrivate.h) | `EngineBridge::Private`: the maps from model ids to engine ids, and the last value given to the engine of everything it pushes only when it changes. The application layer's own (it includes `Engine.h`). |
+| [BridgePrivate.h](../../app/src/audio/BridgePrivate.h) | `EngineBridge::Private`: the maps from model ids to engine ids, and the last value given to the engine of everything it pushes only when it changes. What the bridge's files share: `BusyScope` (`busy` counted around a plug-in's or driver's call, however it ends), `stateBytes`/`stateData` (a processor's state as the engine and the model have it), `stringList`, `guarded`. The application layer's own (it includes `Engine.h`). |
 | [BridgeTracks.cpp](../../app/src/audio/BridgeTracks.cpp) | Engine tracks, mixers, outputs, sends, clips and notes (and a drag's preview of them), tempo and loop, audio threads |
 | [BridgeInputs.cpp](../../app/src/audio/BridgeInputs.cpp) | Tracks' audio and MIDI inputs and monitoring, the device's inputs, the MIDI inputs open |
 | [BridgeDevices.cpp](../../app/src/audio/BridgeDevices.cpp) | Devices' processors in every chain, racks, sidechains, parameters, states |
@@ -64,10 +65,10 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 | [BridgeFreezing.cpp](../../app/src/audio/BridgeFreezing.cpp) | Frozen tracks in the engine, rendering a freeze, exporting |
 | [BridgeReversing.cpp](../../app/src/audio/BridgeReversing.cpp) | Reversed copies of files, for reversed clips |
 | [BridgeAudioDevice.cpp](../../app/src/audio/BridgeAudioDevice.cpp) | Opening the audio device, resets, its control panel, its events, `startAudio()` |
-| [BridgeTypes.h](../../app/src/audio/BridgeTypes.h), [Waveform.h](../../app/src/audio/Waveform.h), [LiveTake.h](../../app/src/audio/LiveTake.h), [RenderTask.h](../../app/src/audio/RenderTask.h), [ReverseJob.h](../../app/src/audio/ReverseJob.h), [EqResponse.h](../../app/src/audio/EqResponse.h) | What the bridge hands the UI, as the application's own types (below) |
+| [BridgeTypes.h](../../app/src/audio/BridgeTypes.h), [Waveform.h](../../app/src/audio/Waveform.h), [LiveTake.h](../../app/src/audio/LiveTake.h), [RenderTask.h](../../app/src/audio/RenderTask.h), [ReverseJob.h](../../app/src/audio/ReverseJob.h), [GateResponse.h](../../app/src/audio/GateResponse.h), [LimiterResponse.h](../../app/src/audio/LimiterResponse.h), [MultibandResponse.h](../../app/src/audio/MultibandResponse.h), [SpectralResponse.h](../../app/src/audio/SpectralResponse.h), [SaturatorResponse.h](../../app/src/audio/SaturatorResponse.h), [AmpResponse.h](../../app/src/audio/AmpResponse.h), [ErosionResponse.h](../../app/src/audio/ErosionResponse.h), [ChorusVoices.h](../../app/src/audio/ChorusVoices.h), [PhaserResponse.h](../../app/src/audio/PhaserResponse.h), [ReverbResponse.h](../../app/src/audio/ReverbResponse.h), [DisperserResponse.h](../../app/src/audio/DisperserResponse.h), [EqResponse.h](../../app/src/audio/EqResponse.h), [SampleSlices.h](../../app/src/audio/SampleSlices.h) | What the bridge hands the UI, as the application's own types (below); the Gate's, the Limiter's, Multiband Dynamics', the Spectral Compressor's, the Saturator's, the Amp's, Erosion's, the Chorus-Ensemble's, the Phaser-Flanger's, the Reverb's, the Disperser's and the EQ's curves and the Sampler's slices and snapping, the engine's own (for the editors) |
 | [EngineDescs.h](../../app/src/audio/EngineDescs.h) | Model to engine descriptions (clips, notes); the application layer's own |
 | [AudioSettings.h](../../app/src/audio/AudioSettings.h) | `AudioSettings` (QSettings), `audioThreads`/`setAudioThreads`, `disabledMidiInputs`/`setMidiInputDisabled`, `recordQuantize`/`setRecordQuantize`/`recordQuantizeChoices`, `defaultDriver`, `audioDrivers`, `kBufferSizes`, `kSampleRates` |
-| [AudioFiles.h](../../app/src/audio/AudioFiles.h) | `recordingsFolder`, `takePath`, `freezeFolder`, `reversedFolder`, `reversedPath`, `floatWavHeader`, `writeFloatWav`, `isAudioFile`, `audioExtensions`, `sourceKey` |
+| [AudioFiles.h](../../app/src/audio/AudioFiles.h) | `recordingsFolder`, `takePath`, `freezeFolder`, `reversedFolder`, `reversedPath`, `makeFolder` (or why it can't be made), `floatWavHeader`, `writeFloatWav`, `isAudioFile`, `audioExtensions` |
 
 ### What the UI may include
 
@@ -82,6 +83,17 @@ UI shows of the engine comes as application-layer types:
 | `MeterLevel`, `AudioFileInfo`, `AudioDeviceStatus`, `AudioDeviceCaps`, `AudioDeviceEntry` | meter readings, a file's header, the device running and what it offers (Q_GADGETs, so QML reads them as values) |
 | `ProcessorParam`, `ProcessorDisplay`, `ParamGroup` | a processor's parameters as a device's editor shows them (with the engine's normalized mapping), the streams its own editor draws (meters, curves), and an owner's automatable parameters as `ParamSpec`s |
 | `RenderTask` (`EngineRender`, `FreezeRender`), `ReverseJob` | a render or a reversed copy on a thread of its own, followed without waiting (below) |
+| `gateKeyFilterDb()`, `gateKeyFilterUsesGain()`, `gateKeyFilterUsesQ()`, `gateFloorIsSilent()`, `gateGainDb()`, `gateCloseDb()`, `gateDisplaySamples()`, `gateThresholdRange()`, `gateReturnRange()`, `gateKeyFreqRange()`, `gateKeyQRange()`, `gateKeyGainRange()` (`GateRange`s) | the Gate's key EQ response (dB) from the engine's own filter and which of its types use the gain and the Q; whether the floor is silence, the gain the gate applies for how much it lets through, where an open gate closes again, its displays' samples per value, and the ranges of what its graphs drag; so the key curve drawn is the one that keys the gate, the gain shown the one it applies, and a drag never sets what the device hasn't |
+| `limiterLine()` (a `LimiterLine`), `limiterSoftKneeDb()`, `limiterSoftTopDb()`, `limiterMeterSamples()`, `limiterFloorDb()` | the Limiter's line (the Ceiling, or with Maximize the Threshold) and what to take off an output level to draw it in the line's domain; Soft Clip's knee (where it starts rounding off, where it reaches the line); its displays' samples per value and level for silence; from the engine's own maths, so the line drawn is where the device limits |
+| `multibandGainDb()`, `multibandMinThresholdDb()`... `multibandMaxRatio()`, `multibandParseRatio()`, `multibandParseMs()` | Multiband Dynamics' gain change for a steady level once attack and release are done (a band's thresholds and ratios, Soft Knee, Amount), the engine's own, so what the graph shows a level getting is what plays; its thresholds' and ratios' ranges, the engine's; and its ratios and times as typed ("1:4", "4:1", "0.5"; "250 ms", "1.5 s") |
+| `spectralThresholdDb()`, `spectralBelowDb()`, `spectralFocusWeights()`, `spectralDisplayFrequencies()`, `kSpectralDisplayPoints`, `kSpectralPivotHz` | the Spectral Compressor's threshold and Below line (in its pink-referenced dB, tilted about 1 kHz), the share of the gain each frequency gets from the Focus band (the editor dims the band's outside by it), the frequencies its spectral displays' values stand for, their number per frame and the pivot (checked against the engine's), from the engine's own maths, so the line drawn is the threshold that plays |
+| `saturatorCurve()`, `saturatorCurveAt()`, `saturatorSlope()` (of a `SaturatorShape`), `saturatorColorDb()`, `saturatorThresholdInput()`, `saturatorBassShaperType()`, `saturatorWaveshaperType()`, `saturatorHqLatency()`, `saturatorRange()` | the Saturator's shaping (Drive, the curve and Post Clip, in the engine's float arithmetic) and its slope at 0, Color's emphasis in dB, and where the Bass Shaper's curve leaves the straight line, by the engine's own functions, so the curve drawn is the shaping that plays and the EQ drawn is Color's; and what else its editor needs of the engine: the Type list's Bass Shaper and Waveshaper entries, Hi-Quality's latency, a parameter's range |
+| `ampToneResponseDb()`, `ampTransfer()`, `AmpTransferCurve`, `ampModelNames()`, `ampModelCount()`, `ampDisplayFloorDb()` | the Amp's tone section (the model's tone stack with its make-up, and Presence) in dB, and its transfer for a 1 kHz tone through the engine's stages and filters (`AmpTransferCurve` makes it in two parts, so the sag moving alone costs a fraction), from the engine's own design, so what is drawn is what plays; its models' names, and what its displays read at silence |
+| `erosionBandMagnitude()`, `erosionBandEdges()`, `erosionModFrequency()`, `erosionExcursionMs()`, `erosionExcursionText()`, `erosionBlendWeights()`, `erosionPeakDb()` | the Erosion's noise band (its magnitude and its −3 dB edges) from the engine's own filter, the frequency the modulator plays, how far Amount moves the delay (and that as the graph reads it out), Noise Blend's equal-power weights, and how much values of its `erosion` display say it erodes (the most of them; `kErosionFloorDb`, the display's floor, without any), so the band drawn is the filter that plays |
+| `chorusVoices()`, `chorusCentreMs()`, `chorusSwingMs()`, `chorusLowestMs()`, `chorusHighestMs()`, `chorusVoicePhase()`, `chorusDelayMs()`, `chorusPeakDetuneCents()` (of a `ChorusLayout`); `chorusMinRate()`, `chorusMaxRate()` | the Chorus-Ensemble's voices: how many a side, where the delay sits and how far it swings, its range at Amount 100, each voice's place in the modulation's cycle, the delay at a phase, and the largest detune, by the engine's own maths, so the delays drawn are the delays that play; the Rate's range, the engine's |
+| `phaserResponseDb()`, `phaserCurvePoints()` (of a `PhaserCurve`), `phaserNotchFrequencies()`, `phaserCombNotchFrequencies()`, `phaserLfoValue()`, `phaserWaveIsRandom()`, `phaserSyncedRateHz()`, `phaserQ()`, `phaserCenterHz()`, `phaserDelayMs()`, `phaserFeedbackGain()`, `phaserWaveLabels()`, `phaserDisplaySamples()`, `phaserRanges()` | the Phaser-Flanger's response in dB (and as its editor draws it over its columns, a comb finer than a column as its highest and lowest), where the Phaser's and the comb's notches are, the LFO's shapes and synced rates, and the modulation's mappings, from the engine's own maths, so the curve drawn is what plays; and the engine's figures its editor needs (frames per display value, the parameters' ranges its drags hold to) |
+| `reverbDecaySeconds()` (of `ReverbDecaySettings`), `reverbInputFilterDb()`, `reverbEarlyTaps()` (`ReverbTap`s), `reverbSpinPan()`, `reverbStereoWidth()`, `reverbDiffuseOnsetMs()`; `kReverbTaps`, `kReverbMeterFloorDb`, `kReverbMinInFreq` .. `kReverbMaxSpinRate` | the Reverb's decay time per frequency, its input filter's band, the early reflections at rest and where Spin swings them, Stereo Image's width and when the diffuse tail starts after the predelay, from the engine's own maths, so what is drawn is what plays; and the engine's constants its editor needs (the reflections' count, the level displays' floor, the pads' parameter ranges), checked against `ReverbDesign.h`'s |
+| `disperserGroupDelayMs()`, `disperserTunedFrequency()`, `disperserPeakFrequency()` | the Disperser's group delay (ms) from the engine's own stages, where they are tuned (below Nyquist) and where the delay peaks, so the graph drawn is the delay that plays |
 | `eqResponseDb()` | the EQ device's band response, computed by the engine's own filter design, so the curve drawn is the one that plays |
 
 `BridgePrivate.h` and `EngineDescs.h` are the application layer's own.
@@ -153,15 +165,21 @@ too, and loaded) and `engineChainId(chain)` (a rack chain's engine chain) give t
 - `addEngineTrack` pushes, in order: mixer, input, frozen state, clips, devices, automation, then outputs (its own,
   and what is in it, back into it), sends (a return: every track's, since sends into it can exist only now), the
   inputs taken from it, and sidechains.
-- **Groups**: the engine knows only where each track's output goes. `pushOutputs` sets every track's output to its
-  group's engine track or the master. Changed routes go to the master first, then to their new group, so that no step
-  closes a cycle (a group moving into what was in it).
+- **Outputs and groups**: the engine knows only where each track's output goes. `pushOutputs` sets every track's
+  (and return's) output as `Track::output` says (`wantedOutput`): its group's engine track (by default) or the master,
+  another track (`setTrackOutput`), a device's processor's sidechain (`setTrackOutputSidechain`; nowhere while that
+  device's plug-in isn't there yet, or it has no sidechain input), or nowhere (`kNoOutput`). It has the engine take
+  what goes into an audio track as that track's input (`setTrackInMonitored`: Ableton's Track In); groups and returns
+  are buses. Changed routes go to the master first, then where they go, so that no step closes a cycle (a group
+  moving into what was in it); one the engine refuses for now comes with the change in its way. `pushRoutes` pushes
+  outputs, inputs, sidechains and devices' MIDI inputs, in that order: after rearranging, a track's change, and
+  device syncs (a device's processor is new, or an instrument a Pre FX tap is taken after).
 - **Returns and sends**: a track's sends are engine sends into the returns' engine tracks, at the send's gain, before
   or after the fader. `pushSends` removes the sends going away first, then sets the others; one the engine refuses (a
   cycle with a send another track hasn't given up yet) is skipped and comes with that track's turn. A send automated
   without having been set yet is made, silent, so that its automation plays (`wantedSends`).
 - **Inputs**: `pushInput` sets device channels (`setTrackInput`) or another track's output (`setTrackInputTrack`;
-  `kMaster` for resampling), the monitoring mode, arming and a MIDI track's MIDI input (`setTrackMidiInput(engine id,
+  `kMaster` for resampling; tapped where `Track::inputTap` says, as a sidechain's tap: `engineTap`), the monitoring mode, arming and a MIDI track's MIDI input (`setTrackMidiInput(engine id,
   enabled, device, channel)`). A source the engine refuses for now (a cycle another change hasn't undone yet) leaves
   the track with no input until that change comes. A track given ASIO input channels the device hasn't open makes the
   device open again with them too (`openInputs`), as it runs now, and saves that, so they open next time too.
@@ -177,7 +195,10 @@ too, and loaded) and `engineChainId(chain)` (a rack chain's engine chain) give t
   semitones. Every clip's file is requested for decoding first. A deactivated clip (`Clip::muted`) isn't among them
   (`clipDescs()`), but its file is decoded all the same (its waveform shows).
 - MIDI tracks: the track's clips are flattened into the notes they play (`Clip::heardNotes()` in timeline beats: none
-  of a deactivated clip, nor deactivated notes) and set with `setTrackNotes`. See [engine/midi.md](../engine/midi.md).
+  of a deactivated clip, nor deactivated notes) and set with `setTrackNotes`, each as `noteDesc()` makes it
+  ([EngineDescs.h](../../app/src/audio/EngineDescs.h)): with its bend (points and vibratos, MIDI 2.0's per-note pitch
+  bend) as the model has it, in beats from the note's start, the vibratos' rates in cycles a second. See
+  [engine/midi.md](../engine/midi.md).
 - A frozen track plays its frozen audio instead, as clips into the render: its segments (`Freeze::playing()`: all of
   it from beat 0 until a time selection over it is edited, then what the edits left, where they put it; see
   [model.md](model.md#freezing)); a MIDI track's notes go. Segments changing come as `clipsChanged` of the frozen
@@ -251,8 +272,9 @@ concerned (see [Freezing](#freezing)).
   | `PresetChanged` | `pluginPresetChanged`: `pluginPresetName()` says another preset (the track labels follow it) |
 
 - **Re-entrancy**: a plug-in (or a driver) may run a message loop inside a call (a licence dialog, a control panel)
-  that calls back into the UI. Around such calls the bridge counts `busy`, and while it is above 0 it doesn't dispatch
-  plug-in reports or device events, nor load plug-ins that wait.
+  that calls back into the UI. Around such calls the bridge counts `busy` (a `BusyScope`: it counts down however the
+  call ends), and while it is above 0 it doesn't dispatch plug-in reports or device events, nor load plug-ins that
+  wait.
 
 See [engine/plugins.md](../engine/plugins.md) for the engine side.
 
@@ -277,6 +299,17 @@ None for a device without a sidechain input (`processorInfo(...).hasSidechain`),
 master. Changing ones are cleared first (`clearProcessorSidechain`), then the rest set; one the engine refuses for now
 (a cycle with a route another change hasn't undone yet) comes with that change. `hasSidechainInput(track, device)`
 tells the device view whether to show the button.
+
+### Devices' MIDI inputs
+
+`pushMidiInputs` (after device syncs, outputs, track changes, a track added, a project opened) works out every
+device's MIDI input from another track (`Device::midiFrom`, racks' devices too) as (processor, the source's engine
+track), and sets those that changed with `Engine::setProcessorMidiInput` (0 for those that went: the device takes its
+own track's notes again). Only for a device whose processor plays notes (`processorInfo(...).acceptsMidi`: a plug-in
+that isn't loaded yet gets its input once it is) and a source the engine has. It keeps what it gave the engine in
+`midiInputs`; the engine itself lets go of the inputs from a track it removes, and the bridge forgets them too.
+`acceptsMidi(track, device)` tells the device view whether to show the MIDI From button. See
+[engine/midi.md](../engine/midi.md#a-devices-midi-input-from-another-track).
 
 ### Opening a project
 
@@ -325,9 +358,10 @@ engine track is frozen (`setTrackFrozen`), its clips become the frozen audio's s
 deleted, their plug-ins' states kept, and come back on unfreezing. The tracks in a frozen group keep their processors;
 the engine just doesn't render them. Frozen tracks don't record.
 
-`startExport(path, start, end, bitDepth)` is the other render in the background: the arrangement (or the loop) into a
-WAV file of 16, 24 or 32-bit float, through `Engine::startExport`; `finishExport` gives the frames written (none if
-cancelled).
+`startExport(path, start, end, bitDepth)` is the other render in the background: the arrangement (the loop, a time
+selection) into a WAV file of 16, 24 or 32-bit float, through `Engine::startExport`; `startExport(path, start, end,
+format)` takes an `AudioExportFormat` ([BridgeTypes.h](../../app/src/audio/BridgeTypes.h)): a WAV file of `bitDepth`, or
+an MP3 file at `bitrate` kbps. `finishExport` gives the frames written (none if cancelled).
 
 ### Reversing
 
@@ -340,7 +374,10 @@ A reversed clip plays a reversed copy of its file, named `name R.wav` (`reversed
 - `startReversed(path)` starts a `ReverseJob`: the decoded source (it must be decoded: otherwise `EditError`, with a
   message for the user) written backwards as a 32-bit float WAV, `kReverseChunk` frames at a time from its end, on a
   thread of its own, then decoded there. It is a `RenderTask` (progress, done, `cancel()`), so the session's renders
-  follow it as they follow the engine's; cancelled or failed, its file goes.
+  follow it as they follow the engine's; cancelled or failed, its file goes. A `ReverseJob` is made, then started
+  (`start()`, which `startReversed` calls at once, as the engine starts its `RenderJob`s): cancelled before that, it
+  writes none of the copy (the tests' way to cancel one deterministically: a short copy can be written before a cancel
+  reaches it); finished, it is started if it wasn't.
 - `finishReversed(path, job)`: the copy's path and length in seconds (decoded, so it plays without a gap, and
   remembered for `path`), none if cancelled, or `EditError`.
 - `renderReversed(path)` is the three of them, waited for.
@@ -405,10 +442,13 @@ See [engine/automation.md](../engine/automation.md).
 
 Audio files (`audioExtensions()`: `.wav`, `.wave`, `.flac`, `.mp3`) are decoded at the engine's rate in a
 `QThreadPool` of two threads (`Engine::loadSource`). `requestSource(path, then)` decodes a file once (keyed by
-`sourceKey(path)`: absolute and clean, lower case on Windows, so two spellings of one file share one source), queues
+`pathIdentity(path)`, [model/Paths.h](../../app/src/model/Paths.h): absolute and clean, in any case on Windows, so
+two spellings of one file share one source), queues
 `then` callbacks while it loads, and emits `sourceReady(path)` or `sourceFailed(path, message)` on the GUI thread.
 `waveform(path)` gives the decoded file as a `Waveform` (null while it isn't decoded); `isLoading`, `loadError`,
-`fileInfo` (the header only, cached, `sub::AudioSource::probe`). After a sample-rate change every source is decoded
+`fileInfo` (the header only, cached, `sub::AudioSource::probe`). A file that couldn't be decoded is said in the status
+line, but one that isn't there at all: the File Manager lists missing files ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)),
+and a project opening with some says how many once. After a sample-rate change every source is decoded
 again (`refreshSources`). On `reset` the bridge forgets sources the new project doesn't use and calls
 `Engine::releaseUnusedSources()`. See [engine/warp.md](../engine/warp.md).
 
@@ -457,8 +497,10 @@ what there is. See [engine/audio-devices.md](../engine/audio-devices.md).
   (the tests use it), else `SUBstation/Recordings` in the user's Music folder.
 - `liveTakes()` holds a `LiveTake` per track while it records, which the arrangement draws.
 - `stopRecording()` ends it (playing goes on), reports takes' errors and dropped samples, and emits
-  `takesRecorded(takes)`: `RecordedTake`s, start and length in seconds, a MIDI take's notes in seconds. The session
-  adds them as clips in one undo step, quantized to `recordQuantize()`, and selects them.
+  `takesRecorded(takes)`: `RecordedTake`s, start and length in seconds, a MIDI take's notes in seconds (with the
+  per-note bends played on each, MIDI 2.0's: `RecordedTakeNote::bend`, seconds from the note's start and semitones).
+  The session adds them as clips in one undo step, quantized to `recordQuantize()`, and selects them; a note's bends
+  become its bend.
 
 See [engine/recording.md](../engine/recording.md) and [guide/recording.md](../guide/recording.md).
 
@@ -542,7 +584,7 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
   edits only count while its editor is open.
 - `Device::state` of a plug-in is stale until `storePluginStates()`; read `pluginState()` for the current one.
 - Overrides are lost on `reset` (opening a project) and are never saved.
-- Decoding is keyed by `sourceKey`, so two clips of one file share one source.
+- Decoding is keyed by `pathIdentity`, so two clips of one file share one source.
 - `source(path)` hands out the engine's `AudioSource` (forward-declared): only application-layer code that includes
   the engine may use it; the UI uses `waveform(path)`.
 - The timers' intervals are 16 and 33 ms; "60 and 30 times a second" are approximate.
@@ -555,6 +597,9 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
   are made, undone, moved and deleted; chain automation and overrides; macros moving plug-in parameters, and their
   automation moving what is mapped to them (over its range, overridden, re-enabled); sidechains;
   presets.
+- [test_editor_midi_from.cpp](../../tests/app/test_editor_midi_from.cpp) and
+  [test_note_bends.cpp](../../tests/app/test_note_bends.cpp): an instrument and an effect with a MIDI input playing
+  another track's notes; bent notes playing at their bent pitch, recorded bends.
 - [test_bridge_plugins.cpp](../../tests/app/test_bridge_plugins.cpp): plug-in loading (after a project opens too),
   missing and moved plug-ins, editors, edits for undo, automating plug-in parameters.
 - [test_bridge_freeze.cpp](../../tests/app/test_bridge_freeze.cpp): frozen tracks in the engine (their frozen audio

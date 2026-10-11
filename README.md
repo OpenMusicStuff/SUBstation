@@ -10,7 +10,10 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
 ## Features
 
 - **Arrangement**: audio and MIDI tracks, group tracks (nesting, folding), return
-  tracks and sends, a master with its own effects; clip editing with snapping
+  tracks and sends, a master with its own effects; track headers laid out as Ableton's,
+  with an In/Out column routing each track as Ableton does (Audio From with Pre FX, Post
+  FX or Post Mixer; Audio To its group, Main, another track's input or a device's
+  sidechain, or Sends Only); clip editing with snapping
   (trimming, stretching, sliding a clip's content), clip fades with curves,
   deactivating clips (0, as in Ableton), time selections, undo/redo for every edit.
 - **Audio clips**: real-time warping (Signalsmith Stretch) with several warp modes,
@@ -24,16 +27,26 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
   ("Washed Out Serum Pluck", "Orchestral Trumpet", "Sad Piano Line"), worked out from its
   name, its instrument's preset, its files, its notes, its effects and their amounts, and
   its mixer, with what each was; for people, and as context for agents.
-- **Devices**: a built-in Synth, Sampler, Compressor (with sidechain), Over The Top
-  multiband compressor and Utility; racks with parallel chains, macros and presets.
+- **Devices**: a built-in Synth, a Sampler after Ableton's Simpler (Classic, 1-Shot and
+  Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
+  The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband
+  Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble,
+  Phaser-Flanger, Reverb, Disperser (phase dispersion through up to 64 all-pass stages,
+  its group delay drawn), EQ and Sidechain; racks with parallel chains, macros and
+  presets.
 - **VST3 plug-ins**: instruments and effects, their own editors, presets, sidechains,
   latency compensation everywhere, crash-safe scanning.
 - **Automation** of every parameter, played sample-accurately.
 - **Recording** from ASIO inputs, with count-in and latency-corrected takes, and
   resampling of any track or the master.
 - **Browser** with instant search over hundreds of thousands of samples, preview,
-  and ranking by use.
-- **Multi-threaded rendering**, bit-identical on any number of threads; WAV export.
+  and ranking by use; *Find Similar Sounds* by timbre, envelope and pitch, from
+  Essentia's audio descriptors, the library analysed in the background.
+- **Multi-threaded rendering**, bit-identical on any number of threads; WAV and MP3 export of the
+  arrangement, the loop or a time selection.
+- **Projects**: `.gilproj` files, a template every new project starts as, and **importing Ableton
+  Live Sets** (tracks, groups, clips, VST3 plug-ins with their settings, Live's EQ Eight,
+  Compressor, Delay, Utility and Simpler, Drum Racks as a track a pad, automation).
 
 See the [user guide](docs/guide/README.md) for how each of these behaves, and
 [what isn't implemented yet](docs/guide/limitations.md).
@@ -106,7 +119,9 @@ QML views (on Linux under `xvfb-run`). See [docs/testing.md](docs/testing.md).
 
 ```
 engine/src/          the real-time audio engine and plug-in hosting (sub_engine; no Qt)
-engine/third_party/  miniaudio (public domain / MIT-0), Signalsmith Stretch and Linear, the VST 3 SDK subset (MIT)
+engine/third_party/  miniaudio (public domain / MIT-0), Signalsmith Stretch and Linear, the VST 3 SDK subset (MIT),
+                     LAME's MP3 encoder (LGPL)
+intelligence/third_party/  Essentia 2.1-beta5's core and the algorithms used (AGPLv3), HUMANBRO's runtime
 browser/src/         the browser's file index and search (sub_browser; no Qt)
 app/src/             the application layer (sub_app; Qt Core and Gui): model/, editor/, io/, audio/,
                      session/, browser/, plugins/, analysis/
@@ -122,9 +137,18 @@ docs/                documentation
 ## Documentation
 
 - [Architecture](docs/architecture.md): layers, threads, real-time rules
+- [Licensing](docs/licensing.md): MIT, and what Essentia's AGPLv3 asks of a build you distribute
 - [Building](docs/building.md) and [testing](docs/testing.md)
 - [User guide](docs/guide/README.md) and [keyboard shortcuts](docs/guide/shortcuts.md)
 - [Code reference](docs/README.md): the engine, the application layer, the UI, the browser
 
 Note:
 This project kinda started out as a meme, but I'm starting to think it's actually much better for my specific workflow than Ableton is. You may or may not find it a good replacement, but I know for certain a lot of issues that bothered me the most with Ableton (crashing on switching audio devices, slow project save and load times) are solved with this DAW. The end goal, however, is to re-invent the way I make music with a DAW. Right now, features are very limited to my specific workflow, but I will continue adding stuff that make it more versatile and suited for everyone's music production needs. 
+
+## Licence
+
+SUBstation's own code is under the [MIT licence](LICENSE). Builds include
+[Essentia](intelligence/third_party/essentia) (AGPLv3), so a build you distribute is,
+as a whole, under the AGPLv3's terms: ship it with its source. See
+[docs/licensing.md](docs/licensing.md), which also covers the ASIO SDK and the velocity
+model.

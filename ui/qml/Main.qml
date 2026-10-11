@@ -8,7 +8,8 @@ import SUBstation
 // with a project's plug-ins loading, and on Windows the window's buttons: the
 // system's caption is gone), the transport bar under it; below them the
 // browser (left) beside the arrangement (or the clip view covering it while
-// clips are open in it), and along the window's bottom, as in Ableton, the
+// clips are open in it), and the File Manager at the right while it shows
+// (View › File Manager); along the window's bottom, as in Ableton, the
 // info view (what the control under the mouse is: the tooltips are said there)
 // and the device view across the rest of the width.
 // Every menu action and shortcut calls the session (the main window's logic:
@@ -20,7 +21,8 @@ import SUBstation
 // interfaces, each call guarded:
 //   arrangement: zoom(factor), zoomToArrangement(), narrowGrid(), widenGrid(),
 //                openClipView(), renameTrack(trackId) -> bool, focusLanes();
-//                snap, follow (read/write), gridStep, gridLevel; statusMessage(text)
+//                snap, follow, ioShown (read/write), gridStep, gridLevel; statusMessage(text),
+//                preferencesRequested(page)
 //   devicePanel: startChainRename(rackId, chainId) -> bool, focusDevices();
 //                statusMessage(text)
 ApplicationWindow {
@@ -29,6 +31,7 @@ ApplicationWindow {
     // The views (for the tests, and whoever needs them).
     readonly property alias transportBar: transportBar
     readonly property alias browserPanel: browser
+    readonly property alias fileManagerPanel: fileManager
     readonly property alias arrangementView: arrangement
     readonly property alias devicePanelView: devicePanel
     readonly property alias infoView: infoView
@@ -117,6 +120,19 @@ ApplicationWindow {
         })
     }
 
+    // Import Ableton Live Set…: asks about unsaved changes, then which set.
+    function importLiveSet() {
+        confirmDiscard(() => {
+            liveSetDialog.currentFolder = FileUrls.fileUrl(Session.lastFolder)
+            liveSetDialog.open()
+        })
+    }
+
+    function importChosen(path) {
+        if (path !== "")
+            Session.importLiveSet(path)
+    }
+
     function openChosen(path) {
         if (path !== "")
             Session.openProject(path)
@@ -147,8 +163,9 @@ ApplicationWindow {
         recentMenu.addItem(recentEntry.createObject(recentMenu.contentItem, {text: qsTr("&Clear List"), clearList: true}))
     }
 
-    // File › Export Audio…: the range and bit depth, then where (or why there is nothing to export).
-    function exportChosen(range, bitDepth) {
+    // File › Export Audio…: the range, the file type and its bit depth or
+    // bitrate, then where (or why there is nothing to export).
+    function exportChosen(range, bitDepth, fileType, bitrate) {
         const problem = Session.exportProblem(range)
         if (problem !== "") {
             messages.information(problem)
@@ -156,14 +173,18 @@ ApplicationWindow {
         }
         exportFileDialog.range = range
         exportFileDialog.bitDepth = bitDepth
-        exportFileDialog.currentFolder = FileUrls.folderUrl(Session.suggestedExportPath())
-        exportFileDialog.selectedFile = FileUrls.fileUrl(Session.suggestedExportPath())
+        exportFileDialog.fileType = fileType || "wav"
+        exportFileDialog.bitrate = bitrate || Session.defaultExportBitrate
+        const suggested = Session.suggestedExportPath(exportFileDialog.fileType)
+        exportFileDialog.currentFolder = FileUrls.folderUrl(suggested)
+        exportFileDialog.selectedFile = FileUrls.fileUrl(suggested)
         exportFileDialog.open()
     }
 
     function exportFileChosen(path) {
         if (path !== "")
-            Session.exportAudio(path, exportFileDialog.range, exportFileDialog.bitDepth)
+            Session.exportAudio(path, exportFileDialog.range, exportFileDialog.bitDepth, exportFileDialog.fileType,
+                                exportFileDialog.bitrate)
     }
 
     // --- Edit ----------------------------------------------------------------------------------
@@ -193,6 +214,26 @@ ApplicationWindow {
         function onSimilarChanged() {
             if (Session.browser.similarTo !== "")
                 browserAction.checked = true
+        }
+    }
+
+    // A hot swap (an audio clip's menu, the File Manager) works in the browser: it shows.
+    Connections {
+        target: Session.hotSwap
+
+        function onChanged() {
+            if (Session.hotSwap.active)
+                browserAction.checked = true
+        }
+    }
+
+    // Show in File Manager (an audio clip's menu): it shows, the file's row selected.
+    Connections {
+        target: Session.files
+
+        function onRevealRequested(path) {
+            fileManagerAction.checked = true
+            Qt.callLater(() => fileManager.reveal(path))
         }
     }
 
@@ -279,6 +320,8 @@ ApplicationWindow {
         function onProjectOpened() {
             if (arrangement.zoomToArrangement)
                 arrangement.zoomToArrangement()
+            if (Session.files.missingCount > 0)  // (it finds them)
+                fileManagerAction.checked = true
         }
     }
 
@@ -326,9 +369,12 @@ ApplicationWindow {
                     onAboutToShow: window.fillRecentMenu()
                     MenuItem { text: qsTr("No Recent Projects"); enabled: false }
                 }
+                Action { objectName: "importLiveSet"; text: qsTr("&Import Ableton Live Set…"); onTriggered: window.importLiveSet() }
                 MenuSeparator {}
                 Action { objectName: "save"; text: qsTr("&Save"); shortcut: StandardKey.Save; onTriggered: window.save() }
                 Action { objectName: "saveAs"; text: qsTr("Save &As…"); shortcut: "Ctrl+Shift+S"; onTriggered: window.saveAs() }
+                Action { objectName: "saveAsTemplate"; text: qsTr("Save as &Template"); onTriggered: Session.saveAsTemplate() }
+                Action { objectName: "clearTemplate"; text: qsTr("C&lear Template"); enabled: Session.hasTemplate; onTriggered: Session.clearTemplate() }
                 MenuSeparator {}
                 Action { objectName: "exportAudio"; text: qsTr("&Export Audio…"); shortcut: "Ctrl+Shift+R"; onTriggered: exportDialog.open() }
                 MenuSeparator {}
@@ -452,11 +498,25 @@ ApplicationWindow {
             Menu {
                 title: qsTr("&View")
                 Action { id: browserAction; objectName: "browser"; text: qsTr("&Browser"); shortcut: "Ctrl+Alt+B"; checkable: true; checked: true }
+                // The files the project plays, on the right (as Ableton's): missing ones found, any replaced, hot-swapped.
+                Action { id: fileManagerAction; objectName: "fileManager"; text: qsTr("&File Manager"); shortcut: "Ctrl+Alt+F"; checkable: true; checked: false }
                 Action { id: deviceViewAction; objectName: "deviceView"; text: qsTr("&Device View"); shortcut: "Ctrl+Alt+L"; checkable: true; checked: true }
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
                 Action { id: infoViewAction; objectName: "infoView"; text: qsTr("&Info View"); checkable: true; checked: true }
                 Action { objectName: "clipView"; text: qsTr("&Clip View"); shortcut: "Shift+Tab"; onTriggered: window.toggleClipView() }
                 Action { objectName: "automation"; text: qsTr("&Automation"); shortcut: "A"; onTriggered: Session.editor.toggleAllAutomation() }
+                // The track headers' In/Out column (Audio From and To, monitoring), as Ableton's.
+                Action {
+                    objectName: "inOut"
+                    text: qsTr("&In/Out")
+                    shortcut: "Ctrl+Alt+I"
+                    checkable: true
+                    checked: arrangement.ioShown
+                    onTriggered: {
+                        arrangement.ioShown = checked
+                        checked = Qt.binding(() => arrangement.ioShown)
+                    }
+                }
                 // The piano roll's chord lane and its notes out of the key in red.
                 Action {
                     objectName: "showHarmony"
@@ -571,6 +631,7 @@ ApplicationWindow {
             BrowserPanel {
                 id: browser
                 visible: browserAction.checked
+                hotSwapKeepers: [fileManager, transportBar]  // (a hot swap goes on while the song is played from there)
                 SplitView.preferredWidth: 300
                 SplitView.minimumWidth: 120
             }
@@ -605,6 +666,10 @@ ApplicationWindow {
                     objectName: "arrangement"
                     anchors.fill: parent
                     visible: !arrangementArea.clipViewShown
+                    onPreferencesRequested: page => {
+                        preferences.currentPage = page
+                        preferences.open()
+                    }
                 }
 
                 ClipView {
@@ -616,6 +681,15 @@ ApplicationWindow {
                     onLocateRequested: beat => Session.locate(beat)
                     onStatusMessage: message => window.showMessage(message)
                 }
+            }
+
+            // The File Manager, at the right (View › File Manager).
+            FileManagerPanel {
+                id: fileManager
+                visible: fileManagerAction.checked
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 160
+                onCloseRequested: fileManagerAction.checked = false
             }
         }
 
@@ -710,7 +784,7 @@ ApplicationWindow {
 
     ExportDialog {
         id: exportDialog
-        onExportChosen: (range, bitDepth) => window.exportChosen(range, bitDepth)
+        onExportChosen: (range, bitDepth, fileType, bitrate) => window.exportChosen(range, bitDepth, fileType, bitrate)
     }
 
     RenderDialog {
@@ -724,6 +798,15 @@ ApplicationWindow {
         fileMode: FileDialog.OpenFile
         nameFilters: [Session.projectFilter]
         onAccepted: window.openChosen(FileUrls.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: liveSetDialog
+        objectName: "liveSetDialog"
+        title: qsTr("Import Ableton Live Set")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [Session.liveSetFilter]
+        onAccepted: window.importChosen(FileUrls.localPath(selectedFile))
     }
 
     FileDialog {
@@ -743,10 +826,12 @@ ApplicationWindow {
         objectName: "exportFileDialog"
         property string range: "arrangement"
         property int bitDepth: 24
+        property string fileType: "wav"
+        property int bitrate: 320
         title: qsTr("Export Audio")
         fileMode: FileDialog.SaveFile
-        nameFilters: [qsTr("WAV Audio (*.wav)")]
-        defaultSuffix: "wav"
+        nameFilters: fileType === "mp3" ? [qsTr("MP3 Audio (*.mp3)")] : [qsTr("WAV Audio (*.wav)")]
+        defaultSuffix: fileType
         onAccepted: window.exportFileChosen(FileUrls.localPath(selectedFile))
     }
 

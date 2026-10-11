@@ -19,16 +19,26 @@ namespace sub {
 
 // A timestamped event delivered to a processor within a block. The renderer
 // sends each track's notes to every processor on the track (audio effects
-// ignore them), sorted by sample offset, note-offs before note-ons at the same
-// offset. Plug-in adapters translate these to their format's events.
+// ignore them; a device may take another track's instead: Engine::
+// setProcessorMidiInput()), sorted by sample offset, note-offs before note-ons
+// at the same offset and a note's bends after its note-on. Plug-in adapters
+// translate these to their format's events.
 // (Automation reaches each processor separately: see Processor::automate().)
+//
+// Notes are addressed as MIDI 2.0 addresses them, each on its own: a note-on
+// carries an id (its note-off and its bends carry the same), and a NoteBend
+// moves that one note's pitch (MIDI 2.0's per-note pitch bend, in semitones from
+// its key; VST3's note expression "tuning"). A note without an id (-1: a MIDI
+// 1.0 message, a note the piano roll plays) is known by its key and channel.
 struct ProcessEvent {
-    enum class Type : uint8_t { NoteOn, NoteOff, Midi };
+    enum class Type : uint8_t { NoteOn, NoteOff, Midi, NoteBend };
     Type type = Type::Midi;
     int32_t sampleOffset = 0;
-    // NoteOn/NoteOff: data[0] is the key (0-127, 60 = C3), data[1] the velocity
-    // (1-127; 0 for note-offs), data[2] the MIDI channel. Midi: the raw bytes.
+    // NoteOn/NoteOff/NoteBend: data[0] is the key (0-127, 60 = C3), data[1] the
+    // velocity (1-127; 0 for note-offs), data[2] the MIDI channel. Midi: the raw bytes.
     uint8_t data[4] = {};
+    int32_t noteId = -1;  // the note it belongs to (-1: none; by key and channel)
+    float bend = 0.f;     // NoteBend: the note's pitch, in semitones from its key
 
     static ProcessEvent noteOn(int32_t offset, uint8_t key, uint8_t velocity) noexcept {
         ProcessEvent event;
@@ -45,9 +55,23 @@ struct ProcessEvent {
         event.data[0] = key;
         return event;
     }
+    // A note's pitch, `semitones` from its key from here on (MIDI 2.0's per-note pitch bend).
+    static ProcessEvent noteBend(int32_t offset, uint8_t key, int32_t noteId, float semitones) noexcept {
+        ProcessEvent event;
+        event.type = Type::NoteBend;
+        event.sampleOffset = offset;
+        event.data[0] = key;
+        event.noteId = noteId;
+        event.bend = semitones;
+        return event;
+    }
     uint8_t key() const noexcept { return data[0]; }
     uint8_t velocity() const noexcept { return data[1]; }
     uint8_t channel() const noexcept { return data[2]; }
+    // A note starts; a note ends. A note-on at velocity 0 ends one: MIDI 1.0's
+    // rule, kept here only (in MIDI 2.0 such a note-on is a note).
+    bool startsNote() const noexcept { return type == Type::NoteOn && velocity() > 0; }
+    bool endsNote() const noexcept { return type == Type::NoteOff || (type == Type::NoteOn && velocity() == 0); }
 };
 
 struct EventList {
@@ -70,6 +94,11 @@ struct ProcessContext {
     double loopEndBeat = 0.0;
     bool offline = false;    // rendering an export (or a test), not live
     EventList inEvents;
+
+    // Samples a beat lasts at the block's tempo (0 without one).
+    double samplesPerBeat() const noexcept { return tempo > 0.0 ? sampleRate * 60.0 / tempo : 0.0; }
+    // Beats (quarter notes) in a bar of the time signature.
+    double beatsPerBar() const noexcept { return std::max(1, timeSigNum) * 4.0 / std::max(1, timeSigDen); }
 };
 
 // A parameter, whatever kind of processor it belongs to. Its values are plain
@@ -260,6 +289,10 @@ public:
     // call's frames (two channels, as long as the call), or null for nothing
     // (silence: no source, or solo leaves it out); after the call, null again.
     virtual bool hasSidechain() const { return false; }
+    // Whether it plays notes (an instrument, or an effect with a MIDI input, as
+    // a vocoder or a pitch corrector has): what can take another track's notes
+    // (Engine::setProcessorMidiInput()). Main thread.
+    virtual bool acceptsMidi() const { return false; }
     void setSidechain(const float* left, const float* right) noexcept {
         sidechain_[0] = left;
         sidechain_[1] = right;

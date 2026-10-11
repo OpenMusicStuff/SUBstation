@@ -13,6 +13,7 @@
 
 #include "AudioSource.h"
 #include "Automation.h"
+#include "NoteBend.h"
 #include "Processor.h"
 #include "Scheduler.h"
 #include "Warp.h"
@@ -33,6 +34,9 @@ struct TrackParams {
     std::atomic<float> pan{0.f};
     std::atomic<bool> mute{false};
     std::atomic<bool> solo{false};
+    // The API's writes, kept in range: gain from 0, pan from -1 (left) to 1 (right).
+    void setGain(float value) noexcept { gain.store(std::max(0.f, value)); }
+    void setPan(float value) noexcept { pan.store(std::clamp(value, -1.f, 1.f)); }
 
     // Written by the audio thread, read and reset by the API.
     std::atomic<float> peakLeft{0.f};
@@ -124,10 +128,11 @@ public:
             // The whole chunk goes in before anything comes out: what it reads from
             // before this chunk (delay samples back) is out of the way of its writes.
             const int read = write_ - delay < 0 ? write_ - delay + size : write_ - delay;
-            toRing(left_, write_, left, frames);
-            toRing(right_, write_, right, frames);
-            fromRing(left_, read, left, frames);
-            fromRing(right_, read, right, frames);
+            const auto at = static_cast<size_t>(write_), from = static_cast<size_t>(read), n = static_cast<size_t>(frames);
+            copyIntoRing(left_.data(), left_.size(), at, left, n);
+            copyIntoRing(right_.data(), right_.size(), at, right, n);
+            copyOutOfRing(left_.data(), left_.size(), from, left, n);
+            copyOutOfRing(right_.data(), right_.size(), from, right, n);
             write_ = (write_ + frames) % size;
             return;
         }
@@ -143,18 +148,6 @@ public:
     }
 
 private:
-    // Copies n samples into / out of the ring from position `at`, wrapping once.
-    static void toRing(std::vector<float>& ring, int at, const float* from, int n) noexcept {
-        const int first = std::min(n, static_cast<int>(ring.size()) - at);
-        std::copy_n(from, first, ring.data() + at);
-        std::copy_n(from + first, n - first, ring.data());
-    }
-    static void fromRing(const std::vector<float>& ring, int at, float* to, int n) noexcept {
-        const int first = std::min(n, static_cast<int>(ring.size()) - at);
-        std::copy_n(ring.data() + at, first, to);
-        std::copy_n(ring.data(), n - first, to + first);
-    }
-
     std::vector<float> left_, right_;
     int write_ = 0;
     int delay_ = 0;
@@ -172,13 +165,41 @@ struct SwitchRender {
     std::shared_ptr<DelayLine> delay;  // for the live renderer
 };
 
+// A note's bend (NoteBend.h) as the renderer plays it: times in samples from
+// the note's start, vibratos' rates in cycles a sample.
+struct NoteBendRender {
+    std::vector<BendPoint> points;  // sorted by time
+    std::vector<VibratoSpan> vibrato;
+
+    double at(double t) const noexcept { return bend::at(points, vibrato, t); }
+};
+
 // A note of a MIDI clip, already cut to its clip: the renderer sends a note-on
-// at `start` and a note-off at `end`.
+// at `start` and a note-off at `end`, and while it sounds its bend (if any).
 struct NoteRender {
     int64_t start = 0;  // timeline samples
     int64_t end = 0;    // > start
     uint8_t key = 60;
     uint8_t velocity = 100;
+    std::shared_ptr<const NoteBendRender> bend;  // null: it doesn't bend
+};
+
+// A device's MIDI input from another track (Engine::setProcessorMidiInput()):
+// what it hears instead of its own track's notes. Rendering-thread state, kept
+// with the device across snapshots: the prologue copies the source track's
+// events for the chunk into it, before the graph runs (where the source's own
+// devices rebase theirs to their stretches), and the device reads its copy.
+struct MidiFeed {
+    std::vector<ProcessEvent> events;
+    int numEvents = 0;
+
+    explicit MidiFeed(int capacity) : events(static_cast<size_t>(capacity)) {}
+};
+
+// A device's feed in the snapshot, and where it comes from.
+struct MidiFeedRender {
+    int source = -1;  // the snapshot track whose notes it takes (-1: none in this snapshot)
+    std::shared_ptr<MidiFeed> feed;
 };
 
 // How deep racks nest: a rack in a strip's own chain is at depth 0, one in a
@@ -203,15 +224,18 @@ struct StripRender {
     // A track's switch (its activator, kTrackOnLane): while it has one it is
     // heard where it is on, whatever its mute (the master has none).
     AutomationRender on;
-    // Per insert, the edge going into its sidechain (aux) input, if any (-1:
-    // none); empty if none has one.
-    std::vector<int> sidechains;
+    // Per insert, the edges going into its sidechain (aux) input (summed: its
+    // own sidechain, and tracks' outputs going into it); empty if none has any.
+    std::vector<std::vector<int>> sidechains;
     // The edges leaving it after one of its devices (EdgeRender::Tap::AfterDevice), by
     // device: those before its first device (tapDevice -1) first. A rack's chain
     // has those taken after its own devices (its strip's source's sidechains).
     std::vector<int> deviceTaps;
     // Per insert, its chains if it is a rack (null: a device); empty if none is.
     std::vector<std::shared_ptr<const RackRender>> racks;
+    // Per insert, the MIDI it takes from another track instead of the strip's
+    // notes (null: the strip's); empty if none takes any.
+    std::vector<std::shared_ptr<MidiFeed>> midiFeeds;
 };
 
 // A chain of a rack: a strip inside a strip. The rack hands each chain its own
@@ -250,19 +274,23 @@ struct EdgeState {
 };
 
 // An edge of the routing graph (Routing.h): a strip's signal going into another
-// strip (a group's bus, a return), or into the master. Each track has one
-// output edge (post-fader) and any number of sends, tapped after its fader or
-// before it. The destination sums its incoming edges, each at its level. An
+// strip (a group's bus, a return), or into the master. Each track has at most
+// one output edge (post-fader) and any number of sends, tapped after its fader
+// or before it. The destination sums its incoming edges, each at its level. An
 // input edge (resampling) is a track's input taken from another track's output
-// (post-fader): it isn't summed, but heard instead of the track's clips while
-// the track is monitored (InputEdge), and recorded; it isn't delay-compensated.
-// A sidechain goes into one device of its destination (a track's, or the
-// master's), into its aux input: tapped after the source's fader, before it,
-// after one of its devices or before all of them, and lined up with the destination's signal at that
-// device. It isn't heard on its own, so the source's mute (and solo) silence it
-// only after the fader.
+// (tapped as a sidechain is): it isn't summed, but heard instead of the track's
+// clips while the track is monitored (InputEdge), and recorded; it isn't
+// delay-compensated. A Track In edge is an output into a track that takes what
+// goes into it as its input (Engine::setTrackInMonitored): heard as an input
+// edge is, but not recorded. A sidechain goes into one device of its
+// destination (a track's, or the master's), into its aux input: tapped after
+// the source's fader, before it, after one of its devices or before all of
+// them, and lined up with the destination's signal at that device (a track's
+// output going into a device's sidechain is one too, after the fader). It
+// isn't heard on its own, so the source's mute (and solo) silence it only
+// after the fader.
 struct EdgeRender {
-    enum class Kind : uint8_t { Output, Send, Input, Sidechain };
+    enum class Kind : uint8_t { Output, Send, Input, TrackIn, Sidechain };
     enum class Tap : uint8_t { PostFader, PreFader, AfterDevice };
 
     int from = 0;   // the snapshot track it leaves
@@ -289,8 +317,8 @@ struct EdgeRender {
     // tap before the fader (the source's buffer holds it after the fader), or a
     // signal delayed for this edge alone. Otherwise the destination reads the source's buffer.
     bool ownSignal() const noexcept { return tap != Tap::PostFader || compensation > 0; }
-    // Whether its destination sums it into its input (an input edge is heard
-    // only while monitored, a sidechain only by its device).
+    // Whether its destination sums it into its input (an input or Track In edge
+    // is heard only while monitored, a sidechain only by its device).
     bool sums() const noexcept { return kind == Kind::Output || kind == Kind::Send; }
 };
 
@@ -306,6 +334,7 @@ struct InputEdge {
     int left = -1;
     int right = -1;
     int edge = -1;  // Track: the snapshot edge (Kind::Input) it comes in on
+    int arrival = 0;  // Track: how late its source's signal leaves where it is tapped
 
     bool fromDevice() const noexcept { return source == Source::Device; }
     // Whether the track can hear it (monitoring): the device's, or another track's.
@@ -382,7 +411,7 @@ struct TrackBuffers {
 struct TrackRender : StripRender {
     uint32_t id = 0;
     std::vector<int> incoming;      // edges into it (snapshot edges), in the order it sums them
-    std::vector<int> outgoing;      // edges out of it: its output first, then its sends (and input edges and sidechains)
+    std::vector<int> outgoing;      // edges out of it: its output (if any) first, then its sends (and input edges and sidechains)
     int inputCount = 0;             // incoming.size(): the scheduler runs it once they are done
     // How late it hears what its summed edges bring. (Its own clips and notes
     // play on time: they aren't delayed to line up with its inputs, and nor is
@@ -396,6 +425,9 @@ struct TrackRender : StripRender {
     // Frozen (Engine::setTrackFrozen): it plays its clips (its frozen audio)
     // and doesn't hear what goes into it; it has no devices, notes or input then.
     bool frozen = false;
+    // Other tracks' outputs come into it as its input (Track In edges): it can
+    // be monitored without an input of its own.
+    bool trackIn = false;
     std::vector<ClipRender> clips;  // sorted by start
     int64_t maxClipLength = 0;      // bounds the binary search window
     std::vector<NoteRender> notes;  // sorted by start
@@ -422,11 +454,20 @@ struct RenderSnapshot {
     std::vector<int> chainDelays;
     // Every switched device's latency, by its SwitchRender::delayIndex (likewise).
     std::vector<int> switchDelays;
+    // Every device's MIDI input from another track (StripRender::midiFeeds), for the prologue to fill.
+    std::vector<MidiFeedRender> midiFeeds;
 
     // The output lags the timeline by this much: the tracks' latency, then the
     // master's devices. The metronome is delayed as much.
     int outputLatency() const { return maxLatency + master.latency; }
     double samplesPerBeat() const { return sampleRate * 60.0 / tempo; }
+
+    // The track with this id; null if the snapshot has none.
+    const TrackRender* findTrack(uint32_t id) const noexcept {
+        for (const TrackRender& track : tracks)
+            if (track.id == id) return &track;
+        return nullptr;
+    }
 };
 
 }  // namespace sub

@@ -41,8 +41,8 @@ QString EngineBridge::startRecording(double countInBeats) {
         if (!input.empty()) openInputs(input);
     }
     const QString folder = recordingsFolder(*project_);
-    if (!audio.isEmpty() && !QDir().mkpath(folder)) {
-        return QStringLiteral("Could not create the recordings folder %1").arg(QDir::toNativeSeparators(folder));
+    if (!audio.isEmpty()) {
+        if (const auto problem = makeFolder(folder, QStringLiteral("the recordings folder"))) return *problem;
     }
     const QDateTime now = QDateTime::currentDateTime();  // local time, in the file names
     std::vector<sub::RecordTarget> targets;
@@ -104,8 +104,12 @@ std::vector<RecordedTake> EngineBridge::stopRecording() {
         recorded.durationSec = static_cast<double>(take.frames) / rate;
         recorded.midi = take.midi;
         for (const sub::RecordedNote& note : take.notes) {
-            recorded.notes.push_back({static_cast<double>(note.start) / rate, static_cast<double>(note.end) / rate,
-                                      note.key, note.velocity});
+            RecordedTakeNote played{static_cast<double>(note.start) / rate, static_cast<double>(note.end) / rate,
+                                    note.key, note.velocity, {}};
+            for (const sub::RecordedBend& bend : note.bend) {
+                played.bend.emplace_back(static_cast<double>(bend.time) / rate, static_cast<double>(bend.semitones));
+            }
+            recorded.notes.push_back(std::move(played));
         }
         takes.push_back(std::move(recorded));
     }

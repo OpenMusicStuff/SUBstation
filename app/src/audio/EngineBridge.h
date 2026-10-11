@@ -124,7 +124,7 @@
 //
 // This header includes none of the engine's: the UI may include it (and
 // BridgeTypes.h, Waveform.h, LiveTake.h, RenderTask.h, ReverseJob.h,
-// AudioSettings.h, AudioFiles.h, EqResponse.h). EngineDescs.h and
+// AudioSettings.h, AudioFiles.h, EqResponse.h, DisperserResponse.h). EngineDescs.h and
 // BridgePrivate.h are the application layer's own.
 
 #include "audio/AudioSettings.h"
@@ -159,6 +159,7 @@
 namespace sub {
 class AudioSource;
 class Engine;
+enum class SidechainTap : std::uint8_t;
 struct AutomationLaneDesc;
 struct ParamInfo;
 struct ProcessorEventRecord;
@@ -256,6 +257,7 @@ public:
     // the engine's default) and applied.
     Q_INVOKABLE void chooseAudioThreads(int threads);
     int audioThreads() const;  // the engine's now
+    int realtimeWorkers() const;  // of the helpers (audioThreads() - 1), those at real-time priority
     static int defaultAudioThreads();  // one per core but one
 
     // --- Meters and the scope -----------------------------------------------------------
@@ -314,6 +316,9 @@ public:
     void storePluginStates(const std::optional<QSet<QString>>& deviceIds = std::nullopt);
     // Whether a device has a sidechain (aux) input (not while it isn't loaded).
     Q_INVOKABLE bool hasSidechainInput(const QString& trackId, const QString& deviceId);
+    // Whether a device plays notes (an instrument, or an effect with a MIDI
+    // input): what can take another track's (Device::midiFrom). Not while it isn't loaded.
+    Q_INVOKABLE bool acceptsMidi(const QString& trackId, const QString& deviceId);
     // A device's parameter as the engine describes it (none: not loaded, or no
     // such one): the editor's macros map through it.
     std::optional<sub::ParamInfo> deviceParamInfo(const QString& trackId, const QString& deviceId,
@@ -430,9 +435,12 @@ public:
     // forgotten and its file deleted.
     void discardFreeze(const Freeze& freeze);
     // Exports the arrangement from startBeat to endBeat as a WAV file of
-    // `bitDepth` (16, 24 or 32 float) in the background; finish it with
-    // finishExport (the frames written; none if cancelled). Throws EditError.
+    // `bitDepth` (16, 24 or 32 float), or in `format` (WAV or MP3), in the
+    // background; finish it with finishExport (the frames written; none if
+    // cancelled). Throws EditError.
     std::unique_ptr<EngineRender> startExport(const QString& path, double startBeat, double endBeat, int bitDepth);
+    std::unique_ptr<EngineRender> startExport(const QString& path, double startBeat, double endBeat,
+                                              const AudioExportFormat& format);
     std::optional<qint64> finishExport(EngineRender& render);
     // The reversed copy of `path` there is already, if any: one made this
     // session, or one a clip of the project plays (saved with it). Not decoded
@@ -537,7 +545,12 @@ private:
     void overrideChangedSends(const QString& trackId);
     void overrideChangedMixer(const QString& owner, double volumeDb, double pan, bool mute);
     void pushMixer(const QString& trackId);
+    struct OutputState;
+    OutputState wantedOutput(const Track& track);
     void pushOutputs();
+    // Every route to the engine, in the order that lets each go in: outputs,
+    // inputs from tracks, then devices' sidechains.
+    void pushRoutes();
     std::vector<std::pair<quint32, std::pair<double, bool>>> wantedSends(const Track& track) const;
     void pushSends(const QString& trackId);
     void pushAllSends();
@@ -559,9 +572,14 @@ private:
                  std::optional<quint32> processorId);
     QStringList chainsOf(const QString& rackId) const;
     void dropChain(const QString& key);
+    // Where the engine taps a source's signal for a tap as the model has it
+    // (kPostFader, kPreFader, kPreFx: a MIDI track's after its instrument; or a
+    // device's id, after it: before the fader while it isn't on the source).
+    std::pair<sub::SidechainTap, quint32> engineTap(const QString& sourceId, const QString& tap);
     std::optional<SidechainState> wantedSidechain(const Device& device, quint32 processorId);
     void pushSidechains();
     void dropSidechain(quint32 processorId);
+    void pushMidiInputs();
     void pushEnabled(const QString& trackId);
     void onChainChanged(const QString& trackId, const QString& chainId);
     void pushChainMixers(const QString& trackId);

@@ -18,6 +18,9 @@
 
 namespace sub::app::edits {
 
+// Sorts clips by where they start, those starting together in the order they were.
+void sortByStart(std::vector<Clip>& clips);
+
 inline constexpr double kMinClipSec = 0.005;
 inline constexpr double kMinMidiClipBeats = 1.0 / 64;
 inline constexpr double kEps = 1e-9;
@@ -75,6 +78,20 @@ Clip curveFade(const Clip& clip, bool out, double curve);
 // the file it was reversed from forgets it; otherwise it remembers its file, to
 // go back to.
 Clip reverseClip(const Clip& clip, const QString& path, double totalSec);
+// Whether an audio clip plays all of its file (as dropped in), not a stretch of it.
+bool playsWholeFile(const Clip& clip);
+// `clip` playing another file (`path`, `totalSec` long) in its place, where it
+// is, with its settings (warp, pitch, gain, pan, fades, activation): a clip
+// that played all of its file plays all of the new one (a longer kick, longer);
+// one that played a stretch of it plays the same stretch of the new one, as
+// far as the new one goes (from its start, if it doesn't go that far). It is
+// named after the new file, and plays it forwards (a reversed clip isn't
+// reversed any more). A MIDI clip as it is.
+Clip replaceFile(const Clip& clip, const QString& path, double totalSec);
+// `clip` with a file found somewhere else: `to` wherever it played `from`, or
+// was reversed from it (paths compared by samePath(), model/Paths.h). Nothing
+// else changes: it is the same audio.
+Clip relinkFile(const Clip& clip, const QString& from, const QString& to);
 // (earliest start, latest end) of some clips (there must be some).
 std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, double tempo);
 // Ableton's Consolidate (Ctrl+J): one MIDI clip from the first clip's start to

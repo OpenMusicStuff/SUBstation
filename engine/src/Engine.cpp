@@ -6,14 +6,13 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cwctype>
 #include <iterator>
 #include <stdexcept>
 #include <thread>
 #include <unordered_set>
 #include <utility>
 
-#include "PathUtils.h"
+#include "platform/Paths.h"
 
 namespace sub {
 
@@ -40,14 +39,7 @@ Engine::~Engine() {
     closeDeviceLocked();
 }
 
-std::string Engine::sourceKey(const std::string& path) {
-    std::wstring wide = pathFromUtf8(path).lexically_normal().make_preferred().wstring();
-#ifdef _WIN32  // (names differing only in case are one file there; elsewhere they're two)
-    std::transform(wide.begin(), wide.end(), wide.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
-#endif
-    const std::u8string utf8 = std::filesystem::path(wide).u8string();
-    return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
-}
+std::string Engine::sourceKey(const std::string& path) { return platform::fileKey(path); }
 
 // ---------------------------------------------------------------------------
 // Sources
@@ -227,6 +219,7 @@ void Engine::setAudioThreads(int threads) {
     const bool suspended = liveSuspended_.exchange(true, std::memory_order_seq_cst);
     waitForCallbackLocked();
     auto old = std::exchange(scheduler_, std::make_unique<Scheduler>(threads));
+    scheduler_->setWorkgroup(device_.workgroup());
     renderer_.setScheduler(scheduler_.get());
     old.reset();  // its workers end
     if (!suspended) resumeLiveLocked();
@@ -240,6 +233,11 @@ int Engine::audioThreads() {
 uint64_t Engine::nodesOnWorkers() {
     std::lock_guard lock(mutex_);
     return scheduler_->nodesOnWorkers();
+}
+
+int Engine::realtimeWorkers() {
+    std::lock_guard lock(mutex_);
+    return scheduler_->realtimeWorkers();
 }
 
 void Engine::setCostOrdering(bool on) { renderer_.setCostOrdering(on); }  // offline renders copy it
@@ -302,10 +300,15 @@ void Engine::idle(bool releaseAll) {
 
     bool realign = false;
     for (const auto& p : live) realign |= p->idle();
-    if (realign) {
-        std::lock_guard lock(mutex_);
-        rebuildSnapshotLocked();  // a latency changed: new delay compensation
+    if (live.empty()) return;
+    std::lock_guard lock(mutex_);
+    // A processor's idle() compares its latency with what it last reported, which may not be what the
+    // snapshot was aligned to (a change, another edit rebuilding the snapshot, then the change undone):
+    // check against the snapshot too.
+    for (auto it = processors_.begin(); !realign && it != processors_.end(); ++it) {
+        realign = !it->second.rack && insertLatency(*it->second.processor) != it->second.alignedLatency;
     }
+    if (realign && job_ == nullptr) rebuildSnapshotLocked();  // a latency changed: new delay compensation
 }
 
 }  // namespace sub

@@ -30,6 +30,21 @@ std::vector<int> channelsOf(const QVariant& value) {
     return channels;
 }
 
+// Rich text, in the error's red.
+QString warning(const QString& text) { return QStringLiteral("<span style='color:#ff6b5e'>%1</span>").arg(text.toHtmlEscaped()); }
+
+// Why the system may have refused the audio threads real-time priority, and what to do.
+QString realtimeAdvice() {
+#if defined(Q_OS_LINUX)
+    return QStringLiteral("Install rtkit (and log in again), or let your user have real-time priority: rtprio in "
+                          "/etc/security/limits.conf, often for the \"audio\" group.");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("The Multimedia Class Scheduler service may be off.");
+#else
+    return {};
+#endif
+}
+
 }  // namespace
 
 std::vector<std::pair<QString, std::vector<int>>> outputChoices(const QStringList& names) {
@@ -190,7 +205,7 @@ void AudioPreferences::refresh(const QString& error) {
     bufferFixed_ = running && isAsio && buffers_.size() == 1;
 
     QStringList lines;
-    if (!error.isEmpty()) lines.append(QStringLiteral("<span style='color:#ff6b5e'>%1</span>").arg(error.toHtmlEscaped()));
+    if (!error.isEmpty()) lines.append(warning(error));
     if (status.open) {
         const QString latency =
             status.backend == kAsio
@@ -203,6 +218,18 @@ void AudioPreferences::refresh(const QString& error) {
                               status.exclusive ? QStringLiteral(" · exclusive") : QString()));
     } else {
         lines.append(QStringLiteral("No audio device is open."));
+    }
+    // The helpers render at normal priority where the system refused them
+    // real-time: anything else running can delay them, and the buffer with them.
+    const int helpers = bridge_->audioThreads() - 1;
+    const int realtime = bridge_->realtimeWorkers();
+    if (realtime < helpers) {
+        const QString which =
+            realtime == 0 ? QStringLiteral("The audio threads beside the driver's own run")
+                          : QStringLiteral("%1 of the %2 audio threads beside the driver's own run").arg(helpers - realtime).arg(helpers);
+        lines.append(warning(which + QStringLiteral(" at normal priority: the system refused real-time priority, so "
+                                                    "small buffers may drop out. ") +
+                             realtimeAdvice()));
     }
     status_ = lines.join(QStringLiteral("<br>"));
     Q_EMIT changed();
@@ -312,7 +339,7 @@ void AudioPreferences::chooseThreads(int index) {
     if (index == threadIndex_ || index < 0 || index >= static_cast<int>(threads_.size())) return;
     threadIndex_ = index;
     bridge_->chooseAudioThreads(threads_[static_cast<size_t>(index)].value.toInt());
-    Q_EMIT changed();
+    refresh();  // (whether the new helpers have real-time priority)
 }
 
 void AudioPreferences::showControlPanel() {

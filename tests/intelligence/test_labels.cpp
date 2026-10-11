@@ -179,6 +179,11 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("ott", "Over The Top")) == Effect::Ott);
     CHECK(classify(builtin("sidechain", "Sidechain")) == Effect::Ducking);
     CHECK(classify(builtin("synth", "Synth", {}, true)) == Effect::Instrument);
+    CHECK(classify(builtin("reverb", "Reverb")) == Effect::Reverb);
+    CHECK(classify(builtin("saturator", "Saturator")) == Effect::Saturation);
+    CHECK(classify(builtin("phaser", "Phaser-Flanger")) == Effect::Phaser);
+    CHECK(classify(builtin("chorus", "Chorus-Ensemble")) == Effect::Chorus);
+    CHECK(classify(builtin("erosion", "Erosion")) == Effect::LoFi);
     CHECK(classify(serum("")) == Effect::Instrument);
     // The words of their names: "verb" a reverb, "dist" a distortion...
     CHECK(classify(plugin("ValhallaVintageVerb", "Fx")) == Effect::Reverb);
@@ -235,6 +240,12 @@ TEST_CASE("how much effects do") {
     CHECK_EQ(first(builtin("utility", "Utility", {{"width", "Width", 0, 0, "%", ""}})), std::string("Mono"));
     CHECK_EQ(first(plugin("Wider", "Fx|Spatial")), std::string("Wide"));
     CHECK_EQ(first(builtin("sidechain", "Sidechain", {percent("depth", 100)})), std::string("Pumping"));
+    // The built-in Reverb by its Dry/Wet; the Saturator by where its drive (dB) is in its range: 0 dB is no drive.
+    CHECK_EQ(first(builtin("reverb", "Reverb", {percent("mix", 50)})), std::string("Washed Out"));
+    CHECK_EQ(first(builtin("reverb", "Reverb", {percent("mix", 0)})), std::string());
+    CHECK_EQ(first(builtin("saturator", "Saturator", {{"drive", "Drive", 0, 0.0, "dB", ""}})), std::string("Saturated"));
+    CHECK_EQ(first(builtin("saturator", "Saturator", {{"drive", "Drive", 30, 0.85, "dB", ""}})), std::string("Distorted"));
+    CHECK_EQ(first(builtin("phaser", "Phaser-Flanger", {percent("mix", 0)})), std::string());
 
     // A built-in EQ by its cuts.
     const auto band = [](int n, int type, double freq) {
@@ -429,7 +440,7 @@ TEST_CASE("groups, returns and the master") {
     CHECK(mentions(labels[0].details, "Holds: Kick, Snare, Hi-Hat Loop"));
     CHECK_EQ(labels[4].label, std::string("Empty Group"));
     CHECK_EQ(labels[5].label, std::string("Synth Group"));  // what the user called it
-    CHECK_EQ(labels[6].label, std::string("Master"));       // (limited, as masters are: said in its details)
+    CHECK_EQ(labels[6].label, std::string("Main"));  // (limited, as masters are: said in its details)
     CHECK(mentions(labels[6].details, "kHs Limiter: limiter"));
 
     // A group that holds most of the song is its mix bus; groups of a kind are told apart by what they hold.

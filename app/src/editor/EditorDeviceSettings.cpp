@@ -7,6 +7,7 @@
 #include "model/Commands.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
+#include "model/Ids.h"
 
 #include <QUndoStack>
 
@@ -121,7 +122,7 @@ void ProjectEditor::renameRack(const QString& trackId, const QString& deviceId, 
                                const QString& text) {
     const Device* device = project_->findDevice(trackId, deviceId);
     if (device == nullptr) return;
-    const std::optional<QString> nw = name.isEmpty() ? std::nullopt : std::optional<QString>(name);
+    const std::optional<QString> nw = optionalId(name);
     if (device->isRack() && device->name != nw) {
         push(std::make_unique<SetDeviceNameCommand>(project_, trackId, deviceId, device->name, nw, text));
     }
@@ -153,6 +154,20 @@ void ProjectEditor::setDeviceSidechain(const QString& trackId, const QString& de
     if (sidechain != device.sidechain) {
         const QString text = sidechain ? QStringLiteral("Change Sidechain") : QStringLiteral("Remove Sidechain");
         push(std::make_unique<SetDeviceSidechainCommand>(project_, trackId, deviceId, device.sidechain, sidechain, text));
+    }
+}
+
+void ProjectEditor::setDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId) {
+    const Project& p = *project_;
+    const Device& device = p.device(trackId, deviceId);
+    // Its own track is what it hears without one.
+    const QString source = sourceId == trackId ? QString() : sourceId;
+    if (!source.isEmpty() && (!p.hasTrack(source) || p.track(source).kind != kMidiKind)) {
+        throw EditError(QStringLiteral("%1 can only take its notes from a MIDI track").arg(deviceName(device)));
+    }
+    if (source != device.midiFrom) {
+        const QString text = source.isEmpty() ? QStringLiteral("Remove MIDI Input") : QStringLiteral("Change MIDI Input");
+        push(std::make_unique<SetDeviceMidiFromCommand>(project_, trackId, deviceId, device.midiFrom, source, text));
     }
 }
 

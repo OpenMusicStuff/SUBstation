@@ -230,12 +230,12 @@ std::vector<uint32_t> Engine::chainProcessors(uint32_t chainId) {
 
 void Engine::setChainGain(uint32_t chainId, float gain) {
     std::lock_guard lock(mutex_);
-    rackChainLocked(chainId).params->gain.store(std::max(0.f, gain));
+    rackChainLocked(chainId).params->setGain(gain);
 }
 
 void Engine::setChainPan(uint32_t chainId, float pan) {
     std::lock_guard lock(mutex_);
-    rackChainLocked(chainId).params->pan.store(std::clamp(pan, -1.f, 1.f));
+    rackChainLocked(chainId).params->setPan(pan);
 }
 
 void Engine::setChainMute(uint32_t chainId, bool mute) {
@@ -342,6 +342,14 @@ void Engine::moveProcessor(uint32_t processorId, uint32_t toChainId, int index) 
     if (from.stripId != to.stripId) {
         if (entry.sidechain) checkSidechainLocked(entry.sidechain->source, to.stripId);
         if (entry.rack) checkRackSidechainsLocked(processorId, to.stripId);
+        // And the tracks whose output goes into its sidechain (or into one in it).
+        std::vector<uint32_t> moving{processorId}, chains;
+        if (entry.rack) rackContentsLocked(processorId, moving, chains);
+        for (const TrackModel& track : tracks_) {
+            if (track.outputProcessor != 0 && std::find(moving.begin(), moving.end(), track.outputProcessor) != moving.end()) {
+                checkSidechainLocked(track.id, to.stripId);
+            }
+        }
     }
     std::erase(from.inserts, processor);
     to.inserts.insert(to.inserts.begin() + insertPosition(index, to.inserts.size()), processor);
@@ -362,7 +370,31 @@ void Engine::moveProcessor(uint32_t processorId, uint32_t toChainId, int index) 
 
 ProcessorInfo Engine::processorInfo(uint32_t processorId) {
     auto p = processor(processorId);
-    return {p->typeId(), p->name(), p->latencySamples(), p->tailSamples(), p->hasEditor(), p->hasSidechain()};
+    return {p->typeId(),    p->name(),         p->latencySamples(), p->tailSamples(),
+            p->hasEditor(), p->hasSidechain(), p->acceptsMidi()};
+}
+
+void Engine::setProcessorMidiInput(uint32_t processorId, uint32_t sourceTrackId) {
+    std::lock_guard lock(mutex_);
+    const auto processor = processorLocked(processorId);
+    ProcessorEntry& entry = processors_[processorId];
+    if (sourceTrackId != 0) {
+        if (!processor->acceptsMidi()) {
+            throw std::invalid_argument("Device " + std::to_string(processorId) + " takes no MIDI");
+        }
+        arrangementTrackLocked(sourceTrackId);  // (throws for an unknown one)
+    }
+    if (entry.midiSource == sourceTrackId) return;
+    entry.midiSource = sourceTrackId;
+    if (sourceTrackId != 0 && !entry.midiFeed) entry.midiFeed = std::make_shared<MidiFeed>(TrackBuffers::kMaxEvents);
+    processor->requestReset();  // what it heard from where it heard it stops
+    rebuildSnapshotLocked();
+}
+
+uint32_t Engine::processorMidiInput(uint32_t processorId) {
+    std::lock_guard lock(mutex_);
+    processorLocked(processorId);
+    return processors_[processorId].midiSource;
 }
 
 void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId, SidechainTap tap,
@@ -377,15 +409,7 @@ void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId,
         throw std::invalid_argument("The master can't be a sidechain: it renders after every track");
     }
     arrangementTrackLocked(sourceTrackId);
-    if (tap == SidechainTap::AfterDevice) {  // one of its devices: in its own chain, or in a rack's there
-        const auto found = processors_.find(tapProcessorId);
-        if (found == processors_.end() || chainLocked(found->second.chainId).stripId != sourceTrackId) {
-            throw std::invalid_argument("Device " + std::to_string(tapProcessorId) + " is not on track " +
-                                        std::to_string(sourceTrackId));
-        }
-    } else {
-        tapProcessorId = 0;
-    }
+    tapProcessorId = tapProcessorLocked(tap, tapProcessorId, sourceTrackId);
     if (!entry.sidechain || entry.sidechain->source != sourceTrackId) {
         checkSidechainLocked(sourceTrackId, chainLocked(entry.chainId).stripId);
     }

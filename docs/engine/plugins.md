@@ -21,8 +21,10 @@ Plug-ins load and play on Linux too, but without their editor windows (see [`Edi
 | [Vst3Processor.h](../../engine/src/plugins/Vst3Processor.h) / [.cpp](../../engine/src/plugins/Vst3Processor.cpp) | a VST3 plug-in as a `Processor`: buses, events, parameters, automation, state, restarts, the component handler, its preset's name |
 | [PresetName.h](../../engine/src/plugins/PresetName.h) / [.cpp](../../engine/src/plugins/PresetName.cpp) | which preset a plug-in has loaded, from its saved state: `presetNameFromState()`, `presetNameFromPreset()` (a `.vstpreset`), `isPlaceholderPresetName()` |
 | [Vst3Support.h](../../engine/src/plugins/Vst3Support.h) | allocation-free building blocks for the audio thread: `ProcessGuard`, `HostEventList`, `HostParamQueue`, `HostParamChanges`, `ParamChangeQueue`, `SpinLock` |
-| [EditorWindow.h](../../engine/src/plugins/EditorWindow.h) / [.cpp](../../engine/src/plugins/EditorWindow.cpp) | the Win32 window holding a plug-in's editor (`IPlugView`, `IPlugFrame`) |
+| [EditorWindow.h](../../engine/src/plugins/EditorWindow.h) / [.cpp](../../engine/src/plugins/EditorWindow.cpp) | the window holding a plug-in's editor (`IPlugView`, `IPlugFrame`), and what every system's window does with the view |
+| [EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp) | `EditorWindow` on Windows: a Win32 window |
 | [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) | `EditorWindow` off Windows: it never opens |
+| [Vst3Platform.h](../../engine/src/plugins/Vst3Platform.h) | what hosting does differently on each system: `prepareThreadForModules()`, `systemPluginFolders()`, `binaryInBundle()`; [Vst3PlatformWin32.cpp](../../engine/src/plugins/Vst3PlatformWin32.cpp), [Vst3PlatformPosix.cpp](../../engine/src/plugins/Vst3PlatformPosix.cpp) |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addPluginProcessor()`, `retireProcessorLocked()`, the processor and editor calls (made without the engine lock) |
 | [Engine.cpp](../../engine/src/Engine.cpp) | `Engine::idle()`: plug-ins' main-thread work, destroying removed ones, realigning on latency changes |
 | [tools/scanner/main.cpp](../../tools/scanner/main.cpp) | `substation-scan`: reads plug-in files with `Vst3Format::scanFile()` for the application, in a process of its own |
@@ -49,16 +51,21 @@ A singleton (`Vst3Format::instance()`).
 
 - **Host context.** `SubHostApplication` derives from the SDK's `HostApplication` and names itself "SUBstation". It is
   created once and never freed: plug-ins may keep it until they unload.
-- **Modules.** `loadModule(path)` keeps a `weak_ptr` per module, keyed by the normalised, lower-cased path, so every
-  instance from one file shares the module and the module unloads with the last instance. It sets the host context on
-  the module's factory.
-- **COM.** Some plug-ins need COM on the thread that loads them: `ensureComInitialized()` calls `OleInitialize` once
-  per thread (Windows only). Qt has set it up on the UI thread already; the scanner process has not.
-- **`defaultSearchPaths()`**: on Windows `FOLDERID_ProgramFilesCommon\VST3` and `FOLDERID_UserProgramFilesCommon\VST3`
-  (`C:\Program Files\Common Files\VST3` and `%LOCALAPPDATA%\Programs\Common\VST3`); elsewhere `~/.vst3`,
-  `/usr/lib/vst3` and `/usr/local/lib/vst3`. The application layer's `standardPluginFolders()`
-  ([app/src/plugins/PluginPaths.h](../../app/src/plugins/PluginPaths.h)) keeps its own list on Windows and takes
-  these elsewhere, unless `SUBSTATION_VST3_PATH` says otherwise (see [app/plugin-scanner.md](../app/plugin-scanner.md)).
+- **Modules.** `loadModule(path)` keeps a `weak_ptr` per module, keyed by the path's `platform::fileKey()` (normalised,
+  and in any case on Windows), so every instance from one file shares the module and the module unloads with the last
+  instance. It sets the host context on the module's factory.
+- **COM.** Some plug-ins need COM on the thread that loads them: `prepareThreadForModules()` calls `OleInitialize`
+  once per thread on Windows (and does nothing elsewhere). Qt has set it up on the UI thread already; the scanner
+  process has not.
+- **`defaultSearchPaths()`** (`systemPluginFolders()`): on Windows `FOLDERID_ProgramFilesCommon\VST3` and
+  `FOLDERID_UserProgramFilesCommon\VST3` (`C:\Program Files\Common Files\VST3` and
+  `%LOCALAPPDATA%\Programs\Common\VST3`); on Linux `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`; on macOS
+  `~/Library/Audio/Plug-Ins/VST3` and `/Library/Audio/Plug-Ins/VST3`. The application layer's
+  `standardPluginFolders()` ([app/src/plugins/PluginPaths.h](../../app/src/plugins/PluginPaths.h)) takes these,
+  unless `SUBSTATION_VST3_PATH` says otherwise (see [app/plugin-scanner.md](../app/plugin-scanner.md)).
+- **`binaryInBundle(name)`**: where a bundle's code is on this system (`Contents/x86_64-win/<name>.vst3`,
+  `Contents/<arch>-linux/<name>.so`, `Contents/MacOS/<name>`), for the application's scan cache, which signs a bundle
+  by its code's file.
 - **`scanFile(path)`**: loads the module and lists its `kVstAudioEffectClass` classes (controllers and other helper
   classes are skipped). The vendor falls back to the factory's. `isInstrument` is true if the sub-categories include
   `Instrument`. A module with several plug-ins (an instrument and its FX version) lists each. The application calls
@@ -152,15 +159,25 @@ In `process()`:
 - Each input bus's silence flags are set per channel by checking for all-zero samples.
 - The main output is copied back to the track; a mono output goes to both sides.
 
-`hasSidechain()` is `auxInput_ >= 0`. Routing and alignment of sidechains are in [routing.md](routing.md).
+`hasSidechain()` is `auxInput_ >= 0`; `acceptsMidi()` is `eventInput_ >= 0` (an instrument, or an effect with an
+event input, as a vocoder or a pitch corrector has: it can take another track's notes, [midi.md](midi.md#a-devices-midi-input-from-another-track)). Routing and alignment of sidechains are in [routing.md](routing.md).
 
 ### Events: notes and MIDI
 
 `buildEvents()` turns the block's `ProcessEvent`s into VST3 events on the first event input bus (instruments play the
 MIDI clips, and the piano roll's notes, sample-accurately):
 
-- Note-ons (velocity / 127) and note-offs; a note-on with velocity 0 releases. `held_[channel][key]` counts notes
-  without a note-off yet.
+- Note-ons (velocity / 127) and note-offs, with the note's id (`ProcessEvent::noteId`, -1 for none); a note-on
+  with velocity 0 releases. `held_[channel][key]` counts notes without a note-off yet.
+- A note's bend (`NoteBend`, MIDI 2.0's per-note pitch bend) becomes a `kNoteExpressionValueEvent` of
+  `kTuningTypeID` for the note it names: VST3's per-note pitch, normalized as 0.5 + semitones / 240 (0.5 is none,
+  ±120 semitones across). A bend without a note id is dropped (note expressions address notes by id). A plug-in
+  that doesn't support tuning expressions ignores them.
+- Every note-on with an id is followed by its tuning, 0.5 (none), unless a bend of its own follows at the same
+  offset (`bentFromStart`: the renderer sorts a note's bends after its note-on). A synth that gives a new note a
+  voice another note left can keep that note's last tuning on it: Serum 2 played the note after a slide as far off
+  as the slide had bent (G# after B bent down to G# came out as F). Stating every note's tuning from its start
+  rules that out.
 - `reset()` sets `releaseAll_`; the next block starts with a note-off for every held note. (Real-time resets come on
   stop, locate, loop wrap and around offline renders; see [midi.md](midi.md).)
 - Raw MIDI: control change, channel pressure and pitch bend are mapped to parameters through the controller's
@@ -334,10 +351,18 @@ blocks set `ProcessContext::offline`, but the plug-in is still processed in `kRe
 
 ## `EditorWindow`
 
-On platforms other than Windows there are no editor windows: [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp)
-stands in, the window never opens, and `openEditor()` returns false (`hasEditor()` still says whether the plug-in has
-one). The application then says the plug-in has no editor, and the device view's generic editor (a knob per
-parameter) is the way to edit it. The rest of this section is about Windows.
+`EditorWindow` is the same class on every system: what it does with the view (attaching it, telling it its size and
+its content scale, detaching it) is [EditorWindow.cpp](../../engine/src/plugins/EditorWindow.cpp)'s, and the window
+itself is a file per system's (`EditorWindow::Native`). `EditorWindow::canHold(view)` says whether this system's
+window can hold a view (the platform type it supports: an HWND on Windows); `Vst3Processor::openEditor()` asks it
+before making one. macOS's (`kPlatformTypeNSView`) and X11's (`kPlatformTypeX11EmbedWindowID`) windows go beside
+Windows'.
+
+On platforms other than Windows there are no editor windows yet: [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp)
+stands in, `canHold()` is false and the window never opens, so `openEditor()` returns false (`hasEditor()` still says
+whether the plug-in has one). The application then says the plug-in has no editor, and the device view's generic
+editor (a knob per parameter) is the way to edit it. The rest of this section is about Windows
+([EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp)).
 
 A plain Win32 top-level window (class `SUBstationPluginEditor`) holding the plug-in's `IPlugView`, owned by the main
 window so it floats above it; Qt's event loop dispatches its messages like any other window's. Main thread only.
@@ -390,10 +415,12 @@ sidechain only.
 
 ## Tests
 
-The tests use three VST3 plug-ins built with the engine ([tests/vst3_plugins/](../../tests/vst3_plugins)): *SUB Test
-Synth*, an instrument with a separate controller (it reports the transport it gets back as parameters); *SUB Test
-Effect*, a single-component effect with adjustable latency and, on Windows, a Win32 editor; and *SUB Test Mono*, a
-mono effect without a controller; plus *SUB Test Sidechain* ([test_sidechain.cpp](../../tests/vst3_plugins/test_sidechain.cpp)),
+The tests use four VST3 plug-ins built with the engine ([tests/vst3_plugins/](../../tests/vst3_plugins)): *SUB Test
+Synth*, an instrument with a separate controller (it reports the transport it gets back as parameters, and a note's
+tuning expression bends that note's sine; as a synth reusing voices can, a new note keeps the tuning of the last
+note to end until it gets its own); *SUB Test Effect*, a single-component effect with adjustable latency and,
+on Windows, a Win32 editor; *SUB Test Mono*, a mono effect without a controller; and *SUB Test Note Effect*, an
+effect with an event input whose output is its input plus each held note's velocity / 127 (DC); plus *SUB Test Sidechain* ([test_sidechain.cpp](../../tests/vst3_plugins/test_sidechain.cpp)),
 whose output is its input plus its sidechain. The tests see only these, never the installed ones: the engine's tests
 load the bundle by its path (`SUBSTATION_TEST_PLUGINS_BUNDLE`, [harness/Fixtures.h](../../tests/engine/harness/Fixtures.h)),
 and the application's tests point `SUBSTATION_VST3_PATH` at folders of their own.
@@ -409,6 +436,10 @@ and the application's tests point `SUBSTATION_VST3_PATH` at folders of their own
   64 KB), in a `.vstpreset` (the controller's, the component's first, damaged ones), placeholder program names; and a
   plug-in's name followed live: restored with a state (*SUB Test Effect* keeps a name in its state when it has one),
   and picked in its editor (Windows only), reported once.
+- [tests/engine/test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp) and
+  [test_midi_routing_engine.cpp](../../tests/engine/test_midi_routing_engine.cpp): a note's bend reaching a plug-in
+  as its tuning expression, and a note after a bent one played at its own pitch by a plug-in that would keep the
+  bent note's tuning; an effect with an event input playing along with another track's notes.
 - [tests/engine/test_sidechain_engine.cpp](../../tests/engine/test_sidechain_engine.cpp): sidechains into plug-ins, and
   a missing sidechain reaching the plug-in flagged as silence.
 - [tests/app/test_plugin_index.cpp](../../tests/app/test_plugin_index.cpp): scanning with `substation-scan`, including

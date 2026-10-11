@@ -1,7 +1,10 @@
 #include "pianoroll/NoteGrid.h"
 
+#include "input/GestureKey.h"
+#include "input/Modifiers.h"
 #include "model/Notes.h"
 #include "model/Numbers.h"
+#include "pianoroll/NoteGridGesture.h"
 #include "pianoroll/NoteSet.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
@@ -10,7 +13,6 @@
 #include <QHoverEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QUuid>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -24,32 +26,6 @@ using app::Note;
 namespace notes = app::notes;
 
 // --- Gestures ------------------------------------------------------------------------
-
-// A mouse drag in the note grid. Moves and resizes edit the clips live, as one
-// undo step (the gesture's merge key).
-class NoteGrid::Gesture {
-public:
-    Gesture(NoteGrid* grid, const QPointF& press)
-        : grid(grid), roll(grid->roll()), press(press), key(QUuid::createUuid().toString()) {}
-    virtual ~Gesture() = default;
-
-    // Past the drag threshold yet (from then on, it is active).
-    bool started(const QPointF& pos) {
-        if (!active && (pos - press).manhattanLength() >= kDragThreshold) active = true;
-        return active;
-    }
-    virtual void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) = 0;
-    virtual std::optional<QRectF> rubberBand() const { return std::nullopt; }
-    virtual void finish() {}
-    // The mouse came up without dragging.
-    virtual void clicked(Qt::KeyboardModifiers) {}
-
-    NoteGrid* grid;
-    PianoRoll* roll;
-    QPointF press;
-    bool active = false;
-    QString key;
-};
 
 namespace {
 
@@ -227,22 +203,6 @@ private:
     int scrollY_;
 };
 
-// The modifiers held once a key event is through: a modifier key's own press
-// or release isn't in its event's modifiers on every platform (X11 reports the
-// state before it).
-Qt::KeyboardModifiers heldModifiers(const QKeyEvent* event) {
-    Qt::KeyboardModifiers modifiers = event->modifiers();
-    Qt::KeyboardModifier own = Qt::NoModifier;
-    switch (event->key()) {
-    case Qt::Key_Control: own = Qt::ControlModifier; break;
-    case Qt::Key_Alt: own = Qt::AltModifier; break;
-    case Qt::Key_Shift: own = Qt::ShiftModifier; break;
-    case Qt::Key_Meta: own = Qt::MetaModifier; break;
-    default: break;
-    }
-    if (own != Qt::NoModifier) modifiers.setFlag(own, event->type() == QEvent::KeyPress);
-    return modifiers;
-}
 
 // Each part of [from, to] outside every span.
 std::vector<PianoRoll::Span> outside(std::vector<PianoRoll::Span> spans, double from, double to) {
@@ -269,10 +229,6 @@ NoteGrid::NoteGrid(QQuickItem* parent) : RollItem(parent) {
 }
 
 NoteGrid::~NoteGrid() = default;
-
-bool NoteGrid::isPanModifier(Qt::KeyboardModifiers modifiers) {
-    return (modifiers & Qt::ControlModifier) && (modifiers & Qt::AltModifier);
-}
 
 void NoteGrid::rollConnected(PianoRoll* roll) {
     connect(roll, &PianoRoll::vscrollChanged, this, &QQuickItem::update);
@@ -309,7 +265,7 @@ std::optional<QRectF> NoteGrid::rubberBand() const { return gesture_ ? gesture_-
 
 void NoteGrid::paint(SgPainter& p) {
     const QRectF visible = p.rect();
-    p.fillRect(visible, Theme::kLane);
+    p.fillRect(visible, Theme::lane());
     PianoRoll* roll = this->roll();
     if (!roll) return;
     const timeline::Timeline& view = roll->view();
@@ -317,22 +273,22 @@ void NoteGrid::paint(SgPainter& p) {
     for (int pitch = roll->pitchAt(visible.bottom()); pitch <= roll->pitchAt(visible.top()); ++pitch) {
         const double top = roll->pitchTop(pitch);
         if (notes::isBlackKey(pitch))
-            p.fillRect(QRectF(visible.left(), top, visible.width(), height), Theme::kBlackKeyRow);
+            p.fillRect(QRectF(visible.left(), top, visible.width(), height), Theme::blackKeyRow());
         if (pitch % 12 == 0 || pitch % 12 == 5) {  // octave (B|C) and E|F lines
             p.fillRect(QRectF(visible.left(), top + height - 1, visible.width(), 1),
-                       pitch % 12 == 0 ? Theme::kGridBar : Theme::kGridSub);
+                       pitch % 12 == 0 ? Theme::gridBar() : Theme::gridSub());
         }
     }
     const double bottom = std::min(visible.bottom(), roll->pitchTop(0) + height);
     timeline::drawGrid(p, view, visible.left(), visible.right(), visible.top(), bottom);
     if (bottom < visible.bottom())
-        p.fillRect(QRectF(visible.left(), bottom, visible.width(), visible.bottom() - bottom), Theme::kEmptyArea);
+        p.fillRect(QRectF(visible.left(), bottom, visible.width(), visible.bottom() - bottom), Theme::emptyArea());
     if (roll->hasClip()) {
         // Dimmed outside the parts the clips play; with several, a line at each one's ends.
         const std::vector<PianoRoll::Span> lit = roll->windows();
         for (const auto& [from, to] : outside(lit, view.xToBeat(visible.left()), view.xToBeat(visible.right() + 1))) {
             const double x0 = view.beatToX(from), x1 = view.beatToX(to);
-            p.fillRect(QRectF(x0, visible.top(), x1 - x0, visible.height()), Theme::kOutsideClip);
+            p.fillRect(QRectF(x0, visible.top(), x1 - x0, visible.height()), Theme::outsideClip());
         }
         if (roll->clipCount() > 1) {
             for (int i = 0; i < roll->clipCount(); ++i) {
@@ -347,7 +303,7 @@ void NoteGrid::paint(SgPainter& p) {
         // The stretch of time a rubber band selected, under the notes.
         if (const auto& span = roll->selectedSpan()) {
             const double x0 = view.beatToX(span->first), x1 = view.beatToX(span->second);
-            p.fillRect(QRectF(x0, visible.top(), x1 - x0, bottom - visible.top()), Theme::kSelection);
+            p.fillRect(QRectF(x0, visible.top(), x1 - x0, bottom - visible.top()), Theme::selection());
         }
         std::vector<QColor> colors;
         std::vector<std::pair<double, double>> played;  // each clip's window, in its content beats
@@ -357,6 +313,7 @@ void NoteGrid::paint(SgPainter& p) {
             played.emplace_back(clip ? clip->offsetBeats : 0.0, clip ? clip->windowEnd() : 0.0);
         }
         const QFont font = uiFont(7);
+        const bool bending = roll->bendView();  // (the notes stand back for their curves)
         roll->forEachNote([&](int clip, const Note& n) {
             const ClipNote note{clip, n};
             const QRectF rect = roll->noteRect(note);
@@ -364,41 +321,42 @@ void NoteGrid::paint(SgPainter& p) {
             const auto& [from, to] = played[static_cast<size_t>(clip)];
             const bool playing = from <= n.start && n.start < to;
             drawNote(p, n, rect, colors[static_cast<size_t>(clip)], font, roll->isSelected(note), playing,
-                     roll->outOfKey(n.pitch));
+                     roll->outOfKey(n.pitch), bending);
         });
+        paintBends(p, visible);
     }
 
     if (const auto band = rubberBand()) {
-        p.fillRect(*band, Theme::kRubberBand);
-        p.drawRect(*band, Theme::kAccent, 1);
+        p.fillRect(*band, Theme::rubberBand());
+        p.drawRect(*band, Theme::accent(), 1);
     }
     if (const auto start = roll->startBeat())
-        p.fillRect(QRectF(app::roundHalfEven(view.beatToX(*start)), 0, 1, this->height()), Theme::kInsertMarker);
+        p.fillRect(QRectF(app::roundHalfEven(view.beatToX(*start)), 0, 1, this->height()), Theme::insertMarker());
     // Where Ctrl+V pastes: dashed, unlike the start marker and the playhead.
     if (const auto paste = roll->pasteBeat()) {
         const double x = app::roundHalfEven(view.beatToX(*paste));
         for (double y = visible.top() - std::fmod(visible.top(), kPasteDash * 2); y < visible.bottom(); y += kPasteDash * 2)
-            p.fillRect(QRectF(x, y, 1, kPasteDash), Theme::kPasteMarker);
+            p.fillRect(QRectF(x, y, 1, kPasteDash), Theme::pasteMarker());
     }
 }
 
 void NoteGrid::drawNote(SgPainter& p, const Note& note, const QRectF& rect, const QColor& trackColor,
-                        const QFont& font, bool selected, bool playing, bool outOfKey) const {
+                        const QFont& font, bool selected, bool playing, bool outOfKey, bool dim) const {
     // Out of the song's key: halfway to red. Deactivated: grey.
-    const QColor color = note.muted ? Theme::kDeactivatedClip
-                         : outOfKey ? QColor((trackColor.red() + Theme::kOutOfKey.red()) / 2,
-                                             (trackColor.green() + Theme::kOutOfKey.green()) / 2,
-                                             (trackColor.blue() + Theme::kOutOfKey.blue()) / 2)
+    const QColor color = note.muted ? Theme::deactivatedClip()
+                         : outOfKey ? QColor((trackColor.red() + Theme::outOfKey().red()) / 2,
+                                             (trackColor.green() + Theme::outOfKey().green()) / 2,
+                                             (trackColor.blue() + Theme::outOfKey().blue()) / 2)
                                     : trackColor;
     // Brighter for louder notes, as in Ableton; faint outside the part the clip plays.
     QColor fill = selected ? color.lighter(135) : color;
-    fill.setAlphaF(static_cast<float>((0.35 + 0.65 * note.velocity / 127) * (playing ? 1.0 : 0.5)));
+    fill.setAlphaF(static_cast<float>((0.35 + 0.65 * note.velocity / 127) * (playing ? 1.0 : 0.5) * (dim ? 0.55 : 1.0)));
     const QRectF box = rect.adjusted(0.5, 0.5, -0.5, -0.5);
     p.fillRect(box, fill);
-    p.drawRect(box, selected ? Theme::kSelectionOutline : color.darker(220), 1);
+    p.drawRect(box, selected ? Theme::selectionOutline() : color.darker(220), 1);
     if (rect.width() >= 30 && rect.height() >= 10) {
         p.drawText(box.adjusted(3, 0, -2, 0), Qt::AlignVCenter | Qt::AlignLeft, notes::noteName(note.pitch),
-                   Theme::kAccentText, font);
+                   Theme::accentText(), font);
     }
 }
 
@@ -412,12 +370,20 @@ void NoteGrid::mousePressEvent(QMouseEvent* event) {
     PianoRoll* roll = this->roll();
     if (!roll) return;
     const QPointF pos = event->position();
-    const Qt::KeyboardModifiers mods = event->modifiers();
-    if (isPanModifier(mods)) {
+    peekGesture_ = false;
+    if (isPanModifier(event->modifiers())) {
         gesture_ = std::make_unique<PanGesture>(this, pos);
         setCursor(Qt::ClosedHandCursor);
         return;
     }
+    syncPeek(event->modifiers());
+    if (roll->bendView()) {  // bends, not notes (NoteGridBends.cpp)
+        gesture_ = bendPress(pos, event->modifiers());
+        update();
+        return;
+    }
+    peekGesture_ = roll->bendMode();  // (Shift held in bend mode: the notes, as out of it)
+    const Qt::KeyboardModifiers mods = gestureModifiers(event->modifiers());
     const bool additive = mods & (Qt::ControlModifier | Qt::ShiftModifier);
     const auto hit = noteAt(pos);
     if (!hit) {
@@ -453,7 +419,7 @@ void NoteGrid::mousePressEvent(QMouseEvent* event) {
 
 void NoteGrid::mouseMoveEvent(QMouseEvent* event) {
     if (gesture_) {
-        gesture_->move(event->position(), event->modifiers());
+        gesture_->move(event->position(), gestureModifiers(event->modifiers()));
         update();
         return;
     }
@@ -470,8 +436,10 @@ void NoteGrid::mouseReleaseEvent(QMouseEvent* event) {
         if (gesture->active)
             gesture->finish();
         else
-            gesture->clicked(event->modifiers());
+            gesture->clicked(gestureModifiers(event->modifiers()));
     }
+    peekGesture_ = false;
+    syncPeek(event->modifiers());  // (Shift taken up or let go while it dragged)
     roll->releaseAudition();
     updateCursor(event->position(), event->modifiers());
     roll->placeTools();
@@ -482,6 +450,7 @@ void NoteGrid::mouseUngrabEvent() {
     // The mouse was taken away mid-gesture (a popup): it ends where it is.
     if (!gesture_ && !selectOnClick_) return;
     gesture_.reset();
+    peekGesture_ = false;
     selectOnClick_.reset();
     if (PianoRoll* roll = this->roll()) {
         roll->releaseAudition();
@@ -497,6 +466,10 @@ void NoteGrid::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton || !roll || !roll->hasClip() || isPanModifier(event->modifiers())) return;
     forceActiveFocus(Qt::MouseFocusReason);
     const QPointF pos = event->position();
+    if (roll->bendView()) {
+        bendDoubleClick(pos, event->modifiers());
+        return;
+    }
     if (const auto hit = noteAt(pos)) {
         const app::Clip* clip = roll->clipAt(hit->note.clip);
         roll->setToolsWanted(false);
@@ -525,17 +498,42 @@ void NoteGrid::mouseDoubleClickEvent(QMouseEvent* event) {
 
 void NoteGrid::hoverEnterEvent(QHoverEvent* event) {
     hover_ = event->position();
-    if (!gesture_) updateCursor(event->position(), event->modifiers());
+    if (gesture_) return;
+    syncPeek(event->modifiers());
+    updateCursor(event->position(), event->modifiers());
 }
 
 void NoteGrid::hoverMoveEvent(QHoverEvent* event) {
     hover_ = event->position();
-    if (!gesture_) updateCursor(event->position(), event->modifiers());
+    if (gesture_) return;
+    syncPeek(event->modifiers());
+    updateCursor(event->position(), event->modifiers());
 }
 
-void NoteGrid::hoverLeaveEvent(QHoverEvent*) { hover_.reset(); }
+void NoteGrid::hoverLeaveEvent(QHoverEvent*) {
+    hover_.reset();
+    if (bendHover_) {
+        bendHover_.reset();
+        update();
+    }
+}
 
 void NoteGrid::updateCursor(const QPointF& pos, Qt::KeyboardModifiers mods) {
+    PianoRoll* roll = this->roll();
+    if (roll && roll->bendView() && !isPanModifier(mods)) {
+        const auto before = bendHover_;
+        setCursor(bendCursor(pos, mods));
+        const auto same = [](const std::optional<BendHit>& a, const std::optional<BendHit>& b) {
+            return a.has_value() == b.has_value() &&
+                   (!a || (a->kind == b->kind && a->note == b->note && a->point == b->point && a->beat == b->beat));
+        };
+        if (!same(before, bendHover_)) update();  // (a ghost point, a hovered one)
+        return;
+    }
+    if (bendHover_) {
+        bendHover_.reset();
+        update();
+    }
     const auto hit = noteAt(pos);
     if (isPanModifier(mods))
         setCursor(Qt::OpenHandCursor);
@@ -548,7 +546,16 @@ void NoteGrid::updateCursor(const QPointF& pos, Qt::KeyboardModifiers mods) {
 }
 
 void NoteGrid::onModifiers(Qt::KeyboardModifiers mods) {
+    syncPeek(mods);
     if (!gesture_ && hover_) updateCursor(*hover_, mods);
+}
+
+void NoteGrid::syncPeek(Qt::KeyboardModifiers mods) {
+    PianoRoll* roll = this->roll();
+    if (!roll) return;
+    // Not while the curves are dragged (Shift is theirs then, as the vibrato's speed is).
+    if (gesture_ && !peekGesture_ && roll->bendView()) return;
+    roll->setPeeking(mods & Qt::ShiftModifier);
 }
 
 void NoteGrid::wheelEvent(QWheelEvent* event) {
@@ -564,6 +571,9 @@ bool NoteGrid::handles(const QKeyEvent* event) {
         return key == Qt::Key_A || key == Qt::Key_D || key == Qt::Key_U || key == Qt::Key_C || key == Qt::Key_X ||
                key == Qt::Key_V;
     }
+    if (!(event->modifiers() & (Qt::AltModifier | Qt::MetaModifier)) &&
+        (key == Qt::Key_B || key == Qt::Key_V || key == Qt::Key_G))
+        return true;  // bend mode, the vibrato and glide tools
     return key == Qt::Key_Delete || key == Qt::Key_Backspace || key == Qt::Key_Up || key == Qt::Key_Down ||
            key == Qt::Key_Left || key == Qt::Key_Right || key == Qt::Key_0;
 }
@@ -582,6 +592,11 @@ void NoteGrid::keyPressEvent(QKeyEvent* event) {
     PianoRoll* roll = this->roll();
     if (!roll || !roll->hasClip() || !handles(event)) {
         event->ignore();
+        return;
+    }
+    if (bendKey(event)) {  // B, V, G; with the curves shown Delete and Ctrl+A (NoteGridBends.cpp)
+        updateCursor(hover_.value_or(QPointF(-1, -1)), event->modifiers());
+        event->accept();
         return;
     }
     const int key = event->key();
@@ -637,6 +652,12 @@ void NoteGrid::keyPressEvent(QKeyEvent* event) {
 void NoteGrid::keyReleaseEvent(QKeyEvent* event) {
     onModifiers(heldModifiers(event));
     event->ignore();
+}
+
+void NoteGrid::focusOutEvent(QFocusEvent* event) {
+    // (Shift let go elsewhere would never be heard.)
+    if (PianoRoll* roll = this->roll()) roll->setPeeking(false);
+    RollItem::focusOutEvent(event);
 }
 
 // --- Size and visibility --------------------------------------------------------------------

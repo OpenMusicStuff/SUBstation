@@ -1,6 +1,7 @@
 #include "editor/ProjectEditor.h"
 
 #include "model/Errors.h"
+#include "model/Ids.h"
 
 #include <QUndoCommand>
 #include <QUndoStack>
@@ -60,13 +61,37 @@ bool ProjectEditor::trySetTrackInput(const QString& trackId, const QList<int>& c
 bool ProjectEditor::trySetTrackInputTrack(const QString& trackId, const QString& sourceId) {
     if (!project_->hasOwner(trackId)) return false;
     return reportRefusal([&] {
-        setTrackInputTrack(trackId, sourceId.isEmpty() ? std::nullopt : std::optional<QString>(sourceId));
+        setTrackInputTrack(trackId, optionalId(sourceId));
     });
 }
 
 bool ProjectEditor::trySetTrackMonitor(const QString& trackId, const QString& mode) {
     if (!project_->hasOwner(trackId)) return false;
     return reportRefusal([&] { setTrackMonitor(trackId, mode); });
+}
+
+bool ProjectEditor::trySetTrackInputTap(const QString& trackId, const QString& tap) {
+    if (!project_->hasOwner(trackId)) return false;
+    return reportRefusal([&] { setTrackInputTap(trackId, tap); });
+}
+
+bool ProjectEditor::trySetTrackOutput(const QString& trackId, const QString& to, const QString& id) {
+    if (!project_->hasOwner(trackId)) return false;
+    return reportRefusal([&] {
+        Output output;
+        if (to == u"master") {
+            output = Output::master();
+        } else if (to == u"none") {
+            output = Output::none();
+        } else if (to == u"track") {
+            output = Output::track(id);
+        } else if (to == u"sidechain") {
+            output = Output::sidechain(id);
+        } else if (to != u"group") {
+            throw EditError(QStringLiteral("No such output: %1").arg(to));
+        }
+        setTrackOutput(trackId, output);
+    });
 }
 
 bool ProjectEditor::trySetTrackMidiInput(const QString& trackId, bool enabled, const QString& device, int channel) {
@@ -83,6 +108,11 @@ bool ProjectEditor::trySetDeviceSidechain(const QString& trackId, const QString&
         setDeviceSidechain(trackId, deviceId,
                            sourceTrackId.isEmpty() ? std::nullopt : std::optional<Sidechain>(Sidechain{sourceTrackId, tap}));
     });
+}
+
+bool ProjectEditor::trySetDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId) {
+    if (!project_->hasDevice(trackId, deviceId)) return false;
+    return reportRefusal([&] { setDeviceMidiFrom(trackId, deviceId, sourceId); });
 }
 
 QString ProjectEditor::tryAddRackChain(const QString& trackId, const QString& rackId, int index, const QString& name) {

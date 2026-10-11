@@ -8,6 +8,7 @@
 
 #include "Engine.h"
 
+#include <QByteArray>
 #include <QHash>
 #include <QMap>
 #include <QSet>
@@ -22,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -38,12 +40,24 @@ struct EngineBridge::SidechainState {
     friend bool operator==(const SidechainState&, const SidechainState&) = default;
 };
 
+// Where a track's output goes as the engine has it: an engine track (or
+// sub::Engine::kMaster, or sub::Engine::kNoOutput), or a device's sidechain
+// (`processor`, when not 0).
+struct EngineBridge::OutputState {
+    quint32 track = sub::Engine::kMaster;
+    quint32 processor = 0;
+
+    friend bool operator==(const OutputState&, const OutputState&) = default;
+};
+
 struct EngineBridge::Private {
     // A track's input as the engine has it: (device channels, the engine track
-    // whose output it takes, monitoring, armed, MIDI input).
+    // whose output it takes and where it is tapped, monitoring, armed, MIDI input).
     struct InputState {
         std::vector<int> channels;
         std::optional<quint32> source;
+        sub::SidechainTap tap = sub::SidechainTap::PostFader;
+        quint32 tapProcessor = 0;
         QString monitor;
         bool armed = false;
         std::optional<MidiInput> midi;
@@ -90,11 +104,13 @@ struct EngineBridge::Private {
     QMap<QString, std::pair<double, double>> mixer;  // owner -> (volume dB, pan) the engine has
     QMap<QString, bool> mutes;  // track id -> its mute as the engine has it
     QMap<QString, InputState> inputs;  // track id -> its input as the engine has it
-    QMap<QString, quint32> outputs;  // track id -> the engine track its output goes into
+    QMap<QString, OutputState> outputs;  // track id -> where its output goes
+    QMap<QString, bool> trackIn;  // track id -> whether what goes into it is its input (Track In), as the engine has it
     QMap<QString, std::map<quint32, std::pair<double, bool>>> sends;  // track id -> {engine return: (gain, pre-fader)}
     QSet<QString> frozen;  // tracks the engine has frozen
     QMap<QString, QMap<QString, double>> sendLevels;  // track id -> {return id: level dB} the engine has
     std::map<quint32, SidechainState> sidechains;  // processor -> the sidechain the engine has
+    std::map<quint32, quint32> midiInputs;  // processor -> the engine track whose notes it takes, as the engine has it
     int busy = 0;  // > 0 while a plug-in (or driver) call may run a message loop that calls us back
     QMap<QString, QString> pluginErrors;  // device id -> why its plug-in isn't loaded
     QMap<QString, QString> knownPlugins;  // plug-in uid -> file, from the scan: finds moved plug-ins
@@ -140,5 +156,32 @@ struct EngineBridge::Private {
 // What a slot reacting to the project does, or (should something throw) says
 // so: Qt must never see an exception, and the model goes on.
 void guarded(const char* what, const std::function<void()>& body);
+
+// Private::busy counted up while it lives: around a plug-in's or a driver's
+// call that may run a message loop calling the bridge back. It counts down
+// however the call ends, whatever it throws.
+class BusyScope {
+public:
+    explicit BusyScope(int& busy) : busy_(busy) { ++busy_; }
+    ~BusyScope() { --busy_; }
+    BusyScope(const BusyScope&) = delete;
+    BusyScope& operator=(const BusyScope&) = delete;
+
+private:
+    int& busy_;
+};
+
+// A processor's state as the engine has it (bytes), and as the application keeps it.
+inline std::vector<uint8_t> stateBytes(const QByteArray& state) { return {state.begin(), state.end()}; }
+inline QByteArray stateData(const std::vector<uint8_t>& bytes) {
+    return QByteArray(reinterpret_cast<const char*>(bytes.data()), static_cast<qsizetype>(bytes.size()));
+}
+
+// Names as the engine lists them (drivers, channels, MIDI inputs).
+inline QStringList stringList(const std::vector<std::string>& names) {
+    QStringList list;
+    for (const std::string& name : names) list.append(QString::fromStdString(name));
+    return list;
+}
 
 }  // namespace sub::app

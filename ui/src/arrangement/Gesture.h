@@ -28,6 +28,11 @@ namespace sub::ui::arrangement {
 
 inline constexpr double kDragThreshold = 4.0;  // pixels (manhattan) before a press is a drag
 
+// Whether the mouse at `pos` has moved far enough from `press` to be dragging.
+inline bool farEnough(const QPointF& pos, const QPointF& press) {
+    return (pos - press).manhattanLength() >= kDragThreshold;
+}
+
 // A clip to draw for a gesture: on the row of the track at `row` (an index
 // into Project::tracks()), in its track's colour.
 struct GestureClip {
@@ -57,6 +62,10 @@ public:
     virtual std::vector<GestureClip> kept() const { return {}; }
     virtual std::optional<app::TimeRange> timeRange() const { return std::nullopt; }
     virtual std::optional<Readout> readout() const { return std::nullopt; }
+    // Whether it is selecting across the rows: then the lanes scroll while the
+    // mouse is near their top or bottom, and past them (on the ruler, or below
+    // the arrangement) it takes every row that way (ArrangementLanes).
+    virtual bool selectsRows() const { return false; }
 };
 
 }  // namespace sub::ui::arrangement

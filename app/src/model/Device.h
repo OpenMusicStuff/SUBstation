@@ -101,7 +101,10 @@ struct Chain;
 // the model. A plug-in keeps its own state; `state` holds it (base64) as last
 // saved, for loading the project. Its `params` only record values changed from
 // the host, for undo. A rack's params are its macros' values (macroParam()). A
-// device with a sidechain (aux) input may hear a track there (`sidechain`).
+// device with a sidechain (aux) input may hear a track there (`sidechain`). A
+// device that plays notes (an instrument, an effect with a MIDI input, as a
+// vocoder or a pitch corrector has) may take a MIDI track's notes instead of
+// its own track's (`midiFrom`, that track's id; "": its own track's).
 struct Device {
     QString id;
     QString kind;
@@ -110,6 +113,7 @@ struct Device {
     std::optional<PluginRef> plugin;
     std::optional<QString> state;
     std::optional<Sidechain> sidechain;
+    QString midiFrom;  // a MIDI track whose notes it plays instead of its own track's ("": its own track's)
     std::vector<Chain> chains;  // a rack's
     std::vector<MacroMapping> macros;  // a rack's
     // A rack's macros, one each: its name as the user gave it ("": "Macro N"; macroName()).
@@ -168,6 +172,12 @@ const Device& deviceAt(const std::vector<Device>& devices, const std::vector<int
 // A device by id (in racks too); null: not there.
 Device* findDevice(std::vector<Device>& devices, const QString& deviceId);
 const Device* findDevice(const std::vector<Device>& devices, const QString& deviceId);
+// A rack chain by id, in a chain or in the racks in it (depth first, as
+// iterChains), with its rack; both null: not there.
+RackChain findChain(std::vector<Device>& devices, const QString& chainId);
+ConstRackChain findChain(const std::vector<Device>& devices, const QString& chainId);
+// Where a rack's own chain of this id is among its chains (-1: none of its own).
+int chainIndex(const Device& rack, const QString& chainId);
 // The devices of a chain (the vector itself): `devices` (no chain: a track's
 // own) or the rack chain with that id in it; null: not there.
 std::vector<Device>* chainDevices(std::vector<Device>& devices, const std::optional<QString>& chain);

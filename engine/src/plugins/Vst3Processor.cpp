@@ -1,7 +1,6 @@
 #include "plugins/Vst3Processor.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -46,6 +45,16 @@ bool isSilent(const float* samples, int count) {
         if (samples[i] != 0.f) return false;
     }
     return true;
+}
+
+// Whether the note started by events[at] has a bend of its own at its start (it
+// follows its note-on at the same offset: the renderer sorts a note's bends after it).
+bool bentFromStart(const EventList& events, size_t at) noexcept {
+    const ProcessEvent& on = events.events[at];
+    for (size_t e = at + 1; e < events.count && events.events[e].sampleOffset == on.sampleOffset; ++e) {
+        if (events.events[e].type == ProcessEvent::Type::NoteBend && events.events[e].noteId == on.noteId) return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -485,15 +494,33 @@ void Vst3Processor::buildEvents(const ProcessContext& ctx) {
             case ProcessEvent::Type::NoteOn:
                 if (in.velocity() > 0) {
                     event.type = Event::kNoteOnEvent;
-                    event.noteOn = {channel, key, 0.f, in.velocity() / 127.f, 0, -1};
-                    if (events_.add(event) && held_[channel][key] < 255) ++held_[channel][key];
+                    event.noteOn = {channel, key, 0.f, in.velocity() / 127.f, 0, in.noteId};
+                    if (!events_.add(event)) break;
+                    if (held_[channel][key] < 255) ++held_[channel][key];
+                    // Its tuning from the start, unbent unless its own bend follows: a
+                    // synth that gives it a voice another note left (as Serum 2 appears to) may
+                    // otherwise play it with that note's last tuning.
+                    if (in.noteId >= 0 && !bentFromStart(ctx.inEvents, e)) {
+                        event.type = Event::kNoteExpressionValueEvent;
+                        event.noteExpressionValue = {kTuningTypeID, in.noteId, 0.5};
+                        events_.add(event);
+                    }
                     break;
                 }
                 [[fallthrough]];  // velocity 0 releases
             case ProcessEvent::Type::NoteOff:
                 event.type = Event::kNoteOffEvent;
-                event.noteOff = {channel, key, 0.f, -1, 0.f};
+                event.noteOff = {channel, key, 0.f, in.noteId, 0.f};
                 if (events_.add(event) && held_[channel][key] > 0) --held_[channel][key];
+                break;
+            case ProcessEvent::Type::NoteBend:
+                // A note's bend is its note expression "tuning" (VST3's per-note pitch:
+                // 0.5 is none, 240 semitones across), for the note it names.
+                if (in.noteId < 0) break;
+                event.type = Event::kNoteExpressionValueEvent;
+                event.noteExpressionValue = {kTuningTypeID, in.noteId,
+                                             std::clamp(0.5 + static_cast<double>(in.bend) / 240.0, 0.0, 1.0)};
+                events_.add(event);
                 break;
             case ProcessEvent::Type::Midi:
                 addMidi(in);
@@ -554,11 +581,9 @@ void Vst3Processor::fillContext(const ProcessContext& ctx) {
     c.sampleRate = ctx.sampleRate;
     c.projectTimeSamples = ctx.samplePos;
     c.continousTimeSamples = continuousSamples_;
-    c.systemTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::steady_clock::now().time_since_epoch())
-                       .count();
+    c.systemTime = hostTimeNs();
     c.projectTimeMusic = ctx.beatPos;
-    const double beatsPerBar = ctx.timeSigNum * 4.0 / ctx.timeSigDen;
+    const double beatsPerBar = ctx.beatsPerBar();
     c.barPositionMusic = std::floor(ctx.beatPos / beatsPerBar + 1e-9) * beatsPerBar;
     c.tempo = ctx.tempo;
     c.timeSigNumerator = ctx.timeSigNum;
@@ -878,9 +903,7 @@ void Vst3Processor::setState(const std::vector<uint8_t>& state) {
     bool loaded = false;
     {
         ScopedSuspend suspend(guard_);
-        ParamChange stale;
-        while (toAudio_.pop(stale)) {
-        }  // changes from before must not undo the state
+        toAudio_.clear();  // changes from before must not undo the state
         loaded = PresetFile::loadPreset(stream, FUID::fromTUID(classId_.data()), component_,
                                         singleComponent_ ? nullptr : controller_.get());
     }
@@ -959,7 +982,7 @@ bool Vst3Processor::openEditor(void* ownerWindow, const std::string& title) {
     dropEditor();
     if (!controller_) return false;
     IPtr<IPlugView> view = owned(controller_->createView(ViewType::kEditor));
-    if (!view || view->isPlatformTypeSupported(kPlatformTypeHWND) != kResultTrue) return false;
+    if (!view || !EditorWindow::canHold(*view)) return false;
     editor_ = std::make_unique<EditorWindow>(view, ownerWindow, title,
                                              editorPosition_ ? &*editorPosition_ : nullptr);
     if (!editor_->isOpen()) {

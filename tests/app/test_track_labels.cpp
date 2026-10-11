@@ -225,7 +225,7 @@ private Q_SLOTS:
         QCOMPARE(second.value(QStringLiteral("role")).toString(), QStringLiteral("kick"));
         QVERIFY(second.value(QStringLiteral("details")).toStringList().contains(QStringLiteral("Audio: \u201CKick_Deep\u201D")));
         QCOMPARE(all[3].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Delay Return"));
-        QCOMPARE(all[4].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Master"));
+        QCOMPARE(all[4].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Main"));
 
         QVERIFY(trackLabels.toolTip(group).startsWith(QStringLiteral("Drum Group\nHolds: Deep Kick, Tight Snare")));
         QCOMPARE(trackLabels.toolTip(QStringLiteral("nope")), QString());

@@ -57,11 +57,17 @@ void prepareApplication() {
     qputenv("SUBSTATION_PLUGIN_CACHE",
             (runFolder(QStringLiteral("sub-plugin-cache")) + QStringLiteral("/vst3-cache.json")).toUtf8());
     qputenv("SUBSTATION_RECORDINGS", (runFolder(QStringLiteral("sub-recordings")) + QStringLiteral("/Recordings")).toUtf8());
+    // Not the user's template: new projects start empty until a test saves one.
+    qputenv("SUBSTATION_TEMPLATE", (runFolder(QStringLiteral("sub-template")) + QStringLiteral("/Template.gilproj")).toUtf8());
 }
 
-ScopedEnv::ScopedEnv(const char* name, const QString& value)
+ScopedEnv::ScopedEnv(const char* name, const std::optional<QString>& value)
     : name_(name), before_(qgetenv(name)), was_(qEnvironmentVariableIsSet(name)) {
-    qputenv(name, value.toUtf8());
+    if (value) {
+        qputenv(name, value->toUtf8());
+    } else {
+        qunsetenv(name);
+    }
 }
 
 ScopedEnv::~ScopedEnv() {
@@ -118,6 +124,30 @@ Device makeDevice(const QString& id, const QString& kind, const QMap<QString, do
     device.kind = kind;
     device.params = params;
     return device;
+}
+
+QStringList ids(const std::vector<Device>& devices) {
+    QStringList result;
+    for (const Device& device : devices) result.append(device.id);
+    return result;
+}
+
+QStringList ids(const std::vector<const Track*>& tracks) {
+    QStringList result;
+    for (const Track* track : tracks) result.append(track->id);
+    return result;
+}
+
+QStringList kinds(const std::vector<Device>& devices) {
+    QStringList result;
+    for (const Device& device : devices) result.append(device.kind);
+    return result;
+}
+
+Spans spans(const std::vector<Clip>& clips, double tempo) {
+    Spans result;
+    for (const Clip& c : clips) result.emplace_back(round6(c.startBeat), round6(c.endBeat(tempo)));
+    return result;
 }
 
 }  // namespace sub::app::test

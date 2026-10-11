@@ -720,7 +720,7 @@ Description describeMaster(const TrackFacts& track) {
         if (device->kind != "rack") readEffect(d, *device);
     }
     std::erase_if(d.traits, [](const Trait& t) { return t.word == "Limited" || t.word == "Compressed" || t.word == "Mastered"; });
-    d.head = "Master";
+    d.head = "Main";  // (the master, as Ableton 12 and its header call it)
     d.family = Family::Mix;
     d.role = "master";
     if (devices.empty()) d.details.push_back("No effects");

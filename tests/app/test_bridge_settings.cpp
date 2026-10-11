@@ -1,17 +1,23 @@
 // The audio and MIDI preferences (AudioSettings and the other QSettings keys),
-// where the bridge puts its files (recordings, frozen audio, reversed copies) and
-// how it names them, the float WAV writer, the EQ's curve, and what the UI reads
-// of the engine through the bridge (device status, the scope, MIDI inputs).
+// where the bridge puts its files (recordings, frozen audio, reversed copies),
+// how it names them and makes their folders, the float WAV writer, the EQ's
+// curve, the count of calls that may call the bridge back (BusyScope), and what
+// the UI reads of the engine through the bridge (device status, the scope, MIDI
+// inputs).
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
 
 #include "audio/AudioFiles.h"
 #include "audio/AudioSettings.h"
+#include "audio/BridgePrivate.h"
+#include "audio/DisperserResponse.h"
 #include "audio/EqResponse.h"
 #include "audio/EngineBridge.h"
+#include "model/Paths.h"
 #include "model/Project.h"
 
+#include "builtin/DisperserDesign.h"
 #include "builtin/EqDesign.h"
 
 #include <QDir>
@@ -147,11 +153,9 @@ private Q_SLOTS:
         QCOMPARE(recordingsFolder(project), QDir(dir.path()).filePath("Recordings"));
         QCOMPARE(freezeFolder(project), QDir(dir.path()).filePath("Freeze"));
         QCOMPARE(reversedFolder(project), QDir(dir.path()).filePath("Reversed"));
-        const QByteArray before = qgetenv("SUBSTATION_RECORDINGS");
-        qunsetenv("SUBSTATION_RECORDINGS");
+        const test::ScopedEnv unset("SUBSTATION_RECORDINGS", std::nullopt);
         project.setPath({});
         QVERIFY(recordingsFolder(project).endsWith("SUBstation/Recordings"));
-        qputenv("SUBSTATION_RECORDINGS", before);
     }
 
     void reversedCopiesAreNumbered() {
@@ -168,7 +172,31 @@ private Q_SLOTS:
         QVERIFY(isAudioFile(QStringLiteral("c.mp3")) && isAudioFile(QStringLiteral("d.wave")));
         QVERIFY(!isAudioFile(QStringLiteral("e.gilproj")));
         QCOMPARE(audioExtensions().size(), 4);
-        QCOMPARE(sourceKey(QStringLiteral("/a/b/../c.wav")), sourceKey(QStringLiteral("/a/c.wav")));
+        QCOMPARE(pathIdentity(QStringLiteral("/a/b/../c.wav")), pathIdentity(QStringLiteral("/a/c.wav")));
+    }
+
+    void foldersAreMadeOrSayWhyNot() {
+        test::TempDir dir;
+        QVERIFY(!makeFolder(dir.path(QStringLiteral("a/b")), QStringLiteral("the folder")));
+        QVERIFY(QFileInfo(dir.path(QStringLiteral("a/b"))).isDir());
+        QVERIFY(!makeFolder(dir.path(QStringLiteral("a/b")), QStringLiteral("the folder")));  // (there already)
+        QVERIFY(QFile(dir.path(QStringLiteral("file"))).open(QIODevice::WriteOnly));  // a file where a folder would go
+        const QString inside = dir.path(QStringLiteral("file/Freeze"));
+        QCOMPARE(makeFolder(inside, QStringLiteral("the freeze folder")),
+                 std::optional<QString>(QStringLiteral("Could not create the freeze folder ") +
+                                        QDir::toNativeSeparators(inside)));
+    }
+
+    void busyLastsAsLongAsTheCallWhateverItThrows() {
+        int busy = 0;
+        try {
+            const BusyScope outer(busy);
+            const BusyScope inner(busy);
+            QCOMPARE(busy, 2);
+            throw 1;  // (not a std::exception)
+        } catch (int) {
+        }
+        QCOMPARE(busy, 0);
     }
 
     void floatWavFilesDecodeAsWritten() {
@@ -201,6 +229,30 @@ private Q_SLOTS:
         // Above Nyquist: Nyquist's.
         QCOMPARE(eqResponseDb(sub::eq::Bell, 1000.0, 6.0, 1.0, 0, 48000.0, {24000.0, 40000.0})[1],
                  eqResponseDb(sub::eq::Bell, 1000.0, 6.0, 1.0, 0, 48000.0, {24000.0})[0]);
+    }
+
+    void theDisperserCurveIsTheEngines() {
+        const QList<double> frequencies{20.0, 200.0, 1000.0, 5000.0, 30000.0};
+        const QList<double> curve = disperserGroupDelayMs(32, 1000.0, 2.0, 48000.0, frequencies);
+        QCOMPARE(curve.size(), 5);
+        for (qsizetype i = 0; i < frequencies.size(); ++i)
+            QCOMPARE(curve[i], sub::disperser::groupDelayMs(32, 1000.0, 2.0, 48000.0, frequencies[i]));
+        QVERIFY(curve[2] > curve[1] && curve[2] > curve[3]);  // it peaks where it is tuned
+        QVERIFY(std::abs(curve[2] - 32 * 2 * 2.0 / (3.14159265358979 * 1000.0) * 1000.0) < 0.5);  // ~2Q/(pi f) a stage
+        // Above Nyquist: Nyquist's. No stages: no delay.
+        QCOMPARE(curve[4], disperserGroupDelayMs(32, 1000.0, 2.0, 48000.0, {24000.0})[0]);
+        QCOMPARE(disperserGroupDelayMs(0, 1000.0, 2.0, 48000.0, {1000.0})[0], 0.0);
+        // Its peak: its poles' frequency, a little below where it is tuned (f sqrt(1 - 1/4Q²)), kept
+        // below Nyquist; at 0 Hz for a pinch so low its poles are real.
+        QVERIFY(std::abs(disperserPeakFrequency(1000.0, 2.0, 48000.0) / (1000.0 * std::sqrt(1.0 - 1.0 / 16.0)) - 1.0) <
+                0.01);
+        QVERIFY(std::abs(disperserPeakFrequency(1000.0, 10.0, 48000.0) / 1000.0 - 1.0) < 0.01);
+        QVERIFY(std::abs(disperserPeakFrequency(20000.0, 10.0, 44100.0) - 0.45 * 44100.0) < 50.0);
+        QCOMPARE(disperserPeakFrequency(1000.0, 0.1, 48000.0), 0.0);
+        const double peak = disperserPeakFrequency(20000.0, 10.0, 44100.0);
+        const double atPeak = disperserGroupDelayMs(64, 20000.0, 10.0, 44100.0, {peak})[0];
+        for (const double nearby : {19000.0, 19500.0, 20000.0, 20500.0})
+            QVERIFY(atPeak >= disperserGroupDelayMs(64, 20000.0, 10.0, 44100.0, {nearby})[0]);
     }
 
     void startingAudioFallsBackOrSaysSo() {

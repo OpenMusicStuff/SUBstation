@@ -145,7 +145,8 @@ Rectangle {
     }
 
     // A device's sidechain menu: No Sidechain, the tracks it can come from
-    // (those that would close a cycle greyed out), then where it is taken.
+    // (those that would close a cycle greyed out) under a search field that
+    // has the keyboard as it opens, then where it is taken.
     function showSidechainMenu(frame, at, x, y) {
         const trackId = frame.trackId
         const id = frame.deviceId
@@ -157,8 +158,30 @@ Rectangle {
                 menu.separator()
                 continue
             }
+            if (entry.search) {
+                menu.search(entry.children,
+                            source => Session.editor.trySetDeviceSidechain(trackId, id, source.source, source.tap))
+                continue
+            }
             menu.entry(entry.text, () => Session.editor.trySetDeviceSidechain(trackId, id, entry.source, entry.tap),
                        entry.checked, entry.enabled)
+        }
+        menu.popup(at, x, y)
+    }
+
+    // A device's MIDI From menu: Own Track, then the MIDI tracks whose notes
+    // it can play instead, under a search field that has the keyboard as it opens.
+    function showMidiFromMenu(frame, at, x, y) {
+        const info = frame.info
+        menu.reset()
+        const entries = info.midiFromMenu()
+        for (let i = 0; i < entries.length; ++i) {
+            const entry = entries[i]
+            if (entry.search) {
+                menu.search(entry.children, source => info.setMidiFrom(source.source))
+                continue
+            }
+            menu.entry(entry.text, () => info.setMidiFrom(entry.source), entry.checked, entry.enabled)
         }
         menu.popup(at, x, y)
     }
@@ -198,10 +221,7 @@ Rectangle {
         const rackId = macro.rackId
         let renaming = false
         menu.reset()
-        menu.entry(qsTr("Show Automation"), () => macro.showAutomation(), undefined, macro.canAutomate())
-        menu.entry(qsTr("Delete Automation"), () => macro.deleteAutomation(), undefined, macro.hasEnvelope())
-        if (macro.isOverridden())
-            menu.entry(qsTr("Re-Enable Automation"), () => macro.reEnableAutomation())
+        menu.automationEntries(macro)
         menu.separator()
         menu.entry(qsTr("Rename"), () => renaming = true)
         menu.entry(qsTr("Edit Mappings…"), () => macroMappings.show(macro, cell), undefined, macro.mapped)
@@ -269,21 +289,21 @@ Rectangle {
     function loadPresetFile(chain, index) {
         presetFileDialog.chain = chain
         presetFileDialog.index = index
-        presetFileDialog.currentFolder = area.fileUrl(Session.deviceSelection.presetFolder())
+        presetFileDialog.currentFolder = FileUrls.fileUrl(Session.deviceSelection.presetFolder())
         presetFileDialog.open()
     }
 
     function loadVst3Preset(deviceId) {
         vst3LoadDialog.deviceId = deviceId
-        vst3LoadDialog.currentFolder = area.fileUrl(Session.deviceSelection.vst3PresetFolder(deviceId))
+        vst3LoadDialog.currentFolder = FileUrls.fileUrl(Session.deviceSelection.vst3PresetFolder(deviceId))
         vst3LoadDialog.open()
     }
 
     function saveVst3Preset(deviceId, name) {
         const folder = Session.deviceSelection.vst3PresetFolder(deviceId)
         vst3SaveDialog.deviceId = deviceId
-        vst3SaveDialog.currentFolder = area.fileUrl(folder)
-        vst3SaveDialog.selectedFile = area.fileUrl(folder + "/" + name + ".vstpreset")
+        vst3SaveDialog.currentFolder = FileUrls.fileUrl(folder)
+        vst3SaveDialog.selectedFile = FileUrls.fileUrl(folder + "/" + name + ".vstpreset")
         vst3SaveDialog.open()
     }
 
@@ -462,7 +482,7 @@ Rectangle {
 
         title: qsTr("Load Preset")
         nameFilters: [qsTr("SUBstation Preset (*.gilpreset)")]
-        onAccepted: Session.deviceSelection.loadPresetFile(area.localPath(selectedFile), chain, index)
+        onAccepted: Session.deviceSelection.loadPresetFile(FileUrls.localPath(selectedFile), chain, index)
     }
 
     FileDialog {
@@ -473,7 +493,7 @@ Rectangle {
 
         title: qsTr("Load VST3 Preset")
         nameFilters: [qsTr("VST3 Preset (*.vstpreset)")]
-        onAccepted: Session.deviceSelection.loadVst3Preset(deviceId, area.localPath(selectedFile))
+        onAccepted: Session.deviceSelection.loadVst3Preset(deviceId, FileUrls.localPath(selectedFile))
     }
 
     FileDialog {
@@ -485,6 +505,6 @@ Rectangle {
         title: qsTr("Save VST3 Preset")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("VST3 Preset (*.vstpreset)")]
-        onAccepted: Session.deviceSelection.saveVst3Preset(deviceId, area.localPath(selectedFile))
+        onAccepted: Session.deviceSelection.saveVst3Preset(deviceId, FileUrls.localPath(selectedFile))
     }
 }

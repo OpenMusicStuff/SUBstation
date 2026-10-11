@@ -6,12 +6,16 @@
 // is needed (test_parallel_live.cpp plays live, with the fake ASIO driver).
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <stdexcept>
 #include <thread>
 
 #include "Engine.h"
+#include "Scheduler.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 #include "harness/TaskGraphOrder.h"
@@ -20,7 +24,6 @@ using namespace subtest;
 
 namespace {
 
-enum { FX_GAIN, FX_LATENCY };  // SUB Test Effect's parameters
 // Workers run whatever the computer's cores (oversubscribed on fewer).
 constexpr int kThreads = 4;
 
@@ -53,15 +56,10 @@ uint32_t synth(sub::Engine& engine, uint32_t track, const std::vector<sub::NoteD
     return processor;
 }
 
-uint32_t utility(sub::Engine& engine, uint32_t track, double gainDb) {
-    return utilityOn(engine, engine.trackChain(track), static_cast<float>(gainDb));
-}
-
-uint32_t latentEffect(sub::Engine& engine, uint32_t track, int64_t latency, double gain = 1.0) {
-    const uint32_t effect = addTestPlugin(engine, engine.trackChain(track), "SUB Test Effect");
-    engine.setProcessorParam(effect, FX_LATENCY, static_cast<float>(latency));
+// SUB Test Effect `latency` samples late, at `gain` (FX_GAIN: 0..1 is 0..2 times).
+uint32_t latentEffectAt(sub::Engine& engine, uint32_t track, int64_t latency, double gain = 1.0) {
+    const uint32_t effect = latentEffect(engine, track, static_cast<int>(latency));
     engine.setProcessorParam(effect, FX_GAIN, static_cast<float>(gain));
-    engine.idle();  // the plug-in asked for a restart to change its latency
     return effect;
 }
 
@@ -118,7 +116,7 @@ Project randomProject(sub::Engine& engine, Rng& rng, bool plugins, int tracks = 
         if (rng.random() < 0.5) utility(engine, track, rng.uniform(-12.0, 6.0));
         if (plugins && rng.random() < 0.4) {
             const int64_t latency = rng.integers(0, 600);
-            latentEffect(engine, track, latency, rng.uniform(0.25, 1.0));
+            latentEffectAt(engine, track, latency, rng.uniform(0.25, 1.0));
         }
         engine.setTrackGain(track, static_cast<float>(rng.uniform(0.3, 1.0)));
         engine.setTrackPan(track, static_cast<float>(rng.uniform(-1.0, 1.0)));
@@ -133,7 +131,7 @@ Project randomProject(sub::Engine& engine, Rng& rng, bool plugins, int tracks = 
     for (const uint32_t track : project.leaves) {  // some into groups made after them: the snapshot reorders them
         if (!project.groups.empty() && rng.random() < 0.3) engine.setTrackOutput(track, rng.choice(project.groups));
     }
-    if (plugins && rng.random() < 0.5) latentEffect(engine, sub::Engine::kMaster, rng.integers(0, 300));
+    if (plugins && rng.random() < 0.5) latentEffectAt(engine, sub::Engine::kMaster, rng.integers(0, 300));
     return project;
 }
 
@@ -148,7 +146,7 @@ std::vector<uint32_t> addReturns(sub::Engine& engine, Rng& rng, bool plugins, co
         utility(engine, ret, rng.uniform(-6.0, 0.0));
         if (plugins && rng.random() < 0.6) {
             const int64_t latency = rng.integers(0, 500);
-            latentEffect(engine, ret, latency, rng.uniform(0.25, 1.0));
+            latentEffectAt(engine, ret, latency, rng.uniform(0.25, 1.0));
         }
         engine.setTrackGain(ret, static_cast<float>(rng.uniform(0.3, 1.0)));
         engine.setTrackMute(ret, rng.random() < 0.1);
@@ -187,13 +185,13 @@ int addSidechains(sub::Engine& engine, Rng& rng, const std::vector<uint32_t>& tr
             const int index = static_cast<int>(rng.integers(0, 3)) - 1;
             const uint32_t pid = addTestPlugin(engine, engine.trackChain(consumer), "SUB Test Sidechain", index);
             if (consumer != sub::Engine::kMaster && rng.random() < 0.3)
-                latentEffect(engine, consumer, rng.integers(1, 400));  // after it
+                latentEffectAt(engine, consumer, rng.integers(1, 400));  // after it
             const uint32_t source = rng.choice(tracks);
             std::vector<sub::SidechainTap> taps{sub::SidechainTap::PostFader, sub::SidechainTap::PreFader,
                                                 sub::SidechainTap::PreFx};
             uint32_t device = 0;
             if (rng.random() < 0.4) {  // a device to tap after, before the source's others
-                device = latentEffect(engine, source, rng.integers(0, 500));
+                device = latentEffectAt(engine, source, rng.integers(0, 500));
                 engine.moveProcessor(device, engine.trackChain(source), 0);
                 taps.push_back(sub::SidechainTap::AfterDevice);
             }
@@ -245,6 +243,55 @@ TEST_CASE("the number of audio threads") {
     CHECK_EQ(engine.audioThreads(), 64);
 }
 
+TEST_CASE("the workers ask for real-time priority: those the system raised are counted") {
+    sub::Engine engine;
+    engine.setAudioThreads(kThreads);
+    const int realtime = engine.realtimeWorkers();  // (known as setAudioThreads returns: the workers have asked)
+    CHECK(realtime >= 0 && realtime <= kThreads - 1);
+    std::printf("  workers at real-time priority: %d of %d\n", realtime, kThreads - 1);
+    engine.setAudioThreads(1);  // no workers
+    CHECK_EQ(engine.realtimeWorkers(), 0);
+}
+
+TEST_CASE("back to back runs for longer than a worker stays awake, its workgroup changing") {
+    // Runs with no gap between them (as an offline render's chunks): the workers
+    // take a nap every few milliseconds (rtkit's RLIMIT_RTTIME) and go on taking
+    // part. Each run renders every node once, after its inputs.
+    constexpr int kNodes = 32;
+    std::vector<std::pair<int, int>> edges;
+    for (int i = 0; i + 1 < kNodes; ++i) {
+        if (i % 4 != 3) edges.emplace_back(i, (i / 4) * 4 + 3);  // groups of four: three into the fourth
+    }
+    sub::TaskGraph graph(kNodes, edges);
+    sub::Scheduler scheduler(kThreads);
+    struct Context {
+        std::atomic<int> rendered[kNodes] = {};
+        std::atomic<bool> outOfOrder{false};
+    } context;
+    const auto job = [](void* p, int node, int) noexcept {
+        auto& c = *static_cast<Context*>(p);
+        if (node % 4 == 3) {
+            const int pass = c.rendered[node].load();
+            for (int input = node - 3; input < node; ++input) {
+                if (c.rendered[input].load() != pass + 1) c.outOfOrder = true;
+            }
+        }
+        c.rendered[node].fetch_add(1);
+        volatile double spin = 0;  // a little work
+        for (int i = 0; i < 2000; ++i) spin = spin + i;
+    };
+    const auto start = std::chrono::steady_clock::now();
+    int runs = 0;
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(200)) {
+        if (runs % 500 == 250) scheduler.setWorkgroup({});  // (none here, or the same: nothing to rejoin)
+        scheduler.run(graph, job, &context, true);
+        ++runs;
+    }
+    for (int node = 0; node < kNodes; ++node) CHECK_EQ(context.rendered[node].load(), runs);
+    CHECK(!context.outOfOrder.load());
+    CHECK(scheduler.nodesOnWorkers() > 0);
+}
+
 TEST_CASE("a track renders the same on any thread") {
     // Built-in synths (with state: their voices go on across blocks) on many
     // tracks, each moving between threads from block to block.
@@ -269,7 +316,7 @@ TEST_CASE("a plug-in keeps its state on any thread") {
         const std::string path = makeWav(rng.uniformSamples(kSampleRate * 2, -0.5, 0.5), 2);
         engine.loadSource(path);
         engine.setTrackClips(track, {clip(path, 0.0, 1.0)});
-        latentEffect(engine, track, rng.integers(1, 2000));
+        latentEffectAt(engine, track, rng.integers(1, 2000));
     }
     sameOnAnyThreads(engine, 4 * kBeat);
 }
@@ -348,6 +395,59 @@ TEST_CASE("random graphs with sidechains render the same on any threads") {
     }
 }
 
+TEST_CASE("random graphs with Ableton's outputs and inputs render the same on any threads") {
+    // Tracks routed as Ableton routes them: some sending only, some into
+    // tracks that take what comes in as their input (Track In, monitoring In:
+    // heard offline), some into keyed devices' sidechains (summed there with the
+    // devices' own), some taking another track's output tapped before its
+    // devices, before its fader or after it. Routes that would close a cycle
+    // are refused.
+    requireTestPlugins();
+    for (int seed = 1; seed <= 8; ++seed) {
+        INFO("seed " + std::to_string(500 + seed));
+        sub::Engine engine;
+        Rng rng(static_cast<uint64_t>(500 + seed));
+        const int trackCount = static_cast<int>(rng.integers(5, 16));
+        const Project project = randomProject(engine, rng, true, trackCount);
+        const auto all = joined(project.groups, project.leaves);
+        addSidechains(engine, rng, all);
+        std::vector<uint32_t> keyedDevices;
+        for (const uint32_t track : all) {
+            for (const uint32_t pid : engine.chainProcessors(engine.trackChain(track))) {
+                if (engine.processorInfo(pid).hasSidechain) keyedDevices.push_back(pid);
+            }
+        }
+        for (const uint32_t track : project.leaves) {
+            if (rng.random() < 0.4) {
+                engine.setTrackInMonitored(track, true);
+                engine.setTrackMonitor(track, sub::MonitorMode::In);
+            }
+        }
+        int routed = 0;
+        for (const uint32_t track : all) {
+            const double what = rng.random();
+            try {
+                if (what < 0.15) {
+                    engine.setTrackOutput(track, sub::Engine::kNoOutput);
+                } else if (what < 0.4 && !keyedDevices.empty()) {
+                    engine.setTrackOutputSidechain(track, rng.choice(keyedDevices));
+                } else if (what < 0.6) {
+                    engine.setTrackOutput(track, rng.choice(project.leaves));
+                } else if (what < 0.8) {
+                    const std::vector<sub::SidechainTap> taps{sub::SidechainTap::PostFader, sub::SidechainTap::PreFader,
+                                                              sub::SidechainTap::PreFx};
+                    engine.setTrackInputTrack(track, rng.choice(all), taps[static_cast<size_t>(rng.integers(0, 3))]);
+                }
+                ++routed;
+            } catch (const std::invalid_argument&) {
+                // itself, or a track it feeds
+            }
+        }
+        CHECK(routed > 0);
+        checkRandomGraph(engine, true);
+    }
+}
+
 TEST_CASE("nested groups on any threads") {
     // Groups three deep, with tracks at every level: each bus sums what goes into it in a fixed order.
     sub::Engine engine;
@@ -370,7 +470,7 @@ TEST_CASE("nested groups on any threads") {
                 engine.setTrackClips(track, {clip(noise, i * 0.5, 1.0)});
                 utility(engine, track, i);
             }
-            if (haveTestPlugins() && i == 3) latentEffect(engine, track, 100 * (bus % 4) + 37);
+            if (haveTestPlugins() && i == 3) latentEffectAt(engine, track, 100 * (bus % 4) + 37);
         }
     }
     sameOnAnyThreads(engine, 4 * kBeat);

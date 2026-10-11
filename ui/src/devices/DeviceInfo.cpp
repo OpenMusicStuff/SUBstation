@@ -1,6 +1,7 @@
 #include "devices/DeviceInfo.h"
 
 #include "audio/EngineBridge.h"
+#include "controls/Automation.h"
 #include "editor/ProjectEditor.h"
 #include "model/Device.h"
 #include "model/Devices.h"
@@ -104,10 +105,10 @@ void DeviceInfo::connectSession() {
     };
     // Its track's devices changed (it may have moved, gone, been switched or
     // renamed), or another track's: a sidechain's source may have lost (or got
-    // back) the device it is taken after. Its sidechain's source renamed (or going).
+    // back) the device it is taken after. Its sidechain's (or MIDI input's) source renamed (or going).
     connections_ << connect(project, &Project::devicesChanged, this, refreshAll);
     connections_ << connect(project, &Project::trackChanged, this, [this](const QString& trackId) {
-        if (trackId == sidechainSource_)
+        if (trackId == sidechainSource_ || trackId == midiSource_)
             refresh();
     });
     connections_ << connect(project, &Project::devicesFolded, this, ofTrack);
@@ -253,9 +254,15 @@ void DeviceInfo::refresh() {
         } else {
             s.sidechainToolTip = QStringLiteral("Sidechain: none (click to choose a track)");
         }
+        s.acceptsMidi = bridge->acceptsMidi(trackId_, deviceId_);
+        const Track* source = device->midiFrom.isEmpty() ? nullptr : project->findTrack(device->midiFrom);
+        s.midiFromOn = source != nullptr;
+        s.midiFromToolTip = source ? QStringLiteral("MIDI From: %1 (it plays that track's notes)").arg(source->name)
+                                   : QStringLiteral("MIDI From: its own track (click to take another track's notes)");
     }
     const std::optional<Sidechain> sidechain = currentSidechain();
     sidechainSource_ = sidechain ? sidechain->trackId : QString();
+    midiSource_ = device ? device->midiFrom : QString();
     if (s == state_)
         return;
     state_ = s;
@@ -274,20 +281,11 @@ void DeviceInfo::showSwitchAutomation() {
         session_->editor()->showAutomation(trackId_, switchKey());
 }
 
-void DeviceInfo::deleteSwitchAutomation() {
-    if (session_ && session_->project()->hasOwner(trackId_))
-        session_->editor()->clearEnvelope(trackId_, switchKey());
-}
+void DeviceInfo::deleteSwitchAutomation() { AutomationTarget{session_, trackId_, switchKey()}.deleteEnvelope(); }
 
-void DeviceInfo::reEnableAutomation() {
-    if (session_)
-        session_->bridge()->reEnableAutomation(trackId_);
-}
+void DeviceInfo::reEnableAutomation() { AutomationTarget{session_, trackId_, switchKey()}.reEnable(); }
 
-bool DeviceInfo::hasSwitchEnvelope() const {
-    return session_ && session_->project()->hasOwner(trackId_) &&
-           !session_->project()->envelope(trackId_, switchKey()).empty();
-}
+bool DeviceInfo::hasSwitchEnvelope() const { return AutomationTarget{session_, trackId_, switchKey()}.hasEnvelope(); }
 
 void DeviceInfo::moveLeft() {
     if (!session_ || !state_.canMoveLeft)
@@ -331,14 +329,20 @@ QVariantList DeviceInfo::sidechainMenu() const {
                            {QStringLiteral("source"), source},      {QStringLiteral("tap"), tap}};
     };
     const QVariantMap separator{{QStringLiteral("separator"), true}};
-    entries << entry(QStringLiteral("No Sidechain"), !current, true, QString(), QString()) << separator;
+    entries << entry(QStringLiteral("No Sidechain"), !current, true, QString(), QString());
+    // The tracks: a search field's list (MenuSearch.qml), which has the keyboard as the menu opens.
+    QVariantList tracks;
     for (const Track* source : project->sidechainSources(trackId_)) {
         const bool usable = !project->sidechainWouldCycle(trackId_, source->id);
         // A new source: taken where the old one was (after its fader if after a device of it).
         const QString tap = !current || current->tapDevice() ? sub::app::kPostFader : current->tap;
-        entries << entry(usable ? source->name : source->name + QStringLiteral(" (this track feeds it)"),
-                         current && current->trackId == source->id, usable, source->id, tap);
+        tracks << entry(usable ? source->name : source->name + QStringLiteral(" (this track feeds it)"),
+                        current && current->trackId == source->id, usable, source->id, tap);
     }
+    if (tracks.isEmpty())
+        entries << separator;
+    else
+        entries << QVariantMap{{QStringLiteral("search"), true}, {QStringLiteral("children"), tracks}};
     if (current) {
         entries << separator;
         const QString tap = tapOf(*current);
@@ -346,6 +350,34 @@ QVariantList DeviceInfo::sidechainMenu() const {
             entries << entry(label, choice == tap, true, current->trackId, choice);
     }
     return entries;
+}
+
+QVariantList DeviceInfo::midiFromMenu() const {
+    QVariantList entries;
+    const Device* device = session_ ? session_->project()->findDevice(trackId_, deviceId_) : nullptr;
+    if (device == nullptr)
+        return entries;
+    auto entry = [](const QString& text, bool checked, const QString& source) {
+        return QVariantMap{{QStringLiteral("text"), text},    {QStringLiteral("checkable"), true},
+                           {QStringLiteral("checked"), checked}, {QStringLiteral("enabled"), true},
+                           {QStringLiteral("source"), source}};
+    };
+    const Project* project = session_->project();
+    const bool own = device->midiFrom.isEmpty() || !project->hasTrack(device->midiFrom);
+    entries << entry(QStringLiteral("Own Track"), own, QString());
+    QVariantList tracks;
+    for (const Track* source : project->midiSources(trackId_))
+        tracks << entry(source->name, !own && device->midiFrom == source->id, source->id);
+    if (!tracks.isEmpty())
+        entries << QVariantMap{{QStringLiteral("search"), true}, {QStringLiteral("children"), tracks}};
+    return entries;
+}
+
+void DeviceInfo::setMidiFrom(const QString& sourceTrackId) {
+    if (!session_ || !session_->project()->hasDevice(trackId_, deviceId_))
+        return;
+    session_->editor()->trySetDeviceMidiFrom(trackId_, deviceId_, sourceTrackId);  // (refusals on the status line)
+    refresh();
 }
 
 void DeviceInfo::setSidechain(const QString& sourceTrackId, const QString& tap) {

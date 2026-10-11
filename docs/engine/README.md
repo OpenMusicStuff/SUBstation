@@ -24,9 +24,11 @@ includes the engine's headers.
 | [EngineDevice.cpp](../../engine/src/EngineDevice.cpp) | Opening and closing the audio device, device events, input meters, the master scope, and `audioCallback()`. See [audio-devices.md](audio-devices.md). |
 | [EngineTracks.cpp](../../engine/src/EngineTracks.cpp) | Tracks, their mixer, routing (outputs, sends, the list of edges, cycle checks), meters, `setTrackAutomation`. See [routing.md](routing.md). |
 | [EngineInput.cpp](../../engine/src/EngineInput.cpp) | Track inputs (device channels or another track's output), monitoring, arming, recording, MIDI input. See [recording.md](recording.md) and [midi.md](midi.md). |
-| [EngineChains.cpp](../../engine/src/EngineChains.cpp) | Device chains, racks, sidechains, and the processor calls (parameters, state, editors, events). See [routing.md](routing.md), [devices.md](devices.md), [plugins.md](plugins.md). |
+| [EngineChains.cpp](../../engine/src/EngineChains.cpp) | Device chains, racks, sidechains, devices' MIDI inputs from other tracks (`setProcessorMidiInput`), and the processor calls (parameters, state, editors, events). See [routing.md](routing.md), [devices.md](devices.md), [plugins.md](plugins.md), [midi.md](midi.md). |
+| [NoteBend.h](../../engine/src/NoteBend.h) | A note's bend (MIDI 2.0's per-note pitch bend): `BendPoint`, `VibratoSpan`, and its rules (`sub::bend::curveAt`, `vibratoAt`, `at`), in any unit of time. Header-only; the application layer draws and edits with the same rules. See [midi.md](midi.md#bends-midi-20s-per-note-pitch-bend). |
+| [Ump.h](../../engine/src/Ump.h) | MIDI 2.0's Universal MIDI Packets: their lengths, decoding channel voice messages into `MidiInputEvent`s, the per-note pitch bend's 32 bits as semitones, and packets to send (tests). See [midi.md](midi.md#midi-20-input). |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | Building the `RenderSnapshot` from the edit model, and publishing it. See [rendering.md](rendering.md) and [routing.md](routing.md). |
-| [EngineOffline.cpp](../../engine/src/EngineOffline.cpp) | `renderOffline()` and `exportWav()`: suspending live output, a separate `Renderer`, fresh delay lines and stretch voices; renders in the background (`startExport()`, `startTrackRender()`) and `RenderJob`. |
+| [EngineOffline.cpp](../../engine/src/EngineOffline.cpp) | `renderOffline()` and `exportWav()` (`exportFile()`: WAV or MP3): suspending live output, a separate `Renderer`, fresh delay lines and stretch voices; renders in the background (`startExport()`, `startTrackRender()`) and `RenderJob`. |
 | [RenderJob.h](../../engine/src/RenderJob.h) | A render on a thread of its own: its progress, `cancel()`, `finish()`. |
 | [Snapshot.h](../../engine/src/Snapshot.h) | The snapshot's types. See [rendering.md](rendering.md). |
 | [Renderer.h](../../engine/src/Renderer.h) / [.cpp](../../engine/src/Renderer.cpp) | Turns a snapshot into audio. See [rendering.md](rendering.md). |
@@ -34,8 +36,8 @@ includes the engine's headers.
 | [Scheduler.h](../../engine/src/Scheduler.h) / [.cpp](../../engine/src/Scheduler.cpp) | The task graph and worker threads. See [scheduler.md](scheduler.md). |
 | [Transport.h](../../engine/src/Transport.h) | `TransportCommand`, `PreviewNote` and `SharedState`: what the API threads and the audio thread share. |
 | [Metronome.h](../../engine/src/Metronome.h) / [.cpp](../../engine/src/Metronome.cpp) | The click generator. See [rendering.md](rendering.md#metronome-and-count-in). |
-| [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) | Real-time helpers: `ScopedNoDenormals`, `SmoothedValue`, `SpscQueue`, `DeferredReleasePool`, `atomicStoreMax`, `dbToGain`, `balanceGains`, `DisplayStream`. |
-| [PathUtils.h](../../engine/src/PathUtils.h) | `pathFromUtf8()` and `widen()`: the engine takes paths as UTF-8, Windows file APIs want UTF-16. |
+| [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) | Real-time helpers: `ScopedNoDenormals`, `cpuRelax`, `hostTimeNs`, `SmoothedValue`, `copyIntoRing`/`copyOutOfRing`, `SpscQueue`, `DeferredReleasePool`, `atomicStoreMax`, `dbToGain`, `gainToDb`, `expDbToGain`, `onePoleCoefficient`, `addStereo`, `interleave`, `balanceGains`, `DisplayStream`. |
+| [MiniaudioFiles.h](../../engine/src/MiniaudioFiles.h) | `initDecoderFile()`, `initEncoderFile()`: miniaudio's files by UTF-8 path (its wide calls on Windows, its narrow ones elsewhere). The engine takes paths as UTF-8; the platform layer ([platform.md](../platform.md)) turns them into what the system and `std::filesystem` take (`platform::toPath()`). |
 
 The `Engine` class is declared once in `Engine.h` and implemented by area across the
 `Engine*.cpp` files (the comment at the top of `Engine.cpp` lists them). They all build into
@@ -96,7 +98,8 @@ only tracks and the edges between them.
   the strip whose signal it processes (`stripId`) and the rack it belongs to (`parentRack`, 0
   for a main chain).
 - **`ProcessorEntry`** (in `processors_`, by processor id): the chain a device is in, the
-  `Processor`, its sidechain (`SidechainModel`, if any), and for a rack its chains in order.
+  `Processor`, its sidechain (`SidechainModel`, if any), the track whose notes it takes
+  (`midiSource`, with its `MidiFeed`), and for a rack its chains in order.
   Processor ids are unique across chains, so a device can move from one chain to another (on
   any strip) and keep its state: a plug-in isn't loaded again.
 - **`StripSlot`** (built on demand by `stripSlotsLocked()`): a strip's devices depth first,
@@ -135,8 +138,10 @@ converted to samples at the current tempo and sample rate. In order:
    sidechains into each strip's devices, the taps after devices, and the `TaskGraph` the
    scheduler runs.
 5. The master strip and each track (`TrackRender`): its chain and racks (`buildChainLocked()`,
-   recursively), automation in samples (`buildAutomationLocked()`), notes and clips in samples
-   (with their fades), its input, monitoring and MIDI route.
+   recursively, with the devices' MIDI feeds), automation in samples (`buildAutomationLocked()`),
+   notes (and their bends) and clips in samples (with their fades), its input, monitoring and
+   MIDI route. A track left out (frozen, or in a frozen group) keeps its notes while a
+   device elsewhere takes them.
 6. Stretch voices: enough for the clips that need stretching, at most 64 per configuration
    (`ensureWarpVoicesLocked()`); they only grow until the sample rate changes.
 
@@ -231,16 +236,28 @@ values (a rebuild). The metronome switch is an atomic. See [rendering.md](render
 Everything in [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) is wait-free and allocation-free on
 the real-time side.
 
-- `ScopedNoDenormals`: sets flush-to-zero / denormals-are-zero for a scope. The audio callback,
-  offline renders and each worker during a run use it.
+- `ScopedNoDenormals`: sets flush-to-zero / denormals-are-zero for a scope (x86-64: MXCSR's FTZ
+  and DAZ; arm64: FPCR's FZ). The audio callback, offline renders and each worker during a run
+  use it.
+- `cpuRelax()`: the pause in a spin-wait loop (x86-64: `PAUSE`; arm64: `ISB`), so the core's
+  other hyper-thread runs and the loop draws less power. The scheduler's waits and the VST3
+  host's `SpinLock` use it.
+- `hostTimeNs()`: the host clock (`std::chrono::steady_clock`, in nanoseconds) that audio
+  callbacks and MIDI input are stamped with.
 - `SmoothedValue`: a linear ramp to a target. Faders and send levels ramp over 20 ms.
 - `SpscQueue<T, Capacity>`: single-producer single-consumer ring; head and tail on separate
-  cache lines. A full queue drops the push (the caller sees `false`).
+  cache lines. A full queue drops the push (the caller sees `false`); `clear()` (the consumer)
+  drops what is queued. `copyIntoRing()` / `copyOutOfRing()` copy a run into or out of a plain
+  ring buffer, wrapping once (the recorder's rings, delay lines).
 - `DeferredReleasePool`: see [Epochs](#epochs-and-retiring-snapshots).
 - `atomicStoreMax()`: meters are written with "store max" by the audio thread and reset with
   `exchange(0)` by the UI (`takeMeters()`, `takeInputMeters()`).
 - `balanceGains()`: balance-style pan with a sine taper, unity at the centre; used for track,
-  chain and clip pan. `dbToGain()`.
+  chain and clip pan. `dbToGain()` (with a floor: -120 dB is silence), `gainToDb()`,
+  `expDbToGain()` (through `exp`, without the floor: what gain computers run per sample) and
+  `onePoleCoefficient()` (a smoother's or a glide's coefficient for a time constant).
+- `addStereo()` (a stereo signal into another, as it is or times a gain) and `interleave()`
+  (planar stereo into interleaved frames): the renderer's sums and offline output.
 - `DisplayStream`: values one thread publishes for others to draw (a device's meters and
   curves; see [devices.md](devices.md)). The writer overwrites the oldest; each reader keeps its
   own position.
@@ -260,8 +277,10 @@ snapshot's `outputLatency()`: they render that much first and drop it.
 `startExport()` and `startTrackRender()` do the same on a thread of their own and return a
 `RenderJob` ([RenderJob.h](../../engine/src/RenderJob.h)) at once; `exportWav()` and
 `renderTrackToWav()` are those, waited for. Under the lock, on the calling (main) thread, they
-create the file (a `WavWriter`: miniaudio's encoder, 16-bit with triangle dither, 24-bit or
-32-bit float), suspend live output, reset the processors and prepare an `OfflineRender`: the
+create the file (an `AudioFileWriter`, [AudioFileWriter.h](../../engine/src/AudioFileWriter.h): a
+`WavWriter`, miniaudio's encoder, 16-bit with triangle dither, 24-bit or 32-bit float; or for an
+`ExportFormat` of kind `Mp3` an MP3 writer, LAME's encoder at a constant bitrate,
+[Mp3Writer.cpp](../../engine/src/Mp3Writer.cpp)), suspend live output, reset the processors and prepare an `OfflineRender`: the
 renderer, its lines, and a `shared_ptr` to the snapshot as it is, which keeps its processors,
 sources and buffers alive whatever the UI changes meanwhile. The job's thread then renders that
 snapshot without the lock (4096 frames at a time), so the UI's calls (meters, the playhead,
@@ -270,7 +289,8 @@ snapshot without the lock (4096 frames at a time), so the UI's calls (meters, th
 - `progress()` is the frames rendered over the frames to render; `done()` says the thread has
   ended.
 - `cancel()` stops it before its next chunk. The file is deleted when the render's state goes
-  (on its thread) unless it was kept at the end: a cancelled or failed render leaves nothing.
+  (on its thread) unless it was kept at the end: a cancelled or failed render leaves nothing
+  (`AudioFileWriter::deleteUnlessKept()`, which every writer calls as it goes).
 - `finish()`, on the main thread, joins the thread, resets the processors again and gives live
   output back (`endJob()`), then returns the frames written, `nullopt` if cancelled, or throws
   what the render threw (a short write: "Could not write").
@@ -297,7 +317,18 @@ What the application needs besides an `Engine` is plain functions and singletons
 | The driver types this build has | `Engine::driverTypes()` |
 | The built-in devices, instruments first, then by name | `BuiltinRegistry::instance().devices()` ([devices.md](devices.md)) |
 | The default VST3 folders | `vst3::Vst3Format::instance().defaultSearchPaths()` ([plugins.md](plugins.md)) |
-| The clock MIDI input is stamped with | `hostTimeNs()` ([MidiInput.h](../../engine/src/MidiInput.h)) |
+| The clock MIDI input is stamped with | `hostTimeNs()` ([rt/RtUtils.h](../../engine/src/rt/RtUtils.h)) |
+| The Gate's key EQ curve and gain | `gate::keyFilter()`, `gate::gain()` and `gate::closeDb()` ([builtin/GateDesign.h](../../engine/src/builtin/GateDesign.h); the application's `gateKeyFilterDb()`, `gateGainDb()` and `gateCloseDb()` wrap them, see [devices.md](devices.md)) |
+| The Limiter's line and Soft Clip's band | `limiter::scales()`, `softKneeDb()` and `softTopDb()` ([builtin/LimiterDesign.h](../../engine/src/builtin/LimiterDesign.h); the application's `limiterLine()`, `limiterSoftKneeDb()` and `limiterSoftTopDb()` wrap them, see [devices.md](devices.md)) |
+| Multiband Dynamics' static curve | `multiband::staticGainDb()` ([builtin/MultibandDesign.h](../../engine/src/builtin/MultibandDesign.h); the application's `multibandGainDb()` wraps it, see [devices.md](devices.md)) |
+| The Spectral Compressor's threshold, Below and Focus | `spectral::thresholdDb()`, `belowDb()`, `focusWeight()` and `displayFrequency()` ([builtin/SpectralDesign.h](../../engine/src/builtin/SpectralDesign.h); the application's `spectralThresholdDb()`, `spectralBelowDb()`, `spectralFocusWeights()` and `spectralDisplayFrequencies()` wrap them, see [devices.md](devices.md)) |
+| The Saturator's curve and Color | `saturator::transfer()`, `colorDesign()` and `colorResponseDb()` ([builtin/SaturatorDesign.h](../../engine/src/builtin/SaturatorDesign.h); the application's `saturatorCurve()` and `saturatorColorDb()` wrap them, see [devices.md](devices.md)) |
+| The Amp's tone and transfer curves | `amp::toneResponseDb()` and `amp::Transfer` ([builtin/AmpDesign.h](../../engine/src/builtin/AmpDesign.h); the application's `ampToneResponseDb()`, `ampTransfer()` and `AmpTransferCurve` wrap them, see [devices.md](devices.md)) |
+| Erosion's noise band and excursion | `erosion::bandMagnitude()`, `bandEdges()`, `excursionMs()` and `blendWeights()` ([builtin/ErosionDesign.h](../../engine/src/builtin/ErosionDesign.h); the application's `erosionBandMagnitude()`, `erosionBandEdges()`, `erosionExcursionMs()` and `erosionBlendWeights()` wrap them, see [devices.md](devices.md)) |
+| The Chorus-Ensemble's voices' delays | `chorus::layout()`, `delayMs()`, `voicePhase()` and `peakDetuneCents()` ([builtin/ChorusDesign.h](../../engine/src/builtin/ChorusDesign.h); the application's `chorusDelayMs()`, `chorusVoicePhase()` and `chorusPeakDetuneCents()` wrap them, see [devices.md](devices.md)) |
+| The Phaser-Flanger's response and curve | `phaser::responseDb()`, `phaser::curve()`, `phaser::notchFrequencies()` ([builtin/PhaserDesign.h](../../engine/src/builtin/PhaserDesign.h); the application's `phaserResponseDb()` and `phaserCurvePoints()` wrap them, see [devices.md](devices.md)) |
+| The Reverb's decay curve, input filter and reflections | `reverb::decaySeconds()`, `inputFilterDb()`, `earlyTaps()` and `spinPan()` ([builtin/ReverbDesign.h](../../engine/src/builtin/ReverbDesign.h); the application's `reverbDecaySeconds()`, `reverbInputFilterDb()`, `reverbEarlyTaps()` and `reverbSpinPan()` wrap them, see [devices.md](devices.md)) |
+| The Disperser's group delay | `disperser::groupDelayMs()` ([builtin/DisperserDesign.h](../../engine/src/builtin/DisperserDesign.h); the application's `disperserGroupDelayMs()` wraps it, see [devices.md](devices.md)) |
 | An EQ band's response | `eq::design()` and `eq::responseDb()` ([builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h); the application's `eqResponseDb()` wraps them, see [devices.md](devices.md)) |
 
 - Long-running calls (loading sources, opening devices, plug-in state, recording, offline renders,
@@ -313,14 +344,20 @@ What the application needs besides an `Engine` is plain functions and singletons
 ## Platforms
 
 The engine builds on Windows (the product's platform) and on Linux; what differs is chosen in
-[engine/CMakeLists.txt](../../engine/CMakeLists.txt) by file, not by `#ifdef` scattered through it:
+[engine/CMakeLists.txt](../../engine/CMakeLists.txt) by file, not by `#ifdef` scattered through it.
+Each seam is a header every system shares and a file per system behind it, so another system
+(macOS, a native Linux driver) is another file, with nothing above it changing. What the engine
+needs from the operating system besides (paths, thread priorities) is the platform layer's
+([platform.md](../platform.md)), and what depends on the CPU (the denormal flush, the spin-wait
+pause) is in [rt/RtUtils.h](../../engine/src/rt/RtUtils.h).
 
-| | Windows | Elsewhere (Linux) |
+| Seam | Windows | Elsewhere (Linux) |
 |---|---|---|
-| Audio drivers | WASAPI (through miniaudio), and ASIO with the SDK ([audio-devices.md](audio-devices.md)) | "System": miniaudio's default backend (PulseAudio, ALSA, JACK...; never its null backend, which "plays" faster than real time), output only, no exclusive mode (`kDefaultDriver`) |
-| MIDI input devices | WinMM ([backends/MidiWinMM.cpp](../../engine/src/backends/MidiWinMM.cpp)) | none ([backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp)): no device is ever connected, but messages sent with `Engine::sendMidiInput()` (the computer keyboard, tests) still arrive ([midi.md](midi.md)) |
-| Plug-in editor windows | Win32 windows ([plugins/EditorWindow.cpp](../../engine/src/plugins/EditorWindow.cpp)) | none ([plugins/EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp)): `openEditor()` returns false ([plugins.md](plugins.md)) |
-| VST3 modules | the SDK's `module_win32.cpp` | the SDK's `module_linux.cpp`; default folders `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3` |
+| Audio drivers ([backends/AudioBackends.h](../../engine/src/backends/AudioBackends.h)) | WASAPI (through miniaudio), and ASIO with the SDK ([AudioBackendsWin32.cpp](../../engine/src/backends/AudioBackendsWin32.cpp), [audio-devices.md](audio-devices.md)) | "System": miniaudio's default backend (PulseAudio, ALSA, JACK...; never its null backend, which "plays" faster than real time), output only, no exclusive mode (`kDefaultDriver`; [AudioBackendsPosix.cpp](../../engine/src/backends/AudioBackendsPosix.cpp)) |
+| MIDI input devices ([backends/MidiDriver.h](../../engine/src/backends/MidiDriver.h)) | WinMM ([backends/MidiWinMM.cpp](../../engine/src/backends/MidiWinMM.cpp)) | none ([backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp)): no device is ever connected, but messages sent with `Engine::sendMidiInput()` (the computer keyboard, tests) still arrive ([midi.md](midi.md)) |
+| Plug-in editor windows ([plugins/EditorWindow.h](../../engine/src/plugins/EditorWindow.h)) | Win32 windows ([plugins/EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp)) | none ([plugins/EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp)): `openEditor()` returns false ([plugins.md](plugins.md)) |
+| VST3 hosting ([plugins/Vst3Platform.h](../../engine/src/plugins/Vst3Platform.h)) | COM on the loading thread, the known folders, `Contents/x86_64-win` ([Vst3PlatformWin32.cpp](../../engine/src/plugins/Vst3PlatformWin32.cpp)); modules: the SDK's `module_win32.cpp` | default folders `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3` (macOS's `~/Library/Audio/Plug-Ins/VST3`, `/Library/Audio/Plug-Ins/VST3`), `Contents/<arch>-linux` ([Vst3PlatformPosix.cpp](../../engine/src/plugins/Vst3PlatformPosix.cpp)); modules: the SDK's `module_linux.cpp` |
+| CPU | x86-64 with AVX2 (`/arch:AVX2`, `-mavx2 -mfma`) | x86-64 with AVX2, or arm64 with its baseline (NEON) |
 
 The built-in devices register themselves from their own files, which nothing else refers to; a
 program linking the static library would lose them. So each defines an anchor function, and

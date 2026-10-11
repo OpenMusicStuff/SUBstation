@@ -19,16 +19,6 @@
 
 namespace sub::ui::arrangement {
 
-namespace {
-
-bool farEnough(const QPointF& pos, const QPointF& press) { return (pos - press).manhattanLength() >= kDragThreshold; }
-
-}  // namespace
-
-bool isPanModifier(Qt::KeyboardModifiers modifiers) {
-    return (modifiers & Qt::ControlModifier) && (modifiers & Qt::AltModifier);
-}
-
 // --- MoveRangeGesture --------------------------------------------------------------------------
 
 MoveRangeGesture::MoveRangeGesture(LanesHost& host, const QPointF& press, std::function<void()> onClick)
@@ -405,7 +395,13 @@ void ExtendGesture::move(const QPointF& pos, Qt::KeyboardModifiers modifiers) {
     const double beat = std::max(0.0, view.snapBeat(view.xToBeat(pos.x()), modifiers & Qt::AltModifier));
     const double start = std::min(start_, beat), end = std::max(end_, beat);
     if (end <= start) return;  // (nothing to select yet)
-    if (lanes_ && host_.inClipBand(pos)) {  // into the clips: the clips of the tracks from its lanes' to there
+    // Into the clips (their title band; or past the tracks, on the ruler or
+    // below the arrangement, where ArrangementLanes puts it before the first
+    // row or after the last): the clips of the tracks from its lanes' to there.
+    const Arrangement& arrangement = *host_.hostArrangement();
+    const double contentY = pos.y() + arrangement.scrollY();
+    const bool pastTracks = contentY < 0 || contentY >= arrangement.layout().totalHeight();
+    if (lanes_ && (host_.inClipBand(pos) || pastTracks)) {
         const auto row = host_.rowAt(pos.y(), true);
         if (!row) return;
         selectRows(host_, start, end, std::min(laneRowsFirst_.value_or(*row), *row),

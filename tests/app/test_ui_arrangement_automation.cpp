@@ -586,8 +586,10 @@ private Q_SLOTS:
 
     void draggingUpFromALaneIntoTheClipsSelectsThem() {
         // From an automation lane, up into the clips' title band (or past the top
-        // track) selects the clips, as a drag in a lane without automation does.
+        // track) selects the clips, as a drag in a lane without automation does;
+        // down past the last track, the clips of every track from its own down.
         const auto clip = editor().addMidiClip(a_, 0.0, 8.0);
+        const auto lower = editor().addMidiClip(b_, 0.0, 8.0);
         editor().showAutomation(a_, kPan);
         h_->settle();
         const QPoint start = point(a_, 1.0, 0.1);
@@ -598,6 +600,12 @@ private Q_SLOTS:
             QCOMPARE(selection().clips(), QSet<sub::app::ClipRef>{*clip});
             QCOMPARE(selection().timeRange()->trackIds, QStringList{a_});
         }
+        selection().clear();
+        const double belowTracks = arrangement()->layout().totalHeight() - arrangement()->scrollY() + 10;
+        QVERIFY(belowTracks < lanes()->height());  // (the empty lanes below the tracks)
+        drag(start, h_->at(QPointF(std::round(arrangement()->view().beatToX(3.0)), belowTracks)));
+        QCOMPARE(selection().clips(), (QSet<sub::app::ClipRef>{*clip, *lower}));
+        QCOMPARE(selection().timeRange()->trackIds, (QStringList{a_, b_}));
         // Kept to the lanes, it is a range on the automation.
         drag(start, point(a_, 3.0, 0.1));
         QCOMPARE(selection().lanes(), (QList<sub::app::LaneRef>{{a_, kPan}}));

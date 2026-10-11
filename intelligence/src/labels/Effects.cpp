@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <set>
 
 #include "labels/Words.h"
 
@@ -244,6 +245,15 @@ std::optional<double> share(const DeviceFact& device, std::initializer_list<std:
     return param ? std::optional<double>(fraction(*param)) : std::nullopt;
 }
 
+// How hard a drive is driven: one in decibels by where it is in its range (0 dB of
+// drive is none, not full), else as fraction() reads it.
+std::optional<double> driveShare(const DeviceFact& device, std::initializer_list<std::string_view> names) {
+    const ParamFact* param = findParam(device, names);
+    if (!param) return std::nullopt;
+    const bool decibels = lowered(param->unit) == "db" || lowered(param->text).find("db") != std::string::npos;
+    return decibels ? std::clamp(param->normalized, 0.0, 1.0) : fraction(*param);
+}
+
 std::optional<double> wetShare(const DeviceFact& device) {
     return share(device, kWetNames);
 }
@@ -385,7 +395,10 @@ Effect classify(const DeviceFact& device) {
     static const std::map<std::string, Effect, std::less<>> kBuiltins = {
         {"synth", E::Instrument},     {"sampler", E::Instrument}, {"compressor", E::Compressor},
         {"delay", E::Delay},          {"eq", E::Eq},              {"ott", E::Ott},
-        {"sidechain", E::Ducking},    {"utility", E::Utility},
+        {"sidechain", E::Ducking},    {"utility", E::Utility},    {"reverb", E::Reverb},
+        {"saturator", E::Saturation}, {"amp", E::Amp},            {"erosion", E::LoFi},
+        {"chorus", E::Chorus},        {"phaser", E::Phaser},      {"gate", E::Gate},
+        {"limiter", E::Limiter},      {"multiband", E::Compressor}, {"spectral", E::Compressor},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {
@@ -458,8 +471,9 @@ DeviceReading readDevice(const DeviceFact& device) {
         if (weight > 0.0) reading.traits.push_back({std::move(word), weight, std::move(group)});
     };
     const auto wet = wetShare(device);
-    if (wet && (reading.effect == E::Reverb || reading.effect == E::Delay || reading.effect == E::Distortion ||
-                reading.effect == E::Saturation || reading.effect == E::Chorus || reading.effect == E::LoFi)) {
+    static const std::set<Effect> kWet = {E::Reverb, E::Delay,  E::Distortion, E::Saturation, E::Chorus,
+                                          E::Phaser, E::Flanger, E::LoFi,      E::Amp,        E::Modulation};
+    if (wet && kWet.contains(reading.effect)) {
         reading.summary += ", " + percent(*wet) + " wet";
         if (*wet < 0.03) return reading;  // (as good as off)
     }
@@ -489,12 +503,12 @@ DeviceReading readDevice(const DeviceFact& device) {
         break;
     }
     case E::Distortion: {
-        const auto drive = share(device, kDriveNames);
+        const auto drive = driveShare(device, kDriveNames);
         add("Distorted", drive ? 0.55 + 0.25 * *drive : 0.65, "drive");
         break;
     }
     case E::Saturation: {
-        const auto drive = share(device, {"drive", "saturation", "amount"});
+        const auto drive = driveShare(device, {"drive", "saturation", "amount"});
         if (drive && *drive >= 0.7) {
             add("Distorted", 0.6, "drive");
         } else {

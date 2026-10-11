@@ -3,7 +3,9 @@
 SUBstation is one C++ program in five layers: a Qt Quick UI that draws everything, an application layer that owns
 the project and everything that works on it, a real-time audio engine that plays it, a small library that indexes
 and searches the sample browser's files, and the intelligence module, which works things out about music and sound
-(how similar sounds are, in the background; a song's chords and key, from its MIDI). This page is the map; each part has its own pages (see the
+(how similar sounds are, in the background; a song's chords and key, from its MIDI). Under the engine, the browser and
+the intelligence module lies a small platform layer: what they need from the operating system, one file per system,
+so nothing above it has `#ifdef`s for one. This page is the map; each part has its own pages (see the
 [index](README.md)).
 
 ## Layers
@@ -48,15 +50,20 @@ and searches the sample browser's files, and the intelligence module, which work
                 │ Labels: pure functions; TrackLabels (app/src/intelligence) calls    │
                 │ them on the GUI thread with the project's facts when asked          │
                 └─────────────────────────────────────────────────────────────────────┘
+                ┌─────────────────────────────────────────────────────────────────────┐
+  platform      │ sub_platform, under the engine, the browser and the intelligence:   │
+                │ paths and their keys, files, threads' priorities; a file per system │
+                └─────────────────────────────────────────────────────────────────────┘
 ```
 
 | Layer | Where | Built as | Depends on | Docs |
 |---|---|---|---|---|
 | UI | [ui/qml](../ui/qml) (QML module `SUBstation`), [ui/src](../ui/src) (C++ Qt Quick items), [ui/style](../ui/style) (the controls' style), [ui/main.cpp](../ui/main.cpp) | `sub_ui` + the `substation` executable | the application layer, Qt Quick, QML, Quick Controls | [ui/](ui/README.md) |
-| Application layer | [app/src](../app/src): `model/`, `editor/`, `io/`, `audio/`, `session/`, `browser/`, `intelligence/`, `plugins/`, `analysis/` | `sub_app` | Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence` | [app/](README.md#application-layer) |
-| Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
-| Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library | [browser.md](browser.md) |
-| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, miniaudio (its decoders), Signalsmith Linear (its FFTs), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
+| Application layer | [app/src](../app/src): `model/`, `editor/`, `io/`, `audio/`, `session/`, `files/`, `browser/`, `intelligence/`, `plugins/`, `analysis/` | `sub_app` | Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence` | [app/](README.md#application-layer) |
+| Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, the platform layer, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
+| Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library, the platform layer | [browser.md](browser.md) |
+| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
+| Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
 
 [ui/main.cpp](../ui/main.cpp) puts the layers together: it makes the `QGuiApplication`, the engine, the
@@ -79,8 +86,16 @@ and searches the sample browser's files, and the intelligence module, which work
   `Q_INVOKABLE`s and signals, but includes nothing of QML.
 - **The application layer talks to the engine only through [Engine.h](../engine/src/Engine.h)** and the few engine
   headers it needs besides: `builtin/BuiltinRegistry.h` (the built-in devices), `Processor.h` (`ParamInfo`),
-  `AudioSource.h`, `RenderJob.h`, `AudioDevice.h` (the default driver), `builtin/EqDesign.h` (the EQ's curves)
-  and `plugins/Vst3Format.h` (the default VST3 folders). Only the engine bridge talks to the engine about the
+  `AudioSource.h`, `RenderJob.h`, `AudioDevice.h` (the default driver), `builtin/GateDesign.h` (the Gate's key EQ
+  curve and gain), `builtin/LimiterDesign.h` (the Limiter's line and Soft Clip's band), `builtin/MultibandDesign.h`
+  (Multiband Dynamics' gain law and ranges), `builtin/SpectralDesign.h` (the Spectral Compressor's threshold, Below and
+  Focus), `builtin/SaturatorDesign.h` (the Saturator's curve and Color), `builtin/AmpDesign.h` (the Amp's tone and
+  transfer curves), `builtin/ErosionDesign.h` (Erosion's noise band and excursion), `builtin/ChorusDesign.h` (the
+  Chorus-Ensemble's voices), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
+  `builtin/ReverbDesign.h` (the Reverb's decay curve, input filter, reflections and Spin's swing),
+  `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/EqDesign.h` (the EQ's curves),
+  `builtin/SampleSlicing.h` (the Sampler's slices and Snap), `plugins/Vst3Format.h` (the default VST3 folders) and
+  `plugins/Vst3Ids.h` (VST3 class ids, for Live Sets). Only the engine bridge talks to the engine about the
   project. What the UI shows of the engine (waveform peaks, meters, the scope, device status, plug-in parameter
   texts, devices' displays) comes through application-layer types whose headers include no engine header
   (`Waveform`, `MeterLevel`, `ProcessorParam`...: see [app/engine-bridge.md](app/engine-bridge.md)).
@@ -100,8 +115,9 @@ source file's `#include` lines and fails if:
 
 | Folder | Must not include |
 |---|---|
-| `engine/src`, `browser/src`, `intelligence/src` | anything of Qt (`Q...`, `qt...`), `app/` or `ui/` |
-| `intelligence/src` | the engine's headers, the browser backend's headers (it decodes through the `miniaudio` library and transforms with `signalsmith_linear`, third-party targets of their own) |
+| `platform/src`, `engine/src`, `browser/src`, `intelligence/src` | anything of Qt (`Q...`, `qt...`), `app/` or `ui/` |
+| `platform/src` | the engine's, the browser backend's or the intelligence module's headers: they all stand on it |
+| `intelligence/src` | the engine's headers, the browser backend's headers (it decodes through the `miniaudio` library and analyses with `essentia`, third-party targets of their own) |
 | `app/src` | Qt Quick or QML (`QtQuick`, `QtQml`, `QQuick*`, `QQml*`, `QJSValue`, `QJSEngine`) or `ui/` |
 | `ui/src` | the engine's headers (any header under `engine/src` by its name, miniaudio, the VST 3 SDK) |
 
@@ -204,7 +220,8 @@ not hierarchy: a track's output into a group or the master, sends into returns, 
 track (resampling), a sidechain into a device. The hierarchy (which track is in which group) lives in the
 application's model (`Track::parent`; the tracks stay a flat list), which also refuses any edge that would close a
 cycle before it reaches the engine. Delay compensation is worked out per edge. See
-[engine/routing.md](engine/routing.md) and [app/model.md](app/model.md#returns-sends-inputs-sidechains-the-routing-graph).
+[engine/routing.md](engine/routing.md) and
+[app/model.md](app/model.md#outputs-returns-sends-inputs-sidechains-the-routing-graph).
 
 ## Parameters and automation
 
@@ -215,7 +232,9 @@ the application layer's `ParamSpec` ([app/src/model/ParamSpec.h](../app/src/mode
 (`ParamSpec::fromInfo`) and maps the same way, and describes the mixer's controls itself (`mixerSpecs`). The
 mixer's mappings and the shape of curved segments in [Automation.h](../app/src/model/Automation.h) are the
 engine's ([engine/src/Automation.h](../engine/src/Automation.h): `kAutomationCurvature`, `kMaxVolumeGain`), and
-[test_automation_model.cpp](../tests/app/test_automation_model.cpp) holds the two together. The bridge hands the
+[test_automation_model.cpp](../tests/app/test_automation_model.cpp) holds the two together. A note's pitch bend
+is shared the same way: the application layer draws and edits it with the engine's own rules (`sub::bend`,
+header-only, in [engine/src/NoteBend.h](../engine/src/NoteBend.h)), so the piano roll shows what plays. The bridge hands the
 UI every owner's parameters as `ParamSpec`s (`EngineBridge::paramGroups`), and the editor learns plug-ins'
 mappings (for macros) through a hook the session wires to the bridge. See
 [engine/automation.md](engine/automation.md) and [app/model.md](app/model.md#automation).

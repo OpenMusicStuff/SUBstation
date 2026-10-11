@@ -1,32 +1,25 @@
 #include "devices/DeviceParam.h"
 
 #include "audio/EngineBridge.h"
+#include "controls/Automation.h"
 #include "controls/ValueBoxItem.h"
 #include "editor/ProjectEditor.h"
 #include "model/Automation.h"
 #include "model/Device.h"
 #include "model/Project.h"
 
+#include <QHash>
 #include <QLocale>
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <vector>
 
 namespace sub::ui {
 
 using sub::app::EngineBridge;
 using sub::app::Project;
-
-namespace {
-
-// "on" while its automation plays, "off" when overridden, else "" (mixer_controls.automation_state).
-QString automationStateOf(const EngineBridge& bridge, const QString& owner, const QString& key) {
-    if (bridge.isOverridden(owner, key))
-        return QStringLiteral("off");
-    return bridge.isAutomated(owner, key) ? QStringLiteral("on") : QString();
-}
-
-}  // namespace
 
 DeviceParam::DeviceParam(QObject* parent) : QObject(parent) {}
 
@@ -131,7 +124,7 @@ void DeviceParam::refreshSpec() {
 }
 
 void DeviceParam::refreshAutomation() {
-    const QString state = session_ && !deviceId_.isEmpty() ? automationStateOf(*session_->bridge(), trackId_, key())
+    const QString state = session_ && !deviceId_.isEmpty() ? automationState(*session_->bridge(), trackId_, key())
                                                             : QString();
     if (state == automation_)
         return;
@@ -185,6 +178,105 @@ QString DeviceParam::format(double value) const {
     return sub::app::formatValue(value, unit());
 }
 
+namespace {
+
+// A text's form: each number's figures after its first as '#' ("-12.5 dB" is "-1#.# dB").
+QString textForm(QString text) {
+    bool inNumber = false;
+    for (QChar& c : text) {
+        if (c.isDigit()) {
+            if (inNumber)
+                c = QLatin1Char('#');
+            inNumber = true;
+        } else if (c != QLatin1Char('.')) {
+            inNumber = false;
+        }
+    }
+    return text;
+}
+
+// Every form `text(value)` takes from `lo` to `hi` (on a log scale if `log`), in the order found (see textForms()).
+QStringList formsOver(double lo, double hi, bool log, const std::function<QString(double)>& text) {
+    log = log && lo > 0;
+    auto formAt = [&](double t) { return textForm(text(log ? lo * std::pow(hi / lo, t) : lo + (hi - lo) * t)); };
+    // Whether no other form lies between two: they are the same, or differ only in one figure, by one.
+    auto adjoining = [](const QString& a, const QString& b) {
+        if (a.size() != b.size())
+            return false;
+        qsizetype differs = -1;
+        for (qsizetype i = 0; i < a.size(); ++i) {
+            if (a[i] != b[i]) {
+                if (differs >= 0)
+                    return false;
+                differs = i;
+            }
+        }
+        return differs < 0 || (a[differs].isDigit() && b[differs].isDigit()
+                               && std::abs(a[differs].unicode() - b[differs].unicode()) == 1);
+    };
+    QStringList forms;
+    auto add = [&](const QString& form) {
+        if (!forms.contains(form))
+            forms << form;
+    };
+    std::function<void(double, const QString&, double, const QString&, int)> between =
+        [&](double t0, const QString& a, double t1, const QString& b, int depth) {
+            if (depth == 0 || adjoining(a, b))
+                return;
+            const double t = (t0 + t1) / 2;
+            const QString form = formAt(t);
+            add(form);
+            between(t0, a, t, form, depth - 1);
+            between(t, form, t1, b, depth - 1);
+        };
+    std::vector<double> points;
+    for (int i = 0; i <= 32; ++i)
+        points.push_back(i / 32.0);
+    for (int n = -3; n <= 6; ++n) {
+        for (const double power : {std::pow(10.0, n), -std::pow(10.0, n)}) {
+            if (const double under = power * (1 - 1e-9); under > lo && under < hi)
+                points.push_back(log ? std::log(under / lo) / std::log(hi / lo) : (under - lo) / (hi - lo));
+        }
+    }
+    std::sort(points.begin(), points.end());
+    double t0 = points.front();
+    QString a = formAt(t0);
+    add(a);
+    for (size_t i = 1; i < points.size(); ++i) {
+        const QString b = formAt(points[i]);
+        add(b);
+        between(t0, a, points[i], b, 6);
+        t0 = points[i];
+        a = b;
+    }
+    return forms;
+}
+
+}  // namespace
+
+QStringList DeviceParam::textForms(const QJSValue& formatter) const {
+    if (!valid())
+        return {};
+    if (formatter.isCallable()) {
+        QJSValue call = formatter;
+        return formsOver(minimum(), maximum(), logScale(), [&](double value) {
+            return call.call({QJSValue(steps() > 0 ? std::round(value) : value)}).toString();
+        });
+    }
+    // (the same for every parameter with the same text rule: worked out once)
+    static QHash<QString, QStringList> known;
+    const QString key = QStringList{unit(), labels().join(QChar(1)), QString::number(minimum(), 'g', 17),
+                                    QString::number(maximum(), 'g', 17), QString::number(int(logScale())),
+                                    QString::number(steps())}
+                            .join(QChar(0));
+    if (const auto found = known.constFind(key); found != known.cend())
+        return *found;
+    const QStringList forms = formsOver(minimum(), maximum(), logScale(),
+                                        [&](double value) { return format(steps() > 0 ? std::round(value) : value); });
+    known.insert(key, forms);
+    return forms;
+}
+
 QVariant DeviceParam::parse(const QString& text) const {
     if (unit() == QLatin1String("Hz")) {  // a frequency: "1.5k", "1500 Hz", "2 kHz"
         QString cleaned = text.trimmed().toLower();
@@ -216,28 +308,19 @@ void DeviceParam::touch() {
         session_->editor()->touchParameter(trackId_, key());
 }
 
-bool DeviceParam::canAutomate() const { return session_ && session_->bridge()->canAutomate(trackId_, key()); }
+AutomationTarget DeviceParam::automationTarget() const { return {session_, trackId_, key()}; }
 
-bool DeviceParam::hasEnvelope() const {
-    return session_ && session_->project()->hasOwner(trackId_) && !session_->project()->envelope(trackId_, key()).empty();
-}
+bool DeviceParam::canAutomate() const { return automationTarget().canAutomate(); }
 
-bool DeviceParam::isOverridden() const { return session_ && session_->bridge()->isOverridden(trackId_, key()); }
+bool DeviceParam::hasEnvelope() const { return automationTarget().hasEnvelope(); }
 
-void DeviceParam::showAutomation() {
-    if (session_ && session_->project()->hasOwner(trackId_))
-        session_->editor()->showAutomation(trackId_, key());
-}
+bool DeviceParam::isOverridden() const { return automationTarget().isOverridden(); }
 
-void DeviceParam::deleteAutomation() {
-    if (session_ && session_->project()->hasOwner(trackId_))
-        session_->editor()->clearEnvelope(trackId_, key());
-}
+void DeviceParam::showAutomation() { automationTarget().show(); }
 
-void DeviceParam::reEnableAutomation() {
-    if (session_)
-        session_->bridge()->reEnableAutomation(trackId_);
-}
+void DeviceParam::deleteAutomation() { automationTarget().deleteEnvelope(); }
+
+void DeviceParam::reEnableAutomation() { automationTarget().reEnable(); }
 
 QString DeviceParam::rackId() const {
     if (!session_)

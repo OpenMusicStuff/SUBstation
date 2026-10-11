@@ -1,16 +1,20 @@
 // Built-in "Synth" instrument: a simple polyphonic subtractive synthesizer.
 // One oscillator per voice (sine, triangle, band-limited saw or square), an
 // ADSR amplitude envelope and a resonant low-pass filter. Mono, on both channels.
+// Each voice follows its note's bend (MIDI 2.0's per-note pitch bend).
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <vector>
 
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
+#include "builtin/Dsp.h"
+#include "NoteBend.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -26,6 +30,7 @@ public:
 
     std::string typeId() const override { return "builtin:synth"; }
     std::string name() const override { return "Synth"; }
+    bool acceptsMidi() const override { return true; }
 
     void prepare(double sampleRate, int maxBlockSize) override;
     void reset() override;
@@ -42,13 +47,17 @@ private:
         bool active = false;
         bool held = true;  // no note-off yet
         uint8_t key = 0;
+        int32_t noteId = -1;   // its note's (-1: known by its key)
         uint64_t started = 0;  // note counter, for stealing the oldest voice
         float gain = 0.f;      // velocity
         double phase = 0.0;    // 0..1
         double increment = 0.0;
+        double keyIncrement = 0.0;  // at its key, unbent
+        double bend = 0.0;          // semitones, gliding to bendTarget
+        double bendTarget = 0.0;
         Stage stage = Stage::Attack;
         float level = 0.f;     // envelope
-        float ic1 = 0.f, ic2 = 0.f;  // filter state
+        dsp::Svf filter;
     };
 
     // Per-block settings derived from the parameters.
@@ -59,8 +68,12 @@ private:
         float releaseCoef;
     };
 
-    void noteOn(uint8_t key, uint8_t velocity);
-    void noteOff(uint8_t key);
+    void noteOn(const ProcessEvent& event);
+    void noteOff(const ProcessEvent& event);
+    void noteBend(const ProcessEvent& event);
+    // The voice an event about a note is for: by its id, else by its key (the
+    // newest held one, else the newest still sounding). Null: none sounds.
+    Voice* voiceOf(const ProcessEvent& event, bool held);
     void renderVoices(int from, int to, Waveform wave, const Envelope& env);
     Envelope envelope() const;
 
@@ -69,17 +82,17 @@ private:
     double sampleRate_ = 48000.0;
 
     // Filter coefficients per sample of the block (the cutoff glides), and the mix.
-    std::vector<float> a1_, a2_, a3_, mix_;
+    std::vector<dsp::SvfCoefficients> filter_;
+    std::vector<float> mix_;
     float cutoff_ = 0.f;  // smoothed, Hz
     float cutoffGlide_ = 0.f;
+    double bendGlide_ = 0.0;  // how much of the way to its bend a voice goes in a sample
     SmoothedValue volume_;
 };
 
 
-constexpr double kPi = 3.14159265358979323846;
+constexpr double kPi = std::numbers::pi;
 constexpr float kVoiceGain = 0.25f;  // one voice's peak at full velocity
-constexpr float kSilent = 1e-4f;     // -80 dB: a releasing voice ends here
-constexpr double kFadeTo = 1e-3;     // decay and release times are to -60 dB
 
 // PolyBLEP: smooths an oscillator's step at phase 0 over one sample on each
 // side, which removes most of the aliasing of a naive saw or square.
@@ -119,8 +132,10 @@ SynthProcessor::SynthProcessor() : BuiltinProcessor(infos()) {}
 
 void SynthProcessor::prepare(double sampleRate, int maxBlockSize) {
     sampleRate_ = sampleRate;
-    for (auto* buffer : {&a1_, &a2_, &a3_, &mix_}) buffer->assign(static_cast<size_t>(maxBlockSize), 0.f);
-    cutoffGlide_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.005 * sampleRate)));  // ~5 ms
+    filter_.assign(static_cast<size_t>(maxBlockSize), dsp::SvfCoefficients{});
+    mix_.assign(static_cast<size_t>(maxBlockSize), 0.f);
+    cutoffGlide_ = static_cast<float>(1.0 - onePoleCoefficient(0.005, sampleRate));  // ~5 ms
+    bendGlide_ = 1.0 - onePoleCoefficient(dsp::kBendGlideSeconds, sampleRate);
     volume_.reset(sampleRate, 0.02);
     reset();
 }
@@ -135,18 +150,15 @@ int SynthProcessor::tailSamples() const { return static_cast<int>(param(Release)
 
 SynthProcessor::Envelope SynthProcessor::envelope() const {
     const double samplesPerMs = sampleRate_ * 0.001;
-    const auto fade = [&](float ms) {
-        return static_cast<float>(std::exp(std::log(kFadeTo) / std::max(1.0, ms * samplesPerMs)));
-    };
     return {
-        static_cast<float>(1.0 / std::max(1.0, param(Attack) * samplesPerMs)),
-        fade(param(Decay)),
+        dsp::riseStep(param(Attack), samplesPerMs),
+        dsp::fallCoefficient(param(Decay), samplesPerMs),
         std::clamp(param(Sustain) / 100.f, 0.f, 1.f),
-        fade(param(Release)),
+        dsp::fallCoefficient(param(Release), samplesPerMs),
     };
 }
 
-void SynthProcessor::noteOn(uint8_t key, uint8_t velocity) {
+void SynthProcessor::noteOn(const ProcessEvent& event) {
     // A free voice; else the quietest releasing one; else the oldest.
     Voice* target = nullptr;
     for (Voice& voice : voices_) {
@@ -168,31 +180,53 @@ void SynthProcessor::noteOn(uint8_t key, uint8_t velocity) {
     Voice& voice = *target;
     voice = Voice{};
     voice.active = true;
-    voice.key = key;
+    voice.key = event.key();
+    voice.noteId = event.noteId;
     voice.started = ++noteCounter_;
-    voice.gain = kVoiceGain * static_cast<float>(velocity) / 127.f;
-    voice.increment = 440.0 * std::pow(2.0, (key - 69) / 12.0) / sampleRate_;
+    voice.gain = kVoiceGain * static_cast<float>(event.velocity()) / 127.f;
+    voice.keyIncrement = 440.0 * std::pow(2.0, (voice.key - 69) / 12.0) / sampleRate_;
+    voice.increment = voice.keyIncrement;
 }
 
-void SynthProcessor::noteOff(uint8_t key) {
-    // With the same key held twice, the older note ends first.
-    Voice* target = nullptr;
-    for (Voice& voice : voices_) {
-        if (voice.active && voice.held && voice.key == key && (!target || voice.started < target->started)) {
-            target = &voice;
+SynthProcessor::Voice* SynthProcessor::voiceOf(const ProcessEvent& event, bool held) {
+    if (event.noteId >= 0) {
+        for (Voice& voice : voices_) {
+            if (voice.active && voice.noteId == event.noteId && (!held || voice.held)) return &voice;
         }
     }
-    if (target) {
+    // With the same key held twice, the older note ends first; a bend goes to the newest.
+    Voice* target = nullptr;
+    for (Voice& voice : voices_) {
+        if (!voice.active || voice.key != event.key() || (held && !voice.held)) continue;
+        if (event.noteId >= 0 && voice.noteId >= 0) continue;  // another note of that key
+        if (!target || (held ? voice.started < target->started : voice.started > target->started)) target = &voice;
+    }
+    return target;
+}
+
+void SynthProcessor::noteOff(const ProcessEvent& event) {
+    if (Voice* target = voiceOf(event, true)) {
         target->held = false;
         target->stage = Stage::Release;
+    }
+}
+
+void SynthProcessor::noteBend(const ProcessEvent& event) {
+    if (Voice* target = voiceOf(event, false)) {
+        target->bendTarget = std::clamp(static_cast<double>(event.bend), -kMaxBendSemitones, kMaxBendSemitones);
     }
 }
 
 void SynthProcessor::renderVoices(int from, int to, Waveform wave, const Envelope& env) {
     for (Voice& voice : voices_) {
         if (!voice.active) continue;
-        const double dt = voice.increment;
         for (int i = from; i < to; ++i) {
+            if (voice.bend != voice.bendTarget) {  // gliding to its note's bend
+                voice.bend += (voice.bendTarget - voice.bend) * bendGlide_;
+                if (std::abs(voice.bendTarget - voice.bend) < 1e-6) voice.bend = voice.bendTarget;
+                voice.increment = voice.keyIncrement * std::exp2(voice.bend / 12.0);
+            }
+            const double dt = voice.increment;
             switch (voice.stage) {
                 case Stage::Attack:
                     voice.level += env.attackStep;
@@ -224,17 +258,13 @@ void SynthProcessor::renderVoices(int from, int to, Waveform wave, const Envelop
             voice.phase += dt;
             if (voice.phase >= 1.0) voice.phase -= 1.0;
 
-            // Low-pass: a TPT state-variable filter (Zavalishin/Simper), stable
-            // at any cutoff and resonance.
-            const float v3 = static_cast<float>(sample) - voice.ic2;
-            const float v1 = a1_[i] * voice.ic1 + a2_[i] * v3;
-            const float v2 = voice.ic2 + a2_[i] * voice.ic1 + a3_[i] * v3;
-            voice.ic1 = 2.f * v1 - voice.ic1;
-            voice.ic2 = 2.f * v2 - voice.ic2;
-            mix_[i] += v2 * voice.level * voice.gain;
+            // Low-pass: a state-variable filter, stable at any cutoff and resonance.
+            const float low = voice.filter.tick(filter_[static_cast<size_t>(i)], static_cast<float>(sample)).low;
+            mix_[i] += low * voice.level * voice.gain;
         }
-        const bool faded = voice.stage == Stage::Release || (voice.stage == Stage::Decay && env.sustain < kSilent);
-        if (faded && voice.level < kSilent) voice.active = false;
+        const bool faded =
+            voice.stage == Stage::Release || (voice.stage == Stage::Decay && env.sustain < dsp::kSilent);
+        if (faded && voice.level < dsp::kSilent) voice.active = false;
     }
 }
 
@@ -249,7 +279,7 @@ void SynthProcessor::render(const ProcessContext& ctx, float* const* channels, i
     }
 
     const int frames = std::min(numFrames, static_cast<int>(mix_.size()));  // prepare() said no more
-    const auto wave = static_cast<Waveform>(std::clamp(static_cast<int>(std::lround(param(Wave))), 0, 3));
+    const auto wave = static_cast<Waveform>(std::clamp(choiceIndex(Wave), 0, 3));
     const Envelope env = envelope();
 
     // Filter coefficients for each sample: the cutoff glides to its target so
@@ -260,25 +290,14 @@ void SynthProcessor::render(const ProcessContext& ctx, float* const* channels, i
     for (int i = 0; i < frames; ++i) {
         cutoff_ += (target - cutoff_) * cutoffGlide_;
         const auto g = static_cast<float>(std::tan(kPi * std::min(cutoff_, highest) / sampleRate_));
-        a1_[i] = 1.f / (1.f + g * (g + damping));
-        a2_[i] = g * a1_[i];
-        a3_[i] = g * a2_[i];
+        filter_[static_cast<size_t>(i)] = dsp::SvfCoefficients(g, damping);
     }
 
     std::fill_n(mix_.data(), frames, 0.f);
-    int position = 0;
-    for (size_t e = 0; e < ctx.inEvents.count; ++e) {
-        const ProcessEvent& event = ctx.inEvents.events[e];
-        const int at = std::clamp(static_cast<int>(event.sampleOffset), position, frames);
-        renderVoices(position, at, wave, env);
-        position = at;
-        if (event.type == ProcessEvent::Type::NoteOn && event.velocity() > 0) {
-            noteOn(event.key(), event.velocity());
-        } else if (event.type == ProcessEvent::Type::NoteOn || event.type == ProcessEvent::Type::NoteOff) {
-            noteOff(event.key());
-        }
-    }
-    renderVoices(position, frames, wave, env);
+    dsp::renderBetweenNotes(
+        ctx.inEvents, frames, [&](int from, int to) { renderVoices(from, to, wave, env); },
+        [&](const ProcessEvent& event) { noteOn(event); }, [&](const ProcessEvent& event) { noteOff(event); },
+        [&](const ProcessEvent& event) { noteBend(event); });
 
     volume_.setTarget(dbToGain(param(Volume)));
     float* left = channels[0];

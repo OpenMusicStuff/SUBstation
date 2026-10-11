@@ -1,5 +1,6 @@
 #include "model/Project.h"
 
+#include "model/Edits.h"
 #include "model/Errors.h"
 #include "model/TrackNames.h"
 
@@ -14,6 +15,14 @@ namespace {
 
 [[noreturn]] void missing(const char* what, const QString& id) {
     throw std::out_of_range(std::string("no ") + what + " " + id.toStdString());
+}
+
+// Where the track of this id is in a list (-1: not there).
+int indexIn(const std::vector<Track>& tracks, const QString& trackId) {
+    for (int index = 0; index < static_cast<int>(tracks.size()); ++index) {
+        if (tracks[index].id == trackId) return index;
+    }
+    return -1;
 }
 
 double asDouble(const ChainValue& value) {
@@ -104,15 +113,12 @@ const Track& Project::track(const QString& trackId) const {
 Track& Project::trackRef(const QString& trackId) { return const_cast<Track&>(track(trackId)); }
 
 int Project::trackIndex(const QString& trackId) const {
-    for (int index = 0; index < static_cast<int>(tracks_.size()); ++index) {
-        if (tracks_[index].id == trackId) return index;
-    }
-    missing("track", trackId);
+    const int index = indexIn(tracks_, trackId);
+    if (index < 0) missing("track", trackId);
+    return index;
 }
 
-bool Project::hasTrack(const QString& trackId) const {
-    return std::any_of(tracks_.begin(), tracks_.end(), [&](const Track& t) { return t.id == trackId; });
-}
+bool Project::hasTrack(const QString& trackId) const { return indexIn(tracks_, trackId) >= 0; }
 
 const Clip* Project::findClip(const QString& trackId, const QString& clipId) const {
     const Track* owner = findTrack(trackId);
@@ -168,15 +174,12 @@ QStringList Project::owners() const {
 
 // --- Returns and sends ---
 
-bool Project::hasReturn(const QString& trackId) const {
-    return std::any_of(returns_.begin(), returns_.end(), [&](const Track& t) { return t.id == trackId; });
-}
+bool Project::hasReturn(const QString& trackId) const { return indexIn(returns_, trackId) >= 0; }
 
 int Project::returnIndex(const QString& trackId) const {
-    for (int index = 0; index < static_cast<int>(returns_.size()); ++index) {
-        if (returns_[index].id == trackId) return index;
-    }
-    missing("return track", trackId);
+    const int index = indexIn(returns_, trackId);
+    if (index < 0) missing("return track", trackId);
+    return index;
 }
 
 QString Project::returnLetter(const QString& trackId) const { return sub::app::returnLetter(returnIndex(trackId)); }
@@ -212,6 +215,14 @@ std::vector<const Track*> Project::sidechainSources(const QString& trackId) cons
 
 std::vector<const Track*> Project::inputSources(const QString& trackId) const { return sidechainSources(trackId); }
 
+std::vector<const Track*> Project::midiSources(const QString& trackId) const {
+    std::vector<const Track*> sources;
+    for (const Track& t : tracks_) {
+        if (t.kind == kMidiKind && t.id != trackId) sources.push_back(&t);
+    }
+    return sources;
+}
+
 QString Project::inputName(const QString& sourceId) const {
     return sourceId == kMaster ? QStringLiteral("Resampling") : track(sourceId).name;
 }
@@ -224,6 +235,16 @@ std::vector<const Track*> Project::sendTargets(const QString& trackId) const {
         if (!feeds(graph, r.id, trackId)) targets.push_back(&r);
     }
     return targets;
+}
+
+// --- Outputs ---
+
+bool Project::outputWouldCycle(const QString& trackId, const Output& output) const {
+    return sub::app::outputWouldCycle(tracks_, returns_, trackId, output);
+}
+
+std::optional<QString> Project::outputTarget(const QString& trackId) const {
+    return sub::app::outputTarget(track(trackId), tracks_, returns_);
 }
 
 // --- Groups ---
@@ -392,10 +413,9 @@ std::optional<QString> Project::deviceOwner(const QString& deviceId) const {
 }
 
 const Chain& Project::chain(const QString& trackId, const QString& chainId) const {
-    for (const ConstRackChain& rc : iterChains(track(trackId).devices)) {
-        if (rc.chain->id == chainId) return *rc.chain;
-    }
-    missing("chain", chainId);
+    const Chain* found = findChain(track(trackId).devices, chainId).chain;
+    if (found == nullptr) missing("chain", chainId);
+    return *found;
 }
 
 Chain& Project::chainRef(const QString& trackId, const QString& chainId) {
@@ -403,10 +423,9 @@ Chain& Project::chainRef(const QString& trackId, const QString& chainId) {
 }
 
 const Device& Project::chainRack(const QString& trackId, const QString& chainId) const {
-    for (const ConstRackChain& rc : iterChains(track(trackId).devices)) {
-        if (rc.chain->id == chainId) return *rc.rack;
-    }
-    missing("chain", chainId);
+    const Device* rack = findChain(track(trackId).devices, chainId).rack;
+    if (rack == nullptr) missing("chain", chainId);
+    return *rack;
 }
 
 // --- Mutations ---
@@ -517,17 +536,14 @@ void Project::setFrozen(const QString& trackId, const std::optional<Freeze>& fre
 void Project::setFrozenSegments(const QString& trackId, std::optional<std::vector<Clip>> segments) {
     std::optional<Freeze>& frozen = trackRef(trackId).frozen;
     if (!frozen) return;
-    if (segments) {
-        std::stable_sort(segments->begin(), segments->end(),
-                         [](const Clip& a, const Clip& b) { return a.startBeat < b.startBeat; });
-    }
+    if (segments) edits::sortByStart(*segments);
     if (frozen->segments == segments) return;
     frozen->segments = std::move(segments);
     Q_EMIT clipsChanged(trackId);
 }
 
 void Project::setClips(const QString& trackId, std::vector<Clip> clips) {
-    std::stable_sort(clips.begin(), clips.end(), [](const Clip& a, const Clip& b) { return a.startBeat < b.startBeat; });
+    edits::sortByStart(clips);
     Track& track = trackRef(trackId);
     const bool followed = namedByContents(track);
     track.clips = std::move(clips);
@@ -635,6 +651,11 @@ void Project::setDeviceSidechain(const QString& trackId, const QString& deviceId
     Q_EMIT devicesChanged(trackId);
 }
 
+void Project::setDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId) {
+    deviceRef(trackId, deviceId).midiFrom = sourceId;
+    Q_EMIT devicesChanged(trackId);
+}
+
 void Project::setDeviceState(const QString& trackId, const QString& deviceId, const std::optional<QString>& state) {
     deviceRef(trackId, deviceId).state = state;
     Q_EMIT deviceStateChanged(trackId, deviceId);
@@ -728,6 +749,9 @@ void Project::replaceContents(ProjectContents contents) {
     const bool pathChange = path_ != contents.path;
     path_ = contents.path;
     Q_EMIT reset();
+    // The settings are new too: what shows them through their properties (the
+    // tempo box, Lock Envelopes, the loop button) is notified by this signal only.
+    Q_EMIT settingsChanged();
     if (pathChange) Q_EMIT pathChanged();
 }
 

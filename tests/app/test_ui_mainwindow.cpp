@@ -12,6 +12,7 @@
 // saves screenshots there.
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -32,6 +33,7 @@
 #include "audio/EngineBridge.h"
 #include "browser/BrowserController.h"
 #include "editor/ProjectEditor.h"
+#include "files/FileManager.h"
 #include "intelligence/Harmony.h"
 #include "model/Project.h"
 #include "mainwindow/WindowState.h"
@@ -105,15 +107,19 @@ class TestUiMainWindow : public QObject {
         QVERIFY(QMetaObject::invokeMethod(find(dialog), "answer", Q_ARG(QVariant, value)));
         QTRY_VERIFY(!shown(dialog));
     }
-    QVariant call(const char* function, const QVariant& a = QVariant(), const QVariant& b = QVariant()) {
+    QVariant call(const char* function, const QVariant& a = QVariant(), const QVariant& b = QVariant(),
+                  const QVariant& c = QVariant(), const QVariant& d = QVariant()) {
         QVariant result;
         if (!b.isValid() && !a.isValid())
             QMetaObject::invokeMethod(window_, function, Q_RETURN_ARG(QVariant, result));
         else if (!b.isValid())
             QMetaObject::invokeMethod(window_, function, Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, a));
-        else
+        else if (!c.isValid())
             QMetaObject::invokeMethod(window_, function, Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, a),
                                       Q_ARG(QVariant, b));
+        else
+            QMetaObject::invokeMethod(window_, function, Q_RETURN_ARG(QVariant, result), Q_ARG(QVariant, a),
+                                      Q_ARG(QVariant, b), Q_ARG(QVariant, c), Q_ARG(QVariant, d));
         return result;
     }
 
@@ -202,10 +208,10 @@ private Q_SLOTS:
         auto pixel = [&](qreal x, qreal y) { return image.pixel(int(x * dpr), int(y * dpr)); };
         auto* windowTitle = item(QStringLiteral("windowTitle"));
         const QRectF title = windowTitle->mapRectToScene(windowTitle->boundingRect());
-        QVERIFY(near(pixel(title.left() - 8, 5), Theme::kPanel));                 // the title bar
-        QVERIFY(near(pixel(tb.center().x(), tb.bottom() - 1), Theme::kBorder));   // its line
-        QVERIFY(near(pixel(t.center().x(), t.bottom() - 1), Theme::kBorder));     // the transport's line
-        QVERIFY(near(pixel((b.right() + a.left()) / 2, a.center().y()), Theme::kBorder));  // a split handle
+        QVERIFY(near(pixel(title.left() - 8, 5), Theme::panel()));                 // the title bar
+        QVERIFY(near(pixel(tb.center().x(), tb.bottom() - 1), Theme::border()));   // its line
+        QVERIFY(near(pixel(t.center().x(), t.bottom() - 1), Theme::border()));     // the transport's line
+        QVERIFY(near(pixel((b.right() + a.left()) / 2, a.center().y()), Theme::border()));  // a split handle
         // The real views are in: the arrangement's interface is there.
         QVERIFY(item(QStringLiteral("arrangement"))->metaObject()->indexOfMethod("zoomToArrangement()") >= 0);
 
@@ -225,8 +231,8 @@ private Q_SLOTS:
                 QTest::mouseMove(window_, at);
             QTest::qWait(250);
             const QImage open = window_->grabWindow();
-            QVERIFY2(near(open.pixel(int((at.x() + 20) * dpr), int((at.y() + 40) * dpr)), Theme::kPanelAlt) ||
-                         near(open.pixel(int((at.x() + 20) * dpr), int((at.y() + 40) * dpr)), Theme::kAccent),
+            QVERIFY2(near(open.pixel(int((at.x() + 20) * dpr), int((at.y() + 40) * dpr)), Theme::panelAlt()) ||
+                         near(open.pixel(int((at.x() + 20) * dpr), int((at.y() + 40) * dpr)), Theme::accent()),
                      names[menu]);
             test::screenshot(window_, QStringLiteral("main-window-%1-menu").arg(QLatin1String(names[menu])));
         }
@@ -373,7 +379,7 @@ private Q_SLOTS:
         auto* text = item(QStringLiteral("infoText"));
         const QPoint nowhere(window_->width() / 2, window_->height() / 3);
         QTest::mouseMove(window_, nowhere);
-        QTest::mouseMove(window_, header->mapToScene(QPointF(header->nameLeft() + 12, header->nameTop() + 10)).toPoint());
+        QTest::mouseMove(window_, header->mapToScene(QPointF(header->nameLeft() + 12, 10)).toPoint());
         QTRY_COMPARE(title->property("text").toString(), QStringLiteral("Echoing Bell Stab"));
         // (What it says follows the edits once they settle: the mix just set.)
         QTRY_VERIFY(text->property("text").toString().contains(QStringLiteral("Effect: Delay, 40% wet")));
@@ -596,6 +602,22 @@ private Q_SLOTS:
         key(Qt::Key_L, Qt::ControlModifier | Qt::AltModifier);
         QVERIFY(area->isVisible());
 
+        // View › File Manager (hidden at first) shows and hides it, right of the
+        // arrangement; Show in File Manager (an audio clip's menu) shows it.
+        auto* files = item(QStringLiteral("fileManager"));
+        QVERIFY(files && !files->isVisible());
+        key(Qt::Key_F, Qt::ControlModifier | Qt::AltModifier);
+        QVERIFY(files->isVisible());
+        // (The split view lays out what shows at its next polish.)
+        QTRY_VERIFY(files->mapToScene({0, 0}).x() > item(QStringLiteral("arrangementArea"))->mapToScene({0, 0}).x());
+        key(Qt::Key_F, Qt::ControlModifier | Qt::AltModifier);
+        QVERIFY(!files->isVisible());
+        session().files()->reveal(QStringLiteral("C:/nowhere/kick.wav"));
+        QVERIFY(files->isVisible());
+        key(Qt::Key_F, Qt::ControlModifier | Qt::AltModifier);
+        QVERIFY(!files->isVisible());
+        window_->contentItem()->forceActiveFocus();
+
         // Zooming and the grid reach the arrangement through its interface: with
         // the placeholder there is none, and nothing goes wrong.
         for (const char* name : {"zoomIn", "zoomOut", "zoomToArrangement", "narrowGrid", "widenGrid", "snapToGrid", "clipView"})
@@ -758,24 +780,85 @@ private Q_SLOTS:
         QCOMPARE(window_->title(), QStringLiteral("ctrl s - SUBstation"));
     }
 
-    // Export Audio: nothing to export says so; else it asks where and renders it.
+    // Save as Template and Clear Template; Import Ableton Live Set… asks about
+    // unsaved changes, then which set, and says what didn't come across.
+    void templatesAndImportingALiveSet() {
+        QVERIFY(!prop(QStringLiteral("clearTemplate"), "enabled").toBool());
+        trigger(QStringLiteral("insertMidiTrack"));
+        trigger(QStringLiteral("saveAsTemplate"));
+        QCOMPARE(status(), QStringLiteral("Saved as the template: new projects start as this one is now"));
+        QVERIFY(prop(QStringLiteral("clearTemplate"), "enabled").toBool());
+        session().undoStack()->setClean();
+        trigger(QStringLiteral("newProject"));
+        QCOMPARE(project().tracks().size(), size_t(1));  // (the template's)
+        trigger(QStringLiteral("clearTemplate"));
+        QVERIFY(!prop(QStringLiteral("clearTemplate"), "enabled").toBool());
+
+        const QString set = dir_->path(QStringLiteral("Live Song.als"));
+        QFile file(set);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Ableton MajorVersion=\"5\"><LiveSet><Tracks>"
+                   "<MidiTrack Id=\"1\"><Name><EffectiveName Value=\"1-Keys\" /></Name><DeviceChain><DeviceChain><Devices>"
+                   "<Saturator /></Devices></DeviceChain></DeviceChain></MidiTrack></Tracks>"
+                   "<MainTrack><DeviceChain><Mixer><Tempo><Manual Value=\"95\" /></Tempo></Mixer></DeviceChain></MainTrack>"
+                   "</LiveSet></Ableton>");
+        file.close();
+        trigger(QStringLiteral("insertAudioTrack"));
+        trigger(QStringLiteral("importLiveSet"));
+        answer(QStringLiteral("unsavedChangesDialog"), QStringLiteral("discard"));
+        QTRY_VERIFY(shown(QStringLiteral("liveSetDialog")));
+        QCOMPARE(prop(QStringLiteral("liveSetDialog"), "nameFilters").toStringList(), QStringList{QStringLiteral("Ableton Live Set (*.als)")});
+        QMetaObject::invokeMethod(find(QStringLiteral("liveSetDialog")), "close");
+        call("importChosen", set);  // (the dialog's accepted)
+        QCOMPARE(project().tempo(), 95.0);
+        QCOMPARE(project().tracks().size(), size_t(1));
+        QCOMPARE(window_->title(), QStringLiteral("Live Song* - SUBstation"));  // (not saved yet)
+        QTRY_VERIFY(shown(QStringLiteral("messageBox")));
+        QVERIFY(prop(QStringLiteral("messageBox"), "text").toString().contains(QStringLiteral("Saturator")));
+        test::screenshot(window_, QStringLiteral("live-set-imported"));
+        answer(QStringLiteral("messageBox"), QStringLiteral("ok"));
+        trigger(QStringLiteral("newProject"));  // it asks before the import goes
+        QTRY_VERIFY(shown(QStringLiteral("unsavedChangesDialog")));
+        answer(QStringLiteral("unsavedChangesDialog"), QStringLiteral("cancel"));
+        QCOMPARE(project().tempo(), 95.0);
+    }
+
+    // Export Audio: nothing to export says so; else it asks where (a WAV or an
+    // MP3 file) and renders it.
     void exportAudio() {
-        call("exportChosen", QStringLiteral("arrangement"), 24);
+        call("exportChosen", QStringLiteral("arrangement"), 24, QStringLiteral("wav"), 320);
         QTRY_VERIFY(shown(QStringLiteral("messageBox")));
         QCOMPARE(prop(QStringLiteral("messageBox"), "text").toString(), QStringLiteral("There is nothing to export yet."));
         answer(QStringLiteral("messageBox"), QStringLiteral("ok"));
 
         const QString path = wav(QStringLiteral("export.wav"), 0.5);
         audioTrack(path, 0.5);
-        call("exportChosen", QStringLiteral("arrangement"), 16);
+        call("exportChosen", QStringLiteral("arrangement"), 16, QStringLiteral("wav"), 320);
         QTRY_VERIFY(shown(QStringLiteral("exportFileDialog")));
         QCOMPARE(prop(QStringLiteral("exportFileDialog"), "bitDepth").toInt(), 16);
+        QCOMPARE(prop(QStringLiteral("exportFileDialog"), "defaultSuffix").toString(), QStringLiteral("wav"));
         QMetaObject::invokeMethod(find(QStringLiteral("exportFileDialog")), "close");
         const QString mix = dir_->path(QStringLiteral("mix.wav"));
         call("exportFileChosen", mix);
         QTRY_VERIFY_WITH_TIMEOUT(!session().render()->active(), 30000);
         QVERIFY(QFileInfo::exists(mix));
         QCOMPARE(status(), QStringLiteral("Exported mix.wav"));
+
+        // An MP3, of the time selection.
+        session().selection()->setTimeRange(0.0, 0.5, {project().tracks().front().id});
+        call("exportChosen", QStringLiteral("selection"), 24, QStringLiteral("mp3"), 192);
+        QTRY_VERIFY(shown(QStringLiteral("exportFileDialog")));
+        QCOMPARE(prop(QStringLiteral("exportFileDialog"), "fileType").toString(), QStringLiteral("mp3"));
+        QCOMPARE(prop(QStringLiteral("exportFileDialog"), "bitrate").toInt(), 192);
+        QCOMPARE(prop(QStringLiteral("exportFileDialog"), "defaultSuffix").toString(), QStringLiteral("mp3"));
+        QCOMPARE(prop(QStringLiteral("exportFileDialog"), "nameFilters").toStringList(),
+                 QStringList{QStringLiteral("MP3 Audio (*.mp3)")});
+        QMetaObject::invokeMethod(find(QStringLiteral("exportFileDialog")), "close");
+        const QString mp3 = dir_->path(QStringLiteral("mix.mp3"));
+        call("exportFileChosen", mp3);
+        QTRY_VERIFY_WITH_TIMEOUT(!session().render()->active(), 30000);
+        QVERIFY(QFileInfo(mp3).size() > 0);
+        QCOMPARE(status(), QStringLiteral("Exported mix.mp3"));
     }
 
     // Closing while a render runs cancels it (the window stays); with unsaved

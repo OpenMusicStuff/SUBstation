@@ -55,6 +55,7 @@
 #include "AudioSource.h"
 #include "Automation.h"
 #include "MidiInput.h"
+#include "NoteBend.h"
 #include "Processor.h"
 #include "Recorder.h"
 #include "RenderJob.h"
@@ -94,11 +95,15 @@ struct ClipDesc {
 
 // A note on a MIDI track, in timeline beats. The UI flattens MIDI clips into
 // these, keeping only what the clips play (notes cut at their clip's end).
+// Its bend (NoteBend.h: MIDI 2.0's per-note pitch bend) is in beats from its
+// start, its vibratos' rates in cycles a second (Hz).
 struct NoteDesc {
     double startBeat = 0.0;
     double lengthBeats = 0.25;
     int key = 60;  // MIDI note number; 60 = C3
     int velocity = 100;
+    std::vector<BendPoint> bend;       // sorted by time
+    std::vector<VibratoSpan> vibrato;
 };
 
 // A track to record, and the file its take goes to (a WAV file, created anew).
@@ -168,11 +173,22 @@ struct ProcessorInfo {
     int tail = 0;
     bool hasEditor = false;
     bool hasSidechain = false;  // it has a sidechain (aux) input: setProcessorSidechain()
+    bool acceptsMidi = false;   // it plays notes (an instrument, an effect with a MIDI input): setProcessorMidiInput()
 };
 
 // A ProcessorEvent and the processor it came from.
 struct ProcessorEventRecord : ProcessorEvent {
     uint32_t processorId = 0;
+};
+
+// What an export writes (Engine::startExport): a WAV file, `bitDepth` 16 or 24
+// (integer; 16 dithered) or 32 (float); or an MP3 file at a constant `bitrate`
+// in kbps, 32 to 320 (AudioFileWriter.h).
+struct ExportFormat {
+    enum class Kind { Wav, Mp3 };
+    Kind kind = Kind::Wav;
+    int bitDepth = 24;
+    int bitrate = 320;
 };
 
 struct DeviceStatus {
@@ -243,13 +259,34 @@ public:
     void setTrackMute(uint32_t trackId, bool mute);
     void setTrackSolo(uint32_t trackId, bool solo);
     // Routing: where a track's output goes, the master (kMaster) or another
-    // track, which then sums it into its own input (a group's bus). The engine
-    // sees only these edges, never groups. Throws std::invalid_argument for an
-    // unknown track, or a route that would close a cycle (a track into itself,
-    // or into a track it feeds). When a track goes, what went into it goes to
-    // the master. Delay compensation lines up the inputs of every bus.
+    // track, which then sums it into its own input (a group's bus), or nowhere
+    // (kNoOutput: only its sends, and what takes its output as an input or a
+    // sidechain, hear it: Ableton's Sends Only). The engine sees only these
+    // edges, never groups. Throws std::invalid_argument for an unknown track, or
+    // a route that would close a cycle (a track into itself, or into a track it
+    // feeds). When a track goes, what went into it goes to the master. Delay
+    // compensation lines up the inputs of every bus.
+    static constexpr uint32_t kNoOutput = 0xFFFFFFFFu;
     void setTrackOutput(uint32_t trackId, uint32_t outputTrackId);
+    // kMaster, a track, or kNoOutput (also while it goes into a device: trackOutputSidechain()).
     uint32_t trackOutput(uint32_t trackId);
+    // A track's output into a device's sidechain (aux) input instead (Ableton's
+    // Audio To a device's sidechain), after its fader: heard only there, summed
+    // with the device's own sidechain (setProcessorSidechain()) and the other
+    // tracks' outputs going into it, each lined up as a sidechain is. The
+    // device may be on any track, or the master. setTrackOutput() takes it
+    // away; when the device goes, the track goes into the master. Throws
+    // std::invalid_argument for an unknown track or device, a device without a
+    // sidechain input, or a route that would close a cycle (the device on the
+    // track, or on one it feeds).
+    void setTrackOutputSidechain(uint32_t trackId, uint32_t processorId);
+    uint32_t trackOutputSidechain(uint32_t trackId);  // the device its output goes into (0: none)
+    // What goes into a track (other tracks' outputs): summed into it always, as
+    // a bus does (a group, a return: the default), or, as Ableton's Track In on
+    // an audio track, taken as its input (`monitored`): heard only while the
+    // track monitors (setTrackMonitor()), instead of its clips and with its own
+    // input, without delay compensation, as that input is; not recorded.
+    void setTrackInMonitored(uint32_t trackId, bool monitored);
     // Sends: a track's signal also goes into another track (a return track), at
     // `gain`, taken after its fader or before it (`preFader`; a muted track's
     // sends are silent either way). One send per pair; setting it again changes
@@ -278,16 +315,21 @@ public:
     // A track's input: device channels (0-based, as DeviceStatus lists them): none,
     // one (mono) or two (a stereo pair). Channels the device hasn't open are silent.
     void setTrackInput(uint32_t trackId, const std::vector<int>& channels);
-    // A track's input from another track's output, after its fader (resampling
-    // it: an input edge), or from the master's (kMaster: resampling the mix),
-    // instead of device channels (setTrackInput() goes back to those). The source
-    // renders first. Monitored, the track hears a track's output instead of its
-    // clips, without delay compensation, as it hears the device; never the
-    // master's (that would feed back), which it can only record. Throws
-    // std::invalid_argument for an unknown track, the track itself, or a track
-    // it feeds (a cycle, through outputs, sends and inputs alike). When the
-    // source goes, the input goes too.
-    void setTrackInputTrack(uint32_t trackId, uint32_t sourceTrackId);
+    // A track's input from another track's output (resampling it: an input
+    // edge), or from the master's (kMaster: resampling the mix), instead of
+    // device channels (setTrackInput() goes back to those). The source renders
+    // first. A track's is tapped as a sidechain is (`tap`, `tapProcessorId`):
+    // after its fader (Ableton's Post Mixer), before it (Post FX), after one of
+    // its devices (a MIDI track's instrument: its Pre FX), or before them all
+    // (Pre FX); the master's after its fader. Monitored, the track hears a
+    // track's output instead of its clips, without delay compensation, as it
+    // hears the device: live, and in offline renders while it monitors In; never
+    // the master's (that would feed back), which it can only record. Throws
+    // std::invalid_argument for an unknown track, the track itself, a track it
+    // feeds (a cycle, through outputs, sends and inputs alike), or a tap after a
+    // device that isn't on the source. When the source goes, the input goes too.
+    void setTrackInputTrack(uint32_t trackId, uint32_t sourceTrackId, SidechainTap tap = SidechainTap::PostFader,
+                            uint32_t tapProcessorId = 0);
     std::optional<uint32_t> trackInputTrack(uint32_t trackId);  // none: its input is the device's (or none)
     void setTrackMonitor(uint32_t trackId, MonitorMode mode);
     // Armed tracks are what Auto monitoring listens to; what records is up to startRecording().
@@ -325,6 +367,12 @@ public:
     // hostTimeNs() clock; 0: now), e.g. from a computer keyboard or a test. 1-3
     // bytes, starting with a status byte. Dropped if no audio device runs.
     void sendMidiInput(const std::string& device, const std::vector<uint8_t>& message, int64_t hostTimeNs = 0);
+    // MIDI 2.0: Universal MIDI Packets (Ump.h) as if from the input `device`,
+    // as sendMidiInput() (and a MIDI 2.0 backend) hands them over. Channel voice
+    // messages play as MIDI 1.0's do; a per-note pitch bend bends the note it
+    // names, of those the input holds. Words after the last whole packet, and
+    // packets of other kinds, are ignored.
+    void sendUmp(const std::string& device, const std::vector<uint32_t>& words, int64_t hostTimeNs = 0);
     AudioClockStatus audioClock() const;
 
     // --- Automation -------------------------------------------------------------
@@ -401,6 +449,20 @@ public:
                                SidechainTap tap = SidechainTap::PostFader, uint32_t tapProcessorId = 0);
     void clearProcessorSidechain(uint32_t processorId);
     std::optional<SidechainInfo> processorSidechain(uint32_t processorId);
+    // A device's MIDI input from another track (acceptsMidi in its ProcessorInfo:
+    // an instrument, or an effect with a MIDI input, as a vocoder or a pitch
+    // corrector has): it hears that track's notes, its clips', those played on
+    // it by hand and its MIDI input as the track hears them (bends and all),
+    // instead of its own track's; 0 (the master's id: it has no notes) for its
+    // own track's again. Notes go to it when they play on the timeline, not
+    // delayed to line up with its audio. A MIDI input carries no audio, so it
+    // orders nothing and closes no cycle, and the source's mute and solo don't
+    // stop it. It stays with the device when the device moves; when its track
+    // goes, so does it. The device resets as its source changes (no note it
+    // heard hangs). Throws std::invalid_argument for an unknown device or
+    // track, or a device that takes no MIDI.
+    void setProcessorMidiInput(uint32_t processorId, uint32_t sourceTrackId);
+    uint32_t processorMidiInput(uint32_t processorId);  // 0: its own track's
     ProcessorInfo processorInfo(uint32_t processorId);
     std::vector<ParamInfo> processorParams(uint32_t processorId);
     int processorParamIndex(uint32_t processorId, const std::string& paramId);  // -1: no such parameter
@@ -452,6 +514,8 @@ public:
     std::vector<float> renderOffline(double startBeat, int64_t frames, bool loop = false,
                                      bool metronome = false);  // interleaved stereo
     void exportWav(const std::string& path, double startBeat, double endBeat, int bitDepth);
+    // The same in any format (WAV or MP3).
+    void exportFile(const std::string& path, double startBeat, double endBeat, const ExportFormat& format);
     // One track's signal before its fader (after its devices: what freezing it
     // keeps), lined up with the timeline: what it plays at startBeat comes first.
     // Solo is ignored (what goes into a group is heard as if nothing were
@@ -462,13 +526,15 @@ public:
     // Returns the frames written.
     int64_t renderTrackToWav(uint32_t trackId, const std::string& path, double startBeat, double endBeat,
                              double tailSeconds);
-    // exportWav() and renderTrackToWav() on a thread of their own (RenderJob.h):
+    // exportWav() (exportFile()) and renderTrackToWav() on a thread of their own (RenderJob.h):
     // they return at once with the job, its file created (or throw why not).
     // One job at a time. Until it is finished live output is silent, and what
     // would disturb it is refused (std::runtime_error): another render, opening
     // a device, the audio threads, recording. Other changes are taken, but the
     // job renders the project as it was when it started.
     std::shared_ptr<RenderJob> startExport(const std::string& path, double startBeat, double endBeat, int bitDepth);
+    std::shared_ptr<RenderJob> startExport(const std::string& path, double startBeat, double endBeat,
+                                           const ExportFormat& format);
     std::shared_ptr<RenderJob> startTrackRender(uint32_t trackId, const std::string& path, double startBeat,
                                                 double endBeat, double tailSeconds);
     bool isRendering();  // a job is running (or done, not finished yet)
@@ -483,6 +549,10 @@ public:
     // Tracks the workers have rendered since the number of threads was last set
     // (tests and benchmarks see them work).
     uint64_t nodesOnWorkers();
+    // How many of the workers (audioThreads() - 1) run at real-time priority
+    // (Scheduler.h); the others were refused it and render at normal priority,
+    // which the audio settings warn of.
+    int realtimeWorkers();
     // Each track's render is timed. Tracks start with those with the most work
     // hanging off them (their own and the groups they go into), unless this is
     // off (for benchmarks): then in routing order. Results are the same either way.
@@ -514,7 +584,9 @@ private:
         std::vector<std::string> clipKeys;  // sourceKey() of each clip's path
         std::vector<NoteDesc> notes;
         uint32_t chainId = 0;               // its main chain
-        uint32_t output = 0;                // where its output goes: kMaster or a track (a routing edge)
+        uint32_t output = 0;                // where its output goes: kMaster, a track (a routing edge) or kNoOutput
+        uint32_t outputProcessor = 0;       // a device whose sidechain its output goes into instead (0: none)
+        bool inMonitored = false;           // what goes into it is its input (setTrackInMonitored())
         std::shared_ptr<EdgeState> outputState;  // its output edge's, kept across snapshots (not the master)
         std::shared_ptr<DelayLine> delay;   // its output edge's delay compensation, kept across snapshots
         std::vector<SendModel> sends;       // more edges, in the order they were made
@@ -523,6 +595,8 @@ private:
         std::vector<int> inputChannels;  // device channels: its input (unless inputTrack)
         // Its input from a track's output (an input edge) or the master's (kMaster), instead of device channels.
         std::optional<uint32_t> inputTrack;
+        SidechainTap inputTap = SidechainTap::PostFader;  // where it is taken from that track
+        uint32_t inputTapProcessor = 0;                   // AfterDevice: the source's device
         std::shared_ptr<EdgeState> inputState;  // the input edge's (once it had one), kept across snapshots
         MidiInputRoute midiInput;
         MonitorMode monitor = MonitorMode::Auto;
@@ -535,6 +609,9 @@ private:
     void deviceEvent(DeviceEvent event) noexcept override;
     // Any thread: a MIDI message from input `port`, stamped and queued for the audio thread.
     void midiInput(uint16_t port, const uint8_t* message, int size, int64_t hostTimeNs) noexcept;
+    // The same for Universal MIDI Packets (MIDI 2.0), and for a message of either kind once decoded.
+    void umpInput(uint16_t port, const uint32_t* words, int count, int64_t hostTimeNs) noexcept;
+    void queueMidiInput(uint16_t port, MidiInputEvent event, int64_t hostTimeNs) noexcept;
     uint16_t midiPortLocked(const std::string& name);
     void discardMidiInputLocked();
 
@@ -554,8 +631,7 @@ private:
         SidechainTap tap = SidechainTap::PostFader;
         uint32_t tapProcessor = 0;  // AfterDevice: the source's device
         std::shared_ptr<EdgeState> state;
-        std::shared_ptr<DelayLine> delay;        // the sidechain's
-        std::shared_ptr<DelayLine> deviceDelay;  // the device's own signal's, before it
+        std::shared_ptr<DelayLine> delay;  // the sidechain's
     };
     struct ProcessorEntry {
         uint32_t chainId = 0;
@@ -566,6 +642,16 @@ private:
         // While its automation switches it off: the line its input is passed on
         // through (SwitchRender), kept across snapshots.
         std::shared_ptr<DelayLine> switchDelay;
+        // Its own signal's delay before it, lining it up with what comes into
+        // its sidechain (its own, and tracks' outputs), kept across snapshots.
+        std::shared_ptr<DelayLine> sidechainWait;
+        // The track whose notes it takes instead of its own track's (0: none),
+        // and its copy of them each chunk, kept across snapshots.
+        uint32_t midiSource = 0;
+        std::shared_ptr<MidiFeed> midiFeed;
+        // Its latency (insertLatency) when the snapshot was last aligned: idle()
+        // realigns when it differs, whatever the processor's own idle() says.
+        int alignedLatency = 0;
     };
     // A strip's devices depth first (Routing.h's slots): each device of its main
     // chain, and after a rack the devices of its chains, chain by chain.
@@ -653,7 +739,7 @@ private:
         const std::vector<int>* deviceLatency = nullptr;
         const std::vector<std::vector<int>>* chainEnd = nullptr;
         const std::vector<std::vector<int>>* chainCompensation = nullptr;
-        std::vector<int> sidechainOf;  // per slot: the snapshot edge into its sidechain input (-1: none)
+        std::vector<std::vector<int>> sidechainOf;  // per slot: the snapshot edges into its sidechain input
         double samplesPerBeat = 0.0;
         // Rack chain -> the snapshot edges taken after its devices (StripRender::deviceTaps).
         const std::unordered_map<uint32_t, std::vector<int>>* chainTaps = nullptr;
@@ -671,17 +757,19 @@ private:
     // An envelope's breakpoints in samples, sorted.
     static std::vector<AutomationNode> automationNodes(const AutomationLaneDesc& desc, double samplesPerBeat);
     // The routing graph's edges, as indices into tracks_ (-1: the master): each
-    // track's output, then its sends; then the input edges; then the sidechains,
-    // by destination and device. `origins` (if given) gets what each is.
+    // track's output (into a track, or into a device's sidechain), then its
+    // sends; then the input edges; then the sidechains, by destination and
+    // device. `origins` (if given) gets what each is.
     static constexpr int kOutputEdge = -1;
     static constexpr int kInputEdge = -2;
     static constexpr int kSidechainEdge = -3;
+    static constexpr int kOutputSidechainEdge = -4;  // a track's output into a device's sidechain
     struct EdgeOrigin {
         // The track (index) it belongs to: its source, or its destination for an
         // input or a sidechain (-1: the master).
         int track = 0;
-        int send = kOutputEdge;  // its send index, or kOutputEdge, kInputEdge, kSidechainEdge
-        uint32_t processor = 0;  // a sidechain's device
+        int send = kOutputEdge;  // its send index, or kOutputEdge, kInputEdge, kSidechainEdge, kOutputSidechainEdge
+        uint32_t processor = 0;  // a sidechain's device (an output's into one too)
         int device = -1;         // and that device's place in its chain
     };
     std::vector<RouteEdge> routeEdgesLocked(std::vector<EdgeOrigin>* origins = nullptr) const;
@@ -691,10 +779,19 @@ private:
     // but one in a rack switched off (or in a rack inside one) is tapped after
     // the outermost of those racks, which passes its input on. A tap after a
     // device that isn't on the source (any more) is before the fader.
-    int sidechainTapLocked(const SidechainModel& sidechain, const std::vector<StripSlot>& slots,
+    int sidechainTapLocked(SidechainTap where, uint32_t tapProcessor, const std::vector<StripSlot>& slots,
                            EdgeRender::Tap& tap) const;
+    // Where a device is: its strip (as an index into tracks_; -1: the master)
+    // and its slot there. None: no such device.
+    std::optional<std::pair<int, int>> deviceSlotLocked(uint32_t processorId, const ProcessorIds& ids) const;
+    // Tracks whose output went into a device that is gone go into the master.
+    void dropGoneOutputSidechainsLocked();
     // Throws std::invalid_argument if a sidechain from `source` into a device on `strip` would close a cycle.
     void checkSidechainLocked(uint32_t source, uint32_t strip) const;
+    // The device a tap of track `source` (a sidechain's, a track's input) reads after: `tapProcessorId`
+    // for an AfterDevice tap, which must be on that track (in its chain or a rack's there; else
+    // std::invalid_argument), 0 for any other.
+    uint32_t tapProcessorLocked(SidechainTap tap, uint32_t tapProcessorId, uint32_t source);
     // The same for every sidechained device in a rack's chains (it moves to `strip`).
     void checkRackSidechainsLocked(uint32_t rackId, uint32_t strip);
     // Throws std::invalid_argument if an edge from `from` into `to` would close a cycle.

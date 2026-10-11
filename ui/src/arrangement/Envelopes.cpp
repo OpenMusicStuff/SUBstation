@@ -5,6 +5,7 @@
 #include "arrangement/Cursors.h"
 #include "audio/EngineBridge.h"
 #include "editor/ProjectEditor.h"
+#include "input/GestureKey.h"
 #include "model/Project.h"
 #include "session/Selection.h"
 #include "session/Session.h"
@@ -14,7 +15,6 @@
 
 #include <QFontMetricsF>
 #include <QLineF>
-#include <QUuid>
 
 #include <algorithm>
 #include <cmath>
@@ -41,7 +41,6 @@ using app::Envelope;
 
 double fine(Qt::KeyboardModifiers modifiers) { return modifiers & Qt::ShiftModifier ? 0.1 : 1.0; }
 bool alt(Qt::KeyboardModifiers modifiers) { return modifiers & Qt::AltModifier; }
-bool farEnough(const QPointF& pos, const QPointF& press) { return (pos - press).manhattanLength() >= kDragThreshold; }
 
 const timeline::Timeline& viewOf(LanesHost& host) { return host.hostArrangement()->view(); }
 app::Project& projectOf(LanesHost& host) { return *host.hostSession()->project(); }
@@ -178,8 +177,6 @@ std::optional<Grab> grabAt(LanesHost& host, const EnvelopeArea& area, const Enve
     return std::nullopt;
 }
 
-QString newKey() { return QUuid::createUuid().toString(); }
-
 // --- Gestures -------------------------------------------------------------------------------------
 
 // Drag breakpoints: the one pressed, and the others selected with it. A click
@@ -192,7 +189,7 @@ public:
     PointGesture(LanesHost& host, const EnvelopeArea& area, int index, const QPointF& press,
                  Qt::KeyboardModifiers modifiers, bool added = false, bool segment = false, QString mergeKey = {})
         : host_(host), area_(area), index_(index), press_(press), added_(added || segment),
-          mergeKey_(mergeKey.isEmpty() ? newKey() : std::move(mergeKey)) {
+          mergeKey_(mergeKey.isEmpty() ? newGestureKey() : std::move(mergeKey)) {
         app::Selection& selection = *host.hostSession()->selection();
         original_ = projectOf(host).envelope(area.owner, area.key);
         QSet<int> selected = added_ ? QSet<int>() : selection.selectedPoints(area.owner, area.key);
@@ -278,7 +275,7 @@ private:
 class CurveGesture : public Gesture {
 public:
     CurveGesture(LanesHost& host, const EnvelopeArea& area, int index, const QPointF& press)
-        : host_(host), area_(area), index_(index), press_(press), key_(newKey()) {
+        : host_(host), area_(area), index_(index), press_(press), key_(newGestureKey()) {
         original_ = projectOf(host).envelope(area.owner, area.key);
         host.hostSession()->selection()->selectPoints(area.owner, area.key, QSet<int>());
     }
@@ -303,7 +300,10 @@ private:
 // A press on a lane off its breakpoints and its line: a click sets the
 // insert marker; a drag selects a time range on the automation lanes it
 // crosses (down over the tracks below too), and on the clips when it goes up
-// into their title band or above its track.
+// into their title band or above its track, or down past the last track (the
+// device view below the arrangement: every track from its own down, as a drag
+// from its clips would). The lanes scroll near their edges as for any drag
+// selecting time (Gesture::selectsRows).
 class LaneGesture : public Gesture {
 public:
     LaneGesture(LanesHost& host, const EnvelopeArea& area, const QPointF& press, Qt::KeyboardModifiers modifiers)
@@ -355,15 +355,19 @@ public:
         if (!active_) host_.hostSession()->selection()->setInsert(anchor_);
     }
 
+    bool selectsRows() const override { return active_ && clips_ != nullptr; }
+
 private:
-    // Whether the drag went up into the clips' title band or above its track.
+    // Whether the drag went up into the clips' title band or above its track,
+    // or down past the last track.
     bool overClips(const QPointF& pos) const {
         if (!clips_) return false;
         const Arrangement& arrangement = *host_.hostArrangement();
         const auto& rows = arrangement.layout().rows();
         if (clips_->anchorRow() < 0 || clips_->anchorRow() >= static_cast<int>(rows.size())) return false;
         const Row& row = rows[static_cast<size_t>(clips_->anchorRow())];
-        return host_.inClipBand(pos) || pos.y() + arrangement.scrollY() < row.top;
+        const double contentY = pos.y() + arrangement.scrollY();
+        return host_.inClipBand(pos) || contentY < row.top || contentY >= arrangement.layout().totalHeight();
     }
 
     LanesHost& host_;
@@ -381,7 +385,7 @@ private:
 class RangeGesture : public Gesture {
 public:
     RangeGesture(LanesHost& host, const EnvelopeArea& area, const QPointF& press, Qt::KeyboardModifiers modifiers)
-        : host_(host), area_(area), press_(press), modifiers_(modifiers), key_(newKey()) {
+        : host_(host), area_(area), press_(press), modifiers_(modifiers), key_(newGestureKey()) {
         const app::Selection& selection = *host.hostSession()->selection();
         if (const auto& range = selection.timeRange()) {
             start_ = range->start;
@@ -433,7 +437,7 @@ private:
 std::unique_ptr<Gesture> addAndDrag(LanesHost& host, const EnvelopeArea& area, const QPointF& pos,
                                     Qt::KeyboardModifiers modifiers, const std::pair<double, double>& target) {
     app::Session& session = *host.hostSession();
-    const QString key = newKey();  // ties the breakpoint's adding to the drag that follows
+    const QString key = newGestureKey();  // ties the breakpoint's adding to the drag that follows
     const int index = session.editor()->addAutomationPoint(area.owner, area.key, target.first, target.second, key);
     auto gesture = std::make_unique<PointGesture>(host, area, index, pos, modifiers, true, false, key);
     session.selection()->setInsert(target.first);
@@ -452,8 +456,11 @@ void drawGhost(SgPainter& p, const timeline::Timeline& view, const EnvelopeArea&
     if (!hover || !hover->on(area) || hover->kind != Hover::Kind::Add || gestureActive) return;
     const double radius = kPointRadius + 1.0;
     const QPointF at(view.beatToX(hover->beat), area.y(hover->value));
-    p.fillEllipse(at, radius, radius, QColor(kGhost.red(), kGhost.green(), kGhost.blue(), 70));
-    p.drawEllipse(QRectF(at.x() - radius, at.y() - radius, 2 * radius, 2 * radius), kGhost, 1.4);
+    QColor ghost = Theme::automationOn();
+    ghost.setAlpha(70);
+    p.fillEllipse(at, radius, radius, ghost);
+    ghost.setAlpha(kGhostAlpha);
+    p.drawEllipse(QRectF(at.x() - radius, at.y() - radius, 2 * radius, 2 * radius), ghost, 1.4);
 }
 
 }  // namespace
@@ -667,21 +674,24 @@ void addMenuEntries(LanesHost& host, const EnvelopeArea& area, const QPointF& po
 
 void drawArea(SgPainter& p, const timeline::Timeline& view, const app::Selection& selection, const EnvelopeArea& area,
               const Envelope& points, const EnvelopeLook& look, const QRectF& visible, const std::optional<Hover>& hover,
-              bool shade, bool gestureActive) {
+              bool gestureActive) {
     const QRectF clip = area.rect.intersected(visible);
     if (clip.isEmpty()) return;
     p.save();
     p.setClipRect(clip.adjusted(0, -kPointRadius - 1, 0, kPointRadius + 1));
-    if (shade) p.fillRect(clip, kLaneBackground);
     p.setAntialiasing(true);
     const double x0 = clip.left() - 2, x1 = clip.right() + 2;
     if (points.empty()) {
-        if (look.unautomated) dashedLine(p, x0, x1, area.y(*look.unautomated), kUnautomated, 1.5);
+        if (look.unautomated) {
+            QColor unautomated = Theme::automationOn();
+            unautomated.setAlpha(kUnautomatedAlpha);
+            dashedLine(p, x0, x1, area.y(*look.unautomated), unautomated, 1.5);
+        }
         drawGhost(p, view, area, hover, gestureActive);
         p.restore();
         return;
     }
-    const QColor color = look.overridden ? kOverridden : kEnvelope;
+    const QColor color = look.overridden ? Theme::automationOff() : Theme::automationOn();
     const app::ParamSpec* quantize = look.quantizer();
     const bool here = hover && hover->on(area);
     if (here && hover->kind == Hover::Kind::Segment && hover->index && *hover->index + 1 < static_cast<int>(points.size()))
@@ -705,7 +715,7 @@ void drawArea(SgPainter& p, const timeline::Timeline& view, const app::Selection
                 hovered = i - *hover->index == 0 || i - *hover->index == 1;
         }
         const double radius = kPointRadius + (hovered ? 1.0 : 0.0);
-        const QColor fill = selected.contains(i) ? Theme::kSelectionOutline : (hovered ? color : Theme::kLane);
+        const QColor fill = selected.contains(i) ? Theme::selectionOutline() : (hovered ? color : Theme::lane());
         const QPointF at(x, area.y(point.value));
         p.fillEllipse(at, radius, radius, fill);
         p.drawEllipse(QRectF(at.x() - radius, at.y() - radius, 2 * radius, 2 * radius), color, 1.4);
@@ -736,10 +746,10 @@ void drawReadout(SgPainter& p, double width, const std::optional<Readout>& reado
     if (box.right() > width) box.moveRight(at.x() - 8);
     p.save();
     p.setAntialiasing(true);
-    p.fillRoundedRect(box, 3, 3, Theme::kPanelAlt);
-    p.drawRoundedRect(box, 3, 3, Theme::kBorder);
+    p.fillRoundedRect(box, 3, 3, Theme::panelAlt());
+    p.drawRoundedRect(box, 3, 3, Theme::border());
     p.restore();
-    p.drawText(box, Qt::AlignCenter, readout->text, Theme::kText, font);
+    p.drawText(box, Qt::AlignCenter, readout->text, Theme::text(), font);
 }
 
 }  // namespace envelopes

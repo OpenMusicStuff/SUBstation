@@ -84,7 +84,10 @@ folding, the master, the title bar and the transport bar, and projects.
 
 A clip's right-click menu has *Cut*, *Copy*, *Paste*, *Split Here*, *Duplicate*,
 *Consolidate*, *Reverse*, *Deactivate* (or *Activate*) and *Delete*; right-clicking anywhere in a time selection
-offers the same (but *Split Here*), for what is selected. Right-clicking an empty part
+offers the same (but *Split Here*), for what is selected. An audio clip's also has *Find
+Similar Sounds* (see [browser.md](browser.md#find-similar-sounds)), *Hot-Swap Sample*
+(try samples from the browser in place of its file, everywhere it plays) and *Show in
+File Manager* (see [file-manager.md](file-manager.md)). Right-clicking an empty part
 of a lane offers *Paste* (at that point), *Insert MIDI Clip* (on a MIDI track), *Insert
 Audio Track*, *Insert MIDI Track* and *Delete Track*.
 
@@ -127,17 +130,26 @@ header's right-click menu.
 
 ### Track headers
 
-Each track's header (on the right, like Ableton) has:
+Each track's header (on the right) is laid out as Ableton's, in columns:
 
-- the **activator** (its number; switched off, the track is muted), **solo** and **arm**;
-- **volume** (drag it; select it and type a number; double-click to reset) and **pan**;
-- the **input** (audio, or a MIDI track's MIDI input) and **monitoring**
-  (see [recording.md](recording.md));
-- a **meter**;
-- while there are return tracks, a **send knob** for each return
-  (see [mixing.md](mixing.md));
-- while its automation shows, the **automation choosers**
-  (see [automation.md](automation.md)).
+- the **name column**: its name bar in the track's colour, with the fold button (drag
+  the bar to move the track); below it, on a shade of its colour, the **automation
+  choosers** while its automation shows (see [automation.md](automation.md)). A group's
+  colour fills its name column down to its choosers;
+- the **In/Out column** (*View › In/Out*, **Ctrl+Alt+I**, shows or hides it): **Audio
+  From** (a MIDI track's **MIDI From**) and its channel, **In / Auto / Off** monitoring
+  (see [recording.md](recording.md)), and **Audio To** and where in that track it goes
+  (see [mixing.md](mixing.md#where-a-track-goes-audio-to)). A group has Audio To only;
+- the **mixer column**: the **activator** (its number; switched off, the track is
+  muted), **solo** and **arm**; under them **volume** and **pan** (drag them up or
+  down; select one and type a number, `25L` or `C` for pan; double-click to reset),
+  each filled as far as its slider is; while there are return tracks, a **send knob**
+  for each return (see [mixing.md](mixing.md));
+- a **meter**.
+
+A row shows when the track is tall enough for it: a folded track shows its name bar
+and the first row of each column, a folded group the first two (its volume and pan
+too).
 
 **Ctrl+R** (or *Rename* in its right-click menu) renames the selected track in place;
 *Color* in the menu sets its colour. Drag the bottom edge of a track to resize it.
@@ -223,9 +235,10 @@ first of them was.
   on to the master, or the group it is in (groups nest).
 - A group has no clips. Its lane shows what is in it as Ableton's do: a thin row for
   each track in it (in groups in it too), with that track's clips, so the group's
-  structure shows at a glance. Folded, the rows are in the tracks' colours; open (its
-  tracks show below it), just a faint outline. Its automation works as a track's. It
-  has no arm or input: it records nothing.
+  structure shows at a glance; five rows at least, so a group of one track shows its
+  clips in the top fifth of the lane, empty rows below. Folded, the rows are in the
+  tracks' colours; open (its tracks show below it), just a faint outline. Its
+  automation works as a track's. It has no arm or input: it records nothing.
 - A new audio or MIDI track made in a group takes the group's colour.
 - A group's header is a little taller than a track's, with a bar in its colour across
   its top. The tracks in it are indented under it, and a band in the group's colour
@@ -249,8 +262,10 @@ in its right-click menu).
   row is a grid as any other: a click moves the insert marker, a drag selects time
   (on it, and on the tracks it goes on to), and what is selected there is cut, copied,
   duplicated and moved as on any track.
-- A group's is three bars in a circle, filled while folded: folded, it shrinks to its
-  name row too (a little taller than a track's) and hides its tracks.
+- A group's is three bars in a circle, the same folded or open: folded, it hides its
+  tracks and shrinks to two rows, twice a folded track's height (as tall as its
+  colour is while it is open, as in Ableton): its name, Audio To, activator and solo,
+  with its volume and pan under them; its lane shows its tracks' clips (see above).
 - Folded tracks and groups don't show their automation (lanes or choosers); unfolded,
   it is back as it was.
 - With several tracks or groups selected, folding one of them folds (or unfolds) them
@@ -301,9 +316,20 @@ stops; press it again to return to the start. **Home** goes to the start.
 - **Undo / redo** (**Ctrl+Z** / **Ctrl+Y** or **Ctrl+Shift+Z**) cover all edits.
 - Projects are `.gilproj` files (JSON): *File › New Project*, *Open…*, *Open Recent*,
   *Save* and *Save As…* (**Ctrl+Shift+S**).
+- *File › Import Ableton Live Set…* opens a Live Set as a new project: see
+  [ableton-import.md](ableton-import.md).
+- *File › Save as Template* makes the project as it is now the one every new project
+  starts as: *New Project*, and SUBstation's start without a project to open, open
+  exactly that (its tracks, clips, devices and plug-ins' settings, automation, routing,
+  tempo, key, loop and what its views show), untitled. Saving it again replaces it;
+  *File › Clear Template* goes back to empty new projects. The project you saved it
+  from stays as it was (its file, its unsaved changes).
 - *File › Export Audio…* (**Ctrl+Shift+R**) renders the arrangement (from the start to
-  the end of the last clip) or the loop region to a WAV file, 16-bit, 24-bit or 32-bit
-  float. It renders in the background, its progress in a dialog; the window goes on
+  the end of the last clip), the loop region, or the time selection (the whole mix over
+  its time, whichever tracks it is on) to a WAV file, 16-bit, 24-bit or 32-bit float, or
+  to an MP3 file, 128 to 320 kbps (constant bitrate, LAME's encoder; above 48 kHz it is
+  resampled, MP3 goes no higher). The file type and bitrate stay as you chose them last.
+  It renders in the background, its progress in a dialog; the window goes on
   meanwhile (but takes no edits, and nothing plays). **Cancel** (or Esc) stops it and
   deletes the unfinished file.
 - Opening a project shows it at once; its plug-ins load after it, one at a time (see

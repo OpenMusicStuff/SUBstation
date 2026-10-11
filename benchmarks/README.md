@@ -7,7 +7,8 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 |---|---|
 | [parallel_render_bench.cpp](parallel_render_bench.cpp) | Tracks rendered on one thread and on several: offline (best of three, checked bit-identical on any number of threads) and live through the fake ASIO driver. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
-| [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints on a real sample library: how fast they are made and searched, and how often a one-shot's nearest sounds are of its kind; `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
+| [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
+| [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints (Essentia's descriptors) on a real sample library: how fast they are made and searched, how fast the index analyses a library, and how often a sound's nearest sounds are of its kind; `--split` holds half the queries out, `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
 | [LibraryGen.h](LibraryGen.h) | Makes the synthetic sample libraries. |
 | [PyRandom.h](PyRandom.h), [Json.h](Json.h) | Python's random numbers (so a library is the one the Python generator made), and the reports as JSON. |
 
@@ -24,15 +25,16 @@ thousands of shapes).
 The benchmarks are built with `-DSUBSTATION_BUILD_BENCHMARKS=ON` (off by
 default), into the build's `bin` folder with everything else. Always in Release.
 `browser_backend_bench` needs the application layer (Qt Core, as the tests do);
-`parallel_render_bench` needs only the engine, and `sound_similarity_bench` only the
+`parallel_render_bench` and `builtin_devices_bench` need only the engine, and `sound_similarity_bench` only the
 intelligence module (no Qt either; it wants a sample library of your own).
 
 Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench sound_similarity_bench
+ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
+build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/browser_backend_bench --size 200000 --json backend.json
 build/bin/sound_similarity_bench --folder ~/Samples --cache /tmp/fingerprints.bin --json similarity.json
 ```
@@ -234,6 +236,27 @@ only 8 tracks to share). Live at 64 frames: 46 µs per buffer on one thread, 15 
 A project with two tracks renders at 32 frames as it did on one thread (below the
 threshold, chunks render serially) and a little faster at 128 (13 → 9 µs).
 
+### Linux, real-time workers
+
+The C++ build on Linux (platform support, stage 1: the workers at real-time
+priority, `platform::ScopedRealtimePriority`). A 4-core cloud VM (Intel Xeon,
+2.1 GHz), Ubuntu 24.04, GCC, Release; 32 Synth tracks, 10 s, offline. "Real-time":
+the workers at `SCHED_FIFO` 70 (the process allowed to set it); "rtkit": a user
+without that, given `SCHED_RR` 20 by rtkit (and `RLIMIT_RTTIME` 200 ms); "refused":
+a user with neither, the workers at normal priority. Raw reports:
+`results/parallel-32-synth-linux-*.json`.
+
+| threads | real-time | speed-up | rtkit | speed-up | refused | speed-up |
+|---|---|---|---|---|---|---|
+| 1 | 1.953 s (5.1× realtime) | 1.00× | 1.871 s (5.3× realtime) | 1.00× | 1.858 s (5.4× realtime) | 1.00× |
+| 2 | 1.006 s | 1.94× | 0.973 s | 1.92× | 1.015 s | 1.83× |
+| 4 | 0.543 s (18.4× realtime) | 3.59× | 0.543 s (18.4× realtime) | 3.45× | 0.565 s (17.7× realtime) | 3.29× |
+
+The speed-ups are those of Windows above (1.96× on 2 threads, 3.74× on 4), on
+slower cores. Live (`--live`) needs the fake ASIO driver, so it waits for the
+PipeWire backend (stage 2) on Linux; and the comparison on the same hardware, and
+on macOS, are still to do.
+
 ### Starting the heaviest tracks first
 
 `--heavy N` puts a chain of OTTs on the last N tracks (the last in routing order,
@@ -257,48 +280,112 @@ noise, and timing every track costs nothing measurable on one thread.
 
 ```
 sound_similarity_bench --folder <sample library> [--threads N] [--limit N] [--cache file]
-                       [--weights t,m,s,e,p,r] [--tune] [--show N] [--json out.json]
+                       [--weights t,m,s,e,p,r,ts,c,ss,to,x] [--tune] [--split] [--show N]
+                       [--index] [--json out.json]
 ```
 
-Fingerprints every audio file under the folder (on `--threads` threads, normal
-priority; `--cache` keeps them between runs, made again when the feature version
-changes), then measures one search over all of them, and how well the nearest
-sounds match what a sound is. A file's kind comes from its name and its folder's
-(kick, snare, clap, closed and open hi-hat, tom, cymbal, rim, shaker, snap, 808;
-a name with "loop", "fill", "bpm"... is a loop): each labelled one-shot is a
-query over the whole library, and precision@k is the share of its k nearest
-sounds (itself left out) that are one-shots of its kind. It prints that per kind,
-each aspect alone, and with `--tune` searches the aspects' weights (Timbre,
-TimbreMotion, Spectrum, Envelope, Pitch, Rhythm) for the best mean precision@10
-over kinds. `--show N` prints the N nearest of one query per kind. How the
-fingerprint works is in [docs/intelligence.md](../docs/intelligence.md).
+Fingerprints every audio file under the folder with the index's extractor
+(`EssentiaExtractor`; on `--threads` threads, normal priority; `--cache` keeps
+them between runs, made again when the extractor's schema changes), then measures
+one search over all of them, measuring the library's statistics, and how well the
+nearest sounds match what a sound is. A file's kind comes from its name and its
+folder's: kick, snare, clap, closed and open hi-hat, tom, cymbal, rim, shaker,
+snap, 808, and drum machines' abbreviations (BD, SD, CP, CH, OH...); TidalCycles'
+Dirt-Samples folders (bd, sn, cp, hh, oh, lt/mt/ht, cr, rm, stab, pluck, bass,
+jungbass, arpy...) as kick, snare... synth stab, pluck, synth bass, sub bass, arp;
+a name with "loop", "fill", "bpm", "breaks"... is a loop. Each labelled one-shot
+is a query over the whole library, and precision@k is the share of its k nearest
+sounds (itself left out) that are one-shots of its kind; each loop is a query too,
+its hits other loops. It prints that per kind and each aspect alone. `--weights`
+gives the aspects' weights in `Aspect`'s order (Timbre, TimbreMotion, Spectrum,
+Envelope, Pitch, Rhythm, TimbreSpread, Contrast, SpectralShape, Tonality,
+Embedding); those left off the end keep the extractor's. `--split` halves the queries by their folder and reports each half;
+`--tune` searches the weights for the best mean precision@10 over the kinds of
+the first half (so the second shows what the tuning is worth on sounds it didn't
+see). `--index` also runs the `SoundIndex` itself over the library at background
+priority: from nothing, then from its saved fingerprints. `--show N` prints the N
+nearest of one query per kind. How the fingerprint works is in
+[docs/intelligence.md](../docs/intelligence.md).
 
 ## Results
 
-A Splice sample library of 5 091 files (WAV files from 1 403 packs: drums, loops,
-vocals, instruments, FX), on an Intel Core Ultra 7 270K Plus (24 threads),
-Windows 11, MinGW GCC 13 `-O2`:
+[Dirt-Samples](https://github.com/tidalcycles/Dirt-Samples) (not in the
+repository: `git clone --depth 1 https://github.com/tidalcycles/Dirt-Samples`):
+2 068 WAV files in 221 folders, at 44.1, 22.05, 48 and 16 kHz and a few odd rates,
+plus 30 drum loops made from its kicks, snares and hats (90–174 BPM, 4 s). A
+release build on a 4-core cloud machine (Linux, GCC 13):
 
 | | |
 |---|---|
-| analysing 5 091 files, 12 threads | 4.1 s (1 250 files/s); a file: median 9.5 ms, 95% 19.3 ms (a thread) |
-| one search over 5 084 fingerprints | 0.1 ms (the comparison only) |
-| queries | 1 102 labelled one-shots |
+| analysing 2 068 files, 4 threads | 8.6 s (240 files/s); a file: median 10 ms, 95% 58 ms (a thread); one thread 59 files/s |
+| the index, 4 analysers at background priority | 8.2 s; the next start reads the 0.8 MB store in 3 ms and has checked every file's stamp 8 ms later; a search 0.7 ms |
+| one search over 2 068 fingerprints | 0.2 ms (the comparison only); measuring the library's statistics 2 ms |
+| queries | 583 labelled one-shots, 40 loops |
 
-Precision@10, all queries (and per kind):
+Precision@10, Essentia's descriptors against the module's own (the extractor it
+replaced, built from the commit before; the same files, labels and queries):
 
-| | all | kick | snare | 808 | closed hat | open hat | clap | tom |
+| | one-shots, mean over kinds | one-shots, all | P@1, mean | loops | kick | snare | synth stab | synth bass |
 |---|---|---|---|---|---|---|---|---|
-| MFCCs alone (`--weights 1,0,0,0,0,0`) | 0.352 | 0.52 | 0.37 | 0.39 | 0.21 | 0.11 | 0.31 | |
-| the default weights (0.5, 1.5, 2.5, 2, 0.5, 0.5) | **0.694** | 0.84 | 0.79 | 0.73 | 0.53 | 0.59 | 0.56 | 0.38 |
+| the module's own descriptors | 0.467 | 0.580 | 0.671 | 0.462 | 0.455 | 0.692 | 0.804 | 0.414 |
+| Essentia's (default weights) | **0.492** | **0.602** | **0.683** | **0.528** | **0.504** | **0.692** | **0.870** | **0.504** |
 
-Each aspect alone (mean precision@10 over kinds): timbre 0.20, timbre motion 0.24,
-spectrum 0.24, envelope 0.20, pitch 0.09, rhythm 0.12; all together 0.45. `--tune`
-finds 0.449 (0.25, 2, 3, 3, 0.5, 0.5); the defaults are rounded from it, a little
-less fitted to this one library.
+Each aspect alone (mean precision@10 over kinds): timbre 0.34, timbre motion 0.37,
+spectrum 0.34, envelope 0.18, pitch 0.13, rhythm 0.11, timbre spread 0.22,
+contrast 0.39, spectral shape 0.32, tonality 0.22. With `--split`, the six aspects
+the module had: 0.389 / 0.469 (the two halves); with the four added: 0.407 /
+0.514. Weights `--tune`d on the first half did worse on the second (0.498), so the
+defaults stay round. The full table per kind is in
+[docs/intelligence.md](../docs/intelligence.md#how-well-it-works).
 
-The index itself (`SoundIndex`, at background priority, its default 4 analysers),
-on the same library: everything analysed in 11.5 s the first time; the next start
-reads the 1.7 MB store in 10 ms and has checked every file's stamp 20 ms later; a
-search (on its thread, the comparison and the table of results) takes 0.5 ms, one
-from a part of a file (analysed then) 1.6 ms.
+The module's own descriptors, on a Splice library of 5 091 files (1 403 packs) on
+an Intel Core Ultra 7 270K Plus (24 threads), Windows 11, MinGW GCC 13: precision@10
+0.694 over all queries (kick 0.84, snare 0.79, 808 0.73, closed hat 0.53, open hat
+0.59, clap 0.56); 1 250 files/s on 12 threads, 1.4–9.5 ms a file. That library's
+labels are cleaner than Dirt-Samples' file names: compare extractors on one set,
+not the sets with each other.
+
+# Built-in devices
+
+```
+builtin_devices_bench [--device ID[,ID...]] [--seconds 10] [--block 256] [--rate 48000]
+    [--set PARAM=VALUE ...] [--json out.json]
+```
+
+Each built-in audio effect (or those named), made from the registry and prepared
+at the rate, plays stereo noise and two tones at about -12 dBFS in blocks of
+`--block` frames, as the audio thread gives them; the time its `process()` takes,
+against how long the audio plays, is its load on one core (best of three).
+`--set` changes a parameter, by id and in its own units, on every device that has
+one: the heavy settings below. No engine, no graph: the device alone.
+
+## Results
+
+Linux, Intel Xeon at 2.1 GHz (a cloud VM's 4 cores, other work on it), GCC 13,
+Release, 48 kHz, blocks of 256, 5 s. The raw report is in
+`results/builtin-devices.json`.
+
+| device | defaults | heavy settings |
+|---|---|---|
+| Amp | 0.63 % | 1.37 % (Dual Mono, Lead, Gain 10) |
+| Chorus-Ensemble | 0.31 % | 0.67 % (Ensemble, Warmth 100, High-pass, Feedback 80) |
+| Compressor | 0.12 % | |
+| Delay | 0.14 % | |
+| Disperser | 0.23 % | |
+| EQ | 0.02 % | |
+| Erosion | 0.22 % | |
+| Gate | 0.14 % | |
+| Limiter | 0.35 % | 0.68 % (True Peak, Gain +12 dB) |
+| Multiband Dynamics | 0.66 % | |
+| Over The Top | 0.40 % | |
+| Phaser-Flanger | 0.23 % | 0.75 % (42 notches, Feedback 95, Amount 100) |
+| Reverb | 1.43 % | 1.39 % (Size 500, Predelay 250 ms, Decay 60 s, Spin and Chorus 100, Diffusion, Scale and Shape 100) |
+| Saturator | 0.10 % | 0.65 % (Hi-Quality, Waveshaper, Color, DC, Drive +12 dB) |
+| Sidechain | 0.09 % | |
+| Spectral Compressor | 0.61 % | 0.73 % (Stereo Link 0, Upward 10, Smoothing 100, Threshold -60, Ratio 20) |
+| Utility | 0.02 % | |
+
+Oversampling (the Saturator's Hi-Quality, the Amp) runs the shared half-band
+stages a tap at a time over the block, which the compiler vectorises. Before it
+did, the same machine measured about 1.4 % for the Saturator's heaviest
+Hi-Quality settings and 2.1-2.2 % for the Amp in Dual Mono.
