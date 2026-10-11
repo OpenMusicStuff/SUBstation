@@ -143,8 +143,12 @@ TEST_CASE("pipewire: dropouts counted") {
     t.engine.openDevice(pipeWire("Test Duplex", 48000, 256));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));  // cycles as they should be
     CHECK_EQ(t.engine.deviceStatus().dropouts, uint64_t{0});
-    t.daemon.freeze(std::chrono::milliseconds(200));  // the device's clock skips the cycles it missed
-    CHECK(waitUntil([&] { return t.engine.deviceStatus().dropouts > 0; }));
+    // The device's clock skips the cycles it missed (now and then it doesn't: again until it has).
+    for (int i = 0; i < 5 && t.engine.deviceStatus().dropouts == 0; ++i) {
+        t.daemon.freeze(std::chrono::milliseconds(200));
+        waitUntil([&] { return t.engine.deviceStatus().dropouts > 0; }, 0.2);
+    }
+    CHECK(t.engine.deviceStatus().dropouts > 0);
     t.engine.openDevice(pipeWire("Test Duplex", 48000, 256));
     CHECK_EQ(t.engine.deviceStatus().dropouts, uint64_t{0});  // counted again for each device opened
 }

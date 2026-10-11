@@ -367,7 +367,8 @@ where a build without the ASIO SDK lists it disabled, saying why; the engine's e
 the UI disables the dialog meanwhile). `status` is rich text: what runs, an error first in red, and a warning (in red too) when
 the system refused the audio threads beside the driver's own real-time priority (`EngineBridge::realtimeWorkers()`,
 with what to do about it: on Linux rtkit or `rtprio` in limits.conf), and another when the device has dropped out
-since it opened (`AudioDeviceStatus::dropouts`: how many; a larger buffer may help). The latency shown is the
+since it opened (`AudioDeviceStatus::dropouts`: how many; a larger buffer may help; looked at once a second while the dialog
+shows, `kDropoutsInterval`, since dropouts come without an event). The latency shown is the
 output's, and the input's too where inputs are open (or the driver is ASIO).
 
 **Preferences › MIDI** is `MidiPreferences` (`Session.midiPreferences`): the MIDI inputs connected

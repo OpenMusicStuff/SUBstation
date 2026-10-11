@@ -3,8 +3,8 @@
 The engine plays through one audio device at a time, of any driver type the build has: on Windows
 WASAPI (through miniaudio) or ASIO (Steinberg's driver model, compiled only when the ASIO SDK was
 found); on Linux PipeWire ([below](#pipewire-pipewirebackend), built when libpipewire's headers are
-found); and on platforms other than Windows the WASAPI backend opening miniaudio's default backend
-instead, as the "System" driver ([below](#the-system-driver-elsewhere)), which Linux falls back to
+found); and on platforms other than Windows the same miniaudio backend (`MiniaudioBackend`) opening
+miniaudio's default backend instead, as the "System" driver ([below](#the-system-driver-elsewhere)), which Linux falls back to
 where PipeWire doesn't run. This
 part lives in [AudioDevice.h](../../engine/src/AudioDevice.h) / [AudioDevice.cpp](../../engine/src/AudioDevice.cpp),
 the backends in [engine/src/backends/](../../engine/src/backends/) (which ones a build has: a file per system behind

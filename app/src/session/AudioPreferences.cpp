@@ -69,6 +69,11 @@ AudioPreferences::AudioPreferences(EngineBridge* bridge, QObject* parent) : QObj
     connect(bridge_, &EngineBridge::deviceChanged, this, [this] {
         if (following_) refresh();
     });
+    // Dropouts come without an event: looked at while the dialog shows.
+    dropoutsTimer_.setInterval(kDropoutsInterval);
+    connect(&dropoutsTimer_, &QTimer::timeout, this, [this] {
+        if (bridge_->deviceStatus().dropouts != dropoutsShown_) refresh();
+    });
 }
 
 QVariantList AudioPreferences::list(const std::vector<Choice>& choices) {
@@ -124,12 +129,16 @@ QStringList AudioPreferences::deviceNames(const QString& driver) const {
 
 void AudioPreferences::open() {
     following_ = true;
+    dropoutsTimer_.start();
     settings_ = currentSettings();
     showThreads();
     refresh();
 }
 
-void AudioPreferences::close() { following_ = false; }
+void AudioPreferences::close() {
+    following_ = false;
+    dropoutsTimer_.stop();
+}
 
 void AudioPreferences::showThreads() {
     threads_.clear();
@@ -206,6 +215,7 @@ void AudioPreferences::refresh(const QString& error) {
 
     QStringList lines;
     if (!error.isEmpty()) lines.append(warning(error));
+    dropoutsShown_ = status.dropouts;
     if (status.open) {
         const QString latency =
             status.backend == kAsio || !status.inputChannels.isEmpty()

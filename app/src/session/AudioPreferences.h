@@ -15,6 +15,7 @@
 // currentIndexChanged).
 
 #include <QObject>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -72,6 +73,7 @@ class AudioPreferences : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY changed)
 
 public:
+    static constexpr int kDropoutsInterval = 1000;  // ms between looks at the dropouts while open
     explicit AudioPreferences(EngineBridge* bridge, QObject* parent = nullptr);
 
     QVariantList driverChoices() const { return list(drivers_); }
@@ -143,6 +145,8 @@ private:
     EngineBridge* bridge_;
     AudioSettings settings_;
     bool following_ = false;
+    QTimer dropoutsTimer_;  // while open: the dropouts counted since (refresh() when they change)
+    qint64 dropoutsShown_ = 0;
     std::vector<Choice> drivers_;
     int driverIndex_ = -1;
     std::vector<Choice> devices_;

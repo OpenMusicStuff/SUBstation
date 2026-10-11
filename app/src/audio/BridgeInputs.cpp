@@ -95,16 +95,19 @@ void EngineBridge::openInputs(const std::vector<int>& channels) {
         return;  // not this device's: silent until a device that has them
     }
     // As it runs now (not as saved: it may have opened with its own settings
-    // instead), the same device: ASIO's by name, PipeWire's as opened (no name:
-    // the default device, which it goes on following).
+    // instead). PipeWire's as it was opened: no name is the default device,
+    // which it goes on following, and its rate and buffer size are requests
+    // (the graph may run another quantum for a while), not what runs now.
     AudioSettings settings;
     settings.driver = QString::fromStdString(status.backend);
     settings.deviceName = QString::fromStdString(status.name);
-    if (settings.driver != QStringLiteral("ASIO") && d_->opened && d_->opened->driver == settings.driver) {
-        settings.deviceName = d_->opened->deviceName;
-    }
     settings.sampleRate = static_cast<int>(status.sampleRate);
     settings.bufferFrames = static_cast<int>(status.bufferFrames);
+    if (settings.driver != QStringLiteral("ASIO") && d_->opened && d_->opened->driver == settings.driver) {
+        settings.deviceName = d_->opened->deviceName;
+        settings.sampleRate = d_->opened->sampleRate;
+        settings.bufferFrames = d_->opened->bufferFrames;
+    }
     settings.outputChannels = status.outputChannels;
     std::set<int> inputs = open;
     inputs.insert(channels.begin(), channels.end());

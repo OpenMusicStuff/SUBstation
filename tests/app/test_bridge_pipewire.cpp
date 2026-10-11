@@ -6,8 +6,12 @@
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
 
+#include "SessionFixture.h"
+
 #include "audio/AudioSettings.h"
 #include "audio/EngineBridge.h"
+#include "session/AudioPreferences.h"
+#include "session/Session.h"
 
 #include <QElapsedTimer>
 #include <QSettings>
@@ -105,6 +109,30 @@ private Q_SLOTS:
         QCOMPARE(saved.driver, QStringLiteral("PipeWire"));
         QCOMPARE(saved.deviceName, QString());  // still the default device, whichever it is
         QCOMPARE(saved.inputChannels, std::vector<int>{1});
+        // What was asked for, not what the graph runs now: requests, kept as they were.
+        QCOMPARE(saved.sampleRate, 0);
+        QCOMPARE(saved.bufferFrames, 256);
+    }
+
+    void thePreferencesShowDropoutsAsTheyCome() {
+        subtest::PipeWireDaemon daemon;
+        if (!daemon.running()) QSKIP(daemon.whyNot().c_str());
+        test::SessionFixture f;
+        QCOMPARE(f.bridge().openDevice(pipeWire()), QString());
+        AudioPreferences& prefs = *f.s().audioPreferences();
+        prefs.open();
+        QVERIFY(!prefs.status().contains(QStringLiteral("dropout")));
+        QTest::qWait(100);  // cycles as they should be first: a gap is counted against the last one
+        // The device's clock skips the cycles it missed (now and then it doesn't: again until it has).
+        for (int i = 0; i < 5 && f.bridge().deviceStatus().dropouts == 0; ++i) {
+            daemon.freeze(std::chrono::milliseconds(200));
+            QTest::qWait(200);
+        }
+        QVERIFY(f.bridge().deviceStatus().dropouts > 0);
+        // No setting changed and no device event: the open dialog looks again by itself.
+        QTRY_VERIFY_WITH_TIMEOUT(prefs.status().contains(QStringLiteral("since it opened")),
+                                 3 * AudioPreferences::kDropoutsInterval);
+        prefs.close();
     }
 #endif
 };
