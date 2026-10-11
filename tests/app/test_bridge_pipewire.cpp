@@ -122,9 +122,12 @@ private Q_SLOTS:
         AudioPreferences& prefs = *f.s().audioPreferences();
         prefs.open();
         QVERIFY(!prefs.status().contains(QStringLiteral("dropout")));
-        QTest::qWait(100);  // cycles as they should be first: a gap is counted against the last one
-        // The device's clock skips the cycles it missed (now and then it doesn't: again until it has).
-        for (int i = 0; i < 5 && f.bridge().deviceStatus().dropouts == 0; ++i) {
+        // The device runs: callbacks come (the scope fills).
+        const quint64 written = f.bridge().scopeWritten();
+        QTRY_VERIFY(f.bridge().scopeWritten() > written);
+        // A freeze makes the device's clock skip only now and then (when it stops,
+        // or when it starts again, by a cycle or all it missed): again until it has.
+        for (int i = 0; i < 20 && f.bridge().deviceStatus().dropouts == 0; ++i) {
             daemon.freeze(std::chrono::milliseconds(200));
             QTest::qWait(200);
         }
