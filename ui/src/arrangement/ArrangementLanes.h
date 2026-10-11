@@ -72,6 +72,8 @@
 #include <QHash>
 #include <QPointF>
 #include <QRectF>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
@@ -92,6 +94,16 @@ inline constexpr double kEdgeGrab = 6;      // trim handles: this many pixels in
 // name row of the track's header.
 inline constexpr double kTitleHeight = kFoldedHeight - 3;
 inline constexpr double kMinTitleRow = kTitleHeight + 14;  // clips in shorter rows have a thin title bar instead
+// A clip's body on a track showing its automation, as Ableton's: a fifth of
+// its colour over a grey, the grey chosen so every clip comes out as light
+// (a little lighter than the lane): a bright clip's over a dark grey, a dark
+// one's over a light grey, so all of them read as a faint tint of the same
+// depth (read off Live: yellow and blue clips both come out at a luma of 61
+// on a lane of 50). The grid faint over it.
+inline constexpr double kAutomationBodyChroma = 0.2;
+inline constexpr double kAutomationBodyLift = 1.32;  // its luma: the lane's, times this (dark themes)
+inline constexpr double kAutomationGridOpacity = 0.6;
+inline constexpr double kClipGridOpacity = 1.0;  // the grid through a clip's body otherwise
 inline constexpr double kShortTitleHeight = 9;  // that thin bar: grab it to move the clip; below it, select time
 inline constexpr double kFadeHandle = 7;     // a fade handle's square
 inline constexpr double kFadeGrab = 4;       // pixels around a fade handle (square or dot) that grab it too
@@ -248,6 +260,7 @@ private:
         bool selected;
         bool ghost;
         bool folded;
+        bool automation;  // on a track showing its automation
     };
 
     QRectF clipRect(const app::Clip& clip, double rowTop, int rowHeight) const;
@@ -261,14 +274,23 @@ private:
     bool showsFadeHandles() const;
     void showMenu(const QPointF& pos);
     void updateIfShown(const QString& trackId);
+    // A selecting drag (Gesture::selectsRows) near or past the lanes' edges:
+    // where the gesture is told the mouse is (on the ruler or above: before the
+    // first row; below the arrangement: after the last; over the returns and the
+    // master: on the lanes' bottom edge), and how far a tick of edgeScroll_
+    // scrolls (0: the mouse isn't near an edge).
+    QPointF selectingPos(const QPointF& pos) const;
+    int edgeScrollStep(double y) const;
+    void moveGesture(const QPointF& pos, Qt::KeyboardModifiers modifiers);
+    void edgeScrollTick();
 
     QHash<QString, QRectF> selectedAreas(const app::TimeRange& range) const;
     void drawClip(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
-                  const QRectF& visible, bool selected, bool ghost, bool folded);
+                  const QRectF& visible, bool selected, bool ghost, bool folded, bool automation = false);
     void drawContent(SgPainter& p, const app::Clip& clip, const QRectF& rect, const QRectF& body,
                      const QRectF& visible);
     void drawClipFrame(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
-                       bool selected, bool ghost, bool folded) const;
+                       bool selected, bool ghost, bool folded, bool automation = false) const;
     void drawGroupSummary(SgPainter& p, const QString& groupId, double rowTop, int rowHeight, bool folded,
                           const QRectF& visible) const;
     void drawNotes(SgPainter& p, const app::Clip& clip, const QRectF& area, const QRectF& visible) const;
@@ -286,6 +308,10 @@ private:
     std::optional<std::tuple<QString, bool, bool>> hoverFade_;  // (clip id, out, curve)
     std::optional<arrangement::Hover> hoverPoint_;
     std::optional<QPointF> hoverPos_;
+    QTimer edgeScroll_;  // scrolls while a selecting drag is near the top or bottom
+    QElapsedTimer edgeWait_;  // since the mouse came near the edge (it scrolls after kEdgeDelayMs)
+    QPointF dragPos_;  // where the mouse was at the gesture's last move
+    Qt::KeyboardModifiers dragModifiers_;
     arrangement::MenuEntries menu_;
     arrangement::WaveformCache waveforms_;
     // Worked out on the GUI thread for paint(): the envelopes showing, and how each looks.

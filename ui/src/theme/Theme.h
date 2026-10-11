@@ -60,6 +60,7 @@ class Theme : public QObject {
     Q_PROPERTY(QColor gridBar READ gridBar NOTIFY changed)
     Q_PROPERTY(QColor gridBeat READ gridBeat NOTIFY changed)
     Q_PROPERTY(QColor gridSub READ gridSub NOTIFY changed)
+    Q_PROPERTY(QColor gridBand READ gridBand NOTIFY changed)
     Q_PROPERTY(QColor playhead READ playhead NOTIFY changed)
     Q_PROPERTY(QColor insertMarker READ insertMarker NOTIFY changed)
     Q_PROPERTY(QColor loopOn READ loopOn NOTIFY changed)
@@ -170,6 +171,8 @@ public:
     static QColor gridBar() { return colors().gridBar; }
     static QColor gridBeat() { return colors().gridBeat; }
     static QColor gridSub() { return colors().gridSub; }
+    // Over every other block of bars on the lanes (drawGridBands), as Ableton's.
+    static QColor gridBand() { return colors().gridBand; }
     static QColor playhead() { return colors().playhead; }
     static QColor insertMarker() { return colors().insertMarker; }
     static QColor loopOn() { return colors().loopOn; }

@@ -35,14 +35,31 @@ app::ProjectEditor* Arrangement::editor() const { return session_ ? session_->ed
 app::EngineBridge* Arrangement::bridge() const { return session_ ? session_->bridge() : nullptr; }
 app::Selection* Arrangement::selection() const { return session_ ? session_->selection() : nullptr; }
 
+void Arrangement::setHeaderSelected(const QStringList& trackIds) {
+    if (trackIds == headerSelected_) return;
+    headerSelected_ = trackIds;
+    Q_EMIT headerSelectionChanged();
+}
+
+void Arrangement::endHeaderClick() {
+    headerClick_ = false;
+    const app::Selection* s = selection();
+    if (!s) return;
+    QStringList ids = s->trackIds();
+    if (s->trackId() == app::kMaster && !ids.contains(app::kMaster)) ids << app::kMaster;
+    setHeaderSelected(ids);
+}
+
 void Arrangement::setSession(app::Session* session) {
     if (session == session_) return;
     if (session_) {
         disconnect(session_, nullptr, this, nullptr);
         disconnect(session_->project(), nullptr, this, nullptr);
         disconnect(session_->bridge(), nullptr, this, nullptr);
+        disconnect(session_->selection(), nullptr, this, nullptr);
     }
     session_ = session;
+    setHeaderSelected({});
     view_.setProject(session ? session->project() : nullptr);
     if (session) connectSession();
     Q_EMIT sessionChanged();
@@ -51,6 +68,9 @@ void Arrangement::setSession(app::Session* session) {
 
 void Arrangement::connectSession() {
     app::Project* p = session_->project();
+    connect(session_->selection(), &app::Selection::changed, this, [this] {
+        if (!headerClick_) setHeaderSelected({});  // (a header's click sets them when it is done)
+    });
     for (auto signal : {&app::Project::trackInserted, &app::Project::trackRemoved}) {
         connect(p, signal, this, [this] {
             invalidateGraph();

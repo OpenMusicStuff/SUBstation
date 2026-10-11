@@ -155,6 +155,20 @@ void drawGrid(SgPainter& painter, const Timeline& view, double x0, double x1, do
     }
 }
 
+void drawGridBands(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom) {
+    if (bottom <= top || x1 <= x0) return;
+    const double bar = view.timeSignature().beatsPerBar();
+    const double label = labelStep(view, view.gridStep());
+    const double block = label >= bar ? 2 * label : bar;
+    const auto first = static_cast<long long>(std::max(0.0, std::floor(view.xToBeat(x0) / block)));
+    const auto last = static_cast<long long>(std::ceil(view.xToBeat(x1) / block));
+    for (long long k = first | 1; k <= last; k += 2) {
+        const double left = std::max(x0, app::roundHalfEven(view.beatToX(static_cast<double>(k) * block)));
+        const double right = std::min(x1, app::roundHalfEven(view.beatToX(static_cast<double>(k + 1) * block)));
+        if (right > left) painter.fillRect(QRectF(left, top, right - left, bottom - top), Theme::gridBand());
+    }
+}
+
 void drawLoopRegion(SgPainter& painter, const Timeline& view, double x0, double x1, double top, double bottom) {
     const app::Project* project = view.project();
     if (!project || !project->loopEnabled() || bottom <= top) return;

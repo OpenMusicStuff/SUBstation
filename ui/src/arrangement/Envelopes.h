@@ -77,7 +77,6 @@ class LanesHost;
 // fainter where a click on the line would add a breakpoint (the ghost).
 inline constexpr int kUnautomatedAlpha = 110;
 inline constexpr int kGhostAlpha = 170;
-inline constexpr QColor kLaneBackground{0, 0, 0, 55};  // over the clips of a lane showing automation
 inline constexpr double kPointRadius = 3.0;
 inline constexpr double kPointGrab = 6.0;     // pixels around a breakpoint that grab it
 inline constexpr double kLineGrab = 4.0;      // pixels around the envelope's line that count as on it
@@ -196,10 +195,10 @@ void addMenuEntries(LanesHost& host, const EnvelopeArea& area, const QPointF& po
 
 // --- Drawing (render thread: reads only) ---
 
-// A lane's envelope (and, with `shade`, a veil over what is under it).
+// A lane's envelope (nothing under it is darkened: the grid and clips show as they are).
 void drawArea(SgPainter& painter, const timeline::Timeline& view, const app::Selection& selection,
               const EnvelopeArea& area, const app::Envelope& points, const EnvelopeLook& look, const QRectF& visible,
-              const std::optional<Hover>& hover, bool shade, bool gestureActive);
+              const std::optional<Hover>& hover, bool gestureActive);
 // The selected time range, over the automation lanes it covers.
 void drawRange(SgPainter& painter, const timeline::Timeline& view, const app::Selection& selection,
                const std::vector<EnvelopeArea>& areas, const QColor& tint);

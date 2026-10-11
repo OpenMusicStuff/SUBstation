@@ -83,6 +83,7 @@ void BusLane::paint(SgPainter& p) {
     p.fillRect(visible, Theme::lane());
     if (!ready()) return;
     const timeline::Timeline& view = arrangement()->view();
+    timeline::drawGridBands(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawGrid(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 1, height());
     p.fillRect(QRectF(visible.left(), 0, visible.width(), 1), Theme::border());
@@ -93,7 +94,7 @@ void BusLane::paint(SgPainter& p) {
     for (size_t i = 0; i < areas_.size() && i < looks_.size(); ++i) {
         const EnvelopeArea& area = areas_[i];
         envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
-                            hoverPoint_, false, gesture_ != nullptr);
+                            hoverPoint_, gesture_ != nullptr);
     }
     envelopes::drawRange(p, view, selection, areas_, Theme::selection());
     envelopes::drawReadout(p, width(), gesture_ ? gesture_->readout() : std::nullopt);

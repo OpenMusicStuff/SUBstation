@@ -310,6 +310,15 @@ QString TrackHeaderItem::outputChannelToolTip() const {
 }
 
 QColor TrackHeaderItem::barColor() const {
+    // Selected by a click on its name, with its automation hidden: all of the
+    // name column in the selection's colour, opaque (Ableton's light blue),
+    // whatever its own.
+    if (arrangement_ && arrangement_->headerSelected(isMaster() ? QString(app::kMaster) : trackId_) &&
+        !automationShown_) {
+        QColor color = Theme::selection();
+        color.setAlpha(255);
+        return color;
+    }
     if (isMaster()) return QColor(app::kMasterColor);
     return track() ? QColor(track()->color) : QColor(Theme::surface());
 }
@@ -424,6 +433,7 @@ void TrackHeaderItem::connectAll() {
         Q_EMIT selectedChanged();
         update();
     });
+    connect(arrangement_, &Arrangement::headerSelectionChanged, this, [this] { update(); });
     for (auto signal : {&Arrangement::layoutChanged, &Arrangement::returnRowsChanged, &Arrangement::masterRowsChanged})
         connect(arrangement_, signal, this, &TrackHeaderItem::refreshRow);
     connect(arrangement_, &Arrangement::renameRequested, this, [this](const QString& id) {
@@ -1300,9 +1310,12 @@ MenuEntries TrackHeaderItem::paramMenu(int lane) {
 namespace {
 
 // The ground under a strip's name column below its name bar (its automation
-// choosers'): the header's, tinted with its colour, as Ableton shades it.
-QColor shade(const QColor& color) {
-    constexpr double kTint = 0.16;
+// choosers'): the header's, tinted with its colour, as Ableton shades it;
+// while the track is selected, the selection's teal instead, whatever its
+// colour (Ableton's: the selected device header's).
+QColor shade(const QColor& color, bool selected) {
+    if (selected) return Theme::deviceHeaderSelected();
+    constexpr double kTint = 0.08;
     const QColor ground = Theme::panelAlt();
     return QColor::fromRgbF(ground.redF() + kTint * (color.redF() - ground.redF()),
                             ground.greenF() + kTint * (color.greenF() - ground.greenF()),
@@ -1323,17 +1336,18 @@ void TrackHeaderItem::paint(SgPainter& p) {
     const double left = strip ? 1.0 : indent();
     const double right = (ioLeft_ > 0 ? ioLeft_ : mixerLeft_ > 0 ? mixerLeft_ : w) - 1;
     const QColor color = barColor();
-    // Its colour: a track's name row; a group's down to its choosers (all of
-    // it without them); below, a dark shade of it.
-    const double bar = folded_ || (t->isGroup() && !automationShown_) ? main - 1
+    // Its colour: all of it while its automation doesn't show (as Ableton's);
+    // else a track's name row, a group's down to its choosers, and below, a
+    // dark shade of it.
+    const double bar = folded_ || !automationShown_ ? main - 1
                        : t->isGroup()                                 ? double(kGroupBlock)
                                                                       : double(kNamePad + kNameButton + kNamePad);
     p.fillRect(QRectF(left, 0, right - left, bar), color);
-    if (bar < main - 1) p.fillRect(QRectF(left, bar, right - left, main - 1 - bar), shade(color));
+    if (bar < main - 1) p.fillRect(QRectF(left, bar, right - left, main - 1 - bar), shade(color, isSelected));
     // The lanes below it: a row each, with a line above.
     for (const LaneRow& lane : row_.lanes) {
         const double top = lane.top - rowTop_;
-        p.fillRect(QRectF(left, top, right - left, lane.height), shade(color));
+        p.fillRect(QRectF(left, top, right - left, lane.height), shade(color, isSelected));
         p.fillRect(QRectF(0, top, w, 1), Theme::gridBar());
     }
     // The columns' edges.
@@ -1370,7 +1384,7 @@ void TrackHeaderItem::paint(SgPainter& p) {
         p.restore();
     }
     if (!renaming_) {
-        const QFont font = uiFont(9, isSelected || strip);
+        const QFont font = uiFont(9);  // (never bold: selected or not, a track's, a group's or a strip's)
         const double nameX = nameLeft();
         const QRectF nameRect(nameX, kNamePad, nameRight_ - nameX, kNameButton);
         const QString name = isMaster() ? kMain : t->name;
@@ -1399,14 +1413,21 @@ void TrackHeaderItem::mousePressEvent(QMouseEvent* event) {
         return;
     }
     if (event->button() != Qt::LeftButton) return;
+    // A click on the name column lights up the tracks it selects (Arrangement::headerSelected).
+    const bool onName = pos.x() < (ioLeft_ > 0 ? ioLeft_ : mixerLeft_ > 0 ? mixerLeft_ : width());
+    const auto headerClick = [this, onName](const auto& select) {
+        if (onName && arrangement_) arrangement_->beginHeaderClick();
+        select();
+        if (onName && arrangement_) arrangement_->endHeaderClick();
+    };
     if (isMaster()) {
-        selection.selectTrack(app::kMaster, true);  // the device view shows its effects
+        headerClick([&] { selection.selectTrack(app::kMaster, true); });  // the device view shows its effects
         return;
     }
     if (isReturn()) {
         const auto mode = event->modifiers() & Qt::ControlModifier ? app::Selection::Mode::Toggle
                                                                    : app::Selection::Mode::Replace;
-        selection.selectTrack(trackId_, true, mode);
+        headerClick([&] { selection.selectTrack(trackId_, true, mode); });
         return;
     }
     if (inResizeZone(pos.y())) {
@@ -1419,11 +1440,13 @@ void TrackHeaderItem::mousePressEvent(QMouseEvent* event) {
                           : mods & Qt::ShiftModifier ? app::Selection::Mode::Range
                                                      : app::Selection::Mode::Replace;
         const QStringList selected = selection.trackIds();
-        if (!(mode == app::Selection::Mode::Replace && selected.contains(trackId_) && selected.size() > 1)) {
-            QStringList order;
-            for (const app::Track& other : project()->tracks()) order << other.id;
-            selection.selectTrack(trackId_, true, mode, order);
-        }
+        headerClick([&] {
+            if (!(mode == app::Selection::Mode::Replace && selected.contains(trackId_) && selected.size() > 1)) {
+                QStringList order;
+                for (const app::Track& other : project()->tracks()) order << other.id;
+                selection.selectTrack(trackId_, true, mode, order);
+            }
+        });
         press_ = pos;  // dragging moves the track (the selected tracks)
     }
 }
@@ -1463,8 +1486,12 @@ void TrackHeaderItem::mouseReleaseEvent(QMouseEvent* event) {
     const QStringList selected = selection.trackIds();
     if (pressed && selected.contains(trackId_) && selected.size() > 1 &&
         !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))) {
-        // A click (not a drag) on one of several selected tracks selects just it.
+        // A click (not a drag) on one of several selected tracks selects just it
+        // (on its name: lit up, as the press left them).
+        const bool lit = arrangement_ && arrangement_->headerSelected(trackId_);
+        if (lit) arrangement_->beginHeaderClick();
         selection.selectTrack(trackId_, true);
+        if (lit) arrangement_->endHeaderClick();
     }
 }
 
