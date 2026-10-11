@@ -23,7 +23,7 @@ public:
     MiniaudioBackend();
     ~MiniaudioBackend() override;
 
-    static constexpr const char* kName = kDefaultDriver;
+    static constexpr const char* kName = kSystemDriver;
     std::string name() const override { return kName; }
     std::vector<AudioDeviceInfo> devices() override;
     void open(const DeviceConfig& config, AudioCallback* callback) override;

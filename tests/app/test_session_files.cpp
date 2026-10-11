@@ -455,10 +455,15 @@ private Q_SLOTS:
         prefs.open();
         QVERIFY(prefs.deviceChoices().size() >= 1);  // the system default, at least
         QCOMPARE(labels(prefs.driverChoices()), audioDrivers());
-        const QVariantMap asio = prefs.driverChoices().back().toMap();
-        QCOMPARE(asio.value(QStringLiteral("enabled")).toBool(), EngineBridge::driverTypes().contains(QStringLiteral("ASIO")));
-        QCOMPARE(labels(prefs.driverChoices()).at(prefs.driverIndex()), prefs.settings().driver);
-        QVERIFY(!prefs.outputsVisible() && prefs.exclusiveVisible() == (prefs.settings().driver == QStringLiteral("WASAPI")) && !prefs.controlPanelVisible());
+        for (const QVariant& choice : prefs.driverChoices()) {  // (ASIO disabled in a build without it)
+            const QVariantMap driver = choice.toMap();
+            QCOMPARE(driver.value(QStringLiteral("enabled")).toBool(),
+                     EngineBridge::driverTypes().contains(driver.value(QStringLiteral("value")).toString()));
+        }
+        const QString driver = prefs.settings().driver;
+        QCOMPARE(labels(prefs.driverChoices()).at(prefs.driverIndex()), driver);
+        QCOMPARE(prefs.outputsVisible(), driver == QStringLiteral("ASIO") || driver == QStringLiteral("PipeWire"));
+        QVERIFY(prefs.exclusiveVisible() == (driver == QStringLiteral("WASAPI")) && !prefs.controlPanelVisible());
         if (!f.bridge().deviceStatus().open) {
             QVERIFY(prefs.status().startsWith(QStringLiteral("No audio device is open.")));
             // Without a device, the choices are the preferences' own, the saved ones current.

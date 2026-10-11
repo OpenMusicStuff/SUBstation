@@ -176,7 +176,7 @@ void AudioPreferences::refresh(const QString& error) {
     }
 
     outputs_.clear();
-    for (const auto& [label, channels] : outputChoices(caps && isAsio ? caps->outputNames : QStringList())) {
+    for (const auto& [label, channels] : outputChoices(caps && listsChannels() ? caps->outputNames : QStringList())) {
         outputs_.push_back({label, channelsValue(channels)});
     }
     outputIndex_ = select(outputs_, running ? channelsValue(status.outputChannels) : channelsValue(s.outputChannels));
@@ -208,7 +208,7 @@ void AudioPreferences::refresh(const QString& error) {
     if (!error.isEmpty()) lines.append(warning(error));
     if (status.open) {
         const QString latency =
-            status.backend == kAsio
+            status.backend == kAsio || !status.inputChannels.isEmpty()
                 ? QStringLiteral("input latency %1 ms · output latency %2 ms")
                       .arg(QString::number(status.inputLatencyMs, 'f', 1), QString::number(status.latencyMs, 'f', 1))
                 : QStringLiteral("~%1 ms output latency").arg(QString::number(status.latencyMs, 'f', 1));
@@ -216,6 +216,11 @@ void AudioPreferences::refresh(const QString& error) {
                          .arg(status.name.toHtmlEscaped(), status.backend, QString::number(status.sampleRate),
                               QString::number(status.bufferFrames), latency,
                               status.exclusive ? QStringLiteral(" · exclusive") : QString()));
+        if (status.dropouts > 0) {
+            lines.append(warning(QStringLiteral("%1 dropout%2 since it opened: a larger buffer may help.")
+                                     .arg(status.dropouts)
+                                     .arg(status.dropouts == 1 ? QString() : QStringLiteral("s"))));
+        }
     } else {
         lines.append(QStringLiteral("No audio device is open."));
     }
@@ -311,7 +316,7 @@ void AudioPreferences::settingChosen() {
     next.bufferFrames = value(buffers_, bufferIndex_).toInt();
     next.exclusive = settings_.exclusive && !isAsio;
     const QVariant outputs = value(outputs_, outputIndex_);
-    if (isAsio && !outputs.isNull()) next.outputChannels = channelsOf(outputs);
+    if (listsChannels() && !outputs.isNull()) next.outputChannels = channelsOf(outputs);
     openDevice(next);
 }
 

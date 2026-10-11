@@ -4,21 +4,21 @@
 the transport bar) chooses the audio device, the MIDI inputs and the plug-in folders
 (and the theme: [look-and-feel.md](look-and-feel.md)).
 SUBstation plays through ASIO drivers, or WASAPI shared or exclusive, with the sample
-rate and buffer size you choose. On Linux it plays through the *System* driver instead
-(see [below](#on-linux)).
+rate and buffer size you choose. On Linux it plays through PipeWire, or the *System*
+driver where PipeWire doesn't run (see [below](#on-linux)).
 
 ## First start
 
-The first launch uses the system's default output device (WASAPI; *System* on Linux).
+The first launch uses the system's default output device (WASAPI; PipeWire on Linux).
 Change it here.
 
 ## The Audio page
 
 | Setting | What it does |
 |---|---|
-| *Driver Type* | WASAPI or ASIO (on Linux: *System*). ASIO is greyed out when SUBstation was built without the ASIO SDK (see [../building.md](../building.md)), and always on Linux |
-| *Audio Device* | The WASAPI (or *System*) device (*System Default* or one by name), or the ASIO driver, with its **Hardware Setup** button |
-| *Output Channels* | ASIO only: which pair of the driver's outputs the master plays on |
+| *Driver Type* | WASAPI or ASIO (on Linux: PipeWire or *System*). ASIO is greyed out when SUBstation was built without the ASIO SDK (see [../building.md](../building.md)) |
+| *Audio Device* | The WASAPI (PipeWire, *System*) device (*System Default* or one by name), or the ASIO driver, with its **Hardware Setup** button |
+| *Output Channels* | ASIO and PipeWire: which pair of the device's outputs the master plays on |
 | *Sample Rate* | The rates the device offers |
 | *Buffer Size* | The buffer sizes the device offers, in samples |
 | *Exclusive mode* | WASAPI only: lower latency; other apps are silenced |
@@ -26,7 +26,12 @@ Change it here.
 
 Changes there apply at once, because what a driver offers is only known while it runs.
 The line below the settings shows the device running, its sample rate, buffer size and
-latency, or the error if it didn't open.
+latency, or the error if it didn't open, and in red how many times the audio has dropped
+out since the device opened (the buffer ran out before it was filled, or the device lost
+samples): a larger buffer may help.
+
+If the device goes away (unplugged, or the sound server restarted), the status line says
+so, and SUBstation opens it again by itself when it is back.
 
 ### Audio threads
 
@@ -84,7 +89,8 @@ audio and says so in the status line.
 A track's input opens the driver's inputs it needs; every buffer of them reaches the
 engine, which meters, monitors and records them (see [recording.md](recording.md)).
 WASAPI devices (and the *System* driver on Linux) open outputs only, so recording from a
-microphone or line input needs an ASIO driver; resampling works with either.
+microphone or line input needs an ASIO driver (PipeWire on Linux); resampling works with
+any.
 
 ## MIDI
 
@@ -108,9 +114,19 @@ recording; what was recorded so far is kept.
 
 ## On Linux
 
-- *Driver Type* has *System*: the system's default sound backend (PulseAudio, ALSA,
-  JACK...), its playback devices under *Audio Device*. It opens outputs only, with no
-  exclusive mode (the check box isn't shown) and no ASIO.
+- *Driver Type* has *PipeWire*, the default: the outputs PipeWire has (sinks, and duplex
+  devices) under *Audio Device*, *System Default* following whichever is the default
+  output (when it changes, SUBstation moves to it). Its inputs are the device's own, or
+  those of the same sound card (else the default input). It joins PipeWire's graph,
+  which runs every application at one sample rate and buffer size: the buffer size you
+  choose is the most it asks for (another application asking for less makes it smaller,
+  and the status line shows it), and the sample rate only changes if PipeWire allows it
+  (`default.clock.allowed-rates` in its configuration). No session manager links
+  SUBstation; it links itself, so it shows in patchbays (qpwgraph, Helvum) as
+  "SUBstation".
+- *System*, after it: the system's default sound backend through miniaudio (PulseAudio,
+  ALSA, JACK...), outputs only, with no exclusive mode (the check box isn't shown). It is
+  what SUBstation opens where PipeWire doesn't run.
 - With no sound server and no sound device, nothing opens: SUBstation runs without audio
   and says so.
 

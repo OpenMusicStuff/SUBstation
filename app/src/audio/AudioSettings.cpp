@@ -1,6 +1,6 @@
 #include "audio/AudioSettings.h"
 
-#include "AudioDevice.h"  // sub::kDefaultDriver
+#include "AudioDevice.h"  // sub::kDefaultDriver, sub::kSystemDriver, sub::AudioDevice::driverTypes
 
 #include <QSettings>
 #include <QVariant>
@@ -41,7 +41,17 @@ int intValue(const QSettings& settings, const QString& key, int fallback) {
 
 QString defaultDriver() { return QString::fromUtf8(sub::kDefaultDriver); }
 
-QStringList audioDrivers() { return {defaultDriver(), QStringLiteral("ASIO")}; }
+QString systemDriver() { return QString::fromUtf8(sub::kSystemDriver); }
+
+QStringList audioDrivers() {
+#ifdef _WIN32
+    return {defaultDriver(), QStringLiteral("ASIO")};
+#else
+    QStringList drivers;
+    for (const std::string& driver : sub::AudioDevice::driverTypes()) drivers.append(QString::fromStdString(driver));
+    return drivers;
+#endif
+}
 
 AudioSettings AudioSettings::load() {
     const QSettings s;

@@ -35,6 +35,7 @@ option(SUBSTATION_BUILD_TESTS "Build the tests" ON)
 option(SUBSTATION_BUILD_BENCHMARKS "Build the benchmarks (benchmarks/: run by hand, not by ctest)" OFF)
 option(SUBSTATION_TEST_PLUGINS "Build the VST3 plug-ins and the ASIO driver the tests use" ON)
 option(SUBSTATION_ASIO "Build ASIO support (needs Steinberg's ASIO SDK: see docs/building.md)" ON)
+option(SUBSTATION_PIPEWIRE "Build PipeWire support on Linux (needs libpipewire-0.3-dev: see docs/building.md)" ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)

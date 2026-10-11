@@ -467,6 +467,8 @@ public:
     // Opens the device again, as its driver asked: its settings changed (in
     // its control panel, or its clock).
     QString resetDevice();
+    // A device that went away is looked for this often (ms), and opened again when it is back.
+    static constexpr qint64 kLostDeviceInterval = 1000;
     // The ASIO driver's own settings. False if it has none.
     Q_INVOKABLE bool showDeviceControlPanel();
     Q_INVOKABLE void closeDevice();
@@ -626,6 +628,7 @@ private:
     // The audio device (BridgeAudioDevice.cpp).
     QString changeDevice(const std::function<void()>& change);
     void pollDevice();
+    void lookForLostDevice();
 
     sub::Engine& engine_;
     Project* project_;

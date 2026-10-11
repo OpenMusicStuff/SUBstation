@@ -614,16 +614,25 @@ Stage 2 — Audio backends (each listed and made by its system's file behind
 `backends/AudioBackends.h`: `AudioBackendsPosix.cpp` here, before "System")
 - [ ] Linux: a PipeWire backend (`backends/PipeWireBackend.cpp`, libpipewire
       `pw_filter`): the driver every Linux build has, in place of miniaudio's
-      "System" there.
-  - [ ] Devices listed and chosen (sinks/sources); follows the default device.
-  - [ ] Block size and sample rate asked for (`node.latency`, `node.rate`);
+      "System" there. (Built when pkg-config finds libpipewire-0.3; it links
+      its ports to the device's itself, as JACK clients do.)
+  - [x] Devices listed and chosen (sinks/sources); follows the default device.
+  - [x] Block size and sample rate asked for (`node.latency`, `node.rate`);
         the quantum the graph actually runs reported as the buffer size.
-  - [ ] Planar float in and out, no interleaving and no extra buffering in
-        the callback; the worker group joined to PipeWire's data thread
-        priority.
-  - [ ] Inputs for recording (Phase 2's `AudioIO::inputs`), multichannel.
-  - [ ] Xruns counted and shown as on Windows; the device lost / back again.
-  - [ ] CI: the tests against a headless PipeWire (null sink).
+  - [x] Planar float in and out, no interleaving and no extra buffering in
+        the callback.
+  - [ ] The worker group joined to PipeWire's data thread priority. (The
+        workers are real-time already, Stage 1: SCHED_FIFO 70, or rtkit's
+        SCHED_RR 20; the data thread asks for 88. Matching it would need
+        the backend to read the data thread's policy and the scheduler to
+        move its workers to it.)
+  - [x] Inputs for recording (Phase 2's `AudioIO::inputs`), multichannel.
+  - [x] Xruns counted and shown as on Windows; the device lost / back again.
+        (The engine counts dropouts for every driver: late callbacks, and
+        gaps in the device's sample clock; Preferences › Audio shows them.
+        The bridge opens a lost device again when it is listed again.)
+  - [x] CI: the tests against a headless PipeWire (null sink). (A daemon of
+        the tests' own: tests/engine/harness/PipeWireDaemon.h.)
 - [ ] macOS: a Core Audio backend (`backends/CoreAudioBackend.cpp`, an
       `AudioDeviceIOProc` on the HAL device, not miniaudio).
   - [ ] Devices listed and chosen; aggregate devices; follows the default device.
@@ -635,6 +644,8 @@ Stage 2 — Audio backends (each listed and made by its system's file behind
   - [ ] Microphone permission asked (`NSMicrophoneUsageDescription`).
 - [ ] miniaudio's "System" driver (`MiniaudioBackend`) stays only as the
       fallback when neither opens (no PipeWire daemon, a CI container).
+  - [x] Linux: listed after PipeWire; start-up falls back to it.
+  - [ ] macOS: after Core Audio, once there is one.
 
 Stage 3 — MIDI (each a file behind `backends/MidiDriver.h`: the system's
 inputs listed and one opened; `MidiInputDevices` does the rest)

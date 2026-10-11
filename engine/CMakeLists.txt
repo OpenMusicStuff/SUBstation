@@ -232,6 +232,24 @@ else()
     target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/backends/MidiNone.cpp
                                       src/plugins/EditorWindowNone.cpp src/plugins/Vst3PlatformPosix.cpp)
 endif()
+# PipeWire (Linux): the driver Linux builds play through, before miniaudio's
+# "System". Needs libpipewire's headers (libpipewire-0.3-dev); without them the
+# engine is built with "System" alone.
+if (SUBSTATION_PIPEWIRE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig QUIET)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(PIPEWIRE IMPORTED_TARGET libpipewire-0.3)
+    endif()
+    if (PIPEWIRE_FOUND)
+        message(STATUS "PipeWire: ${PIPEWIRE_VERSION}")
+        target_sources(sub_engine PRIVATE src/backends/PipeWireBackend.cpp)
+        target_link_libraries(sub_engine PRIVATE PkgConfig::PIPEWIRE)
+        target_compile_definitions(sub_engine PUBLIC SUBSTATION_HAS_PIPEWIRE=1)
+    else()
+        message(WARNING "libpipewire-0.3 not found, so the engine is built without PipeWire (miniaudio's \"System\" "
+                        "driver only). Install libpipewire-0.3-dev, or set SUBSTATION_PIPEWIRE=OFF.")
+    endif()
+endif()
 add_library(sub::engine ALIAS sub_engine)
 target_include_directories(sub_engine PUBLIC src)
 # Signalsmith Stretch (time stretching / pitch shifting) and its FFT library:

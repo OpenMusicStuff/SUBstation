@@ -1,7 +1,7 @@
 #pragma once
 // Audio devices. Each driver type is an AudioBackend: on Windows WASAPI
 // (through miniaudio), and ASIO when the engine is built with Steinberg's ASIO
-// SDK; elsewhere miniaudio's "System". Which ones a build has is one file per
+// SDK; on Linux PipeWire; and everywhere but Windows miniaudio's "System". Which ones a build has is one file per
 // system (backends/AudioBackends.h). The engine only talks to AudioDevice,
 // which opens a device of any.
 //
@@ -24,12 +24,19 @@
 
 namespace sub {
 
-// The driver type every build has: WASAPI on Windows, miniaudio's default
-// backend ("System") elsewhere (backends/MiniaudioBackend.h).
+// The driver type a build plays through by default: WASAPI on Windows,
+// PipeWire on Linux (built with it: backends/PipeWireBackend.h), miniaudio's
+// default backend ("System") elsewhere. kSystemDriver is miniaudio's
+// (backends/MiniaudioBackend.h), which every build has: the same on Windows.
 #ifdef _WIN32
-inline constexpr const char* kDefaultDriver = "WASAPI";
+inline constexpr const char* kSystemDriver = "WASAPI";
 #else
-inline constexpr const char* kDefaultDriver = "System";
+inline constexpr const char* kSystemDriver = "System";
+#endif
+#if SUBSTATION_HAS_PIPEWIRE
+inline constexpr const char* kDefaultDriver = "PipeWire";
+#else
+inline constexpr const char* kDefaultDriver = kSystemDriver;
 #endif
 
 struct AudioDeviceInfo {
@@ -141,7 +148,8 @@ public:
     AudioDevice& operator=(const AudioDevice&) = delete;
 
     // The driver types this engine was built with: kDefaultDriver ("WASAPI" on
-    // Windows) first, then "ASIO" if built with it (backends/AudioBackends.h).
+    // Windows, "PipeWire" on Linux) first, then "ASIO" if built with it, or
+    // "System" after PipeWire (backends/AudioBackends.h).
     static std::vector<std::string> driverTypes();
     std::vector<AudioDeviceInfo> devices(const std::string& driver);
 

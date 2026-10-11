@@ -1,9 +1,11 @@
 # Audio devices
 
-The engine plays through one audio device at a time, of either driver type: WASAPI (through
-miniaudio) or ASIO (Steinberg's driver model, compiled only when the ASIO SDK was found). On
-platforms other than Windows the WASAPI backend opens miniaudio's default backend instead, as the
-"System" driver ([below](#the-system-driver-elsewhere)). This
+The engine plays through one audio device at a time, of any driver type the build has: on Windows
+WASAPI (through miniaudio) or ASIO (Steinberg's driver model, compiled only when the ASIO SDK was
+found); on Linux PipeWire ([below](#pipewire-pipewirebackend), built when libpipewire's headers are
+found); and on platforms other than Windows the WASAPI backend opening miniaudio's default backend
+instead, as the "System" driver ([below](#the-system-driver-elsewhere)), which Linux falls back to
+where PipeWire doesn't run. This
 part lives in [AudioDevice.h](../../engine/src/AudioDevice.h) / [AudioDevice.cpp](../../engine/src/AudioDevice.cpp),
 the backends in [engine/src/backends/](../../engine/src/backends/) (which ones a build has: a file per system behind
 [AudioBackends.h](../../engine/src/backends/AudioBackends.h)), and the engine's side of it
@@ -21,7 +23,9 @@ for building with or without the ASIO SDK, [building.md](../building.md).
 - Devices run duplex: each callback gets the open inputs and fills the open outputs, as separate
   (planar) float buffers of one length, with the device's sample position and the steady-clock time
   the callback began (`AudioIO`). Recording and input monitoring use the inputs; MIDI input is
-  timestamped against the same clock ([midi.md](midi.md)). WASAPI opens outputs only so far.
+  timestamped against the same clock ([midi.md](midi.md)). WASAPI (and "System") open outputs only so far.
+- The engine counts dropouts: callbacks that ran longer than their buffer lasts, and gaps in the
+  device's sample clock ([below](#dropouts)).
 - A driver's events (the device went away, it was rerouted, a reset request, new latencies) are flags
   the audio side sets; the UI takes them one at a time from `Engine::takeDeviceEvent()` and answers a
   reset with `Engine::reopenDevice()`, which asks the driver for the buffer size and sample rate it
@@ -52,7 +56,8 @@ for building with or without the ASIO SDK, [building.md](../building.md).
 |---|---|
 | [AudioDevice.h](../../engine/src/AudioDevice.h) | `DeviceConfig`, `DeviceCaps`, `DeviceState`, `AudioIO`, `DeviceEvent`, the `AudioCallback` and `AudioBackend` interfaces, and `AudioDevice` |
 | [AudioDevice.cpp](../../engine/src/AudioDevice.cpp) | `AudioDevice`: makes the system's backends, picks one by driver name, remembers the last config for resets |
-| [backends/AudioBackends.h](../../engine/src/backends/AudioBackends.h) | `audioDriverNames()`, `makeAudioBackends()`: the driver types this build has, one file per system: [AudioBackendsWin32.cpp](../../engine/src/backends/AudioBackendsWin32.cpp) (WASAPI, then ASIO with the SDK; ASIO is made first, for COM), [AudioBackendsPosix.cpp](../../engine/src/backends/AudioBackendsPosix.cpp) ("System") |
+| [backends/AudioBackends.h](../../engine/src/backends/AudioBackends.h) | `audioDriverNames()`, `makeAudioBackends()`: the driver types this build has, one file per system: [AudioBackendsWin32.cpp](../../engine/src/backends/AudioBackendsWin32.cpp) (WASAPI, then ASIO with the SDK; ASIO is made first, for COM), [AudioBackendsPosix.cpp](../../engine/src/backends/AudioBackendsPosix.cpp) (PipeWire on Linux when built with it, then "System") |
+| [backends/PipeWireBackend.h](../../engine/src/backends/PipeWireBackend.h), [.cpp](../../engine/src/backends/PipeWireBackend.cpp) | PipeWire (Linux): the daemon's devices, a `pw_filter` of planar float ports linked to the device's ports by the backend itself, the graph's rate and quantum, the default device followed, devices and the daemon going away. Built only with `SUBSTATION_HAS_PIPEWIRE` |
 | [backends/MiniaudioBackend.h](../../engine/src/backends/MiniaudioBackend.h), [.cpp](../../engine/src/backends/MiniaudioBackend.cpp) | Output through miniaudio: WASAPI, shared or exclusive, on Windows; elsewhere the "System" driver |
 | [backends/AsioBackend.h](../../engine/src/backends/AsioBackend.h), [.cpp](../../engine/src/backends/AsioBackend.cpp) | ASIO through `IASIO`: finding and loading drivers, channels, rate, buffer size, the callbacks, resets, control panel. Built only with `SUBSTATION_HAS_ASIO` |
 | [backends/AsioSupport.h](../../engine/src/backends/AsioSupport.h) | The parts of ASIO hosting that need no SDK: the sample formats and their conversion, the buffer sizes to offer and to ask for (namespace `sub::asio`) |
@@ -70,8 +75,8 @@ the engine uses it for WASAPI and also for decoding and WAV encoding (see [warp.
 
 | Field | Meaning |
 |---|---|
-| `driver` | `"WASAPI"` (default) or `"ASIO"`, one of `AudioDevice::driverTypes()` |
-| `name` | empty: the system default output (WASAPI), the first driver listed (ASIO) |
+| `driver` | one of `AudioDevice::driverTypes()`: `"WASAPI"` (the default on Windows) or `"ASIO"`; `"PipeWire"` (the default on Linux) or `"System"` |
+| `name` | empty: the system default output (WASAPI, PipeWire, System; PipeWire follows it), the first driver listed (ASIO) |
 | `sampleRate` | 0: the rate the device runs at |
 | `bufferFrames` | 0: the device's preferred size |
 | `exclusive` | WASAPI exclusive mode |
@@ -86,7 +91,7 @@ size, and whether it has a control panel.
 **`DeviceState`**: the open device: driver type, name, rate, buffer size, input and output latency in
 frames (as the driver reports them), the open input and output channels *in the callback's order*,
 exclusive, and its `DeviceCaps`. `Engine::deviceStatus()` turns it into a `DeviceStatus` for the
-application (latencies in ms; `backend` is the driver type).
+application (latencies in ms; `backend` is the driver type; `dropouts`, the engine's count since it opened).
 
 **`AudioIO`**: one callback's audio: `inputs`/`numInputs`, `outputs`/`numOutputs` (planar float
 buffers), `frames`, `sampleTime` (the device's sample clock at the first frame) and `hostTimeNs`
@@ -95,7 +100,8 @@ must write every output sample.
 
 **`DeviceEvent`**: flags, so several can be pending at once: `Stopped` (the device went away),
 `Rerouted` (the system moved the output to another device; WASAPI), `ResetRequest` (the driver's
-settings changed: close it and open it again; ASIO), `LatencyChanged` (ASIO).
+settings changed: close it and open it again; ASIO, and PipeWire when the graph's rate changes or the
+default output it follows does), `LatencyChanged` (ASIO; PipeWire when the graph's quantum changes).
 
 **`AudioCallback`**: what a backend calls. `audioCallback(const AudioIO&)` runs on the real-time thread
 and never locks, allocates or waits; `deviceEvent(DeviceEvent)` may come on any thread and must only
@@ -122,8 +128,8 @@ SUBstation has no ASIO support (the ASIO SDK was missing)".
 - A backend is opened, queried and closed on one thread: the thread that created the engine (the UI
   thread). ASIO drivers are COM objects in its apartment. All `Engine` device calls take the engine's
   recursive `mutex_`.
-- The audio callback runs on the backend's real-time thread (miniaudio's WASAPI thread, or the ASIO
-  driver's own thread).
+- The audio callback runs on the backend's real-time thread (miniaudio's WASAPI thread, the ASIO
+  driver's own thread, or PipeWire's data thread in our process).
 - Device events may arrive on any thread; `Engine::deviceEvent()` only ORs them into the atomic
   `pendingDeviceEvents_`.
 - `openDevice`, `reopenDevice`, `closeDevice` and `showDeviceControlPanel` block the main thread, and
@@ -165,7 +171,8 @@ On the real-time thread, with denormals off:
    (offline renders, changing the number of audio threads), it writes silence. Otherwise
    `Renderer::processLive()` renders, and the CPU load (time taken over the buffer's duration) is
    smoothed into `shared_.cpuLoad`.
-4. Advances `audioEpoch_`, which the edit side uses to know a callback has passed
+4. Counts dropouts ([below](#dropouts)).
+5. Advances `audioEpoch_`, which the edit side uses to know a callback has passed
    (`waitForCallbackLocked`, retired snapshots).
 
 `processLive()` renders in chunks of at most `Renderer::kMaxBlock` (1024) frames. **Output channel
@@ -196,15 +203,60 @@ into the oscilloscope ring (`SharedState::pushScope`, read by `masterScope()`).
 A capture device (to record WASAPI inputs) would open miniaudio's duplex mode and fill
 `AudioIO::inputs`; it isn't done yet (resampling records without inputs, so it works on WASAPI).
 
+### PipeWire (`PipeWireBackend`)
+
+The driver Linux builds play through (`kDefaultDriver` is "PipeWire" there; `kSystemDriver`, "System", comes
+after it). Built when CMake finds `libpipewire-0.3` through pkg-config (`SUBSTATION_PIPEWIRE`, on by default;
+the engine defines `SUBSTATION_HAS_PIPEWIRE`), linked as a library: every Linux with PipeWire has it.
+
+- **The connection.** Made the first time a device is listed or opened (an engine that never plays never
+  connects), on a `pw_thread_loop` of its own; with no daemon, `devices()` is empty and `open()` throws "PipeWire
+  isn't running". It keeps a copy of the registry: nodes (`node.name`, description, `media.class`, `device.id`),
+  their ports (direction, `port.id`, `port.name`, `audio.channel`, monitor; MIDI ports left out), and the
+  `default` and `settings` metadata (`default.audio.sink`/`source`; `clock.rate`, `clock.allowed-rates`,
+  `clock.quantum`, `clock.min-quantum`, `clock.max-quantum`). Each list or open makes a round trip first
+  (`pw_core_sync`), so it sees the graph as it is. If the daemon went away it connects again.
+- **Devices.** The output nodes (`Audio/Sink*`, `Audio/Duplex*`), by description (with the node's name after it
+  where two share one), the default one marked. A device's inputs are its own capture ports (a duplex node), else
+  those of the source on the same card (`device.id`), else the default source's. No name: the default output,
+  followed (below).
+- **The filter.** `open()` makes a `pw_filter` (media type Audio, category Duplex, role Production, node name
+  "SUBstation") with one DSP port ("32 bit float mono audio") per open channel, `input_1`... and `output_1`...,
+  connected with `PW_FILTER_FLAG_RT_PROCESS`, so the callback runs on PipeWire's data thread in our process (at
+  the real-time priority PipeWire's `module-rt` gives it). It asks for the buffer size as `node.latency`
+  (`frames/rate`) and the rate as `node.rate` (`1/rate`). No session manager links a filter, so the backend
+  links its ports to the device's itself, as JACK clients do: once the daemon has our node and ports, each
+  output port to the device port of the open output channel, each open input channel's port to our input port
+  (`link-factory`, `object.linger=false`: the links go with us). A link refused is the open's error.
+- **The rate and buffer size** are the graph's: it runs at the smallest latency any of its nodes asks for, and
+  changes rate to ours only if `clock.allowed-rates` lets it. `open()` waits (up to a second) for the first
+  cycle, whose `spa_io_position` clock gives both; `state()` reports them (until then, and for a suspended
+  device, those asked for). Later cycles at another quantum raise `LatencyChanged` (`state()` has it); at another
+  rate `ResetRequest`, and `adjustForReset()` puts the new rate in the config. Latency is a quantum each way.
+  Capabilities: the allowed rates (and the running one), powers of two from `clock.min-quantum` to
+  `clock.max-quantum` (at most 8192), `clock.quantum` as the preferred size, channel names from their positions
+  ("Front Left", "LFE", "Aux 3"; the port's name if it has none).
+- **The callback** (`onProcess`): the cycle's `pw_filter_get_dsp_buffer` for each port, handed to the engine as
+  they are (planar float: no copy, no interleaving), in chunks of at most 4096 frames; an unlinked port reads
+  silence or writes into a scratch buffer. `sampleTime` is the graph clock's position, so a cycle the device
+  missed shows as a gap ([dropouts](#dropouts)). Before `start()` it writes silence.
+- **Events.** The output or input node removed from the registry (unplugged, its card's profile changed), the
+  filter in error, or the daemon gone (`EPIPE`) → `Stopped`. The default output (or source, with inputs open)
+  changing while the device follows the default → `ResetRequest`: the engine opens the new one.
+- `close()` destroys the links and the filter, which takes the node off the data thread: the callback has
+  returned. The connection stays until the backend goes.
+
 ### The System driver (elsewhere)
 
 On platforms other than Windows the same backend is the driver type every build has
-(`kDefaultDriver`, "System"; `AudioDevice::driverTypes()` lists it, and ASIO never): its miniaudio
+(`kSystemDriver`, "System"; `AudioDevice::driverTypes()` lists it, after PipeWire on Linux, and ASIO
+never; it is `kDefaultDriver` too where there is no PipeWire): its miniaudio
 context takes the system's backends in miniaudio's order (Core Audio, PulseAudio, ALSA, JACK, sndio,
 audio4, OSS, AAudio, OpenSL), but never miniaudio's null backend, which "plays" faster than real time,
 so the playhead would race with no sound. Everything else is as for WASAPI: playback devices by name,
-output only, the same callback. Exclusive mode is WASAPI's: the application doesn't offer it here. With
-no sound server and no device, nothing opens; the application then runs without audio and says so.
+output only, the same callback. Exclusive mode is WASAPI's: the application doesn't offer it here. On
+Linux it is what the application falls back to where PipeWire doesn't run (PulseAudio, ALSA). With no
+sound server and no device, nothing opens; the application then runs without audio and says so.
 
 ### ASIO (`AsioBackend`)
 
@@ -290,6 +342,18 @@ aren't supported (`SampleFormat::bytes == 0`).
   changed). It runs before the driver is closed, since only the open driver can say.
 - `refreshLatencies()` reads `getLatencies` again.
 
+### Dropouts
+
+`Engine::audioCallback` counts them in `dropouts_` (`DeviceStatus::dropouts`), from 0 for each device opened:
+
+- a callback that rendered for longer than its buffer lasts (the CPU load over 1): the buffer ran out before it
+  was filled (every driver, WASAPI's chunks too);
+- a callback whose `sampleTime` isn't where the last one ended: the device's clock skipped the samples it lost
+  (ASIO's sample position, PipeWire's graph clock; WASAPI's count of frames never skips), unless the callback
+  before it was late, which counted it already.
+
+The application shows the count in Preferences › Audio ([app/session.md](../app/session.md)).
+
 ### Events, as the UI sees them (`Engine::takeDeviceEvent`)
 
 One string per call, in this order of priority:
@@ -313,7 +377,7 @@ The status line shows the input and output latency the driver reports (`DeviceSt
 
 ### Inputs
 
-A track's input names device channels; the bridge reopens an ASIO device with the extra input channels
+A track's input names device channels; the bridge reopens an ASIO or PipeWire device with the extra input channels
 it needs (`DeviceConfig::inputChannels`) when a track chooses one the driver hasn't open
 (not while recording, which a reopen would end). Every buffer of the open inputs reaches the audio
 callback (with its sample position and time), where the engine meters them, and the renderer monitors
@@ -335,12 +399,13 @@ silence.
 
 ## Extending it
 
+- **Core Audio** (macOS): a backend of its own in `AudioBackendsPosix.cpp`, before "System" (TODO.md, Stage 2),
+  whose `workgroup()` hands over the device's I/O thread's.
 - **A new driver type** is a new `AudioBackend`: implement `name()`, `devices()`, `open()`, `start()`,
   `close()` (blocking until the callback stops), `isOpen()` and `state()`, call
   `AudioCallback::audioCallback` with planar float buffers, a running `sampleTime` and the steady-clock
   `hostTimeNs()`, and report events as flags. Add it to its system's `audioDriverNames()` and
-  `makeAudioBackends()` ([AudioBackends.h](../../engine/src/backends/AudioBackends.h): a PipeWire backend goes in
-  `AudioBackendsPosix.cpp`, on Linux, before "System"). Mind COM on Windows: if it initialises COM, do it after the
+  `makeAudioBackends()` ([AudioBackends.h](../../engine/src/backends/AudioBackends.h)). Mind COM on Windows: if it initialises COM, do it after the
   ASIO backend has. A system with audio workgroups (macOS) returns the device's from `workgroup()`.
 - **WASAPI capture**: open miniaudio's duplex (or capture) device, fill `AudioIO::inputs`/`numInputs`,
   report `inputChannels`, `inputLatency` and input names in `state()`; recording and monitoring then
@@ -357,7 +422,14 @@ silence.
 - `AudioDevice::resetConfig()` must run before closing: it asks the open driver.
 - A sample-rate change reloads every decoded source and remakes the stretch voices; the bridge also
   refreshes its sources (`EngineBridge::refreshSources()`).
-- WASAPI's `sampleTime` restarts at 0 on every open; ASIO's comes from the driver when it is valid.
+- WASAPI's `sampleTime` restarts at 0 on every open; ASIO's comes from the driver when it is valid;
+  PipeWire's is the graph clock's position (shared by every node the device drives).
+- PipeWire runs the whole graph at one quantum and rate: another application asking for a smaller buffer
+  makes ours smaller (`LatencyChanged`), and the rate asked for is only granted where `clock.allowed-rates`
+  has it. The filter's ports are DSP ports: no resampling, no conversion.
+- Without a session manager (WirePlumber), a PipeWire daemon has no `default` metadata (the first output
+  device is the default then) and leaves device nodes without DSP ports unless configured
+  (`adapter.auto-port-config`, as the tests' daemon does).
 - WASAPI may hand the engine several callbacks per device buffer with the same `hostTimeNs`;
   `AudioClock` keeps the first one's anchor ([midi.md](midi.md)).
 - Recording ends whenever the device is opened again, including a driver's reset.
@@ -378,6 +450,15 @@ silence.
   buffer switches on the test's thread. Its exported hooks set the sample type, buffer sizes,
   latencies, input levels and loopback, make `init` fail, change settings from the control panel, send
   `asioMessage`s, change the sample rate, and read back the bytes written to its outputs.
+- [tests/engine/test_pipewire.cpp](../../tests/engine/test_pipewire.cpp), against a PipeWire daemon of the
+  test's own ([tests/engine/harness/PipeWireDaemon.h](../../tests/engine/harness/PipeWireDaemon.h): the
+  `pipewire` program with its own configuration and folder, no session manager; a duplex null device that loops
+  its outputs back to its inputs, and a four-channel sink): the driver types, devices and the default, status
+  and capabilities, the buffer size and rate asked for, playing and the inputs coming back, output channels and
+  the errors of channels a device hasn't, the default output followed, dropouts (the daemon frozen for a
+  while), the device and the daemon going away (and the daemon back). Skipped without PipeWire or without the
+  `pipewire` program. [tests/app/test_bridge_pipewire.cpp](../../tests/app/test_bridge_pipewire.cpp): a device
+  that went away opening again when it is back, a track's input opening the device again with it.
 - [tests/engine/test_recording.cpp](../../tests/engine/test_recording.cpp) checks that a device change
   ends a recording; [tests/engine/test_midi_input.cpp](../../tests/engine/test_midi_input.cpp) that
   MIDI input is dropped without a running device.

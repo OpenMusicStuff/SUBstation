@@ -4,7 +4,8 @@
 // Tests"):
 //
 //   audio/driver           the driver type: the default one (sub::kDefaultDriver:
-//                          "WASAPI" on Windows) or "ASIO"         AudioSettings
+//                          "WASAPI" on Windows, "PipeWire" on Linux),
+//                          "ASIO" or "System"                     AudioSettings
 //   audio/device           device or driver name; "": the system default (WASAPI),
 //                          the first driver (ASIO)
 //   audio/sample_rate      0: the rate the device runs at
@@ -25,10 +26,15 @@
 
 namespace sub::app {
 
-// The driver type every build has (sub::kDefaultDriver): "WASAPI" on Windows,
-// miniaudio's default backend ("System") elsewhere.
+// The driver type a build plays through by default (sub::kDefaultDriver):
+// "WASAPI" on Windows, "PipeWire" on Linux (built with it), miniaudio's default
+// backend ("System") elsewhere.
 QString defaultDriver();
-// The driver types the preferences offer: the default one, and ASIO.
+// miniaudio's, which every build has (sub::kSystemDriver): "WASAPI" on
+// Windows, "System" elsewhere (after PipeWire, where it doesn't run).
+QString systemDriver();
+// The driver types the preferences offer: WASAPI and ASIO (Windows, whether
+// built with it or not); the engine's elsewhere (PipeWire, System).
 QStringList audioDrivers();
 inline const std::vector<int> kBufferSizes{64, 128, 256, 512, 1024, 2048};
 inline const std::vector<int> kSampleRates{0, 44100, 48000, 88200, 96000};  // 0 = device default

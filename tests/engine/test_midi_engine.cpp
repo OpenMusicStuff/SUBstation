@@ -17,22 +17,26 @@ namespace {
 enum { WAVE, ATTACK, DECAY, SUSTAIN, RELEASE, CUTOFF, RESONANCE, VOLUME };
 const double kSineRms = 0.25 * 100 / 127 / std::sqrt(2.0);  // one voice at the default velocity (100)
 
-// Opens an output device (the default, else any that opens) or skips the test.
+// Opens an output device (of the default driver, else of "System" after
+// PipeWire; the default device, else any that opens) or skips the test.
 void openAnyOutput(sub::Engine& engine) {
-    std::vector<std::string> names{""};
-    try {
-        for (const auto& d : engine.devices(sub::kDefaultDriver)) names.push_back(d.name);
-    } catch (const std::exception&) {
-    }
-    for (const std::string& name : names) {
-        sub::DeviceConfig config;
-        config.driver = sub::kDefaultDriver;
-        config.name = name;
-        config.bufferFrames = 256;
+    for (const std::string& driver : sub::Engine::driverTypes()) {
+        if (driver == "ASIO") continue;
+        std::vector<std::string> names{""};
         try {
-            engine.openDevice(config);
-            return;
-        } catch (const std::runtime_error&) {
+            for (const auto& d : engine.devices(driver)) names.push_back(d.name);
+        } catch (const std::exception&) {
+        }
+        for (const std::string& name : names) {
+            sub::DeviceConfig config;
+            config.driver = driver;
+            config.name = name;
+            config.bufferFrames = 256;
+            try {
+                engine.openDevice(config);
+                return;
+            } catch (const std::runtime_error&) {
+            }
         }
     }
     SKIP("no audio output device");

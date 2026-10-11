@@ -194,7 +194,7 @@ struct ExportFormat {
 struct DeviceStatus {
     bool open = false;
     std::string name;
-    std::string backend;  // the driver type: "WASAPI" or "ASIO"
+    std::string backend;  // the driver type: "WASAPI", "ASIO", "PipeWire" or "System"
     uint32_t sampleRate = 0;
     uint32_t bufferFrames = 0;
     double latencyMs = 0.0;       // output latency
@@ -202,6 +202,10 @@ struct DeviceStatus {
     std::vector<int> inputChannels;   // the device channels open, in the order the engine sees them
     std::vector<int> outputChannels;  // the master plays on the first two (or mixed to mono on one)
     bool exclusive = false;
+    // Dropouts since the device opened: callbacks that took longer than their
+    // buffer lasts, and gaps in the device's sample clock (it lost samples: ASIO,
+    // PipeWire; one late callback that caused the gap counts once).
+    uint64_t dropouts = 0;
 };
 
 class Engine final : private AudioCallback {
@@ -808,6 +812,11 @@ private:
     std::atomic<uint32_t> pendingDeviceEvents_{0};  // DeviceEvent flags
     std::atomic<bool> liveSuspended_{false};
     std::atomic<uint64_t> audioEpoch_{0};
+    // Dropouts (DeviceStatus::dropouts); the sample time the next callback
+    // should start at (-1: none yet) and whether the last one ran late: the audio thread's.
+    std::atomic<uint64_t> dropouts_{0};
+    int64_t nextSampleTime_ = -1;
+    bool lastLate_ = false;
 
     std::atomic<const RenderSnapshot*> snapshot_{nullptr};
     std::shared_ptr<const RenderSnapshot> snapshotHold_;
