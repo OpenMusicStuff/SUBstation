@@ -20,6 +20,7 @@
 // while they render.
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -121,7 +122,9 @@ private:
     static constexpr uint64_t kQuit = ~uint64_t{0};
 
     void workerMain(int worker) noexcept;
-    void work(int worker) noexcept;  // takes and runs nodes until none is left to take
+    // Takes and runs nodes until none is left to take. A pool worker passes when
+    // it last slept: it naps between nodes when that was too long ago (Scheduler.cpp).
+    void work(int worker, std::chrono::steady_clock::time_point* lastSlept = nullptr) noexcept;
 
     std::vector<std::thread> workers_;
     // The current run (valid while it is open).

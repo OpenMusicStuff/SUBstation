@@ -78,7 +78,9 @@ workers rendered since the scheduler started (tests and benchmarks use it to see
   consecutive chunks of one callback come within microseconds. Then it sleeps on `state_` (`std::atomic::wait`) until
   the next run opens. The caller only calls `notify_all()` if some worker is sleeping
   (`sleepers_`). A worker that hasn't slept for 20 ms takes a 50 µs nap before its
-  next run, even one already open (the others take its nodes meanwhile): a real-time thread must block now and then
+  next node or run, even inside a run or with the next one open already (the others take its nodes meanwhile; one
+  run of a render slower than real time can keep a worker busy for longer than the limit, node after node; the
+  calling thread never naps): a real-time thread must block now and then
   (rtkit makes the process set `RLIMIT_RTTIME`, past which Linux ends it), and back to back runs (an offline render's
   chunks follow each other within its spin) would keep it awake. A shorter nap doesn't block (a microsecond's timer
   goes off before the thread is put to sleep), and a wait on `state_` counts as sleep only if it took over 20 µs (one

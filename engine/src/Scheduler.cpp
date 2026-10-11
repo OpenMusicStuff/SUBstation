@@ -19,14 +19,22 @@ constexpr int kPausesBeforeYield = 2000;
 // real-time priority has to block now and then: rtkit makes the process set
 // RLIMIT_RTTIME (Linux; 200 ms by default), past which the system ends it.
 // A worker that hasn't slept for this long takes a nap (kNap) before its next
-// run, open or not. (A single job longer than the limit, a plug-in
-// hanging, isn't bounded by this: the process ends then, as it would hang.)
+// node or run. (A single job longer than the limit, a plug-in hanging, isn't
+// bounded by this: the process ends then, as it would hang.)
 constexpr auto kAwakeAtMost = std::chrono::milliseconds(20);
 // A wait on state_ that took this long blocked (woken, not returning at once).
 constexpr auto kSleptAtLeast = std::chrono::microseconds(20);
 // Long enough that the thread is put to sleep: a microsecond's timer goes off
 // before it is (Linux, measured: never blocks at 1 µs, nearly always at 20 µs).
 constexpr auto kNap = std::chrono::microseconds(50);
+
+// A pool worker that hasn't slept for kAwakeAtMost naps, between nodes or runs
+// (`lastSlept`: when it was last asleep, updated by the nap).
+void napIfAwakeTooLong(std::chrono::steady_clock::time_point& lastSlept) noexcept {
+    if (std::chrono::steady_clock::now() - lastSlept <= kAwakeAtMost) return;
+    std::this_thread::sleep_for(kNap);
+    lastSlept = std::chrono::steady_clock::now();
+}
 
 }  // namespace
 
@@ -154,7 +162,7 @@ void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel) noe
     while (active_.load(std::memory_order_seq_cst) > 0) cpuRelax();
 }
 
-void Scheduler::work(int worker) noexcept {
+void Scheduler::work(int worker, std::chrono::steady_clock::time_point* lastSlept) noexcept {
     TaskGraph& graph = *graph_;
     const int size = graph.size();
     int idle = 0;
@@ -166,7 +174,8 @@ void Scheduler::work(int worker) noexcept {
             if (++idle < kPausesBeforeYield) {
                 cpuRelax();
             } else {
-                std::this_thread::yield();
+                std::this_thread::yield();  // (doesn't count as sleep: yielding to another real-time thread)
+                if (lastSlept) napIfAwakeTooLong(*lastSlept);
             }
             continue;
         }
@@ -181,6 +190,9 @@ void Scheduler::work(int worker) noexcept {
             if (graph.pending_[dests[d]].fetch_sub(1, std::memory_order_acq_rel) == 1) graph.push(dests[d]);
         }
         graph.done_.fetch_add(1, std::memory_order_release);
+        // Within a run too: one run of a heavy render (slower than real time) can
+        // keep a worker busy for longer than the limit, node after node.
+        if (lastSlept) napIfAwakeTooLong(*lastSlept);
     }
 }
 
@@ -203,14 +215,12 @@ void Scheduler::workerMain(int worker) noexcept {
             }
         }
         uint64_t state = state_.load(std::memory_order_seq_cst);
-        auto now = std::chrono::steady_clock::now();
-        if (now - lastSlept > kAwakeAtMost && state != kQuit) {
+        if (state != kQuit) {
             // Even when the next run is open already (the others take its nodes meanwhile).
-            std::this_thread::sleep_for(kNap);
-            lastSlept = now = std::chrono::steady_clock::now();
+            napIfAwakeTooLong(lastSlept);
             state = state_.load(std::memory_order_seq_cst);
         }
-        const auto deadline = now + kSpinBeforeSleep;
+        const auto deadline = std::chrono::steady_clock::now() + kSpinBeforeSleep;
         for (int spins = 1; state != kQuit && (!(state & 1) || state == joined); ++spins) {
             if (spins % 64 == 0 && std::chrono::steady_clock::now() > deadline) break;
             cpuRelax();
@@ -221,7 +231,7 @@ void Scheduler::workerMain(int worker) noexcept {
             active_.fetch_add(1, std::memory_order_seq_cst);
             if (state_.load(std::memory_order_seq_cst) == state) {  // still open: the run's data is valid
                 ScopedNoDenormals noDenormals;
-                work(worker);
+                work(worker, &lastSlept);
             }
             active_.fetch_sub(1, std::memory_order_seq_cst);
             joined = state;
