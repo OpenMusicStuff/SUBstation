@@ -136,6 +136,20 @@ TEST_CASE("the curves match the analog filters") {
         CHECK_NEAR(response(LOW_CUT, 1000.0, 0.0, 0.71, slope, 62.5), -24.1 * order, 0.5 * order);
     }
     CHECK_NEAR(response(BELL, 15000.0, 6.0, 1.0, 1, 15000.0), 6.0, 0.05);  // not squeezed up high
+    // A cut near Nyquist (the bilinear transform, pre-warped at its corner): -3 dB at the corner whatever the
+    // slope or the rate, and no rise above its passband on the way (matched poles rose 2 dB at 22 kHz of 48 kHz).
+    for (const double rate : {44100.0, 48000.0}) {
+        for (const int slope : {1, 3, 8}) {
+            INFO("rate " + std::to_string(rate) + ", slope " + std::to_string(slope));
+            const sub::eq::Design cut = sub::eq::design(HIGH_CUT, 22000.0, 0.0, 0.7071, slope, rate);
+            CHECK_NEAR(sub::eq::responseDb(cut, 22000.0, rate), -3.0, 0.05);
+            double peak = -100.0;
+            for (int i = 0; i < 400; ++i) peak = std::max(peak, sub::eq::responseDb(cut, 20.0 + i * (22000.0 - 20.0) / 399, rate));
+            CHECK(peak < 0.01);
+        }
+    }
+    // A resonant one keeps its peak's height wherever it is.
+    CHECK_NEAR(response(HIGH_CUT, 22000.0, 0.0, 2.0, 1, 22000.0), response(HIGH_CUT, 1000.0, 0.0, 2.0, 1, 1000.0), 0.05);
     CHECK(response(NOTCH, 15000.0, 0.0, 4.0, 1, 15000.0) < -40);
 }
 
