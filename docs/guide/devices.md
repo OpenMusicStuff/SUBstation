@@ -596,6 +596,37 @@ dashed yellow line.
 It adds **latency**: 53 ms at 48 kHz (58 ms at 44.1 kHz). Playback is compensated, but
 you'll feel it while monitoring live input through it.
 
+### Prisma
+
+Pulls a sound into key. Prisma keeps the parts of the spectrum that sit on the notes you
+choose, moves the notes a semitone off them onto them, takes the other notes out, and lets
+what lies between notes through more quietly: a growl, a reese or a riddim bass keeps its
+texture while its partials line up with the song's scale. It is made for basses and other
+dense, harmonic sounds, and works on anything.
+
+- **The notes**: the twelve buttons (C to B) choose the scale; a note in any octave counts.
+  With no notes, or all twelve, the sound passes as it is. **MIDI Notes** on: the notes held
+  on the track (or on the track chosen with **MIDI From**, see above) choose them instead,
+  so the scale can follow a chord part; with nothing held, the sound passes.
+- What happens to each note: an enabled note is kept and made louder (the fewer notes, the
+  louder: about +8 dB for one); a note a semitone from an enabled one is moved onto it
+  (a note between two enabled ones goes down); the others are taken out. What lies between
+  notes (detuned, noisy parts) passes more quietly, more so the fewer notes are enabled.
+- **Start** and **End** (80 Hz to 1.8 kHz, 400 Hz to 8 kHz): the band that is processed;
+  below Start and above End the sound passes as it is (the low band keeps a bass's sub
+  untouched). The band works within 160 Hz to 4 kHz whatever they are set to.
+- **Color** (0 to 200 %): from the plain sound (0 %) to the processed one (100 %); past
+  100 % the notes get louder and narrower and what lies between them quieter.
+- **Wet Gain** (±6 dB): the level of the processed band.
+- **Pre-Shift** (±50 cents): shifts the band's pitch before the notes are picked (to catch
+  a detuned sound); **Post-Shift** (±50 cents): tunes the notes themselves.
+- **Mute Low** and **Mute High**: take the bands outside Start and End away, to hear the
+  processed band alone.
+
+Prisma's latency is about 11 ms (the engine lines the other tracks up with it). Changing
+the notes takes a few milliseconds to be heard and fades in, so chords played from MIDI
+change smoothly.
+
 ### Saturator
 
 Saturation and distortion after Ableton's Saturator: the sound is driven into a curve

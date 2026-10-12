@@ -266,8 +266,13 @@ public:
             c.history.assign(static_cast<size_t>(kParts * kBlock), Complex{});
             for (int s = 0; s < 3; ++s) {
                 // a stage's upper half waits for the processing beneath it: the block, at its rate
+                // (and as the half-band filters of the stages beneath delay it, rounded)
                 const int shift = s < stages_ ? stages_ - 1 - s : 0;
-                c.highDelay[static_cast<size_t>(s)].assign(static_cast<size_t>(kBlock) << shift, 0.0);
+                double deeper = 0;
+                for (int d = s + 1; d < stages_; ++d) deeper += Qmf::delay() * (1 << (d - s - 1));
+                c.highDelay[static_cast<size_t>(s)].assign((static_cast<size_t>(kBlock) << shift) +
+                                                               static_cast<size_t>(std::lround(deeper)),
+                                                           0.0);
             }
             c.pre.prepare(coreRate_);
             c.up.prepare(coreRate_);
