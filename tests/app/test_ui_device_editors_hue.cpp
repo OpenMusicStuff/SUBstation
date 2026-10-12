@@ -2,8 +2,8 @@
 // loaded as the device view loads it, over a real engine: it fits the view's
 // height and, folded, is the spectrum alone, as wide as the Vintage Hall's,
 // the key, HQ and the arrow over its top edge; the arrow slides open the wheel
-// and the finer controls and shuts them again; the spectrum's handles drag Low
-// Cut and High Cut, a drag up and down anywhere else Color, one undo step a
+// and the finer controls and shuts them again; a drag across its far left and
+// right sets Low Cut and High Cut, up and down in the band Color, one undo step a
 // drag, a double-click resetting; a key (a root and a scale) sets the twelve
 // notes in one undo step and is read back from them ("Custom" when they are no
 // scale, a new root moving them); a click on the wheel switches a note; what
@@ -252,13 +252,14 @@ private Q_SLOTS:
         QCOMPARE(spectrum->partAt(at(240.0)), QStringLiteral("start"));
         QCOMPARE(spectrum->partAt(at(2400.0)), QStringLiteral("end"));
         QCOMPARE(spectrum->partAt(at(760.0)), QStringLiteral("color"));
-        QCOMPARE(spectrum->partAt(at(60.0)), QStringLiteral("color"));
+        QCOMPARE(spectrum->partAt(at(60.0)), QStringLiteral("start"));  // (the far left: Low Cut)
+        QCOMPARE(spectrum->partAt(at(6000.0)), QStringLiteral("end"));  // (the far right: High Cut)
         QCOMPARE(spectrum->partAt(QPointF(-20, y)), QString());
 
-        // Low Cut to the right, as far up as the pixels say (across the view: 30 Hz to 12 kHz), one undo step.
+        // Low Cut (from the far left) to the right, as far up as the pixels say (across the view: 30 Hz to 12 kHz), one undo step.
         int steps = undo()->index();
         const double perPixel = std::pow(HueSpectrum::kHighHz / HueSpectrum::kLowHz, 1.0 / (spectrum->width() - 2));
-        dragSpectrum(spectrum, at(240.0), 20);
+        dragSpectrum(spectrum, at(60.0), 20);
         QVERIFY2(std::abs(value(shown, "start") / (240.0 * std::pow(perPixel, 20)) - 1.0) < 0.03,
                  qPrintable(QString::number(value(shown, "start"))));
         QCOMPARE(value(shown, "end"), 2400.0);

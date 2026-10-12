@@ -2,7 +2,7 @@
 
 // Hue's spectrum, its editor's face: what goes in and what comes out, 30 Hz to
 // 12 kHz, the band it processes between Low Cut and High Cut (its parameters
-// Start and End) as two handles to drag, and Color as a drag up and down.
+// Start and End) as a filter's shape, and Color as a drag up and down.
 // - The output as a fill coloured by pitch: each frequency in the hue of the
 //   note it is (HueWheel::noteColor, blended between notes), as vivid as Color
 //   makes the sound (grey at 0 %, glowing past 100 %), so the partials pulled
@@ -11,12 +11,15 @@
 // - Inside the band, the notes in use (the key's, or the MIDI notes once they
 //   choose them: the display "notes") as thin lines in their hues at every
 //   octave (the comb the sound is pulled onto), each brighter as it sounds.
-// - The handles, at the bottom: a line each with a grip and its frequency; drag
-//   one across (Shift: finely), one undo step a drag; a double-click resets it.
-//   Outside the band the view is shaded.
-// - Anywhere else, drag up for more Color, down for less (Shift: finely); a
+// - The band's shape: the crossovers' curve (24 dB/octave either side) soft over
+//   the spectrum, what it leaves alone dimmed as far as it falls, a dot and the
+//   frequency at each corner. Drag across anywhere left of the band (or by its
+//   corner) for Low Cut, right of it for High Cut (Shift: finely), one undo step
+//   a drag; a double-click resets it. Hovered or dragged, that side lights up.
+// - In the band, drag up for more Color, down for less (Shift: finely); a
 //   double-click resets it. A gauge at the right edge shows it, and its value
 //   while hovered or dragged.
+// Everything is where its parameter is at once (nothing slides in).
 // The editor lays its buttons over the top edge, clear of all this. The analyzer
 // is the EQ's (analysis::EqAnalyzer: tilted 4.5 dB/octave, rising fast, falling
 // slowly). It repaints only while something moves.
@@ -43,9 +46,8 @@ public:
     static constexpr int kMinimumHeight = 96;
     static constexpr double kLowHz = 30.0;
     static constexpr double kHighHz = 12000.0;
-    static constexpr double kGrabPixels = 6.0;          // a handle's reach either side
+    static constexpr double kGrabPixels = 6.0;          // a corner's reach into the band
     static constexpr double kColorPerPixel = 1.2;      // % dragged up
-    static constexpr double kHandleBand = 34.0;         // the handles' grips and frequencies: this far from the bottom
     static constexpr int kFromMidi = 1 << 12;          // in the display "notes": the notes are MIDI's
 
     explicit HueSpectrum(QQuickItem* parent = nullptr);
@@ -94,10 +96,9 @@ private:
     bool midi_ = false;        // the notes are MIDI's
 
     sub::app::analysis::EqAnalyzer analyzer_;
-    Eased startShown_, endShown_, colorShown_;  // easing to a value set elsewhere (snapping while dragged)
+    Eased startShown_, endShown_, colorShown_;  // (always snapped: where the parameters are)
     bool animating_ = false;
-    bool started_ = false;
-    double glow_ = 0.0;  // the handles' and the gauge's highlight while hovered or dragged (0..1)
+    double glow_ = 0.0;  // the corners' and the gauge's highlight while hovered or dragged (0..1)
 
     // Dragging.
     QString gesture_;

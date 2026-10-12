@@ -606,10 +606,11 @@ dense, harmonic sounds, and works on anything.
 
 - **The editor** is a spectrum of what comes out, across the device: each frequency coloured
   by the note it is, as vivid as **Color** makes the sound, over a faint line of what goes
-  in; thin lines in the notes' colours mark the notes it pulls the sound onto. **Low Cut**
-  and **High Cut** are the two handles at its bottom: drag them (Shift: finely);
-  double-click one to reset it. Drag up and down anywhere else for **Color** (the gauge at
-  the right edge shows it); double-click to reset it. Over its top edge: the **Key** (a
+  in; thin lines in the notes' colours mark the notes it pulls the sound onto. A soft
+  filter curve shows the band processed: drag across the far left for **Low Cut** and the
+  far right for **High Cut** (Shift: finely); double-click there to reset it. Drag up and
+  down in the band for **Color** (the gauge at the right edge shows it); double-click to
+  reset it. Over its top edge: the **Key** (a
   root and a scale) and **HQ**; the arrow at the right slides open the note wheel, the
   twelve notes round a colour wheel (C at the top): lit notes are kept, shaded ones with an
   arrow are moved onto the note beside them, dark ones are taken out; click a note to

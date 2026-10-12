@@ -20,10 +20,9 @@ namespace {
 using sub::app::analysis::EqAnalyzer;
 
 constexpr double kRecentSeconds = 0.2;  // a tick reads this much of the sound at most (after a backlog)
-constexpr double kEaseSeconds = 0.08;   // the handles and Color, to a value set elsewhere
 constexpr double kGlowSeconds = 0.1;
 constexpr double kColumnPixels = 2.0;
-// The parameters' ranges (Start, End, Color), and how far apart the handles stay.
+// The parameters' ranges (Start, End, Color), and how far apart Low and High Cut stay.
 constexpr double kStartMin = 80.0, kStartMax = 1800.0, kEndMin = 400.0, kEndMax = 8000.0, kGap = 1.25;
 constexpr double kColorMax = 200.0;
 constexpr double kTopDb = EqAnalyzer::kCeilDb, kBottomDb = -84.0;
@@ -75,9 +74,11 @@ QString HueSpectrum::partAt(QPointF point) const {
     if (!plot().adjusted(-2, -2, 2, 2).contains(point))
         return {};
     const double xs = xOf(std::exp2(startShown_.value)), xe = xOf(std::exp2(endShown_.value));
-    const double ds = std::abs(point.x() - xs), de = std::abs(point.x() - xe);
-    if (std::min(ds, de) <= kGrabPixels)
-        return ds <= de ? QStringLiteral("start") : QStringLiteral("end");
+    const double x = point.x(), ds = std::abs(x - xs), de = std::abs(x - xe);
+    if (x < xs || (ds <= kGrabPixels && ds <= de))
+        return QStringLiteral("start");
+    if (x > xe || de <= kGrabPixels)
+        return QStringLiteral("end");
     return QStringLiteral("color");
 }
 
@@ -92,15 +93,10 @@ void HueSpectrum::sync() {
         if (value(HueWheel::noteParam(c)) >= 0.5)
             bits |= 1 << c;
     buttons_ = bits;
-    startShown_.target = std::log2(std::max(1.0, start_));
-    endShown_.target = std::log2(std::max(1.0, end_));
-    colorShown_.target = color_;
-    if (!started_ || dragging()) {  // (where they are: the first time, and under the mouse)
-        started_ = true;
-        startShown_.snap(startShown_.target);
-        endShown_.snap(endShown_.target);
-        colorShown_.snap(colorShown_.target);
-    }
+    // (where they are at once: nothing slides in as the device is added, or as automation moves them)
+    startShown_.snap(std::log2(std::max(1.0, start_)));
+    endShown_.snap(std::log2(std::max(1.0, end_)));
+    colorShown_.snap(color_);
     update();
 }
 
@@ -122,11 +118,7 @@ void HueSpectrum::refreshDisplays() {
     analyzer_.feed(EqAnalyzer::Input, in.data(), in.size(), rate);
     analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate);
 
-    const double ease = easeFraction(dt, kEaseSeconds);
     moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output) || moving;
-    moving = startShown_.step(ease, 1e-4) || moving;
-    moving = endShown_.step(ease, 1e-4) || moving;
-    moving = colorShown_.step(ease, 1e-2) || moving;
     const double glowTarget = !hovered_.isEmpty() || dragging() ? 1.0 : 0.0;
     if (glow_ != glowTarget) {
         glow_ += (glowTarget - glow_) * easeFraction(dt, kGlowSeconds);
@@ -309,39 +301,61 @@ void HueSpectrum::paint(SgPainter& p) {
         drawGlowPolyline(p, top, withAlpha(Theme::text(), 200), 1.2);
     }
 
-    // Outside the band: shaded.
-    const QColor shade = withAlpha(QColor(0, 0, 0), 95);
-    if (xs > area.left())
-        p.fillRect(QRectF(area.left(), area.top(), xs - area.left(), area.height()), shade);
-    if (xe < area.right())
-        p.fillRect(QRectF(xe, area.top(), area.right() - xe, area.height()), shade);
-
-    // The handles: a line, a grip and the frequency at the bottom.
-    const QFont small = uiFont(7, true);
-    const double gripTop = area.bottom() - 18;
-    const double room = xe - xs - 18 - SgPainter::textWidth(hzText(start), small) - SgPainter::textWidth(hzText(end), small);
-    for (const bool isEnd : {false, true}) {
-        const QString part = isEnd ? QStringLiteral("end") : QStringLiteral("start");
-        const bool hot = hovered_ == part || part_ == part;
-        const double x = isEnd ? xe : xs, hz = isEnd ? end : start;
-        const QColor lineColor = mixColor(Theme::accent(), Theme::text(), hot ? 0.25 * glow_ : 0.0);
-        if (hot && glow_ > 0.0)
-            p.fillRect(QRectF(x - 3, area.top(), 6, area.height()), withAlpha(Theme::accent(), int(40 * glow_)));
-        p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()), withAlpha(lineColor, hot ? 230 : 160),
-                   hot ? 1.6 : 1.1);
-        const QRectF grip(x - 3.5, gripTop, 7, 14);
-        p.fillRoundedRect(grip, 2.5, 2.5, lineColor);
-        for (int line = 0; line < 3; ++line) {
-            const double y = grip.top() + 4 + 3 * line;
-            p.drawLine(QPointF(grip.left() + 2, y), QPointF(grip.right() - 2, y), withAlpha(Theme::meterBg(), 200), 1.0);
+    // The band's shape: the crossovers' (Linkwitz-Riley, 24 dB/octave) as a soft curve over the spectrum, the sides
+    // it leaves alone dimmed as far as they fall, each corner a dot; brighter, with its frequency, under the mouse.
+    {
+        const double flatY = area.top() + 26, dbSpan = 48.0;  // 0 dB under the buttons, -48 dB at the bottom
+        const auto gainAt = [&](double hz) {
+            const double l = std::pow(hz / start, 4.0), h = std::pow(hz / end, 4.0);
+            return (l / (1.0 + l)) * (1.0 / (1.0 + h));
+        };
+        std::vector<QPointF> curve(static_cast<std::size_t>(n)), roof(static_cast<std::size_t>(n));
+        std::vector<QColor> roofColors(static_cast<std::size_t>(n)), curveColors(static_cast<std::size_t>(n));
+        for (int i = 0; i < n; ++i) {
+            const std::size_t k = std::size_t(i);
+            const double g = gainAt(freqs[k]);
+            const double db = 20.0 * std::log10(std::max(g, 1e-6));
+            const double y = std::min(area.bottom(), flatY - db / dbSpan * (area.bottom() - flatY));
+            curve[k] = QPointF(columnX[k], y);
+            roof[k] = QPointF(columnX[k], area.top());
+            roofColors[k] = withAlpha(QColor(0, 0, 0), int(85 * (1.0 - g)));
+            curveColors[k] = withAlpha(QColor(0, 0, 0), int(55 * (1.0 - g)));
         }
-        // inside the band (the start's to the right of its line, the end's to the left), or outside where it is narrow
-        const QString text = hzText(hz);
-        const double w = SgPainter::textWidth(text, small) + 4;
-        const bool leftOfLine = isEnd == (room > 0.0);
-        const double tx = std::clamp(leftOfLine ? x - 6 - w : x + 6, area.left() + 2, area.right() - w - 10);
-        p.drawText(QRectF(tx, gripTop + 1, w, 12), (leftOfLine ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter, text,
-                   withAlpha(Theme::text(), hot ? 255 : 200), small);
+        p.fillGradientStrip(roof.data(), curve.data(), roofColors.data(), curveColors.data(), n);
+        const bool lowHot = hovered_ == QLatin1String("start") || part_ == QLatin1String("start");
+        const bool highHot = hovered_ == QLatin1String("end") || part_ == QLatin1String("end");
+        // the curve: faint, each side brighter while it is hovered or dragged
+        std::vector<QPointF> side;
+        const auto stroke = [&](int from, int to, bool hot) {
+            side.assign(curve.begin() + from, curve.begin() + to);
+            if (side.size() < 2)
+                return;
+            const double lift = hot ? glow_ : 0.0;
+            drawGlowPolyline(p, side, withAlpha(Theme::text(), int(70 + 110 * lift)), 1.0 + 0.4 * lift);
+        };
+        int split = 0;  // the curve's middle (in log frequency), where its sides meet
+        const double middle = std::sqrt(start * end);
+        while (split < n - 1 && freqs[std::size_t(split)] < middle)
+            ++split;
+        stroke(0, split + 1, lowHot);
+        stroke(split, n, highHot);
+
+        const QFont small = uiFont(7, true);
+        for (const bool isEnd : {false, true}) {
+            const bool hot = isEnd ? highHot : lowHot;
+            const double hz = isEnd ? end : start, x = isEnd ? xe : xs;
+            const double y = flatY + 6.0 / dbSpan * (area.bottom() - flatY);  // (its corner: 6 dB down)
+            const double lift = hot ? glow_ : 0.0;
+            if (lift > 0.0)
+                p.fillRadialGlow(QPointF(x, y), 9.0, withAlpha(Theme::text(), int(70 * lift)), 4);
+            p.fillEllipse(QPointF(x, y), 2.2 + 0.8 * lift, 2.2 + 0.8 * lift, withAlpha(Theme::text(), int(130 + 125 * lift)));
+            // its frequency: faint by the corner, clear under the mouse (outside the band, where the side is)
+            const QString text = hzText(hz);
+            const double w = SgPainter::textWidth(text, small) + 4;
+            const double tx = std::clamp(isEnd ? x + 5 : x - 5 - w, area.left() + 2, area.right() - w - 10);
+            p.drawText(QRectF(tx, y + 3, w, 12), (isEnd ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, text,
+                       withAlpha(Theme::text(), int(90 + 165 * lift)), small);
+        }
     }
 
     // Color: a gauge at the right edge, its value while hovered or dragged.
@@ -350,7 +364,7 @@ void HueSpectrum::paint(SgPainter& p) {
     const double level = gaugeBottom - (gaugeBottom - gaugeTop) * std::clamp(color / kColorMax, 0.0, 1.0);
     p.fillRoundedRect(QRectF(area.right() - 5, gaugeTop, 3, gaugeBottom - gaugeTop), 1.5, 1.5, withAlpha(Theme::textDim(), 50));
     p.fillRoundedRect(QRectF(area.right() - 5, level, 3, gaugeBottom - level), 1.5, 1.5,
-                      withAlpha(Theme::accent(), int(150 + 105 * (colorHot ? glow_ : 0.0))));
+                      withAlpha(Theme::text(), int(80 + 140 * (colorHot ? glow_ : 0.0))));
     const double mid = gaugeBottom - (gaugeBottom - gaugeTop) * 0.5;  // (100 %)
     p.drawLine(QPointF(area.right() - 7, mid), QPointF(area.right() - 1, mid), withAlpha(Theme::text(), 120), 1.0);
     if (colorHot && glow_ > 0.0) {
@@ -365,7 +379,7 @@ void HueSpectrum::paint(SgPainter& p) {
     // Before any sound: a hint.
     if (!outLive && !inLive) {
         p.drawText(QRectF(area.left(), area.center().y() - 6, area.width(), 12), Qt::AlignCenter,
-                   QStringLiteral("Drag up and down for Color, the handles for Low and High Cut"),
+                   QStringLiteral("Drag up and down for Color, the sides for Low and High Cut"),
                    withAlpha(Theme::textDim(), 160), uiFont(7));
     }
 }
