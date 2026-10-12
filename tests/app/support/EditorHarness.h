@@ -62,6 +62,7 @@ namespace sub::app::test {
 // The host window's QML.
 inline constexpr const char* kEditorHost = R"QML(
 import QtQuick
+import QtQuick.Controls
 import SUBstation
 
 Window {
@@ -74,8 +75,21 @@ Window {
         return loader.item
     }
     function clear() {
+        // Qt's shared tooltip closed first (its delay stopped): the Loader takes the
+        // editor out of the window at once but deletes it only later, and a tip still
+        // waiting for a control in it would open meanwhile, with no window to open in.
+        loader.ToolTip.toolTip.close()
         loader.sourceComponent = null
         loader.source = ""
+    }
+    // The tooltip Qt shares among all controls (one per engine) shown for `item`
+    // after `delay` ms, as hovering a control asks it to.
+    function waitingToolTip(item, delay) {
+        const tip = loader.ToolTip.toolTip
+        tip.parent = item
+        tip.delay = delay
+        tip.text = "waiting"
+        tip.open()
     }
     function editorFor(kind) {
         return DeviceEditors.editorFor(kind)

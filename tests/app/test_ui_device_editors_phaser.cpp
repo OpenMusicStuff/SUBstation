@@ -580,6 +580,25 @@ private Q_SLOTS:
     }
 
     // Every knob and switch sets its parameter, one undo step each.
+    // A tooltip waiting out its delay for a control as the editor goes (the next
+    // test's init clears it) doesn't open later with no window to open in: a
+    // warning that failed whichever test came next (modeTabs, after a drag ended
+    // over the Time knob).
+    void aTooltipWaitingAsTheEditorGoes() {
+        QQuickItem* view = showPhaser();
+        QVERIFY(view);
+        QQuickItem* amount = find(view, QStringLiteral("amount"));
+        QVERIFY(amount);
+        // Its delay over just as the editor goes: the Loader takes the editor out of the
+        // window at once but deletes it only later, and the tip's timer comes first.
+        QVERIFY(QMetaObject::invokeMethod(root_.get(), "waitingToolTip", Q_ARG(QVariant, QVariant::fromValue(amount)),
+                                          Q_ARG(QVariant, 1)));
+        QTest::qSleep(10);
+        clearHost();
+        QTest::qWait(100);
+        QVERIFY2(qmlWarnings.isEmpty(), qPrintable(qmlWarnings.join(QLatin1Char('\n'))));
+    }
+
     void editsAreUndoable() {
         QQuickItem* view = showPhaser();
         QVERIFY(view);
