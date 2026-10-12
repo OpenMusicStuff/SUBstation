@@ -359,7 +359,8 @@ public:
     // closed on this track (with its close button or the device's) opens again;
     // pressed again, the one closed before it, and so on (up to
     // kClosedEditorsKept). With none closed (or none whose device is still
-    // there), the editor of the first device in the track's chain that has one
+    // there), the editor of the first device in the track's chain (racks' chains
+    // too) that has one
     // (brought to the front if it is open). False (and a status message) if no
     // device there has an editor.
     Q_INVOKABLE bool reopenClosedPluginEditor(const QString& trackId);

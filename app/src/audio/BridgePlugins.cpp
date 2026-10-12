@@ -199,11 +199,11 @@ bool EngineBridge::reopenClosedPluginEditor(const QString& trackId) {
         loadPluginNow(deviceId);  // (if it waits to load)
         if (openPluginEditor(trackId, deviceId, false)) return true;
     }
-    // None closed (or none of those left): the first device in the chain with an editor.
+    // None closed (or none of those left): the first device in the chain with an editor (in racks too).
     if (const Track* track = project_->findTrack(trackId)) {
         QStringList plugins;  // (a copy: opening may run a message loop that changes the chain)
-        for (const Device& device : track->devices) {
-            if (device.plugin) plugins.append(device.id);
+        for (const Device* device : iterDevices(track->devices)) {
+            if (device->isPlugin()) plugins.append(device->id);
         }
         for (const QString& deviceId : plugins) {
             loadPluginNow(deviceId);

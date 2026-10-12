@@ -443,7 +443,8 @@ private Q_SLOTS:
 
         for (int i = 0; i < matches.size() && selection().trackId() != stab; ++i) key(Qt::Key_Return);
         QCOMPARE(selection().trackId(), stab);
-        QVERIFY(arrangement->headerSelected(stab));
+        // A track with clips: its clip nearest the playhead is selected (not its header).
+        QVERIFY(selection().clips().contains(sub::app::ClipRef{stab, clips.front().clipId}));
         QVERIFY(!project().track(group).folded);
         const auto* row = arrangement->layout().rowFor(stab);
         QVERIFY(row && !row->hidden);

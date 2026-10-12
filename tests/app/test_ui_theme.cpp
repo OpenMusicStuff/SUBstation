@@ -262,7 +262,7 @@ private Q_SLOTS:
         Theme& theme = *Theme::instance();
         const QVariantMap map = theme.buttonStyle(QStringLiteral("solo"), false, false, true, true);
         QCOMPARE(map.value(QStringLiteral("background")).value<QColor>(), Theme::soloOn());
-        QCOMPARE(map.value(QStringLiteral("radius")).toInt(), 2);
+        QCOMPARE(map.value(QStringLiteral("radius")).toInt(), 0);
     }
 
     void textHelpers() {

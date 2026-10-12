@@ -2,12 +2,11 @@ import QtQuick
 
 // Where a device body's four parameter cells go (PluginDeviceBody,
 // DeviceKnobPages): two by two, the columns `columnSpacing` apart and centred
-// across the area, so the margins left and right come out equal; each row in
-// the middle of its half of the height.
-// The body's Repeater of cells is a child, given as `cells`; each cell takes
-// its x and y from cellX() and cellY() by its place among them. A row's cells
-// line up at the top, centred as its tallest one (a list is shorter than a
-// knob). The implicit height is the grid's as it was: 6 above, the rows
+// across the area, so the margins left and right come out equal; the rows
+// `rowSpacing` apart, centred up and down (6 above and below at the implicit
+// height). The body's Repeater of cells is a child, given as `cells`; each cell
+// takes its x and y from cellX() and cellY() by its place among them. A row's
+// cells line up at the top (a list is shorter than a knob). The implicit height is the grid's as it was: 6 above, the rows
 // `rowSpacing` apart, 6 below.
 Item {
     id: quadrants
@@ -33,8 +32,9 @@ Item {
         return Math.round(left + (place % 2) * (cellWidth + columnSpacing))
     }
     function cellY(place) {
-        const row = Math.floor(place / 2)
-        return Math.round((row + 0.5) * height / 2 - rowHeight(row) / 2)
+        const rows = implicitHeight - 12  // (the rows and the space between them)
+        const top = Math.max(0, Math.floor((height - rows) / 2))
+        return place < 2 ? top : top + rowHeight(0) + rowSpacing
     }
 
     implicitHeight: cells && cells.count > 0
