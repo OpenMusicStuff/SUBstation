@@ -6,8 +6,10 @@
 // The notes of every clip the roll shows, each in its track's colour (with
 // several, a line at each clip's ends), and the stretch a rubber band selected.
 //
-// Mouse: double-click to add a note (one grid step long; into the clip that
-// plays there) or to delete one; drag a note to move it (Ctrl copies, Alt
+// Mouse: double-click to add a note (as long as the last note added, at first
+// one grid step; into the clip that plays there) or to delete one; held after
+// the double-click, dragging sideways draws the new note's length (on the grid;
+// Alt: freely), and that length is the next one's; drag a note to move it (Ctrl copies, Alt
 // bypasses the grid), drag either end to resize it, drag in empty space to
 // select (each note it touches sounds for a moment as it is caught); click
 // empty space to place the paste marker (where Ctrl+V pastes; dashed, apart
@@ -168,6 +170,7 @@ private:
     std::optional<std::vector<ClipNote>> selectOnClick_;
     std::optional<QPointF> hover_;  // where the mouse is over the grid
     std::optional<BendHit> bendHover_;  // in bend mode, what is under the mouse (a ghost point, a hovered one)
+    std::optional<double> lastLength_;  // beats: the last note added's (none yet: a grid step)
 };
 
 }  // namespace sub::ui

@@ -195,6 +195,18 @@ public:
     // folded away in unfolded, and scrolled to the middle of the lanes if it
     // doesn't show whole. False if there is no such track.
     Q_INVOKABLE bool revealTrack(const QString& trackId);
+    // A triple-click on a track's automation lane: everything on the track (and
+    // in the groups in it) selected as a clip range, from its first clip or
+    // breakpoint to its last, so Delete clears it (clips and automation). The
+    // insert marker at its start. False if it is not a track or holds nothing.
+    Q_INVOKABLE bool selectTrackContent(const QString& trackId);
+    // The find bar's match in the arrangement: the track's clip nearest the
+    // playhead (where it plays, or the insert marker while stopped; one under it
+    // first, then the closest, the earliest of those as close) selected as a
+    // click on its title selects it, and scrolled into view if it doesn't show
+    // whole (centred, or its start near the left if it is wider than the lanes).
+    // Its id; "" if the track has no clips (nothing changes).
+    Q_INVOKABLE QString revealNearestClip(const QString& trackId);
     // Alt+wheel over a track (its header or its lane), as one gesture: down
     // shrinks it, and once it is as small as it gets, folds it (a group: hides
     // its tracks too); up unfolds a folded track, then makes it taller. A turn

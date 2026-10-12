@@ -10,8 +10,8 @@ their own page: [plugins.md](plugins.md).
 
 - It shows the built-in Synth and Sampler instruments, the Utility device, Over The Top,
   Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp,
-  Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, EQ
-  and Sidechain, and plug-ins, all through the same interface: they show alike.
+  Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall, Disperser, Transient
+  Shaper, EQ and Sidechain, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only.
 - **Ctrl+Alt+L** (*View › Device View*) shows or hides it, with the info view.
 - The **info view**, at the bottom left, says what the control under the mouse is: its
@@ -43,8 +43,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Amp, Erosion, the Delay, the Chorus-Ensemble,
-  the Phaser-Flanger, the Reverb, the Disperser, the Transient Shaper, the EQ and the
-  Sidechain have editors of their own (below).
+  the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the Transient Shaper,
+  the EQ and the Sidechain have editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
   *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)).
@@ -1000,6 +1000,41 @@ handles), then the levels. The editor goes left to right:
   Density crossfade, the levels glide. Its sound is the reverb, not latency: nothing is
   delayed to line up with it. It costs about 1.4 % of a core at the defaults (Sparse
   under half of that), and almost nothing once its tail has died away.
+
+### Vintage Hall
+
+A lush 1970s digital concert hall, cloned from a classic: a dark, wide, chorused tail with
+a soft bloom and nothing above 12 kHz, as the hardware of the time sounded. It is stereo
+in and out. On a return track leave **Dry/Wet** at 100 % (its default); on a track, blend
+it in.
+
+- **Decay** (0.2 to 70 s) is how long the middle of the tail rings; **Bass Mult** (0.25 to
+  4×) makes what is below **Bass Xover** ring that many times longer or shorter. **High
+  Shelf** (−24 to 0 dB) at **High Freq** darkens the tail every time round (and the sound
+  going in once): −24 dB at 6 kHz, the default, is the classic dark hall; 0 dB keeps it
+  bright.
+- **Size** shrinks the hall from 100 % (its natural size, a 560 ms loop) down to a small
+  room; **Predelay** (0 to 500 ms) is how long before the reverb starts.
+- **Attack** shapes the start: low, the reverb starts at once; high, it swells in over
+  about a quarter of a second.
+- **Early Diffusion** smears the sound as it comes in; **Late Diffusion** how quickly the
+  tail turns from echoes into a smooth wash. Both at 0 give the bare loop's echoes, a
+  slapback lo-fi room.
+- **Mod Depth** and **Mod Rate** make the tail's delays wander, a gentle chorus that keeps
+  it from ringing metallic: more depth or rate for a lusher, more seasick tail; 0 for a
+  still one.
+- **High Cut** and **Low Cut** take the highs and lows off what goes into the reverb.
+- Its editor draws the hall as what it is: one loop the sound runs round, a ring (the
+  left half amber, the right blue). It glows where the sound is now; each note or hit
+  sends a comet round from each side at the loop's own speed, fading as Decay says and
+  smearing out as Late Diffusion spreads it. Inside are its diffusers, wavering with the
+  modulation; outside, the taps it is heard from, as big as Attack weighs them. Drag the
+  ring up and down for Decay, across for Size (Shift: finely); double-click to reset
+  them. Beside it Decay, Predelay, Size, Attack, High Cut, Low Cut and Dry/Wet are
+  always shown; **Advanced** opens the rest (the tail's bass and high shelf, the
+  diffusion and the modulation).
+- Every control can be automated; Size and Predelay glide (the tail bends in pitch as
+  they move, as tape would). It costs about 0.5 % of a core.
 
 ### Disperser
 

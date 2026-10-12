@@ -3,6 +3,7 @@
 // button rules, the icons (each drawn, in its colour, its states, the disabled
 // variant) and the image provider that serves them to QML.
 
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
 #include <QKeySequence>
@@ -109,7 +110,8 @@ private Q_SLOTS:
         QCOMPARE(Theme::selection().alpha(), 72);
         QCOMPARE(theme.property("monoFontFamily").toString(), QStringLiteral("Consolas"));
         const QFont font = theme.uiFont(11, true);
-        QCOMPARE(font.family(), QStringLiteral("Segoe UI"));
+        QCOMPARE(font.family(), QStringLiteral("Inter"));
+        QVERIFY(QFontDatabase::families().contains(QStringLiteral("Inter")));  // (bundled, loaded)
         QCOMPARE(font.pointSizeF(), 11.0);
         QVERIFY(font.bold());
         QCOMPARE(sub::ui::uiFont().pointSizeF(), 9.0);
@@ -219,7 +221,7 @@ private Q_SLOTS:
         QCOMPARE(plain.background, Theme::surface());
         QCOMPARE(plain.text, Theme::text());
         QCOMPARE(plain.border, 1);
-        QCOMPARE(plain.radius, 3);
+        QCOMPARE(plain.radius, 0);  // square corners, every role
         QCOMPARE(plain.paddingH, 12);
         QCOMPARE(look("", true, false, false, true).background, Theme::surfaceHover());
         QCOMPARE(look("", true, true, false, true).background, Theme::panel());       // pressed over hover
@@ -238,7 +240,7 @@ private Q_SLOTS:
         QCOMPARE(look("record", false, false, false, true).minHeight, 22);
         const L arm = look("arm", false, false, true, true);
         QCOMPARE(arm.background, Theme::recordOn());
-        QCOMPARE(arm.radius, 2);  // (a box, as solo's)
+        QCOMPARE(arm.radius, 0);
         QCOMPARE(look("re-enable", false, false, true, true).background, Theme::accent());
         QCOMPARE(look("tool", false, false, false, true).paddingH, 2);
         // Flat: never a background; dim, but TEXT under the mouse.
@@ -260,7 +262,7 @@ private Q_SLOTS:
         Theme& theme = *Theme::instance();
         const QVariantMap map = theme.buttonStyle(QStringLiteral("solo"), false, false, true, true);
         QCOMPARE(map.value(QStringLiteral("background")).value<QColor>(), Theme::soloOn());
-        QCOMPARE(map.value(QStringLiteral("radius")).toInt(), 2);
+        QCOMPARE(map.value(QStringLiteral("radius")).toInt(), 0);
     }
 
     void textHelpers() {

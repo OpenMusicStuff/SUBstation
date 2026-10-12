@@ -47,6 +47,7 @@ QtObject {
         "sidechain": "SidechainEditor.qml",
         "spectral": "SpectralEditor.qml",
         "transient": "TransientEditor.qml",
+        "vintage_hall": "VintageHallEditor.qml",
         "vital": "VitalEditor.qml"
     })
 

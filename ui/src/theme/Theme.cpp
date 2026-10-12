@@ -2,6 +2,8 @@
 
 #include "input/Shortcuts.h"
 
+#include <QDir>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QJSEngine>
 #include <QKeySequence>
@@ -13,7 +15,23 @@
 
 namespace sub::ui {
 
+namespace {
+
+// The bundled UI font's files (ui/fonts), added to the application's fonts once.
+void loadUiFont() {
+    static const bool loaded = [] {
+        const QDir fonts(QStringLiteral(":/qt/qml/SUBstation/fonts"));
+        for (const QString& file : fonts.entryList({QStringLiteral("*.ttf")}, QDir::Files))
+            QFontDatabase::addApplicationFont(fonts.filePath(file));
+        return true;
+    }();
+    Q_UNUSED(loaded);
+}
+
+}  // namespace
+
 QFont uiFont(qreal pointSize, bool bold) {
+    loadUiFont();
     QFont font(QString::fromLatin1(Theme::kUiFontFamily));
     font.setPointSizeF(pointSize);
     font.setBold(bold);
@@ -206,17 +224,14 @@ Theme::ButtonLook Theme::buttonLook(const QString& role, bool hovered, bool pres
     } else if (role == QLatin1String("arm")) {  // (a box as solo's, as Ableton's, its dot the text)
         look.paddingH = look.paddingV = 0;
         look.pointSize = 8.0;
-        look.radius = 2;
     } else if (role == QLatin1String("activator") || role == QLatin1String("solo")) {
         look.paddingH = look.paddingV = 0;
         look.pointSize = 8.0;
         look.weight = QFont::DemiBold;
-        look.radius = 2;
     } else if (role == QLatin1String("monitor")) {
         // A track header's In, Auto and Off: small, side by side (the one chosen in the accent).
         look.paddingH = look.paddingV = 0;
         look.pointSize = 8.0;
-        look.radius = 2;
     } else if (role == QLatin1String("flat")) {
         // Later than every state rule: no background in any state, dim text but under the mouse.
         look.paddingH = look.paddingV = 0;
@@ -230,7 +245,6 @@ Theme::ButtonLook Theme::buttonLook(const QString& role, bool hovered, bool pres
     } else if (role == QLatin1String("device-header")) {
         look.paddingH = look.paddingV = 0;
         look.border = 0;
-        look.radius = 2;
         look.background = Qt::transparent;
         look.text = textDim();
         if (hovered) {

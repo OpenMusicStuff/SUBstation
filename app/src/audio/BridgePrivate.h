@@ -124,6 +124,8 @@ struct EngineBridge::Private {
     QSet<QString> editorsWanted;  // device ids whose editor the user left open
     std::optional<QString> editorsTrack;  // the track whose editors are shown (the selected one)
     std::vector<quint32> hiddenEditors;  // processors of hidden editors, the longest hidden first
+    // Per track: device ids whose editor the user closed, the last closed last (Ctrl+Shift+W reopens them).
+    QHash<QString, QStringList> closedEditors;
 
     QHash<QString, std::shared_ptr<sub::AudioSource>> sources;  // source key -> decoded file
     QHash<QString, std::vector<std::function<void()>>> loading;  // source key -> what waits for it

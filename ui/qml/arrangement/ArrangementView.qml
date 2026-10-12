@@ -25,7 +25,8 @@ import SUBstation
 //   openClipView() (the selected clips, through Session.arrangement's
 //   clipViewRequested), renameTrack(trackId) (in place; false if it can't be),
 //   focusLanes(), revealTrack(trackId) (selected, unfolded, scrolled to: the
-//   find bar's matches); properties snap, follow,
+//   find bar's matches), revealNearestClip(trackId) (its clip nearest the
+//   playhead selected and scrolled to; "" if it has none); properties snap, follow,
 //   ioShown (the headers' In/Out column, View › In/Out) (read and write),
 //   gridStep (beats, the grid's step whether
 //   snapping or not), gridLevel; signals statusMessage(text) and
@@ -77,6 +78,9 @@ FocusScope {
     }
     function revealTrack(trackId) {
         return arrangementState.revealTrack(trackId)
+    }
+    function revealNearestClip(trackId) {
+        return arrangementState.revealNearestClip(trackId)
     }
 
     implicitWidth: 1000

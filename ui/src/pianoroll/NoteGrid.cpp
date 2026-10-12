@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <tuple>
 
@@ -94,17 +95,23 @@ private:
     int originPitch_;
 };
 
+// Dragging notes' ends. Also the hold after a double-click that added a note
+// (`text` "Add Note", the add's merge key: one undo step), drawing its length;
+// `resized` hears the grabbed note's length at each move.
 class ResizeNotesGesture : public NoteGrid::Gesture {
 public:
     ResizeNotesGesture(NoteGrid* grid, const QPointF& press, const ClipNote& grabbed, std::vector<ClipNote> moving,
-                       notes::Edge edge)
+                       notes::Edge edge, QString text = QStringLiteral("Resize Notes"),
+                       std::function<void(double)> resized = {})
         : Gesture(grid, press),
           grabbed_(grabbed),
           moving_(std::move(moving)),
           edge_(edge),
           mine_(byClip(moving_)),
           base_(clipNotes(roll, moving_)),
-          originBeat_(roll->view().xToBeat(press.x())) {}
+          originBeat_(roll->view().xToBeat(press.x())),
+          text_(std::move(text)),
+          resized_(std::move(resized)) {}
 
     void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override {
         if (!started(pos)) return;
@@ -120,9 +127,12 @@ public:
             const std::vector<Note>& mine = mine_[index];
             const std::vector<Note> changed = notes::resized(mine, edge_, delta, minLength);
             changes[index] = notes::place(base, mine, changed);
-            for (const Note& note : changed) resized.push_back({index, note});
+            for (size_t i = 0; i < changed.size(); ++i) {
+                resized.push_back({index, changed[i]});
+                if (resized_ && index == grabbed_.clip && mine[i] == grabbed_.note) resized_(changed[i].length);
+            }
         }
-        roll->commitNotes(changes, QStringLiteral("Resize Notes"), key, resized);
+        roll->commitNotes(changes, text_, key, resized);
     }
 
 private:
@@ -132,6 +142,8 @@ private:
     std::map<int, std::vector<Note>> mine_;  // each clip's resized notes
     std::map<int, std::vector<Note>> base_;
     double originBeat_;
+    QString text_;
+    std::function<void(double)> resized_;
 };
 
 // Rubber band: selects the notes it touches (added to the selection with
@@ -489,10 +501,17 @@ void NoteGrid::mouseDoubleClickEvent(QMouseEvent* event) {
     Note note;
     note.pitch = roll->pitchAt(pos.y());
     note.start = std::max(0.0, beat - roll->shift(index));
-    note.length = step;
+    note.length = lastLength_.value_or(step);
     roll->setToolsWanted(false);
-    roll->commitNotes({{index, notes::place(clip->notes, {}, {note})}}, QStringLiteral("Add Note"), {},
-                      std::vector<ClipNote>{{index, note}});
+    // Held, the drag draws its length (as one undo step with the add); the length is remembered for the next one.
+    const ClipNote added{index, note};
+    auto gesture = std::make_unique<ResizeNotesGesture>(this, pos, added, std::vector<ClipNote>{added},
+                                                        notes::Edge::End, QStringLiteral("Add Note"),
+                                                        [this](double length) { lastLength_ = length; });
+    roll->commitNotes({{index, notes::place(clip->notes, {}, {note})}}, QStringLiteral("Add Note"), gesture->key,
+                      std::vector<ClipNote>{added});
+    lastLength_ = note.length;
+    gesture_ = std::move(gesture);
     roll->audition(note.pitch, note.velocity, index);
 }
 

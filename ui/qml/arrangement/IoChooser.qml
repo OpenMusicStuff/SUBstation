@@ -22,7 +22,6 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 2
         color: chooser.empty ? "transparent" : (area.containsMouse ? Theme.surfaceHover : Theme.surface)
         border.color: chooser.empty ? Theme.surface : Theme.border
     }
