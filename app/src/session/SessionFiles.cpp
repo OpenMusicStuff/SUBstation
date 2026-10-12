@@ -13,6 +13,7 @@
 
 #include "audio/EngineBridge.h"
 #include "browser/PathKeys.h"
+#include "editor/AgentHistory.h"
 #include "files/FileManager.h"
 #include "io/LiveImport.h"
 #include "io/LiveSet.h"
@@ -49,6 +50,7 @@ void Session::resetSession(const QString& untitledName) {
     bridge_->stop();
     undoStack_->clear();
     undoStack_->setClean();
+    agents_->clear();
     playStart_ = 0.0;
     selection_->clear();
     selection_->selectTrack(QString());
@@ -158,6 +160,7 @@ bool Session::saveTo(const QString& path) {
         return false;
     }
     undoStack_->setClean();
+    agents_->setClean();
     setLastFolder(QFileInfo(path).absolutePath());
     addRecent(path);
     Q_EMIT titleChanged();

@@ -8,6 +8,7 @@
 #include "browser/BrowserController.h"
 #include "browser/ItemListModel.h"
 #include "browser/SidebarModel.h"
+#include "editor/AgentHistory.h"
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
@@ -61,6 +62,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<TrackLabels>("TrackLabels");
     registerUncreatable<TrackSearch>("TrackSearch");
     registerUncreatable<McpServer>("McpServer");
+    registerUncreatable<AgentHistory>("AgentHistory");
     registerUncreatable<PluginListModel>("PluginListModel");
     registerUncreatable<PluginFolderModel>("PluginFolderModel");
     registerUncreatable<ArrangementActions>("ArrangementActions");
