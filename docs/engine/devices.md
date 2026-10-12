@@ -51,6 +51,8 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Eq.cpp](../../engine/src/builtin/devices/Eq.cpp) | EQ: 24 bands, placement, output gain, gain scale |
 | [builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h) | The EQ's filter design (`eq::design`, `eq::responseDb`), shared with the application layer's `eqResponseDb()` for the editor's curves; `eq::Biquad::tick` (a sample through a section, transposed direct form II: the EQ's and the Sidechain's crossover) |
 | [builtin/devices/Sidechain.cpp](../../engine/src/builtin/devices/Sidechain.cpp) | Sidechain: a curve from each hit in the key (or on the beat), lookahead, lows only |
+| [builtin/devices/Transient.cpp](../../engine/src/builtin/devices/Transient.cpp) | Transient Shaper: onsets and tails turned up or down by followers on the input's envelope, Threshold, Output, Dry/Wet, Clip, lookahead, displays |
+| [builtin/TransientDesign.h](../../engine/src/builtin/TransientDesign.h) | The Transient Shaper's maths (`transient::Hilbert`, the envelope; `Detector`, its three followers; `weight`, the threshold's fade; `gain`, the gain law; `softClip`; `lookaheadSamples`; the hit its editor draws, `hitEnvelope` and `hitResponse`), shared with the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) for the editor |
 | [Rack.h](../../engine/src/Rack.h) | `RackProcessor`: a rack's place in a chain (its chains are run by the renderer) |
 | [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) | `SmoothedValue`, `SpscQueue`, `DisplayStream`, `dbToGain`, `gainToDb`, `expDbToGain`, `onePoleCoefficient`, `balanceGains` |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addBuiltinProcessor()`, and the processor calls the engine bridge makes (`setProcessorParam`, `processorState`, `setProcessorState`, `processorDisplays`, `readProcessorDisplay`, ...) |
@@ -1967,6 +1969,56 @@ Ducks its input along a curve from each hit: for a bass under a kick.
   editor finds the hits (the phase's 0s) and fits the curve to the kick
   ([app/src/analysis/SidechainFit.h](../../app/src/analysis/SidechainFit.h)).
 
+### Transient Shaper (`builtin:transient`, AudioEffect)
+
+Turns a sound's onsets (Attack) and its tails (Sustain) up or down, whatever its level, by following its envelope
+([TransientDesign.h](../../engine/src/builtin/TransientDesign.h)).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `attack` | Attack | % | -100..100 | 0 |
+| `sustain` | Sustain | % | -100..100 | 0 |
+| `attack_time` | Attack Time | ms | 1..100, log | 20 |
+| `release` | Release | ms | 20..2000, log | 300 |
+| `threshold` | Threshold | dB | -80..0 | -60 |
+| `output` | Output | dB | -24..24 | 0 |
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+| `clip` | Clip | | Off, On | Off |
+| `lookahead` | Lookahead | | 0 ms, 1 ms, 5 ms (not automatable: it is the latency) | 0 ms |
+
+- **The envelope** is the magnitude of the input's analytic signal, each channel's (`transient::Hilbert`: two chains
+  of four second-order all-passes 90° apart, Olli Niemitalo's design, each coefficient squared), the louder
+  channel's for both (linked stereo). On a steady tone from 40 Hz to 20 kHz (at 48 kHz) it holds within 0.06 dB,
+  where a rectified tone falls to zero twice a cycle: a bass note doesn't make the gain chatter.
+- **Three followers** ride on it (`Detector`, `dsp::EnvelopeFollower`s): *fast* (rising over 0.15 ms, falling over
+  20 ms), *slow* (rising over Attack Time, falling as the fast one) and *held* (rising as the fast one, falling over
+  Release). Fast over slow, in dB, is the transient (≥ 0: only while the level rises); held over fast the sustain
+  (≥ 0: only while it falls faster than Release).
+- **The gain** in dB is Attack / 100 times the transient plus Sustain / 100 times the sustain, times the
+  threshold's weight (an S-curve from 0, 12 dB under the threshold, to 1 at it, by the held level), held to
+  -30..+24 dB (`gain`, which scales the two parts together so they still add up to it). So Attack +100 % doubles an
+  onset's rise in dB and -100 % slows it to Attack Time's; Sustain +100 % lets a tail fall only as fast as Release,
+  -100 % twice as fast as it does.
+- **The output** is `(dry + mix (dry · gain - dry)) · output`, then with Clip a smooth bend above -6 dBFS towards
+  full scale (`softClip`: a tanh, the line's slope at its knee; not oversampled). At its defaults the device passes
+  its input bit for bit.
+- **Lookahead** delays the audio (0, 1 or 5 ms) while the detector hears it as it comes, so the gain moves that much
+  before an onset reaches the output; it is the latency (`idle()` reports a change), and a change crossfades from the
+  old delay to the new over 10 ms (one during a crossfade starts when it is done).
+- **Nothing jumps**: Attack, Sustain, Threshold, Output and Dry/Wet ramp over 20 ms, Clip fades over 10 ms; the
+  times only change how fast the followers move. Automation is sample-accurate (the output is the same, bit for bit,
+  whatever the block size).
+- **Displays**, one value per 128 samples, pushed together: `input` and `output` (dB, the envelope's most over the
+  stretch: smooth on a low tone, where sample peaks would beat against its cycles; `input` as it reaches the gain,
+  after the lookahead, `output` that times the gain, Clip bending it), `attack` and `sustain` (dB, the gain's parts, the one furthest from 0 of each stretch)
+  and `detect` (dB, the transient after the threshold's weight, the most of each stretch: what the editor's sparks and
+  playheads go off on).
+- **The editor's hit**: `hitResponse()` runs `hitEnvelope()` (1 ms up to -6 dBFS, then 60 dB down over 450 ms)
+  through the same `Detector` and `gain` at 24 kHz, so the hit drawn is shaped as the device shapes one (the
+  application layer's `transientHit()` wraps it).
+- Its envelopes, followers and gain on two channels took about 0.5 % of one core at 48 kHz on the machine it was
+  written on.
+
 ### Racks
 
 A rack is a `RackProcessor` ([Rack.h](../../engine/src/Rack.h), `typeId()` `"rack"`): only its place in a chain, its
@@ -1997,7 +2049,8 @@ readonly property var editors: ({
     "sampler": "SamplerEditor.qml",
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
-    "spectral": "SpectralEditor.qml"
+    "spectral": "SpectralEditor.qml",
+    "transient": "TransientEditor.qml"
 })
 ```
 
@@ -2007,7 +2060,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are sixteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
+- Today there are seventeen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
   48 kHz) and In/Out meters with the threshold marked; the Gate the last 2.5 s of `input`, `output`, `key` and `open`
   with its threshold and Return lines to drag, and in its sidechain section the key EQ's curve (from `gate::keyFilter`,
   the engine's own biquad); the Limiter the level over the last 1.5 s with the gain reduction hanging from the top,
@@ -2028,7 +2081,10 @@ readonly property var editors: ({
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
   particles Spin swings (`early`, `spin`), and its decay time per frequency (from `reverb::decaySeconds`) over the
   tail's spectrum (`tail`, `diffuse`), each with handles to drag; the Disperser its group delay in ms on a fixed log
-  axis (from `disperser::groupDelayMs`, the engine's own stages); the EQ its bands' curves (from `eq::responseDb`)
+  axis (from `disperser::groupDelayMs`, the engine's own stages); the Transient Shaper a hit before and after its
+  shaping (from `transient::hitResponse`, the engine's own detector and gain) with handles for Attack, Sustain and
+  their times and a playhead along it at each transient (`detect`), and the last 2 s of `input` and `output` glowing
+  where `attack` and `sustain` shaped them, the gain in a lane under them, sparks at each transient; the EQ its bands' curves (from `eq::responseDb`)
   over an analyzer of `input` and `output`; the Sidechain its curve, its
   playhead from `phase` and its fit to the kick (`key`, against `input`); the Sampler the sample's waveform as it plays
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and
@@ -2311,6 +2367,15 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   6th-difference measure, against an unfaded switch); automation through the engine, to the sample;
   reset and a new rate; silence ringing out to exact zeros; the tail; no latency (the other tracks not
   delayed, the dispersion where it should be).
+- [test_transient_engine.cpp](../../tests/engine/test_transient_engine.cpp): its listing; its input bit for bit at
+  its defaults (whatever the block size); its envelope within 0.1 dB on a tone from 40 Hz to 20 kHz; Attack turning
+  onsets up and down and Sustain tails, each leaving what is steady alone (Attack Time and Release mattering as they
+  should); the gain within its range; what is under the threshold untouched; Output, Dry/Wet (to the sample) and Clip
+  (never over full scale, untouched under its knee); lookahead as latency, the gain applied exactly that much early;
+  every control changing without a click (a 6th-difference measure, against the same settings unchanged); automation
+  the same bit for bit whatever the block size; reset and a new rate; NaN and infinity as silence, the extremes at 8
+  to 192 kHz; ringing out to exact zeros; one channel; the displays; the hit the editor draws, shaped as the device
+  shapes one.
 - [test_eq_engine.cpp](../../tests/engine/test_eq_engine.cpp): each band type plays as `eq::responseDb` draws it,
   matching the analog filters, placement (left, mid, side), output gain and gain scale, extremes, the displays.
 - [test_sidechain_device_engine.cpp](../../tests/engine/test_sidechain_device_engine.cpp): hits to the sample, the
