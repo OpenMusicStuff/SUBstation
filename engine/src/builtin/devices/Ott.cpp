@@ -1,10 +1,19 @@
 // Built-in "Over The Top" device: multiband upward + downward compression, the
 // sound of every drop since 2014. Three bands split by Linkwitz-Riley
 // crossovers; each band is squashed hard from above and pulled up hard from
-// below, then made up. One knob (Soundgoodize) blends the processed bands in.
+// below, then made up. One knob (Soundgoodize) scales every band's gain in dB,
+// as Live's Amount scales its OTT preset's: 50 % is half the dB, not half the
+// processed signal.
 //
-// The dry signal is the bands summed unprocessed (an allpass of the input), so
-// in-between settings don't comb-filter against the crossover's phase shift.
+// The numbers are fitted to renders of Live's OTT preset (drums, a growl, a
+// piano at Amount 25, 50 and 100 %): Live's ratios and nearly its thresholds,
+// but far quicker detectors than its panel's times suggest. Its exports were
+// peak-normalized, which hides the overall level, so the make-ups average the
+// preset's band outputs (10.3, 5.7, 10.3 dB).
+//
+// At 0 % every band's gain is 0 dB: the bands summed unprocessed (an allpass
+// of the input), so in-between settings don't comb-filter against the
+// crossover's phase shift.
 
 #include <array>
 #include <atomic>
@@ -13,6 +22,7 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/Dsp.h"
+#include "builtin/MultibandDesign.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -80,8 +90,7 @@ protected:
             for (int b = 0; b < kBands; ++b) {
                 const float coeff = peak[b] > env_[b] ? attack_[b] : release_[b];
                 env_[b] = peak[b] + coeff * (env_[b] - peak[b]);
-                const float gain = bandGain(b, env_[b]);
-                mix[b] = 1.f + depth * (gain - 1.f);
+                mix[b] = expDbToGain(depth * bandGainDb(b, env_[b]));
             }
             for (int c = 0; c < n; ++c) {
                 float sum = 0.f;
@@ -95,19 +104,18 @@ private:
     static constexpr int kBands = 3;
     static constexpr float kLowCrossover = 88.3f;   // Hz
     static constexpr float kHighCrossover = 2500.f;
-    static constexpr float kDownRatio = 66.f;       // effectively a limiter above the threshold
-    static constexpr float kUpRatio = 4.17f;        // and 1:4 below the other one
-    static constexpr float kMaxUpwardDb = 30.f;     // how far the quiet stuff may be dragged up
-    static constexpr float kFloorDb = -90.f;        // below this, leave silence silent
-    static constexpr float kMakeupDb = 6.f;         // on top of the bands' own: a squashed mix lands near -16 dB RMS
+    static constexpr float kDownRatio = 66.7f;  // Live's Above: effectively a limiter
+    static constexpr float kUpRatio = 4.17f;    // and its Below, 1:4.17 upwards
 
+    // Fitted to Live's renders (see the top). The attacks catch a transient
+    // within a millisecond, so it isn't let through with the quiet sound's lift.
     struct BandSettings {
         float downThresholdDb, upThresholdDb, makeupDb, attackMs, releaseMs;
     };
     static constexpr std::array<BandSettings, kBands> kBands_ = {{
-        {-33.8f, -40.8f, 10.3f, 47.8f, 282.f},  // low
-        {-30.2f, -41.8f, 5.7f, 22.4f, 282.f},   // mid
-        {-35.5f, -40.8f, 10.3f, 13.5f, 132.f},  // high
+        {-36.1f, -42.0f, 12.7f, 0.77f, 84.f},  // low
+        {-29.1f, -41.8f, 5.4f, 0.66f, 59.f},   // mid (the renders hold little this quiet: Live's Below)
+        {-33.4f, -36.1f, 8.3f, 0.55f, 25.f},   // high
     }};
 
     // A Butterworth (k = sqrt 2) state-variable filter section at a crossover.
@@ -145,19 +153,14 @@ private:
         return static_cast<float>(onePoleCoefficient(ms * 0.001, sampleRate));
     }
 
-    // The band's linear gain for its envelope: down above one threshold, up
-    // below the other, then the make-up.
-    static float bandGain(int band, float envelope) noexcept {
+    // The band's gain (dB) for its envelope: down above one threshold, up below
+    // the other (Multiband Dynamics' law: at most 30 dB up, faded out towards
+    // silence), then the make-up.
+    static float bandGainDb(int band, float envelope) noexcept {
         const BandSettings& s = kBands_[band];
         const float level = gainToDb(envelope);
-        float db = 0.f;
-        if (level > s.downThresholdDb) {
-            db = (s.downThresholdDb - level) * (1.f - 1.f / kDownRatio);
-        } else if (level < s.upThresholdDb) {
-            db = std::min((s.upThresholdDb - level) * (1.f - 1.f / kUpRatio), kMaxUpwardDb);
-            db *= std::clamp((level - kFloorDb) / 20.f, 0.f, 1.f);  // fade out towards silence
-        }
-        return expDbToGain(db + s.makeupDb + kMakeupDb);
+        return multiband::aboveGainDb(level, s.downThresholdDb, multiband::slope(kDownRatio), 0.f) +
+               multiband::belowGainDb(level, s.upThresholdDb, multiband::slope(kUpRatio), 0.f) + s.makeupDb;
     }
 
     static const std::vector<ParamInfo>& infos() {

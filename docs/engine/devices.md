@@ -424,17 +424,27 @@ phase, see below).
   filters in a row. The low band also goes through an all-pass equal to the upper crossover's LP + HP sum, so every
   band has the same phase shift. The dry signal is the bands summed unprocessed, so in-between settings don't
   comb-filter against the crossover's phase shift.
-- Each band's envelope is followed on the louder channel (linked stereo) with its own attack and release. Above its
-  downward threshold it is squashed at 66:1 (effectively a limiter); below its upward threshold it is pulled up at
-  1:4.17, by at most 30 dB, fading out towards -90 dB so silence stays silent. Then each band's make-up plus 6 dB.
+- Each band's envelope is followed on the louder channel (linked stereo) with its own attack and release (one-poles
+  on the peak level). Above its downward threshold it is squashed at 66.7:1 (effectively a limiter); below its upward
+  threshold it is pulled up at 1:4.17, Multiband Dynamics' law (`multiband::aboveGainDb`, `belowGainDb`: at most
+  30 dB up, faded out between -72 and -96 dB so silence stays silent). Then each band's make-up.
 
 | Band | Down threshold | Up threshold | Make-up | Attack | Release |
 |---|---|---|---|---|---|
-| Low | -33.8 dB | -40.8 dB | 10.3 dB | 47.8 ms | 282 ms |
-| Mid | -30.2 dB | -41.8 dB | 5.7 dB | 22.4 ms | 282 ms |
-| High | -35.5 dB | -40.8 dB | 10.3 dB | 13.5 ms | 132 ms |
+| Low | -36.1 dB | -42.0 dB | 12.7 dB | 0.77 ms | 84 ms |
+| Mid | -29.1 dB | -41.8 dB | 5.4 dB | 0.66 ms | 59 ms |
+| High | -33.4 dB | -36.1 dB | 8.3 dB | 0.55 ms | 25 ms |
 
-- Depth blends each band's gain from 1 to its computed gain; the output trim applies last.
+- Depth scales each band's whole gain in dB (its make-up too), as Live's Amount does: 50 % is half the change in dB,
+  not half the processed signal, and 0 % is 0 dB. The output trim applies last.
+- The settings are fitted to renders of Live's OTT preset (Multiband Dynamics) on drums, a dubstep growl and a piano
+  at Amount 25, 50 and 100 %: each band's level, 10 ms at a time, is within 0.7 dB of Live's on average (the earlier
+  settings, the preset's panel values with slow detectors and a linear blend, were 2.8 dB off). Live's ratios fit
+  as well as free ones and its thresholds land within a few dB of the panel's, but its detectors react far quicker
+  than the panel's attack and release suggest: with them, a transient after a quiet stretch came through with the
+  quiet stretch's lift. The renders were peak-normalized on export, which hides the overall level, so the make-ups
+  are placed to average the preset's band outputs (10.3, 5.7 and 10.3 dB); the renders hold too little quiet mid to
+  place its upward threshold, so it is the preset's. Loud material comes out quieter than it went in, as Live's does.
 
 ### Compressor (`builtin:compressor`, AudioEffect, sidechain)
 
