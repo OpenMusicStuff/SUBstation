@@ -44,6 +44,7 @@
 #include "builtin/DisperserDesign.h"
 #include "builtin/Dsp.h"
 #include "builtin/DspBlocks.h"
+#include "rt/FastMath.h"
 
 namespace sub {
 namespace {
@@ -218,7 +219,7 @@ private:
     double targetWet() const noexcept { return std::clamp(param(Mix), 0.f, 100.f) / 100.0; }
     double targetBypass() const noexcept { return isOn(Bypass) ? 0.0 : 1.0; }
     disperser::Stage designNow() const noexcept {
-        return disperser::design(std::exp(freq_.value), std::exp(pinch_.value), sampleRate_);
+        return disperser::design(fastmath::exp(freq_.value), fastmath::exp(pinch_.value), sampleRate_);
     }
 
     static const std::vector<ParamInfo>& infos() {

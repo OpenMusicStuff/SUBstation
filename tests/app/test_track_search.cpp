@@ -65,10 +65,10 @@ private Q_SLOTS:
 
     void namesFirstThenLabelsThenWhatTheyAreMadeOf() {
         EditorFixture f;
-        const QString pad = f.editor.addMidiTrack(-1, QStringLiteral("Pad"));
+        const QString pad = f.editor.addMidiTrack(-1, QStringLiteral("Pad"), QStringLiteral("synth"));
         const QString bbc = orchestra(f, QStringLiteral("BBC SO"), "Core - Horns");
         const QString thorn = f.editor.addAudioTrack(-1, QStringLiteral("Thorn"));
-        const QString horn = f.editor.addMidiTrack(-1, QStringLiteral("Horn Stab"));
+        const QString horn = f.editor.addMidiTrack(-1, QStringLiteral("Horn Stab"), QStringLiteral("synth"));
         TrackLabels labels(&f.project, nullptr, nullptr);
         QVERIFY2(labels.toolTip(bbc).contains(QStringLiteral("Core - Horns")), qPrintable(labels.toolTip(bbc)));
 
@@ -88,7 +88,7 @@ private Q_SLOTS:
         QVERIFY(TrackSearch::find(f.project, labels, QString()).isEmpty());
 
         // Within each rank, the arrangement's order: its tracks, in groups too, then the returns, the master.
-        const QString horn2 = f.editor.addMidiTrack(0, QStringLiteral("Horn 2"));
+        const QString horn2 = f.editor.addMidiTrack(0, QStringLiteral("Horn 2"), QStringLiteral("synth"));
         const QString group = f.editor.groupTracks({horn2});
         f.editor.setFolded(group, true);
         const QString ret = f.editor.addReturnTrack();
@@ -106,7 +106,7 @@ private Q_SLOTS:
         EditorFixture f;
         const QString bbc = orchestra(f, QStringLiteral("BBC SO"), "Core - Horns");
         const QString thorn = f.editor.addAudioTrack(-1, QStringLiteral("Thorn"));
-        const QString horn = f.editor.addMidiTrack(-1, QStringLiteral("Horn Stab"));
+        const QString horn = f.editor.addMidiTrack(-1, QStringLiteral("Horn Stab"), QStringLiteral("synth"));
         TrackLabels labels(&f.project, nullptr, nullptr);
         TrackSearch search(&f.project, &labels);
         QSignalSpy changed(&search, &TrackSearch::changed);
@@ -145,9 +145,9 @@ private Q_SLOTS:
     // there is the one overlapping it most (the earliest of equals).
     void theClipInTheArea() {
         EditorFixture f;
-        const QString lead = f.editor.addMidiTrack(-1, QStringLiteral("Lead"));
-        const QString bass = f.editor.addMidiTrack(-1, QStringLiteral("Bass"));
-        const QString pad = f.editor.addMidiTrack(-1, QStringLiteral("Pad"));
+        const QString lead = f.editor.addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
+        const QString bass = f.editor.addMidiTrack(-1, QStringLiteral("Bass"), QStringLiteral("synth"));
+        const QString pad = f.editor.addMidiTrack(-1, QStringLiteral("Pad"), QStringLiteral("synth"));
         const auto open = f.editor.addMidiClip(lead, 8, 8);    // beats 8 to 16
         const auto early = f.editor.addMidiClip(bass, 0, 4);
         const auto little = f.editor.addMidiClip(bass, 6, 3);  // 2 beats in the area

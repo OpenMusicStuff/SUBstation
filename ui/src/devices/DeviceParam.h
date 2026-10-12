@@ -138,6 +138,7 @@ private:
     QString deviceId_;
     QString paramId_;
     std::optional<sub::app::ProcessorParam> spec_;
+    int specIndex_ = -1;  // its index in the processor's parameters
     double value_ = 0.0;
     QString automation_;
     QList<QMetaObject::Connection> connections_;

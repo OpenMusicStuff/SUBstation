@@ -1,0 +1,62 @@
+{
+  "plugin": "Vital 1.5.5",
+  "seconds": 10.0,
+  "block": 256,
+  "rate": 48000.0,
+  "results": [
+    {
+      "scenario": "silence (no notes)",
+      "notes": 0,
+      "builtin_load_percent": 0.03369299999999913,
+      "vst3_load_percent": 0.23022100000000006
+    },
+    {
+      "scenario": "1 note",
+      "notes": 1,
+      "builtin_load_percent": 0.4857359999999982,
+      "vst3_load_percent": 0.534572999999998
+    },
+    {
+      "scenario": "4-note chord",
+      "notes": 4,
+      "builtin_load_percent": 0.7330970000000038,
+      "vst3_load_percent": 0.8389530000000024
+    },
+    {
+      "scenario": "8-note chord",
+      "notes": 8,
+      "builtin_load_percent": 1.2685860000000022,
+      "vst3_load_percent": 1.4412920000000011
+    },
+    {
+      "scenario": "8 notes, unison 8 (osc 1)",
+      "notes": 8,
+      "builtin_load_percent": 1.9106390000000186,
+      "vst3_load_percent": 2.154783000000003
+    },
+    {
+      "scenario": "8 notes, unison 16 (osc 1)",
+      "notes": 8,
+      "builtin_load_percent": 2.681969999999982,
+      "vst3_load_percent": 3.1168240000000216
+    },
+    {
+      "scenario": "8 notes, 3 oscs unison 8",
+      "notes": 8,
+      "builtin_load_percent": 4.304587999999983,
+      "vst3_load_percent": 4.941813000000023
+    },
+    {
+      "scenario": "8 notes, oversampling 4x",
+      "notes": 8,
+      "builtin_load_percent": 2.1347480000000156,
+      "vst3_load_percent": 2.556282000000002
+    },
+    {
+      "scenario": "16 notes, poly 16",
+      "notes": 16,
+      "builtin_load_percent": 2.254284999999999,
+      "vst3_load_percent": 2.678585999999992
+    }
+  ]
+}

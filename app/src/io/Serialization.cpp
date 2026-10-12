@@ -1,6 +1,7 @@
 #include "io/Serialization.h"
 
 #include "io/Json.h"
+#include "io/VitalPresets.h"
 #include "model/Automation.h"
 #include "model/Devices.h"
 #include "model/Edits.h"
@@ -1217,6 +1218,7 @@ Device presetDevice(const QJsonValue& data) {
 void savePreset(const Device& device, const QString& path) { writeJson(deviceToPreset(device), path); }
 
 Device loadPreset(const QString& path) {
+    if (isVitalPreset(path)) return loadVitalPreset(path);  // (Vital's own, as a Vital device)
     Device device = presetDevice(parseJson(readFile(path), path));
     if (device.isRack()) device.name = stemOf(path);  // (the preset's name, renamed or not)
     return device;

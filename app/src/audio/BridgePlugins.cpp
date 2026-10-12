@@ -30,6 +30,7 @@ ProcessorParam processorParam(const sub::ParamInfo& info) {
     param.automatable = info.automatable;
     param.readOnly = info.readOnly;
     param.hidden = info.hidden;
+    param.ownText = info.ownText;
     return param;
 }
 

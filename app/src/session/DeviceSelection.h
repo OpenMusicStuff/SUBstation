@@ -200,6 +200,18 @@ public:
     // saves a SUBstation preset). The folder is remembered. Whether it was saved.
     Q_INVOKABLE bool saveVst3Preset(const QString& deviceId, const QString& path);
 
+    // --- Vital's own presets (.vital files: Vital's, and to share patches with it) ---
+    // Where their file dialogs start: where the last one was, else Vital's
+    // presets folder if there is one (Documents/Vital on Windows,
+    // ~/.local/share/vital on Linux), else Documents.
+    Q_INVOKABLE QString vitalPresetFolder() const;
+    // Load Vital Preset…: a .vital file into a Vital device (as loadPresetInto:
+    // one undo step). The folder is remembered. Whether it loaded.
+    Q_INVOKABLE bool loadVitalPreset(const QString& deviceId, const QString& path);
+    // Save Vital Preset…: a Vital device's patch as a .vital file (Vital opens
+    // it). The folder is remembered. Whether it was saved.
+    Q_INVOKABLE bool saveVitalPreset(const QString& deviceId, const QString& path);
+
     // --- Drops on the device view ---
     // Devices of this track's chain dragged to `index` of `chain` ("": its own).
     Q_INVOKABLE bool dropMoved(const QStringList& deviceIds, const QString& chain, int index);

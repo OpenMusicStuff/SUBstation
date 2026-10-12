@@ -108,17 +108,21 @@ void DeviceParam::refresh() {
 
 void DeviceParam::refreshSpec() {
     std::optional<sub::app::ProcessorParam> spec;
+    int index = -1;
     if (session_ && !paramId_.isEmpty() && session_->project()->findDevice(trackId_, deviceId_)) {
-        for (const sub::app::ProcessorParam& param : session_->bridge()->deviceParams(trackId_, deviceId_)) {
-            if (param.id == paramId_) {
-                spec = param;
+        const QList<sub::app::ProcessorParam> params = session_->bridge()->deviceParams(trackId_, deviceId_);
+        for (qsizetype i = 0; i < params.size(); ++i) {
+            if (params[i].id == paramId_) {
+                spec = params[i];
+                index = static_cast<int>(i);
                 break;
             }
         }
     }
-    if (spec == spec_)
+    if (spec == spec_ && index == specIndex_)
         return;
     spec_ = spec;
+    specIndex_ = index;
     Q_EMIT specChanged();
     Q_EMIT valueChanged();  // (its text, in its units)
 }
@@ -175,6 +179,8 @@ QString DeviceParam::format(double value) const {
     const QStringList names = labels();
     if (!names.isEmpty())
         return names.at(std::clamp(static_cast<int>(std::nearbyint(value)), 0, int(names.size()) - 1));
+    if (spec_ && spec_->ownText && session_)  // (Vital's: as the device shows it)
+        return session_->bridge()->deviceParamText(trackId_, deviceId_, specIndex_, value);
     return sub::app::formatValue(value, unit());
 }
 

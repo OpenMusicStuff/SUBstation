@@ -199,7 +199,7 @@ private Q_SLOTS:
         QVERIFY(button(keyed)->property("checked").toBool());
 
         // A MIDI track's own audio is its instrument's: Pre FX is after it, so it isn't listed.
-        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         choose(keyed, QStringLiteral("Keys"));
         entries = openMenu(keyed);
         QCOMPARE(entries.mid(entries.size() - 3), (QStringList{"Pre FX", "Post FX", "Post Mixer"}));

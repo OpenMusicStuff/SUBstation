@@ -44,18 +44,29 @@ class TestEditorMidi : public QObject {
 private Q_SLOTS:
     void initTestCase() { test::prepareApplication(); }
 
-    void midiTracksComeWithTheSynth() {
+    void midiTracksComeEmpty() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString empty = f.editor.addMidiTrack();  // (the UI's Insert MIDI Track: no default instrument)
+        QCOMPARE(f.track(empty).kind, QStringLiteral("midi"));
+        QVERIFY(f.track(empty).devices.empty());
+        QCOMPARE(f.track(empty).name, QStringLiteral("1 MIDI"));
+        f.stack.undo();
+        QVERIFY(!f.project.hasTrack(empty));
+    }
+
+    void midiTracksTakeAnInstrument() {
+        EditorFixture f;
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         QCOMPARE(f.track(track).kind, QStringLiteral("midi"));
         QCOMPARE(f.track(track).name, QStringLiteral("1 Synth"));  // (named by its instrument)
         QCOMPARE(kinds(f.track(track).devices), QStringList{"synth"});
         const QString utility = f.editor.addDevice(track, "utility");
         QCOMPARE(f.project.device(track, utility).kind, QStringLiteral("utility"));
-        QVERIFY(!f.editor.addDevice(track, "synth").isEmpty());  // replaces the instrument, stays first
-        QCOMPARE(kinds(f.track(track).devices), (QStringList{"synth", "utility"}));
+        QVERIFY(!f.editor.addDevice(track, "vital").isEmpty());  // replaces the instrument, stays first
+        QCOMPARE(kinds(f.track(track).devices), (QStringList{"vital", "utility"}));
+        QCOMPARE(f.track(track).name, QStringLiteral("1 Vital"));
         const QString audio = f.editor.addAudioTrack();
-        QVERIFY(f.editor.addDevice(audio, "synth").isEmpty());  // instruments need a MIDI track
+        QVERIFY(f.editor.addDevice(audio, "vital").isEmpty());  // instruments need a MIDI track
         f.stack.undo();
         f.stack.undo();
         QCOMPARE(kinds(f.track(track).devices), (QStringList{"synth", "utility"}));
@@ -63,7 +74,7 @@ private Q_SLOTS:
 
     void moveDeviceGoesToItsNewPosition() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString synth = f.track(track).devices[0].id;
         const QString a = f.editor.addDevice(track, "utility");
         const QString b = f.editor.addDevice(track, "utility");
@@ -84,7 +95,7 @@ private Q_SLOTS:
 
     void midiClipsAndNoteEditsAreUndoable() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = f.editor.addMidiClip(track, 4.0, 4.0);
         QVERIFY(ref);
         QCOMPARE(f.project.clip(ref->trackId, ref->clipId).name, QString());  // (MIDI clips have no name)
@@ -100,7 +111,7 @@ private Q_SLOTS:
     void clipsOnlyMoveOntoTracksOfTheirKind() {
         EditorFixture f;
         const QString audio1 = f.editor.addAudioTrack();
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString audio2 = f.editor.addAudioTrack();
         const ClipRefs ref = f.editor.addClips(audio1, 0.0, {{"a.wav", 1.0}});
         QCOMPARE(f.editor.clampTrackDelta(ref, 1), 0);  // the MIDI track in between: stay
@@ -119,7 +130,7 @@ private Q_SLOTS:
 
     void midiTracksHearEveryInputAndCanBeArmed() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         QVERIFY(f.track(track).midiInput == MidiInput{});
         QVERIFY(f.track(track).hasInput());
         f.editor.armTracks({track}, true);
@@ -139,7 +150,7 @@ private Q_SLOTS:
 
     void aRecordedMidiTakeBecomesAClip() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto old = f.editor.addMidiClip(track, 0.0, 16.0);
         f.editor.setClipNotes(*old, {Note{C, 5.0, 1.0}}, "Add Note");
         const QString audio = f.editor.addAudioTrack();
@@ -176,7 +187,7 @@ private Q_SLOTS:
 
     void recordQuantization() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const RecordedTake take = midiTake(track, 1.1, 3.0, {{1.1, 1.3, C, 100}, {1.6, 2.2, E, 100}, {3.95, 4.05, G, 100}});
         ClipRefs refs = f.editor.addRecordings({take}, 0.5);
         Clip clip = f.project.clip(refs[0].trackId, refs[0].clipId);
@@ -201,7 +212,7 @@ private Q_SLOTS:
 
     void midiClipSpansAndClipsOverARange() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString audio = f.editor.addAudioTrack();
         f.editor.addMidiClip(track, 0.0, 2.0);
         f.editor.addMidiClip(track, 6.0, 4.0);
@@ -218,7 +229,7 @@ private Q_SLOTS:
 
     void consolidatingJoinsMidiClipsOnEachTrack() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto a = f.editor.addMidiClip(track, 0.0, 2.0);
         const auto b = f.editor.addMidiClip(track, 4.0, 2.0);
         f.editor.setClipNotes(*a, {Note{C, 0.5, 1.0}}, "Add Note");

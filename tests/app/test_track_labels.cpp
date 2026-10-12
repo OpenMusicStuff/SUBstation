@@ -72,7 +72,7 @@ private Q_SLOTS:
     void whatTheLabellerIsTold() {
         EditorFixture f;
         // A MIDI track (the built-in Synth) through a Delay, its notes in a clip at beat 4; a send to a return.
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString delay = f.editor.addDevice(midi, QStringLiteral("delay"));
         f.editor.setDeviceParam(midi, delay, QStringLiteral("mix"), 40.0);
         const auto clip = f.editor.addMidiClip(midi, 4, 4);
@@ -128,7 +128,7 @@ private Q_SLOTS:
 
     void whoNamedATrack() {
         EditorFixture f;
-        const QString midi = f.editor.addMidiTrack();  // "# Synth": named by its instrument
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));  // "# Synth": named by its instrument
         const auto named = [&](const QString& id) { return TrackLabels::namedByUser(f.project.track(id)); };
         QVERIFY(!named(midi));
         f.editor.renameTrack(midi, QStringLiteral("vocals"));
@@ -186,7 +186,7 @@ private Q_SLOTS:
         EditorFixture f;
         TrackLabels trackLabels(&f.project, nullptr, nullptr);
         QSignalSpy changed(&trackLabels, &TrackLabels::changed);
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.editor.renameTrack(midi, QStringLiteral("piano"));
         f.editor.setTrackParam(midi, TrackField::VolumeDb, -3.0);
         QCOMPARE(changed.count(), 0);  // not yet: once, when the edits settle

@@ -249,7 +249,9 @@ Clicking a chain (`clickChain`) shows its rack's devices again.
   preset of that name), `saveAsDefault`, `clearDefault`, `hasDefault`, `insertPreset`, `loadPresetInto`,
   `presetLoadsInto`, `loadPresetFile` (*Load Preset…*, starting in `presetFolder()`). A plug-in's own `.vstpreset`
   files are loaded (`loadVst3Preset`: an undoable `SetDeviceStateCommand`) and saved here too, starting in
-  `vst3PresetFolder()`. The folders last used are remembered ([Settings](#settings)).
+  `vst3PresetFolder()`. A Vital's own `.vital` presets load (`loadVitalPreset`: as `loadPresetInto`) and save
+  (`saveVitalPreset`) here, starting in `vitalPresetFolder()`. The folders last used are remembered
+  ([Settings](#settings)).
 - **Drops**: `dropMoved(ids, chain, index)`, `dropDevices(kinds, plugins, chain, index)`,
   `dropPresets(paths, chain, index, intoDeviceId)` (onto a device of the preset's kind: loaded into it), `dragEnded()`.
 - Texts the view shows: `kEffectsHint`, `kInstrumentHint`, `kInstrumentRefused`.
@@ -395,6 +397,7 @@ parts keep these QSettings keys:
 | `files/last_dir` | where the file dialogs start (default `~/Music`) | `Session::kLastFolderKey` |
 | `transport/count_in_bars` | the count-in (0, 1, 2 or 4 bars) | `Session::kCountInKey` |
 | `presets/dir` | where *Load Preset…* last loaded a preset file from (default: the library) | `DeviceSelection::presetFolder` |
+| `vital/preset_dir` | where a Vital preset (`.vital`) was last loaded from or saved to (default: Vital's presets folder, `Documents/Vital` or `~/.local/share/vital`, if it exists) | `DeviceSelection::vitalPresetFolder` |
 | `plugins/preset_dir` | where a plug-in's own `.vstpreset` was last loaded from or saved to (default: `Documents/VST3 Presets/<vendor>/<plug-in>`, if it exists) | `DeviceSelection::vst3PresetFolder` |
 
 ## Gotchas

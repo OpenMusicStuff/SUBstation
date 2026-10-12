@@ -50,7 +50,9 @@ is in [app/model.md](../app/model.md); overrides are the engine bridge's ([below
 
 `ParamInfo` ([Processor.h](../../engine/src/Processor.h)) describes one parameter of any processor: `id`, `name`,
 `unit`, `minValue`, `maxValue`, `defaultValue`, `logScale`, `valueLabels`, `steps`, `automatable`, `readOnly`,
-`hidden`. Values are *plain*, in the parameter's own units, from `minValue` to `maxValue`.
+`hidden`, `ownText`. Values are *plain*, in the parameter's own units, from `minValue` to `maxValue`. `ownText`: the
+processor shows its values itself (`paramText()`), not the UI by `unit` (the built-in Vital's: Vital's own texts); the
+device view's knobs and the automation lanes ask it, as they ask a plug-in.
 
 - `stepCount()`: `steps` if set; else, for a list (`valueLabels` not empty), the number of labels minus one; else 0
   (continuous).

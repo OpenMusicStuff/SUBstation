@@ -367,6 +367,11 @@ TEST_CASE("instruments, presets and samples name what plays") {
                                 {"sustain", "Sustain", 0, 0, "%", ""}, {"wave", "Wave", 2, 0, "", ""}},
                                true);
     CHECK_EQ(only(track("1", kMidi, {synth})).label, std::string("Synth Pluck"));
+    // A built-in Vital by its patch's name, as a plug-in by its preset's.
+    DeviceFact vital = builtin("vital", "Vital", {}, true);
+    vital.preset = "BS - Dirty Fat BASS";
+    CHECK_EQ(only(track("1", kMidi, {vital})).label, std::string("Dirty Vital Bass"));
+    CHECK_EQ(only(track("1", kMidi, {vital})).family, std::string("bass"));
     // A rack named by the user says what it holds.
     DeviceFact rack = builtin("rack", "Big Bed Bass");
     rack.chains = {{serum("- Init -")}};

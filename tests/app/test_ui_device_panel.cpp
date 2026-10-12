@@ -136,7 +136,7 @@ private Q_SLOTS:
                  8.0);  // the chain's spacing (a grip in it)
         QCOMPARE(partOf(ids[0], "title")->property("text").toString(), QStringLiteral("Utility"));
         // A MIDI track without an instrument asks for one, after its effects.
-        const QString midi = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString midi = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         editor().removeDevices(midi, chain(midi));
         session().selection()->selectTrack(midi);
         QCOMPARE(hint->property("text").toString(), sub::app::kInstrumentHint);
@@ -191,7 +191,7 @@ private Q_SLOTS:
     }
 
     void devicesWithEditorsOfTheirOwn() {
-        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         session().selection()->selectTrack(track);
         const QString synth = chain(track).front();
         const QString sampler = editor().addDevice(track, QStringLiteral("sampler"));  // (it replaces the synth)
@@ -553,7 +553,7 @@ private Q_SLOTS:
 
     void draggingADeviceStartsAMoveOfTheSelected() {
         QStringList ids;
-        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"));  // with its synth
+        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));  // with its synth
         session().selection()->selectTrack(track);
         for (int i = 0; i < 3; ++i) ids << editor().addDevice(track, QStringLiteral("utility"));
         const QString synth = chain(track).front();

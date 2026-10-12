@@ -24,6 +24,12 @@
 // Controls glide: the damping, the diffusion, the modulation and the taps move
 // over about 30 ms (a step a block, the taps a straight line across it), Size
 // and Predelay glide every delay (read between samples while they move).
+//
+// Silence: once the input has been below -160 dB for longer than it takes to
+// reach the ring, and the ring and the wet have stayed below -120 dB for a
+// whole lap, it sleeps: everything it holds is cleared, the wet is exactly 0
+// and the reverb is skipped (the dry still goes through Dry/Wet) until any
+// sound comes in, which it hears from silence as a reverb just reset would.
 
 #include <algorithm>
 #include <array>
@@ -48,6 +54,8 @@ constexpr double kControlSeconds = 0.03;  // the controls' glide
 constexpr double kLengthSeconds = 0.08;   // Size's and Predelay's glide
 constexpr double kMaxPredelayMs = 500.0;
 constexpr float kLandedSamples = 1e-4f;   // a gliding length lands on its target within this
+constexpr float kAwakeLevel = 1e-8f;      // -160 dB: any input louder wakes it
+constexpr float kSleepLevel = 1e-6f;      // -120 dB: a tail this quiet lets it sleep
 
 // A delay line at the reverb's rate, read before each write. Its length glides
 // to its target (and is read between samples, linearly, while it moves).
@@ -292,8 +300,7 @@ public:
         for (NestedAllpass& ap : allpasses_) ap.clear();
         for (Line& l : plain_) l.clear();
         for (Damping& d : damping_) d.reset();
-        wander_[0].reset(0x2545f491u);
-        wander_[1].reset(0x9e3779b9u);
+        resetWander();
         for (int& p : downPhase_) p = 0;
         hostCount_ = 0;
         outL_ = outR_ = 0.f;
@@ -302,6 +309,8 @@ public:
         displayCount_ = 0;
         peakIn_ = peakOut_ = 0.f;
         tapPeaks_.fill(0.f);
+        sleeping_ = false;
+        inputQuiet_ = quietSamples_ = 0;
         fresh_ = true;
     }
 
@@ -309,10 +318,38 @@ protected:
     void render(const ProcessContext&, float* const* ch, int numChannels, int numFrames) override {
         const int n = std::min(numChannels, 2);
         if (n <= 0) return;
+        // How long the input has been silent; any sound wakes it before it is heard.
+        int lastLoud = -1;
+        for (int c = 0; c < n; ++c) {
+            for (int i = numFrames - 1; i > lastLoud; --i) {
+                if (std::abs(ch[c][i]) > kAwakeLevel) {
+                    lastLoud = i;
+                    break;
+                }
+            }
+        }
+        if (lastLoud >= 0) {
+            inputQuiet_ = numFrames - 1 - lastLoud;
+            if (sleeping_) {
+                sleeping_ = false;
+                fresh_ = true;  // (from silence: every control starts where it is, as after a reset)
+            }
+        } else {
+            inputQuiet_ = std::min<int64_t>(inputQuiet_ + numFrames, int64_t{1} << 40);
+        }
+        if (sleeping_) {
+            renderAsleep(ch, n, numFrames);
+            return;
+        }
         updateControls(numFrames);
+        ringPeak_ = 0.f;
+        float wetPeak = 0.f;
         const vh::FirstOrder highCut = vh::highCut(std::min<double>(param(HighCut), 0.49 * hostRate_), hostRate_);
         const vh::FirstOrder lowCut = vh::lowCut(param(LowCut), hostRate_);
         mix_.setTarget(param(Mix) / 100.f);
+        const bool mixMoving = mix_.isSmoothing();
+        float dryGain = std::cos(0.5f * std::numbers::pi_v<float> * mix_.target());
+        float wetGain = std::sin(0.5f * std::numbers::pi_v<float> * mix_.target());
 
         // The taps' weights glide in a straight line across the block's reverb samples.
         const int reverbSamples = std::max(1, (numFrames + divider_ - 1) / divider_);
@@ -353,12 +390,16 @@ protected:
             if (stages_ > 0) {  // a host sample later, as the original's resampling comes out
                 for (int c = 0; c < 2; ++c) std::swap(wet[c], lastWet_[c]);
             }
+            const float wetNow = std::max(std::abs(static_cast<float>(wet[0])), std::abs(static_cast<float>(wet[1])));
+            wetPeak = std::max(wetPeak, wetNow);
             peakIn_ = std::max({peakIn_, std::abs(static_cast<float>(x[0])), std::abs(static_cast<float>(x[1]))});
-            peakOut_ = std::max({peakOut_, std::abs(static_cast<float>(wet[0])), std::abs(static_cast<float>(wet[1]))});
+            peakOut_ = std::max(peakOut_, wetNow);
             if (++displayCount_ == vh::kDisplaySamples) publishDisplays();
-            const float mix = mix_.next();
-            const float dryGain = std::cos(0.5f * std::numbers::pi_v<float> * mix);
-            const float wetGain = std::sin(0.5f * std::numbers::pi_v<float> * mix);
+            if (mixMoving) {  // (settled, the gains are the block's: no trigonometry a sample)
+                const float mix = mix_.next();
+                dryGain = std::cos(0.5f * std::numbers::pi_v<float> * mix);
+                wetGain = std::sin(0.5f * std::numbers::pi_v<float> * mix);
+            }
             if (n == 1) {
                 ch[0][i] = dryGain * dryL + wetGain * 0.5f * static_cast<float>(wet[0] + wet[1]);
             } else {
@@ -367,9 +408,77 @@ protected:
             }
         }
         tapsFrom_ = taps_;
+
+        // Quiet for a whole lap, with nothing on its way in: asleep.
+        const bool quiet = inputQuiet_ > inputReach() && ringPeak_ < kSleepLevel && wetPeak < kSleepLevel;
+        quietSamples_ = quiet ? quietSamples_ + numFrames : 0;
+        if (quietSamples_ > lapReach()) fallAsleep();
     }
 
 private:
+    // Host samples from the input to the ring (High and Low Cut, the resampler, the fixed delays and
+    // Predelay), and for a lap of the ring, with some to spare.
+    int64_t inputReach() const noexcept {
+        const double fixed = std::max(fixed_[0].length, fixed_[1].length);
+        return static_cast<int64_t>(fixed * divider_) + static_cast<int64_t>(0.01 * hostRate_);
+    }
+    int64_t lapReach() const noexcept {
+        return static_cast<int64_t>((halfSamples_[0] + halfSamples_[1]) * divider_) + static_cast<int64_t>(0.01 * hostRate_);
+    }
+
+    // B's and D's moving delays back to where they start, each from its own seed.
+    void resetWander() noexcept {
+        wander_[0].reset(0x2545f491u);
+        wander_[1].reset(0x9e3779b9u);
+    }
+
+    // Everything it holds (all below -120 dB) is let go: it wakes as from a reset, the controls as they are.
+    void fallAsleep() noexcept {
+        for (int side = 0; side < 2; ++side) {
+            fixed_[side].clear();
+            for (Diffuser& d : diffusers_[side]) d.line.clear();
+            highCutState_[side].reset();
+            lowCutState_[side].reset();
+            for (int s = 0; s < 3; ++s) {
+                down_[s][side].reset();
+                up_[s][side].reset();
+            }
+        }
+        for (NestedAllpass& ap : allpasses_) ap.clear();
+        for (Line& l : plain_) l.clear();
+        for (Damping& d : damping_) d.reset();
+        resetWander();  // (as reset() leaves them: waking, the modulation starts as a fresh hall's)
+        for (int& p : downPhase_) p = 0;
+        hostCount_ = 0;
+        outL_ = outR_ = 0.f;
+        lastWet_[0] = lastWet_[1] = 0.0;
+        sleeping_ = true;
+        quietSamples_ = 0;
+    }
+
+    // Asleep: the wet is exactly 0, the dry goes through Dry/Wet. The other controls aren't followed
+    // (nothing to hear them): waking, they start where they are.
+    void renderAsleep(float* const* ch, int n, int numFrames) noexcept {
+        mix_.setTarget(param(Mix) / 100.f);
+        if (mix_.isSmoothing()) {
+            for (int i = 0; i < numFrames; ++i) {
+                const float dryGain = std::cos(0.5f * std::numbers::pi_v<float> * mix_.next());
+                for (int c = 0; c < n; ++c) ch[c][i] *= dryGain;
+            }
+        } else {
+            const float dryGain = std::cos(0.5f * std::numbers::pi_v<float> * mix_.target());
+            if (dryGain != 1.f)
+                for (int c = 0; c < n; ++c)
+                    for (int i = 0; i < numFrames; ++i) ch[c][i] *= dryGain;
+        }
+        displayCount_ += numFrames;
+        while (displayCount_ >= vh::kDisplaySamples) {
+            const int over = displayCount_ - vh::kDisplaySamples;
+            publishDisplays();  // (the floor: nothing heard)
+            displayCount_ = over;
+        }
+    }
+
     // One sample at the reverb's rate: the input in, the outputs to outL_ and outR_.
     void tick(float inL, float inR, const std::array<float, 4>& tap) noexcept {
         if (lengthsMoving_) glideLengths();
@@ -410,7 +519,11 @@ private:
         plain_[7].push(r4);
 
         const float points[8] = {l1, l2, l3, l4, r1, r2, r3, r4};
-        for (int k = 0; k < 8; ++k) tapPeaks_[k] = std::max(tapPeaks_[k], std::abs(points[k]));
+        for (int k = 0; k < 8; ++k) {
+            const float a = std::abs(points[k]);
+            tapPeaks_[k] = std::max(tapPeaks_[k], a);
+            ringPeak_ = std::max(ringPeak_, a);
+        }
         outL_ = tap[0] * l1 + tap[1] * l2 + tap[2] * l3 + tap[3] * l4;
         outR_ = tap[0] * r2 + tap[1] * r3 + tap[2] * r4 + tap[3] * r1;
     }
@@ -590,6 +703,10 @@ private:
     SmoothedValue mix_;
     int displayCount_ = 0;
     float peakIn_ = 0.f, peakOut_ = 0.f;
+    float ringPeak_ = 0.f;          // the ring's peak at its taps over the block
+    bool sleeping_ = false;
+    int64_t inputQuiet_ = 0;        // host samples the input has been silent
+    int64_t quietSamples_ = 0;      // host samples it has all been quiet, nothing coming in
     std::array<float, 8> tapPeaks_{};
 };
 

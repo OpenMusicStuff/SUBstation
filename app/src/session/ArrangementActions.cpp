@@ -287,7 +287,7 @@ QString ArrangementActions::insertTrackAfter(const QString& trackId, bool midi) 
     const InsertionPoint point = editor_->insertionPoint(project_->hasTrack(trackId) ? trackId : QString());
     const TrackParent parent(point.parent);
     const int index = point.index.value_or(-1);
-    return midi ? editor_->addMidiTrack(index, QString(), kDefaultInstrument, std::nullopt, parent)
+    return midi ? editor_->addMidiTrack(index, QString(), QString(), std::nullopt, parent)
                 : editor_->addAudioTrack(index, QString(), parent);
 }
 

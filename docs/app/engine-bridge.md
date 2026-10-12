@@ -435,7 +435,9 @@ QML reads the transport and the device through properties: `position`, `playing`
   `automationOverridden`). Overrides are bridge state: not saved, not undone, cleared on `reset`.
 - Describing parameters to the UI: `paramGroups(owner)` (the mixer with its sends, then each device, racks included),
   `deviceParamSpecs`, `mixerSpecs`, `paramSpec`, `canAutomate`. Plug-in parameters that aren't automatable, are
-  hidden or read-only are left out. `ownValue(owner, key)` is a target's value set by hand (a plug-in's read from the
+  hidden or read-only are left out. A plug-in's parameters, and a built-in device's that are `ownText` (the Vital's),
+  show their values as the processor writes them (`ParamSpec::text` from `pluginParamText`; `deviceParamText` for a
+  device's by index). `ownValue(owner, key)` is a target's value set by hand (a plug-in's read from the
   plug-in), `currentValue(owner, key, beat)` what it is at a beat while automated. `deviceParamInfo` describes a
   device's parameter as the engine does (the editor's macros map through it). A rack's macros are targets too, and
   their automation plays as the parameters mapped to them (`macroEnvelopes()`: each one plays the macro's envelope

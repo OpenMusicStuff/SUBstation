@@ -80,7 +80,7 @@ private Q_SLOTS:
         EditorFixture f;
         Humanizer humanizer(&f.project);
         QVERIFY(humanizer.velocityAvailable());  // (the build puts the model next to the tests)
-        const QString track = f.editor.addMidiTrack(-1, QStringLiteral("Piano"));
+        const QString track = f.editor.addMidiTrack(-1, QStringLiteral("Piano"), QStringLiteral("synth"));
         const ClipRef clip = midiClip(f, track, 8, 8, piece(2));  // (at bar 3)
         const auto targets = targetsOf(f, clip);
         const auto velocities = humanizer.velocities(targets, 1.0);
@@ -100,7 +100,7 @@ private Q_SLOTS:
     void aTrackIsJudgedWithTheNotesItPlaysAroundThem() {
         EditorFixture f;
         Humanizer humanizer(&f.project);
-        const QString track = f.editor.addMidiTrack(-1, QStringLiteral("Piano"));
+        const QString track = f.editor.addMidiTrack(-1, QStringLiteral("Piano"), QStringLiteral("synth"));
         const std::vector<Note> all = piece(4);
         std::vector<Note> first, second;
         for (const Note& n : all) (n.start < 8 ? first : second).push_back(n);
@@ -131,8 +131,8 @@ private Q_SLOTS:
     void eachTrackKeepsItsOwnLevel() {
         EditorFixture f;
         Humanizer humanizer(&f.project);
-        const ClipRef loud = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Keys")), 0, 8, piece(2, 90));
-        const ClipRef soft = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Piano")), 0, 8, piece(2, 50));
+        const ClipRef loud = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth")), 0, 8, piece(2, 90));
+        const ClipRef soft = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Piano"), QStringLiteral("synth")), 0, 8, piece(2, 50));
         auto targets = targetsOf(f, loud);
         const auto softTargets = targetsOf(f, soft);
         targets.insert(targets.end(), softTargets.begin(), softTargets.end());
@@ -146,7 +146,7 @@ private Q_SLOTS:
         QCOMPARE(b, expected({}, softNotes));  // (each track alone)
 
         // Drum tracks are left as they are (and the status line says so).
-        const ClipRef drums = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Drums")), 0, 8, piece(2, 70));
+        const ClipRef drums = midiClip(f, f.editor.addMidiTrack(-1, QStringLiteral("Drums"), QStringLiteral("synth")), 0, 8, piece(2, 70));
         QSignalSpy said(&humanizer, &Humanizer::statusMessage);
         QCOMPARE(*humanizer.velocities(targetsOf(f, drums), 1.0), std::vector<int>(40, 70));
         QCOMPARE(said.count(), 1);

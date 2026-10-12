@@ -290,7 +290,7 @@ private Q_SLOTS:
     void theToolsReadTheProject() {
         SessionFixture f;
         mcp::Protocol& protocol = f.s().mcp()->protocol();
-        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         const auto clip = f.editor().addMidiClip(lead, 0, 4);
         QVERIFY(clip);
         f.editor().setClipNotes(*clip, {{60, 0, 1, 100}, {64, 0, 1, 90}, {67, 0, 1, 80}}, QStringLiteral("Notes"));
@@ -373,7 +373,7 @@ private Q_SLOTS:
     void theToolsReadParametersAndNotes() {
         SessionFixture f;
         mcp::Protocol& protocol = f.s().mcp()->protocol();
-        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         const QString delay = f.editor().addDevice(lead, QStringLiteral("delay"));
         const auto clip = f.editor().addMidiClip(lead, 4, 4);
         QVERIFY(clip);
@@ -448,7 +448,7 @@ private Q_SLOTS:
 
         // ...and in one call, all a part written there needs: each track in it
         // with its notes there (a group's tracks, not the group), the chords, the tempo.
-        const QString pad = f.editor().addMidiTrack(-1, QStringLiteral("Pad"));
+        const QString pad = f.editor().addMidiTrack(-1, QStringLiteral("Pad"), QStringLiteral("synth"));
         const QString group = f.editor().groupTracks({pad});
         f.selection().setTimeRange(4, 8, {lead, group, pad}, QSet<ClipRef>{*clip});
         out = structured(call(protocol, QStringLiteral("get_selection_context")));
@@ -474,7 +474,7 @@ private Q_SLOTS:
         SessionFixture f;
         mcp::Protocol& protocol = f.s().mcp()->protocol();
         AgentHistory& history = *f.s().agentChanges();
-        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         const QString delay = f.editor().addDevice(lead, QStringLiteral("delay"));
         const QJsonObject param = structured(call(protocol, QStringLiteral("get_device_parameters"),
                                                   {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay}}))
@@ -596,8 +596,8 @@ private Q_SLOTS:
         SessionFixture f;
         mcp::Protocol& protocol = f.s().mcp()->protocol();
         AgentHistory& history = *f.s().agentChanges();
-        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
-        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"));
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
+        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"), QStringLiteral("synth"));
         const auto setPan = [&](const QString& track, double pan) {
             return structured(call(protocol, QStringLiteral("set_mixer"),
                                    {{QStringLiteral("track_id"), track}, {QStringLiteral("pan"), pan}}))
@@ -680,7 +680,7 @@ private Q_SLOTS:
 
         // What the model's commands touch, macros by their parts.
         SessionFixture f;
-        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         f.editor().setTrackParam(lead, TrackField::Pan, 0.5);
         const QUndoCommand* pan = f.stack().command(f.stack().index() - 1);
         QCOMPARE(AgentHistory::footprint(*pan, f.project()),
@@ -688,7 +688,7 @@ private Q_SLOTS:
         f.editor().addMidiClip(lead, 0, 4);
         QVERIFY(AgentHistory::footprint(*f.stack().command(f.stack().index() - 1), f.project())
                     .contains(QStringLiteral("track/%1/clips").arg(lead)));
-        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"));
+        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"), QStringLiteral("synth"));
         f.editor().groupTracks({lead, bass});  // (a macro)
         const QStringList grouped = AgentHistory::footprint(*f.stack().command(f.stack().index() - 1), f.project());
         QVERIFY(grouped.contains(QStringLiteral("order")));

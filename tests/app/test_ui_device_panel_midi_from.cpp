@@ -68,8 +68,8 @@ private Q_SLOTS:
     }
 
     void theMidiFromButton() {
-        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"));
-        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
+        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         const QString vocals = editor().addAudioTrack(-1, QStringLiteral("Vocals"));
         session().selection()->selectTrack(vocals);
         const QString tuner = editor().addDevice(vocals, sub::app::kPluginKind, -1, plugin(QStringLiteral("SUB Test Note Effect")));

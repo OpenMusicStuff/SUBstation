@@ -40,7 +40,7 @@ QString names(const Harmony& harmony) {
 
 // A MIDI track with a clip of `notes` from `start`, `length` beats long.
 QString midiTrack(EditorFixture& f, const QString& name, double start, double length, const std::vector<Note>& notes) {
-    const QString track = f.editor.addMidiTrack(-1, name);
+    const QString track = f.editor.addMidiTrack(-1, name, QStringLiteral("synth"));
     const auto ref = f.editor.addMidiClip(track, start, length);
     f.editor.setClipNotes(*ref, notes, QStringLiteral("Notes"));
     return track;

@@ -293,9 +293,9 @@ bool contains(const DeviceFact& rack, const DeviceFact* target) {
 void readInstrument(Description& d, const DeviceFact& device) {
     const KnownInstrument* known = device.kind == "plugin" ? knownInstrument(device.name) : nullptr;
     const std::string name = device.name.empty() ? titleCase(device.kind) : device.name;
-    if (device.kind == "synth") {
+    if (device.kind == "synth" || device.kind == "vital") {
         d.synth = true;
-        d.source = "Synth";
+        d.source = device.kind == "vital" ? "Vital" : "Synth";
     } else if (device.kind == "sampler") {
         d.source = "Sampler";
     } else {

@@ -44,7 +44,8 @@ session's ([session.md](session.md)).
 | [TrackNames.h](../../app/src/model/TrackNames.h) | Track names: `#` for its number (`numberedName`), audio and MIDI tracks named by what they hold (`contentsLabel`, `contentsName`, `namedByContents`), names older projects had (`hasPlainName`, `plainNameTemplate`), `takeName` |
 | [Clip.h](../../app/src/model/Clip.h) | `Clip` (audio and MIDI alike), `Note`, `BendPoint`, `Vibrato`, `PlayedNote`; `kWarpModes`, `legacyWarpMode`, `kMinSegmentBpm`, `kMaxSegmentBpm` |
 | [Device.h](../../app/src/model/Device.h) | `Device`, `Chain`, `PluginRef`, `Sidechain`, `MacroMapping`; the device-tree helpers (`iterDevices`, `iterChains`, `devicePath`, `deviceAt`, `findDevice`, `findChain`, `chainIndex`, `chainDevices`, `containerOf`, `rackDepth`, `rackHeight`, `refreshIds`); `kPluginKind`, `kRackKind`, `kMaxRackDepth`, `kDefaultMacroCount`, `kMaxMacroCount`, `macroParam`, `macroIndex`, `macroCount`, `macroName`, the taps `kPostFader`, `kPreFader`, `kPreFx` |
-| [Devices.h](../../app/src/model/Devices.h) | Kinds of devices: `builtinDevices()`, `builtinDevice()`, `builtinCategories()` (from the engine), `kDefaultInstrument`; `isInstrument`, `deviceIsInstrument`, `loadsInto`, `deviceName`, `kindName`; `newDevice`, `newRack`, `newChain`; `builtinParamInfo`, `deviceIdsOf`, `deviceIdsOfList`, `addDeviceIds` (into a set of many lists' ids), `innerDeviceIds` (what is in a rack) |
+| [Devices.h](../../app/src/model/Devices.h) | Kinds of devices: `builtinDevices()`, `builtinDevice()`, `builtinCategories()` (from the engine); `isInstrument`, `deviceIsInstrument`, `loadsInto`, `deviceName`, `kindName`; `newDevice`, `newRack`, `newChain`; `builtinParamInfo`, `deviceIdsOf`, `deviceIdsOfList`, `addDeviceIds` (into a set of many lists' ids), `innerDeviceIds` (what is in a rack) |
+| [Vital.h](../../app/src/model/Vital.h) | A built-in Vital as the application sees it besides its parameters (see [Vital](#vital)): `isVital`, `vitalModulations`, `vitalModulationSlots`, `vitalSources`, `vitalDestinations`, `vitalSourceName`, `vitalDestinationName`, `vitalSlotParam`, `vitalWavetableNames`, `vitalLfoNames`, `vitalShapeNames`, `vitalStateValue` |
 | [Routing.h](../../app/src/model/Routing.h) | The group tree (`TreeEntry`, `TrackTree`, `treeProblem`, `repairTree`) and the routing graph (`routingGraph`, `feeds`, `wouldCycle`, `inputWouldCycle`, `sidechainWouldCycle`); `isDefaultOutput` (an output that goes where the default does: its own group, or the master from outside a group) |
 | [Automation.h](../../app/src/model/Automation.h) | `AutomationPoint`, `Envelope`, `AutomationView`, `kMaster`; in `sub::app::automation`: target keys, the mixer's normalized mappings, evaluation (`valueAt`, `leftValue`, `shape`), every envelope edit |
 | [ParamSpec.h](../../app/src/model/ParamSpec.h) | `ParamSpec`: any automatable parameter described alike, with the engine's normalized mapping; `mixerSpecs`, `sendSpec`, `chainSpecs`, `formatValue` |
@@ -167,7 +168,8 @@ no MIDI input closes a cycle, and a device on any track (a return, the master) m
 - **Built-in** (`kind` `"synth"`, `"utility"`, ...): its state is its `params`, and `state` for what isn't a
   parameter (see `DeviceState.h`). The engine follows the model. The list of built-in devices, their names,
   categories, default parameters and which are instruments come from the engine (`builtinDevices()` reads
-  `sub::BuiltinRegistry`), so a new device needs nothing here. `kDefaultInstrument` is `"synth"`.
+  `sub::BuiltinRegistry`), so a new device needs nothing here. New MIDI tracks have none: the user adds the
+  instrument.
 - **Plug-in** (`kind` `kPluginKind`, `"plugin"`): `plugin` is a `PluginRef` (`format` `"VST3"`, `uid` the class id,
   `name`, `vendor`, `path` where it was last loaded, `instrument`). The plug-in keeps its own state; `state` holds it
   (base64 `.vstpreset`) as last stored, for saving and copying. Its `params` only record values changed from the
@@ -362,7 +364,32 @@ tempo), and a `transpose` to the project key. Used by `ProjectEditor::addClips`.
 [DeviceState.h](../../app/src/model/DeviceState.h) encodes a built-in device's non-parameter values as the engine
 does (`BuiltinProcessor::encodeState`): `name=value` lines, a backslash escaping a backslash or a newline.
 `deviceState::toModel`/`fromModel` wrap it in base64 for `Device::state`. The Sampler's one value is `"sample"`, its
-file path (see [ui/device-view.md](../ui/device-view.md)).
+file path (see [ui/device-view.md](../ui/device-view.md)); a Vital's are its patch's ([Vital](#vital)).
+
+### Vital
+
+A built-in Vital (`kind` `"vital"`, [engine/devices.md](../engine/devices.md#vital-builtinvital-instrument)) keeps
+Vital's parameters as its `params` (Vital's ids) and the rest of its patch as its state values (`modulations`,
+`wavetables`, `lfos`, `sample`, `tuning`: JSON, as a `.vital` file has them; `preset_name`, `author`, `comments`,
+`preset_style`, `macro1`..`macro4`), so it saves, copies, undoes and makes presets as any built-in device does.
+[Vital.h](../../app/src/model/Vital.h) reads them (through the engine's `VitalPatch.h`, which has no Vital headers):
+the modulations slot by slot (`vitalModulationSlots`: all 64, "" in a free one; `vitalModulations`: those in use),
+every source and destination Vital's engine has and their names, a slot's parameters (`vitalSlotParam(slot,
+"amount")` is `modulation_<slot + 1>_amount`), the wavetables' and LFO shapes' names. The editor's edits
+([EditorVital.cpp](../../app/src/editor/EditorVital.cpp)), one undo step each:
+
+- `setVitalModulation(track, device, slot, source, destination)` [Q]: a slot's source and destination (both "": the
+  slot cleared, its amount, Bipolar, Power, Stereo and Bypass back to their defaults, as Vital leaves a slot it
+  frees); a new source sets Bipolar as Vital does for it (`sourceBipolar`: LFOs, random LFOs, the pitch wheel...).
+  Refused for a source or destination Vital's engine hasn't, past 64 slots, or another kind of device.
+- `addVitalModulation(track, device, source, destination)` [Q]: in the first free slot, or the slot already joining
+  them; -1 if none is free.
+- `setVitalWavetable(track, device, oscillator, wavetable)` (a wavetable as the state keeps one:
+  [io/VitalPresets.h](../../app/src/io/VitalPresets.h) `vitalWavetableFromFile` makes one from a `.vitaltable` or audio
+  file), `setVitalWavetableShape` [Q], `setVitalLfoShape` [Q] (a basic shape: `vitalShapeNames()`).
+
+Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: see
+[serialization.md](serialization.md#vitals-presets).
 
 ## The Project object and its signals
 
@@ -493,8 +520,8 @@ automated (the session shows its lane), and `refused(message)` (below).
 
 Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
 
-- **Tracks**: `addAudioTrack` [Q], `addMidiTrack` [Q] (with the default instrument, as its default preset has it; C++
-  forms take a built-in instrument or a plug-in and a parent), `addMidiTrackWith` (a new MIDI track with an instrument
+- **Tracks**: `addAudioTrack` [Q], `addMidiTrack` [Q] (with no devices; C++ forms take a built-in instrument (as its
+  default preset has it) or a plug-in and a parent), `addMidiTrackWith` (a new MIDI track with an instrument
   preset, one step), `insertionPoint`, `deleteTracks` [Q] (a group with what is in it, a return with the sends into
   it and their automation; inputs, sidechains and MIDI inputs from them go: one step), `duplicateTracks` [Q] (new ids for tracks,
   clips, devices and rack chains; automation keys, automation view, sidechains, inputs and MIDI inputs among the

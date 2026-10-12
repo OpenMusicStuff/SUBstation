@@ -99,6 +99,11 @@ Rectangle {
             menu.entry(qsTr("Save VST3 Preset…"), () => panel.saveVst3Preset(id, info.name), undefined, info.loaded)
             menu.separator()
         }
+        if (info.kind === "vital") {
+            menu.entry(qsTr("Load Vital Preset…"), () => panel.loadVitalPreset(id))
+            menu.entry(qsTr("Save Vital Preset…"), () => panel.saveVitalPreset(id, info.name))
+            menu.separator()
+        }
         if (info.isRack) {
             menu.entry(qsTr("Add Chain"), () => {
                 if (Session.editor.tryAddRackChain(trackId, id) !== "")
@@ -307,6 +312,20 @@ Rectangle {
         vst3SaveDialog.open()
     }
 
+    function loadVitalPreset(deviceId) {
+        vitalLoadDialog.deviceId = deviceId
+        vitalLoadDialog.currentFolder = FileUrls.fileUrl(Session.deviceSelection.vitalPresetFolder())
+        vitalLoadDialog.open()
+    }
+
+    function saveVitalPreset(deviceId, name) {
+        const folder = Session.deviceSelection.vitalPresetFolder()
+        vitalSaveDialog.deviceId = deviceId
+        vitalSaveDialog.currentFolder = FileUrls.fileUrl(folder)
+        vitalSaveDialog.selectedFile = FileUrls.fileUrl(folder + "/" + name + ".vital")
+        vitalSaveDialog.open()
+    }
+
     implicitHeight: 2 * panelMargin + deviceHeight
     color: Theme.window
 
@@ -481,7 +500,7 @@ Rectangle {
         property int index: -1
 
         title: qsTr("Load Preset")
-        nameFilters: [qsTr("SUBstation Preset (*.gilpreset)")]
+        nameFilters: [qsTr("SUBstation Preset (*.gilpreset)"), qsTr("Vital Preset (*.vital)")]
         onAccepted: Session.deviceSelection.loadPresetFile(FileUrls.localPath(selectedFile), chain, index)
     }
 
@@ -506,5 +525,28 @@ Rectangle {
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("VST3 Preset (*.vstpreset)")]
         onAccepted: Session.deviceSelection.saveVst3Preset(deviceId, FileUrls.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: vitalLoadDialog
+        objectName: "vitalLoadDialog"
+
+        property string deviceId
+
+        title: qsTr("Load Vital Preset")
+        nameFilters: [qsTr("Vital Preset (*.vital)")]
+        onAccepted: Session.deviceSelection.loadVitalPreset(deviceId, FileUrls.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: vitalSaveDialog
+        objectName: "vitalSaveDialog"
+
+        property string deviceId
+
+        title: qsTr("Save Vital Preset")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("Vital Preset (*.vital)")]
+        onAccepted: Session.deviceSelection.saveVitalPreset(deviceId, FileUrls.localPath(selectedFile))
     }
 }

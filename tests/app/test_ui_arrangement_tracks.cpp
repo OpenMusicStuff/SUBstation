@@ -1234,7 +1234,7 @@ private Q_SLOTS:
     void theOutputChoosers() {
         const QString a = editor().addAudioTrack(-1, QStringLiteral("Drums"));
         const QString bus = editor().addAudioTrack(-1, QStringLiteral("Bus"));
-        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const QString inGroup = editor().addAudioTrack(-1, QStringLiteral("Inner"));
         const QString group = editor().groupTracks({inGroup});
         const QString compressor = editor().addDevice(keys, QStringLiteral("compressor"));
@@ -1317,9 +1317,9 @@ private Q_SLOTS:
     // groups, automation shown on the groups. What each header's In/Out shows.
     void anAbletonLikeSet() {
         auto& e = editor();
-        const QString chords = e.addMidiTrack(-1, QStringLiteral("chords"));
+        const QString chords = e.addMidiTrack(-1, QStringLiteral("chords"), QStringLiteral("synth"));
         const QString pad = e.addAudioTrack(-1, QStringLiteral("pad"));
-        const QString kit = e.addMidiTrack(-1, QStringLiteral("DRUMS"));
+        const QString kit = e.addMidiTrack(-1, QStringLiteral("DRUMS"), QStringLiteral("synth"));
         const QString ride = e.addAudioTrack(-1, QStringLiteral("ride"));
         const QString shaker = e.addAudioTrack(-1, QStringLiteral("shaker"));
         const QString sidechain = e.addAudioTrack(-1, QStringLiteral("SIDECHAIN"));
@@ -1398,7 +1398,7 @@ private Q_SLOTS:
     }
 
     void midiHeaderControls() {
-        const QString track = editor().addMidiTrack();
+        const QString track = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         h_->settle();
         TrackHeaderItem* h = header(track);
         QVERIFY(h->midi());
@@ -1510,7 +1510,7 @@ private Q_SLOTS:
 
     void flatteningAMidiTrack() {
         test::ScopedEnv recordings("SUBSTATION_RECORDINGS", dir_->path(QStringLiteral("Recordings")));
-        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const auto ref = editor().addMidiClip(track, 0.0, 2.0);
         QVERIFY(ref);
         editor().setClipNotes(*ref, {{60, 0.0, 1.0, 100}}, QStringLiteral("setup"));
@@ -1569,7 +1569,7 @@ private Q_SLOTS:
         editor().renameTrack(drums, QStringLiteral("Kick"));
         const QString group = editor().groupTracks({drums});
         editor().renameTrack(group, QStringLiteral("Drums"));
-        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString keys = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const auto clip = editor().addMidiClip(keys, 4.0, 8.0);
         QVERIFY(clip);
         editor().setClipNotes(*clip, {{60, 0.0, 1.0, 100}, {64, 1.0, 1.0, 90}, {67, 2.0, 2.0, 80}, {72, 4.0, 3.0, 110}},

@@ -8,6 +8,8 @@
 #                           needs the application layer: SUBSTATION_BUILD_APP)
 #   builtin_devices_bench   each built-in audio effect alone: what it costs a
 #                           core, at its defaults or at settings given
+#   vital_bench             the built-in Vital against Vital's VST3 plug-in,
+#                           the same notes held through each
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
 #                           library: speed, and how often a one-shot's nearest
 #                           sounds are of its kind (the intelligence module alone)
@@ -27,6 +29,12 @@ add_executable(builtin_devices_bench builtin_devices_bench.cpp Json.h)
 target_include_directories(builtin_devices_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(builtin_devices_bench PRIVATE sub_engine)
 sub_project_warnings(builtin_devices_bench)
+
+# The built-in Vital against Vital's VST3 plug-in (the engine's VST3 host).
+add_executable(vital_bench vital_bench.cpp Json.h)
+target_include_directories(vital_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(vital_bench PRIVATE sub_engine)
+sub_project_warnings(vital_bench)
 
 add_executable(sound_similarity_bench sound_similarity_bench.cpp)
 target_link_libraries(sound_similarity_bench PRIVATE sub_intelligence)

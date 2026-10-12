@@ -60,7 +60,7 @@ QString Session::insertAudioTrack() {
 
 QString Session::insertMidiTrack() {
     const Place place = afterSelectedTrack();
-    const QString track = editor_->addMidiTrack(place.index, QString(), kDefaultInstrument, std::nullopt,
+    const QString track = editor_->addMidiTrack(place.index, QString(), QString(), std::nullopt,
                                                 TrackParent(place.parent));
     selection_->selectTrack(track, true);
     return track;

@@ -105,6 +105,7 @@ Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
 | `signalsmith_linear` | interface library | engine | [Signalsmith Linear](../engine/third_party/signalsmith-linear)'s headers: the FFTs of Signalsmith Stretch. |
 | `vst3_base`, `vst3_hosting` | static libraries | engine | The VST 3 SDK's interfaces and base library, and its host side (module loading: `module_win32.cpp` or `module_linux.cpp`). `vst3_hosting` is C++17 on purpose: as C++17 the module loader reads paths as UTF-8 (`u8path`); as C++20 it would use the ANSI code page on Windows, and plug-ins with non-ASCII paths would not load. |
 | `mp3lame` | static library (C) | engine | [LAME](../engine/third_party/lame)'s encoding library (`libmp3lame`, its SSE quantizer on x86-64), with a `config.h` of ours; MP3 export (`Mp3Writer.cpp`). |
+| `vital` | static library | engine | [Vital](../engine/third_party/vital)'s synthesis engine, built as Vital builds it (two unity files), without JUCE (a stand-in `JuceHeader.h` in `compat/`), with the engine's SIMD flags, no fast math, its warnings not shown (`/bigobj` with MSVC); linked privately into `sub_engine` (the built-in Vital, [engine/devices.md](engine/devices.md#vital-builtinvital-instrument)). GPLv3: [licensing.md](licensing.md). |
 | `sub_platform` | static library | platform | What every layer needs from the operating system ([platform/](../platform/CMakeLists.txt), [platform.md](platform.md)): paths and their keys, files, binary fields, threads' priorities; no Qt, nothing of the other layers. `PlatformWin32.cpp` on Windows, `PlatformPosix.cpp` elsewhere. |
 | `sub_engine` | static library | engine | The real-time engine ([engine/](../engine/CMakeLists.txt)): no Qt; on `sub_platform`. Each system's audio drivers, MIDI inputs, plug-in editor windows and VST3 folders are files of their own ([engine/README.md](engine/README.md#platforms)): on Windows WASAPI and, with the SDK, ASIO, WinMM MIDI, Win32 editor windows; on Linux PipeWire (with libpipewire's headers) and elsewhere miniaudio's "System", ALSA's sequencer for MIDI (with its headers; elsewhere a MIDI backend without devices), and X11 editor windows (with xcb's headers; elsewhere none). |
 | `sub_browser` | static library | browser | The browser's file index and search ([browser/](../browser/CMakeLists.txt)): no Qt; `sub_platform`, and a Win32 or POSIX layer of its own for listing and watching folders (inotify's watcher on Linux). |
@@ -167,11 +168,12 @@ Vendored in [engine/third_party](../engine/third_party), so nothing else needs i
 | [Signalsmith Linear](../engine/third_party/signalsmith-linear) | 0.6.4 | MIT | its FFT (`stft.h`, `fft.h` only): Signalsmith Stretch's |
 | [VST 3 SDK](../engine/third_party/vst3sdk) | 3.8.1 | MIT (since SDK 3.8) | `pluginterfaces`, `base`, `public.sdk/source/{common,main}` and `public.sdk/source/vst`, with the Windows and Linux module loaders; without VSTGUI, the SDK's tests and the wrappers |
 | [LAME](../engine/third_party/lame) | 3.100 | LGPL-2.0-or-later | its encoding library (`include/lame.h`, `libmp3lame/` without the decoder's glue): MP3 export |
+| [Vital](../engine/third_party/vital) | 1.0.6's source (commit 636ca0e) | **GPL-3.0-or-later**; its nlohmann JSON MIT, its KISS FFT BSD-3-Clause | its synthesis engine (`src/synthesis` without VitalFX's), the parts of `src/common` it and its presets need, `synth_strings.h`, its unity build files; with two local changes (`load_save` trimmed, the common unity file without Vital's application: [local-changes.patch](../engine/third_party/vital/local-changes.patch), [VERSION.txt](../engine/third_party/vital/VERSION.txt)) and a stand-in for JUCE's header: the built-in Vital |
 
 In [app/third_party](../app/third_party): [puff](../app/third_party/puff) 2.3 (zlib licence), from zlib 1.3.1's
 `contrib/puff`: inflate, for reading Ableton Live Sets (target `puff`, linked into `sub_app`).
 
-Each folder has its licence and a `VERSION.txt` saying what was taken and that it is unmodified. Qt is not vendored:
+Each folder has its licence and a `VERSION.txt` saying what was taken and that it is unmodified (or how it was changed). Qt is not vendored:
 it is LGPL-3.0 (or commercial), linked dynamically. SUBstation itself is MIT ([LICENSE](../LICENSE)); what the
 licences together mean for distributing it is in [licensing.md](licensing.md).
 

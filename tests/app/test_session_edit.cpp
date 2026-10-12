@@ -329,7 +329,7 @@ private Q_SLOTS:
         const QString a = s.insertAudioTrack();
         const QString b = s.insertMidiTrack();
         QCOMPARE(trackIds(f.project()), (QStringList{a, b}));
-        QVERIFY(f.project().track(b).isMidi() && f.project().track(b).devices.size() == 1);  // with its synth
+        QVERIFY(f.project().track(b).isMidi() && f.project().track(b).devices.empty());  // no instrument yet
         QCOMPARE(f.selection().trackId(), b);
         QCOMPARE(f.selection().focus(), Selection::Focus::Track);
         f.selection().selectTrack(a);
@@ -537,7 +537,7 @@ private Q_SLOTS:
 
     void reversingNeedsAudioClips() {
         SessionFixture f;
-        const QString track = f.editor().addMidiTrack();
+        const QString track = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = f.editor().addMidiClip(track, 0.0, 4.0);
         f.selection().selectClips(f.editor(), {*ref});
         f.s().reverseClips();
@@ -858,6 +858,7 @@ private Q_SLOTS:
         Session& s = f.s();
         const QString first = s.insertAudioTrack();
         const QString second = s.insertMidiTrack();
+        f.editor().addDevice(second, QStringLiteral("vital"));
         f.selection().selectTrack(first, true);
         f.selection().selectTrack(second, true, Selection::Mode::Toggle);
         s.duplicate();
@@ -867,7 +868,7 @@ private Q_SLOTS:
         const Track& audioCopy = f.project().track(ids[2]);
         const Track& midiCopy = f.project().track(ids[3]);
         QVERIFY(audioCopy.isAudio() && midiCopy.isMidi());
-        QVERIFY(f.bridge().engineDeviceId(midiCopy.id, midiCopy.devices[0].id).has_value());  // its synth plays
+        QVERIFY(f.bridge().engineDeviceId(midiCopy.id, midiCopy.devices[0].id).has_value());  // its Vital plays
         const QStringList selected = f.selection().trackIds();
         QCOMPARE(QSet<QString>(selected.begin(), selected.end()), (QSet<QString>{ids[2], ids[3]}));
         QCOMPARE(f.selection().focus(), Selection::Focus::Track);

@@ -884,7 +884,7 @@ private Q_SLOTS:
     }
 
     void reversingNeedsAudioClips() {
-        const QString track = editor().addMidiTrack();
+        const QString track = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = editor().addMidiClip(track, 0.0, 4.0);
         selection().selectClips(editor(), {*ref});
         QSignalSpy messages(&session(), &sub::app::Session::statusMessage);

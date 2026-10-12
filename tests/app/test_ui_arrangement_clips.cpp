@@ -167,7 +167,7 @@ private Q_SLOTS:
         QCOMPARE(clipOf(0).segmentBpm, 240.0);
 
         // A MIDI clip's notes stretch with it.
-        const QString midi = editor().addMidiTrack();
+        const QString midi = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         editor().commitClips(QStringLiteral("Add"),
                              {{midi, {Clip::midi(QStringLiteral("m"), QStringLiteral("M"), 0.0, 2.0, 0.0,
                                                  {Note{60, 0.0, 0.5, 100}, Note{64, 1.0, 0.5, 100}})}}});
@@ -214,7 +214,7 @@ private Q_SLOTS:
         QVERIFY(near(clipOf(0).offsetSec, 0.25));
 
         // A MIDI clip's notes move under it.
-        const QString midi = editor().addMidiTrack();
+        const QString midi = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         editor().commitClips(QStringLiteral("Add"),
                              {{midi, {Clip::midi(QStringLiteral("m"), QStringLiteral("M"), 0.0, 4.0, 0.0,
                                                  {Note{60, 1.0, 0.5, 100}})}}});
@@ -302,7 +302,7 @@ private Q_SLOTS:
         session().computerKeyboard()->setEnabled(false);
 
         // MIDI clips have no fades.
-        const QString midi = editor().addMidiTrack();
+        const QString midi = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         editor().commitClips(QStringLiteral("Add"), {{midi, {Clip::midi(QStringLiteral("m"), QStringLiteral("M"), 0.0, 4.0)}}});
         h_->settle();
         QTest::keyPress(window(), Qt::Key_F);

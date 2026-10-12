@@ -113,7 +113,7 @@ private Q_SLOTS:
         Session& s = f.s();
         TempDir dir;
         f.clipTrack(dcWav(dir));  // a second: two beats at 120 BPM
-        f.editor().addMidiTrack();
+        f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         QCOMPARE(s.exportProblem(QStringLiteral("selection")),
                  QStringLiteral("There is no time selection to export: select a time range in the arrangement first."));
         f.selection().setTimeRange(0.5, 1.5, {f.project().tracks().back().id});  // (on the other track: it is time)
@@ -302,7 +302,7 @@ private Q_SLOTS:
     void flatteningAMidiTrack() {
         SessionFixture f(true);
         Session& s = f.s();
-        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         f.editor().commitClips(QStringLiteral("Add"),
                                {{track, {Clip::midi(QStringLiteral("m"), QStringLiteral("m"), 0.0, 2.0, 0.0, {Note{60, 0.0, 1.0}})}}});
         f.selection().selectTrack(track, true);
@@ -325,7 +325,7 @@ private Q_SLOTS:
     void nothingToFreezeIsSaid() {
         SessionFixture f(true);
         Session& s = f.s();
-        const QString keys = f.editor().addMidiTrack();  // nothing to freeze yet: an empty arrangement
+        const QString keys = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));  // nothing to freeze yet: an empty arrangement
         f.selection().selectTrack(keys, true);
         s.toggleFreeze();
         QVERIFY(f.waitForRender());

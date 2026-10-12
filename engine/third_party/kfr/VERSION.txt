@@ -1,0 +1,13 @@
+KFR 7.2.0 (GPL-2.0-or-later, or a commercial licence from KFR's authors; see
+LICENSE.txt), https://github.com/kfrlib/kfr, tag 7.2.0.
+
+What is here, unmodified (line endings aside): include/kfr without audio/, io/,
+capi.h, all.hpp and thirdparty/catch; src/dft without convolution-impl.cpp,
+version.cpp and its CMakeLists.txt. That is KFR's DFT and what it includes.
+
+SUBstation builds it itself (engine/CMakeLists.txt, target kfr_fft: one
+architecture, the engine's, AVX2 on x86-64), not with KFR's CMake. The built-in
+Vital's FourierTransform runs on it (vital/compat/kfr_fourier_transform.cpp):
+measured against KISS FFT, FFTW 3.3.10 (AVX2), pffft, PocketFFT and Signalsmith
+Linear on Vital's 2048-point real transforms, it was the fastest at the inverse
+the oscillators run (see benchmarks/README.md).

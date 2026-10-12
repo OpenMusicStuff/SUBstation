@@ -46,8 +46,8 @@ struct TwoTracks {
 
 TwoTracks twoTracks(EditorFixture& f) {
     TwoTracks t;
-    t.a = f.editor.addMidiTrack();
-    t.b = f.editor.addMidiTrack();
+    t.a = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
+    t.b = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
     t.clip = f.editor.addMidiClip(t.a, 4.0, 4.0)->clipId;
     t.synth = autom::deviceKey(f.track(t.a).devices[0].id, "cutoff");
     f.editor.setEnvelope(t.a, autom::kMixerPan, twoTracksPan());
@@ -66,7 +66,7 @@ private Q_SLOTS:
 
     void envelopeEditsAreUndoable() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         QSignalSpy changes(&f.project, &Project::automationChanged);
         f.editor.addAutomationPoint(track, autom::kMixerVolume, 1.0, 0.5);
         const int index = f.editor.addAutomationPoint(track, autom::kMixerVolume, 3.0, 0.8);
@@ -131,7 +131,7 @@ private Q_SLOTS:
 
     void deletingADeviceDeletesItsAutomation() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString synth = f.track(track).devices[0].id;
         const QString utility = f.editor.addDevice(track, "utility");
         const QString key = autom::deviceKey(utility, "gain");
@@ -153,7 +153,7 @@ private Q_SLOTS:
 
     void touchingAParameterIsReported() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString synth = f.track(track).devices[0].id;
         QSignalSpy touched(&f.editor, &ProjectEditor::parameterTouched);
         f.editor.setTrackParam(track, TrackField::VolumeDb, -3.0);
@@ -219,7 +219,7 @@ private Q_SLOTS:
 
     void saveAndLoad() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString deviceKey = autom::deviceKey(f.track(track).devices[0].id, "cutoff");
         Envelope curved = env({{0.0, 0.2}, {2.0, 0.9}});
         curved[0].curve = 0.3;

@@ -74,6 +74,7 @@
 #include "builtin/Dsp.h"
 #include "builtin/DspBlocks.h"
 #include "builtin/ReverbDesign.h"
+#include "rt/FastMath.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -854,7 +855,7 @@ private:
             LineState& line = line_[static_cast<size_t>(q)];
             double drift = 0.0;
             if (chorus > 0.0)
-                drift = std::min(chorus, 0.25 * line.length * s) * std::sin(2.0 * kPi * line.chorusPhase);
+                drift = std::min(chorus, 0.25 * line.length * s) * fastmath::sin(2.0 * kPi * line.chorusPhase);
             line.mod.set(drift, n, snapping_ || fresh_[static_cast<size_t>(q)]);
             linesMoving_ = linesMoving_ || !line.mod.still();
         }
@@ -913,7 +914,8 @@ private:
         const double spin = spinAmount_.value;
         const double depth = spin * reverb::kSpinDepthMs * std::min(1.0, s) * fs / 1000.0;
         const double spinAngle = 2.0 * kPi * spinPhase_;
-        const double spinSin = std::sin(spinAngle), spinCos = std::cos(spinAngle);
+        double spinSin, spinCos;
+        fastmath::sincos(spinAngle, spinSin, spinCos);
         taps_ = 0;
         for (int k = 0; k < kMaxTaps; ++k) {
             TapState& tap = tap_[static_cast<size_t>(k)];
@@ -926,8 +928,7 @@ private:
                 const double cosK = spinCos * cosStep - spinSin * sinStep;
                 drift = depth * (1.0 + sinK);
                 const double angle = tap.angle + spin * tap.swing * cosK;
-                left = std::cos(angle);
-                right = std::sin(angle);
+                fastmath::sincos(angle, right, left);
             }
             tap.drift.set(drift, n, snapping_);
             const bool silent = gain == 0.0 && tap.left.end == 0.0 && tap.right.end == 0.0;

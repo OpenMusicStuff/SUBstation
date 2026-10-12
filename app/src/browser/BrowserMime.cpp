@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "io/Json.h"
+#include "io/VitalPresets.h"
 
 namespace sub::app {
 
@@ -110,7 +111,18 @@ QStringList deviceKinds(const QMimeData* mime) { return deviceKinds(dataOf(mime,
 
 QStringList presetPaths(const QByteArray& data) { return strings(data); }
 
-QStringList presetPaths(const QMimeData* mime) { return presetPaths(dataOf(mime, kPresetMime)); }
+QStringList presetPaths(const QMimeData* mime) {
+    QStringList paths = presetPaths(dataOf(mime, kPresetMime));
+    // Vital's presets dragged in as files (from a file manager): presets too.
+    if (mime && mime->hasUrls()) {
+        for (const QUrl& url : mime->urls()) {
+            if (url.isLocalFile() && isVitalPreset(url.toLocalFile()) && !paths.contains(url.toLocalFile())) {
+                paths << url.toLocalFile();
+            }
+        }
+    }
+    return paths;
+}
 
 QByteArray movedDevicesData(const QString& trackId, const QStringList& deviceIds) {
     return (QStringList{trackId} + deviceIds).join(u'\n').toUtf8();

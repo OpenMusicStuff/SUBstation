@@ -130,8 +130,8 @@ private Q_SLOTS:
         arrangement()->setGridLevel(0);
         arrangement()->setScrollBeats(0.0);
         arrangement()->setScrollY(0);
-        a_ = editor().addMidiTrack();
-        b_ = editor().addMidiTrack();
+        a_ = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
+        b_ = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         h_->setZoom(40.0);
         test::moveTo(window(), QPoint(2, 2), {}, Qt::NoButton);
         h_->settle();

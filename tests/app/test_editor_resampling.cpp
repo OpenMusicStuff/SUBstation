@@ -37,7 +37,7 @@ private Q_SLOTS:
     void anInputFromATrackAndItsUndo() {
         EditorFixture f;
         Project& p = f.project;
-        const QString source = f.editor.addMidiTrack(-1, "Synth");
+        const QString source = f.editor.addMidiTrack(-1, "Synth", QStringLiteral("synth"));
         const QString track = f.editor.addAudioTrack(-1, "Bounce");
         f.editor.setTrackInput(track, {0, 1});
         const int steps = f.stack.count();
@@ -73,7 +73,7 @@ private Q_SLOTS:
         Project& p = f.project;
         const QString a = f.editor.addAudioTrack();
         const QString b = f.editor.addAudioTrack();
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString group = f.editor.groupTracks({b});
         const QString ret = f.editor.addReturnTrack();
         f.editor.setSend(a, ret, 0.0);

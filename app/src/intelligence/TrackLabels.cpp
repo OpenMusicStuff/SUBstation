@@ -240,6 +240,9 @@ labels::DeviceFact TrackLabels::deviceFacts(const QString& trackId, const Device
         if (device.kind == QStringLiteral("sampler")) {
             facts.sample = utf8(deviceState::fromModel(device.state).value(QStringLiteral("sample")));
         }
+        if (device.kind == QStringLiteral("vital")) {  // its patch's name, as a plug-in's preset is read
+            facts.preset = utf8(deviceState::fromModel(device.state).value(QStringLiteral("preset_name")));
+        }
     }
     return facts;
 }
