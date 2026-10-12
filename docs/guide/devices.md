@@ -622,6 +622,11 @@ dense, harmonic sounds, and works on anything.
   a detuned sound); **Post-Shift** (±50 cents): tunes the notes themselves.
 - **Mute Low** and **Mute High**: take the bands outside Start and End away, to hear the
   processed band alone.
+- **Quality**: **Low Latency** moves the notes a semitone off as the original Chroma does,
+  landing a few cents from the note with a little roughness (part of its sound).
+  **High Quality** moves each note through a shifter of its own, tuned to that note: it
+  lands on the note exactly and cleanly. The latency is the same; it costs about twice the
+  CPU (still about half a percent of a core). Switching crossfades.
 
 Prisma's latency is about 11 ms (the engine lines the other tracks up with it). Changing
 the notes takes a few milliseconds to be heard and fades in, so chords played from MIDI

@@ -4,32 +4,39 @@
 // off them onto them, takes out the other notes and lets what lies between
 // notes through, softer: a growl's partials pulled into key, its texture left.
 //
-// - Bands: the input is split in halves of its rate (two-path polyphase IIR
+// - Rates: the input is split in halves of its rate (two-path polyphase IIR
 //   half-band filters, as a perfect-reconstruction QMF: the upper half passes
-//   untouched) down to a core of 22.05-24 kHz, where Linkwitz-Riley crossovers
-//   (24 dB/octave) at Start and End make a low, a mid and a high band. Only
-//   the mid band is processed; the others pass (or are muted).
-// - The mid band goes through three filters at once: the notes kept, and the
-//   notes a semitone below and above enabled ones, which two pitch shifters
-//   then move up and down onto them. Each filter is minimum-phase (no latency
-//   of its own, no pre-ringing), made from a magnitude mask over the pitch of
+//   untouched) down to a core of 22.05-24 kHz, where everything else happens.
+// - Masks: the notes are filters made from magnitude masks over the pitch of
 //   each frequency: an enabled note's gain (measured per set of notes:
 //   PrismaData.h) falling off over a semitone or two, exact zeros on the notes
 //   taken out, and between notes a floor that depends on how many notes are
-//   enabled. The masks are designed in steps across audio callbacks whenever
-//   the notes change (a cepstrum of 16384 points, then 32 partitions), and the
-//   new filters fade in over one block.
-// - The convolution is uniformly partitioned: blocks of 256 core samples (the
-//   latency, with the half-band filters' delay; the other bands wait with it).
-// - The shifters: two read heads per shifter on a delay line, crossfaded with
-//   Hann windows over 220 ms grains born every 110 ms, their delay sweeping
-//   at 1 - ratio (a semitone, or Pre-Shift's cents ahead of the notes).
+//   enabled. A note a semitone off an enabled one (the lower one if both are)
+//   is moved onto it: a band about it, then a pitch shifter.
+// - The bands: Linkwitz-Riley crossovers at Start and End make a low, a mid
+//   and a high band; the mid band goes through the kept notes' filter and the
+//   moved notes' bands, all minimum-phase (no latency of their own). The latency
+//   is one convolution block (256 core samples) and the half-band filters'.
+// - Quality: Low Latency moves the notes (as the reference) through two
+//   shifters, up and down, whose heads drift in and out of phase on each note:
+//   it lands a little off its pitch, with sidebands. High Quality gives each
+//   pitch class moved a shifter of its own, its heads a whole number of that
+//   note's periods apart: the note lands on its pitch exactly, clean. Both have
+//   the same latency; switching crossfades.
+// - The convolutions are uniformly partitioned (blocks of 256 core samples, 32
+//   partitions). The masks are designed in steps across audio callbacks whenever the notes change (a
+//   cepstrum of 16384 points for the minimum-phase ones), and the new filters
+//   fade in over one block.
+// - The shifters: two read heads on a delay line, crossfaded with Hann windows
+//   over grains two periods long, their delay sweeping at 1 - ratio.
 // - Color fades from the plain mid band (0 %) to the processed one (100 %);
 //   above, the notes get louder and narrower and the floor between them lower.
-//   Wet Gain scales the processed band; Post-Shift tunes the note grid.
+//   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
+//   notes, Post-Shift tunes the notes.
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -41,7 +48,6 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/PrismaData.h"
-#include "rt/FastMath.h"
 #include "rt/RtUtils.h"
 
 #ifdef _MSC_VER
@@ -66,12 +72,24 @@ constexpr int kBins = kBlock + 1;     // a block's spectrum (its transform's siz
 constexpr int kDesignSize = 16384;    // the masks' frequency grid
 constexpr int kTaps = kDesignSize / 2;
 constexpr int kParts = kTaps / kBlock;
-constexpr int kFilters = 3;           // kept, from below (moved up), from above (moved down)
 constexpr float kGrainSeconds = 0.11f;
 constexpr float kMinDelay = 3.f;      // core samples a head reads behind at the least
 constexpr float kMaskFloor = 1e-5f;   // -100 dB: where a mask is zero (the log needs a floor)
 constexpr float kMinStart = 160.f;    // Start and End work within these (as the reference's do), whatever
 constexpr float kMaxEnd = 4000.f;     // they are set to
+// The notes moved (measured on the reference): a band about each, its gain 0.85 times the note's it lands on,
+// falling exponentially away from it (13.5 dB in 0.3 semitone).
+constexpr double kMoveGain = 0.85;
+constexpr double kMoveWidth = 0.19;
+
+// The filters, by slot.
+enum Slot {
+    Kept = 0,         // the notes kept
+    FromBelow,        // Low Latency: the notes moved up, before the shifter
+    FromAbove,        // Low Latency: the notes moved down
+    Moved0,           // High Quality: each pitch class moved, before its own shifter (12)
+    kSlots = Moved0 + 12
+};
 
 // Half-band all-pass coefficients (polyphase, four: a transition 0.1075 of the rate wide), chosen so the
 // bands' delay follows the reference's across the spectrum (its 34 samples at a quarter of the rate).
@@ -159,41 +177,52 @@ struct Lr4 {
     void clear() noexcept { a.z1 = a.z2 = b.z1 = b.z2 = 0; }
 };
 
-// Two read heads on a delay line: a pitch shift by `ratio`. The heads crossfade with Hann windows (their
-// gains summing to one) or, for the notes moved a semitone, sine windows (their powers summing to one).
+// Two read heads on a delay line, crossfaded with Hann windows over grains two periods long and born a period
+// apart: a pitch shift, the delay sweeping by `slope` (1 - ratio) per sample. The heads are slope * period
+// apart: a whole number of a note's periods keeps them in phase on it (High Quality's shifters).
 class Shifter {
 public:
-    void prepare(double rate, bool constantPower = false) {
-        period_ = std::max(16, static_cast<int>(std::lround(kGrainSeconds * rate)));
+    void prepare(int period, int maxPeriod) {
+        maxPeriod = std::max(maxPeriod, period);
         // The longest sweep: Pre-Shift's 50 cents or a semitone's (6 %) over two periods.
         size_t size = 1;
-        while (size < static_cast<size_t>(0.07 * 2 * period_ + kMinDelay + 8)) size <<= 1;
+        while (size < static_cast<size_t>(0.07 * 2 * maxPeriod + kMinDelay + 8)) size <<= 1;
         buffer_.assign(size, 0.f);
         mask_ = size - 1;
-        // the heads' gains over a grain's life (a table: no sine per sample)
+        window_.reserve(static_cast<size_t>(2 * maxPeriod));
+        setPeriod(period);
+    }
+    // A period of another length (no more than prepare()'s longest): the shifter starts again, silent.
+    void setPeriod(int period) {
+        period_ = std::max(16, period);
         window_.resize(static_cast<size_t>(2 * period_));
         for (size_t i = 0; i < window_.size(); ++i) {
             const double s = std::sin(std::numbers::pi * static_cast<double>(i) / (2.0 * period_));
-            window_[i] = static_cast<float>(constantPower ? s : s * s);
+            window_[i] = static_cast<float>(s * s);
         }
         clear();
     }
+    int period() const noexcept { return period_; }
     void clear() noexcept {
         std::fill(buffer_.begin(), buffer_.end(), 0.f);
         write_ = 0;
         age_ = 0;
+        filled_ = 0;
     }
-    float process(float x, double ratio) noexcept {
+    float process(float x, double slope) noexcept {
         buffer_[write_] = x;
-        const double slope = 1.0 - ratio;
         const double twoP = 2.0 * period_;
         double out = 0;
         for (int head = 0; head < 2; ++head) {
             int age = age_ + head * period_;
             if (age >= 2 * period_) age -= 2 * period_;
             const double delay = slope > 0 ? kMinDelay + slope * age : kMinDelay + (-slope) * (twoP - age);
-            out += window_[static_cast<size_t>(age)] * read(delay);
+            double w = window_[static_cast<size_t>(age)];
+            // started again: a head comes in over kWarmUp samples once what it reads has been written
+            if (filled_ < delay + kWarmUp) w *= std::clamp((filled_ - delay) / kWarmUp, 0.0, 1.0);
+            out += w * read(delay);
         }
+        if (filled_ < static_cast<double>(mask_)) filled_ += 1;
         write_ = (write_ + 1) & mask_;
         if (++age_ >= 2 * period_) age_ = 0;
         return static_cast<float>(out);
@@ -207,8 +236,10 @@ private:
         const double f = pos - fl;
         return buffer_[i] * (1 - f) + buffer_[(i + 1) & mask_] * f;
     }
+    static constexpr double kWarmUp = 64;
     std::vector<float> buffer_, window_;
     size_t mask_ = 0, write_ = 0;
+    double filled_ = 0;  // samples written since it started (up to the buffer's length)
     int period_ = 2640, age_ = 0;
 };
 
@@ -217,7 +248,8 @@ struct DesignKey {
     int notes = 0;            // bit per pitch class (C = bit 0)
     int postCents = 0;        // tenths of a cent
     int colorExponent = 100;  // percent, above 100 only
-    int start = 240, end = 2400;  // Hz: where the kept mask goes flat
+    int start = 240, end = 2400;
+    bool highQuality = false;
     bool operator==(const DesignKey&) const = default;
 };
 
@@ -255,6 +287,10 @@ struct Spectra {
             i[k] = bins[k].imag();
         }
     }
+    void clear() noexcept {
+        std::fill(re.begin(), re.end(), 0.f);
+        std::fill(im.begin(), im.end(), 0.f);
+    }
     const float* real(size_t block) const noexcept { return re.data() + block * kBins; }
     const float* imag(size_t block) const noexcept { return im.data() + block * kBins; }
 };
@@ -263,6 +299,18 @@ struct Spectra {
 struct Partitions {
     Spectra spectra;
     int used = 0;  // partitions with anything in them; 0: the filter is silent
+};
+
+// A signal's last blocks, as spectra (each block with the one before it: overlap-save), newest at `pos`.
+struct History {
+    Spectra spectra;
+    int pos = 0;
+    float previous[kBlock] = {};
+    void clear() noexcept {
+        spectra.clear();
+        pos = 0;
+        std::fill(std::begin(previous), std::end(previous), 0.f);
+    }
 };
 
 // y += x h, over one partition's bins.
@@ -277,7 +325,7 @@ inline void multiplyAdd(const float* __restrict xr, const float* __restrict xi, 
 class PrismaProcessor final : public BuiltinProcessor {
 public:
     enum Param {
-        Start = 0, End, Color, WetGain, PreShift, PostShift, MuteLow, MuteHigh, Midi,
+        Start = 0, End, Color, WetGain, PreShift, PostShift, MuteLow, MuteHigh, Quality, Midi,
         NoteC, NumParams = NoteC + 12
     };
 
@@ -290,7 +338,6 @@ public:
     int tailSamples() const override { return latency_ + kTaps * factor_; }
 
     void prepare(double sampleRate, int) override {
-        rate_ = sampleRate;
         stages_ = 0;
         double core = sampleRate;
         while (core >= 40000.0 && stages_ < 3) {
@@ -306,8 +353,9 @@ public:
 
         fft_.resize(2 * kBlock);
         designFft_.resize(kDesignSize);
+        grain_ = static_cast<int>(std::lround(kGrainSeconds * coreRate_));
         for (auto& c : ch_) {
-            c.history.assign(kParts);
+            c.mid.spectra.assign(kParts);
             for (int s = 0; s < 3; ++s) {
                 // a stage's upper half waits for the processing beneath it: the block, at its rate
                 // (and as the half-band filters of the stages beneath delay it, rounded)
@@ -318,20 +366,21 @@ public:
                                                                static_cast<size_t>(std::lround(deeper)),
                                                            0.0);
             }
-            c.pre.prepare(coreRate_);
-            c.up.prepare(coreRate_);
-            c.down.prepare(coreRate_);
+            c.pre.prepare(grain_, grain_);
+            c.up.prepare(grain_, grain_);
+            c.down.prepare(grain_, grain_);
+            for (auto& m : c.moved) m.prepare(grain_, 3 * grain_);
         }
         for (auto& set : filters_)
             for (auto& f : set) f.spectra.assign(kParts);
-        mag_.assign(static_cast<size_t>(kFilters), std::vector<float>(kDesignSize / 2 + 1));
+        mag_.assign(kSlots, std::vector<float>(kDesignSize / 2 + 1));
         work_.assign(kDesignSize, 0.f);
         spec_.assign(kDesignSize / 2 + 1, Complex{});
         timeBuf_.assign(2 * kBlock, 0.f);
         freqBuf_.assign(kBins, Complex{});
         accumRe_.assign(kBins, 0.f);
         accumIm_.assign(kBins, 0.f);
-        blockOut_.assign(static_cast<size_t>(kFilters) * 2, std::vector<float>(kBlock));
+        for (auto& b : out_) b.assign(2 * kBlock, 0.f);
 
         // The filters for the current settings, now (no audio is running).
         key_ = currentKey();
@@ -340,7 +389,7 @@ public:
         while (designing_) runDesignStep();
         active_ = pending_;
         fade_ = 0;
-        wetNotes_ = key_.notes;
+        heard_ = key_;
         wetAmount_.reset(coreRate_, 0.02);
         wetAmount_.snapTo(wetTarget());
         reset();
@@ -407,9 +456,8 @@ private:
         size_t highPos[3] = {};
         Lr4 lowLp, midHp, midLp, highHp;
         Shifter pre, up, down;
-        Spectra history;  // the mid band's last blocks, as spectra
-        int historyPos = 0;
-        float prevIn[kBlock] = {};
+        std::array<Shifter, 12> moved;  // High Quality: a shifter per pitch class moved
+        History mid;                    // the mid band (as Pre-Shift has it)
         float inMid[kBlock] = {}, inLow[kBlock] = {}, inHigh[kBlock] = {};
         float outBlock[kBlock] = {};
         bool resting = false;  // the shifters cleared while the processed band isn't heard
@@ -422,14 +470,9 @@ private:
             }
             lowLp.clear(); midHp.clear(); midLp.clear(); highHp.clear();
             pre.clear(); up.clear(); down.clear();
-            std::fill(history.re.begin(), history.re.end(), 0.f);
-            std::fill(history.im.begin(), history.im.end(), 0.f);
-            historyPos = 0;
-            std::fill(std::begin(prevIn), std::end(prevIn), 0.f);
-            std::fill(std::begin(inMid), std::end(inMid), 0.f);
-            std::fill(std::begin(inLow), std::end(inLow), 0.f);
-            std::fill(std::begin(inHigh), std::end(inHigh), 0.f);
-            std::fill(std::begin(outBlock), std::end(outBlock), 0.f);
+            for (auto& m : moved) m.clear();
+            mid.clear();
+            for (float* b : {inMid, inLow, inHigh, outBlock}) std::fill(b, b + kBlock, 0.f);
             std::fill(std::begin(frameIn), std::end(frameIn), 0.0);
             std::fill(std::begin(frameOut), std::end(frameOut), 0.0);
         }
@@ -438,6 +481,7 @@ private:
     static const std::vector<ParamInfo>& infos() {
         static const std::vector<ParamInfo> kInfos = [] {
             const auto& onOff = offOnLabels();
+            static const std::vector<std::string> kQuality = {"Low Latency", "High Quality"};
             std::vector<ParamInfo> list = {
                 {"start", "Start", "Hz", 80.f, 1800.f, 240.f, true},
                 {"end", "End", "Hz", 400.f, 8000.f, 2400.f, true},
@@ -447,6 +491,7 @@ private:
                 {"post_shift", "Post-Shift", "cents", -50.f, 50.f, 0.f},
                 {"mute_low", "Mute Low", "", 0.f, 1.f, 0.f, false, onOff},
                 {"mute_high", "Mute High", "", 0.f, 1.f, 0.f, false, onOff},
+                {"quality", "Quality", "", 0.f, 1.f, 0.f, false, kQuality},
                 {"midi", "MIDI Notes", "", 0.f, 1.f, 0.f, false, onOff},
             };
             static const char* const kNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -476,13 +521,21 @@ private:
         k.colorExponent = std::max(100, static_cast<int>(std::lround(param(Color))));
         k.start = static_cast<int>(std::lround(std::max(param(Start), kMinStart)));
         k.end = static_cast<int>(std::lround(std::min(param(End), kMaxEnd)));
+        k.highQuality = choiceIndex(Quality) == 1;
         return k;
     }
     // How much of the processed band is heard (0..1): Color up to 100 %, and nothing with no notes or all twelve.
     float wetTarget() const noexcept {
-        const int n = wetNotes_;
+        const int n = heard_.notes;
         if (n == 0 || n == 0xfff) return 0.f;
         return std::clamp(param(Color) / 100.f, 0.f, 1.f);
+    }
+    // A pitch class's shift: +1 up, -1 down (onto the lower neighbour when both are enabled), 0 none.
+    static int moveOf(int bits, int c) noexcept {
+        if (bits >> c & 1) return 0;
+        if (bits >> ((c + 11) % 12) & 1) return -1;
+        if (bits >> ((c + 1) % 12) & 1) return 1;
+        return 0;
     }
 
     void updateCrossovers() noexcept {
@@ -508,7 +561,7 @@ private:
         for (int c = 0; c < chs; ++c) processBlock(ch_[static_cast<size_t>(c)]);
         if (fade_ > 0 && --fade_ == 0) {
             active_ = 1 - active_;
-            wetNotes_ = key_.notes;
+            heard_ = key_;
         }
     }
 
@@ -525,10 +578,9 @@ private:
                 cur[k] = low;
                 // the upper half waits as long as the processing beneath it
                 auto& d = c.highDelay[s];
-                const double delayed = d[c.highPos[s]];
+                hi[s][k] = d[c.highPos[s]];
                 d[c.highPos[s]] = high;
                 c.highPos[s] = (c.highPos[s] + 1) % d.size();
-                hi[s][k] = delayed;
             }
             len /= 2;
         }
@@ -542,85 +594,135 @@ private:
         std::copy(cur, cur + factor_, out);
     }
 
-    // One core sample: the bands now, what the block before them made out.
+    // One core sample: what goes into this block, and what the block before it made out.
     double core(Channel& c, double x) noexcept {
-        const double low = c.lowLp(x);
         const double mid = c.midLp(c.midHp(x));
-        const double high = c.highHp(x);
-        const float m = preRatio_ != 1.0 ? c.pre.process(static_cast<float>(mid), preRatio_) : static_cast<float>(mid);
-        c.inLow[pos_] = static_cast<float>(low);
-        c.inHigh[pos_] = static_cast<float>(high);
-        c.inMid[pos_] = m;
+        c.inLow[pos_] = static_cast<float>(c.lowLp(x));
+        c.inHigh[pos_] = static_cast<float>(c.highHp(x));
+        c.inMid[pos_] = preRatio_ != 1.0 ? c.pre.process(static_cast<float>(mid), 1.0 - preRatio_) : static_cast<float>(mid);
         return c.outBlock[pos_];
     }
 
-    // A block of the mid band: convolved with the three filters (and the outgoing ones while they fade),
-    // shifted, mixed with the other bands into the next block's output.
-    void processBlock(Channel& c) noexcept {
-        // the input spectrum: the last two blocks (overlap-save)
-        std::copy(std::begin(c.prevIn), std::end(c.prevIn), timeBuf_.begin());
-        std::copy(std::begin(c.inMid), std::end(c.inMid), timeBuf_.begin() + kBlock);
-        std::copy(std::begin(c.inMid), std::end(c.inMid), std::begin(c.prevIn));
-        fft_.forward(timeBuf_.data(), freqBuf_.data());
-        c.historyPos = (c.historyPos + kParts - 1) % kParts;
-        c.history.set(static_cast<size_t>(c.historyPos), freqBuf_.data());
+    // --- Convolution -----------------------------------------------------------------------------------
 
+    void push(History& h, const float* block) noexcept {
+        std::copy(h.previous, h.previous + kBlock, timeBuf_.begin());
+        std::copy(block, block + kBlock, timeBuf_.begin() + kBlock);
+        std::copy(block, block + kBlock, h.previous);
+        fft_.forward(timeBuf_.data(), freqBuf_.data());
+        h.pos = (h.pos + kParts - 1) % kParts;
+        h.spectra.set(static_cast<size_t>(h.pos), freqBuf_.data());
+    }
+
+    // out (a block) = `filter` over the history, the block just pushed last.
+    void convolve(const History& h, const Partitions& filter, float* out) noexcept {
+        if (filter.used == 0) {
+            std::fill(out, out + kBlock, 0.f);
+            return;
+        }
+        std::fill(accumRe_.begin(), accumRe_.end(), 0.f);
+        std::fill(accumIm_.begin(), accumIm_.end(), 0.f);
+        for (int part = 0; part < filter.used; ++part) {
+            const auto x = static_cast<size_t>((h.pos + part) % kParts);
+            const auto f = static_cast<size_t>(part);
+            multiplyAdd(h.spectra.real(x), h.spectra.imag(x), filter.spectra.real(f), filter.spectra.imag(f),
+                        accumRe_.data(), accumIm_.data());
+        }
+        for (int k = 0; k < kBins; ++k)
+            freqBuf_[static_cast<size_t>(k)] = Complex(accumRe_[static_cast<size_t>(k)], accumIm_[static_cast<size_t>(k)]);
+        fft_.inverse(freqBuf_.data(), timeBuf_.data());
+        const float scale = 1.f / (2 * kBlock);
+        for (int k = 0; k < kBlock; ++k) out[k] = timeBuf_[static_cast<size_t>(kBlock + k)] * scale;
+    }
+
+    // --- A block ---------------------------------------------------------------------------------------
+
+    // A filter's output this block with set `from`, and (with `to` a set, while they fade) with set `to` blended
+    // in. `run(set, out)` fills a block for a set; the blend ramps from one to the other over the block.
+    template <typename Run>
+    void blended(int from, int to, float* out, float* scratch, Run run) noexcept {
+        run(from, out);
+        if (to < 0) return;
+        run(to, scratch);
+        for (int k = 0; k < kBlock; ++k) {
+            const float t = (k + 1) / static_cast<float>(kBlock);
+            out[k] = out[k] * (1 - t) + scratch[k] * t;
+        }
+    }
+
+    // The notes moved, by the filters of set `from` (fading into those of set `to`, if any) and the shifters of a
+    // mode: Low Latency's two (up and down), High Quality's one per pitch class.
+    void moveNotes(Channel& c, bool highQuality, int from, int to, float* out) noexcept {
+        float* band = out_[3].data();
+        float* scratch = out_[4].data();
+        auto filtered = [&](int slot) {
+            blended(from, to, band, scratch, [&](int s, float* o) { convolve(c.mid, filters_[s][slot], o); });
+        };
+        std::fill(out, out + kBlock, 0.f);
+        if (!highQuality) {
+            const double upSlope = 1.0 - std::exp2(1.0 / 12), downSlope = 1.0 - std::exp2(-1.0 / 12);
+            filtered(FromBelow);
+            for (int k = 0; k < kBlock; ++k) out[k] += c.up.process(band[k], upSlope);
+            filtered(FromAbove);
+            for (int k = 0; k < kBlock; ++k) out[k] += c.down.process(band[k], downSlope);
+            return;
+        }
+        for (int pc = 0; pc < 12; ++pc) {
+            const int slot = Moved0 + pc;
+            if (filters_[static_cast<size_t>(from)][slot].used == 0 &&
+                (to < 0 || filters_[static_cast<size_t>(to)][slot].used == 0))
+                continue;
+            filtered(slot);
+            Shifter& shifter = c.moved[static_cast<size_t>(pc)];
+            for (int k = 0; k < kBlock; ++k) out[k] += shifter.process(band[k], movedSlope_[pc]);
+        }
+    }
+
+    void processBlock(Channel& c) noexcept {
         const bool fading = fade_ > 0;
-        // Nothing of the processed band heard (no notes, all twelve, Color 0): the band passes, and the filters
-        // and shifters rest (the input's spectra are still kept, for when they are heard again).
+        const int incoming = 1 - active_;
+        const bool muteLow = isOn(MuteLow), muteHigh = isOn(MuteHigh);
+        const float wetGain = dbToGain(param(WetGain));
+        const float* low = c.inLow;
+        const float* high = c.inHigh;
+        const float* mid = c.inMid;
+        float* kept = out_[0].data();
+        float* moved = out_[1].data();
+        float* other = out_[2].data();
+        float* scratch = out_[4].data();
+        push(c.mid, c.inMid);
+
+        // Nothing of the processed band heard (no notes, all twelve, Color 0): the band passes, and the notes'
+        // filters and the shifters rest (the band's spectra are still kept, for when they are heard again).
         if (!fading && wetRamp_[0] == 0.f && wetRamp_[kBlock - 1] == 0.f) {
             if (!c.resting) {
                 c.up.clear();
                 c.down.clear();
+                for (auto& m : c.moved) m.clear();
                 c.resting = true;
             }
-            const bool muteLow = isOn(MuteLow), muteHigh = isOn(MuteHigh);
-            for (int k = 0; k < kBlock; ++k)
-                c.outBlock[k] = (muteLow ? 0.f : c.inLow[k]) + (muteHigh ? 0.f : c.inHigh[k]) + c.inMid[k];
+            for (int k = 0; k < kBlock; ++k) c.outBlock[k] = (muteLow ? 0.f : low[k]) + (muteHigh ? 0.f : high[k]) + mid[k];
             return;
         }
         c.resting = false;
-        const float scale = 1.f / (2 * kBlock);
-        for (int set = 0; set < (fading ? 2 : 1); ++set) {
-            const int which = set == 0 ? active_ : 1 - active_;
-            for (int f = 0; f < kFilters; ++f) {
-                const Partitions& p = filters_[static_cast<size_t>(which)][static_cast<size_t>(f)];
-                auto& out = blockOut_[static_cast<size_t>(set * kFilters + f)];
-                if (p.used == 0) {
-                    std::fill(out.begin(), out.end(), 0.f);
-                    continue;
-                }
-                std::fill(accumRe_.begin(), accumRe_.end(), 0.f);
-                std::fill(accumIm_.begin(), accumIm_.end(), 0.f);
-                for (int part = 0; part < p.used; ++part) {
-                    const auto x = static_cast<size_t>((c.historyPos + part) % kParts);
-                    const auto h = static_cast<size_t>(part);
-                    multiplyAdd(c.history.real(x), c.history.imag(x), p.spectra.real(h), p.spectra.imag(h),
-                                accumRe_.data(), accumIm_.data());
-                }
-                for (int k = 0; k < kBins; ++k)
-                    freqBuf_[static_cast<size_t>(k)] = Complex(accumRe_[static_cast<size_t>(k)], accumIm_[static_cast<size_t>(k)]);
-                fft_.inverse(freqBuf_.data(), timeBuf_.data());
-                for (int k = 0; k < kBlock; ++k) out[static_cast<size_t>(k)] = timeBuf_[static_cast<size_t>(kBlock + k)] * scale;
-            }
-        }
-        const float wetGain = dbToGain(param(WetGain));
-        const bool muteLow = isOn(MuteLow), muteHigh = isOn(MuteHigh);
-        const double upRatio = std::exp2(1.0 / 12), downRatio = std::exp2(-1.0 / 12);
-        for (int k = 0; k < kBlock; ++k) {
-            const auto i = static_cast<size_t>(k);
-            float kept = blockOut_[0][i], fromBelow = blockOut_[1][i], fromAbove = blockOut_[2][i];
-            if (fading) {
-                // the outgoing filters (set 0) fade out as the new ones (set 1) fade in
+
+        blended(active_, fading ? incoming : -1, kept, scratch,
+                [&](int s, float* o) { convolve(c.mid, filters_[s][Kept], o); });
+        // the notes moved: from one Quality to the other, each mode's own, crossfaded
+        if (fading && highQualitySet_[active_] != highQualitySet_[incoming]) {
+            moveNotes(c, highQualitySet_[active_], active_, -1, moved);
+            moveNotes(c, highQualitySet_[incoming], incoming, -1, other);
+            for (int k = 0; k < kBlock; ++k) {
                 const float t = (k + 1) / static_cast<float>(kBlock);
-                kept = kept * (1 - t) + blockOut_[3][i] * t;
-                fromBelow = fromBelow * (1 - t) + blockOut_[4][i] * t;
-                fromAbove = fromAbove * (1 - t) + blockOut_[5][i] * t;
+                moved[k] = moved[k] * (1 - t) + other[k] * t;
             }
-            const float wet = kept + c.up.process(fromBelow, upRatio) + c.down.process(fromAbove, downRatio);
-            const float a = wetRamp_[i];
-            const float midOut = (1 - a) * c.inMid[k] + a * wetGain * wet;
-            c.outBlock[k] = (muteLow ? 0.f : c.inLow[k]) + (muteHigh ? 0.f : c.inHigh[k]) + midOut;
+        } else {
+            moveNotes(c, highQualitySet_[active_], active_, fading ? incoming : -1, moved);
+        }
+        for (int k = 0; k < kBlock; ++k) {
+            const float a = wetRamp_[static_cast<size_t>(k)];
+            const float midOut = (1 - a) * mid[k] + a * wetGain * (kept[k] + moved[k]);
+            c.outBlock[k] = (muteLow ? 0.f : low[k]) + (muteHigh ? 0.f : high[k]) + midOut;
         }
     }
 
@@ -632,18 +734,79 @@ private:
             ++designStep_;
             return;
         }
-        const int f = designStep_ - 1;
-        designFilter(f, filters_[static_cast<size_t>(1 - active_)][static_cast<size_t>(f)]);
-        if (++designStep_ > kFilters) {
-            designing_ = false;
-            pending_ = 1 - active_;
-            fade_ = 1;  // the next block crossfades from the old filters to these
+        // one filter a step: the slots this design uses (the others go silent)
+        const int slot = designStep_ - 1;
+        Partitions& out = filters_[static_cast<size_t>(1 - active_)][static_cast<size_t>(slot)];
+        if (!slotUsed_[slot]) {
+            out.used = 0;
+        } else {
+            designMinimum(mag_[static_cast<size_t>(slot)], out);
+        }
+        if (++designStep_ > kSlots) finishDesign();
+    }
+
+    void finishDesign() noexcept {
+        designing_ = false;
+        pending_ = 1 - active_;
+        // High Quality's shifters: one per pitch class, their periods kept in step with its notes
+        for (int pc = 0; pc < 12; ++pc) {
+            movedNext_[pc] = moveOf(key_.notes, pc);
+            nextPeriod_[pc] = movedPeriod(pc, movedNext_[pc]);
+        }
+        // the next block crossfades from the old filters to these (and, from one Quality to the other, from the
+        // one mode's shifters to the other's, started again)
+        highQualitySet_[pending_] = key_.highQuality;
+        if (highQualitySet_[pending_] != highQualitySet_[active_]) {
+            for (auto& c : ch_) {
+                if (key_.highQuality) {
+                    for (auto& m : c.moved) m.clear();
+                } else {
+                    c.up.clear();
+                    c.down.clear();
+                }
+            }
+        }
+        fade_ = 1;
+        applyMoves();
+    }
+
+    // High Quality's shifters take their new periods (and moves) now; a shifter whose period changes starts again.
+    void applyMoves() noexcept {
+        for (int pc = 0; pc < 12; ++pc) {
+            if (movedNext_[pc] != 0 && nextPeriod_[pc] != ch_[0].moved[static_cast<size_t>(pc)].period())
+                for (auto& c : ch_) c.moved[static_cast<size_t>(pc)].setPeriod(nextPeriod_[pc]);
+            const double ratio = std::exp2(movedNext_[pc] / 12.0);
+            // the heads a whole number of the note's periods apart: the slope that makes them so
+            const int period = ch_[0].moved[static_cast<size_t>(pc)].period();
+            const double notePeriod = notePeriodSamples(pc);
+            const double spacing = std::max(1.0, std::round(std::abs(1.0 - ratio) * period / notePeriod)) * notePeriod;
+            // (a class no longer moved keeps its slope as it fades out)
+            if (movedNext_[pc] != 0) movedSlope_[pc] = (ratio > 1 ? -1.0 : 1.0) * spacing / period;
         }
     }
 
-    // The three magnitude masks over the design grid's bins (core rate).
+    // The period, in core samples, of pitch class pc's lowest note in the processed band (an octave under Start
+    // at the least): every higher octave's period divides it.
+    double notePeriodSamples(int pc) const noexcept {
+        double f = 440.0 * std::exp2((pc - 9) / 12.0);
+        const double floorHz = 0.5 * key_.start;
+        while (f >= 2 * floorHz) f *= 0.5;
+        while (f < floorHz) f *= 2;
+        return coreRate_ / f;
+    }
+    // A High Quality shifter's period: about the grain's, made so a whole number of note periods spans its sweep.
+    int movedPeriod(int pc, int move) const noexcept {
+        if (move == 0) return grain_;
+        const double slope = std::abs(1.0 - std::exp2(move / 12.0));
+        const double note = notePeriodSamples(pc);
+        const double spacing = std::max(1.0, std::round(slope * grain_ / note)) * note;
+        return std::min(3 * grain_, static_cast<int>(std::lround(spacing / slope)));
+    }
+
+    // The magnitude masks over the design grid's bins (core rate), for the slots the design uses.
     void computeMasks() noexcept {
         const int bits = key_.notes;
+        const bool hq = key_.highQuality;
         float v[12] = {};
         int count = 0;
         for (int c = 0; c < 12; ++c) {
@@ -667,19 +830,35 @@ private:
         const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
                                 std::pow(10.f, lerp(kFloorDb) / 20.f);
         const double post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
-        // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat, at a gain
-        // that falls 1.89 dB per enabled note (+19.8 dB with one). The crossovers take most of it away, but
-        // what is left overlaps the low and high bands, and a minimum-phase filter's phase depends on its
-        // magnitude everywhere.
+        // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat (Low Latency, as
+        // the reference: at a gain falling 1.89 dB per enabled note, +19.8 dB with one; the crossovers take most
+        // of it away, but a minimum-phase filter's phase depends on its magnitude everywhere).
         const double combLow = 12.0 * std::log2(key_.start / 440.0) + 9.0 - 10.0;
         const double combHigh = 12.0 * std::log2(key_.end / 440.0) + 9.0 + 10.0;
         const double outsideDb = 19.8 - 1.89 * (count - 1);
+        int move[12];
+        for (int c = 0; c < 12; ++c) move[c] = moveOf(bits, c);
+        // which slots this design uses
+        for (bool& used : slotUsed_) used = false;
+        slotUsed_[Kept] = true;
+        if (hq) {
+            for (int c = 0; c < 12; ++c) slotUsed_[Moved0 + c] = move[c] != 0;
+        } else {
+            slotUsed_[FromBelow] = slotUsed_[FromAbove] = true;
+        }
+
         auto kernel = [](double dist) noexcept {
             const double x = std::abs(dist) * 8.0;
             const int i = static_cast<int>(x);
             if (i >= kKernelPoints - 1) return 0.0;
             const double t = x - i;
             return kNoteKernel[i] * (1 - t) + kNoteKernel[i + 1] * t;
+        };
+        auto wrapped = [](double d) noexcept {
+            d = std::fmod(d, 12.0);
+            if (d < -6) d += 12;
+            if (d >= 6) d -= 12;
+            return d;
         };
         const int bins = kDesignSize / 2 + 1;
         for (int k = 0; k < bins; ++k) {
@@ -691,9 +870,7 @@ private:
             double sum = 0, cover = 0;
             for (int c = 0; c < 12; ++c) {
                 if (!(bits >> c & 1)) continue;
-                double dist = std::fmod(p - c, 12.0);
-                if (dist < -6) dist += 12;
-                if (dist >= 6) dist -= 12;
+                const double dist = wrapped(p - c);
                 const double kv = kernel(dist * narrow);
                 sum += v[c] * kv;
                 cover += kv;
@@ -702,20 +879,16 @@ private:
             const double s = std::sin(std::numbers::pi * d);
             const double notch = on ? 1.0 : s * s;
             double kept = notch * (sum + floorGain * std::max(0.0, 1.0 - cover));
-            // the notes moved: around each removed note with an enabled neighbour (the lower one if both are),
-            // a peak falling exponentially with the distance from it (13.5 dB in 0.3 semitone)
+            // the notes moved: a band about each
             double fromBelow = 0, fromAbove = 0;
+            double perClass[12] = {};
             for (int src = 0; src < 12; ++src) {
-                if (bits >> src & 1) continue;
-                const bool lower = bits >> ((src + 11) % 12) & 1, upper = bits >> ((src + 1) % 12) & 1;
-                if (!lower && !upper) continue;
-                double dist = std::fmod(p - src, 12.0);
-                if (dist < -6) dist += 12;
-                if (dist >= 6) dist -= 12;
-                if (std::abs(dist) > 1.5) continue;
-                const double shape = 0.85 * std::exp(-std::abs(dist) * narrow / 0.19);
-                if (lower) fromAbove += v[(src + 11) % 12] * shape;
-                else fromBelow += v[(src + 1) % 12] * shape;
+                if (move[src] == 0) continue;
+                const double dist = wrapped(p - src) * narrow;
+                if (std::abs(dist) >= 1.5) continue;
+                const double band = kMoveGain * v[(src + move[src] + 12) % 12] * std::exp(-std::abs(dist) / kMoveWidth);
+                (move[src] > 0 ? fromBelow : fromAbove) += band;
+                perClass[src] = band;
             }
             // across a semitone at each end of the comb, from it to the flat gain (in dB)
             const double past = std::max(combLow - p, p - combHigh);  // semitones outside the comb
@@ -725,16 +898,32 @@ private:
                 kept = std::exp((1 - t) * std::log(std::max(kept, 1e-5)) + t * std::log(outside));
                 fromBelow *= 1 - t;
                 fromAbove *= 1 - t;
+                for (double& b : perClass) b *= 1 - t;
             }
-            mag_[0][static_cast<size_t>(k)] = static_cast<float>(kept);
-            mag_[1][static_cast<size_t>(k)] = static_cast<float>(fromBelow);
-            mag_[2][static_cast<size_t>(k)] = static_cast<float>(fromAbove);
+            for (int src = 0; src < 12; ++src)
+                if (move[src] != 0) mag_[Moved0 + src][static_cast<size_t>(k)] = static_cast<float>(perClass[src]);
+            mag_[Kept][static_cast<size_t>(k)] = static_cast<float>(kept);
+            mag_[FromBelow][static_cast<size_t>(k)] = static_cast<float>(fromBelow);
+            mag_[FromAbove][static_cast<size_t>(k)] = static_cast<float>(fromAbove);
         }
     }
 
-    // A minimum-phase filter from mask f (real cepstrum), partitioned into `out`.
-    void designFilter(int f, Partitions& out) noexcept {
-        const auto& mag = mag_[static_cast<size_t>(f)];
+    // The impulse response in work_ (first kTaps samples) into partitions.
+    void partition(Partitions& out) noexcept {
+        int last = 0;
+        for (int n = 0; n < kTaps; ++n)
+            if (std::abs(work_[static_cast<size_t>(n)]) > 1e-7f) last = n;
+        out.used = std::min(kParts, last / kBlock + 1);
+        for (int part = 0; part < out.used; ++part) {
+            std::fill(timeBuf_.begin(), timeBuf_.end(), 0.f);
+            std::copy(work_.begin() + part * kBlock, work_.begin() + (part + 1) * kBlock, timeBuf_.begin());
+            fft_.forward(timeBuf_.data(), freqBuf_.data());
+            out.spectra.set(static_cast<size_t>(part), freqBuf_.data());
+        }
+    }
+
+    // A minimum-phase filter from a mask (real cepstrum).
+    void designMinimum(const std::vector<float>& mag, Partitions& out) noexcept {
         const int half = kDesignSize / 2;
         float peak = 0;
         for (const float m : mag) peak = std::max(peak, m);
@@ -758,7 +947,6 @@ private:
         designFft_.inverse(spec_.data(), work_.data());
         // the impulse response's first kTaps samples, its tail faded
         const int fadeStart = kTaps * 7 / 8;
-        int last = 0;
         for (int n = 0; n < kTaps; ++n) {
             float h = work_[static_cast<size_t>(n)] * inv;
             if (n >= fadeStart) {
@@ -766,40 +954,37 @@ private:
                 h *= 0.5f + 0.5f * std::cos(std::numbers::pi_v<float> * t);
             }
             work_[static_cast<size_t>(n)] = h;
-            if (std::abs(h) > 1e-7f) last = n;
         }
-        out.used = std::min(kParts, last / kBlock + 1);
-        for (int part = 0; part < out.used; ++part) {
-            std::fill(timeBuf_.begin(), timeBuf_.end(), 0.f);
-            std::copy(work_.begin() + part * kBlock, work_.begin() + (part + 1) * kBlock, timeBuf_.begin());
-            fft_.forward(timeBuf_.data(), freqBuf_.data());
-            out.spectra.set(static_cast<size_t>(part), freqBuf_.data());
-        }
+        partition(out);
     }
 
-    double rate_ = 48000, coreRate_ = 24000;
-    int stages_ = 1, factor_ = 2, latency_ = 0;
+
+    int stages_ = 1, factor_ = 2, latency_ = 0, grain_ = 2640;
+    double coreRate_ = 24000;
     std::array<Channel, kChannels> ch_;
     int pos_ = 0;
     int held_[128] = {};
     double lastStart_ = -1, lastEnd_ = -1;
 
     RealDft fft_, designFft_;
-    std::array<std::array<Partitions, kFilters>, 2> filters_;
+    std::array<std::array<Partitions, kSlots>, 2> filters_;
     int active_ = 0, pending_ = 0, fade_ = 0;
-    DesignKey key_;
+    bool highQualitySet_[2] = {};  // each set of filters' Quality (how its notes are moved)
+    DesignKey key_, heard_;
     bool designing_ = false;
     int designStep_ = 0;
+    bool slotUsed_[kSlots] = {};
+    int movedNext_[12] = {}, nextPeriod_[12] = {};
+    double movedSlope_[12] = {};
     std::vector<std::vector<float>> mag_;
     std::vector<float> work_, timeBuf_;
     std::vector<Complex> spec_, freqBuf_;
     std::vector<float> accumRe_, accumIm_;
-    std::vector<std::vector<float>> blockOut_;
+    std::array<std::vector<float>, 5> out_;
     SmoothedValue wetAmount_;
     std::array<float, kBlock> wetRamp_{};
-    int wetNotes_ = 0;    // the notes of the filters heard
-    double preRatio_ = 1.0;
     int frameFill_ = 0;   // host samples gathered into the current frame
+    double preRatio_ = 1.0;
 };
 
 }  // namespace
