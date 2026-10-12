@@ -91,7 +91,8 @@ EngineBridge::~EngineBridge() {
     // Their results come to this object, which is going: what is posted to it goes with it.
     d_->pool.waitForDone();
     d_->statePool.waitForDone();
-    if (d_->editorLoop && &sub::editorEventLoop() == d_->editorLoop.get()) sub::setEditorEventLoop(nullptr);
+    // (Editors still open keep it, and unregister through it, until they close.)
+    if (d_->editorLoop && sub::editorEventLoop() == d_->editorLoop) sub::setEditorEventLoop(nullptr);
 }
 
 void EngineBridge::shutdown() {

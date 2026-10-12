@@ -107,9 +107,9 @@ struct EditorWindow::Native {
     xcb_connection_t* c = nullptr;
     xcb_screen_t* screen = nullptr;
     xcb_window_t window = XCB_WINDOW_NONE;
+    std::shared_ptr<EventLoop> loop;  // the one watching it (unwatched through it)
     EventLoop::Id watch = 0;
     EventLoop::Id drain = 0;
-    bool watching = false;
     bool visible = false;
     int sizeW = 0, sizeH = 0;  // as last configured
     struct {
@@ -406,11 +406,11 @@ EditorWindow::EditorWindow(Steinberg::IPtr<Steinberg::IPlugView> view, void* own
     xcb_map_window(n.c, n.window);
     n.visible = true;
     n.flush();
-    n.watch = editorEventLoop().watch(xcb_get_file_descriptor(n.c), [this] { Native::events(*this); });
+    n.loop = editorEventLoop();
+    n.watch = n.loop->watch(xcb_get_file_descriptor(n.c), [this] { Native::events(*this); });
     // Events xcb read while waiting for a reply wait in its queue, with nothing more to read on the
     // connection: looked for now and then too (a key held for the filter mustn't wait for the next event).
-    n.drain = editorEventLoop().startTimer(50, [this] { Native::events(*this); });
-    n.watching = true;
+    n.drain = n.loop->startTimer(50, [this] { Native::events(*this); });
     toFront(this);
     position_ = this->position();
 }
@@ -432,11 +432,11 @@ void EditorWindow::Native::destroy(EditorWindow& w) {
     auto& open = windows();
     open.erase(std::remove(open.begin(), open.end(), &w), open.end());
     if (!n.c) return;
-    if (n.watching) {
-        editorEventLoop().unwatch(n.watch);
-        editorEventLoop().stopTimer(n.drain);
+    if (n.loop) {
+        n.loop->unwatch(n.watch);
+        n.loop->stopTimer(n.drain);
+        n.loop = nullptr;
     }
-    n.watching = false;
     if (n.window != XCB_WINDOW_NONE) {
         w.position_ = w.position();
         xcb_destroy_window(n.c, n.window);

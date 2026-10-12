@@ -96,14 +96,12 @@ std::function<bool(const EditorKey&)>& keyFilter() {
 
 void setEditorEventLoop(std::shared_ptr<EventLoop> loop) { applicationLoop() = std::move(loop); }
 
-EventLoop& editorEventLoop() {
-    if (const auto& loop = applicationLoop()) return *loop;
-    return ownLoop();
+std::shared_ptr<EventLoop> editorEventLoop() {
+    if (const auto& loop = applicationLoop()) return loop;
+    return std::shared_ptr<EventLoop>(std::shared_ptr<void>(), &ownLoop());  // (static: owned by no one)
 }
 
-void runEditorEvents() {
-    if (!applicationLoop()) ownLoop().run();
-}
+void runEditorEvents() { ownLoop().run(); }
 
 void setEditorKeyFilter(std::function<bool(const EditorKey&)> filter) { keyFilter() = std::move(filter); }
 

@@ -14,6 +14,8 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <memory>
+#include <set>
 #include <thread>
 
 #include "EditorHost.h"
@@ -279,6 +281,31 @@ TEST_CASE("x11 editor: the foremost editor closed") {
     // A hidden editor isn't the foremost.
     CHECK(engine.setEditorVisible(second, false));
     CHECK(!sub::closeForemostEditor());
+}
+
+TEST_CASE("x11 editor: unregistered through the loop it registered on") {
+    // An application's loop that keeps what is registered on it (and runs none of it).
+    struct Kept final : sub::EventLoop {
+        std::set<Id> watches, timers;
+        Id next = 1000;
+        Id watch(int, std::function<void()>) override { return *watches.insert(++next).first; }
+        void unwatch(Id id) override { watches.erase(id); }
+        Id startTimer(int, std::function<void()>) override { return *timers.insert(++next).first; }
+        void stopTimer(Id id) override { timers.erase(id); }
+    };
+    EditorTest t;
+    auto& engine = t.engine;
+    const uint32_t track = engine.addTrack();
+    const uint32_t effect = addTestPlugin(engine, engine.trackChain(track), "SUB Test Effect");
+    auto kept = std::make_shared<Kept>();
+    sub::setEditorEventLoop(kept);
+    REQUIRE(engine.openEditor(effect, 0, "Kept"));
+    CHECK(!kept->watches.empty());  // the window's connection, the plug-in's
+    CHECK(!kept->timers.empty());
+    sub::setEditorEventLoop(nullptr);  // (the application's goes: the bridge did)
+    engine.closeEditor(effect);
+    CHECK(kept->watches.empty());
+    CHECK(kept->timers.empty());
 }
 
 #endif  // SUBSTATION_HAS_X11_EDITORS

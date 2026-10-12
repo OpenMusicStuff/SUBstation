@@ -5,6 +5,7 @@
 // IPlugFrame; what a plug-in leaves registered goes with the window.
 
 #include <map>
+#include <memory>
 
 #include "EditorHost.h"
 #include "pluginterfaces/base/smartpointer.h"
@@ -32,12 +33,15 @@ public:
     SUB_HOST_OWNED_FUNKNOWN(Steinberg::Linux::IRunLoop)
 
 private:
+    // Each with the loop it is registered on, which unregisters it.
     struct Watch {
         Steinberg::IPtr<Steinberg::Linux::IEventHandler> handler;
+        std::shared_ptr<EventLoop> loop;
         EventLoop::Id id;
     };
     struct Timer {
         Steinberg::IPtr<Steinberg::Linux::ITimerHandler> handler;
+        std::shared_ptr<EventLoop> loop;
         EventLoop::Id id;
     };
     std::multimap<int, Watch> watches_;  // by file descriptor

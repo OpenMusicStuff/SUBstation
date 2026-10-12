@@ -37,10 +37,12 @@ public:
 
 // The application's event loop (null: the engine's own, run by runEditorEvents()).
 void setEditorEventLoop(std::shared_ptr<EventLoop> loop);
-EventLoop& editorEventLoop();
+// The loop to register on now. What is registered is unregistered through the
+// same loop (kept: the application's may be another by then).
+std::shared_ptr<EventLoop> editorEventLoop();
 // The engine's own loop's work, without waiting: the file descriptors that are
-// ready, the timers that are due (Engine::idle() calls it). Nothing when the
-// application's loop runs them.
+// ready, the timers that are due (Engine::idle() calls it). Only what was
+// registered on it runs here: none while the application's loop is the one.
 void runEditorEvents();
 
 // A key pressed in a plug-in's editor.

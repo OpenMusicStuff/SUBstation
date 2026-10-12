@@ -359,7 +359,8 @@ Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEd
   connection, and the plug-in's file descriptors and timers, run on the **editor event loop**
   ([EditorHost.h](../../engine/src/EditorHost.h)): the engine's own, run without waiting by `Engine::idle()`, until
   the application gives its own (the engine bridge installs Qt's: `app::EditorEventLoop`, `QSocketNotifier` and
-  `QTimer`). Events xcb reads while waiting for a reply stay in its queue with nothing left to read on the socket,
+  `QTimer`). What is registered is unregistered through the loop it was registered on (kept with it), even if the
+  application's loop changed meanwhile. Events xcb reads while waiting for a reply stay in its queue with nothing left to read on the socket,
   so the window also looks at its queue every 50 ms.
 - **The plug-in's run loop.** The frame hands the view a `RunLoop` ([Vst3RunLoop.h](../../engine/src/plugins/Vst3RunLoop.h),
   VST 3's `Steinberg::Linux::IRunLoop`): `registerEventHandler` watches a file descriptor, `registerTimer` starts a
