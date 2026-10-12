@@ -24,4 +24,11 @@ void saveVitalPreset(const Device& device, const QString& path);
 // The text of a .vital preset from a Vital device (what saveVitalPreset writes).
 QByteArray vitalPresetText(const Device& device);
 
+// An oscillator's wavetable (as a Vital device's state keeps it) from a file:
+// Vital's own (.vitaltable), or audio (a .wav, .flac...) cut into frames
+// (`style` 0: Splice, a wavetable file's frames), or following its pitch (1:
+// Vocode, 2: Pitch), as Vital loads one. Throws ProjectFileError if it can't.
+QString vitalWavetableFromFile(const QString& path, int style = 0);
+inline const QString kVitalTableExtension = QStringLiteral(".vitaltable");
+
 }  // namespace sub::app

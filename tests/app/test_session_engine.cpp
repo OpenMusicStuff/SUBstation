@@ -615,7 +615,7 @@ private Q_SLOTS:
         TempDir dir;
         const test::ScopedEnv recordings("SUBSTATION_RECORDINGS", dir.path(QStringLiteral("Recordings")));
         Bridged f;
-        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         f.editor().commitClips(QStringLiteral("Add"),
                                {{track, {Clip::midi(QStringLiteral("m"), QStringLiteral("m"), 0.0, 2.0, 0.0, {Note{60, 0.0, 1.0}})}}});
         const auto before = f.render(kRate);

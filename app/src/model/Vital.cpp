@@ -71,6 +71,33 @@ QString vitalSlotParam(int slot, const QString& what) {
     return QStringLiteral("modulation_%1_%2").arg(slot + 1).arg(what);
 }
 
+namespace {
+
+QStringList listOfNames(const std::vector<std::string>& names) {
+    QStringList list;
+    for (const std::string& name : names) list.append(QString::fromStdString(name));
+    return list;
+}
+
+}  // namespace
+
+QStringList vitalWavetableNames(const Device& device) {
+    return listOfNames(vitalpatch::wavetableNames(
+        deviceState::fromModel(device.state).value(QString::fromLatin1(vitalpatch::kWavetables)).toStdString()));
+}
+
+QStringList vitalLfoNames(const Device& device) {
+    return listOfNames(
+        vitalpatch::lfoNames(deviceState::fromModel(device.state).value(QString::fromLatin1(vitalpatch::kLfos)).toStdString()));
+}
+
+QStringList vitalShapeNames() {
+    QStringList names;
+    for (int i = 0; i < vitalpatch::kNumShapes; ++i)
+        names.append(QString::fromStdString(vitalpatch::shapeName(static_cast<vitalpatch::Shape>(i))));
+    return names;
+}
+
 QString vitalStateValue(const Device& device, const QString& key) {
     return deviceState::fromModel(device.state).value(key);
 }

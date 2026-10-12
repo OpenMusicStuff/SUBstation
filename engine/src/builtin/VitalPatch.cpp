@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <mutex>
 #include <optional>
@@ -10,6 +13,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "AudioSource.h"
 #include "builtin/VitalEngine.h"
 #include "load_save.h"
 #include "modulation_connection_processor.h"
@@ -285,7 +289,10 @@ const Routing& routing() {
         vital::SoundEngine engine;
         for (const auto& [name, output] : engine.getModulationSources()) r.sources.push_back(name);
         for (const auto& [name, processor] : engine.getMonoModulationDestinations()) {
-            if (vital::Parameters::isParameter(name) && paramIndex(name) >= 0) r.destinations.push_back(name);
+            const int index = paramIndex(name);
+            if (vital::Parameters::isParameter(name) && index >= 0 && !params()[static_cast<size_t>(index)].hidden) {
+                r.destinations.push_back(name);
+            }
         }
         std::sort(r.sources.begin(), r.sources.end());
         std::sort(r.destinations.begin(), r.destinations.end());
@@ -505,5 +512,168 @@ std::string writePreset(const Patch& patch) {
     data["settings"] = settings;
     return data.dump();
 }
+
+// --- Wavetables and LFO shapes ---------------------------------------------------------------
+
+namespace {
+
+// A WAV file's "clm " chunk: how a wavetable file's frames blend (Serum's and Vital's own), "" if none.
+std::string clmChunk(const std::string& path) {
+    std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
+    char header[12];
+    if (!in.read(header, sizeof header) || std::memcmp(header, "RIFF", 4) != 0 || std::memcmp(header + 8, "WAVE", 4) != 0) {
+        return {};
+    }
+    char id[4];
+    unsigned char size[4];
+    while (in.read(id, 4) && in.read(reinterpret_cast<char*>(size), 4)) {
+        const uint32_t length = size[0] | (size[1] << 8) | (size[2] << 16) | (uint32_t(size[3]) << 24);
+        if (std::memcmp(id, "clm ", 4) == 0) {
+            std::string data(std::min<uint32_t>(length, 4096), '\0');
+            in.read(data.data(), static_cast<std::streamsize>(data.size()));
+            return data;
+        }
+        in.seekg(length + (length & 1), std::ios::cur);
+    }
+    return {};
+}
+
+// As Vital's WavetableEditSection reads it: "<!>2048 0...": no blending; "1": in time; else in frequency.
+FileSource::FadeStyle fadeStyleOf(const std::string& clm) {
+    if (clm.rfind("<!>", 0) != 0) return FileSource::kFreqInterpolate;
+    const size_t space = clm.find(' ', 3);
+    if (space == std::string::npos || space + 1 >= clm.size()) return FileSource::kFreqInterpolate;
+    if (clm[space + 1] == '0') return FileSource::kNoInterpolate;
+    if (clm[space + 1] == '1') return FileSource::kTimeInterpolate;
+    return FileSource::kFreqInterpolate;
+}
+
+std::string stemOf(const std::string& path) {
+    const size_t slash = path.find_last_of("/\\");
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    const size_t dot = name.rfind('.');
+    return dot == std::string::npos || dot == 0 ? name : name.substr(0, dot);
+}
+
+void shapeLine(LineGenerator& line, Shape shape) {
+    switch (shape) {
+    case Shape::Sine: line.initSin(); break;
+    case Shape::SawUp: line.initSawUp(); break;
+    case Shape::SawDown: line.initSawDown(); break;
+    case Shape::Square: line.initSquare(); break;
+    case Shape::Init:
+    case Shape::Triangle: line.initTriangle(); break;
+    }
+    line.setName(shapeName(shape == Shape::Init ? Shape::Triangle : shape));
+}
+
+json replaced(const std::string& value, int index, const std::string& entry, size_t count, const std::string& init,
+              const char* what) {
+    json list = value.empty() ? json::array() : parse(value, what);
+    if (!list.is_array()) list = json::array();
+    while (list.size() < count) list.push_back(parse(init, what));
+    if (index < 0 || static_cast<size_t>(index) >= count) throw std::runtime_error("Vital: no such oscillator or LFO");
+    list[static_cast<size_t>(index)] = parse(entry, what);
+    return list;
+}
+
+std::vector<std::string> namesIn(const std::string& value, size_t count, const std::string& fallback) {
+    std::vector<std::string> names(count, fallback);
+    if (value.empty()) return names;
+    try {
+        const json list = json::parse(value);
+        for (size_t i = 0; list.is_array() && i < list.size() && i < count; ++i) {
+            if (list[i].is_object() && list[i].count("name") && list[i]["name"].is_string()) {
+                const std::string name = list[i]["name"];
+                if (!name.empty()) names[i] = name;
+            }
+        }
+    } catch (const std::exception&) {
+    }
+    return names;
+}
+
+}  // namespace
+
+std::string wavetableFromAudioFile(const std::string& utf8Path, WavetableStyle style) {
+    std::shared_ptr<AudioSource> source;
+    try {
+        const AudioFileInfo info = AudioSource::probe(utf8Path);
+        source = AudioSource::load(utf8Path, info.sampleRate);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Vital: the audio file can't be read (") + e.what() + ")");
+    }
+    if (!source || source->frames() <= 0) throw std::runtime_error("Vital: the audio file is empty");
+    vital::Wavetable table(vital::kNumOscillatorWaveFrames);
+    WavetableCreator creator(&table);
+    const WavetableCreator::AudioFileLoadStyle load = style == WavetableStyle::Vocode  ? WavetableCreator::kVocoded
+                                                      : style == WavetableStyle::Pitch ? WavetableCreator::kPitched
+                                                                                       : WavetableCreator::kWavetableSplice;
+    creator.initFromAudioFile(source->channelData(0), static_cast<int>(source->frames()),
+                              static_cast<int>(source->sampleRate()), load, fadeStyleOf(clmChunk(utf8Path)));
+    creator.setName(stemOf(utf8Path));
+    return creator.stateToJson().dump();
+}
+
+std::string wavetableFromVitalTable(const std::string& text, const std::string& name) {
+    const json data = parse(text, "wavetable");
+    if (!WavetableCreator::isValidJson(data)) throw std::runtime_error("Vital: not a Vital wavetable");
+    vital::Wavetable table(vital::kNumOscillatorWaveFrames);
+    WavetableCreator creator(&table);
+    try {
+        creator.jsonToState(data);
+    } catch (const json::exception& e) {
+        throw std::runtime_error(std::string("Vital: the wavetable can't be read (") + e.what() + ")");
+    }
+    if (!name.empty()) creator.setName(name);
+    return creator.stateToJson().dump();
+}
+
+std::string shapeName(Shape shape) {
+    switch (shape) {
+    case Shape::Init: return "Init";
+    case Shape::Sine: return "Sine";
+    case Shape::Triangle: return "Triangle";
+    case Shape::SawUp: return "Saw Up";
+    case Shape::SawDown: return "Saw Down";
+    case Shape::Square: return "Square";
+    }
+    return {};
+}
+
+std::string wavetableOfShape(Shape shape) {
+    vital::Wavetable table(vital::kNumOscillatorWaveFrames);
+    WavetableCreator creator(&table);
+    if (shape == Shape::Init) {
+        creator.init();
+    } else {
+        LineGenerator line(vital::WaveFrame::kWaveformSize);
+        shapeLine(line, shape);
+        creator.jsonToState(line.stateToJson());  // (a line shape: as a wavetable of it)
+    }
+    return creator.stateToJson().dump();
+}
+
+std::string lfoOfShape(Shape shape) {
+    LineGenerator line;
+    shapeLine(line, shape);
+    return line.stateToJson().dump();
+}
+
+std::string withWavetable(const std::string& wavetables, int index, const std::string& entry) {
+    static const std::string kInit = wavetableOfShape(Shape::Init);
+    return replaced(wavetables, index, entry, kNumOscillators, kInit, "wavetables").dump();
+}
+
+std::string withLfo(const std::string& lfos, int index, const std::string& entry) {
+    static const std::string kInit = lfoOfShape(Shape::Init);
+    return replaced(lfos, index, entry, kNumLfos, kInit, "LFOs").dump();
+}
+
+std::vector<std::string> wavetableNames(const std::string& wavetables) {
+    return namesIn(wavetables, kNumOscillators, "Init");
+}
+
+std::vector<std::string> lfoNames(const std::string& lfos) { return namesIn(lfos, kNumLfos, "Triangle"); }
 
 }  // namespace sub::vitalpatch

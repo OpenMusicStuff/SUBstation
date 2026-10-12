@@ -171,7 +171,7 @@ private Q_SLOTS:
     void flatteningAFrozenMidiTrack() {
         EditorFixture f;
         Project& p = f.project;
-        const QString track = f.editor.addMidiTrack(-1, "Keys");
+        const QString track = f.editor.addMidiTrack(-1, "Keys", QStringLiteral("synth"));
         const QString synth = f.track(track).devices[0].id;
         f.editor.commitClips("Add", {{track, {Clip::midi("m", "m", 0.0, 4.0, 0.0, {Note{60, 0.0, 1.0}})}}});
         f.editor.setEnvelope(track, autom::deviceKey(synth, "volume"), env({{0.0, 0.3}}));

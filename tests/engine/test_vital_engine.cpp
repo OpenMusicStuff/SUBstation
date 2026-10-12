@@ -5,6 +5,8 @@
 // written (older ones upgraded), and the device through the engine.
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <set>
 #include <string>
@@ -429,4 +431,116 @@ TEST_CASE("vital: through the engine, a MIDI track's instrument") {
     CHECK(rmsDb(slice(left, 4800, 20000)) > -40.0);
     CHECK(strongest(left, {415.3, 440.0, 466.2}, 2400, 16384) == 440.0);
     CHECK(engine.processorParamText(vital, vp::paramIndex("polyphony"), 8.f) == "8 voices");
+}
+
+namespace {
+
+// A 16-bit mono WAV file of `samples` at `rate`, with a "clm " chunk if given (a wavetable file's).
+void writeWavetableFile(const std::filesystem::path& path, const Samples& samples, int rate, const std::string& clm = {}) {
+    std::vector<uint8_t> bytes;
+    const auto u32 = [&](uint32_t v) { for (int i = 0; i < 4; ++i) bytes.push_back(static_cast<uint8_t>(v >> (8 * i))); };
+    const auto u16 = [&](uint16_t v) { for (int i = 0; i < 2; ++i) bytes.push_back(static_cast<uint8_t>(v >> (8 * i))); };
+    const auto tag = [&](const char* t) { bytes.insert(bytes.end(), t, t + 4); };
+    const uint32_t data = static_cast<uint32_t>(samples.size() * 2);
+    const uint32_t clmSize = static_cast<uint32_t>(clm.size());
+    tag("RIFF");
+    u32(4 + 8 + 16 + (clm.empty() ? 0 : 8 + clmSize + (clmSize & 1)) + 8 + data);
+    tag("WAVE");
+    tag("fmt ");
+    u32(16);
+    u16(1);
+    u16(1);
+    u32(static_cast<uint32_t>(rate));
+    u32(static_cast<uint32_t>(rate * 2));
+    u16(2);
+    u16(16);
+    if (!clm.empty()) {
+        tag("clm ");
+        u32(clmSize);
+        bytes.insert(bytes.end(), clm.begin(), clm.end());
+        if (clmSize & 1) bytes.push_back(0);
+    }
+    tag("data");
+    u32(data);
+    for (float s : samples) u16(static_cast<uint16_t>(static_cast<int16_t>(std::lround(std::clamp(s, -1.f, 1.f) * 32767.f))));
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+// What a Vital with these state values plays for an A4 (left).
+Samples playA4(const sub::BuiltinProcessor::StateValues& state, const ParamValues& values = {}) {
+    Standalone vital("vital", kRate, values);
+    vital.processor().setState(sub::BuiltinProcessor::encodeState(state));
+    Timeline t;
+    t.note(0, -1, 69);
+    return play(vital, t, 24000).first;
+}
+
+// The level of the A4's harmonics 2 to 6 against its fundamental, in dB.
+double harmonicsDb(const Samples& x) {
+    double harmonics = 0.0;
+    for (int h = 2; h <= 6; ++h) harmonics = std::max(harmonics, windowedAmplitude(x, 440.0 * h, 4800, 16384));
+    return db(harmonics / windowedAmplitude(x, 440.0, 4800, 16384));
+}
+
+}  // namespace
+
+TEST_CASE("vital: wavetables of basic shapes, from audio files and Vital's own files") {
+    // A sine: no harmonics to speak of; the init wavetable (a saw): strong ones.
+    const std::string sine = vp::withWavetable("", 0, vp::wavetableOfShape(vp::Shape::Sine));
+    CHECK(harmonicsDb(playA4({{vp::kWavetables, sine}})) < -40.0);
+    CHECK(harmonicsDb(playA4({})) > -12.0);
+    CHECK((vp::wavetableNames(sine) == std::vector<std::string>{"Sine", "Init", "Init"}));
+    CHECK((vp::wavetableNames("") == std::vector<std::string>{"Init", "Init", "Init"}));
+    CHECK_THROWS_AS(vp::withWavetable("", 3, vp::wavetableOfShape(vp::Shape::Sine)), std::exception);
+
+    // A wavetable file: four frames of 2048 samples, sines (Serum's and Vital's "clm " chunk, no blending).
+    Samples frames;
+    for (int f = 0; f < 4; ++f)
+        for (int i = 0; i < 2048; ++i) frames.push_back(0.8f * static_cast<float>(std::sin(2.0 * kPi * i / 2048.0)));
+    const std::filesystem::path file = tempDir() / "Smooth.wav";
+    writeWavetableFile(file, frames, 44100, "<!>2048 00000000 wavetable (vital.audio)");
+    const std::string fromFile = vp::wavetableFromAudioFile(file.string(), vp::WavetableStyle::Splice);
+    const std::string loaded = vp::withWavetable("", 0, fromFile);
+    CHECK(vp::wavetableNames(loaded).front() == "Smooth");
+    CHECK(harmonicsDb(playA4({{vp::kWavetables, loaded}})) < -30.0);
+    CHECK(strongest(playA4({{vp::kWavetables, loaded}}), {415.3, 440.0, 466.2, 880.0}, 4800, 16384) == 440.0);
+    // Vocoded and pitched: a pitched sound followed through, each frame two of its cycles (as Vital loads
+    // them): a pure tone plays pure, an octave over the note.
+    Samples sung;
+    for (int i = 0; i < 44100; ++i) sung.push_back(0.5f * static_cast<float>(std::sin(2.0 * kPi * 220.0 * i / 44100.0)));
+    const std::filesystem::path voice = tempDir() / "Voice.wav";
+    writeWavetableFile(voice, sung, 44100);
+    for (vp::WavetableStyle style : {vp::WavetableStyle::Vocode, vp::WavetableStyle::Pitch}) {
+        const std::string table = vp::withWavetable("", 0, vp::wavetableFromAudioFile(voice.string(), style));
+        const Samples x = playA4({{vp::kWavetables, table}});
+        CHECK(strongest(x, {415.3, 440.0, 466.2, 880.0, 1320.0}, 4800, 16384) == 880.0);
+        CHECK(windowedAmplitude(x, 440.0, 4800, 16384) < 0.01 * windowedAmplitude(x, 880.0, 4800, 16384));
+    }
+    CHECK_THROWS_AS(vp::wavetableFromAudioFile((tempDir() / "missing.wav").string(), vp::WavetableStyle::Splice),
+                    std::exception);
+
+    // Vital's own .vitaltable (a WavetableCreator's JSON), named after its file.
+    const std::string own = vp::wavetableFromVitalTable(fromFile, "Renamed");
+    CHECK(vp::wavetableNames(vp::withWavetable("", 2, own))[2] == "Renamed");
+    CHECK_THROWS_AS(vp::wavetableFromVitalTable("{}", "x"), std::exception);
+    CHECK_THROWS_AS(vp::wavetableFromVitalTable("not json", "x"), std::exception);
+}
+
+TEST_CASE("vital: an LFO's shape set, and heard") {
+    const auto lfoOnLevel = [](const std::string& lfos) {
+        sub::BuiltinProcessor::StateValues state{{vp::kModulations, vp::writeModulations({{"lfo_1", "osc_1_level", ""}})}};
+        if (!lfos.empty()) state[vp::kLfos] = lfos;
+        return playA4(state, {{"modulation_1_amount", 1.f}, {"lfo_1_frequency", 1.f}});
+    };
+    const Samples triangle = lfoOnLevel("");
+    const Samples square = lfoOnLevel(vp::withLfo("", 0, vp::lfoOfShape(vp::Shape::Square)));
+    // The same rate, another shape: another sound.
+    double difference = 0.0;
+    for (size_t i = 2400; i < triangle.size(); ++i)
+        difference = std::max(difference, static_cast<double>(std::fabs(triangle[i] - square[i])));
+    CHECK(difference > 0.05);
+    CHECK(vp::lfoNames(vp::withLfo("", 3, vp::lfoOfShape(vp::Shape::SawUp)))[3] == "Saw Up");
+    CHECK(vp::lfoNames("")[0] == "Triangle");
+    CHECK(vp::shapeName(vp::Shape::SawDown) == "Saw Down");
 }

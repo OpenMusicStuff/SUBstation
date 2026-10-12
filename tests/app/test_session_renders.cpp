@@ -302,7 +302,7 @@ private Q_SLOTS:
     void flatteningAMidiTrack() {
         SessionFixture f(true);
         Session& s = f.s();
-        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = f.editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         f.editor().commitClips(QStringLiteral("Add"),
                                {{track, {Clip::midi(QStringLiteral("m"), QStringLiteral("m"), 0.0, 2.0, 0.0, {Note{60, 0.0, 1.0}})}}});
         f.selection().selectTrack(track, true);

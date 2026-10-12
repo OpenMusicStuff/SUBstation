@@ -410,7 +410,7 @@ private Q_SLOTS:
     // one-key shortcuts; Esc closes it, the lanes taking the keyboard back.
     void findingTracks() {
         for (int i = 0; i < 24; ++i) editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
-        const QString tower = editor().addMidiTrack(2, QStringLiteral("Bell Tower"));
+        const QString tower = editor().addMidiTrack(2, QStringLiteral("Bell Tower"), QStringLiteral("synth"));
         // The bell stab, named otherwise by the user, at the bottom in a folded group.
         const auto clips = editor().addClips({}, 0.0, {{QStringLiteral("C:/x/C_BellStab1.wav"), 1.0}});
         QCOMPARE(clips.size(), 1);
@@ -483,9 +483,9 @@ private Q_SLOTS:
     // span are the search's area. A match with a clip there opens it in the clip
     // view; one without shows in the arrangement; the bar keeps the keyboard.
     void findingTracksFromTheClipView() {
-        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Synth Lead"));
-        const QString bass = editor().addMidiTrack(-1, QStringLiteral("Synth Bass"));
-        const QString pad = editor().addMidiTrack(-1, QStringLiteral("Synth Pad"));
+        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Synth Lead"), QStringLiteral("synth"));
+        const QString bass = editor().addMidiTrack(-1, QStringLiteral("Synth Bass"), QStringLiteral("synth"));
+        const QString pad = editor().addMidiTrack(-1, QStringLiteral("Synth Pad"), QStringLiteral("synth"));
         const auto open = editor().addMidiClip(lead, 8, 8);
         const auto bassEarly = editor().addMidiClip(bass, 0, 4);
         const auto bassThere = editor().addMidiClip(bass, 10, 4);
@@ -564,7 +564,7 @@ private Q_SLOTS:
     // A found track shows whole, its automation lanes too, though its own lane was in view.
     void aFoundTracksAutomationShowsWhole() {
         for (int i = 0; i < 12; ++i) editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
-        const QString last = editor().addMidiTrack(-1, QStringLiteral("Last Synth"));
+        const QString last = editor().addMidiTrack(-1, QStringLiteral("Last Synth"), QStringLiteral("synth"));
         editor().showAutomation(last);
         editor().addAutomationLane(last);  // (lanes below its own: a taller row)
         editor().addAutomationLane(last);
@@ -1130,7 +1130,7 @@ private Q_SLOTS:
         QVERIFY(browser && lanes && view && clipView);
         auto* arrangement = view->property("arrangement").value<sub::ui::Arrangement*>();
         QVERIFY(arrangement);
-        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString track = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const auto clip = editor().addMidiClip(track, 0.0, 16.0);
         QVERIFY(clip);
         editor().setClipNotes(*clip, {{60, 0.0, 16.0, 100}, {64, 0.0, 16.0, 90}, {67, 4.0, 12.0, 80}},

@@ -87,4 +87,39 @@ std::string sourceName(const std::string& source);
 // Whether Vital makes a new modulation from this source bipolar (an LFO's, a random one's, the pitch wheel's...).
 bool sourceBipolar(const std::string& source);
 
+// --- Wavetables and LFO shapes ------------------------------------------------------------------
+
+// How an audio file becomes a wavetable, as Vital's own choices when one is
+// dropped on its wavetable: Splice cuts it into its frames (a wavetable file:
+// Serum's, Vital's own exported ones, 2048 samples a frame), Vocode and Pitch
+// follow the sound's pitch through it (Vocode keeping its phases smooth).
+enum class WavetableStyle { Splice, Vocode, Pitch };
+
+// An oscillator's wavetable (one of kWavetables' entries, JSON text) from an
+// audio file, as Vital loads it (its "clm " chunk saying how its frames blend),
+// named after the file. Throws std::runtime_error if the file can't be decoded.
+std::string wavetableFromAudioFile(const std::string& utf8Path, WavetableStyle style);
+// From Vital's own wavetable file (.vitaltable: JSON), upgraded as Vital
+// upgrades it, named after the file. Throws std::runtime_error if it isn't one.
+std::string wavetableFromVitalTable(const std::string& text, const std::string& name);
+
+// The basic shapes an oscillator's wavetable or an LFO can be set to: Vital's
+// init wavetable (or, for an LFO, its triangle), and its line shapes.
+enum class Shape { Init, Sine, Triangle, SawUp, SawDown, Square };
+inline constexpr int kNumShapes = 6;
+std::string shapeName(Shape shape);
+// An oscillator's wavetable of a basic shape (Init: Vital's init wavetable).
+std::string wavetableOfShape(Shape shape);
+// An LFO's shape (a LineGenerator's JSON; Init: Vital's triangle).
+std::string lfoOfShape(Shape shape);
+
+// The kWavetables (or kLfos) value with oscillator (or LFO) `index` replaced by
+// `entry` (the init patch's where the value has none). Throws
+// std::runtime_error if `entry` or the value isn't JSON.
+std::string withWavetable(const std::string& wavetables, int index, const std::string& entry);
+std::string withLfo(const std::string& lfos, int index, const std::string& entry);
+// The names of the value's wavetables (or LFO shapes), Vital's init ones' where it has none.
+std::vector<std::string> wavetableNames(const std::string& wavetables);
+std::vector<std::string> lfoNames(const std::string& lfos);
+
 }  // namespace sub::vitalpatch

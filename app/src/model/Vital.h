@@ -38,6 +38,12 @@ QString vitalDestinationName(const QString& destination);
 QString vitalSlotParam(int slot, const QString& what);
 inline constexpr int kVitalModulationSlots = 64;
 
+// Its oscillators' wavetables' names (3), its LFOs' shapes' names (8).
+QStringList vitalWavetableNames(const Device& device);
+QStringList vitalLfoNames(const Device& device);
+// The basic shapes a wavetable or an LFO can be set to (ProjectEditor::setVitalWavetableShape, setVitalLfoShape).
+QStringList vitalShapeNames();
+
 // A state value of its patch ("preset_name", "author", "macro1"...; "" if none).
 QString vitalStateValue(const Device& device, const QString& key);
 

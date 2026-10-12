@@ -30,6 +30,10 @@ class VitalPatchInfo : public QObject {
     Q_PROPERTY(int freeSlots READ freeSlots NOTIFY changed)
     Q_PROPERTY(QString presetName READ presetName NOTIFY changed)
     Q_PROPERTY(QStringList macroNames READ macroNames NOTIFY changed)
+    // The oscillators' wavetables' names, the LFOs' shapes' names; the basic shapes either can be set to.
+    Q_PROPERTY(QStringList wavetableNames READ wavetableNames NOTIFY changed)
+    Q_PROPERTY(QStringList lfoNames READ lfoNames NOTIFY changed)
+    Q_PROPERTY(QStringList shapeNames READ shapeNames CONSTANT)
     // [{id, name}], sorted by name: every source, every destination.
     Q_PROPERTY(QVariantList sources READ sources CONSTANT)
     Q_PROPERTY(QVariantList destinations READ destinations CONSTANT)
@@ -48,6 +52,9 @@ public:
     int freeSlots() const { return freeSlots_; }
     QString presetName() const { return presetName_; }
     QStringList macroNames() const { return macroNames_; }
+    QStringList wavetableNames() const { return wavetableNames_; }
+    QStringList lfoNames() const { return lfoNames_; }
+    QStringList shapeNames() const;
     QVariantList sources() const;
     QVariantList destinations() const;
 
@@ -56,6 +63,12 @@ public:
     // A slot's source and destination changed; or cleared.
     Q_INVOKABLE bool change(int slot, const QString& source, const QString& destination);
     Q_INVOKABLE bool remove(int slot);
+    // An oscillator's wavetable from a file (.vitaltable, or audio: `style` 0
+    // Splice, 1 Vocode, 2 Pitch), one undo step: "" if it loaded, else why not.
+    Q_INVOKABLE QString loadWavetable(int oscillator, const QString& path, int style);
+    // An oscillator's wavetable, an LFO's shape: a basic shape (shapeNames' index). One undo step each.
+    Q_INVOKABLE bool setWavetableShape(int oscillator, int shape);
+    Q_INVOKABLE bool setLfoShape(int lfo, int shape);
     // The parameter of a slot ("amount", "bipolar", "power", "stereo", "bypass").
     Q_INVOKABLE QString slotParam(int slot, const QString& what) const;
 
@@ -73,6 +86,8 @@ private:
     int freeSlots_ = 0;
     QString presetName_;
     QStringList macroNames_;
+    QStringList wavetableNames_;
+    QStringList lfoNames_;
     QList<QMetaObject::Connection> connections_;
 };
 

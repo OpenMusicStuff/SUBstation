@@ -3,7 +3,11 @@
 #include "editor/ProjectEditor.h"
 #include "model/Device.h"
 #include "model/Project.h"
+#include "io/VitalPresets.h"
+#include "model/Errors.h"
 #include "model/Vital.h"
+
+#include <QFileInfo>
 
 #include <QVariantMap>
 
@@ -86,6 +90,8 @@ void VitalPatchInfo::refresh() {
     int free = 0;
     QString presetName;
     QStringList macroNames;
+    QStringList wavetableNames;
+    QStringList lfoNames;
     const Device* device = session_ && !trackId_.isEmpty() ? session_->project()->findDevice(trackId_, deviceId_) : nullptr;
     if (device != nullptr && sub::app::isVital(*device)) {
         for (const sub::app::VitalModulation& slot : sub::app::vitalModulationSlots(*device)) {
@@ -101,14 +107,19 @@ void VitalPatchInfo::refresh() {
                                             sub::app::vitalDestinationName(slot.destination)}});
         }
         presetName = sub::app::vitalStateValue(*device, QStringLiteral("preset_name"));
+        wavetableNames = sub::app::vitalWavetableNames(*device);
+        lfoNames = sub::app::vitalLfoNames(*device);
         for (int i = 0; i < 4; ++i) {
             const QString name = sub::app::vitalStateValue(*device, QStringLiteral("macro%1").arg(i + 1)).trimmed();
             macroNames.append(name.isEmpty() || name.startsWith(QStringLiteral("MACRO ")) ? tr("Macro %1").arg(i + 1)
                                                                                          : name);
         }
     }
-    if (modulations == modulations_ && free == freeSlots_ && presetName == presetName_ && macroNames == macroNames_)
+    if (modulations == modulations_ && free == freeSlots_ && presetName == presetName_ && macroNames == macroNames_ &&
+        wavetableNames == wavetableNames_ && lfoNames == lfoNames_)
         return;
+    wavetableNames_ = wavetableNames;
+    lfoNames_ = lfoNames;
     modulations_ = modulations;
     freeSlots_ = free;
     presetName_ = presetName;
@@ -127,6 +138,30 @@ bool VitalPatchInfo::change(int slot, const QString& source, const QString& dest
 }
 
 bool VitalPatchInfo::remove(int slot) { return change(slot, QString(), QString()); }
+
+QStringList VitalPatchInfo::shapeNames() const { return sub::app::vitalShapeNames(); }
+
+QString VitalPatchInfo::loadWavetable(int oscillator, const QString& path, int style) {
+    if (!session_)
+        return tr("No session");
+    try {
+        const QString wavetable = sub::app::vitalWavetableFromFile(path, style);
+        if (!session_->editor()->setVitalWavetable(trackId_, deviceId_, oscillator, wavetable,
+                                                   tr("Load Wavetable %1").arg(QFileInfo(path).completeBaseName())))
+            return tr("The wavetable can't go there.");
+    } catch (const sub::app::ProjectFileError& error) {
+        return error.message();
+    }
+    return {};
+}
+
+bool VitalPatchInfo::setWavetableShape(int oscillator, int shape) {
+    return session_ && session_->editor()->setVitalWavetableShape(trackId_, deviceId_, oscillator, shape);
+}
+
+bool VitalPatchInfo::setLfoShape(int lfo, int shape) {
+    return session_ && session_->editor()->setVitalLfoShape(trackId_, deviceId_, lfo, shape);
+}
 
 QString VitalPatchInfo::slotParam(int slot, const QString& what) const { return sub::app::vitalSlotParam(slot, what); }
 

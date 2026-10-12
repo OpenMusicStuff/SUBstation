@@ -81,7 +81,7 @@ private Q_SLOTS:
         Project& p = f.project;
         const QString a = f.editor.addAudioTrack(-1, "A");
         const QString b = f.editor.addAudioTrack(-1, "B");
-        const QString midi = f.editor.addMidiTrack(-1, "Keys");
+        const QString midi = f.editor.addMidiTrack(-1, "Keys", QStringLiteral("synth"));
         const QString group = f.editor.groupTracks({b});
         const QString ret = f.editor.addReturnTrack();
         // Only an audio track's input (not a MIDI track's, a group's or a return's), not itself.
@@ -225,7 +225,7 @@ private Q_SLOTS:
 
     void anInputsTap() {
         EditorFixture f;
-        const QString source = f.editor.addMidiTrack(-1, "Synth");
+        const QString source = f.editor.addMidiTrack(-1, "Synth", QStringLiteral("synth"));
         const QString track = f.editor.addAudioTrack(-1, "Bounce");
         f.editor.setTrackInputTrack(track, source);
         QCOMPARE(f.track(track).inputTap, kPostFader);
@@ -293,7 +293,7 @@ private Q_SLOTS:
         Project& p = f.project;
         const QString a = f.editor.addAudioTrack(-1, "A");
         const QString b = f.editor.addAudioTrack(-1, "B");
-        const QString midi = f.editor.addMidiTrack(-1, "Keys");
+        const QString midi = f.editor.addMidiTrack(-1, "Keys", QStringLiteral("synth"));
         const QString inGroup = f.editor.addAudioTrack(-1, "In");
         const QString group = f.editor.groupTracks({inGroup});
         QJsonObject data = projectToJson(p);

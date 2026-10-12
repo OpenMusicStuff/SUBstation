@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import SUBstation
 
 // Vital's editor: its whole synth in nine pages, named in the device's title
@@ -8,7 +9,10 @@ import SUBstation
 // Osc (1, 2, 3), Sample, Filter (1, 2), Env (1-6), LFO (1-8), Random (1-4) and
 // FX (its nine effects) each show their section's controls in two rows; the
 // column on the left picks which oscillator, filter, envelope, LFO, random LFO
-// or effect, and shows the loaded preset's name. Matrix is the modulation
+// or effect, and shows the loaded preset's name. On Osc it shows the
+// oscillator's wavetable, and Wavetable… loads another (a .wav wavetable or
+// Vital's .vitaltable; any audio, vocoded or pitched, as Vital loads it) or
+// sets a basic shape; on LFO it shows the LFO's shape, and Shape… sets one. Matrix is the modulation
 // matrix: a source and a destination chosen and added (the first free of
 // Vital's 64 slots), then each modulation in a row: its amount, Bipolar,
 // Stereo and Bypass, and × to remove it. Voice is everything else: volume,
@@ -204,6 +208,31 @@ Item {
         }
     }
     readonly property var rows: rowsOf(page, choice)
+    // Why the last wavetable didn't load ("": it did).
+    property string loadError: ""
+
+    function showShapeMenu(from) {
+        shapeMenu.clear()
+        const oscillator = page === 0
+        const index = choice
+        if (oscillator) {
+            shapeMenu.entry(qsTr("Load Wavetable…"), () => browseWavetable(index, 0))
+            shapeMenu.entry(qsTr("Load Audio, Vocoded…"), () => browseWavetable(index, 1))
+            shapeMenu.entry(qsTr("Load Audio, Pitched…"), () => browseWavetable(index, 2))
+            shapeMenu.separator()
+        }
+        for (let i = oscillator ? 0 : 1; i < patch.shapeNames.length; ++i) {  // (an LFO's Init is its triangle)
+            const shape = i
+            shapeMenu.entry(patch.shapeNames[i], () => oscillator ? patch.setWavetableShape(index, shape)
+                                                                  : patch.setLfoShape(index, shape))
+        }
+        shapeMenu.popup(from, 0, from.height)
+    }
+    function browseWavetable(oscillator, style) {
+        wavetableDialog.oscillator = oscillator
+        wavetableDialog.style = style
+        wavetableDialog.open()
+    }
 
     VitalPatchInfo {
         id: patch
@@ -260,6 +289,58 @@ Item {
                 }
             }
         }
+
+        // The oscillator's wavetable, the LFO's shape.
+        Text {
+            objectName: "shapeName"
+            visible: editor.page === 0 || editor.page === 4
+            width: parent.width
+            text: editor.page === 0 ? (patch.wavetableNames[editor.choice] || "")
+                                    : (patch.lfoNames[editor.choice] || "")
+            elide: Text.ElideRight
+            color: Theme.accent
+            font: Theme.uiFont(8)
+        }
+        RoleButton {
+            id: shapeButton
+            objectName: "shapeButton"
+            visible: editor.page === 0 || editor.page === 4
+            role: "small"
+            text: editor.page === 0 ? qsTr("Wavetable…") : qsTr("Shape…")
+            width: parent.width
+            height: 18
+            tooltip: editor.page === 0 ? qsTr("Load a wavetable, or set a basic shape")
+                                       : qsTr("Set the LFO's shape")
+            onClicked: editor.showShapeMenu(shapeButton)
+        }
+        Text {
+            objectName: "loadError"
+            visible: editor.loadError !== "" && editor.page === 0
+            width: parent.width
+            text: editor.loadError
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            color: Theme.textDim
+            font: Theme.uiFont(7)
+        }
+    }
+
+    DynamicMenu {
+        id: shapeMenu
+    }
+
+    FileDialog {
+        id: wavetableDialog
+
+        property int oscillator: 0
+        property int style: 0
+
+        title: style === 0 ? qsTr("Load Wavetable") : qsTr("Load Audio as Wavetable")
+        nameFilters: style === 0 ? [qsTr("Wavetables (*.wav *.vitaltable)"),
+                                    qsTr("Audio Files (*.wav *.wave *.flac *.mp3 *.aif *.aiff *.ogg)")]
+                                 : [qsTr("Audio Files (*.wav *.wave *.flac *.mp3 *.aif *.aiff *.ogg)")]
+        onAccepted: editor.loadError = patch.loadWavetable(oscillator, FileUrls.localPath(selectedFile), style)
     }
 
     // --- The controls -----------------------------------------------------------------------------

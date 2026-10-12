@@ -172,7 +172,7 @@ private Q_SLOTS:
         TempDir dir;
         QVERIFY(!s.hasTemplate());
         const QString drums = f.editor().addAudioTrack(-1, QStringLiteral("Drums"));
-        const QString keys = f.editor().addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString keys = f.editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const auto clip = f.editor().addMidiClip(keys, 4.0, 4.0);
         QVERIFY(clip);
         f.editor().setClipNotes(*clip, {{60, 0.0, 1.0, 100}, {64, 1.0, 1.0, 90}}, QStringLiteral("setup"));

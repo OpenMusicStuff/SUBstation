@@ -134,7 +134,7 @@ class TestUiPianoRoll : public QObject {
     }
     // A MIDI track "Keys" playing `notes` from the start of the song.
     void keysTrack(const std::vector<Note>& notes) {
-        const QString keys = session().editor()->addMidiTrack(-1, QStringLiteral("Keys"));
+        const QString keys = session().editor()->addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
         const auto ref = session().editor()->addMidiClip(keys, 0.0, 8.0);
         QVERIFY(ref);
         session().editor()->setClipNotes(*ref, notes, QStringLiteral("Notes"));

@@ -214,6 +214,7 @@ private Q_SLOTS:
         QVERIFY(!view.paste());
         QCOMPARE(f.lastMessage(), QStringLiteral("Nothing to paste: copy (Ctrl+C) or cut (Ctrl+X) devices first."));
         const QString keys = s.insertMidiTrack();
+        f.editor().addDevice(keys, QStringLiteral("synth"));
         view.selectDevice(f.project().track(keys).devices[0].id);
         QVERIFY(view.copySelected());
         const auto [audio, devices] = shownTrack(f, 1);

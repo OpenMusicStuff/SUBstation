@@ -584,6 +584,14 @@ public:
     // if one does): its slot; -1 if none is free (or as setVitalModulation refuses).
     Q_INVOKABLE int addVitalModulation(const QString& trackId, const QString& deviceId, const QString& source,
                                        const QString& destination);
+    // A Vital's oscillator's (0..2) wavetable: `wavetable` as its state keeps one
+    // (io/VitalPresets.h vitalWavetableFromFile), or a basic shape
+    // (vitalShapeNames(): Init, Sine, ...). One undo step; false if it isn't a Vital.
+    bool setVitalWavetable(const QString& trackId, const QString& deviceId, int oscillator, const QString& wavetable,
+                           const QString& text = QStringLiteral("Load Wavetable"));
+    Q_INVOKABLE bool setVitalWavetableShape(const QString& trackId, const QString& deviceId, int oscillator, int shape);
+    // A Vital's LFO's (0..7) shape, a basic one. One undo step.
+    Q_INVOKABLE bool setVitalLfoShape(const QString& trackId, const QString& deviceId, int lfo, int shape);
     // A rack's name ("": named by its kind again).
     Q_INVOKABLE void renameRack(const QString& trackId, const QString& deviceId, const QString& name,
                                 const QString& text = QStringLiteral("Rename Rack"));

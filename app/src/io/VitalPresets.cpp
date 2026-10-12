@@ -50,6 +50,29 @@ QByteArray vitalPresetText(const Device& device) {
     }
 }
 
+QString vitalWavetableFromFile(const QString& path, int style) {
+    try {
+        if (path.endsWith(kVitalTableExtension, Qt::CaseInsensitive)) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly)) {
+                throw ProjectFileError(
+                    QStringLiteral("Could not read %1: %2").arg(QFileInfo(path).fileName(), file.errorString()));
+            }
+            return QString::fromStdString(vitalpatch::wavetableFromVitalTable(
+                file.readAll().toStdString(), QFileInfo(path).completeBaseName().toStdString()));
+        }
+        const auto how = style == 1   ? vitalpatch::WavetableStyle::Vocode
+                         : style == 2 ? vitalpatch::WavetableStyle::Pitch
+                                      : vitalpatch::WavetableStyle::Splice;
+        return QString::fromStdString(vitalpatch::wavetableFromAudioFile(path.toStdString(), how));
+    } catch (const ProjectFileError&) {
+        throw;
+    } catch (const std::exception& error) {
+        throw ProjectFileError(QStringLiteral("%1 can't be loaded as a wavetable (%2).")
+                                   .arg(QFileInfo(path).fileName(), QString::fromStdString(error.what())));
+    }
+}
+
 void saveVitalPreset(const Device& device, const QString& path) {
     const QByteArray text = vitalPresetText(device);
     QSaveFile file(path);

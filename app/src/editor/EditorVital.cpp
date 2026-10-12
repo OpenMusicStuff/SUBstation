@@ -83,4 +83,55 @@ int ProjectEditor::addVitalModulation(const QString& trackId, const QString& dev
     return free;
 }
 
+namespace {
+
+// The device's state with one value made anew from what it was (`change`), as a model state; none if it throws.
+template <typename Change>
+std::optional<std::optional<QString>> changedState(const Device& device, const char* key, Change change) {
+    deviceState::Values values = deviceState::fromModel(device.state);
+    try {
+        values.insert(QString::fromLatin1(key),
+                      QString::fromStdString(change(values.value(QString::fromLatin1(key)).toStdString())));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+    return deviceState::toModel(values);
+}
+
+}  // namespace
+
+bool ProjectEditor::setVitalWavetable(const QString& trackId, const QString& deviceId, int oscillator,
+                                      const QString& wavetable, const QString& text) {
+    const Device* device = project_->findDevice(trackId, deviceId);
+    if (device == nullptr || !isVital(*device) || oscillator < 0 || oscillator >= vitalpatch::kNumOscillators) return false;
+    const auto state = changedState(*device, vitalpatch::kWavetables, [&](const std::string& value) {
+        return vitalpatch::withWavetable(value, oscillator, wavetable.toStdString());
+    });
+    if (!state) return false;
+    push(std::make_unique<SetDeviceStateCommand>(project_, trackId, deviceId, device->state, *state, text));
+    return true;
+}
+
+bool ProjectEditor::setVitalWavetableShape(const QString& trackId, const QString& deviceId, int oscillator, int shape) {
+    if (shape < 0 || shape >= vitalpatch::kNumShapes) return false;
+    const std::string wavetable = vitalpatch::wavetableOfShape(static_cast<vitalpatch::Shape>(shape));
+    return setVitalWavetable(trackId, deviceId, oscillator, QString::fromStdString(wavetable),
+                             QStringLiteral("Change Wavetable"));
+}
+
+bool ProjectEditor::setVitalLfoShape(const QString& trackId, const QString& deviceId, int lfo, int shape) {
+    const Device* device = project_->findDevice(trackId, deviceId);
+    if (device == nullptr || !isVital(*device) || lfo < 0 || lfo >= vitalpatch::kNumLfos || shape < 0 ||
+        shape >= vitalpatch::kNumShapes) {
+        return false;
+    }
+    const auto state = changedState(*device, vitalpatch::kLfos, [&](const std::string& value) {
+        return vitalpatch::withLfo(value, lfo, vitalpatch::lfoOfShape(static_cast<vitalpatch::Shape>(shape)));
+    });
+    if (!state) return false;
+    push(std::make_unique<SetDeviceStateCommand>(project_, trackId, deviceId, device->state, *state,
+                                                 QStringLiteral("Change LFO Shape")));
+    return true;
+}
+
 }  // namespace sub::app
