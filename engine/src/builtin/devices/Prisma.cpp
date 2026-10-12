@@ -30,7 +30,8 @@
 // - The shifters: two read heads on a delay line, crossfaded with Hann windows
 //   over grains two periods long, their delay sweeping at 1 - ratio.
 // - Color fades from the plain mid band (0 %) to the processed one (100 %);
-//   above, the notes get louder and narrower and the floor between them lower.
+//   above (as measured on the reference, by how many notes are enabled), the
+//   notes get narrower and louder and the floor between them lower.
 //   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
 //   notes, Post-Shift tunes the notes.
 
@@ -62,6 +63,11 @@ namespace sub {
 namespace {
 
 using Complex = std::complex<float>;
+using prisma::kColorCountPoints;
+using prisma::kColorCounts;
+using prisma::kColorFloorDb;
+using prisma::kColorKernel;
+using prisma::kColorLiftDb;
 using prisma::kKernelPoints;
 using prisma::kNoteGainCentiDb;
 using prisma::kNoteKernel;
@@ -815,20 +821,37 @@ private:
                 ++count;
             }
         }
-        // Color past 100 % sharpens (measured at 125, 150, 175 and 200 %): the notes louder (to +7.1 dB) and
-        // narrower (to 2.5 times), the floor between them lower (to -21.3 dB).
-        static constexpr float kPeakDb[5] = {0.f, 1.8f, 5.3f, 7.1f, 7.1f};
-        static constexpr float kFloorDb[5] = {0.f, -4.3f, -9.7f, -15.4f, -21.3f};
-        static constexpr float kNarrow[5] = {1.f, 1.2f, 1.9f, 2.1f, 2.5f};
+        // Color past 100 % sharpens (measured at 125, 150, 175 and 200 %, PrismaData.h): the notes narrower and
+        // louder, the floor between them lower, the more so the fewer notes are enabled. Between the measured
+        // Colors, linear; the moved notes' bands narrow too (to 1.8 times).
+        static constexpr float kNarrow[5] = {1.f, 1.1f, 1.4f, 1.6f, 1.8f};
         const float over = std::clamp(key_.colorExponent / 100.f - 1.f, 0.f, 1.f) * 4.f;
         const int oi = std::min(3, static_cast<int>(over));
         const float of = over - static_cast<float>(oi);
         auto lerp = [&](const float* t) { return t[oi] + (t[oi + 1] - t[oi]) * of; };
-        const float peak = std::pow(10.f, lerp(kPeakDb) / 20.f);
         const double narrow = lerp(kNarrow);
-        for (float& g : v) g *= peak;
+        // a step's value (dB) for this many notes: 0 at 100 %, then the table's (by count) at 125 ... 200 %
+        auto byCount = [&](const float (*table)[kColorCountPoints], int step) noexcept {
+            if (step < 0) return 0.f;
+            const float* t = table[step];
+            int i = 0;
+            while (i < kColorCountPoints - 2 && count > kColorCounts[i + 1]) ++i;
+            const float u = std::clamp(static_cast<float>(count - kColorCounts[i]) /
+                                           static_cast<float>(kColorCounts[i + 1] - kColorCounts[i]), 0.f, 1.f);
+            return t[i] + (t[i + 1] - t[i]) * u;
+        };
+        auto colorDb = [&](const float (*table)[kColorCountPoints]) noexcept {
+            return byCount(table, oi - 1) + (byCount(table, oi) - byCount(table, oi - 1)) * of;
+        };
+        float noteKernel[kKernelPoints];
+        for (int i = 0; i < kKernelPoints; ++i) {
+            const float from = oi == 0 ? kNoteKernel[i] : kColorKernel[oi - 1][i];
+            noteKernel[i] = from + (kColorKernel[oi][i] - from) * of;
+        }
+        const float lift = std::pow(10.f, colorDb(kColorLiftDb) / 20.f);
+        for (float& g : v) g *= lift;
         const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
-                                std::pow(10.f, lerp(kFloorDb) / 20.f);
+                                std::pow(10.f, colorDb(kColorFloorDb) / 20.f);
         const double post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
         // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat (Low Latency, as
         // the reference: at a gain falling 1.89 dB per enabled note, +19.8 dB with one; the crossovers take most
@@ -847,12 +870,12 @@ private:
             slotUsed_[FromBelow] = slotUsed_[FromAbove] = true;
         }
 
-        auto kernel = [](double dist) noexcept {
+        auto kernel = [&](double dist) noexcept {
             const double x = std::abs(dist) * 8.0;
             const int i = static_cast<int>(x);
             if (i >= kKernelPoints - 1) return 0.0;
             const double t = x - i;
-            return kNoteKernel[i] * (1 - t) + kNoteKernel[i + 1] * t;
+            return noteKernel[i] * (1 - t) + noteKernel[i + 1] * t;
         };
         auto wrapped = [](double d) noexcept {
             d = std::fmod(d, 12.0);
@@ -871,7 +894,7 @@ private:
             for (int c = 0; c < 12; ++c) {
                 if (!(bits >> c & 1)) continue;
                 const double dist = wrapped(p - c);
-                const double kv = kernel(dist * narrow);
+                const double kv = kernel(dist);
                 sum += v[c] * kv;
                 cover += kv;
             }

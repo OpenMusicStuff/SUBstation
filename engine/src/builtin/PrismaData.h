@@ -4112,4 +4112,29 @@ inline constexpr float kNoteKernel[kKernelPoints] = {
     1.00000f, 0.88634f, 0.79557f, 0.66715f, 0.46397f, 0.27855f, 0.17202f, 0.10783f, 0.00006f, 0.02697f, 0.05070f, 0.02938f, 0.01319f, 0.00534f, 0.00000f, 0.00000f, 0.00000f,
 };
 
+// Color past 100 % (chroma-study/probe, colorsets.py and colorfit.py: the masks of five sets of notes at 125, 150,
+// 175 and 200 %): the kernel at each, and the enabled notes' lift and the floor's change (dB) by how many notes are
+// enabled (at kColorCounts of them, between them linear, past the last as the last).
+inline constexpr int kColorSteps = 4;  // 125, 150, 175, 200 %
+inline constexpr int kColorCountPoints = 5;
+inline constexpr int kColorCounts[kColorCountPoints] = {1, 2, 3, 5, 7};
+inline constexpr float kColorKernel[kColorSteps][kKernelPoints] = {
+    {1.000f, 0.897f, 0.716f, 0.514f, 0.308f, 0.155f, 0.221f, 0.210f, 0.025f, 0.000f, 0.000f, 0.042f, 0.018f, 0.000f, 0.000f, 0.000f, 0.000f},
+    {1.000f, 0.825f, 0.552f, 0.330f, 0.177f, 0.078f, 0.158f, 0.385f, 0.143f, 0.011f, 0.000f, 0.021f, 0.008f, 0.000f, 0.000f, 0.000f, 0.000f},
+    {1.000f, 0.724f, 0.404f, 0.207f, 0.099f, 0.035f, 0.095f, 0.558f, 0.273f, 0.089f, 0.000f, 0.007f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f},
+    {1.000f, 0.617f, 0.287f, 0.127f, 0.050f, 0.010f, 0.082f, 0.682f, 0.414f, 0.149f, 0.000f, 0.006f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f},
+};
+inline constexpr float kColorLiftDb[kColorSteps][kColorCountPoints] = {
+    {1.9f, 1.6f, 1.2f, 1.1f, 1.3f},
+    {5.5f, 4.7f, 4.1f, 3.8f, 4.0f},
+    {7.3f, 6.2f, 5.3f, 4.8f, 4.8f},
+    {7.1f, 5.9f, 4.8f, 4.1f, 3.7f},
+};
+inline constexpr float kColorFloorDb[kColorSteps][kColorCountPoints] = {
+    {-3.2f, -4.0f, -4.3f, -4.7f, -9.9f},
+    {-8.3f, -9.1f, -9.4f, -9.7f, -16.5f},
+    {-9.6f, -12.0f, -12.6f, -12.1f, -15.1f},
+    {-7.9f, -12.6f, -14.1f, -14.1f, -13.5f},
+};
+
 }  // namespace sub::prisma
