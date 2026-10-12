@@ -103,6 +103,9 @@ struct EngineBridge::Private {
     // Owner -> {target key: the envelope its macro's automation plays it along}, as pushed.
     QMap<QString, QMap<QString, Envelope>> macroMoved;
     std::set<std::pair<QString, QString>> overridden;  // (owner, key) changed by hand while automated
+    QMap<QString, std::vector<sub::ModulationDesc>> modulation;  // owner -> what its modulators move, as pushed
+    QMap<QString, QSet<QString>> modulating;  // owner -> the targets its modulators move (keys)
+    std::map<std::pair<QString, QString>, double> unmodulated;  // (owner, key) -> its value before it was modulated
     QMap<QString, std::pair<double, double>> mixer;  // owner -> (volume dB, pan) the engine has
     QMap<QString, bool> mutes;  // track id -> its mute as the engine has it
     QMap<QString, InputState> inputs;  // track id -> its input as the engine has it

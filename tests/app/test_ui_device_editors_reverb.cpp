@@ -642,7 +642,7 @@ private Q_SLOTS:
         const QPoint decayAt = centerOf(qvariant_cast<QQuickItem*>(control(s.view, "decayKnob")->property("knob")));
         QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, decayAt);
         for (int dy = 10; dy <= 40; dy += 10) dragTo(decayAt - QPoint(0, dy));
-        QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, decayAt - QPoint(0, 40));
+        releaseDrag(decayAt, decayAt - QPoint(0, 40));  // (the cursor back where it began before the boxes' drags)
         QVERIFY2(value(s, "decay") > 1500.0, qPrintable(QString::number(value(s, "decay"))));
         QCOMPARE(undo()->index(), steps + 1);
         QCOMPARE(engineParam(s, "decay"), double(float(value(s, "decay"))));
@@ -657,7 +657,7 @@ private Q_SLOTS:
             const QPoint at = centerOf(control(s.view, "hiFreqBox"));
             QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, at);
             for (int dy = 5; dy <= 20; dy += 5) dragTo(at - QPoint(0, dy));
-            QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, at - QPoint(0, 20));
+            releaseDrag(at, at - QPoint(0, 20));
             boxSteps += undo()->index() - before;
             return value(s, "hi_freq") / from;
         };

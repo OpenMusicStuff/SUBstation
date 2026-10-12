@@ -3,6 +3,9 @@
 #include "audio/EngineBridge.h"
 #include "controls/Automation.h"
 #include "controls/ValueBoxItem.h"
+#include "devices/ModulatorValues.h"
+#include "model/Devices.h"
+#include "session/ModulationLearn.h"
 #include "editor/ProjectEditor.h"
 #include "model/Automation.h"
 #include "model/Device.h"
@@ -21,7 +24,14 @@ namespace sub::ui {
 using sub::app::EngineBridge;
 using sub::app::Project;
 
-DeviceParam::DeviceParam(QObject* parent) : QObject(parent) {}
+DeviceParam::DeviceParam(QObject* parent) : QObject(parent) {
+    connect(ModulatorValues::instance(), &ModulatorValues::ticked, this, &DeviceParam::refreshModulationValue);
+}
+
+DeviceParam::~DeviceParam() {
+    if (!modulator_.isEmpty())
+        ModulatorValues::release(modulator_);
+}
 
 void DeviceParam::setSession(sub::app::Session* session) {
     if (session == session_)
@@ -93,6 +103,8 @@ void DeviceParam::connectSession() {
             refreshValue();
         }
     });
+    connections_ << connect(session_->modulationLearn(), &sub::app::ModulationLearn::changed, this,
+                            &DeviceParam::refreshMappable);
     // While its automation plays, it follows it.
     connections_ << connect(bridge, &EngineBridge::positionChanged, this, [this] {
         if (automation_ == QLatin1String("on"))
@@ -104,6 +116,63 @@ void DeviceParam::refresh() {
     refreshSpec();
     refreshAutomation();
     refreshValue();
+    refreshModulation();
+    refreshMappable();
+}
+
+void DeviceParam::refreshModulation() {
+    QString modulator;
+    sub::app::ModulationMapping mapping;
+    if (session_ && session_->project()->hasOwner(trackId_)) {
+        for (const sub::app::Device* d : sub::app::iterDevices(session_->project()->track(trackId_).devices)) {
+            if (!d->enabled)
+                continue;  // (switched off, it moves nothing: the bridge sends the engine none of its mappings)
+            for (const sub::app::ModulationMapping& m : d->modulations) {
+                if (m.deviceId == deviceId_ && m.paramId == paramId_) {
+                    modulator = d->id;
+                    mapping = m;
+                    break;
+                }
+            }
+            if (!modulator.isEmpty())
+                break;
+        }
+    }
+    if (modulator == modulator_ && mapping == mapping_)
+        return;
+    if (modulator != modulator_) {
+        if (!modulator_.isEmpty())
+            ModulatorValues::instance()->unwatch(modulator_);
+        if (!modulator.isEmpty())
+            ModulatorValues::instance()->watch(session_, trackId_, modulator);
+        modulationValue_ = -1.0;
+    }
+    modulator_ = modulator;
+    mapping_ = mapping;
+    Q_EMIT modulationChanged();
+    refreshModulationValue();
+}
+
+void DeviceParam::refreshModulationValue() {
+    double value = -1.0;
+    if (!modulator_.isEmpty()) {
+        if (const auto now = ModulatorValues::instance()->value(modulator_))
+            value = mapping_.target(*now);
+    }
+    if (value == modulationValue_)
+        return;
+    modulationValue_ = value;
+    Q_EMIT modulationValueChanged();
+}
+
+void DeviceParam::refreshMappable() {
+    const sub::app::ModulationLearn* learn = session_ ? session_->modulationLearn() : nullptr;
+    const bool mappable = learn && learn->active() && learn->trackId() == trackId_ &&
+                          learn->modulatorId() != deviceId_ && canModulate();
+    if (mappable == mappable_)
+        return;
+    mappable_ = mappable;
+    Q_EMIT mappableChanged();
 }
 
 void DeviceParam::refreshSpec() {
@@ -372,6 +441,50 @@ void DeviceParam::mapToMacro(int index) {
     const QString rack = rackId();
     if (session_ && !rack.isEmpty())
         session_->editor()->tryMapMacro(trackId_, rack, index, deviceId_, paramId_);
+}
+
+QString DeviceParam::modulatorName() const {
+    const sub::app::Device* device =
+        session_ && !modulator_.isEmpty() ? session_->project()->findDevice(trackId_, modulator_) : nullptr;
+    return device ? sub::app::deviceName(*device) : QString();
+}
+
+double DeviceParam::modulationFrom() const { return modulated() ? std::min(mapping_.low, mapping_.high) : 0.0; }
+
+double DeviceParam::modulationTo() const { return modulated() ? std::max(mapping_.low, mapping_.high) : 1.0; }
+
+bool DeviceParam::canModulate() const {
+    return session_ && session_->project()->findDevice(trackId_, deviceId_) &&
+           session_->editor()->canModulate(trackId_, deviceId_, paramId_);
+}
+
+QVariantList DeviceParam::modulatorChoices() const {
+    QVariantList choices;
+    if (!canModulate())
+        return choices;
+    for (const QString& id : session_->editor()->modulators(trackId_)) {
+        if (id == deviceId_)
+            continue;
+        if (const sub::app::Device* device = session_->project()->findDevice(trackId_, id)) {
+            choices.append(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("name"), sub::app::deviceName(*device)}});
+        }
+    }
+    return choices;
+}
+
+void DeviceParam::modulateWith(const QString& modulatorId) {
+    if (session_)
+        session_->editor()->tryMapModulation(trackId_, modulatorId, deviceId_, paramId_);
+}
+
+void DeviceParam::unmodulate() {
+    if (session_)
+        session_->editor()->unmapModulation(trackId_, deviceId_, paramId_);
+}
+
+void DeviceParam::setModulationInverted(bool inverted) {
+    if (session_ && modulated())
+        session_->editor()->setModulationInverted(trackId_, modulator_, deviceId_, paramId_, inverted);
 }
 
 void DeviceParam::unmapFromMacro() {

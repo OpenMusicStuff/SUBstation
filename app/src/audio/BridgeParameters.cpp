@@ -114,6 +114,60 @@ void EngineBridge::pushOwnValue(const QString& owner, const QString& key) {
     if (deviceId && target && project_->hasDevice(owner, *deviceId)) pushDeviceParam(owner, *deviceId, target->param);
 }
 
+void EngineBridge::pushModulation(const QString& owner) {
+    Private& d = *d_;
+    const auto engineId = engineTrackId(owner);
+    if (!engineId || !project_->hasOwner(owner)) return;
+    std::vector<sub::ModulationDesc> modulation;
+    QMap<QString, std::pair<quint32, std::string>> moved;  // key -> (processor, parameter)
+    for (const Device* modulator : iterDevices(project_->track(owner).devices)) {
+        if (modulator->modulations.empty() || !modulator->enabled) continue;
+        const auto source = engineDeviceId(owner, modulator->id);
+        if (!source) continue;
+        for (const ModulationMapping& m : modulator->modulations) {
+            const auto target = engineDeviceId(owner, m.deviceId);
+            const QString key = automation::deviceKey(m.deviceId, m.paramId);
+            if (!target || moved.contains(key)) continue;
+            modulation.push_back({*source, *target, m.paramId.toStdString(), static_cast<float>(m.low),
+                                  static_cast<float>(m.high), m.invert});
+            moved.insert(key, {*target, m.paramId.toStdString()});
+        }
+    }
+    const QSet<QString> before = d.modulating.value(owner);
+    for (auto it = moved.constBegin(); it != moved.constEnd(); ++it) {  // where each was before it started moving
+        if (before.contains(it.key())) continue;
+        const int index = engine_.processorParamIndex(it->first, it->second);
+        if (index >= 0) d.unmodulated[{owner, it.key()}] = engine_.processorParam(it->first, index);
+    }
+    if (!d.modulation.contains(owner) || d.modulation.value(owner) != modulation) {
+        engine_.setTrackModulation(*engineId, modulation);
+        d.modulation.insert(owner, modulation);
+    }
+    QSet<QString> now;
+    for (auto it = moved.constBegin(); it != moved.constEnd(); ++it) now.insert(it.key());
+    d.modulating.insert(owner, now);
+    for (const QString& key : before - now) {
+        const auto was = d.unmodulated.find({owner, key});
+        const std::optional<double> previous =
+            was != d.unmodulated.end() ? std::optional<double>(was->second) : std::nullopt;
+        if (was != d.unmodulated.end()) d.unmodulated.erase(was);
+        const auto deviceId = automation::keyDevice(key);
+        const auto target = automation::parseKey(key);
+        if (!deviceId || !target || !project_->hasDevice(owner, *deviceId)) continue;
+        if (project_->device(owner, *deviceId).params.contains(target->param)) {
+            pushDeviceParam(owner, *deviceId, target->param);  // its own value
+        } else if (const auto processorId = engineDeviceId(owner, *deviceId); processorId && previous) {
+            const int index = engine_.processorParamIndex(*processorId, target->param.toStdString());
+            if (index >= 0) engine_.setProcessorParam(*processorId, index, static_cast<float>(*previous));
+        }
+    }
+}
+
+bool EngineBridge::isModulated(const QString& owner, const QString& key) const {
+    const auto it = d_->modulating.constFind(owner);
+    return it != d_->modulating.constEnd() && it->contains(key);
+}
+
 bool EngineBridge::isAutomated(const QString& owner, const QString& key) const {
     const auto it = d_->automating.constFind(owner);
     return it != d_->automating.constEnd() && it->contains(key);

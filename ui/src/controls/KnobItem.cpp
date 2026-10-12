@@ -147,6 +147,54 @@ void KnobItem::setAutomation(const QString& state) {
     Q_EMIT lookChanged();
 }
 
+namespace {
+
+// Sets a look property, repainting if it changed.
+template <typename T>
+bool changeLook(T& member, const T& value) {
+    if (member == value)
+        return false;
+    member = value;
+    return true;
+}
+
+}  // namespace
+
+void KnobItem::setModulated(bool modulated) {
+    if (changeLook(modulated_, modulated)) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+void KnobItem::setModulationFrom(qreal fraction) {
+    if (changeLook(modulationFrom_, std::clamp<double>(fraction, 0.0, 1.0))) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+void KnobItem::setModulationTo(qreal fraction) {
+    if (changeLook(modulationTo_, std::clamp<double>(fraction, 0.0, 1.0))) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+void KnobItem::setModulationValue(qreal fraction) {
+    if (changeLook(modulationValue_, fraction < 0 ? -1.0 : std::min<double>(fraction, 1.0))) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+void KnobItem::setMappable(bool mappable) {
+    if (changeLook(mappable_, mappable)) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
 void KnobItem::setFormatter(const QJSValue& formatter) {
     formatter_ = formatter;
     updateText();
@@ -237,21 +285,49 @@ void KnobItem::paint(SgPainter& p) {
     if (side <= 0)
         return;
     const QRectF rect((width() - side) / 2, (height() - side) / 2, side, side);
+    if (mappable_) {  // a modulator's Map waits for it
+        const QColor ring = Theme::modulation();
+        p.drawEllipse(rect.adjusted(-1.5, -1.5, 1.5, 1.5), QColor(ring.red(), ring.green(), ring.blue(), 190), 1.5);
+    }
     p.drawArc(rect, kStartAngle - kSpan, kSpan, Theme::knobTrack(), 3, Qt::FlatCap);
 
-    const double origin = bipolar_ ? 0.5 : 0.0;
-    const double frac = fraction(value_);
-    const double start = kStartAngle - origin * kSpan;
-    const double sweep = -(frac - origin) * kSpan;
-    if (std::abs(sweep) > 0.5)
-        p.drawArc(rect, start, sweep, color(), 3, Qt::FlatCap);
-
-    const double angle = (kStartAngle - frac * kSpan) * kPi / 180.0;
     const QPointF center = rect.center();
     const double radius = side / 2 - 2;
-    const QPointF tip(center.x() + std::cos(angle) * radius, center.y() - std::sin(angle) * radius);
-    const QPointF inner(center.x() + std::cos(angle) * radius * 0.3, center.y() - std::sin(angle) * radius * 0.3);
-    p.drawLine(inner, tip, Theme::text(), 2, Qt::RoundCap);
+    const auto pointer = [&](double frac, const QColor& colour, double width) {
+        const double angle = (kStartAngle - frac * kSpan) * kPi / 180.0;
+        const QPointF tip(center.x() + std::cos(angle) * radius, center.y() - std::sin(angle) * radius);
+        const QPointF inner(center.x() + std::cos(angle) * radius * 0.3, center.y() - std::sin(angle) * radius * 0.3);
+        p.drawLine(inner, tip, colour, width, Qt::RoundCap);
+        return tip;
+    };
+    const double frac = fraction(value_);
+    if (modulated_) {
+        // The range it moves over, and where it is now; its own value faint (it waits).
+        const QColor mod = Theme::modulation();
+        const double sweep = -(modulationTo_ - modulationFrom_) * kSpan;
+        if (std::abs(sweep) > 0.5) {
+            p.drawArc(rect, kStartAngle - modulationFrom_ * kSpan, sweep,
+                      QColor(mod.red(), mod.green(), mod.blue(), 110), 3, Qt::FlatCap);
+        }
+        QColor own = Theme::text();
+        own.setAlpha(60);
+        pointer(frac, own, 1.5);
+        if (modulationValue_ >= 0.0) {
+            const double now = modulationValue_;
+            const double from = std::min(modulationFrom_, modulationTo_);
+            const double sweepNow = -(now - from) * kSpan;
+            if (std::abs(sweepNow) > 0.5) p.drawArc(rect, kStartAngle - from * kSpan, sweepNow, mod, 3, Qt::FlatCap);
+            const QPointF tip = pointer(now, mod, 2);
+            p.fillEllipse(tip, 2.2, 2.2, mod);
+        }
+    } else {
+        const double origin = bipolar_ ? 0.5 : 0.0;
+        const double start = kStartAngle - origin * kSpan;
+        const double sweep = -(frac - origin) * kSpan;
+        if (std::abs(sweep) > 0.5)
+            p.drawArc(rect, start, sweep, color(), 3, Qt::FlatCap);
+        pointer(frac, Theme::text(), 2);
+    }
     drawAutomationDot(p, automation_, QPointF(width() - 3.5, 3.5));
 }
 

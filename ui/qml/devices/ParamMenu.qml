@@ -6,8 +6,10 @@ import SUBstation
 // automated), Delete Automation (if it has an envelope), Re-Enable Automation
 // (while its automation is overridden) and, on a device inside a rack, Map to
 // Macro (the rack's macros, by name, the one it is mapped to checked) and Unmap
-// from its macro. Its entries are made for how things are when it opens: show()
-// fills it and pops it up at the mouse.
+// from its macro; and Modulate With (the modulators on its track: an LFO, an
+// Envelope), Invert Modulation and Remove Modulation for one a modulator moves.
+// Its entries are made for how things are when it opens: show() fills it and
+// pops it up at the mouse.
 DynamicMenu {
     id: menu
 
@@ -35,6 +37,22 @@ DynamicMenu {
                 const name = mappedRack === rack && mapped < names.length ? names[mapped]
                                                                           : qsTr("Macro %1").arg(mapped + 1)
                 entry(qsTr("Unmap from %1").arg(name), () => p.unmapFromMacro())
+            }
+        }
+        const modulators = p.modulatorChoices()
+        if (modulators.length > 0 || p.modulated) {
+            separator()
+            if (modulators.length > 0) {
+                const choose = submenu(qsTr("Modulate With"))
+                for (let i = 0; i < modulators.length; ++i) {
+                    const id = modulators[i].id
+                    entry(modulators[i].name, () => p.modulateWith(id), p.modulator === id, true, choose)
+                }
+            }
+            if (p.modulated) {
+                entry(qsTr("Invert Modulation"), () => p.setModulationInverted(!p.modulationInverted),
+                      p.modulationInverted)
+                entry(qsTr("Remove Modulation (%1)").arg(p.modulatorName), () => p.unmodulate())
             }
         }
     }

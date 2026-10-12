@@ -567,6 +567,15 @@ QStringList ProjectEditor::insertCopies(const CopiedTracks& copied, int index, s
             const QStringList nw = deviceAndChainIds(device);
             for (qsizetype i = 0; i < old.size() && i < nw.size(); ++i) ids.insert(old[i], nw[i]);
         }
+        {  // Modulators' mappings follow the copies of the track's devices (refreshIds kept those inside each).
+            const std::vector<const Device*> originals = iterDevices(original.devices);
+            const std::vector<Device*> fresh = iterDevices(track.devices);
+            for (std::size_t i = 0; i < originals.size() && i < fresh.size(); ++i) {
+                if (!originals[i]->modulations.empty()) {
+                    fresh[i]->modulations = renamedModulations(originals[i]->modulations, ids);
+                }
+            }
+        }
         for (Device* device : iterDevices(track.devices)) {
             if (!device->midiFrom.isEmpty()) device->midiFrom = source(device->midiFrom).value_or(QString());
             if (!device->sidechain) continue;

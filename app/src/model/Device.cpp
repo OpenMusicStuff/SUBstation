@@ -67,11 +67,18 @@ std::optional<QString> Sidechain::tapDevice() const {
 
 double MacroMapping::target(double value) const { return low + std::max(0.0, std::min(1.0, value)) * (high - low); }
 
+double ModulationMapping::target(double value) const {
+    double v = std::max(0.0, std::min(1.0, value));
+    if (invert) v = 1.0 - v;
+    return std::max(0.0, std::min(1.0, low + v * (high - low)));
+}
+
 bool Device::operator==(const Device& other) const {
     return id == other.id && kind == other.kind && enabled == other.enabled && params == other.params &&
            plugin == other.plugin && state == other.state && sidechain == other.sidechain &&
            midiFrom == other.midiFrom && chains == other.chains &&
-           macros == other.macros && macroNames == other.macroNames && name == other.name;
+           macros == other.macros && macroNames == other.macroNames && modulations == other.modulations &&
+           name == other.name;
 }
 
 bool Chain::operator==(const Chain& other) const {
@@ -199,7 +206,48 @@ void refreshIds(Device& device) {
         }
         rack->macros = std::move(kept);
     }
+    for (Device* modulator : iterDevices(holder)) {
+        if (!modulator->modulations.empty()) modulator->modulations = renamedModulations(modulator->modulations, renamed);
+    }
     device = std::move(holder.front());
+}
+
+std::vector<ModulationMapping> renamedModulations(const std::vector<ModulationMapping>& mappings,
+                                                  const QHash<QString, QString>& renamed) {
+    std::vector<ModulationMapping> kept;
+    for (const ModulationMapping& m : mappings) {
+        const auto found = renamed.constFind(m.deviceId);
+        if (found == renamed.constEnd()) continue;
+        ModulationMapping copy = m;
+        copy.deviceId = *found;
+        kept.push_back(std::move(copy));
+    }
+    return kept;
+}
+
+bool pruneModulations(std::vector<Device>& devices, const std::function<bool(const QString&)>& isModulator) {
+    QSet<QString> there;
+    for (const Device* d : iterDevices(std::as_const(devices))) there.insert(d->id);
+    QSet<std::pair<QString, QString>> taken;
+    bool pruned = false;
+    for (Device* modulator : iterDevices(devices)) {
+        if (modulator->modulations.empty()) continue;
+        const bool modulates = isModulator(modulator->kind);
+        std::vector<ModulationMapping> kept;
+        for (const ModulationMapping& m : modulator->modulations) {
+            const std::pair<QString, QString> target{m.deviceId, m.paramId};
+            if (!modulates || m.deviceId == modulator->id || !there.contains(m.deviceId) || taken.contains(target)) {
+                continue;
+            }
+            taken.insert(target);
+            kept.push_back(m);
+        }
+        if (kept != modulator->modulations) {
+            modulator->modulations = std::move(kept);
+            pruned = true;
+        }
+    }
+    return pruned;
 }
 
 int rackHeight(const Device& device) {

@@ -6,10 +6,11 @@
 // editors.
 //
 // - value(): a parameter as it is now (its envelope's value while automation
-//   plays), and automationState(); sync() is called (on the GUI thread) when
-//   they may have changed: the device's parameters, its automation, the
-//   playhead while any of its parameters follows automation, the device coming
-//   or going. Subclasses read what they draw there into members; paint() only
+//   plays, where its modulator has it while one moves it), and
+//   automationState(); sync() is called (on the GUI thread) when they may have
+//   changed: the device's parameters, its automation, the playhead while any
+//   of its parameters follows automation, each display tick while a modulator
+//   moves any (ModulatorValues), the device coming or going. Subclasses read what they draw there into members; paint() only
 //   reads those (see SgCanvas's threading note).
 // - setParams() / setParam() go through the ProjectEditor (one undo step per
 //   merge key, the first parameter's lane shown), touch() shows a parameter's
@@ -34,6 +35,8 @@
 #include <vector>
 
 #include "input/DoubleClicks.h"
+#include "model/Device.h"
+#include "model/ParamSpec.h"
 #include "model/OrderedMap.h"
 #include "session/Session.h"
 
@@ -69,9 +72,11 @@ public:
 
     // The device (null: gone). Valid until the project changes.
     const sub::app::Device* device() const;
-    // A parameter as it is now: its automation's value while that plays, else
-    // the device's, else its default.
+    // A parameter as it is now: where its modulator has it while one moves it,
+    // its automation's value while that plays, else the device's, else its default.
     double value(const QString& paramId) const;
+    // Whether a modulator moves it.
+    bool isModulated(const QString& paramId) const { return modulated_.contains(paramId); }
     // "on" while its automation plays, "off" when overridden, else "".
     QString automationState(const QString& paramId) const;
     double defaultValue(const QString& paramId) const { return defaults_.value(paramId, 0.0); }
@@ -126,6 +131,7 @@ protected:
 private:
     void connectSession();
     void readDevice();
+    void readModulation();
     void readTrackName();
     void doSync();
     bool followsAutomation() const;
@@ -142,6 +148,14 @@ private:
     QMap<QString, int> displays_;     // display id -> index
     QMap<QString, int> displaySamples_;  // display id -> the samples each value stands for
     QHash<QString, quint64> positions_;  // "<processor>:<display>" -> where to read from
+    // Its parameters a modulator moves: param id -> the modulator (watched in ModulatorValues), how, and
+    // the parameter's mapping.
+    struct Modulated {
+        QString modulator;
+        sub::app::ModulationMapping mapping;
+        std::optional<sub::app::ParamSpec> spec;
+    };
+    QHash<QString, Modulated> modulated_;
     QList<QMetaObject::Connection> connections_;
     DoubleClicks doubleClicks_;
     QElapsedTimer tickTimer_;  // since the last tickSeconds()

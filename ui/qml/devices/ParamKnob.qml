@@ -2,8 +2,8 @@ import QtQuick
 import SUBstation
 
 // A knob bound to a built-in device's parameter (a DeviceParam), as the
-// device editors bind theirs: it shows the value as it is now and its
-// automation dot, sets it through the editor (one undo step per drag), touches
+// device editors bind theirs: it shows the value as it is now, its
+// automation dot and what a modulator does to it, sets it through the editor (one undo step per drag), touches
 // it when pressed, and right-click gives its menu. `size` is the knob's; the
 // range, scale and default are the parameter's unless set.
 Item {
@@ -40,6 +40,11 @@ Item {
         logScale: control.param ? control.param.logScale : false
         value: control.param ? control.param.value : 0
         automation: control.param ? control.param.automation : ""
+        modulated: control.param ? control.param.modulated : false
+        modulationFrom: control.param ? control.param.modulationFrom : 0
+        modulationTo: control.param ? control.param.modulationTo : 1
+        modulationValue: control.param ? control.param.modulationValue : -1
+        mappable: control.param ? control.param.mappable : false
         formatter: v => control.formatter(v)
         onMoved: (v, key) => {
             if (control.setter)

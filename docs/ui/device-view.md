@@ -25,6 +25,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | [RackDeviceBody.qml](../../ui/qml/devices/RackDeviceBody.qml), [RackMacroKnob.qml](../../ui/qml/devices/RackMacroKnob.qml), [RackMacroMappings.qml](../../ui/qml/devices/RackMacroMappings.qml), [RackChainRow.qml](../../ui/qml/devices/RackChainRow.qml), [RackChainView.qml](../../ui/qml/devices/RackChainView.qml), [RackMacro](../../ui/src/devices/RackMacro.h) (`RackMacro`, `RackMacros`), [RackChain](../../ui/src/devices/RackChain.h), [RackChains](../../ui/src/devices/RackChains.h) | A rack: its buttons, macros and chain list, a macro's mappings and their ranges, a chain's row, the chain shown beside the rack |
 | [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h) | The base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
 | [editors/DeviceEditors.qml](../../ui/qml/devices/editors/DeviceEditors.qml) | The editor registry (a singleton): `editorFor(kind)` |
+| [editors/LfoEditor.qml](../../ui/qml/devices/editors/LfoEditor.qml), [editors/EnvelopeEditor.qml](../../ui/qml/devices/editors/EnvelopeEditor.qml), [editors/ModulatorTargets.qml](../../ui/qml/devices/editors/ModulatorTargets.qml), [ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), [ModulatorMappings](../../ui/src/devices/ModulatorMappings.h), [ModulatorValues](../../ui/src/devices/ModulatorValues.h) | The modulators' editors (see [Modulators](#modulators)): the curve and what it plays, what they move (Map, ranges, Invert, ×), and their values as they play for whatever draws the parameters they move |
 | [editors/EditorCaption.qml](../../ui/qml/devices/editors/EditorCaption.qml), [editors/EditorReadout.qml](../../ui/qml/devices/editors/EditorReadout.qml), [editors/EditorKnob.qml](../../ui/qml/devices/editors/EditorKnob.qml), [editors/EditorTextsWidth.qml](../../ui/qml/devices/editors/EditorTextsWidth.qml), [editors/DeviceParamMap.qml](../../ui/qml/devices/editors/DeviceParamMap.qml) | The editors' captions (a control's name over it) and readouts (its value under it); `EditorKnob`, a knob between the two, bound to its parameter and dimmed while disabled, and what its cell shows (`texts()`); `EditorTextsWidth`, how wide a Text must be for texts, knobs' among them, in its font; `DeviceParamMap`, a `DeviceParam` per id (`get(id)`) |
 | Compressor: [CompressorEditor.qml](../../ui/qml/devices/editors/CompressorEditor.qml), [ReductionGraph](../../ui/src/devices/ReductionGraph.h) | |
 | Gate: [GateEditor.qml](../../ui/qml/devices/editors/GateEditor.qml), [GateGraph](../../ui/src/devices/GateGraph.h), [GateKeyGraph](../../ui/src/devices/GateKeyGraph.h), the application layer's [GateResponse.h](../../app/src/audio/GateResponse.h) | |
@@ -85,8 +86,8 @@ focus), the `statusMessage(text)` signal, and its `implicitHeight`.
 
 The panel never scrolls vertically. Its height is worked out once from a measured, hidden `DeviceParamKnob` (the
 `probe`) and the title font: the tallest device is its border, a title bar and a page of knobs in two rows 14 px
-apart with the body's margins, 6 px above and below (`deviceHeight`); the panel adds `panelMargin` (8 px) above and
-below. Every
+apart with the body's margins, 6 px above and below, and `editorRoom` (24 px) more for the editors' graphs (a page
+of knobs stays centred in it) (`deviceHeight`); the panel adds `panelMargin` (8 px) above and below. Every
 device is that tall, so the tallest page of knobs is as far from its title bar as from the frame's bottom, and an
 editor's graphs take the height there is, with the same margins. (The Python panel also added `EXTRA_HEIGHT` and a
 scroll bar's width, which left more room below a device's knobs than above them; the chain has no scroll bar.) The
@@ -245,6 +246,14 @@ way:
   (`editor.mapMacro`, `editor.unmapMacro`, `editor.macroOf`).
 - A parameter mapped to an automated macro is automated as far as the cell knows (`bridge.isAutomated`: the red dot)
   and follows the macro's envelope over its range (`bridge.currentValue`).
+- On a track with modulators the menu has *Modulate With* (the track's modulators by name, the one moving it
+  checked: `DeviceParam::modulatorChoices()`, `modulateWith()`), and for a modulated parameter *Invert Modulation*
+  and *Remove Modulation (<modulator>)*. A modulated parameter's knob (`KnobItem::modulated`, from
+  `DeviceParam`'s `modulated`, `modulationFrom`, `modulationTo`, `modulationValue`) shows the range its modulator
+  moves it over as an arc in `Theme.modulation`, where it is now as its pointer and the arc up to it (from
+  `ModulatorValues`, the modulator's `value` display played back, mapped as the engine maps it), and its own value
+  as a faint pointer. While a modulator's Map waits (`Session.modulationLearn`), every knob it could take on the
+  track has a ring (`mappable`).
 
 ### Plug-ins
 
@@ -1264,6 +1273,51 @@ The editors:
   lanes' `ParamSpec`s use the same text. The device's menu (DevicePanel's) has *Load Vital Preset…* and *Save Vital
   Preset…* for it.
 
+### Modulators
+
+The LFO's and the Envelope's editors ([LfoEditor.qml](../../ui/qml/devices/editors/LfoEditor.qml),
+[EnvelopeEditor.qml](../../ui/qml/devices/editors/EnvelopeEditor.qml)) are the curve and the controls, and what
+it moves, folded away at first: the Targets cell beside the knobs (a knob-sized arrow button with its caption
+and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../ui/qml/devices/editors/ModulatorTargetsButton.qml);
+`DeviceViews` "targets", view state) unfolds it, widening the device.
+
+- **The curve** ([ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), a `DeviceCanvas`): the device's 32
+  point slots (`p1_used`.., written whole by `pointsValues()` through `setDeviceParams`, so a drag is one undo step),
+  edited as the Sidechain's curve is (drag, bend, add, double-click, Alt-click, Delete, the wheel, Shift), with
+  **Ctrl snapping** to the grid (sixteenths across, eighths up). Its menu: *Shapes* (`shapeList(periodic)`: the
+  LFO's start with its device's triangle, the Envelope's with its pluck), *Flip*, *Reverse* (a segment played backwards
+  keeps its curve value: 1 − s(1 − u, a) = s(u, −a)), *Reset*. Behind it: the grid with the times of its quarters
+  (`lengthText`: the rate in Hz or the synced note and its length at the tempo), the LFO's output band and its
+  curve as played (Depth and Offset, dashed) when they aren't the curve's.
+- **As it plays**, on each DisplayClock tick it reads `value`, `phase` and `key` together into a
+  `DisplayPlayback<3>` (played at the audio's pace, a 64-sample frame at a time) and draws a playhead riding the
+  curve (the LFO's phase the short way round; the Envelope's, resting at -1) with a short fading trail (not drawn across a
+  wrap or a retrigger) and a soft glow at its head, and for an Envelope with a sidechain, the key's level against
+  the threshold at the right. A trigger (the Envelope's playhead starting again; the LFO's `key`) briefly lights
+  the frame's edge. (`output`, its value now, feeds the targets' markers.) The Envelope's hint over the curve, while a sidechain triggers it and
+  none is chosen, asks the frame for its sidechain menu.
+- **The controls**: a row of buttons (Sync, the LFO's Retrig, and Map: [ModulatorMapButton.qml](../../ui/qml/devices/editors/ModulatorMapButton.qml)),
+  then `EditorKnob`s at 38 px in 56 px cells (Rate or the synced rate, swapped by Sync; Depth, Offset, Phase,
+  Smooth; the Envelope's Length, Depth, Velocity, Threshold dimmed until a sidechain is chosen, Smooth). The
+  Envelope has no trigger setting: the notes it hears and, once chosen, its sidechain's hits trigger it.
+- **What it moves** ([ModulatorTargets.qml](../../ui/qml/devices/editors/ModulatorTargets.qml) over
+  [ModulatorMappings](../../ui/src/devices/ModulatorMappings.h)): the count and × for all; a row per mapping
+  (a `ListModel` kept in step with `rows` in place, so the row a drag is in outlives the edits it makes): its
+  device and parameter, its range as a bar (each end dragged, the middle
+  for both, a double-click for all of it; one undo step a drag through `setModulationRange` with a gesture key;
+  its ends in the parameter's units in the tooltip, `valueText()`), a white mark where it is now (the editor's
+  `output` through the mapping), ⇅ (`setModulationInverted`) and × (`unmapModulation`).
+- **Map** ([ModulationLearn](../../app/src/session/ModulationLearn.h), a session part): `start(track, modulator)`
+  arms it; the next `ProjectEditor::parameterTouched` on that track (any knob, button, plug-in parameter or handle
+  in an editor's graph) is mapped with `tryMapModulation` and it stops, saying what it mapped; the modulator's own
+  controls don't count, another track's or a switch say why and it waits on.
+- **Live values everywhere** ([ModulatorValues](../../ui/src/devices/ModulatorValues.h)): one per application;
+  whatever draws a modulated parameter watches its modulator (counted), and each tick it reads every watched
+  modulator's `value` display into a `DisplayPlayback<1>` (a backlog's newest 64 only) and says `ticked()`.
+  `DeviceParam` maps it for its knob; `DeviceCanvas::value()` gives a modulated parameter as its modulator has it now
+  (`ParamSpec::fromNormalized` of the mapping's target, quantized), and every editor with one syncs on each tick, so
+  their graphs (an EQ's curve, a filter) move with the modulation.
+
 ### Adding an editor
 
 1. Write `ui/qml/devices/editors/<Name>Editor.qml`: an `Item` with `required property string trackId, deviceId`, an
@@ -1327,6 +1381,7 @@ The editors:
 | [test_ui_device_panel_sidechain.cpp](../../tests/app/test_ui_device_panel_sidechain.cpp) | The sidechain button and its menu: sources, cycles greyed out, taps (after devices in racks too) |
 | [test_ui_device_panel_midi_from.cpp](../../tests/app/test_ui_device_panel_midi_from.cpp) | The MIDI From button (on an instrument and an effect with a MIDI input, not on one without), its tooltip (following its source's name) and menu, choosing a track and its own again, undo, its source deleted |
 | [test_ui_device_editors.cpp](../../tests/app/test_ui_device_editors.cpp) | The registry (every kind with an editor, and the generic knobs for the others); the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and Sampler's editors, each loaded as the view loads it, driven with the mouse and keys, the project and (rendering offline) the engine checked; what the editors share (SgPainter's additions, the animation helpers, `EditorKnob` and `DeviceParamMap`); the parameter cell and its menu. Its host, and every editor test's, is [support/EditorHarness.h](../../tests/app/support/EditorHarness.h) |
+| [test_ui_device_editors_modulators.cpp](../../tests/app/test_ui_device_editors_modulators.cpp) | The LFO's and the Envelope's editors: fitting the body; the curve the device's (its sine, its pluck), a point's drag one undo step and snapped with Ctrl, a shape replacing it; Map waiting and mapping the next parameter touched, the list's row, its range (one step a drag) and Invert, ×; what the engine renders reaching the graph (output, playhead) and the modulated parameter (its range and where it is now); the Envelope's hint and sidechain button; a modulated knob's look, and its ring while Map waits |
 | [test_ui_device_editors_gate.cpp](../../tests/app/test_ui_device_editors_gate.cpp) | The Gate's editor: fitting the body in any font (the display at its own width; the knobs in equal cells and the column beside them, each as wide as its texts need as a Text lays them out in their font, and no wider; every caption and every text a readout takes whole, and the knobs' `texts()` every form of those), every control bound and undoable (the lookahead reaching the engine's latency; the list as wide as its longest choice; only the key EQ's Gain bipolar; the In meter's panel-grey well); the threshold and return lines' drags (relative, Shift, double-click, also of a line still easing, where it is drawn; one step each; either taken when they are one), their right-click menus, the meters not a control, their captions centred over them and apart by two of their font's word spaces and a pixel (as drawn too: the caption row blank for two word spaces between "In" and "Gate"); the displays reaching the graph (its rings holding all the plot draws, at any rate up to 384 kHz), its scrolling and rest, going idle, silence and a steady tone drawing nothing, listening while idle drawing nothing; the key dot's colour following the key's level now and the dot falling below the line within a few ticks, the passing shade showing over the levels; the sidechain section (fold, the type buttons' EQ faces, what is dimmed but settable and what is disabled, the source button naming itself for the menu, renames, every cell's texts whole and its width theirs, the source and EQ buttons as wide as their names need, the buttons along its top and the types at its right edge); the key curve being the engine's filter, its dot following the mouse, Ctrl and the wheel for the bell's Q |
 | [test_ui_device_editors_limiter.cpp](../../tests/app/test_ui_device_editors_limiter.cpp) | The Limiter's editor: fitting the view; whatever the font, its columns side by side, each as wide as its texts need and no wider (the boxes every text they show with the automation dot a pixel clear of it, the knobs' captions and every text their readouts take as a Text lays them out, and their `texts()` all of those, every button and caption, the line's caption both its names, the lists their longest name with the arrow), the editor as wide as they are; every control bound to its parameter and undoable (Gain bipolar; Release dimmed while Auto is on and still settable; the lookahead reaching the engine's latency; Maximize swapping Gain for Output and the line for the Threshold, a press mid-crossfade turning the knob coming in), the line dragged (one undo step, Shift finely, held to the parameter's range, double-click for the default, presses elsewhere ignored), the hover following the line as it moves, opening as the device is (nothing animating in), the displays reaching the graph (levels, gain reduction, Soft Clip's share in both figures and in the line's glow; with Maximize, the history's output in the line's domain and the Out meter in dBFS), the footer's figures, long ones too, each as wide as its text, apart and inside the graph, and the badges clear of the line's box (`figuresKeepApart`), its animation and its rest, the maths shared with the engine |
 | [test_ui_device_editors_multiband.cpp](../../tests/app/test_ui_device_editors_multiband.cpp) | Multiband Dynamics' editor: it fits the body (at its least height too); whatever the font, its columns side by side, each as wide as its contents need and no wider (every box every text it shows with the automation dot a pixel clear of it, every caption and button whole, the knobs' captions and every text their readouts take as a Text lays them out, and their `texts()` all of those; the band column's buttons and crossover box filling it), the editor as wide as they are; every box reset by a double-click to its parameter's default, every control bound and undoable (the engine has what they set: the activators and the split switches, each where Live has it), ratios and times typed and printed, the T/B/A pages and their captions (the page outliving the editor being made again); the graph's threshold and ratio drags (pushing, Ctrl, Alt, Shift; Ctrl+Alt left to the chain), double-clicks and wheel (a high-resolution wheel's steps adding up; a run staying on a threshold that slides from under the mouse; Shift+wheel left to the chain), one undo step each; the displays reaching the graph as the engine renders (a whole 2048-sample buffer's read), its meters, eased gain, glows (not after the audio stops), target marker, a cut under the floor drawn only as far as the level before it, the bars and the figure agreeing tick by tick while the meters let go (a lift, a cut, a cut under the floor), lanes and highlights, a switched-off lane's "→ Mid" making way for a drag's bubble, the hover readout clear of the change's figure, a bypassed band's lane (its level only), and its stopping once still; the sidechain's controls (dimmed but settable without a sidechain, whole readouts, the menu asked for under the button, Listen); the `ratio` unit and the typed texts (with no window, on any platform) |

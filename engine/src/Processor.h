@@ -303,6 +303,18 @@ public:
     // when solo leaves its source out. Set before each process() call.
     void setSidechainConnected(bool connected) noexcept { sidechainConnected_ = connected; }
 
+    // --- Modulation ----------------------------------------------------------
+    // A modulator (an LFO, an envelope: Modulation.h) moves other devices'
+    // parameters instead of processing audio. The renderer runs it before its
+    // strip's devices and not in its place in the chain; its process() writes
+    // its value (0..1) at every frame into the first channel it is handed (the
+    // others it may leave or fill alike), never the strip's audio.
+    virtual bool isModulator() const { return false; }
+    // Rendering thread: the value it ended its last chunk on, which the
+    // parameters it moves keep while it isn't run (switched off).
+    float heldModulation() const noexcept { return heldModulation_; }
+    void setHeldModulation(float value) noexcept { heldModulation_ = value; }
+
     // --- Display ---------------------------------------------------------------
     // What a device's own editor draws besides its parameters, as streams of
     // values that process() publishes. readDisplay() appends stream `index`'s
@@ -324,6 +336,7 @@ protected:
 private:
     const float* sidechain_[2] = {nullptr, nullptr};
     bool sidechainConnected_ = false;
+    float heldModulation_ = 0.f;
     std::atomic<bool> enabled_{true};
     std::atomic<bool> resetRequested_{false};
     bool switchedOff_ = false;

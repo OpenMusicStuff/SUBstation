@@ -684,6 +684,7 @@ std::vector<int> inputFromJson(const QJsonValue& value) {
 std::vector<Device> devicesFromJson(const QJsonObject& data) {
     std::vector<Device> devices;
     for (const QJsonValue& d : listOr(data, QStringLiteral("devices"))) devices.push_back(deviceFromJson(d));
+    pruneModulations(devices, [](const QString& kind) { return isModulator(kind); });  // (none before version 23)
     return devices;
 }
 
@@ -775,6 +776,17 @@ QJsonObject deviceToJson(const Device& device) {
                                                         {QStringLiteral("tap"), device.sidechain->tap}};
     }
     if (!device.midiFrom.isEmpty()) data[QStringLiteral("midi_from")] = device.midiFrom;
+    if (!device.modulations.empty()) {
+        QJsonArray modulations;
+        for (const ModulationMapping& m : device.modulations) {
+            modulations.append(QJsonObject{{QStringLiteral("device"), m.deviceId},
+                                           {QStringLiteral("param"), m.paramId},
+                                           {QStringLiteral("low"), m.low},
+                                           {QStringLiteral("high"), m.high},
+                                           {QStringLiteral("invert"), m.invert}});
+        }
+        data[QStringLiteral("modulations")] = modulations;
+    }
     if (device.isRack()) {
         QJsonArray chains;
         for (const Chain& c : device.chains) {
@@ -825,6 +837,16 @@ Device deviceFromJson(const QJsonValue& value) {
     device.state = stringOrNone(d.value(QStringLiteral("state")));
     device.sidechain = sidechainFromJson(d.value(QStringLiteral("sidechain")));
     device.midiFrom = d.value(QStringLiteral("midi_from")).toString();
+    for (const QJsonValue& m : listOr(d, QStringLiteral("modulations"))) {
+        const QJsonObject mapping = asObject(m);
+        ModulationMapping modulation;
+        modulation.deviceId = toStr(need(mapping, QStringLiteral("device")));
+        modulation.paramId = toStr(need(mapping, QStringLiteral("param")));
+        modulation.low = clamped(floatOr(mapping, QStringLiteral("low"), 0.0), 0.0, 1.0);
+        modulation.high = clamped(floatOr(mapping, QStringLiteral("high"), 1.0), 0.0, 1.0);
+        modulation.invert = truthy(mapping.value(QStringLiteral("invert")));
+        device.modulations.push_back(std::move(modulation));
+    }
     if (device.isRack()) {
         for (const QJsonValue& c : listOr(d, QStringLiteral("chains"))) device.chains.push_back(chainFromJson(c));
         const QSet<QString> inside = innerDeviceIds(device);

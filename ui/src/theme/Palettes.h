@@ -51,6 +51,7 @@ struct Palette {
     QColor scrollHandle, scrollHandleHover;
     QColor automationOn;   // the dot of an automated control
     QColor automationOff;  // the dot of a control whose automation is overridden
+    QColor modulation;     // what a modulator does: a knob's range and where it is now, the modulators' curves
 };
 
 struct NamedPalette {

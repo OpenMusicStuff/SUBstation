@@ -127,8 +127,9 @@ Window {
     }
 
     // The body of the device view's tallest device: two rows of knobs (a hidden one measured),
-    // 14 px apart, 6 px above and below them (DevicePanel's deviceHeight, less the frame and title bar).
-    readonly property int deviceBodyHeight: 6 + 2 * probe.implicitHeight + 14 + 6
+    // 14 px apart, 6 px above and below them, and the editors' room (DevicePanel's deviceHeight,
+    // less the frame and title bar; its editorRoom).
+    readonly property int deviceBodyHeight: 6 + 2 * probe.implicitHeight + 14 + 6 + 24
     DeviceParamKnob {
         id: probe
         visible: false

@@ -94,8 +94,8 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // track's number; kNameTemplatesVersion), 20: deactivated clips and notes, 21:
 // tracks' outputs and where inputs from tracks are tapped, 22: notes' bends
 // (MIDI 2.0's per-note pitch bend: points and vibratos) and devices' MIDI inputs
-// from other tracks
-inline constexpr int kProjectVersion = 22;
+// from other tracks, 23: modulators' mappings (Device::modulations)
+inline constexpr int kProjectVersion = 23;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

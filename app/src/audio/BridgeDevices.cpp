@@ -132,7 +132,10 @@ void EngineBridge::syncDevices(const QString& trackId) {
     } else if (project_->hasOwner(trackId) && macroEnvelopes(trackId) != d.macroMoved.value(trackId)) {
         pushAutomation(trackId);  // macros mapped otherwise, or over other ranges
     }
-    if (project_->hasOwner(trackId)) pushEnabled(trackId);
+    if (project_->hasOwner(trackId)) {
+        pushEnabled(trackId);
+        pushModulation(trackId);  // (what its modulators move, by the processors they have now)
+    }
     pushChainMixers(trackId);
     pushRoutes();  // (the new processors': outputs into their sidechains, inputs after them, theirs)
 }

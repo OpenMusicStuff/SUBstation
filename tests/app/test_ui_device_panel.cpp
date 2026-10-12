@@ -178,7 +178,9 @@ private Q_SLOTS:
         };
         addKnobs(frame(utility));
         QVERIFY(knobs.height() > 2 * 34);
-        QCOMPARE(margins(utility, knobs), std::make_pair(6.0, 6.0));
+        // (centred in the editors' room: half of it more above them and below)
+        const double room = ui_.panel()->property("editorRoom").toDouble();
+        QCOMPARE(margins(utility, knobs), std::make_pair(6.0 + room / 2, 6.0 + room / 2));
         auto* graph = test::itemNamed(frame(compressor), QStringLiteral("reductionGraph"));
         QVERIFY(graph);
         QCOMPARE(margins(compressor, inFrame(compressor, graph)), std::make_pair(6.0, 6.0));

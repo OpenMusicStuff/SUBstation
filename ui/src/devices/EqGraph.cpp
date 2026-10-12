@@ -105,6 +105,8 @@ int EqGraph::typeAt(double fraction) {
 
 bool EqGraph::hasGain(int type) { return type == Bell || type == LowShelf || type == HighShelf || type == TiltShelf; }
 
+bool EqGraph::isShelf(int type) { return type == LowShelf || type == HighShelf || type == TiltShelf; }
+
 bool EqGraph::hasSlope(int type) {
     return type == LowShelf || type == HighShelf || type == LowCut || type == HighCut || type == TiltShelf;
 }
@@ -506,7 +508,8 @@ void EqGraph::startDrag(int index, const QPointF& pos, const QString& gesture, c
     if (index < 0 || !bands_[std::size_t(index)])
         return;
     const Band band = *bands_[std::size_t(index)];
-    touch(param(index, QStringLiteral("freq")));
+    // A shelf's gain is what its handle shows the automation of (and what a modulator's Map takes); else its frequency.
+    touch(param(index, isShelf(band.type) ? QStringLiteral("gain") : QStringLiteral("freq")));
     drag_ = Drag{index, pos, band.freq, band.gain, band.q, gesture.isEmpty() ? newGestureKey() : gesture, base};
     setCursor(Qt::ClosedHandCursor);
     animateSoon();
@@ -563,20 +566,36 @@ void EqGraph::hoverAt(const QPointF& pos) {
 }
 
 void EqGraph::dragTo(const QPointF& pos, Qt::KeyboardModifiers modifiers) {
-    const Drag& drag = *drag_;
-    const int index = drag.band;
+    const int index = drag_->band;
     if (!bands_[std::size_t(index)])
         return;
     const Band band = *bands_[std::size_t(index)];
+    // Shift (finely) or Ctrl (the Q) pressed or let go of mid-drag: it goes on from here, where the band is now,
+    // rather than taking the whole way from the press at the new rate (which moved the band away from the mouse).
+    const Qt::KeyboardModifiers held = modifiers & (Qt::ShiftModifier | Qt::ControlModifier);
+    if (drag_->modifiers && *drag_->modifiers != held) {
+        drag_->origin = pos;
+        drag_->freq = band.freq;
+        drag_->gain = band.gain;
+        drag_->q = band.q;
+    }
+    drag_->modifiers = held;
+    const Drag& drag = *drag_;
     const double fine = modifiers & Qt::ShiftModifier ? 0.15 : 1.0;
     const double dx = (pos.x() - drag.origin.x()) * fine, dy = (pos.y() - drag.origin.y()) * fine;
     Values values = drag.base;
     const double freq = drag.freq * std::pow(kFreqMax / kFreqMin, dx / plot().width());
+    const bool byGain = !(modifiers & Qt::ControlModifier) && hasGain(band.type);
+    // (The first parameter written is the one whose automation shows: a shelf's gain, else its frequency.)
+    if (byGain && isShelf(band.type)) {
+        const double gain = drag.gain - dy / half() * EqView::instance()->range() / std::max(scale_, 0.01);
+        values.insert(param(index, QStringLiteral("gain")), roundTo(std::clamp(gain, -kGainMax, kGainMax), 2));
+    }
     values.insert(param(index, QStringLiteral("freq")), roundTo(std::clamp(freq, kFreqMin, kFreqMax), 2));
-    if ((modifiers & Qt::ControlModifier) || !hasGain(band.type)) {
+    if (!byGain) {
         const double q = drag.q * std::pow(2.0, -dy / 45.0);
         values.insert(param(index, QStringLiteral("q")), roundTo(std::clamp(q, kQMin, kQMax), 3));
-    } else {
+    } else if (!isShelf(band.type)) {
         const double gain = drag.gain - dy / half() * EqView::instance()->range() / std::max(scale_, 0.01);
         values.insert(param(index, QStringLiteral("gain")), roundTo(std::clamp(gain, -kGainMax, kGainMax), 2));
     }

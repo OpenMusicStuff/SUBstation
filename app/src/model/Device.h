@@ -14,14 +14,19 @@
 // (MacroMapping), which follow it across their range (all of it, part of it, or
 // the other way round). A rack has 1 to kMaxMacroCount of them (a new one
 // kDefaultMacroCount), each with a name of its own if given one (macroNames).
+// A modulator (a built-in LFO or envelope: isModulator() in Devices.h) moves
+// parameters of other devices on its track, wherever they sit
+// (ModulationMapping, in its `modulations`), as the engine plays it.
 //
 // The helpers hand out pointers into the vectors they walk: they stay valid
 // until a vector they point into changes.
 
+#include <QHash>
 #include <QMap>
 #include <QSet>
 #include <QString>
 
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -90,11 +95,30 @@ struct MacroMapping {
     friend bool operator==(const MacroMapping&, const MacroMapping&) = default;
 };
 
+// A modulator moving a parameter of a device on its track (in a rack too; not
+// the modulator itself): the modulator's 0..1 is the parameter's `low`..`high`
+// (normalized, as automation is), or turned upside down with `invert` (1 - its
+// value). A parameter follows one modulator at most; while it does, its own
+// value and its automation wait.
+struct ModulationMapping {
+    QString deviceId;
+    QString paramId;
+    double low = 0.0;
+    double high = 1.0;
+    bool invert = false;
+
+    // The parameter's normalized value for the modulator at `value` (0..1).
+    double target(double value) const;
+
+    friend bool operator==(const ModulationMapping&, const ModulationMapping&) = default;
+};
+
 struct Chain;
 
 // An insert device on a track: a built-in one ("synth", "utility"), a plug-in
 // (kind "plugin", with `plugin` saying which), or a rack (kind "rack": its
 // `chains`, its macros' `macros` mappings, and `macroNames`, one per macro).
+// A modulator's `modulations` are the parameters it moves.
 //
 // A built-in device's state is its `params`, and `state` for what isn't a
 // parameter (a sampler's sample: see DeviceState.h), base64; the engine follows
@@ -118,6 +142,7 @@ struct Device {
     std::vector<MacroMapping> macros;  // a rack's
     // A rack's macros, one each: its name as the user gave it ("": "Macro N"; macroName()).
     std::vector<QString> macroNames;
+    std::vector<ModulationMapping> modulations;  // a modulator's
     // A rack's own name (the preset it was saved as or loaded from); none: by its kind.
     std::optional<QString> name;
 
@@ -187,9 +212,18 @@ std::optional<QString> containerOf(const std::vector<Device>& devices, const QSt
 // How many racks a chain is in (0: a track's own).
 int rackDepth(const std::vector<Device>& devices, const std::optional<QString>& chain);
 // New ids for a device and everything in it (its chains too), in place: a copy
-// (a preset loaded, a chain duplicated) of devices that exist. Its macro
-// mappings follow their devices; mappings to devices not in it go.
+// (a preset loaded, a chain duplicated) of devices that exist. Its macro and
+// modulation mappings follow their devices; mappings to devices not in it go.
 void refreshIds(Device& device);
+// Modulation mappings whose devices got new ids (old id -> new one): those to
+// devices renamed, renamed; the others gone.
+std::vector<ModulationMapping> renamedModulations(const std::vector<ModulationMapping>& mappings,
+                                                  const QHash<QString, QString>& renamed);
+// Drops the modulation mappings a track's devices can't have: to a device not
+// among them (anywhere in their racks), to the modulator itself, of a device
+// that isn't a modulator (`isModulator`, by kind), or to a parameter mapped
+// already (the first mapping of each parameter stays). True if any went.
+bool pruneModulations(std::vector<Device>& devices, const std::function<bool(const QString&)>& isModulator);
 // How deep racks nest in a device: 0 for a device, 1 for a rack without racks in it.
 int rackHeight(const Device& device);
 

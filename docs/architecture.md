@@ -237,7 +237,10 @@ engine's ([engine/src/Automation.h](../engine/src/Automation.h): `kAutomationCur
 is shared the same way: the application layer draws and edits it with the engine's own rules (`sub::bend`,
 header-only, in [engine/src/NoteBend.h](../engine/src/NoteBend.h)), so the piano roll shows what plays. The bridge hands the
 UI every owner's parameters as `ParamSpec`s (`EngineBridge::paramGroups`), and the editor learns plug-ins'
-mappings (for macros) through a hook the session wires to the bridge. See
+mappings (for macros) through a hook the session wires to the bridge. Modulators (the built-in LFO and Envelope)
+move parameters the same way automation does, from what they play: the renderer runs a strip's modulators before
+its devices and hands their values on through `Processor::automate()` (see
+[engine/automation.md](engine/automation.md#modulation)). See
 [engine/automation.md](engine/automation.md) and [app/model.md](app/model.md#automation).
 
 ## One program

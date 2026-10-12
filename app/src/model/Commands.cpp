@@ -227,6 +227,15 @@ void SetMacrosCommand::redo() { apply(new_); }
 
 void SetMacrosCommand::undo() { apply(old_); }
 
+SetModulationsCommand::SetModulationsCommand(Project* project, const QString& trackId, const QString& modulatorId,
+                                             std::vector<ModulationMapping> old, std::vector<ModulationMapping> nw,
+                                             const QString& text, QString mergeKey)
+    : MergeableCommand(project, text, {trackId, modulatorId}, std::move(old), std::move(nw), std::move(mergeKey)) {}
+
+void SetModulationsCommand::redo() { project_->setDeviceModulations(trackId(), modulatorId(), new_); }
+
+void SetModulationsCommand::undo() { project_->setDeviceModulations(trackId(), modulatorId(), old_); }
+
 SetDeviceStateCommand::SetDeviceStateCommand(Project* project, const QString& trackId, const QString& deviceId,
                                              std::optional<QString> old, std::optional<QString> nw,
                                              const QString& text)
