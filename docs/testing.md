@@ -416,7 +416,7 @@ See [intelligence.md](intelligence.md#tests).
 ## CI
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) builds everything (benchmarks too) and runs CTest on every push
-to `master` (and the rewrite's branch), on pull requests, and by hand, on Linux (`ubuntu-24.04`): GCC, Qt 6.4 from
+to `master` (and the rewrite's branch), on pull requests, and by hand, on Linux (Blacksmith's `blacksmith-4vcpu-ubuntu-2404`): GCC, Qt 6.4 from
 Ubuntu's packages, `xvfb` for the UI's tests. It configures with `-G Ninja -DCMAKE_BUILD_TYPE=Release
 -DSUBSTATION_BUILD_BENCHMARKS=ON`, builds with `ninja -C build -k 0` (every error at once) and runs
 `ctest --test-dir build --output-on-failure -j4`. It has no ASIO SDK, so the ASIO tests skip there.
