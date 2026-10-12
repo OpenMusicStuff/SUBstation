@@ -326,6 +326,22 @@ TEST_CASE("vital: asleep after a second of silence, exact zeros, woken by a note
     CHECK(rmsDb(slice(left, 4 * 48000 + 2400, 5 * 48000)) > -40.0);
 }
 
+TEST_CASE("vital: a note waking it late in a block plays on, not put back to sleep") {
+    // (The silence before the note-on in its block must not count toward sleeping again.)
+    for (int block : {256, 1024}) {
+        INFO("block " + std::to_string(block));
+        Standalone vital("vital", kRate);
+        Timeline t;
+        t.note(0, 2400, 69);
+        const int64_t on = 4 * 48000 + block - 100;
+        t.note(on, on + 24000, 69);
+        const auto [left, right] = play(vital, t, on + 30000, block);
+        CHECK(peak(slice(left, 3 * 48000, 4 * 48000)) == 0.0);  // asleep before it
+        CHECK(rmsDb(slice(left, on + 2400, on + 4800)) > -40.0);   // held: sounding throughout
+        CHECK(rmsDb(slice(left, on + 19200, on + 24000)) > -40.0);
+    }
+}
+
 TEST_CASE("vital: reset silences it") {
     Standalone vital("vital", kRate);
     Timeline t;

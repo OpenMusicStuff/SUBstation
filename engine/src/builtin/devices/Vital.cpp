@@ -126,7 +126,12 @@ protected:
         if (ctx.playing && ctx.tempo > 0.0) seconds_ = ctx.beatPos * 60.0 / ctx.tempo;
 
         const EventList& events = ctx.inEvents;
-        if (events.count > 0) sleeping_ = false;
+        // Woken by any event, its second of silence counted afresh: were it not, the silent stretches
+        // before a note-on in this block would put it back to sleep, and the note would go unheard.
+        if (events.count > 0) {
+            sleeping_ = false;
+            silentSamples_ = 0;
+        }
         if (sleeping_ && !fading_) {
             seconds_ += numFrames / static_cast<double>(live_->sampleRate);
             return;
