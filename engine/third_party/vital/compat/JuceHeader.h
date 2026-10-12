@@ -296,7 +296,7 @@ struct FloatVectorOperations {
 };
 
 inline void File::readLines(StringArray& lines) const {
-    std::ifstream in(std::filesystem::u8path(path_), std::ios::binary);
+    std::ifstream in(std::filesystem::path(std::u8string(path_.begin(), path_.end())), std::ios::binary);
     std::string line;
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();

@@ -15,6 +15,7 @@
 
 #include "AudioSource.h"
 #include "builtin/VitalEngine.h"
+#include "platform/Paths.h"
 #include "load_save.h"
 #include "modulation_connection_processor.h"
 #include "synth_constants.h"
@@ -519,7 +520,7 @@ namespace {
 
 // A WAV file's "clm " chunk: how a wavetable file's frames blend (Serum's and Vital's own), "" if none.
 std::string clmChunk(const std::string& path) {
-    std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
+    std::ifstream in(platform::toPath(path), std::ios::binary);
     char header[12];
     if (!in.read(header, sizeof header) || std::memcmp(header, "RIFF", 4) != 0 || std::memcmp(header + 8, "WAVE", 4) != 0) {
         return {};
