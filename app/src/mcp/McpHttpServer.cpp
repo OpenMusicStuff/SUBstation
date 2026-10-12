@@ -162,8 +162,9 @@ bool HttpServer::serve(QTcpSocket* socket, Connection& connection) {
     }
 
     // The body: chunked, or as long as Content-Length says (none: none). Another
-    // transfer coding, or chunks and a length both (RFC 9112 6.1), can't be told
-    // where it ends: refused, and the connection closed (what follows it can't be read).
+    // transfer coding (its end unknown here) is refused; so are chunks and a length
+    // both (RFC 9112 6.1 allows it: what smuggles requests past readers that disagree).
+    // Either way the connection is closed: what follows can't be read.
     QByteArray body;
     qsizetype end = headEnd + 4;
     const QByteArray transferEncoding = headers.value("transfer-encoding").trimmed().toLower();
