@@ -143,6 +143,7 @@ TEST_CASE("the curves match the analog filters") {
             INFO("rate " + std::to_string(rate) + ", slope " + std::to_string(slope));
             const sub::eq::Design cut = sub::eq::design(HIGH_CUT, 22000.0, 0.0, 0.7071, slope, rate);
             CHECK_NEAR(sub::eq::responseDb(cut, 22000.0, rate), -3.0, 0.05);
+            CHECK(sub::eq::responseDb(cut, rate / 2.0, rate) < -100.0);  // nothing left at Nyquist
             double peak = -100.0;
             for (int i = 0; i < 400; ++i) peak = std::max(peak, sub::eq::responseDb(cut, 20.0 + i * (22000.0 - 20.0) / 399, rate));
             CHECK(peak < 0.01);
