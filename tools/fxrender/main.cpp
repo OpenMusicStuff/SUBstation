@@ -6,7 +6,7 @@
 //       range, default, steps, labels, and its own text for the default.
 //   substation-fxrender <bundle.vst3> render
 //       Reads jobs from stdin, one per line, and renders each:
-//         <in.wav> <out.wav> [tail=<seconds>] [preroll=<seconds>] [notes=<key>,<key>...]
+//         <in.wav> <out.wav> [tail=<seconds>] [preroll=<seconds>] [block=<frames>] [notes=<key>,<key>...]
 //                            [<param>=<value>]... [<param>~<normalized>]...
 //       <param> is a parameter's index, id or name (spaces as '_'). Every job
 //       gets a new instance of the plug-in (some keep history through a
@@ -33,6 +33,7 @@
 #include <string>
 #include <vector>
 
+#include "builtin/BuiltinRegistry.h"
 #include "plugins/Vst3Format.h"
 
 namespace {
@@ -196,7 +197,7 @@ void listParams(sub::Processor& processor) {
               << ", \"sidechain\": " << (processor.hasSidechain() ? "true" : "false") << "}\n";
 }
 
-constexpr int kBlock = 512;
+constexpr int kMaxBlock = 8192;  // the most a job's block= may ask for
 
 // Renders one job line. Returns the answer.
 std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& create, double sampleRate,
@@ -210,6 +211,7 @@ std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& cr
     sub::Processor& processor = *instance;
     processor.idle();
     double tail = 1.0, preroll = 0.5;
+    int block = 512;
     std::vector<uint8_t> keys;
     while (words >> word) {
         if (word.rfind("notes=", 0) == 0) {
@@ -224,6 +226,10 @@ std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& cr
         if (at == std::string::npos) throw std::runtime_error("not a setting: " + word);
         const std::string key = word.substr(0, at);
         const float value = std::stof(word.substr(at + 1));
+        if (key == "block") {
+            block = std::clamp(static_cast<int>(value), 1, kMaxBlock);
+            continue;
+        }
         if (key == "tail" || key == "preroll") {
             (key == "tail" ? tail : preroll) = value;
             continue;
@@ -234,7 +240,7 @@ std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& cr
     }
     processor.idle();
     // Prepared again: some plug-ins only read settings such as an FFT size there.
-    processor.prepare(sampleRate, kBlock);
+    processor.prepare(sampleRate, kMaxBlock);
     processor.resetOffline();
     processor.idle();
 
@@ -249,19 +255,19 @@ std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& cr
     out.left.assign(total, 0.f);
     out.right.assign(total, 0.f);
 
-    std::vector<float> left(kBlock), right(kBlock);
+    std::vector<float> left(static_cast<size_t>(block)), right(static_cast<size_t>(block));
     float* channels[2] = {left.data(), right.data()};
     sub::ProcessContext ctx;
     ctx.sampleRate = in.sampleRate;
     ctx.playing = true;
     ctx.offline = true;
     std::vector<sub::ProcessEvent> events;
-    for (size_t pos = 0; pos < total; pos += kBlock) {
-        const int frames = static_cast<int>(std::min<size_t>(kBlock, total - pos));
+    for (size_t pos = 0; pos < total; pos += static_cast<size_t>(block)) {
+        const int frames = static_cast<int>(std::min<size_t>(static_cast<size_t>(block), total - pos));
         events.clear();
         for (const uint8_t key : keys) {
             if (pos == 0) events.push_back(sub::ProcessEvent::noteOn(0, key, 100));
-            if (pos + kBlock >= total) events.push_back(sub::ProcessEvent::noteOff(frames - 1, key));
+            if (pos + static_cast<size_t>(block) >= total) events.push_back(sub::ProcessEvent::noteOff(frames - 1, key));
         }
         std::stable_sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
             return a.sampleOffset < b.sampleOffset;
@@ -278,7 +284,7 @@ std::string renderJob(const std::function<std::shared_ptr<sub::Processor>()>& cr
         processor.process(ctx, channels, 2, frames);
         std::copy_n(left.data(), frames, out.left.data() + pos);
         std::copy_n(right.data(), frames, out.right.data() + pos);
-        if ((pos / kBlock) % 64 == 0) processor.idle();
+        if ((pos / static_cast<size_t>(block)) % 64 == 0) processor.idle();
     }
     const auto skip = static_cast<std::ptrdiff_t>(prerollFrames) + latency;
     out.left.erase(out.left.begin(), out.left.begin() + skip);
@@ -301,19 +307,34 @@ int main(int argc, char** argv) {
     const std::string mode = argv[2];
     const double sampleRate = argc > 3 ? std::stod(argv[3]) : 48000.0;
     try {
-        auto& format = sub::vst3::Vst3Format::instance();
-        const auto found = format.scanFile(bundle);
-        const auto effect = std::find_if(found.begin(), found.end(), [](const auto& d) { return !d.isInstrument; });
-        if (effect == found.end()) throw std::runtime_error("no effect in " + bundle);
-        auto processor = format.instantiate(bundle, effect->uid, sampleRate, kBlock);
-        processor->idle();
-        std::cerr << "loaded " << effect->name << " " << effect->version << " (" << effect->vendor << ")\n";
+        // "builtin:<id>": one of the engine's own devices instead of a VST3 bundle.
+        std::function<std::shared_ptr<sub::Processor>()> create;
+        std::shared_ptr<sub::Processor> processor;
+        if (bundle.rfind("builtin:", 0) == 0) {
+            const std::string id = bundle.substr(8);
+            create = [id, sampleRate] {
+                auto p = sub::BuiltinRegistry::instance().create(id);
+                p->prepare(sampleRate, kMaxBlock);
+                return p;
+            };
+            processor = create();
+            std::cerr << "loaded " << processor->name() << " (built-in)\n";
+        } else {
+            auto& format = sub::vst3::Vst3Format::instance();
+            const auto found = format.scanFile(bundle);
+            const auto effect = std::find_if(found.begin(), found.end(), [](const auto& d) { return !d.isInstrument; });
+            if (effect == found.end()) throw std::runtime_error("no effect in " + bundle);
+            processor = format.instantiate(bundle, effect->uid, sampleRate, kMaxBlock);
+            processor->idle();
+            std::cerr << "loaded " << effect->name << " " << effect->version << " (" << effect->vendor << ")\n";
+            // (The first instance stays: it keeps the module loaded.)
+            const std::string uid = effect->uid;
+            create = [&format, bundle, uid, sampleRate] { return format.instantiate(bundle, uid, sampleRate, kMaxBlock); };
+        }
         if (mode == "params") {
             listParams(*processor);
             return 0;
         }
-        // (The first instance stays: it keeps the module loaded.)
-        const auto create = [&] { return format.instantiate(bundle, effect->uid, sampleRate, kBlock); };
         std::string line;
         while (std::getline(std::cin, line)) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
