@@ -24,8 +24,10 @@ import SUBstation
 //   functions zoom(factor), zoomToArrangement(), narrowGrid(), widenGrid(),
 //   openClipView() (the selected clips, through Session.arrangement's
 //   clipViewRequested), renameTrack(trackId) (in place; false if it can't be),
-//   focusLanes(); properties snap, follow, ioShown (the headers' In/Out column,
-//   View › In/Out) (read and write), gridStep (beats, the grid's step whether
+//   focusLanes(), revealTrack(trackId) (selected, unfolded, scrolled to: the
+//   find bar's matches); properties snap, follow,
+//   ioShown (the headers' In/Out column, View › In/Out) (read and write),
+//   gridStep (beats, the grid's step whether
 //   snapping or not), gridLevel; signals statusMessage(text) and
 //   preferencesRequested(page) (a header's Configure...: 0 Audio, 1 MIDI). Clips double-clicked open through
 //   Session.arrangement's clipViewRequested; a click on the ruler plays from
@@ -72,6 +74,9 @@ FocusScope {
     }
     function focusLanes() {
         lanesItem.forceActiveFocus()
+    }
+    function revealTrack(trackId) {
+        return arrangementState.revealTrack(trackId)
     }
 
     implicitWidth: 1000

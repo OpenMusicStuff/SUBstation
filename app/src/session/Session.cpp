@@ -17,6 +17,7 @@
 #include "intelligence/Humanizer.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/TrackLabels.h"
+#include "intelligence/TrackSearch.h"
 #include "io/Presets.h"
 #include "model/Automation.h"
 #include "model/ParamSpec.h"
@@ -51,6 +52,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     harmony_ = new Harmony(project_, this);
     humanizer_ = new Humanizer(project_, this);
     trackLabels_ = new TrackLabels(project_, bridge_, plugins_, this);
+    trackSearch_ = new TrackSearch(project_, trackLabels_, this);
     BrowserController::Options browserOptions;
     browserOptions.scanPlugins = options_.scanPlugins;
     browserOptions.similarity = similarity_;  // (it analyses the browser's files)
