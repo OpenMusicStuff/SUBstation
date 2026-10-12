@@ -99,6 +99,7 @@ public:
     // The type a click adds this fraction of the way across the graph.
     static int typeAt(double fraction);
     Q_INVOKABLE static bool hasGain(int type);   // a bell, a shelf or a tilt
+    Q_INVOKABLE static bool isShelf(int type);   // a low or high shelf or a tilt: its handle stands for its gain
     Q_INVOKABLE static bool hasSlope(int type);  // a cut or a shelf
     static QString formatFreq(double freq);
 
@@ -190,6 +191,9 @@ private:
         double freq = 0.0, gain = 0.0, q = 0.0;
         QString gesture;
         sub::app::OrderedMap<QString, double> base;  // a band added on the press: all its parameters, each move
+        // Shift and Ctrl as the drag last moved with them: when either changes, it goes on from where the
+        // band is then (no jump), at the new rate or setting the other parameter.
+        std::optional<Qt::KeyboardModifiers> modifiers;
     };
     struct Curve {
         std::vector<double> db;  // per column

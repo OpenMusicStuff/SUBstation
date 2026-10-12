@@ -335,6 +335,8 @@ public:
     void updateChain(const QString& trackId, const QString& chainId, ChainField field, const ChainValue& value);
     // A rack's macro mappings; a rack's name (none: named by its kind).
     void setDeviceMacros(const QString& trackId, const QString& deviceId, const std::vector<MacroMapping>& macros);
+    void setDeviceModulations(const QString& trackId, const QString& deviceId,
+                              const std::vector<ModulationMapping>& modulations);
     void setDeviceName(const QString& trackId, const QString& deviceId, const std::optional<QString>& name);
     void setDeviceParam(const QString& trackId, const QString& deviceId, const QString& paramId, double value);
     // Several parameters at once ((device id, param id) -> value): a macro and what it moves.

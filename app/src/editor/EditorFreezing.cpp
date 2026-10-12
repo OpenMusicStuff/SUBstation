@@ -149,6 +149,8 @@ std::optional<QString> ProjectEditor::frozenProblem(const QUndoCommand& command)
         tracks = {state->trackId()};
     } else if (const auto* macros = dynamic_cast<const SetMacrosCommand*>(&command)) {
         tracks = {macros->trackId()};
+    } else if (const auto* modulations = dynamic_cast<const SetModulationsCommand*>(&command)) {
+        tracks = {modulations->trackId()};
     } else if (const auto* name = dynamic_cast<const SetDeviceNameCommand*>(&command)) {
         tracks = {name->trackId()};
     } else if (const auto* envelope = dynamic_cast<const SetEnvelopeCommand*>(&command)) {

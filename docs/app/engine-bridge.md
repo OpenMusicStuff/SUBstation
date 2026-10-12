@@ -444,6 +444,14 @@ QML reads the transport and the device through properties: `position`, `playing`
   over its range, instead of its own; `currentValue` follows it): see [engine/automation.md](../engine/automation.md#racks-and-macros).
   `pushAutomation` keeps what it pushed of them (`macroMoved`), and devices changing push automation again when that
   changes (a mapping or a range).
+- Modulation (BridgeParameters.cpp): `pushModulation(owner)` sends what the owner's modulators move
+  (`Device::modulations`) to the engine as `ModulationDesc`s (`Engine::setTrackModulation`), by the processors they
+  have now: only modulators switched on, only targets loaded, each parameter once. It runs as devices sync (every
+  `devicesChanged`: a mapping, a range, a device switched, added or gone), as plug-ins load again, and as a
+  plug-in's parameter list changes; it calls the engine only when what it would send changed (`modulation`).
+  `isModulated(owner, key)` [Q] says which targets the engine moves (`modulating`). A target that stops being
+  moved gets its own value back: the model's (`pushDeviceParam`), or for a plug-in's parameter the model has none
+  of, the value the engine had before the modulation began (`unmodulated`, read as it began).
 
 See [engine/automation.md](../engine/automation.md).
 

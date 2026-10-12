@@ -206,9 +206,9 @@ private Q_SLOTS:
     // --- The registry -----------------------------------------------------------------------
 
     void registry() {
-        for (const char* kind : {"amp", "chorus", "compressor", "delay", "disperser", "eq", "erosion", "gate",
-                                 "limiter", "multiband", "phaser", "reverb", "sampler", "saturator", "sidechain",
-                                 "spectral", "transient", "vintage_hall", "vital"}) {
+        for (const char* kind : {"amp", "chorus", "compressor", "delay", "disperser", "envelope", "eq", "erosion",
+                                 "gate", "lfo", "limiter", "multiband", "phaser", "reverb", "sampler", "saturator",
+                                 "sidechain", "spectral", "transient", "vintage_hall", "vital"}) {
             QVariant url;
             QMetaObject::invokeMethod(root_.get(), "editorFor", Q_RETURN_ARG(QVariant, url),
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));

@@ -10,6 +10,13 @@
 // response is the analog one's at 0 Hz, at Nyquist and at the section's own
 // frequency. Unlike the bilinear transform, a bell or shelf high up keeps its
 // shape instead of being squeezed against Nyquist.
+//
+// The cuts (low and high) are the exception: their sections go through the
+// bilinear transform, pre-warped at the band's frequency. Matched poles there
+// overshoot as the corner nears Nyquist (a Butterworth low cut at 22 kHz of
+// 48 kHz rose 2 dB above its passband, its Q seeming to climb), where the
+// bilinear one stays maximally flat, -3 dB at the corner, its resonance as
+// high at any frequency, and a high cut falls to nothing at Nyquist as it should.
 
 #include <algorithm>
 #include <cmath>
@@ -134,14 +141,38 @@ inline double butterworthQ(int n, int k) noexcept {
     return 1.0 / (2.0 * std::sin((2.0 * k + 1.0) * kPi / (2.0 * n)));
 }
 
+// The analog section made digital by the bilinear transform, pre-warped so `w`
+// (its own frequency, held below Nyquist) lands where it is (the cuts': see the top).
+inline Biquad bilinear(const Analog& a, double w) noexcept {
+    const double wk = std::clamp(w, 1e-6, 0.995 * kPi);
+    const double K = wk / std::tan(0.5 * wk);  // s = K (1 - z^-1) / (1 + z^-1)
+    Biquad q;
+    if (a.d2 == 0.0) {  // first order
+        const double a0 = a.d1 * K + a.d0;
+        q.b0 = (a.n1 * K + a.n0) / a0;
+        q.b1 = (a.n0 - a.n1 * K) / a0;
+        q.a1 = (a.d0 - a.d1 * K) / a0;
+        return q;
+    }
+    const double K2 = K * K;
+    const double a0 = a.d2 * K2 + a.d1 * K + a.d0;
+    q.b0 = (a.n2 * K2 + a.n1 * K + a.n0) / a0;
+    q.b1 = 2.0 * (a.n0 - a.n2 * K2) / a0;
+    q.b2 = (a.n2 * K2 - a.n1 * K + a.n0) / a0;
+    q.a1 = 2.0 * (a.d0 - a.d2 * K2) / a0;
+    q.a2 = (a.d2 * K2 - a.d1 * K + a.d0) / a0;
+    return q;
+}
+
 // A band's sections. `freq` in Hz, `gain` in dB, `slope` an index into kSlopes.
 inline Design design(int type, double freq, double gain, double q, int slope, double sampleRate) noexcept {
     Design d;
     const double w = 2.0 * kPi * std::clamp(freq, 1.0, 0.5 * sampleRate) / sampleRate;
     q = std::clamp(q, 0.01, 100.0);
     const int order = usesSlope(type) ? kSlopes[std::clamp(slope, 0, kNumSlopes - 1)] / 6 : 2;
+    const bool cut = type == LowCut || type == HighCut;
     const auto add = [&](const Analog& a) {
-        if (d.count < kMaxSections) d.sections[d.count++] = matched(a, w);
+        if (d.count < kMaxSections) d.sections[d.count++] = cut ? bilinear(a, w) : matched(a, w);
     };
     // Section k's Q: Butterworth's, the most resonant one scaled by the band's Q.
     const auto sectionQ = [&](int k) { return butterworthQ(order, k) * (k == 0 ? q / kButterworthQ : 1.0); };

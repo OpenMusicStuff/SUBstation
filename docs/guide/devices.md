@@ -11,7 +11,8 @@ their own page: [plugins.md](plugins.md).
 - It shows the built-in Synth and Sampler instruments, the Utility device, Over The Top,
   Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp,
   Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall, Disperser, Transient
-  Shaper, EQ and Sidechain, and plug-ins, all through the same interface: they show alike.
+  Shaper, EQ and Sidechain, the LFO and Envelope modulators, and plug-ins, all through the same
+  interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only.
 - **Ctrl+Alt+L** (*View › Device View*) shows or hides it, with the info view.
 - The **info view**, at the bottom left, says what the control under the mouse is: its
@@ -44,10 +45,14 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Amp, Erosion, the Delay, the Chorus-Ensemble,
   the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the Transient Shaper,
-  the EQ and the Sidechain have editors of their own (below).
+  the EQ, the Sidechain, the LFO and the Envelope have editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
-  *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)).
+  *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)); and, on a
+  track with a modulator, *Modulate With*, *Invert Modulation* and *Remove Modulation*
+  (see [Modulators](#modulators-lfo-and-envelope)).
+- A modulated parameter's knob shows the range its modulator moves it over (in the
+  modulation colour) and, as it plays, where it is now; its own value shows faintly.
 - A parameter mapped to a macro whose automation plays follows that automation (with
   the red dot), as if it were its own.
 - Automated parameters are marked with a red dot (grey while overridden) and follow
@@ -1113,7 +1118,9 @@ An equalizer after FabFilter's Pro-Q: up to 24 bands on one curve.
   right. Keep the button down to drag it straight on. Double-clicking anywhere adds one
   too.
 - **Moving a band**: drag its dot across for its frequency, up and down for its gain (a
-  cut, notch or band pass: its Q). Shift drags finely; Ctrl-drag sets the Q.
+  cut, notch or band pass: its Q). Shift drags finely; Ctrl-drag sets the Q. Taking hold
+  of a shelf's dot shows its gain's automation (and Map takes its gain); other bands'
+  dots their frequency's.
 - **The wheel** over a band (or the selected band) sets its Q; Alt-wheel sets its slope.
   While dragging a low or high cut, the wheel sets its slope.
 - **Double-click** a band to switch it off and on; **Alt-click** it (or select it and
@@ -1136,7 +1143,8 @@ An equalizer after FabFilter's Pro-Q: up to 24 bands on one curve.
 - **The expand button** (top right) opens the EQ, bigger, in a window of its own. It
   stays open as you change tracks, and closes when the device is deleted.
 - The curve is the one the engine plays: its filters are matched to analog ones, so a
-  bell high up keeps its shape instead of squeezing against the top of the spectrum.
+  bell high up keeps its shape instead of squeezing against the top of the spectrum. A low
+  or high cut keeps its Q wherever it is, right up to the top.
 
 ### Sidechain
 
@@ -1177,6 +1185,75 @@ fitted to the kick.
   mix is delayed to match.
 - **Lows Only** ducks only what is below the **Crossover**, so the bass's upper
   harmonics carry on through the kick. The fit puts the crossover above the clash.
+
+## Modulators: LFO and Envelope
+
+The LFO and the Envelope (Built-in › Modulators in the browser) don't change the sound
+themselves: they move parameters of the other devices on their track, as fast as the
+audio plays (a new value every 64 samples, as automation slopes do), on built-in
+devices and plug-ins alike, in racks too.
+
+- **Mapping**: click **Map** (beside Sync; it pulses), then touch any parameter on
+  the track: a knob, a button, a plug-in's knob, a handle in another device's graph. It
+  is mapped over its whole range. **Esc** (or Map again) gives up. Or right-click any
+  parameter › **Modulate With** › the modulator. A parameter follows one modulator at a
+  time: mapping it to another moves it over.
+- **Its targets**, in the list the **Targets** arrow beside the knobs unfolds (it shows
+  how many there are under it): each with its device and
+  parameter, a bar for the range it moves over (drag either end for its **min** and
+  **max**, the middle to move both; double-click for the whole range; the values show
+  in the parameter's units as you drag), a white mark where it is now, **⇅ Invert**
+  (the modulator upside down) and **×** to unmap it (× at the top unmaps them all).
+  A min above the max turns it the other way too.
+- While a parameter is modulated, its own value and its automation wait; they count
+  again once it is unmapped or the modulator is switched off. Modulators can move other
+  modulators (an LFO's Rate by an Envelope). A rack's macros can't be modulated: map
+  the parameters they move.
+- **The curve** is drawn as the Sidechain's is: drag a point (the first and last only up
+  and down), drag between points or use the wheel to bend, click to add a point,
+  double-click (or Alt-click, or Delete) to remove one, double-click a bend to straighten
+  it. Shift is fine, **Ctrl snaps** to the grid (sixteenths across, eighths up).
+  Right-click for **Shapes**, *Flip Curve*, *Reverse Curve* and *Reset Curve*.
+- **As it plays**, a playhead rides the curve with a short trail. The knobs it moves follow
+  it, and so do the graphs of the devices they belong to.
+- Copied together with the devices they move (or with the whole track), modulators keep
+  their mappings to the copies; pasted alone, or loaded from a preset, they move nothing
+  yet.
+
+### LFO
+
+A curve played over and over: one cycle of it is what you draw (a triangle to begin with:
+up from the bottom to the top at half the cycle, and down again).
+
+- **Rate** in Hz (0.01 to 40), or with **Sync** in notes (1/64 to 8 bars). Synced, it
+  follows the song's position while it plays (a 1/4 LFO starts its cycle on every beat,
+  wherever playback starts or loops); stopped, it runs on at the tempo.
+- **Retrig**: every note it hears (its track's, or a MIDI track's: the **MIDI From**
+  button) starts its cycle again, so it fits each note; it flashes as one comes.
+- **Depth** scales it round the middle of its targets' ranges; **Offset** moves it up or
+  down (+100 %: by half the range). The shaded band and the dashed line show what it
+  plays then.
+- **Phase** (0 to 360°) shifts where in the cycle it is; **Smooth** (0 to 250 ms) eases
+  its steps and jumps (a square without clicks).
+- Shapes: Triangle, Sine, Saw Up, Saw Down, Square, Pulse, Steps, Hump, Swell.
+
+### Envelope
+
+A curve played once from each trigger, then holding its last point's value (a pluck to
+begin with: up at once, then falling away).
+
+- **What triggers it** is what you give it: every note it hears (its track's, or a MIDI
+  track's with the **MIDI From** button in the title bar), and, once you choose a track
+  with the **sidechain** button in the title bar, each hit in that track. A hit is found
+  as the Sidechain device finds one: the first sample at the **Threshold** (which counts
+  only with a sidechain), once the key has dropped 3 dB below it again (and 20 ms on).
+  The meter beside the output shows the key against the threshold. Each trigger flashes
+  the graph.
+- **Length** in ms (1 ms to 20 s), or with **Sync** in notes. A trigger while it plays
+  starts it again.
+- **Depth** scales it; **Velocity** lets softer notes play it lower (100 %: a note at
+  half velocity plays it at half). **Smooth** eases it.
+- Shapes: Pluck, Attack-Decay, Swell, Ramp Down, Ramp Up, Gate, Duck, Stutter.
 
 ## Racks
 

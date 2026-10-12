@@ -55,6 +55,10 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Eq.cpp](../../engine/src/builtin/devices/Eq.cpp) | EQ: 24 bands, placement, output gain, gain scale |
 | [builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h) | The EQ's filter design (`eq::design`, `eq::responseDb`), shared with the application layer's `eqResponseDb()` for the editor's curves; `eq::Biquad::tick` (a sample through a section, transposed direct form II: the EQ's and the Sidechain's crossover) |
 | [builtin/devices/Sidechain.cpp](../../engine/src/builtin/devices/Sidechain.cpp) | Sidechain: a curve from each hit in the key (or on the beat), lookahead, lows only |
+| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth |
+| [builtin/devices/Envelope.cpp](../../engine/src/builtin/devices/Envelope.cpp) | Envelope: a modulator; a drawn curve played from each note or sidechain hit, in ms or synced, Depth, Velocity, Threshold, Smooth |
+| [builtin/ModulatorDesign.h](../../engine/src/builtin/ModulatorDesign.h) | What the modulators share (`modulator::`): their curve's parameters (`appendPointParams`, `kPoints`), the curve as they play it (`Curve`, automation's shapes worked out once a segment, `fastmath::exp` a sample), the shapes they start with (`sinePoints`, `pluckPoints`), synced lengths, smoothing, `kDisplaySamples` |
+| [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc` (a modulator moving a parameter of a device on its track: its range and which way up), `modulationTarget`, `kMaxModulators`; see [automation.md](automation.md#modulation) |
 | [builtin/devices/Transient.cpp](../../engine/src/builtin/devices/Transient.cpp) | Transient Shaper: onsets and tails turned up or down by followers on the input's envelope, Threshold, Output, Dry/Wet, Clip, lookahead, displays |
 | [builtin/TransientDesign.h](../../engine/src/builtin/TransientDesign.h) | The Transient Shaper's maths (`transient::Hilbert`, the envelope; `Detector`, its three followers; `weight`, the threshold's fade; `gain`, the gain law; `softClip`; `lookaheadSamples`; the hit its editor draws, `hitEnvelope` and `hitResponse`), shared with the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) for the editor |
 | [Rack.h](../../engine/src/Rack.h) | `RackProcessor`: a rack's place in a chain (its chains are run by the renderer) |
@@ -169,8 +173,12 @@ What every built-in device shares ([BuiltinProcessor.h](../../engine/src/builtin
 A device registers itself where it is defined: each `.cpp` in `builtin/devices/` ends with
 
 ```cpp
-SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument
+SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument, or Modulator
 ```
+
+A `Modulator` (the LFO, the Envelope) processes no audio: it moves other devices' parameters
+(`Processor::isModulator()`; see [automation.md](automation.md#modulation)). The browser lists
+the categories as *Instruments*, *Audio Effects* and *Modulators*.
 
 The macro makes a static `BuiltinRegistrar` that adds a factory (`std::make_shared<MyProcessor>()`) and a
 `BuiltinCategory` to `BuiltinRegistry::instance()` (a function-local static, built on first use, since registrars run
@@ -178,7 +186,7 @@ in no fixed order).
 
 - `devices()` builds the list once (`std::call_once`): it makes one prototype of each device and records its id
   (its `typeId()` without the `builtin:` prefix), name, category and parameters as a `BuiltinInfo`; instruments come
-  first, then by name.
+  first, then audio effects, then modulators, each by name.
 - `create(id)` makes a new device of that id; `std::invalid_argument` for an unknown one.
 
 The engine creates devices by id (`Engine::addBuiltinProcessor(chainId, type, index)`: it sets the source loader,
@@ -2080,7 +2088,11 @@ An equalizer after Pro-Q: 24 bands, then an output gain.
   that the magnitude is the analog one's at 0 Hz, Nyquist and the section's frequency.
   Where no real numerator has all three (a resonant cut, a notch high up), Nyquist's
   gives way. So bells and shelves high up keep their analog shape, not the bilinear
-  transform's squeezed one.
+  transform's squeezed one. The cuts' sections are the exception: the bilinear transform,
+  pre-warped at the band's frequency (`eq::bilinear`), since matched poles overshoot as a
+  cut's corner nears Nyquist (a Butterworth high cut at 22 kHz of 48 kHz rose 2 dB above its
+  passband); so a cut stays maximally flat, -3 dB at its corner, its resonance as high at any
+  frequency, and a high cut falls to nothing at Nyquist.
 - **Processing**: per 32 samples, each band glides its frequency and Q (in log) and gain
   towards its parameters (a one-pole, about 15 ms) and is designed again while they
   move; a band switched on starts from its parameters, silent. Sections run in double,
@@ -2193,6 +2205,63 @@ Turns a sound's onsets (Attack) and its tails (Sustain) up or down, whatever its
 - Its envelopes, followers and gain on two channels took about 0.5 % of one core at 48 kHz on the machine it was
   written on.
 
+### LFO (`builtin:lfo`, Modulator)
+
+A drawn curve played over and over; its value moves the parameters mapped to it (a modulator:
+see [automation.md](automation.md#modulation)). It never touches the audio.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `rate` | Rate | Hz | 0.01..40, log | 1 |
+| `sync` | Sync | | Off, On | On |
+| `synced` | Rate (Synced) | | 1/64 .. 8 Bars (DspBlocks.h's `syncedDivisionLabels`) | 1/4 |
+| `depth` | Depth | % | 0..100 | 100 |
+| `offset` | Offset | % | -100..100 | 0 |
+| `phase` | Phase | ° | 0..360 | 0 |
+| `retrigger` | Retrigger | | Off, On | Off |
+| `smooth` | Smooth | ms | 0..250 | 0 |
+| `p1_used` .. `p32_curve` | Point n Used, Time, Level, Curve | | as the Sidechain's (hidden, not automatable) | a triangle (`modulator::trianglePoints`: 0, up to 1 at half the cycle, down to 0) |
+
+- **The cycle**: 1 / Rate seconds, or the synced note value at the tempo. Synced while the song
+  plays (and not retriggered) its position is the song's: frac(beat / cycle beats), exactly, so a
+  1/4 LFO starts its cycle on every beat wherever playback starts or loops; stopped, or
+  retriggered, it runs on from where it is at the tempo; free in Hz it always runs on (from 0
+  after a reset, so offline renders repeat). **Retrigger**: a note-on (`startsNote()`) sets it to
+  the cycle's start.
+- **Its value**: the curve (`modulator::Curve`: automation's shapes, `kPoints` = 32 points) at
+  the cycle's position plus Phase / 360 (wrapped), then 0.5 + (y − 0.5) · Depth + Offset / 2, held
+  to 0..1, smoothed by a one-pole of Smooth ms (none at 0). Written into every frame of its first
+  two channels (the renderer hands it buffers of its own: `Renderer::runModulators`).
+- **Displays**, one value per 64 samples (`kDisplaySamples`), pushed together: `value` (its
+  value), `phase` (the curve's x there) and `key` (1 where a note restarted it).
+
+### Envelope (`builtin:envelope`, Modulator, with a sidechain input)
+
+A drawn curve played once from each trigger, its value moving the parameters mapped to it.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `threshold` | Threshold | dB | -60..0 | -24 |
+| `sync` | Sync | | Off, On | Off |
+| `length` | Length | ms | 1..20000, log | 500 |
+| `synced` | Length (Synced) | | 1/64 .. 8 Bars | 1/2 |
+| `depth` | Depth | % | 0..100 | 100 |
+| `velocity` | Velocity | % | 0..100 | 0 |
+| `smooth` | Smooth | ms | 0..250 | 0 |
+| `p1_used` .. `p32_curve` | Point n Used, Time, Level, Curve | | as the LFO's | a pluck (`modulator::pluckPoints`) |
+
+- **Triggers**: what it is given decides, with no setting of its own: a note-on it hears (its
+  track's notes, or another track's: `acceptsMidi()`), and once a sidechain is chosen
+  (`sidechainConnected()`) a hit in the key, found as the Sidechain device finds one (the louder channel at
+  the threshold, once re-armed: 3 dB below it, falling over 10 ms, and 20 ms on). Without a
+  sidechain chosen, no hits from audio. A trigger while it plays starts it again.
+- **Its value**: from a trigger, the curve at t / length over its length, then (and before any
+  trigger) its last point's; times Depth, times 1 − Velocity · (1 − the note's velocity / 127) (a
+  hit: full), held to 0..1, smoothed by Smooth; written into its first two channels, as the LFO's.
+- **Displays**, one value per 64 samples, pushed together: `value`, `phase` (where along the curve
+  it is, 0..1; -1 at rest) and `key` (the key's peak over the stretch; without a sidechain, 1
+  where a note came).
+
 ### Racks
 
 A rack is a `RackProcessor` ([Rack.h](../../engine/src/Rack.h), `typeId()` `"rack"`): only its place in a chain, its
@@ -2213,9 +2282,11 @@ readonly property var editors: ({
     "compressor": "CompressorEditor.qml",
     "delay": "DelayEditor.qml",
     "disperser": "DisperserEditor.qml",
+    "envelope": "EnvelopeEditor.qml",
     "eq": "EqEditor.qml",
     "erosion": "ErosionEditor.qml",
     "gate": "GateEditor.qml",
+    "lfo": "LfoEditor.qml",
     "limiter": "LimiterEditor.qml",
     "multiband": "MultibandEditor.qml",
     "phaser": "PhaserEditor.qml",
@@ -2236,7 +2307,10 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are nineteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
+- Today there are twenty-one. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+  playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
+  threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
+  The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
   48 kHz) and In/Out meters with the threshold marked; the Gate the last 2.5 s of `input`, `output`, `key` and `open`
   with its threshold and Return lines to drag, and in its sidechain section the key EQ's curve (from `gate::keyFilter`,
   the engine's own biquad); the Limiter the level over the last 1.5 s with the gain reduction hanging from the top,
@@ -2558,6 +2632,13 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   shapes one.
 - [test_eq_engine.cpp](../../tests/engine/test_eq_engine.cpp): each band type plays as `eq::responseDb` draws it,
   matching the analog filters, placement (left, mid, side), output gain and gain scale, extremes, the displays.
+- [test_modulators_engine.cpp](../../tests/engine/test_modulators_engine.cpp): the LFO and the Envelope on their
+  own (listing; the curve at the rate, free and synced following the song or running on stopped; the sine; Depth,
+  Offset, Phase; Retrigger; Smooth; the Envelope from notes and sidechain hits, re-armed, at rest, its length,
+  Depth and Velocity; block sizes), then modulation through the engine: a parameter moved every 64 samples, over
+  a range and inverted, a modulator after its target, synced to the song, ahead of automation (which plays again
+  after), into and out of racks, a modulator moving a modulator, one switched off holding, routes the engine
+  refuses, an Envelope keyed by another track.
 - [test_sidechain_device_engine.cpp](../../tests/engine/test_sidechain_device_engine.cpp): hits to the sample, the
   curve sample by sample (straight and bent), depth and smoothing, the threshold and re-arming, lookahead (as
   latency), Lows Only keeping the highs, hits on the beat, the synced length, the displays, extremes.

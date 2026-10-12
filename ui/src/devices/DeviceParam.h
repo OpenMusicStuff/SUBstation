@@ -8,12 +8,18 @@
 // device frame's parameter cell did with it: setting it through the editor
 // (undoably, one step per gesture key), touching it (the arrangement shows its
 // automation), and its right-click menu's actions (Show Automation, Delete
-// Automation, Re-Enable Automation, and in a rack Map to Macro / Unmap).
+// Automation, Re-Enable Automation, and in a rack Map to Macro / Unmap, Modulate with a modulator /
+// Remove Modulation). A parameter a modulator (an LFO, an Envelope) moves
+// says so (`modulated`), over which normalized range (`modulationFrom`..
+// `modulationTo`, which way up) and where it is now (`modulationValue`, from
+// ModulatorValues); `mappable` while a modulator's Map waits for a parameter
+// on its track (ModulationLearn).
 //
 //   DeviceParam { id: threshold; session: Session; trackId: ...; deviceId: ...; paramId: "threshold" }
 //   Knob { value: threshold.value; onMoved: (v, key) => threshold.set(v, key) }
 
 #include <QJSValue>
+#include <QVariantList>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -24,6 +30,7 @@
 
 #include "audio/BridgeTypes.h"
 #include "controls/Automation.h"
+#include "model/Device.h"
 #include "session/Session.h"
 
 namespace sub::ui {
@@ -54,9 +61,20 @@ class DeviceParam : public QObject {
     Q_PROPERTY(QString text READ text NOTIFY valueChanged)  // the value in its units
     Q_PROPERTY(int index READ index NOTIFY valueChanged)  // a list's: the value rounded
     Q_PROPERTY(QString automation READ automation NOTIFY automationChanged)  // "", "on" or "off"
+    Q_PROPERTY(QString modulator READ modulator NOTIFY modulationChanged)  // its modulator's id ("": none)
+    Q_PROPERTY(QString modulatorName READ modulatorName NOTIFY modulationChanged)
+    Q_PROPERTY(bool modulated READ modulated NOTIFY modulationChanged)
+    // Normalized: where it is at the modulator's 0 or 1, the lower and the higher (which way: modulationInverted).
+    Q_PROPERTY(double modulationFrom READ modulationFrom NOTIFY modulationChanged)
+    Q_PROPERTY(double modulationTo READ modulationTo NOTIFY modulationChanged)
+    Q_PROPERTY(bool modulationInverted READ modulationInverted NOTIFY modulationChanged)
+    // Normalized, where its modulator has it now (-1: not modulated, or not known yet).
+    Q_PROPERTY(double modulationValue READ modulationValue NOTIFY modulationValueChanged)
+    Q_PROPERTY(bool mappable READ mappable NOTIFY mappableChanged)
 
 public:
     explicit DeviceParam(QObject* parent = nullptr);
+    ~DeviceParam() override;
 
     sub::app::Session* session() const { return session_; }
     void setSession(sub::app::Session* session);
@@ -83,6 +101,14 @@ public:
     QString text() const { return format(value_); }
     int index() const;
     QString automation() const { return automation_; }
+    QString modulator() const { return modulator_; }
+    QString modulatorName() const;
+    bool modulated() const { return !modulator_.isEmpty(); }
+    double modulationFrom() const;
+    double modulationTo() const;
+    bool modulationInverted() const { return mapping_.invert; }
+    double modulationValue() const { return modulationValue_; }
+    bool mappable() const { return mappable_; }
 
     // A value in its units ("-18.0 dB", a list's name).
     Q_INVOKABLE QString format(double value) const;
@@ -116,6 +142,14 @@ public:
     Q_INVOKABLE QString macroRack() const;
     Q_INVOKABLE void mapToMacro(int index);
     Q_INVOKABLE void unmapFromMacro();
+    // Modulation: whether it can be modulated; the modulators on its track
+    // that can move it ([{id, name}], in their order); mapped to one (over its
+    // whole range); unmapped; turned upside down.
+    Q_INVOKABLE bool canModulate() const;
+    Q_INVOKABLE QVariantList modulatorChoices() const;
+    Q_INVOKABLE void modulateWith(const QString& modulatorId);
+    Q_INVOKABLE void unmodulate();
+    Q_INVOKABLE void setModulationInverted(bool inverted);
 
     // Reads it all again (the device view does when it rebuilds).
     Q_INVOKABLE void refresh();
@@ -125,6 +159,9 @@ Q_SIGNALS:
     void specChanged();
     void valueChanged();
     void automationChanged();
+    void modulationChanged();
+    void modulationValueChanged();
+    void mappableChanged();
 
 private:
     AutomationTarget automationTarget() const;
@@ -132,6 +169,9 @@ private:
     void refreshSpec();
     void refreshValue();
     void refreshAutomation();
+    void refreshModulation();
+    void refreshModulationValue();
+    void refreshMappable();
 
     QPointer<sub::app::Session> session_;
     QString trackId_;
@@ -141,6 +181,10 @@ private:
     int specIndex_ = -1;  // its index in the processor's parameters
     double value_ = 0.0;
     QString automation_;
+    QString modulator_;  // watched in ModulatorValues while set
+    sub::app::ModulationMapping mapping_;
+    double modulationValue_ = -1.0;
+    bool mappable_ = false;
     QList<QMetaObject::Connection> connections_;
 };
 

@@ -15,7 +15,10 @@ const std::vector<BuiltinDevice>& builtinDevices() {
             device.kind = QString::fromStdString(info.id);
             device.name = QString::fromStdString(info.name);
             device.instrument = info.isInstrument();
-            device.category = device.instrument ? QStringLiteral("Instruments") : QStringLiteral("Audio Effects");
+            device.modulator = info.isModulator();
+            device.category = device.instrument ? QStringLiteral("Instruments")
+                              : device.modulator ? QStringLiteral("Modulators")
+                                                 : QStringLiteral("Audio Effects");
             for (const sub::ParamInfo& param : info.params) {
                 device.defaults.insert(QString::fromStdString(param.id), static_cast<double>(param.defaultValue));
             }
@@ -52,6 +55,11 @@ bool isInstrument(const QString& kind, const std::optional<PluginRef>& plugin) {
     if (kind == kPluginKind) return plugin && plugin->instrument;
     const BuiltinDevice* builtin = builtinDevice(kind);
     return builtin != nullptr && builtin->instrument;
+}
+
+bool isModulator(const QString& kind) {
+    const BuiltinDevice* builtin = builtinDevice(kind);
+    return builtin != nullptr && builtin->modulator;
 }
 
 bool deviceIsInstrument(const Device& device) {

@@ -21,8 +21,9 @@ namespace {
 
 // Drop the macro mappings whose device isn't (any longer) inside its rack (a
 // macro moves parameters of devices in its rack), or whose macro the rack no
-// longer has.
+// longer has; and the modulation mappings to devices no longer on the track.
 void pruneMacros(std::vector<Device>& devices) {
+    pruneModulations(devices, [](const QString& kind) { return isModulator(kind); });
     for (Device* rack : iterDevices(devices)) {
         if (rack->macros.empty()) continue;
         const QSet<QString> inside = innerDeviceIds(*rack);
@@ -169,6 +170,7 @@ QStringList ProjectEditor::pasteDevices(const QString& trackId, const std::vecto
     Project& p = *project_;
     std::vector<Device> devices;
     QSet<QString> foldedCopies;
+    QHash<QString, QString> renamed;  // the copied devices' ids: the copies'
     for (const Device& original : copied) {
         std::vector<Device> holder{original};
         QStringList oldIds;
@@ -176,6 +178,7 @@ QStringList ProjectEditor::pasteDevices(const QString& trackId, const std::vecto
         refreshIds(holder.front());
         const std::vector<Device*> inner = iterDevices(holder);
         for (std::size_t i = 0; i < inner.size() && i < static_cast<std::size_t>(oldIds.size()); ++i) {
+            renamed.insert(oldIds[static_cast<qsizetype>(i)], inner[i]->id);
             if (folded.contains(oldIds[static_cast<qsizetype>(i)])) foldedCopies.insert(inner[i]->id);
             const auto& sidechain = inner[i]->sidechain;
             if (sidechain && (!p.hasOwner(sidechain->trackId) || p.sidechainWouldCycle(trackId, sidechain->trackId))) {
@@ -186,6 +189,15 @@ QStringList ProjectEditor::pasteDevices(const QString& trackId, const std::vecto
             if (!midi.isEmpty() && (!p.hasTrack(midi) || p.track(midi).kind != kMidiKind || midi == trackId)) midi.clear();
         }
         devices.push_back(std::move(holder.front()));
+    }
+    {  // Modulators' mappings to devices pasted with them follow those (refreshIds kept those inside each).
+        const std::vector<const Device*> originals = iterDevices(copied);
+        const std::vector<Device*> fresh = iterDevices(devices);
+        for (std::size_t i = 0; i < originals.size() && i < fresh.size(); ++i) {
+            if (!originals[i]->modulations.empty()) {
+                fresh[i]->modulations = renamedModulations(originals[i]->modulations, renamed);
+            }
+        }
     }
     p.addFoldedDevices(foldedCopies);
     QString label = text;

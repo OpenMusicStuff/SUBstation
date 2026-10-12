@@ -208,6 +208,12 @@ private:
             std::vector<float> chainLeft, chainRight;  // the chain it runs
         };
         std::array<Rack, kMaxRackDepth> racks;  // by depth
+        // The modulators of the strip being processed (runModulators): each one's
+        // value over the chunk, by its place in StripRender::modulators, once run.
+        const std::vector<ModulatorRender>* modulators = nullptr;
+        std::array<std::vector<float>, kMaxModulators> modulation;
+        std::array<bool, kMaxModulators> modulationRun{};
+        std::vector<float> modulationSpare;  // a modulator's second channel
     };
 
     // The stretches of a chunk a strip's devices process: one per continuous
@@ -341,10 +347,25 @@ private:
     void processChain(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
                       const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                       bool monitored, int depth, WorkerScratch& scratch) noexcept;
-    // One device (not a rack) of a chain over the slices, with its automation and sidechain.
+    // One device (not a rack) of a chain over the slices, with its automation,
+    // what modulators do to it, and its sidechain.
     void processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
                        const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                        WorkerScratch& scratch) noexcept;
+    // A strip's sidechained device: the strip's signal waits for the sidechain
+    // that comes later than it (but not while monitored).
+    void waitForSidechain(const RenderSnapshot& snap, const StripRender& chain, size_t i, float* left, float* right,
+                          int frames, bool monitored) const noexcept;
+    // Before a strip's devices: its modulators (StripRender::modulators), each
+    // over the slices as a device would be (its own automation, sidechain and
+    // notes, the modulators before it moving it), into scratch.modulation. One
+    // switched off holds its last value.
+    void runModulators(const RenderSnapshot& snap, const StripRender& strip, ProcessContext& context,
+                       const Slices& slices, ProcessEvent* events, int frames, WorkerScratch& scratch) noexcept;
+    // A modulated parameter over a slice: its modulator's value, every
+    // kAutomationStep samples, handed to its device as automation is (a
+    // modulator not run yet in this chunk: the value it last held).
+    void modulateInsert(const ModulationRender& route, const Slice& slice, const WorkerScratch& scratch) noexcept;
     DelayLine* switchDelayLine(const SwitchRender& device) const noexcept;
     // A switch's lane as a gain per sample over the chunk: 1 where it is on, 0
     // where it is off, fading over switchFade() samples after each switch (the

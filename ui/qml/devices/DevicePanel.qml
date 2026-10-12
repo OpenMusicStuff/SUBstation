@@ -48,8 +48,11 @@ Rectangle {
     // The tallest device: its border, a title bar, a page of knobs in two rows
     // (DeviceKnobPages: 14 px apart) with 6 px above and below them (a body's
     // margins: its content is as far from the title bar as from the bottom
-    // edge). Every device is this tall; an editor's graphs take the height there is.
+    // edge), and `editorRoom` more for the editors' graphs (the knobs stay
+    // centred). Every device is this tall; an editor's graphs take the height there is.
+    readonly property int editorRoom: 24
     readonly property int deviceHeight: 2 + Math.max(16, titleMetrics.height) + 4 + 6 + 2 * probe.implicitHeight + 14 + 6
+                                        + editorRoom
 
     // Ctrl+R on a rack's chain: its name edited in place, its rack's chain list
     // shown first if it is hidden (false: the rack isn't shown, or is folded).

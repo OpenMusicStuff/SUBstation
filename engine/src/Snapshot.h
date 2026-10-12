@@ -13,6 +13,7 @@
 
 #include "AudioSource.h"
 #include "Automation.h"
+#include "Modulation.h"
 #include "NoteBend.h"
 #include "Processor.h"
 #include "Scheduler.h"
@@ -208,6 +209,26 @@ constexpr int kMaxRackDepth = 8;
 
 struct RackRender;
 
+// A parameter a modulator moves (Modulation.h), in the chain its device is in.
+struct ModulationRender {
+    std::shared_ptr<Processor> modulator;  // what moves it: one of its strip's `modulators`
+    std::shared_ptr<Processor> processor;  // the device
+    int param = 0;                         // its parameter's index
+    int steps = 0;                         // > 0: a discrete parameter (values snap to its steps)
+    int insert = -1;                       // the device's place in its chain
+    float low = 0.f, high = 1.f;           // the parameter's normalized values at the modulator's 0 and 1
+    bool invert = false;
+};
+
+// A modulator in a strip (its own chain's, or in a rack's chain however deep),
+// which the renderer runs before the strip's devices (Renderer::runModulators).
+struct ModulatorRender {
+    std::shared_ptr<Processor> processor;
+    const RackRender* rack = nullptr;  // the rack whose chain it is in (null: the strip's own chain); the snapshot owns it
+    int chain = 0;                     // that chain's index in the rack
+    int insert = 0;                    // its place in its chain
+};
+
 // What every strip has: a chain of devices, and a fader with its meter. Tracks
 // are strips fed by their clips and notes (and what goes into them); the master
 // is the strip fed by what goes into it. Delay compensation is the edges'.
@@ -236,6 +257,12 @@ struct StripRender {
     // Per insert, the MIDI it takes from another track instead of the strip's
     // notes (null: the strip's); empty if none takes any.
     std::vector<std::shared_ptr<MidiFeed>> midiFeeds;
+    // The parameters of its devices that modulators move, in chain order (their
+    // automation, if any, isn't played meanwhile).
+    std::vector<ModulationRender> modulation;
+    // A strip's own (not a rack chain's): every modulator on it, racks' too,
+    // in the order they run (at most kMaxModulators of them do).
+    std::vector<ModulatorRender> modulators;
 };
 
 // A chain of a rack: a strip inside a strip. The rack hands each chain its own

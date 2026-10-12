@@ -63,7 +63,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 22; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 23; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
@@ -165,6 +165,7 @@ values, or a sixth value that isn't an object, makes the file damaged.
 | `state` | base64: a plug-in's whole state (a `.vstpreset`), or a built-in device's non-parameter values; omitted when a built-in device has none |
 | `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}` |
 | `midi_from` | only when set: the id of the MIDI track whose notes it plays instead of its own track's (version 22) |
+| `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23) |
 | `name` | racks only, when set: the preset it was saved as or loaded from |
 | `chains` | racks only: `[{"id", "name", "volume_db", "pan", "mute", "solo", "devices": [...]}]` |
 | `macros` | racks only: `[{"macro": 0..15, "device", "param", "low", "high"}]` (`low` > `high`: the other way round) |
@@ -226,6 +227,7 @@ that makes an older file load as it was, and saving writes the current version.
 | 20 | deactivated clips (`muted` on an audio or MIDI clip) and notes (a fifth value, `true`) | every clip and note playing |
 | 21 | tracks' outputs (`output`) and where inputs from tracks are tapped (`input_tap`) | outputs into their groups (or the master), inputs taken after the source's fader |
 | 22 | notes' bends (a sixth value: points and vibratos, MIDI 2.0's per-note pitch bend) and devices' MIDI inputs from other tracks (`midi_from`) | no note bent; every device playing its own track's notes |
+| 23 | modulators' mappings (`modulations`) | none (no modulators either) |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and every rack's devices. The
@@ -253,6 +255,9 @@ refusing the file:
     other than the device's own.
 - Rack macro mappings to a device not in the rack, or to a macro the rack doesn't have, are dropped. A rack has 1 to
   16 macros (`macro_names` longer than 16 is cut there; an empty one gives the default 4), and a value for each.
+- Modulation mappings to a device not on the modulator's track, to the modulator itself, of a device that isn't a
+  modulator, or to a parameter mapped already (the first stays) are dropped (`pruneModulations`); ranges are held to
+  0..1.
 - Sends' and chains' levels are clamped to the faders' range (-70..+6 dB), pans to -1..1; a MIDI channel outside
   0..16 loads as 0 (every channel); an input of more than two channels loads as none; `monitor` must be a known mode.
 - `armed` is ignored on a group.

@@ -1,6 +1,7 @@
 #include "devices/DeviceCanvas.h"
 
 #include "devices/DisplayClock.h"
+#include "devices/ModulatorValues.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,7 +25,10 @@ using sub::app::Project;
 
 DeviceCanvas::DeviceCanvas(QQuickItem* parent) : SgCanvas(parent) {}
 
-DeviceCanvas::~DeviceCanvas() = default;
+DeviceCanvas::~DeviceCanvas() {
+    for (const Modulated& m : std::as_const(modulated_))
+        ModulatorValues::release(m.modulator);
+}
 
 void DeviceCanvas::setSession(sub::app::Session* session) {
     if (session == session_)
@@ -102,6 +106,11 @@ void DeviceCanvas::connectSession() {
         if (alive_ && isVisible() && window())
             refreshDisplays();
     });
+    // While a modulator moves any of its parameters, they move as it plays.
+    connections_ << connect(ModulatorValues::instance(), &ModulatorValues::ticked, this, [this] {
+        if (!modulated_.isEmpty() && alive_ && isVisible() && window())
+            doSync();
+    });
 }
 
 void DeviceCanvas::itemChange(ItemChange change, const ItemChangeData& data) {
@@ -115,7 +124,26 @@ void DeviceCanvas::refresh() {
     doSync();
 }
 
+void DeviceCanvas::readModulation() {
+    QHash<QString, Modulated> modulated;
+    if (device() != nullptr) {
+        for (const sub::app::Device* d : sub::app::iterDevices(session_->project()->track(trackId_).devices)) {
+            for (const sub::app::ModulationMapping& m : d->modulations) {
+                if (m.deviceId != deviceId_ || modulated.contains(m.paramId))
+                    continue;
+                modulated.insert(m.paramId, {d->id, m, session_->editor()->paramInfo(trackId_, deviceId_, m.paramId)});
+            }
+        }
+    }
+    for (const Modulated& m : std::as_const(modulated))
+        ModulatorValues::instance()->watch(session_, trackId_, m.modulator);
+    for (const Modulated& m : std::as_const(modulated_))
+        ModulatorValues::instance()->unwatch(m.modulator);
+    modulated_ = modulated;
+}
+
 void DeviceCanvas::readDevice() {
+    readModulation();
     defaults_.clear();
     automatable_.clear();
     displays_.clear();
@@ -182,6 +210,10 @@ double DeviceCanvas::value(const QString& paramId) const {
     const sub::app::Device* found = device();
     if (found == nullptr)
         return defaultValue(paramId);
+    if (const auto m = modulated_.constFind(paramId); m != modulated_.constEnd() && m->spec) {
+        if (const auto now = ModulatorValues::instance()->value(m->modulator))
+            return m->spec->fromNormalized(m->spec->quantize(m->mapping.target(*now)));
+    }
     if (automationState(paramId) == QLatin1String("on")) {
         const auto current = session_->bridge()->currentValue(trackId_, sub::app::automation::deviceKey(deviceId_, paramId));
         if (current)

@@ -106,6 +106,7 @@ class Theme : public QObject {
     Q_PROPERTY(QColor scrollHandleHover READ scrollHandleHover NOTIFY changed)
     Q_PROPERTY(QColor automationOn READ automationOn NOTIFY changed)
     Q_PROPERTY(QColor automationOff READ automationOff NOTIFY changed)
+    Q_PROPERTY(QColor modulation READ modulation NOTIFY changed)
 
     // Fonts: the UI font (9 pt), the small one buttons with a role use (8 pt),
     // the browser's lists' (10 pt: Qt Quick draws small text smaller than the
@@ -218,6 +219,7 @@ public:
     static QColor scrollHandleHover() { return colors().scrollHandleHover; }
     static QColor automationOn() { return colors().automationOn; }
     static QColor automationOff() { return colors().automationOff; }
+    static QColor modulation() { return colors().modulation; }
 
     QFont font() const;
     QFont smallFont() const;

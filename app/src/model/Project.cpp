@@ -619,6 +619,12 @@ void Project::setDeviceMacros(const QString& trackId, const QString& deviceId,
     Q_EMIT devicesChanged(trackId);
 }
 
+void Project::setDeviceModulations(const QString& trackId, const QString& deviceId,
+                                   const std::vector<ModulationMapping>& modulations) {
+    deviceRef(trackId, deviceId).modulations = modulations;
+    Q_EMIT devicesChanged(trackId);
+}
+
 void Project::setDeviceName(const QString& trackId, const QString& deviceId, const std::optional<QString>& name) {
     const bool followed = namedByContents(trackRef(trackId));
     deviceRef(trackId, deviceId).name = name;

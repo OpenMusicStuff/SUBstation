@@ -36,6 +36,9 @@ void EngineBridge::onReset() {
     d.paramSpecs.clear();
     d.automating.clear();
     d.macroMoved.clear();
+    d.modulation.clear();
+    d.modulating.clear();
+    d.unmodulated.clear();
     d.overridden.clear();
     d.mixer.clear();
     d.mutes.clear();
@@ -136,6 +139,11 @@ void EngineBridge::onTrackRemoved(const QString& trackId) {
     d.meters.remove(trackId);
     d.automating.remove(trackId);
     d.macroMoved.remove(trackId);
+    d.modulation.remove(trackId);
+    d.modulating.remove(trackId);
+    for (auto it = d.unmodulated.begin(); it != d.unmodulated.end();) {
+        it = it->first.first == trackId ? d.unmodulated.erase(it) : std::next(it);
+    }
     d.mixer.remove(trackId);
     d.mutes.remove(trackId);
     d.inputs.remove(trackId);

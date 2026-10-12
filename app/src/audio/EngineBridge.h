@@ -389,6 +389,8 @@ public:
     Q_INVOKABLE bool isAutomated(const QString& owner, const QString& key) const;
     Q_INVOKABLE bool isOverridden(const QString& owner, const QString& key) const;
     Q_INVOKABLE bool hasOverrides() const;
+    // Whether a modulator the engine runs moves this target (its envelope and own value wait).
+    Q_INVOKABLE bool isModulated(const QString& owner, const QString& key) const;
     // The target was changed by hand: its automation stops until re-enabled.
     void overrideAutomation(const QString& owner, const QString& key);
     // Automation plays again where it was overridden (everywhere, or for one owner).
@@ -628,6 +630,10 @@ private:
     std::optional<sub::AutomationLaneDesc> engineLane(const QString& owner, const QString& key,
                                                       const Envelope& points);
     void pushOwnValue(const QString& owner, const QString& key);
+    // What an owner's modulators (those switched on) move, to the engine; the
+    // targets no longer moved go back to their own values (or, a plug-in's the
+    // model has none for, to where they were before).
+    void pushModulation(const QString& owner);
     const std::vector<sub::ParamInfo>& paramInfos(quint32 processorId);
     // Sources (BridgeSources.cpp).
     void onLoaded(const QString& path, std::shared_ptr<sub::AudioSource> source);

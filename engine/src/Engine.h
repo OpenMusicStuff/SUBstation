@@ -55,6 +55,7 @@
 #include "AudioSource.h"
 #include "Automation.h"
 #include "MidiInput.h"
+#include "Modulation.h"
 #include "NoteBend.h"
 #include "Processor.h"
 #include "Recorder.h"
@@ -390,6 +391,17 @@ public:
     // counts again once its envelope is taken away.
     void setTrackAutomation(uint32_t trackId, const std::vector<AutomationLaneDesc>& lanes);
 
+    // --- Modulation -------------------------------------------------------------
+    // Replaces what a track's modulators (trackId 0: the master's) move
+    // (Modulation.h): each a parameter (by id) of one of the track's devices (in
+    // a rack too) moved by a modulator on the same track. Those naming devices
+    // that are gone or elsewhere, a modulator that isn't one, a parameter a
+    // device doesn't have (or can't be set), the modulator itself or a parameter
+    // already modulated are kept but not played. A parameter modulated here
+    // follows its modulator instead of its automation; its own value (set above)
+    // counts again once nothing modulates it (the caller sets it back).
+    void setTrackModulation(uint32_t trackId, const std::vector<ModulationDesc>& modulation);
+
     // --- Device chains ------------------------------------------------------------
     // Devices live in chains, each with an id: every track and the master has a
     // main chain (later, each chain of a rack is one more). Processor ids are
@@ -596,6 +608,7 @@ private:
         std::vector<SendModel> sends;       // more edges, in the order they were made
         std::shared_ptr<TrackBuffers> buffers;  // its signal and chunk state, kept across snapshots (not the master)
         std::vector<AutomationLaneDesc> automation;
+        std::vector<ModulationDesc> modulation;
         std::vector<int> inputChannels;  // device channels: its input (unless inputTrack)
         // Its input from a track's output (an input edge) or the master's (kMaster), instead of device channels.
         std::optional<uint32_t> inputTrack;
@@ -758,6 +771,10 @@ private:
     // before it (the devices before it, and the delays before sidechained ones).
     void buildChainLocked(uint32_t chainId, const StripBuild& build, int depth, RenderSnapshot& snap,
                           StripRender& chain);
+    // The modulators in a chain (`rack`'s chain `chainIndex`; none: a strip's
+    // own) and in the racks in it, depth first, onto `out`.
+    static void collectModulators(const StripRender& chain, const RackRender* rack, int chainIndex,
+                                  std::vector<ModulatorRender>& out);
     // An envelope's breakpoints in samples, sorted.
     static std::vector<AutomationNode> automationNodes(const AutomationLaneDesc& desc, double samplesPerBeat);
     // The routing graph's edges, as indices into tracks_ (-1: the master): each

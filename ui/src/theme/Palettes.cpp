@@ -74,6 +74,7 @@ Palette defaultPalette() {
         .scrollHandleHover = hex("#555555"),
         .automationOn = hex("#ff4a3d"),
         .automationOff = hex("#8c8c8c"),
+        .modulation = hex("#3fd0ff"),
     };
 }
 
@@ -142,6 +143,7 @@ Palette disabletonPalette() {
         .scrollHandleHover = hex("#757575"),
         .automationOn = hex("#c14541"),
         .automationOff = hex("#8c8c8c"),
+        .modulation = hex("#46b7d6"),
     };
 }
 
@@ -208,6 +210,7 @@ Palette flashbangPalette() {
         .scrollHandleHover = hex("#9a9a9a"),
         .automationOn = hex("#f0382b"),
         .automationOff = hex("#8c8c8c"),
+        .modulation = hex("#0b86b8"),
     };
 }
 
@@ -277,6 +280,7 @@ Palette gayPalette() {
         .scrollHandleHover = hex("#57516b"),
         .automationOn = hex("#ff4d7a"),
         .automationOff = hex("#8c8c8c"),
+        .modulation = hex("#7df2df"),
     };
 }
 

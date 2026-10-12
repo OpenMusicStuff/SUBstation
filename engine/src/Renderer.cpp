@@ -77,6 +77,8 @@ void Renderer::setScheduler(Scheduler* scheduler) {
                 buffer->assign(kMaxBlock, 0.f);
             }
         }
+        for (std::vector<float>& values : scratch.modulation) values.assign(kMaxBlock, 0.f);
+        scratch.modulationSpare.assign(kMaxBlock, 0.f);
     }
 }
 
@@ -954,7 +956,60 @@ void Renderer::processInserts(const RenderSnapshot& snap, const StripRender& str
         }
         slices.slice[static_cast<size_t>(s)] = {offset, length, position, moving, first, next};
     }
+    scratch.modulators = &strip.modulators;
+    if (!strip.modulators.empty()) runModulators(snap, strip, context, slices, events, frames, scratch);
     processChain(snap, strip, context, slices, events, left, right, frames, monitored, 0, scratch);
+    scratch.modulators = nullptr;
+}
+
+void Renderer::runModulators(const RenderSnapshot& snap, const StripRender& strip, ProcessContext& context,
+                             const Slices& slices, ProcessEvent* events, int frames, WorkerScratch& scratch) noexcept {
+    const size_t count = std::min(strip.modulators.size(), static_cast<size_t>(kMaxModulators));
+    std::fill(scratch.modulationRun.begin(), scratch.modulationRun.end(), false);
+    for (size_t k = 0; k < count; ++k) {
+        const ModulatorRender& modulator = strip.modulators[k];
+        Processor& processor = *modulator.processor;
+        float* values = scratch.modulation[k].data();
+        if (processor.isEnabled()) {
+            const StripRender& chain =
+                modulator.rack ? modulator.rack->chains[static_cast<size_t>(modulator.chain)] : strip;
+            // (One in a rack: before its rack's chain takes its devices' requests, after this.)
+            if (processor.takeResetRequest()) processor.reset();
+            std::fill_n(values, frames, 0.f);
+            std::fill_n(scratch.modulationSpare.data(), frames, 0.f);
+            processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, slices, events, values,
+                          scratch.modulationSpare.data(), frames, scratch);
+            for (int s = 0; s < frames; ++s) values[s] = modulationTarget(values[s], 0.f, 1.f, false);
+            if (frames > 0) processor.setHeldModulation(values[frames - 1]);
+        } else {
+            std::fill_n(values, frames, processor.heldModulation());
+        }
+        scratch.modulationRun[k] = true;
+    }
+}
+
+void Renderer::modulateInsert(const ModulationRender& route, const Slice& slice,
+                              const WorkerScratch& scratch) noexcept {
+    const float* values = nullptr;
+    if (scratch.modulators) {
+        const std::vector<ModulatorRender>& modulators = *scratch.modulators;
+        const size_t count = std::min(modulators.size(), static_cast<size_t>(kMaxModulators));
+        for (size_t k = 0; k < count; ++k) {
+            if (modulators[k].processor != route.modulator) continue;
+            if (scratch.modulationRun[k]) values = scratch.modulation[k].data() + slice.offset;
+            break;
+        }
+    }
+    const float held = route.modulator->heldModulation();
+    Processor& processor = *route.processor;
+    float last = -1.f;
+    for (int offset = 0; offset < slice.length; offset += kAutomationStep) {
+        const float value = automationQuantize(
+            modulationTarget(values ? values[offset] : held, route.low, route.high, route.invert), route.steps);
+        if (value == last) continue;
+        if (!processor.automate(route.param, value, offset)) return;
+        last = value;
+    }
 }
 
 void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
@@ -980,17 +1035,12 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             nextSwitch < chain.switches.size() && chain.switches[nextSwitch].lane.insert == static_cast<int>(i)
                 ? &chain.switches[nextSwitch]
                 : nullptr;
-        if (insert.isEnabled()) {
-            // The strip's signal waits for a sidechain that comes later than it (but
-            // not while monitored: a player hears only the devices' own latency).
-            // (Each edge into it has the same delay: one waits for them all.)
-            const int e = !rack && i < chain.sidechains.size() && !chain.sidechains[i].empty() ? chain.sidechains[i].front() : -1;
-            if (e >= 0) {
-                const EdgeRender& edge = snap.edges[static_cast<size_t>(e)];
-                if (DelayLine* wait = deviceDelayLine(edge, e)) {
-                    wait->process(left, right, frames, monitored ? 0 : edge.deviceDelay);
-                }
-            }
+        if (insert.isModulator()) {
+            // Run before the chain (runModulators): the audio goes past it, as
+            // late as its sidechain makes the strip (as the engine aligned it).
+            if (insert.isEnabled()) waitForSidechain(snap, chain, i, left, right, frames, monitored);
+        } else if (insert.isEnabled()) {
+            if (!rack) waitForSidechain(snap, chain, i, left, right, frames, monitored);
             // Switched by its automation: its gain over the chunk, and its input
             // as late as it would come out of it.
             WorkerScratch::Switch& own = scratch.switches[static_cast<size_t>(std::clamp(depth, 0, kMaxRackDepth))];
@@ -1046,6 +1096,17 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             tapInto(snap, e, left, right, frames);
         }
     }
+}
+
+void Renderer::waitForSidechain(const RenderSnapshot& snap, const StripRender& chain, size_t i, float* left,
+                                float* right, int frames, bool monitored) const noexcept {
+    // The strip's signal waits for a sidechain that comes later than it (but
+    // not while monitored: a player hears only the devices' own latency).
+    // (Each edge into it has the same delay: one waits for them all.)
+    if (i >= chain.sidechains.size() || chain.sidechains[i].empty()) return;
+    const int e = chain.sidechains[i].front();
+    const EdgeRender& edge = snap.edges[static_cast<size_t>(e)];
+    if (DelayLine* wait = deviceDelayLine(edge, e)) wait->process(left, right, frames, monitored ? 0 : edge.deviceDelay);
 }
 
 void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
@@ -1112,6 +1173,9 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
         }
         for (const AutomationRender& lane : chain.automation) {
             if (lane.insert == static_cast<int>(i)) automateInsert(lane, slice.position, slice.length, slice.moving);
+        }
+        for (const ModulationRender& route : chain.modulation) {
+            if (route.insert == static_cast<int>(i)) modulateInsert(route, slice, scratch);
         }
         insert.process(context, channels, 2, slice.length);
         insert.clearAutomation();
