@@ -1,5 +1,6 @@
-// The ten built-in audio effects (Saturator, Amp, Erosion, Multiband Dynamics,
-// Reverb, Limiter, Chorus-Ensemble, Phaser-Flanger, Spectral Compressor, Gate)
+// The eleven built-in audio effects (Saturator, Amp, Erosion, Multiband Dynamics,
+// Reverb, Limiter, Chorus-Ensemble, Phaser-Flanger, Spectral Compressor, Gate,
+// Transient Shaper)
 // with the rest of the application, what each device's own tests leave out: a
 // project with one, every parameter away from its default and one automated,
 // saved and opened again as it was (in the model and the engine, and as it
@@ -42,7 +43,7 @@ constexpr int kSpb = kRate / 2;  // samples per beat at 120 BPM
 const QStringList kEffects{QStringLiteral("saturator"), QStringLiteral("amp"),     QStringLiteral("erosion"),
                            QStringLiteral("multiband"), QStringLiteral("reverb"),  QStringLiteral("limiter"),
                            QStringLiteral("chorus"),    QStringLiteral("phaser"),  QStringLiteral("spectral"),
-                           QStringLiteral("gate")};
+                           QStringLiteral("gate"),      QStringLiteral("transient")};
 
 // A test's rows: one per kind.
 void kindRows(const QStringList& kinds) {
@@ -82,29 +83,33 @@ QString automatedParam(const QString& kind) {
 }
 
 // The settings that give a device its latency where it is optional (the
-// Saturator's Hi-Quality, the longest lookahead of the Limiter and the Gate).
+// Saturator's Hi-Quality, the longest lookahead of the Limiter, the Gate and the Transient Shaper).
 QMap<QString, double> latencyOn(const QString& kind) {
     if (kind == u"saturator") return {{QStringLiteral("hq"), 1.0}};
-    if (kind == u"limiter" || kind == u"gate") return {{QStringLiteral("lookahead"), 2.0}};
+    if (kind == u"limiter" || kind == u"gate" || kind == u"transient") return {{QStringLiteral("lookahead"), 2.0}};
     return {};
 }
 
 // Settings with which each device changes what the tests play it (a tone at
 // 0.3, noise at 0.5), so that a render with it tells it was there: the
 // Saturator driven, the Limiter pushed over its ceiling, the Gate shut, 12 dB
-// down. The others do at their defaults.
+// down, the Transient Shaper's Output 12 dB down (a steady tone has no onsets
+// or tails to shape). The others do at their defaults.
 QMap<QString, double> audible(const QString& kind) {
     if (kind == u"saturator") return {{QStringLiteral("drive"), 12.0}};
     if (kind == u"limiter") return {{QStringLiteral("gain"), 12.0}};
     if (kind == u"gate") return {{QStringLiteral("threshold"), 0.0}, {QStringLiteral("floor"), -12.0}};
+    if (kind == u"transient") return {{QStringLiteral("output"), -12.0}};
     return {};
 }
 
 // The devices with a latency, and settings with which they pass their input
 // through, that much later: fully dry, no erosion, a click under the
-// Limiter's ceiling, a Gate open whatever it hears.
+// Limiter's ceiling, a Gate open whatever it hears, a Transient Shaper at its
+// defaults (which shape nothing).
 const QStringList kLatent{QStringLiteral("saturator"), QStringLiteral("amp"),      QStringLiteral("erosion"),
-                          QStringLiteral("limiter"),   QStringLiteral("spectral"), QStringLiteral("gate")};
+                          QStringLiteral("limiter"),   QStringLiteral("spectral"), QStringLiteral("gate"),
+                          QStringLiteral("transient")};
 
 QMap<QString, double> passThrough(const QString& kind) {
     QMap<QString, double> values = latencyOn(kind);

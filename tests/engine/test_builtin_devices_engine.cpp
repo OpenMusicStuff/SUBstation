@@ -71,6 +71,7 @@ TEST_CASE("a latency changed back after another edit is still compensated") {
         {"limiter", "lookahead", 2.f, 1.f, nullptr, 0.f},
         {"gate", "lookahead", 2.f, 1.f, "floor", 0.f},
         {"sidechain", "lookahead", 10.f, 0.f, "depth", 0.f},
+        {"transient", "lookahead", 2.f, 1.f, nullptr, 0.f},  // (at its defaults it shapes nothing)
     };
     const auto clickAt = [](const std::vector<float>& out) {
         size_t best = 0;

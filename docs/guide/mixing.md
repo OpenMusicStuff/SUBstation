@@ -157,7 +157,7 @@ A sidechain into a device in a rack lines up with the signal there (see
 
 Latency that devices report (plug-ins' look-ahead limiters and linear-phase EQs; the
 built-in Gate, Limiter, Spectral Compressor, Amp and Erosion, the Saturator with
-Hi-Quality on, the Sidechain's lookahead) is compensated:
+Hi-Quality on, the Sidechain's and the Transient Shaper's lookahead) is compensated:
 
 - the other tracks, and the metronome, are delayed to line up, and exports come out
   aligned;

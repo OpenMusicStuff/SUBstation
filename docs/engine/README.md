@@ -329,6 +329,7 @@ What the application needs besides an `Engine` is plain functions and singletons
 | The Phaser-Flanger's response and curve | `phaser::responseDb()`, `phaser::curve()`, `phaser::notchFrequencies()` ([builtin/PhaserDesign.h](../../engine/src/builtin/PhaserDesign.h); the application's `phaserResponseDb()` and `phaserCurvePoints()` wrap them, see [devices.md](devices.md)) |
 | The Reverb's decay curve, input filter and reflections | `reverb::decaySeconds()`, `inputFilterDb()`, `earlyTaps()` and `spinPan()` ([builtin/ReverbDesign.h](../../engine/src/builtin/ReverbDesign.h); the application's `reverbDecaySeconds()`, `reverbInputFilterDb()`, `reverbEarlyTaps()` and `reverbSpinPan()` wrap them, see [devices.md](devices.md)) |
 | The Disperser's group delay | `disperser::groupDelayMs()` ([builtin/DisperserDesign.h](../../engine/src/builtin/DisperserDesign.h); the application's `disperserGroupDelayMs()` wraps it, see [devices.md](devices.md)) |
+| The Transient Shaper's detector, gain law and the hit its editor draws | `transient::Detector`, `gain()`, `hitResponse()` ([builtin/TransientDesign.h](../../engine/src/builtin/TransientDesign.h); the application's `transientHit()` wraps it, see [devices.md](devices.md)) |
 | An EQ band's response | `eq::design()` and `eq::responseDb()` ([builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h); the application's `eqResponseDb()` wraps them, see [devices.md](devices.md)) |
 
 - Long-running calls (loading sources, opening devices, plug-in state, recording, offline renders,

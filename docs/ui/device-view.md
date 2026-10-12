@@ -40,6 +40,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Reverb: [ReverbEditor.qml](../../ui/qml/devices/editors/ReverbEditor.qml), [ReverbFilterPad](../../ui/src/devices/ReverbFilterPad.h), [ReverbSpinPad](../../ui/src/devices/ReverbSpinPad.h), [ReverbDecayGraph](../../ui/src/devices/ReverbDecayGraph.h), the application layer's [ReverbResponse.h](../../app/src/audio/ReverbResponse.h) | |
 | Disperser: [DisperserEditor.qml](../../ui/qml/devices/editors/DisperserEditor.qml), [DispersionGraph](../../ui/src/devices/DispersionGraph.h) | |
 | EQ: [EqEditor.qml](../../ui/qml/devices/editors/EqEditor.qml), [EqWindow.qml](../../ui/qml/devices/editors/EqWindow.qml), [EqWindows.qml](../../ui/qml/devices/editors/EqWindows.qml), [EqBandPanel.qml](../../ui/qml/devices/editors/EqBandPanel.qml), [EqCorner.qml](../../ui/qml/devices/editors/EqCorner.qml), [EqGraphMenus.qml](../../ui/qml/devices/editors/EqGraphMenus.qml), [EqGraph](../../ui/src/devices/EqGraph.h), [EqView](../../ui/src/devices/EqView.h), [EqTypeIcon](../../ui/src/devices/EqTypeIcon.h) | |
+| Transient Shaper: [TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml), [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h), [TransientGraph](../../ui/src/devices/TransientGraph.h), the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) | |
 | Sidechain: [SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml), [CurveGraph](../../ui/src/devices/CurveGraph.h), [ClashView](../../ui/src/devices/ClashView.h) | |
 | Sampler: [SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml), [SampleView](../../ui/src/devices/SampleView.h), the application layer's [SampleSlices.h](../../app/src/audio/SampleSlices.h) | |
 | [PanelMenu.qml](../../ui/qml/devices/PanelMenu.qml), [DynamicMenu.qml](../../ui/qml/devices/DynamicMenu.qml), [ParamArea.qml](../../ui/qml/devices/ParamArea.qml), [ParamKnob.qml](../../ui/qml/devices/ParamKnob.qml), [ParamBox.qml](../../ui/qml/devices/ParamBox.qml), [ParamButton.qml](../../ui/qml/devices/ParamButton.qml), [ParamChoice.qml](../../ui/qml/devices/ParamChoice.qml), [DeviceHeaderButton.qml](../../ui/qml/devices/DeviceHeaderButton.qml) | Menus filled when they open; the editors' parameter-bound knobs, boxes, buttons and drop-downs; a title bar's buttons |
@@ -329,7 +330,8 @@ readonly property var editors: ({
     "sampler": "SamplerEditor.qml",
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
-    "spectral": "SpectralEditor.qml"
+    "spectral": "SpectralEditor.qml",
+    "transient": "TransientEditor.qml"
 })
 ```
 
@@ -341,7 +343,7 @@ readonly property var editors: ({
   `implicitWidth` is the body's width (Compressor 658, Gate 568, or 837 with its sidechain section, Limiter 610,
   Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 532, Chorus-Ensemble
   534, Phaser-Flanger 732, or 906 with More open, Reverb 1023, Disperser 544, EQ 580, or 756 with its band controls,
-  Sidechain 720, Sampler 760); it may change. All but the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and
+  Sidechain 720, Sampler 760, Transient Shaper 732); it may change. All but the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and
   Sampler's are their widths in the default font as the tests' host has it (Inter standing in for Segoe UI): their parts
   are as wide as their texts need, so they follow the font. It gets the body's whole height and grows its graphs into it
   (6 px from the top and the bottom), while its knobs stay at the top; `implicitHeight` is the least it needs.
@@ -1101,6 +1103,42 @@ The editors:
   sits on the curve where the stages are tuned (`disperserTunedFrequency`), with the delay there read out at the top
   right: drag across for the Frequency, up and down for the Pinch (doubling every `kPinchPixels`, 60 px), one undo
   step per drag. Bypassed or fully dry, the curve is greyed.
+- **Transient Shaper** ([TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml)): no pages: two
+  displays, then Attack, Sustain, Threshold and Output over Attack Time, Release and Dry/Wet (`EditorKnob`s in cells
+  as wide as their texts need, 56 px at least; Attack and Sustain bipolar, signed, in the accent and the blue the
+  displays draw them in, their times too; Output bipolar), and beside them Lookahead (its list under its caption) over
+  Clip.
+  - [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h) (196 px): what the device does to a hit. The
+    hit (`sub::app::transientHit`, the application layer's wrapper of `sub::transient::hitResponse`: the engine's own
+    detector and gain) before the shaping, a dashed ghost, and after it, filled and outlined with a glow, on a
+    square-root time axis (0..600 ms: the onset's first milliseconds get room beside the tail; `kColumns` points,
+    evenly across it) and a dB axis (-60..+24: the hit's peak turned up as far as it goes, and room). Between before and after, where they part by 0.3 dB or more, a band
+    in the colour of what did more of it (Attack's accent, Sustain's blue), brighter turning up than down. A change of
+    setting morphs the curve to its new shape (every point eased in dB, 70 ms); a drag snaps it. Two handles ride on
+    it: Attack's at the shaped peak, Sustain's on the tail (`kSustainMs`, 200 ms in). Dragged up and down they set
+    Attack or Sustain (1 % a pixel), across Attack Time or Release (an octave per 40 px); the direction is picked by
+    the first 4 px, so a drag sets one parameter only; Shift a tenth as far; one undo step each. A double-click puts a
+    handle's two parameters back to their defaults; a right-click gives its amount's menu (`paramMenuRequested`; the
+    editor opens `handleMenu`); presses off the handles are the frame's. Hovered or dragged, a handle grows and shows
+    its values in a tag. Attack Time shows as a bar along the time axis, Release as a notch (an arrow at the edge
+    past 600 ms). Each transient the device detects (`detect` at 6 dB or more, after falling under 2 dB; only the
+    newest 0.1 s of a read) starts a playhead: a glowing head with a comet tail running along the drawn curve in
+    real time, orange through the onset turning blue along the tail (by Attack Time), fading at the window's end;
+    four at most.
+  - [TransientGraph](../../ui/src/devices/TransientGraph.h) (268 px): the last 2 s scrolling right to left, the
+    levels as a waveform's outline mirrored about a centre line on a dB scale (-48..+6 dB from the centre to the
+    edge, so quiet tails show): the input a faint ghost, the output over it outlined, and between the two outlines,
+    where they part, the colour of what did more of it (by `attack` and `sustain`), brighter turning up than down
+    and brighter again for 6 dB or more. Under it a lane of the gain (`attack` + `sustain`, ±18 dB about 0) filled in
+    the same colours under a glowing line, with the gain now as a signed figure (the newest 0.1 s's furthest from 0,
+    eased: quick up, slower down) in the colour of what made more of it; a legend top left; a slim output meter at
+    the right (`drawLevelMeter` in a panel well, -60..0 dBFS, red at its top once its peak reaches full scale). Each
+    transient (`detect`, as the shape's) strikes where it was: a ring swelling from the outline and a flash down the
+    waveform (0.35 s), and 6 to 14 sparks flying off both edges and slowing (their scatter from a seeded generator),
+    all anchored to the strike's display index so they scroll away with the sound. A backlog read late strikes
+    nothing. It reads its five displays by absolute index into a ring per stream (as the Gate's), scrolls a steady
+    30 ms behind the newest value and stops where the values stop, and before any values shows "Play something to
+    see it shaped". Both repaint only while something moves.
 - **EQ** ([EqEditor.qml](../../ui/qml/devices/editors/EqEditor.qml)): no pages, no body margins: the curve
   ([EqGraph](../../ui/src/devices/EqGraph.h)) from the title bar to the bottom edge, Scale and Output knobs in its
   bottom corners ([EqCorner.qml](../../ui/qml/devices/editors/EqCorner.qml)), and the selected band's controls
@@ -1248,5 +1286,6 @@ The editors:
 | [test_ui_device_editors_chorus.cpp](../../tests/app/test_ui_device_editors_chorus.cpp) | The Chorus-Ensemble's editor: fitting the body in any font (margins, nothing overlapping or cut short: every caption, every value a readout can show over its parameter's range, as a `Text` lays it out, each centred on its knob; the high-pass box's every value clear of the automation dot, Time for each choice, the switches' texts inside their borders, the voices clear of the box) and no wider than it needs (the knobs' cells on even pixels, as wide as their widest caption or value, or no wider than its widest form where figures are proportional; the box, Time, Taps and Ø as their texts; the display 234 px or as its tabs or strip need; the columns in line), every control bound to its parameter and undoable (each knob dragged), the modes (their sets cross-fading one after the other; Feedback and Ø dimmed in Vibrato and still settable; the strip's voices the engine's, still naming the old mode's as it fades out), Taps, Time, the high-pass and Ø, the display's drags (Shift, mid-drag too) as single undo steps, each setting only the parameter its direction picked (the other's automation not overridden), the displays reaching the graph (the voices where the engine's delays are, the glow from the sound now and not the display's history, freezing, and resting without repaints with the traces held), layouts fading without pops, the engine having what it set; no text spilling out of its box; no QML warnings |
 | [test_ui_device_editors_phaser.cpp](../../tests/app/test_ui_device_editors_phaser.cpp) | The Phaser-Flanger's editor: fitting the body in any font (inside its margins, nothing overlapping or cut short: every caption and every value a readout can show over its parameter's range, each centred on its knob, with the swapped controls' others, More open and in the delay modes, the Flanger's notch too; the ♪ before its caption, a pixel clear, clear of the dial and nearer its caption than any other by the cells' gap; the switches' texts inside their borders; its knobs the house's 34 px, bipolar only about 0) and no wider than it needs (the cells, the Time knob's and the mode's section on even pixels, as wide as their widest text, or no wider than its widest form where figures are proportional; the tabs as their names; the sections in line, 10 px apart), every control bound to its parameter and undoable (each knob dragged, each switch clicked, the waveform chosen), the swapped controls rebinding (Freq/Rate, Phase/Spin, the delay's Time), the mode tabs, More as view state (not undone, kept when shown again; Env dimming its controls); the curve the engine's design with the notches marked where it puts them, a fine comb drawn as a band; the graph's drags and double-click as single undo steps (undone to what was there before), its cursor over the plot only; a synced rate's wheel stepping a division a notch (Live's 22); the tabs on whole pixels, the Time knob staying put between the delay modes; the displays reaching the graph (the LFO's phase and value, the sweep, both channels, the levels), going quiet and then not repainting; the meters showing the sound now (not a backlog read when shown again) and every value of a large block; `DisplayPlayback` smooth at 1024-frame blocks, wrapping phases, pauses; at 2048-frame blocks (played on the clock the animation counts, ticked back to back) the meters still falling at their pace, a fast LFO's comet tail spanning the time its ticks took, a random shape's trace started afresh; what a curve costs (in the thread's CPU time, optimized builds only); the engine having what it set; no QML warnings |
 | [test_ui_device_editors_reverb.cpp](../../tests/app/test_ui_device_editors_reverb.cpp) | The Reverb's editor: fitting the view and its own least height with nothing overlapping, its boxes as wide as the widest text their parameters take (over the whole range) with a clear pixel between the automation dot and every value (in the drawn image too, every box automated at its widest), its lists as their longest names and the arrow (and their captions), its switches as their text, its knobs the house's 34 px, every caption and readout whole at its widest, each column no wider than its texts need, the pads and the graph spanning their boxes (or the switches over them, or their captions); the spin pad's and the decay graph's captions whole and apart at their widest (the tail's onset at the parameters' ends, each readout at its values' widest), with room for them in their implicit widths; every control bound to its parameter (with a tooltip) and undoable, Size read as a bare number and Stereo in whole degrees, the boxes' log drags, dimming (to 0.55, still editable); the filter pad's, spin pad's and decay graph's drags (one undo step each, Shift finely, the engine having the values), the pads' handles clear of their captions, the decay graph's handles inside the plot and picked when the shelves cross, its double-click (whose second press, dragged, drags nothing), the Low-pass's and a switched-off shelf's handles moving across only; the curves being the engine's maths (frozen too); the displays reaching them (input level and spectrum, tail meter and spectrum, Spin's phase), held through a tick without values and falling back, and after a backlog lit by what is now, not its loudest; the spin pad's trails kept through a sync; the transitions easing (Freeze into the top edge) and everything resting in silence |
+| [test_ui_device_editors_transient.cpp](../../tests/app/test_ui_device_editors_transient.cpp) | The Transient Shaper's editor: fitting the body (its parts inside it side by side, the editor as wide as they are and its margin; every caption and every text a readout takes whole), the defaults, only Attack, Sustain and Output bipolar, the times log, Attack and Sustain signed; Clip undoable, the lookahead reaching the engine's latency; the shape's handles (up and down for the amount, across for the time, never both; Shift; one undo step each, named; the curve following a drag at once; double-click resetting a handle's two; presses off them the frame's; the right button the amount's menu); the curve being the engine's hit (exactly, once settled), morphing to a new shape, the handles at the peak and on the tail; the displays reaching both graphs (the history, the gain's parts, sparks, rings and a playhead at a recent transient, none for a backlog's), and both coming to rest |
 | [test_session_devices.cpp](../../tests/app/test_session_devices.cpp) | `DeviceSelection` through the session: selecting, the focus, the clipboard, folding, racks, drops, presets |
 | [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) | The Sidechain's fit |

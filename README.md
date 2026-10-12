@@ -37,7 +37,8 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
   The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband
   Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble,
   Phaser-Flanger, Reverb, Disperser (phase dispersion through up to 64 all-pass stages,
-  its group delay drawn), EQ and Sidechain; racks with parallel chains, macros and
+  its group delay drawn), Transient Shaper (onsets and tails shaped, the hit drawn as it
+  plays), EQ and Sidechain; racks with parallel chains, macros and
   presets.
 - **VST3 plug-ins**: instruments and effects, their own editors, presets, sidechains,
   latency compensation everywhere, crash-safe scanning.

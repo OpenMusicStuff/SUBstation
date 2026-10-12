@@ -85,14 +85,19 @@ QJsonObject Protocol::result(const QJsonObject& fields, bool modern) const {
 QJsonObject Protocol::listTools(bool modern) const {
     QJsonArray tools;
     for (const Tool& tool : tools_) {
+        QJsonObject annotations{{QStringLiteral("title"), tool.title},
+                                {QStringLiteral("readOnlyHint"), tool.readOnly},
+                                {QStringLiteral("openWorldHint"), false}};
+        if (!tool.readOnly) {  // (an edit: rewindable, so never destructive)
+            annotations.insert(QStringLiteral("destructiveHint"), false);
+            annotations.insert(QStringLiteral("idempotentHint"), tool.idempotent);
+        }
         tools.append(QJsonObject{
             {QStringLiteral("name"), tool.name},
             {QStringLiteral("title"), tool.title},
             {QStringLiteral("description"), tool.description},
             {QStringLiteral("inputSchema"), tool.inputSchema},
-            {QStringLiteral("annotations"), QJsonObject{{QStringLiteral("title"), tool.title},
-                                                        {QStringLiteral("readOnlyHint"), tool.readOnly},
-                                                        {QStringLiteral("openWorldHint"), false}}},
+            {QStringLiteral("annotations"), annotations},
         });
     }
     QJsonObject fields{{QStringLiteral("tools"), tools}};

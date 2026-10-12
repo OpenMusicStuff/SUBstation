@@ -74,6 +74,9 @@ struct Tool {
     QJsonObject inputSchema;  // a JSON Schema object ({"type": "object", ...})
     bool readOnly = true;
     std::function<ToolResult(const QJsonObject& arguments)> call;
+    // An edit's: whether calling it again with the same arguments changes nothing more.
+    // (Edits are never destructive: each is a change the user can rewind.)
+    bool idempotent = false;
 };
 
 // The headers a transport received with a message (none: not sent, or no HTTP).
