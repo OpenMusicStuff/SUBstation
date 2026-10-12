@@ -100,7 +100,6 @@ Item {
         y: 6
         width: 14
         height: editor.height - 12
-        radius: 3
         color: foldArea.containsMouse ? Theme.surfaceHover : Theme.surface
         Behavior on color {
             ColorAnimation {

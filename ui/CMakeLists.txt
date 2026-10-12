@@ -8,7 +8,9 @@
 # A QML file starting with "pragma Singleton" is registered as a singleton.
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.h)
 file(GLOB_RECURSE UI_QML RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS qml/*.qml)
-file(GLOB_RECURSE UI_RESOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS qml/*.svg qml/*.png)
+# fonts/: the UI font (Inter, SIL Open Font License: fonts/LICENSE.txt), bundled so it
+# needn't be installed; uiFont() loads it from the resources the first time.
+file(GLOB_RECURSE UI_RESOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS qml/*.svg qml/*.png fonts/*.ttf)
 foreach (_qml IN LISTS UI_QML)
     file(STRINGS ${_qml} _singleton REGEX "^pragma Singleton")
     if (_singleton)

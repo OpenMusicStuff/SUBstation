@@ -415,6 +415,57 @@ bool Arrangement::revealTrack(const QString& trackId) {
     return true;
 }
 
+bool Arrangement::selectTrackContent(const QString& trackId) {
+    app::Project* p = project();
+    app::Selection* s = selection();
+    if (!p || !s || !editor() || !p->hasTrack(trackId)) return false;
+    QStringList tracks{trackId};
+    for (const app::Track* track : p->descendants(trackId)) tracks.append(track->id);
+    const double tempo = p->tempo();
+    std::optional<std::pair<double, double>> span;
+    const auto take = [&span](double start, double end) {
+        span = span ? std::make_pair(std::min(span->first, start), std::max(span->second, end)) : std::make_pair(start, end);
+    };
+    for (const QString& id : tracks) {
+        for (const app::Clip& clip : p->track(id).clips) take(clip.startBeat, clip.endBeat(tempo));
+        for (const auto& [key, points] : p->automation(id)) {
+            if (!points.empty()) take(points.front().beat, points.back().beat);
+        }
+    }
+    if (!span) return false;
+    // (A lone breakpoint spans no time: a beat past it, so the selection holds it.)
+    const double start = span->first, end = std::max(span->second, start + 1.0);
+    s->setTimeRange(start, end, tracks, editor()->clipsInRange(start, end, tracks), {}, {trackId});
+    s->setInsert(start);
+    return true;
+}
+
+QString Arrangement::revealNearestClip(const QString& trackId) {
+    app::Project* p = project();
+    app::Selection* s = selection();
+    if (!p || !s || !editor() || !p->hasTrack(trackId)) return {};
+    const double beat = playhead_ ? *playhead_ : s->insertBeat();
+    const double tempo = p->tempo();
+    QString clipId;
+    double start = 0.0, end = 0.0, nearest = 0.0;
+    for (const app::Clip& clip : p->track(trackId).clips) {  // (sorted by start: the earliest wins a tie)
+        const double distance = std::max({0.0, clip.startBeat - beat, beat - clip.endBeat(tempo)});
+        if (clipId.isEmpty() || distance < nearest) {
+            clipId = clip.id;
+            nearest = distance;
+            start = clip.startBeat;
+            end = clip.endBeat(tempo);
+        }
+    }
+    if (clipId.isEmpty()) return {};
+    s->selectClips(*editor(), {{trackId, clipId}});
+    const double shown = lanesWidth_ / view_.pxPerBeat();
+    if (shown > 0 && (start < view_.scrollBeats() || end > view_.scrollBeats() + shown)) {
+        setScrollBeats(std::max(0.0, end - start <= shown ? (start + end - shown) / 2 : start - 0.05 * shown));
+    }
+    return clipId;
+}
+
 void Arrangement::wheelResize(const QString& trackId, int delta) {
     app::Project* p = project();
     if (!p) return;

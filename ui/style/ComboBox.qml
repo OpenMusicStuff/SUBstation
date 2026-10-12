@@ -62,7 +62,6 @@ T.ComboBox {
     background: Rectangle {
         implicitWidth: 60
         implicitHeight: 22
-        radius: Theme.radius
         color: control.down ? Theme.panel : Theme.surface
         border.color: control.visualFocus ? Theme.accent : Theme.border
     }

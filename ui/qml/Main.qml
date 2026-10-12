@@ -258,15 +258,19 @@ ApplicationWindow {
 
     // A match of the find bar: selected, unfolded and scrolled to in the
     // arrangement; and its clip in the search's area in the clip view, if it has
-    // one (else the arrangement shows). The find bar keeps the keyboard.
+    // one (else the arrangement shows, its clip nearest the playhead selected
+    // and scrolled to). The find bar keeps the keyboard.
     function showTrackMatch(trackId) {
         if (arrangement.revealTrack)
             arrangement.revealTrack(trackId)
         const clipId = Session.trackSearch.clipInArea(trackId)
-        if (clipId !== "")
+        if (clipId !== "") {
             arrangementArea.openClips([clipId], trackId, clipId)
-        else
+        } else {
             arrangementArea.clipViewShown = false
+            if (arrangement.revealNearestClip)
+                arrangement.revealNearestClip(trackId)
+        }
         trackSearchBar.field.forceActiveFocus()
     }
 
@@ -568,6 +572,19 @@ ApplicationWindow {
                         shortcut: "Ctrl+W"
                         enabled: pluginKeys.supported
                         onTriggered: pluginKeys.closeForemostEditor()
+                    }
+                }
+                // Ctrl+Shift+W, as a browser's Ctrl+Shift+T: the selected track's editor closed last opens again,
+                // or with none closed its first plug-in's (from a plug-in's editor too: PluginEditorKeys passes it on).
+                MenuItem {
+                    visible: pluginKeys.supported
+                    height: visible ? implicitHeight : 0
+                    action: Action {
+                        objectName: "reopenPluginEditor"
+                        text: qsTr("&Reopen Closed Plug-in Editor")
+                        shortcut: "Ctrl+Shift+W"
+                        enabled: pluginKeys.supported
+                        onTriggered: Session.bridge.reopenClosedPluginEditor(Session.selection.trackId)
                     }
                 }
                 MenuSeparator {}

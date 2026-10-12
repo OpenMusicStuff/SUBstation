@@ -35,6 +35,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <QTimer>
 #include <QUrl>
 #include <QWheelEvent>
@@ -42,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace sub::ui {
 
@@ -658,7 +660,8 @@ void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, con
                                      bool selected, bool ghost, bool folded, bool automation) const {
     // A clip's title bar (its name, if there is room: an audio clip's; MIDI
     // clips have none) and its outline: white if `selected`, none on a track
-    // showing its automation (as Ableton's), and the trim handle under the
+    // showing its automation (as Ableton's: just a darker line down its left
+    // edge, so clips end to end stay apart), and the trim handle under the
     // mouse. Grey while it is deactivated.
     const QColor color = clipColor(trackColor, clip);
     const double titleHeight = clipTitleHeight(rect.height(), folded);
@@ -673,6 +676,10 @@ void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, con
     if (selected || !automation) {
         const QColor outline = selected ? Theme::selectionOutline() : color.darker(170);
         p.drawRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), outline, 1);
+    } else {
+        p.fillRect(QRectF(rect.left(), title.top(), 1, titleHeight), color.darker(185));
+        p.fillRect(QRectF(rect.left(), title.bottom(), 1, rect.height() - titleHeight),
+                   automationBody(color).darker(165));
     }
     if (hoverEdge_ && hoverEdge_->first == clip.id && !ghost) {  // (Alt: a stretch, in the accent colour)
         const double x = hoverEdge_->second ? rect.left() : rect.right() - 2;
@@ -795,6 +802,17 @@ void ArrangementLanes::mousePressEvent(QMouseEvent* event) {
         gesture_ = std::make_unique<PanGesture>(*this, pos);
         setCursor(Qt::ClosedHandCursor);
         return;
+    }
+    // The third click of a triple-click on an automation lane: its whole track.
+    if (const auto doubled = std::exchange(laneDoubleClick_, std::nullopt); doubled && !mods) {
+        const QStyleHints* hints = QGuiApplication::styleHints();
+        const auto area = envelopeAreaAt(pos);
+        if (laneDoubleClickTime_.elapsed() < hints->mouseDoubleClickInterval() &&
+            QLineF(doubled->second, pos).length() <= hints->startDragDistance() && area &&
+            area->owner == doubled->first && arrangement()->selectTrackContent(area->owner)) {
+            repaint();
+            return;
+        }
     }
     app::Selection& selection = *session()->selection();
     // A clip edited by itself (a fade, an edge, its content): selected first, as a click on its body would.
@@ -998,6 +1016,8 @@ void ArrangementLanes::mouseDoubleClickEvent(QMouseEvent* event) {
     }
     const auto area = envelopeAreaAt(pos);
     if (area && !isPanModifier(event->modifiers())) {
+        laneDoubleClick_ = std::make_pair(area->owner, pos);
+        laneDoubleClickTime_.start();
         gesture_ = envelopes::press(*this, *area, pos, event->modifiers());
         repaint();
         return;

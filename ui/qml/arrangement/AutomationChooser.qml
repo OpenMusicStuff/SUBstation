@@ -12,7 +12,6 @@ Rectangle {
     signal clicked()
 
     height: 16
-    radius: 2
     color: area.containsMouse ? Theme.surfaceHover : Theme.surface
     border.color: Theme.border
 

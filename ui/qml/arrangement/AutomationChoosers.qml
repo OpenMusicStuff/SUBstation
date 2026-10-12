@@ -78,12 +78,11 @@ Item {
                 text: controls.lane < 0 ? "+" : "−"
                 tooltip: controls.lane < 0 ? qsTr("Show automation in a new lane") : qsTr("Remove this lane")
                 background: Rectangle {
-                    radius: controls.lane < 0 ? width / 2 : 2
                     color: parent.hovered ? Theme.surfaceHover : Theme.surface
                     border.color: Theme.border
                 }
                 // Drawn: a font's "+" sits below the middle (and its metrics don't say
-                // where its ink is). Centred on the circle at any scale, as thin and soft
+                // where its ink is). Centred on the button at any scale, as thin and soft
                 // as the text's strokes.
                 contentItem: Item {
                     readonly property real arm: 6

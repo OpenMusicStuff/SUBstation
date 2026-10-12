@@ -70,7 +70,8 @@ void OscilloscopeItem::poll() {
         return;
     const quint64 written = feed_->property("scopeWritten").toULongLong();
     if (hasWritten_ && written == written_) {
-        if (samples_.empty())
+        // A gap between device buffers holds the trace; only a longer one fades it.
+        if (samples_.empty() || ++staleUpdates_ < kHoldUpdates)
             return;
         float peak = 0.0f;
         for (float s : samples_)
@@ -86,6 +87,7 @@ void OscilloscopeItem::poll() {
     }
     written_ = written;
     hasWritten_ = true;
+    staleUpdates_ = 0;
     QList<float> fetched;
     if (!QMetaObject::invokeMethod(feed_, "scopeSamples", Qt::DirectConnection, Q_RETURN_ARG(QList<float>, fetched),
                                    Q_ARG(int, 2 * kWindow)))

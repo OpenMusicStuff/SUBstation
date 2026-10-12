@@ -160,6 +160,7 @@ bool EngineBridge::openPluginEditor(const QString& trackId, const QString& devic
     }
     if (opened) {
         d_->editorsWanted.insert(deviceId);
+        d_->closedEditors[trackId].removeAll(deviceId);  // (open: not one to reopen)
     } else {
         d_->editorsWanted.remove(deviceId);
         if (report) {
@@ -178,8 +179,39 @@ void EngineBridge::closePluginEditor(const QString& trackId, const QString& devi
     if (!processorId) return;
     auto& hidden = d_->hiddenEditors;
     hidden.erase(std::remove(hidden.begin(), hidden.end(), *processorId), hidden.end());
+    if (engine_.isEditorOpen(*processorId)) noteEditorClosed(trackId, deviceId);
     engine_.closeEditor(*processorId);
     Q_EMIT pluginEditorChanged(trackId, deviceId);
+}
+
+void EngineBridge::noteEditorClosed(const QString& trackId, const QString& deviceId) {
+    QStringList& closed = d_->closedEditors[trackId];
+    closed.removeAll(deviceId);
+    closed.append(deviceId);
+    while (closed.size() > kClosedEditorsKept) closed.removeFirst();
+}
+
+bool EngineBridge::reopenClosedPluginEditor(const QString& trackId) {
+    QStringList& closed = d_->closedEditors[trackId];
+    while (!closed.isEmpty()) {
+        const QString deviceId = closed.takeLast();
+        if (project_->findDevice(trackId, deviceId) == nullptr || isPluginEditorOpen(trackId, deviceId)) continue;
+        loadPluginNow(deviceId);  // (if it waits to load)
+        if (openPluginEditor(trackId, deviceId, false)) return true;
+    }
+    // None closed (or none of those left): the first device in the chain with an editor (in racks too).
+    if (const Track* track = project_->findTrack(trackId)) {
+        QStringList plugins;  // (a copy: opening may run a message loop that changes the chain)
+        for (const Device* device : iterDevices(track->devices)) {
+            if (device->isPlugin()) plugins.append(device->id);
+        }
+        for (const QString& deviceId : plugins) {
+            loadPluginNow(deviceId);
+            if (openPluginEditor(trackId, deviceId, false)) return true;
+        }
+    }
+    Q_EMIT statusMessage(QStringLiteral("No plug-in editor to open on this track."));
+    return false;
 }
 
 void EngineBridge::requestPluginEditor(const QString& trackId, const QString& deviceId) {
@@ -303,6 +335,7 @@ void EngineBridge::dispatchProcessorEvents(const std::vector<sub::ProcessorEvent
             break;
         case Type::EditorClosed:
             d.editorsWanted.remove(deviceId);
+            noteEditorClosed(trackId, deviceId);
             Q_EMIT pluginEditorChanged(trackId, deviceId);
             break;
         case Type::EditorRequested: requestPluginEditor(trackId, deviceId); break;  // like any editor, shown with its track
