@@ -69,6 +69,8 @@ constexpr int kFilters = 3;           // kept, from below (moved up), from above
 constexpr float kGrainSeconds = 0.11f;
 constexpr float kMinDelay = 3.f;      // core samples a head reads behind at the least
 constexpr float kMaskFloor = 1e-5f;   // -100 dB: where a mask is zero (the log needs a floor)
+constexpr float kMinStart = 160.f;    // Start and End work within these (as the reference's do), whatever
+constexpr float kMaxEnd = 4000.f;     // they are set to
 
 // Half-band all-pass coefficients (polyphase, four: a transition 0.1075 of the rate wide), chosen so the
 // bands' delay follows the reference's across the spectrum (its 34 samples at a quarter of the rate).
@@ -419,8 +421,8 @@ private:
         k.notes = enabledNotes();
         k.postCents = static_cast<int>(std::lround(param(PostShift) * 10));
         k.colorExponent = std::max(100, static_cast<int>(std::lround(param(Color))));
-        k.start = static_cast<int>(std::lround(param(Start)));
-        k.end = static_cast<int>(std::lround(param(End)));
+        k.start = static_cast<int>(std::lround(std::max(param(Start), kMinStart)));
+        k.end = static_cast<int>(std::lround(std::min(param(End), kMaxEnd)));
         return k;
     }
     // How much of the processed band is heard (0..1): Color up to 100 %, and nothing with no notes or all twelve.
@@ -431,7 +433,8 @@ private:
     }
 
     void updateCrossovers() noexcept {
-        const double start = param(Start), end = std::max(param(End), param(Start) * 1.01f);
+        const double start = std::max(param(Start), kMinStart);
+        const double end = std::max(static_cast<double>(std::min(param(End), kMaxEnd)), start * 1.01);
         if (start == lastStart_ && end == lastEnd_) return;
         lastStart_ = start;
         lastEnd_ = end;
