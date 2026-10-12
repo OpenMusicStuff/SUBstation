@@ -146,7 +146,7 @@ rules (see [Architecture](docs/architecture.md)). It runs on Windows 10/11 and L
 ## Setup
 
 You need a C++20 compiler, CMake 3.26 or newer with Ninja, and Qt 6.4 or newer
-(Core, Gui, Qml, Quick, QuickControls2, Test). It needs a CPU with AVX2.
+(Core, Gui, Qml, Quick, QuickControls2, Test). On x86-64 it needs a CPU with AVX2; on arm64 it builds for the baseline (NEON).
 
 - **Windows 10/11**: Visual Studio 2022 or newer with the *Desktop development
   with C++* workload, and Qt's *MSVC 2022 64-bit* build of a Qt 6 release (6.5 or
