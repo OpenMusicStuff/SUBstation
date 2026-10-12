@@ -7,8 +7,8 @@ are, or what Serum's filter is set to, and it looks for itself. Ask it to darken
 or write a better piano part over the bars you selected, and it does it while you watch.
 
 What an agent changes isn't in **Edit › Undo**: each change it makes is listed apart, in **View › Agent Changes**,
-where you can rewind it on its own (and restore it), unless you changed the same thing since
-([your work comes first](#rewinding-what-an-agent-did)).
+where you can rewind it on its own (and restore it), unless you, or a later change of the agent's still in effect,
+changed the same thing since ([what comes first](#rewinding-what-an-agent-did)).
 
 ## Turning it on
 
@@ -79,6 +79,9 @@ The two histories never undo each other's work:
   Undo goes on.
 - Likewise a change of the agent's can't be rewound over what you changed of the same since (the status line says
   so): your work comes first. Undo your edit, if you want the agent's change rewound.
+- Changes of the agent's to the same thing go back the latest first: one can't be rewound while a later one to the
+  same thing is in effect (the status line names it). Rewind that one first, or **Rewind All**, which goes from the
+  latest.
 - What doesn't touch the same thing goes either way: the agent's changes to one track don't stand in the way of
   undoing what you did to another.
 
