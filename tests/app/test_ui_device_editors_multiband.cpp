@@ -65,7 +65,7 @@ class TestUiDeviceEditorsMultiband : public QObject, public sub::app::test::Edit
         MultibandGraph* graph = nullptr;
     };
     Shown showDevice(const sub::app::OrderedMap<QString, double>& settings = {},
-                     const std::vector<float>& mono = tone(1000.0, kSampleRate)) {
+                     const std::vector<float>& mono = tone(1000.0, kSampleRate), int height = 0) {
         Shown shown;
         shown.track = audioTrackWith(mono, fileName("tone"), 1.0);
         if (shown.track.isEmpty())
@@ -74,7 +74,7 @@ class TestUiDeviceEditorsMultiband : public QObject, public sub::app::test::Edit
         if (!settings.isEmpty())
             editor()->setDeviceParams(shown.track, shown.device, settings);
         undo()->clear();
-        shown.view = show(QStringLiteral("multiband"), shown.track, shown.device);
+        shown.view = show(QStringLiteral("multiband"), shown.track, shown.device, height);
         if (shown.view)
             shown.graph = find<MultibandGraph>(shown.view, QStringLiteral("multibandGraph"));
         return shown;
@@ -599,7 +599,9 @@ private Q_SLOTS:
     void theBubbleClearsTheOffLabel() {
         // High off, Mid's Above handle dragged: its bubble, over the lane above, would sit on High's "→ Mid" (it
         // did, by a pixel or two). The label makes way while the bubble is on it, and comes back after.
-        const Shown s = showDevice({{QStringLiteral("high_on"), 0.0}});
+        // (At the height the lanes had before the device view gave the editors more room, where the bubble
+        // reaches the label: taller lanes keep them apart.)
+        const Shown s = showDevice({{QStringLiteral("high_on"), 0.0}}, tone(1000.0, kSampleRate), bodyHeight() - 24);
         QVERIFY(s.view && s.graph);
         MultibandGraph* graph = s.graph;
         QVERIFY(graph->offLabelOpacity(kHigh) > 0.99);  // (shown as it is: snapped)
