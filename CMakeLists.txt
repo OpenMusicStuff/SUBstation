@@ -53,7 +53,6 @@ add_subdirectory(engine)
 add_subdirectory(browser)
 add_subdirectory(intelligence)  # (after the engine: it decodes with its miniaudio target)
 add_subdirectory(tools/scanner)
-add_subdirectory(tools/plugin-render)
 
 if (SUBSTATION_BUILD_APP)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2)

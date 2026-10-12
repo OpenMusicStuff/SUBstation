@@ -65,7 +65,6 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
 | Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
-| Plug-in renderer | [tools/plugin-render](../tools/plugin-render/main.cpp) | `substation-plugin-render`, a program of its own (research: not part of the application) | `sub_engine` | [research/vintageverb](../research/vintageverb/README.md) |
 
 [ui/main.cpp](../ui/main.cpp) puts the layers together: it makes the `QGuiApplication`, the engine, the
 `Session` on the engine, registers the session as the QML singleton `Session` (`sub::ui::registerSession`,

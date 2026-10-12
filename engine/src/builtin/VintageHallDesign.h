@@ -1,7 +1,7 @@
 #pragma once
 // The Vintage Hall device's design (devices/VintageHall.cpp): a 1970s digital
-// concert hall, measured from a classic one (research/vintageverb has the
-// renders and the analysis). The numbers below are what the measurements gave;
+// concert hall, measured from renders of a classic one. The numbers below are
+// what the measurements gave;
 // lengths are in samples at kReferenceRate, the rate the reverb runs at with a
 // 48 kHz host, and scale to the rate it runs at.
 //

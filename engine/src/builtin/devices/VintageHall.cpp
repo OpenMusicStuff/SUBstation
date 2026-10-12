@@ -1,6 +1,5 @@
 // Built-in "Vintage Hall" device: a 1970s digital concert hall, after a classic
-// one, measured (VintageHallDesign.h has the numbers; research/vintageverb the
-// renders they came from and how).
+// one, measured from renders of it (VintageHallDesign.h has the numbers).
 //
 // Signal flow:
 // - At the host's rate: High Cut (a one-pole low-pass) and Low Cut (a DC

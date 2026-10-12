@@ -1820,8 +1820,7 @@ comes out. The maths it shares with its editor is in [ReverbDesign.h](../../engi
 ### Vintage Hall (`builtin:vintage_hall`, AudioEffect)
 
 A 1970s digital concert hall: a clone of a classic plug-in's "Concert Hall" in its 1970s color, its structure
-measured from renders of it ([research/vintageverb](../../research/vintageverb/README.md) has the renders, the
-analysis and the scripts that compare the two). The numbers are in
+measured from renders of it. The numbers are in
 [VintageHallDesign.h](../../engine/src/builtin/VintageHallDesign.h) (namespace `vintage_hall`). Stereo in, stereo out.
 
 | id | Name | Unit | Range | Default |

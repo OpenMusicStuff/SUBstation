@@ -135,7 +135,6 @@ app/src/             the application layer (sub_app; Qt Core and Gui): model/, e
 ui/                  the Qt Quick UI: qml/ (QML module SUBstation), src/ (C++ scene-graph items),
                      style/ (the controls' style), main.cpp (the substation executable)
 tools/scanner/       substation-scan, the VST3 scanner's child process
-tools/plugin-render/ substation-plugin-render, runs audio through a VST3 or built-in effect offline (research)
 tests/               engine/ (engine_tests), app/ (Qt Test), vst3_plugins/, asio_driver/
 benchmarks/          the renderer's and the browser backend's benchmarks (not run by ctest)
 cmake/               compiler warnings, the layers' boundary check
