@@ -414,7 +414,7 @@ ApplicationWindow {
                     text: Session.undoStack.undoText !== "" ? qsTr("&Undo %1").arg(Session.undoStack.undoText) : qsTr("&Undo")
                     enabled: Session.undoStack.canUndo
                     shortcut: StandardKey.Undo
-                    onTriggered: Session.undoStack.undo()
+                    onTriggered: Session.undo()  // (refused while an agent changed the same since)
                 }
                 Action {
                     id: redoAction
@@ -422,7 +422,7 @@ ApplicationWindow {
                     text: Session.undoStack.redoText !== "" ? qsTr("&Redo %1").arg(Session.undoStack.redoText) : qsTr("&Redo")
                     enabled: Session.undoStack.canRedo
                     shortcut: "Ctrl+Y"
-                    onTriggered: Session.undoStack.redo()
+                    onTriggered: Session.redo()
                 }
                 MenuSeparator {}
                 Action { objectName: "cut"; text: qsTr("Cu&t"); shortcut: StandardKey.Cut; onTriggered: Session.cut() }
@@ -526,6 +526,8 @@ ApplicationWindow {
                 Action { id: browserAction; objectName: "browser"; text: qsTr("&Browser"); shortcut: "Ctrl+Alt+B"; checkable: true; checked: true }
                 // The files the project plays, on the right (as Ableton's): missing ones found, any replaced, hot-swapped.
                 Action { id: fileManagerAction; objectName: "fileManager"; text: qsTr("&File Manager"); shortcut: "Ctrl+Alt+F"; checkable: true; checked: false }
+                // What agents changed through the MCP server, apart from Undo: each to rewind on its own.
+                Action { id: agentChangesAction; objectName: "agentChangesView"; text: qsTr("A&gent Changes"); shortcut: "Ctrl+Alt+A"; checkable: true; checked: false }
                 Action { id: deviceViewAction; objectName: "deviceView"; text: qsTr("&Device View"); shortcut: "Ctrl+Alt+L"; checkable: true; checked: true }
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
                 Action { id: infoViewAction; objectName: "infoView"; text: qsTr("&Info View"); checkable: true; checked: true }
@@ -744,6 +746,15 @@ ApplicationWindow {
                 SplitView.preferredWidth: 300
                 SplitView.minimumWidth: 160
                 onCloseRequested: fileManagerAction.checked = false
+            }
+
+            // Agent Changes, at the right (View › Agent Changes).
+            AgentChangesPanel {
+                id: agentChanges
+                visible: agentChangesAction.checked
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 160
+                onCloseRequested: agentChangesAction.checked = false
             }
         }
 

@@ -10,6 +10,7 @@
 #include "audio/EngineBridge.h"
 #include "browser/BrowserController.h"
 #include "browser/PresetIndex.h"
+#include "editor/AgentHistory.h"
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
@@ -43,6 +44,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     project_ = new Project(this);
     undoStack_ = new QUndoStack(this);
     editor_ = new ProjectEditor(project_, undoStack_, this);
+    agents_ = new AgentHistory(project_, undoStack_, this);
     selection_ = new Selection(this);
     bridge_ = new EngineBridge(engine_, project_, this);
     plugins_ = new PluginIndex(this, options_.scanner);
@@ -80,16 +82,22 @@ void Session::wire() {
     // parameter mapping, for macros; a plug-in parameter's value as its own
     // editor set it, to undo a macro to. And where new devices come from: the
     // user's default presets.
-    editor_->setParamInfo([this](const QString& trackId, const QString& deviceId,
-                                 const QString& paramId) -> std::optional<ParamSpec> {
-        const auto info = bridge_->deviceParamInfo(trackId, deviceId, paramId);
-        if (!info) return std::nullopt;
-        return ParamSpec::fromInfo(*info, automation::deviceKey(deviceId, paramId), QString());
-    });
-    editor_->setOwnValue([this](const QString& owner, const QString& key) { return bridge_->ownValue(owner, key); });
-    editor_->setDeviceDefaults([](const QString& kind, const std::optional<PluginRef>& plugin) {
-        return defaultDevice(kind, plugin);
-    });
+    // (The agents' editor, too: it edits as the user's does, on a stack of its own.)
+    for (ProjectEditor* editor : {editor_, agents_->editor()}) {
+        editor->setParamInfo([this](const QString& trackId, const QString& deviceId,
+                                    const QString& paramId) -> std::optional<ParamSpec> {
+            const auto info = bridge_->deviceParamInfo(trackId, deviceId, paramId);
+            if (!info) return std::nullopt;
+            return ParamSpec::fromInfo(*info, automation::deviceKey(deviceId, paramId), QString());
+        });
+        editor->setOwnValue([this](const QString& owner, const QString& key) { return bridge_->ownValue(owner, key); });
+        editor->setDeviceDefaults([](const QString& kind, const std::optional<PluginRef>& plugin) {
+            return defaultDevice(kind, plugin);
+        });
+        // A switch switched by hand (or by an agent): its automation stops playing
+        // (it may have had it the other way than the model, which then needn't change).
+        connect(editor, &ProjectEditor::switchedByHand, bridge_, &EngineBridge::overrideAutomation);
+    }
 
     for (QObject* source : {static_cast<QObject*>(bridge_), static_cast<QObject*>(browser_),
                             static_cast<QObject*>(plugins_), static_cast<QObject*>(arrangement_),
@@ -140,9 +148,6 @@ void Session::wire() {
     }
     connect(project_, &Project::clipsChanged, this, [this](const QString&) { pruneSelection(); });
     connect(project_, &Project::automationChanged, this, [this](const QString&, const QString&) { pruneSelection(); });
-    // A switch switched by hand: its automation stops playing (it may have had
-    // it the other way than the model, which then needn't change).
-    connect(editor_, &ProjectEditor::switchedByHand, bridge_, &EngineBridge::overrideAutomation);
     // A parameter changed by hand: its automation shows (as the lane's parameter).
     connect(editor_, &ProjectEditor::parameterTouched, this, [this](const QString& owner, const QString& key) {
         if (!project_->hasOwner(owner)) return;
@@ -193,9 +198,16 @@ void Session::wire() {
     });
 
     // The title: the project's name, and whether it has changes to save.
-    connect(undoStack_, &QUndoStack::cleanChanged, this, [this] {
-        Q_EMIT cleanChanged();
-        Q_EMIT titleChanged();
+    // (Agents' changes too.)
+    connect(undoStack_, &QUndoStack::cleanChanged, this, &Session::cleanChanged);
+    connect(agents_, &AgentHistory::cleanChanged, this, &Session::cleanChanged);
+    connect(this, &Session::cleanChanged, this, &Session::titleChanged);
+    // What an agent did shows in the status line, as the user's refusals do.
+    connect(agents_, &AgentHistory::changed, this, [this](int id) {
+        const AgentHistory::Change* change = agents_->find(id);
+        if (change == nullptr) return;
+        Q_EMIT statusMessage(change->applied ? QStringLiteral("Agent: %1").arg(change->text)
+                                             : QStringLiteral("Agent change rewound: %1").arg(change->text));
     });
     for (auto renamed : {&Project::reset, &Project::pathChanged}) connect(project_, renamed, this, &Session::titleChanged);
 
@@ -260,7 +272,23 @@ QString Session::title() const {
     return QStringLiteral("%1%2 - %3").arg(name, clean() ? QString() : QStringLiteral("*"), QString::fromLatin1(kAppName));
 }
 
-bool Session::clean() const { return undoStack_->isClean(); }
+bool Session::clean() const { return undoStack_->isClean() && agents_->clean(); }
+
+void Session::undo() {
+    if (const QString why = agents_->undoProblem(); !why.isEmpty()) {
+        Q_EMIT statusMessage(why);
+        return;
+    }
+    undoStack_->undo();
+}
+
+void Session::redo() {
+    if (const QString why = agents_->redoProblem(); !why.isEmpty()) {
+        Q_EMIT statusMessage(why);
+        return;
+    }
+    undoStack_->redo();
+}
 
 QString Session::pluginsLoadingText() const {
     if (pluginsTotal_ <= 0) return {};

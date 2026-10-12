@@ -65,6 +65,7 @@ class Engine;
 
 namespace sub::app {
 
+class AgentHistory;
 class ArrangementActions;
 class AudioPreferences;
 class BrowserController;
@@ -111,12 +112,15 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::HotSwap* hotSwap READ hotSwap CONSTANT)
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
     Q_PROPERTY(sub::app::MidiPreferences* midiPreferences READ midiPreferences CONSTANT)
-    // The MCP server agents read the project through (Options › MCP Server).
+    // The MCP server agents read and edit the project through (Options › MCP Server).
     Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
+    // What agents changed through it, apart from the undo stack: each change
+    // can be rewound and restored (View › Agent Changes).
+    Q_PROPERTY(sub::app::AgentHistory* agentChanges READ agentChanges CONSTANT)
 
     // The window's title: "<project name>[*] - SUBstation" (* while there are unsaved changes).
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
-    // No unsaved changes (the undo stack is at its clean state).
+    // No unsaved changes (the undo stack is at its clean state, and agents changed nothing since saving).
     Q_PROPERTY(bool clean READ clean NOTIFY cleanChanged)
     Q_PROPERTY(QString confirmDiscardText READ confirmDiscardText CONSTANT)
     // Projects opened or saved lately, the latest first (at most kMaxRecent).
@@ -204,6 +208,12 @@ public:
     MidiPreferences* midiPreferences() const { return midiPreferences_; }
     PresetIndex* presets() const { return presets_; }
     McpServer* mcp() const { return mcp_; }
+    AgentHistory* agentChanges() const { return agents_; }
+
+    // Edit › Undo and Redo: the undo stack's, unless an agent changed the same
+    // since (statusMessage says so, and nothing is undone).
+    Q_INVOKABLE void undo();
+    Q_INVOKABLE void redo();
 
     QString title() const;
     bool clean() const;
@@ -480,6 +490,7 @@ private:
     TrackLabels* trackLabels_ = nullptr;
     TrackSearch* trackSearch_ = nullptr;
     McpServer* mcp_ = nullptr;
+    AgentHistory* agents_ = nullptr;
     BrowserController* browser_ = nullptr;
     PresetIndex* presets_ = nullptr;
     RenderProgress* render_ = nullptr;

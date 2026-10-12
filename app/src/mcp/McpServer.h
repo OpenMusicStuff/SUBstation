@@ -6,7 +6,9 @@
 // Off until the user turns it on (Options › MCP Server); on or off and the port
 // (Preferences › Agents) are saved in the settings, so it starts again with the
 // application. It answers on the application's thread (Protocol, HttpServer)
-// with the session's tools (McpTools), read only for now.
+// with the session's tools (McpTools): reading the project, and editing it
+// (unless the user turned edits off), each edit a change of the agents'
+// history (AgentHistory), apart from the user's undo stack.
 
 #include <QObject>
 #include <QString>
@@ -34,11 +36,15 @@ class McpServer : public QObject {
     Q_PROPERTY(QString error READ error NOTIFY changed)
     // The command that adds it to Claude Code (claude mcp add ...).
     Q_PROPERTY(QString claudeCodeCommand READ claudeCodeCommand NOTIFY changed)
+    // Whether agents may edit the project (saved; on at first): each edit is a
+    // change in Session.agentChanges. Off, they only read.
+    Q_PROPERTY(bool editsAllowed READ editsAllowed WRITE setEditsAllowed NOTIFY changed)
 
 public:
     static constexpr int kDefaultPort = 7381;
     inline static const QString kEnabledKey = QStringLiteral("mcp/enabled");
     inline static const QString kPortKey = QStringLiteral("mcp/port");
+    inline static const QString kEditsKey = QStringLiteral("mcp/edits");
 
     // Starts at once if the settings say it is on.
     explicit McpServer(Session& session, QObject* parent = nullptr);
@@ -53,6 +59,8 @@ public:
     QString url() const;
     QString error() const { return error_; }
     QString claudeCodeCommand() const;
+    bool editsAllowed() const { return editsAllowed_; }
+    void setEditsAllowed(bool allowed);
 
     mcp::Protocol& protocol() const { return *protocol_; }
 
@@ -69,6 +77,7 @@ private:
     std::unique_ptr<mcp::HttpServer> http_;
     bool enabled_ = false;
     int port_ = kDefaultPort;
+    bool editsAllowed_ = true;
     QString error_;
 };
 
