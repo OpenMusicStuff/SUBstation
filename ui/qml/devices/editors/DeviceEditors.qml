@@ -46,7 +46,8 @@ QtObject {
         "saturator": "SaturatorEditor.qml",
         "sidechain": "SidechainEditor.qml",
         "spectral": "SpectralEditor.qml",
-        "transient": "TransientEditor.qml"
+        "transient": "TransientEditor.qml",
+        "vintage_hall": "VintageHallEditor.qml"
     })
 
     // The editor's component URL for built-in devices of `kind`, or "" when it has none of its own.

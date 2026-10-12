@@ -1817,6 +1817,78 @@ comes out. The maths it shares with its editor is in [ReverbDesign.h](../../engi
   about what the rest of its crossfade does (up to three times as long when the lines that join were cleared whole);
   so does a reset. Its buffers take about 1.4 MB at 48 kHz (6 MB at 192 kHz).
 
+### Vintage Hall (`builtin:vintage_hall`, AudioEffect)
+
+A 1970s digital concert hall: a clone of a classic plug-in's "Concert Hall" in its 1970s color, its structure
+measured from renders of it. The numbers are in
+[VintageHallDesign.h](../../engine/src/builtin/VintageHallDesign.h) (namespace `vintage_hall`). Stereo in, stereo out.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+| `predelay` | Predelay | ms | 0..500 | 20 |
+| `decay` | Decay | ms | 200..70000, log | 4000 |
+| `size` | Size | % | 0..100 | 100 |
+| `attack` | Attack | % | 0..100 | 50 |
+| `bass_mult` | Bass Mult | x | 0.25..4, log | 1.5 |
+| `bass_xover` | Bass Xover | Hz | 100..10000, log | 300 |
+| `high_shelf` | High Shelf | dB | -24..0 | -24 |
+| `high_freq` | High Freq | Hz | 100..20000, log | 6000 |
+| `early_diffusion` | Early Diffusion | % | 0..100 | 100 |
+| `late_diffusion` | Late Diffusion | % | 0..100 | 100 |
+| `mod_rate` | Mod Rate | Hz | 0.1..10, log | 2.53 |
+| `mod_depth` | Mod Depth | % | 0..100 | 38 |
+| `high_cut` | High Cut | Hz | 100..20000, log | 8000 |
+| `low_cut` | Low Cut | Hz | 10..1500, log | 10 |
+
+- **Rates**: the reverb runs at the host's rate over `rateDivider()` (2 at 44.1/48 kHz, 4 at 88.2/96, 8 above):
+  about 24 kHz, as the hardware it recalls did. Down and back up through a 12th-order elliptic low-pass (0.01 dB
+  ripple, 90 dB down, its edge at 0.2495 of the rate it runs at; `kResampler`), once per halving each way: flat to
+  12 kHz at 48 kHz, nothing above 13 kHz, and the original's ringing at the edge. The wet comes out a host sample
+  later than the filters alone would give, as the original's does. Every length is in samples at 24 kHz
+  (`kReferenceRate`) and scales to the rate the reverb runs at.
+- **High Cut and Low Cut**, on the way in at the host's rate: a one-pole low-pass (bilinear, `highCut`) and a DC
+  blocker `y = x - x[-1] + r y[-1]`, `r = exp(-2 pi f / fs)` (`lowCut`: it lifts the top a little, +0.8 dB at a
+  quarter of the rate at 1.5 kHz, as the original's does).
+- **Input**: times 0.9695, then each side's fixed delay (with Predelay) into **the ring**: one loop of two halves,
+  the left coming in at its start and the right half way round, each just after the other half's loss and before
+  its high shelf and two Schroeder all-passes (`v = x + g r`, `y = r - g v`; 168 and 288 samples on the left, 144
+  and 240 on the right; gains 0.75 and 0.656 times Early Diffusion). Then, per half, two nested all-passes (A and B,
+  C and D: the outermost's gain 0.5 times Late Diffusion, those inside 0.25 times it; B and D three levels deep),
+  plain delays between them, and the loss: the decay's gain for the half's length along the loop
+  (`halfGainDb`: -60 dB in Decay seconds) and the bass crossover, `y = x + (g_low - 1) lp(x)` with a one-pole
+  low-pass `lp` at Bass Xover (`a = exp(-2 pi f / fs)`) and `g_low` what makes the band below decay in Decay times
+  Bass Mult. The high shelf is `(G s + w) / (s + w)` at High Freq by the bilinear transform without prewarping, so it
+  reaches High Shelf at half the reverb's rate (12 kHz). The whole loop is 13442 samples (560 ms) at Size 100 %.
+- **Output taps**: each side hears three points of its own half (the first right after its all-passes) and one of
+  the other half (L4 on the left, R1 on the right, negative). **Attack** sets their weights (`tapWeights`: straight
+  lines between four sets at 0, 1/3, 2/3 and 1): at 0 the first tap leads, at 100 % only the third is left (243 ms
+  of loop later), so the reverb swells. The weights glide in a straight line across each block.
+- **Modulation**: the innermost delay of B and of D is longer by up to 2.67 ms times Mod Depth, wandering at a
+  steady speed (the whole range in 1 / Mod Rate seconds) towards targets picked at random (`Wander`, a fixed seed
+  per reset: a render from the same start repeats). It is read linearly between samples (as the original's 1970s
+  mode does: the highs lose a little as it moves, up to 6 dB at 8 kHz a pass at half a sample).
+- **Size** scales the nested all-passes from 0.2 to 1 (`ringScale`), the input all-passes from 0.4 to 1.2 below
+  50 % and not at all above (`inputScale`), the fixed delays below 50 % (`fixedDelay`), and the plain delays as
+  measured (`plainScale`: straight lines below and above 50 %, the loop as a whole always as `ringScale`). Each
+  half's loss is worked out from its length as it is set. Size and Predelay glide every delay (a one-pole of 80 ms,
+  read linearly between samples while it moves).
+- **Controls** glide a step a block towards the parameters (30 ms); Dry/Wet over 20 ms, equal power: the dry by
+  `cos`, the wet by `sin` of a quarter turn times the mix.
+- **How close**: with the modulation off, its output and the original's differ by 30 to 60 dB below them up to
+  10 kHz (with the input's and output's phase difference taken out: the original's resampler is not this elliptic,
+  the same in level only), for every Decay, Attack, Bass, High Shelf, High and Low Cut, Predelay and Dry/Wet; Size
+  below 100 % puts each echo within 0.1 ms (50 % and up) or 0.5 ms (below) of the original's. With the modulation
+  on, the decay per octave and how far a held tone spreads in the tail match to about the original's own variation
+  from one render to the next.
+- **Displays** for its editor, one value per `kDisplaySamples` (256) host samples: `input` and `output` (the peak
+  going into the reverb, after High and Low Cut, and of the wet; dB, floored at `kDisplayFloorDb`, -96), `l1`..`l4`
+  and `r1`..`r4` (each output tap's peak, at the reverb's rate) and `mod_b`, `mod_d` (where B's and D's moving
+  delays are, 0..1). `ringMap()` gives where each part of the loop starts for Size, as the lengths are set, for
+  the editor to draw it ([VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h)).
+- **Tail**: Decay times Bass Mult (at least 1) times 1.2, plus Predelay and a second. No latency. About 0.5 % of a
+  core at 48 kHz stereo.
+
 ### Disperser (`builtin:disperser`, AudioEffect)
 
 Phase dispersion after Kilohearts' Disperser: identical second-order all-passes in a row
@@ -2050,7 +2122,8 @@ readonly property var editors: ({
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
     "spectral": "SpectralEditor.qml",
-    "transient": "TransientEditor.qml"
+    "transient": "TransientEditor.qml",
+    "vintage_hall": "VintageHallEditor.qml"
 })
 ```
 
@@ -2060,7 +2133,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are seventeen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
+- Today there are eighteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
   48 kHz) and In/Out meters with the threshold marked; the Gate the last 2.5 s of `input`, `output`, `key` and `open`
   with its threshold and Return lines to drag, and in its sidechain section the key EQ's curve (from `gate::keyFilter`,
   the engine's own biquad); the Limiter the level over the last 1.5 s with the gain reduction hanging from the top,
@@ -2084,7 +2157,10 @@ readonly property var editors: ({
   axis (from `disperser::groupDelayMs`, the engine's own stages); the Transient Shaper a hit before and after its
   shaping (from `transient::hitResponse`, the engine's own detector and gain) with handles for Attack, Sustain and
   their times and a playhead along it at each transient (`detect`), and the last 2 s of `input` and `output` glowing
-  where `attack` and `sustain` shaped them, the gain in a lane under them, sparks at each transient; the EQ its bands' curves (from `eq::responseDb`)
+  where `attack` and `sustain` shaped them, the gain in a lane under them, sparks at each transient; the Vintage Hall its loop as a ring (from `vintage_hall::ringMap`, every part where Size puts it), glowing
+  with each tap's level (`l1`..`r4`) and wavering with its moving delays (`mod_b`, `mod_d`), a comet from each
+  input for each onset (`input`) running round at the loop's speed and fading as Decay says, its taps weighted by
+  Attack, and a bloom as loud as `output`; the EQ its bands' curves (from `eq::responseDb`)
   over an analyzer of `input` and `output`; the Sidechain its curve, its
   playhead from `phase` and its fit to the kick (`key`, against `input`); the Sampler the sample's waveform as it plays
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and

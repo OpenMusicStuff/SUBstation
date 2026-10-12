@@ -290,6 +290,9 @@ frame's nodes and buffers.
   waveform columns) into as few vertex-coloured triangle nodes as it can, and text and images as textured nodes
   between them, in paint order. A frame whose vertices didn't change uploads nothing. Tens of thousands of rects a
   frame are fine (`test_ui_sg.cpp` benchmarks an arrangement's worth).
+- **Soft light.** `fillGradientStrip` (a strip of quads, each corner its own colour) and `fillRadialGlow` (a
+  colour fading out from a centre, falling off as a soft light does) let the GPU blend colours across a shape:
+  glows, trails, an energy varying round a ring (the Vintage Hall's loop), at the cost of a few triangles.
 - **The 65532-vertex split.** The scene graph's renderer silently draws nothing of a node with more than 65535
   vertices (an EQ's two dozen curves made one). `SgPainter` closes a solid batch at `kMaxSolidVertices` (65532, a
   whole number of rects and triangles) and goes on in a new node.
