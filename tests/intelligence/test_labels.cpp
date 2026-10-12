@@ -184,6 +184,7 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("phaser", "Phaser-Flanger")) == Effect::Phaser);
     CHECK(classify(builtin("chorus", "Chorus-Ensemble")) == Effect::Chorus);
     CHECK(classify(builtin("erosion", "Erosion")) == Effect::LoFi);
+    CHECK(classify(builtin("transient", "Transient Shaper")) == Effect::Transient);
     CHECK(classify(serum("")) == Effect::Instrument);
     // The words of their names: "verb" a reverb, "dist" a distortion...
     CHECK(classify(plugin("ValhallaVintageVerb", "Fx")) == Effect::Reverb);

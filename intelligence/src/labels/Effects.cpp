@@ -399,6 +399,7 @@ Effect classify(const DeviceFact& device) {
         {"saturator", E::Saturation}, {"amp", E::Amp},            {"erosion", E::LoFi},
         {"chorus", E::Chorus},        {"phaser", E::Phaser},      {"gate", E::Gate},
         {"limiter", E::Limiter},      {"multiband", E::Compressor}, {"spectral", E::Compressor},
+        {"transient", E::Transient},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {

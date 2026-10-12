@@ -93,7 +93,8 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
   transfer curves), `builtin/ErosionDesign.h` (Erosion's noise band and excursion), `builtin/ChorusDesign.h` (the
   Chorus-Ensemble's voices), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
   `builtin/ReverbDesign.h` (the Reverb's decay curve, input filter, reflections and Spin's swing),
-  `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/EqDesign.h` (the EQ's curves),
+  `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/TransientDesign.h` (the Transient Shaper's
+  detector, gain law and the hit its editor draws), `builtin/EqDesign.h` (the EQ's curves),
   `builtin/SampleSlicing.h` (the Sampler's slices and Snap), `plugins/Vst3Format.h` (the default VST3 folders) and
   `plugins/Vst3Ids.h` (VST3 class ids, for Live Sets). Only the engine bridge talks to the engine about the
   project. What the UI shows of the engine (waveform peaks, meters, the scope, device status, plug-in parameter

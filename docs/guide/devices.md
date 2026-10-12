@@ -10,8 +10,8 @@ their own page: [plugins.md](plugins.md).
 
 - It shows the built-in Synth and Sampler instruments, the Utility device, Over The Top,
   Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp,
-  Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, EQ and Sidechain,
-  and plug-ins, all through the same interface: they show alike.
+  Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, EQ
+  and Sidechain, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only.
 - **Ctrl+Alt+L** (*View › Device View*) shows or hides it, with the info view.
 - The **info view**, at the bottom left, says what the control under the mouse is: its
@@ -43,8 +43,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Amp, Erosion, the Delay, the Chorus-Ensemble,
-  the Phaser-Flanger, the Reverb, the Disperser, the EQ and the Sidechain have editors
-  of their own (below).
+  the Phaser-Flanger, the Reverb, the Disperser, the Transient Shaper, the EQ and the
+  Sidechain have editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
   *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)).
@@ -983,6 +983,41 @@ into a chirp; sustained sounds change little.
   heard as the sweep itself (a zap), never louder than what went in.
 - Its delay is the effect, not latency: other tracks aren't delayed to line up with it.
   A long dispersion rings on after the sound stops, as a reverb does.
+
+### Transient Shaper
+
+Makes the hits in a sound punchier or softer, and their tails fuller or tighter, however
+loud they are: drums that cut through or sit back, a room tamed or brought out.
+
+- **Attack** (−100 to +100 %): turns each onset up (punchier) or down (softer). At +100 %
+  an onset rises twice as far; at −100 % only as fast as Attack Time lets it.
+- **Sustain** (−100 to +100 %): turns what rings on after the onset up (fuller, longer) or
+  down (tighter, drier). At +100 % a tail falls only as fast as Release; at −100 % twice
+  as fast as it did.
+- **Attack Time** (1 to 100 ms): how long an onset counts as one. Short shapes only the
+  click of a hit; long, its whole body.
+- **Release** (20 ms to 2 s): how long a tail is held up against.
+- **Threshold** (−80 to 0 dB): under this level nothing is shaped (fading out over 12 dB),
+  so a noise floor or bleed between hits isn't lifted.
+- **Output** (±24 dB) sets the level of what comes out, after **Dry/Wet** (blend the
+  untouched sound in for parallel shaping). **Clip** bends whatever goes over −6 dBFS
+  smoothly towards full scale, so a boosted onset never goes over.
+- **Lookahead** (0, 1 or 5 ms): the shaper hears what is coming that much ahead, so its gain
+  moves before an onset reaches the output. It adds as much latency, which is compensated.
+- **The left display** shows what it does to a hit at these settings, worked out with the
+  very maths the device plays: the hit untouched (dashed) and shaped (filled), orange where
+  Attack changed it, blue where Sustain did, morphing as you turn the knobs. Drag the orange
+  handle up and down for Attack, across for Attack Time; the blue one up and down for
+  Sustain, across for Release (Shift: finely). Double-click a handle to reset it,
+  right-click it for its menu. Each time the device hears a hit, a glowing head runs along
+  the curve as the hit plays out.
+- **The right display** shows the last two seconds of the sound: the input faint, the output
+  over it, glowing orange or blue where the shaping turned it up (bright) or down (dimmer),
+  the gain itself in a lane underneath with its value now, and sparks flying at each hit. A
+  meter at the right shows the output's level, red at the top when it reaches full scale.
+- At its defaults (Attack and Sustain 0 %) it changes nothing, bit for bit. Every control
+  can be automated, and changes don't click. It follows a sound's envelope, not its
+  waveform, so even a bass note's level is read smoothly.
 
 ### EQ
 
