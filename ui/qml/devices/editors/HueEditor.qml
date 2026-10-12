@@ -2,17 +2,17 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// Hue's editor: its wheel (HueWheel: the twelve notes round a colour wheel as
-// Hue treats them, the sound's chromagram inside; click a note to switch it),
-// then what is always shown: the key (a root and a scale, setting the twelve
-// notes at once; "Custom" when they are no scale) over High Quality and MIDI
-// Notes, then High Cut over Low Cut (the band processed: End and Start) beside
-// Color over the Notes button. Notes (folded at first; not saved: how the
-// device is looked at) slides open a keyboard of the twelve notes, each lit in
-// its hue (a moved one marked with where it goes), and the finer controls:
-// Wet Gain, Pre- and Post-Shift, Mute Low and High. Every control shows its
-// parameter as it is now, sets it undoably, touches it when pressed, and
-// right-click gives its menu.
+// Hue's editor: its spectrum (HueSpectrum: what comes out coloured by the
+// notes it is, over what goes in, the notes' comb, and the band processed
+// between Low Cut and High Cut as handles to drag), then what is always shown:
+// the key (a root and a scale, setting the twelve notes at once; "Custom" when
+// they are no scale) over HQ (Quality) and MIDI (MIDI Notes), and Color over
+// the Notes button. Notes (folded at first; not saved: how the device is looked
+// at) slides open the note wheel (HueWheel: the twelve notes round a colour
+// wheel as Hue treats them, the sound's chromagram inside; click a note to
+// switch it) and the finer controls: Wet Gain, Pre- and Post-Shift, Mute Low
+// and High. Every control shows its parameter as it is now, sets it undoably,
+// touches it when pressed, and right-click gives its menu.
 Item {
     id: editor
 
@@ -20,12 +20,13 @@ Item {
     required property string deviceId
 
     readonly property alias wheel: wheel
+    readonly property alias spectrum: spectrum
     // The knobs' cells: as wide as their captions and every text their readouts take (EditorTextsWidth); Color's
-    // as the Notes button under it too. (As the Vintage Hall's, so the two are as wide folded.)
+    // as the Notes button under it too.
     readonly property int cellWidth: Math.max(52, cellTexts.needed)
     readonly property int mixWidth: Math.max(cellWidth, Math.ceil(notesButton.implicitWidth))
     readonly property int groupGap: 7  // either side of a group's line
-    // Notes: the keyboard and the finer controls shown. `reveal` follows it, 0..1, as the section slides.
+    // Notes: the wheel and the finer controls shown. `reveal` follows it, 0..1, as the section slides.
     readonly property bool expanded: DeviceViews.value(deviceId, "notes", false)
     property real reveal: expanded ? 1 : 0
     Behavior on reveal {
@@ -141,7 +142,7 @@ Item {
     }
 
     implicitWidth: Math.ceil(knobs.x + knobs.implicitWidth) + 8
-    implicitHeight: 6 + Math.max(knobs.implicitHeight, wheel.implicitHeight) + 6
+    implicitHeight: 6 + Math.max(knobs.implicitHeight, spectrum.implicitHeight) + 6
 
     DeviceParamMap {
         id: p
@@ -154,7 +155,7 @@ Item {
 
     EditorTextsWidth {
         id: cellTexts
-        knobs: [highCutCell, lowCutCell, colorCell, wetGainCell, preShiftCell, postShiftCell]
+        knobs: [colorCell, wetGainCell, preShiftCell, postShiftCell]
         texts: [qsTr("Mute Low"), qsTr("Mute High")]
     }
 
@@ -218,93 +219,33 @@ Item {
         }
     }
 
-        // A key of the Notes keyboard: lit in its hue while on, tinted towards where it goes while moved.
-    component Key: Rectangle {
-            id: key
-            required property int note
-            readonly property bool black: [1, 3, 6, 8, 10].indexOf(note) >= 0
-            readonly property bool on: (wheel.notes >> note & 1) === 1
-            readonly property int move: wheel.moveOf(wheel.notes, note)
-            readonly property bool hot: keyArea.containsMouse || wheel.hoveredNote === note
-            objectName: "key_" + wheel.noteParam(note)
-            radius: 2
-            border.width: 1
-            border.color: hot ? Theme.text : Theme.border
-            color: on ? wheel.noteColor(note)
-                      : move !== 0 ? Qt.tint(black ? Theme.keyBlack : Theme.keyWhite,
-                                             Qt.alpha(wheel.noteColor(note + move), 0.35))
-                                   : black ? Theme.keyBlack : Theme.keyWhite
-            scale: keyArea.pressed ? 0.94 : 1
-            Behavior on color {
-                ColorAnimation {
-                    duration: 140
-                }
-            }
-            Behavior on scale {
-                NumberAnimation {
-                    duration: 80
-                }
-            }
-
-            // where a moved note goes
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: key.black ? 2 : 13
-                text: key.move < 0 ? "‹" : "›"
-                color: wheel.noteColor(key.note + key.move)
-                font: Theme.uiFont(7, true)
-                opacity: key.move !== 0 ? 1 : 0
-                Behavior on opacity {
-                    NumberAnimation {
-                        duration: 140
-                    }
-                }
-            }
-            Text {
-                visible: !key.black
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 2
-                text: wheel.noteName(key.note)
-                color: key.on ? "#101014" : Theme.keyLabel
-                font: Theme.uiFont(7, key.on)
-            }
-            MouseArea {
-                id: keyArea
-                anchors.fill: parent
-                hoverEnabled: true
-                enabled: !wheel.midi
-                cursorShape: Qt.PointingHandCursor
-                onClicked: wheel.toggleNote(key.note)
-            }
-        }
-
-    HueWheel {
-        id: wheel
-        objectName: "hueWheel"
+    HueSpectrum {
+        id: spectrum
+        objectName: "hueSpectrum"
         session: Session
         trackId: editor.trackId
         deviceId: editor.deviceId
-        caption: editor.keyText
         x: 8
         y: 6
-        width: Math.max(implicitWidth, editor.height - 12)  // (square: the wheel fills it)
+        // (as wide as the Vintage Hall's loop and a knob cell beside it: the two editors as wide folded)
+        width: Math.max(110, editor.height - 12) + editor.cellWidth + 4
         height: Math.max(implicitHeight, editor.height - 12)
 
         HoverHandler {
-            id: wheelHover
+            id: spectrumHover
         }
-        ToolTip.visible: wheelHover.hovered
+        ToolTip.visible: spectrumHover.hovered && !spectrum.dragging && spectrum.hovered === ""
         ToolTip.delay: 700
-        ToolTip.text: qsTr("The twelve notes round a colour wheel, as Hue treats them: lit, kept; shaded with an arrow,\n"
-                           + "moved onto the note beside it; dark, taken out. Click a note to switch it.\n"
-                           + "Inside, the sound between Low and High Cut: petals for what comes out, the outline for what goes in")
+        ToolTip.text: qsTr("What comes out, coloured by the notes it is (grey outside the band), over what goes in (the faint line);
+"
+                           + "the thin lines are the notes it is pulled onto. Drag the handles for Low Cut and High Cut, or the
+"
+                           + "band between them to move both (Shift: finely); double-click a handle to reset it")
     }
 
     Row {
         id: knobs
-        x: wheel.x + wheel.width + 10
+        x: spectrum.x + spectrum.width + 10
         y: Math.max(6, Math.round((editor.height - implicitHeight) / 2))
         spacing: editor.groupGap
 
@@ -356,7 +297,7 @@ Item {
             }
             Item {
                 width: parent.width
-                height: lowCutCell.height
+                height: colorCell.height
 
                 EditorCaption {
                     width: parent.width
@@ -390,20 +331,10 @@ Item {
             }
         }
         GroupLine {}
-        // The band, and how much.
-        Grid {
-            columns: 2
-            columnSpacing: 4
-            rowSpacing: 6
+        // How much, and the notes.
+        Column {
+            spacing: 6
 
-            Knob {
-                id: highCutCell
-                objectName: "end"
-                param: p.get("end")
-                title: qsTr("High Cut")
-                tooltip: qsTr("High Cut (End): the top of the band Hue processes; above it the sound passes as it is\n"
-                              + "(Mute High takes it away)")
-            }
             Knob {
                 id: colorCell
                 objectName: "color"
@@ -411,21 +342,14 @@ Item {
                 param: p.get("color")
                 title: qsTr("Color")
                 color: Theme.accent
-                tooltip: qsTr("Color: from the plain sound (0 %) to the processed one (100 %); past 100 % the notes\n"
+                tooltip: qsTr("Color: from the plain sound (0 %) to the processed one (100 %); past 100 % the notes
+"
                               + "louder and narrower, what lies between them quieter")
             }
-            Knob {
-                id: lowCutCell
-                objectName: "start"
-                param: p.get("start")
-                title: qsTr("Low Cut")
-                tooltip: qsTr("Low Cut (Start): the bottom of the band Hue processes; below it the sound passes as it is,\n"
-                              + "a bass's sub untouched (Mute Low takes it away)")
-            }
-            // Notes, level with the knob beside it.
+            // Notes, level with the knobs' second row.
             Item {
                 width: editor.mixWidth
-                height: lowCutCell.height
+                height: colorCell.height
 
                 RoleButton {
                     id: notesButton
@@ -437,14 +361,14 @@ Item {
                     text: editor.expanded ? qsTr("Notes ‹") : qsTr("Notes ›")
                     checkable: false
                     checked: editor.expanded
-                    tooltip: editor.expanded ? qsTr("Hide the notes and the finer controls")
-                                             : qsTr("Show the twelve notes one by one, Wet Gain, Pre- and Post-Shift and the mutes")
+                    tooltip: editor.expanded ? qsTr("Hide the note wheel and the finer controls")
+                                             : qsTr("Show the note wheel (click the notes one by one), Wet Gain, Pre- and Post-Shift and the mutes")
                     onClicked: editor.setExpanded(!editor.expanded)
                 }
             }
         }
 
-        // Notes: sliding open from under the knobs before it (clipped to what is revealed so far).
+        // Notes: sliding open from under the controls before it (clipped to what is revealed so far).
         Item {
             id: notesSection
             objectName: "notesSection"
@@ -460,57 +384,28 @@ Item {
                 opacity: editor.reveal
 
                 GroupLine {}
-                // The twelve notes, one by one.
-                Column {
-                    spacing: 2
+                // The notes, one by one: click one on the wheel to switch it.
+                HueWheel {
+                    id: wheel
+                    objectName: "hueWheel"
+                    session: Session
+                    trackId: editor.trackId
+                    deviceId: editor.deviceId
+                    caption: editor.keyText
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(implicitWidth, 2 * colorCell.height + 6)  // (square, as tall as two rows of knobs)
+                    height: width
 
-                    EditorCaption {
-                        width: keyboard.width
-                        text: qsTr("Notes")
+                    HoverHandler {
+                        id: wheelHover
                     }
-                    Item {
-                        id: keyboard
-                        objectName: "keyboard"
-                        readonly property real whiteWidth: 15
-                        readonly property var whites: [0, 2, 4, 5, 7, 9, 11]
-                        readonly property var blacks: [1, 3, 6, 8, 10]
-                        width: 7 * whiteWidth
-                        height: 2 * colorCell.height + 6 - 14
-                        opacity: wheel.midi ? 0.75 : 1
-
-                        Repeater {
-                            model: keyboard.whites
-                            Key {
-                                required property int index
-                                note: modelData
-                                x: index * keyboard.whiteWidth
-                                width: keyboard.whiteWidth - 1
-                                height: keyboard.height
-                                required property int modelData
-                            }
-                        }
-                        Repeater {
-                            model: keyboard.blacks
-                            Key {
-                                required property int modelData
-                                note: modelData
-                                // between the white keys either side
-                                x: (keyboard.whites.indexOf(modelData + 1)) * keyboard.whiteWidth - width / 2 - 0.5
-                                width: 10
-                                height: Math.round(keyboard.height * 0.58)
-                                z: 1
-                            }
-                        }
-
-                        HoverHandler {
-                            id: keysHover
-                        }
-                        ToolTip.visible: keysHover.hovered
-                        ToolTip.delay: 700
-                        ToolTip.text: wheel.midi ? qsTr("The notes held (MIDI Notes is on)")
-                                                 : qsTr("Click a note to keep it (lit in its hue) or take it out.\n"
-                                                        + "A note beside a kept one is moved onto it (the arrow: where to)")
-                    }
+                    ToolTip.visible: wheelHover.hovered
+                    ToolTip.delay: 700
+                    ToolTip.text: qsTr("The twelve notes round a colour wheel, as Hue treats them: lit, kept; shaded with an arrow,
+"
+                                       + "moved onto the note beside it; dark, taken out. Click a note to switch it.
+"
+                                       + "Inside, the sound between Low and High Cut: petals for what comes out, the outline for what goes in")
                 }
                 GroupLine {}
                 // The finer controls.

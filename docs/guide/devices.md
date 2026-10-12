@@ -604,14 +604,17 @@ what lies between notes through more quietly: a growl, a reese or a riddim bass 
 texture while its partials line up with the song's scale. It is made for basses and other
 dense, harmonic sounds, and works on anything.
 
-- **The editor**: on the left a colour wheel of the twelve notes (C at the top), each in its
-  own hue: lit notes are kept, shaded ones with an arrow are moved onto the note beside
-  them, dark ones are taken out; click a note to switch it. Inside it the sound between
-  Low Cut and High Cut plays as petals (what comes out) over a faint outline (what goes
-  in), so you can see the partials being pulled into key; the middle glows in the colour
-  the sound is now. Beside it: the **Key** (a root and a scale), **HQ**, **MIDI**, **High
-  Cut**, **Low Cut** and **Color**. **Notes ›** slides open a keyboard to choose the notes
-  one by one, with **Wet Gain**, **Pre-Shift**, **Post-Shift**, **Mute Low** and **Mute High**.
+- **The editor**: on the left a spectrum of what comes out, each frequency coloured by the
+  note it is, over a faint line of what goes in; thin lines in the notes' colours mark the
+  notes it pulls the sound onto. **Low Cut** and **High Cut** are the two handles on it:
+  drag them (Shift: finely), or drag the band between them to move both; double-click a
+  handle to reset it. Beside it: the **Key** (a root and a scale), **HQ**, **MIDI** and
+  **Color**. **Notes ›** slides open the note wheel, the twelve notes round a colour wheel
+  (C at the top): lit notes are kept, shaded ones with an arrow are moved onto the note
+  beside them, dark ones are taken out; click a note to switch it. Inside it the sound
+  plays as petals (what comes out) over a faint outline (what goes in), and the middle
+  glows in the colour the sound is now. Beside the wheel: **Wet Gain**, **Pre-Shift**,
+  **Post-Shift**, **Mute Low** and **Mute High**.
 - **The notes**: choose a **Key** (seventeen scales from Major to Power Chord and Root Only,
   on any root) or click notes on the wheel or the keyboard; a note in any octave counts.
   Notes that are no scale show as Custom, and a new root moves them with it. With no notes,

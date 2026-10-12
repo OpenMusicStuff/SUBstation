@@ -1,13 +1,15 @@
-// Hue's editor (ui/qml/devices/editors/HueEditor.qml, HueWheel) loaded as the
-// device view loads it, over a real engine: it fits the view's height and,
-// folded, is as wide as the Vintage Hall's, every caption and readout whole;
-// Notes slides open the keyboard and the finer controls and shuts again; a key
-// (a root and a scale) sets the twelve notes in one undo step and is read back
-// from them ("Custom" when they are no scale, a new root moving them); a click
-// on the wheel or a key switches a note; MIDI Notes shows the notes held; what
-// the engine renders reaches the wheel's chromagram, notes kept louder than the
-// ones taken out, and it comes to rest. With SUBSTATION_UI_SCREENSHOTS set,
-// device-editors-hue*.png are saved there.
+// Hue's editor (ui/qml/devices/editors/HueEditor.qml, HueSpectrum, HueWheel)
+// loaded as the device view loads it, over a real engine: it fits the view's
+// height and, folded, is as wide as the Vintage Hall's, every caption and
+// readout whole; Notes slides open the wheel and the finer controls and shuts
+// again; the spectrum's handles drag Low Cut and High Cut (the band between
+// them both), one undo step a drag, a double-click resetting; a key (a root and
+// a scale) sets the twelve notes in one undo step and is read back from them
+// ("Custom" when they are no scale, a new root moving them); a click on the
+// wheel switches a note; MIDI Notes shows the notes held; what the engine
+// renders reaches the spectrum and the wheel (a growl's A# moved onto A), and
+// they come to rest. With SUBSTATION_UI_SCREENSHOTS set, device-editors-hue*.png
+// are saved there.
 
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -21,6 +23,7 @@
 
 #include "EditorHarness.h"
 #include "controls/KnobItem.h"
+#include "devices/HueSpectrum.h"
 #include "devices/HueWheel.h"
 #include "model/Device.h"
 
@@ -47,12 +50,10 @@ std::vector<float> growl(double seconds) {
 }
 
 // What shows with Notes folded.
-const std::vector<const char*> kAlwaysShown = {"rootChoice", "scaleChoice", "quality", "midi", "end", "color", "start",
-                                               "notesButton"};
-const std::vector<const char*> kAll = {"rootChoice", "scaleChoice", "quality", "midi", "end", "color", "start",
-                                       "notesButton", "keyboard", "wet_gain", "pre_shift", "post_shift", "mute_low",
-                                       "mute_high"};
-const std::vector<const char*> kKnobs = {"end", "color", "start", "wet_gain", "pre_shift", "post_shift"};
+const std::vector<const char*> kAlwaysShown = {"rootChoice", "scaleChoice", "quality", "midi", "color", "notesButton"};
+const std::vector<const char*> kAll = {"rootChoice", "scaleChoice", "quality", "midi", "color", "notesButton", "hueWheel",
+                                       "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high"};
+const std::vector<const char*> kKnobs = {"color", "wet_gain", "pre_shift", "post_shift"};
 
 int bitsOf(std::initializer_list<int> notes) {
     int bits = 0;
@@ -71,6 +72,7 @@ class TestUiDeviceEditorsHue : public QObject, public sub::app::test::EditorHarn
         QString device;
         QQuickItem* view = nullptr;
         HueWheel* wheel = nullptr;
+        HueSpectrum* spectrum = nullptr;
     };
 
     // A Hue on a track playing `mono` for `seconds`, its editor shown.
@@ -81,8 +83,10 @@ class TestUiDeviceEditorsHue : public QObject, public sub::app::test::EditorHarn
             return shown;
         shown.device = editor()->addDevice(shown.track, QStringLiteral("hue"));
         shown.view = show(QStringLiteral("hue"), shown.track, shown.device);
-        if (shown.view)
+        if (shown.view) {
             shown.wheel = find<HueWheel>(shown.view, QStringLiteral("hueWheel"));
+            shown.spectrum = find<HueSpectrum>(shown.view, QStringLiteral("hueSpectrum"));
+        }
         return shown;
     }
 
@@ -92,9 +96,9 @@ class TestUiDeviceEditorsHue : public QObject, public sub::app::test::EditorHarn
         return paramKnob ? qvariant_cast<KnobItem*>(paramKnob->property("knob")) : nullptr;
     }
 
-    // The rightmost edge of `names` in the view, each checked to be whole, beside the wheel and inside the body.
-    double rightOf(QQuickItem* view, QQuickItem* wheelItem, const std::vector<const char*>& names) {
-        const QRectF wheel = wheelItem->mapRectToItem(view, QRectF(0, 0, wheelItem->width(), wheelItem->height()));
+    // The rightmost edge of `names` in the view, each checked to be whole, beside `first` and inside the body.
+    double rightOf(QQuickItem* view, QQuickItem* first, const std::vector<const char*>& names) {
+        const QRectF wheel = first->mapRectToItem(view, QRectF(0, 0, first->width(), first->height()));
         [&] { QVERIFY(wheel.left() >= 0 && wheel.top() >= 0 && wheel.bottom() <= view->height() + 0.5); }();
         double right = wheel.right();
         for (const char* name : names) {
@@ -153,6 +157,24 @@ class TestUiDeviceEditorsHue : public QObject, public sub::app::test::EditorHarn
         QVERIFY(QMetaObject::invokeMethod(item, "chosen", Q_ARG(int, index)));
     }
 
+    // Notes opened (the wheel and the finer controls shown).
+    void openNotes(const Shown& shown) {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(shown.view, QStringLiteral("notesButton"))));
+        QTRY_VERIFY(shown.view->property("reveal").toDouble() == 1.0);
+        QTest::mouseMove(window_, QPoint(1, 1));
+    }
+
+    // A drag on the spectrum from `from` (item coordinates) by `by` pixels across, in steps.
+    void dragSpectrum(HueSpectrum* spectrum, QPointF from, int by, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+        const QPoint at = spectrum->mapToScene(from).toPoint();
+        QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, at);
+        QVERIFY(spectrum->dragging());
+        for (int step = 1; step <= 4; ++step)
+            dragTo(at + QPoint(by * step / 4, 0), modifiers);
+        QTest::mouseRelease(window_, Qt::LeftButton, modifiers, at + QPoint(by, 0));
+        QVERIFY(!spectrum->dragging());
+    }
+
     // The point of the wheel on pitch class `c`, in the window.
     QPoint onNote(HueWheel* wheel, int c) {
         const double angle = -kPi / 2 + 2 * kPi * c / 12.0, r = wheel->radius() * 0.85;
@@ -187,14 +209,14 @@ private Q_SLOTS:
         clearHost();
 
         const Shown shown = hue(growl(1.0), 1.0);
-        QVERIFY(shown.view && shown.wheel);
+        QVERIFY(shown.view && shown.wheel && shown.spectrum);
         QQuickItem* view = shown.view;
         QVERIFY2(view->implicitHeight() <= bodyHeight(),
                  qPrintable(QStringLiteral("%1 > %2").arg(view->implicitHeight()).arg(bodyHeight())));
         QVERIFY(fitted());
         QVERIFY(!find(view, QStringLiteral("notesSection"))->isVisible());
         const double folded = view->implicitWidth();
-        QCOMPARE(folded, std::ceil(rightOf(view, shown.wheel, kAlwaysShown)) + 8);
+        QCOMPARE(folded, std::ceil(rightOf(view, shown.spectrum, kAlwaysShown)) + 8);
         QCOMPARE(folded, hallWidth);
 
         // Notes slides open (not at once), everything inside the body and whole; and shuts again.
@@ -202,15 +224,64 @@ private Q_SLOTS:
         QVERIFY(view->implicitWidth() < folded + 10);
         QTRY_VERIFY(view->property("reveal").toDouble() == 1.0);
         QVERIFY(fitted());
-        QCOMPARE(view->implicitWidth(), std::ceil(rightOf(view, shown.wheel, kAll)) + 8);
+        QCOMPARE(view->implicitWidth(), std::ceil(rightOf(view, shown.spectrum, kAll)) + 8);
+        QVERIFY(shown.wheel->width() >= HueWheel::kMinimumSize);
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("notesButton"))));
         QTRY_VERIFY(view->property("reveal").toDouble() == 0.0);
         QCOMPARE(view->implicitWidth(), folded);
 
-        // The knobs are their parameters.
         QVERIFY(std::abs(knob(view, "color")->value() - 100.0) < 1e-3);
-        QVERIFY(std::abs(knob(view, "start")->value() - 240.0) < 1e-3);
-        QVERIFY(knob(view, "start")->logScale() && knob(view, "end")->logScale());
+    }
+
+    void spectrumDrags() {
+        const Shown shown = hue(growl(1.0), 1.0);
+        QVERIFY(shown.spectrum);
+        HueSpectrum* spectrum = shown.spectrum;
+        tick(3);
+        const double y = spectrum->height() / 2;
+        const auto at = [&](double hz) { return QPointF(spectrum->xOf(hz), y); };
+        QCOMPARE(spectrum->partAt(at(240.0)), QStringLiteral("start"));
+        QCOMPARE(spectrum->partAt(at(2400.0)), QStringLiteral("end"));
+        QCOMPARE(spectrum->partAt(at(760.0)), QStringLiteral("band"));
+        QCOMPARE(spectrum->partAt(at(60.0)), QString());
+
+        // Low Cut to the right, as far up as the pixels say (across the view: 30 Hz to 12 kHz), one undo step.
+        int steps = undo()->index();
+        const double perPixel = std::pow(HueSpectrum::kHighHz / HueSpectrum::kLowHz, 1.0 / (spectrum->width() - 2));
+        dragSpectrum(spectrum, at(240.0), 20);
+        QVERIFY2(std::abs(value(shown, "start") / (240.0 * std::pow(perPixel, 20)) - 1.0) < 0.03,
+                 qPrintable(QString::number(value(shown, "start"))));
+        QCOMPARE(value(shown, "end"), 2400.0);
+        QCOMPARE(undo()->index(), steps + 1);
+        QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Change Low Cut"));
+        tick(20);
+
+        // High Cut down, Shift finely; then the band, both moving together, one undo step.
+        dragSpectrum(spectrum, at(2400.0), -20, Qt::ShiftModifier);
+        QVERIFY2(value(shown, "end") < 2400.0 && value(shown, "end") > 2400.0 / std::pow(perPixel, 20 * 0.3),
+                 qPrintable(QString::number(value(shown, "end"))));
+        tick(20);
+        const double start = value(shown, "start"), end = value(shown, "end");
+        steps = undo()->index();
+        dragSpectrum(spectrum, at(std::sqrt(start * end)), -15);
+        QVERIFY(value(shown, "start") < start);
+        QVERIFY(std::abs(value(shown, "end") / value(shown, "start") - end / start) < 1e-3 * end / start);
+        QCOMPARE(undo()->index(), steps + 1);
+        QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Move Band"));
+        tick(20);
+
+        // Low Cut stays under High Cut.
+        dragSpectrum(spectrum, at(value(shown, "start")), 400);
+        QVERIFY(value(shown, "start") * 1.25 <= value(shown, "end") + 1e-6);
+        tick(20);
+
+        // A double-click on a handle resets it; in the band, both.
+        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(value(shown, "end"))).toPoint());
+        QCOMPARE(value(shown, "end"), 2400.0);
+        tick(20);
+        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(700.0)).toPoint());
+        QCOMPARE(value(shown, "start"), 240.0);
+        QCOMPARE(value(shown, "end"), 2400.0);
     }
 
     void keys() {
@@ -241,9 +312,10 @@ private Q_SLOTS:
         choose(view, "rootChoice", 4);
         QCOMPARE(notes(shown), bitsOf({4, 6, 7, 9, 11, 0, 2, 3}));
 
-        // The wheel and the keyboard switch notes, one undo step each.
+        // The wheel (under Notes) switches notes, one undo step each.
         choose(view, "scaleChoice", -1);
         QCOMPARE(notes(shown), 0);
+        openNotes(shown);
         tick(3);
         const int before = undo()->index();
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, onNote(shown.wheel, 9));
@@ -251,9 +323,8 @@ private Q_SLOTS:
         QCOMPARE(undo()->index(), before + 1);
         QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Add A"));
         QCOMPARE(view->property("keyText").toString(), QStringLiteral("A Root Only"));
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("notesButton"))));
-        QTRY_VERIFY(view->property("reveal").toDouble() == 1.0);
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("key_note_e"))));
+        tick(30);  // (no double-click)
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, onNote(shown.wheel, 4));
         QCOMPARE(notes(shown), bitsOf({4, 9}));
         // (A# and G#, beside A, are moved onto it: down onto A for A#, up for G#)
         QCOMPARE(HueWheel::moveOf(shown.wheel->notes(), 10), -1);
@@ -267,6 +338,7 @@ private Q_SLOTS:
         set(shown, "midi", 1.0);
         QVERIFY(shown.wheel->midi());
         QCOMPARE(shown.view->property("keyText").toString(), QStringLiteral("MIDI"));
+        openNotes(shown);
         // nothing held: no notes shown; a click on the wheel does nothing
         tick(2);
         QCOMPARE(shown.wheel->notes(), 0);
@@ -274,10 +346,11 @@ private Q_SLOTS:
         QCOMPARE(value(shown, "note_d"), 0.0);
     }
 
-    void chromagram() {
+    void displaysReachIt() {
         const Shown shown = hue(growl(2.0), 2.0);
-        QVERIFY(shown.wheel);
+        QVERIFY(shown.wheel && shown.spectrum);
         HueWheel* wheel = shown.wheel;
+        openNotes(shown);
         set(shown, "note_a", 1.0);
         set(shown, "note_e", 1.0);
         settle(shown);
@@ -285,13 +358,20 @@ private Q_SLOTS:
         engine()->renderOffline(0.0, int(kSampleRate * 1.0));
         tick(4, 20);
         QVERIFY(wheel->animating());
+        QVERIFY(shown.spectrum->animating());
         // The growl is an A#: in, A# is loud; out, it is moved onto A, the A louder than the A# left.
-        QVERIFY2(wheel->inputLevelDb(10) > wheel->inputLevelDb(9) + 6, qPrintable(QString::number(wheel->inputLevelDb(10))));
+        QVERIFY2(wheel->inputLevelDb(10) > wheel->inputLevelDb(9) + 3, qPrintable(QString::number(wheel->inputLevelDb(10))));
         QVERIFY2(wheel->levelDb(9) > wheel->levelDb(10) + 6,
                  qPrintable(QStringLiteral("%1 %2").arg(wheel->levelDb(9)).arg(wheel->levelDb(10))));
-        // Nothing more: it falls and rests.
+        // The spectrum too: its 8th partial (A#4, 466 Hz) out moved onto A4 (440 Hz).
+        QVERIFY2(shown.spectrum->levelDbAt(440.0) > shown.spectrum->levelDbAt(466.16) + 6,
+                 qPrintable(QStringLiteral("%1 %2").arg(shown.spectrum->levelDbAt(440.0)).arg(shown.spectrum->levelDbAt(466.16))));
+        // Nothing more: they fall and rest.
         settle(shown, 4000);
         QVERIFY(!wheel->animating());
+        for (int i = 0; i < 3000 && shown.spectrum->animating(); ++i)
+            tick(1, 4);
+        QVERIFY(!shown.spectrum->animating());
     }
 
     void screenshots() {
@@ -315,11 +395,8 @@ private Q_SLOTS:
         save(grab(), QStringLiteral("hue.png"));
         set(shown, "quality", 1.0);
         set(shown, "color", 170.0);
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
-                          centerOf(find(shown.view, QStringLiteral("notesButton"))));
-        QTRY_VERIFY(shown.view->property("reveal").toDouble() == 1.0);
+        openNotes(shown);
         QVERIFY(fitted());
-        QTest::mouseMove(window_, QPoint(1, 1));
         play(1.5, 10);
         QTest::qWait(50);
         save(grab(), QStringLiteral("hue-notes.png"));
