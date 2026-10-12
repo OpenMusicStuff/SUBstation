@@ -1004,6 +1004,53 @@ void SgPainter::fillBand(qreal x0, qreal dx, const float* tops, const float* bot
     }
 }
 
+void SgPainter::fillGradientStrip(const QPointF* inner, const QPointF* outer, const QColor* innerColors,
+                                  const QColor* outerColors, int count) {
+    if (count < 2)
+        return;
+    beginSolid();
+    const double ox = state_.offset.x(), oy = state_.offset.y();
+    const auto at = [&](const QPointF& p, const QColor& c) { return vertex(p.x() + ox, p.y() + oy, premultiplied(c)); };
+    Vertex a0 = at(inner[0], innerColors[0]), b0 = at(outer[0], outerColors[0]);
+    for (int i = 1; i < count; ++i) {
+        const Vertex a1 = at(inner[i], innerColors[i]), b1 = at(outer[i], outerColors[i]);
+        if (a0.a != 0 || a1.a != 0 || b0.a != 0 || b1.a != 0)  // (wholly clear quads cost nothing to skip)
+            quad(a0, a1, b1, b0);
+        a0 = a1;
+        b0 = b1;
+    }
+}
+
+void SgPainter::fillRadialGlow(const QPointF& center, qreal radius, const QColor& color, int rings) {
+    const Rgba c = premultiplied(color);
+    if (c.a == 0 || radius <= 0.0)
+        return;
+    beginSolid();
+    rings = std::clamp(rings, 1, 16);
+    const double cx = center.x() + state_.offset.x(), cy = center.y() + state_.offset.y();
+    const int steps = std::max(12, arcSegments(radius, 2 * kPi));
+    // Ring k at radius r_k has the brightness (1 - t)^2 of a light falling off softly, t = r_k / radius.
+    const auto shade = [&](int k) {
+        const double t = double(k) / rings;
+        return c.scaled(float((1.0 - t) * (1.0 - t)));
+    };
+    for (int k = 0; k < rings; ++k) {
+        const double r0 = radius * k / rings, r1 = radius * (k + 1) / rings;
+        const Rgba c0 = shade(k), c1 = shade(k + 1);
+        for (int s = 0; s < steps; ++s) {
+            const double a0 = 2 * kPi * s / steps, a1 = 2 * kPi * (s + 1) / steps;
+            const Vertex o0 = vertex(cx + r1 * std::cos(a0), cy + r1 * std::sin(a0), c1);
+            const Vertex o1 = vertex(cx + r1 * std::cos(a1), cy + r1 * std::sin(a1), c1);
+            if (k == 0) {
+                triangle(vertex(cx, cy, c0), o0, o1);
+            } else {
+                quad(vertex(cx + r0 * std::cos(a0), cy + r0 * std::sin(a0), c0), o0, o1,
+                     vertex(cx + r0 * std::cos(a1), cy + r0 * std::sin(a1), c0));
+            }
+        }
+    }
+}
+
 // --- Text and images ------------------------------------------------------------------
 
 void SgPainter::drawTexture(const std::shared_ptr<SgTexture>& texture, const QRectF& target, const QRectF& source,

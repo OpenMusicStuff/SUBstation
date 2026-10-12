@@ -154,6 +154,15 @@ public:
     // Each pixel is as covered as a box over it would be: an edge fades over
     // where its outline runs within the column, and a device pixel more.
     void fillBand(qreal x0, qreal dx, const float* tops, const float* bottoms, int count, const QColor& color);
+    // A strip of quads whose colours blend across it (the GPU interpolates them): quad i joins
+    // inner[i], inner[i + 1], outer[i + 1] and outer[i], each corner its own colour (innerColors,
+    // outerColors). Glows, trails fading along a path, an energy that varies round a ring. Soft by
+    // nature: no antialiasing (fade the edges out instead).
+    void fillGradientStrip(const QPointF* inner, const QPointF* outer, const QColor* innerColors,
+                           const QColor* outerColors, int count);
+    // A round glow: `color` at the centre fading to nothing at `radius` (smoothly, through
+    // `rings` rings, so it falls off as a soft light does rather than in a straight line).
+    void fillRadialGlow(const QPointF& center, qreal radius, const QColor& color, int rings = 4);
 
     // --- Text and images ------------------------------------------------------
 

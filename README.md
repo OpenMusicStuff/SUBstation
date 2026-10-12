@@ -36,10 +36,10 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
   Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
   The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband
   Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble,
-  Phaser-Flanger, Reverb, Disperser (phase dispersion through up to 64 all-pass stages,
-  its group delay drawn), Transient Shaper (onsets and tails shaped, the hit drawn as it
-  plays), EQ and Sidechain; racks with parallel chains, macros and
-  presets.
+  Phaser-Flanger, Reverb, Vintage Hall (a 1970s digital concert hall, cloned from a
+  classic), Disperser (phase dispersion through up to 64 all-pass stages, its group delay
+  drawn), Transient Shaper (onsets and tails shaped, the hit drawn as it plays), EQ and
+  Sidechain; racks with parallel chains, macros and presets.
 - **VST3 plug-ins**: instruments and effects, their own editors, presets, sidechains,
   latency compensation everywhere, crash-safe scanning.
 - **Automation** of every parameter, played sample-accurately.
@@ -135,6 +135,7 @@ app/src/             the application layer (sub_app; Qt Core and Gui): model/, e
 ui/                  the Qt Quick UI: qml/ (QML module SUBstation), src/ (C++ scene-graph items),
                      style/ (the controls' style), main.cpp (the substation executable)
 tools/scanner/       substation-scan, the VST3 scanner's child process
+tools/plugin-render/ substation-plugin-render, runs audio through a VST3 or built-in effect offline (research)
 tests/               engine/ (engine_tests), app/ (Qt Test), vst3_plugins/, asio_driver/
 benchmarks/          the renderer's and the browser backend's benchmarks (not run by ctest)
 cmake/               compiler warnings, the layers' boundary check

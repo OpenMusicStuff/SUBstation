@@ -370,6 +370,30 @@ private Q_SLOTS:
         }
     }
 
+    void gradientStripAndRadialGlow() {
+        Scene scene;
+        QVERIFY(scene.show());
+        const QImage image = scene.render([&](SgPainter& p) {
+            // White along the top fading to nothing at the bottom, over the black.
+            const QPointF inner[3] = {{10, 10}, {50, 10}, {90, 10}}, outer[3] = {{10, 50}, {50, 50}, {90, 50}};
+            const QColor white[3] = {Qt::white, Qt::white, Qt::white};
+            const QColor clear[3] = {QColor(255, 255, 255, 0), QColor(255, 255, 255, 0), QColor(255, 255, 255, 0)};
+            p.fillGradientStrip(inner, outer, white, clear, 3);
+            p.fillRadialGlow(QPointF(150, 40), 30, Qt::white);
+        });
+        const qreal dpr = scene.dpr();
+        const auto gray = [&](double x, double y) { return qGray(image.pixel(int(x * dpr), int(y * dpr))); };
+        QVERIFY2(gray(50, 11) > 240, qPrintable(QString::number(gray(50, 11))));
+        QVERIFY2(std::abs(gray(50, 30) - 128) < 20, qPrintable(QString::number(gray(50, 30))));
+        QVERIFY2(gray(50, 49) < 15, qPrintable(QString::number(gray(50, 49))));
+        QCOMPARE(gray(50, 70), 0);
+        // The glow: bright in the middle, falling off softly (a quarter as bright half way), gone at its edge.
+        QVERIFY2(gray(150, 40) > 230, qPrintable(QString::number(gray(150, 40))));
+        QVERIFY2(std::abs(gray(165, 40) - 64) < 20, qPrintable(QString::number(gray(165, 40))));
+        QVERIFY2(gray(150, 69) < 10, qPrintable(QString::number(gray(150, 69))));
+        QVERIFY(std::abs(gray(165, 40) - gray(150, 55)) <= 4);  // (round: pixels as far from its centre)
+    }
+
     void columnsGradientImageOpacity() {
         Scene scene;
         QVERIFY(scene.show());
