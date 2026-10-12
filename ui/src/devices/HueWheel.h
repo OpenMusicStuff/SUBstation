@@ -12,7 +12,7 @@
 //   output as petals in each note's hue, the input as a faint outline behind
 //   them, so what Hue pulled into key shows against what came in; in the middle
 //   a bloom in the colour the sound is now (its notes' hues, as loud as each).
-// With MIDI Notes on it shows the notes held (the device's display "notes").
+// Once MIDI notes choose the notes it shows them (the device's display "notes").
 // Click a note to switch it on or off (one undo step); hover shows it.
 //
 // Everything moves on in refreshDisplays() by the time since the last tick; it
@@ -44,6 +44,7 @@ public:
     static constexpr int kMinimumSize = 110;
     static constexpr int kClasses = 12;
     static constexpr double kFloorDb = -66.0;  // the chromagram's floor: quieter is dark
+    static constexpr int kFromMidi = 1 << 12;  // in the display "notes": the notes are MIDI's
 
     explicit HueWheel(QQuickItem* parent = nullptr);
 
@@ -65,7 +66,7 @@ public:
     Q_INVOKABLE static int moveOf(int notes, int pitchClass);
     // Sets the twelve note buttons to `notes` (bits), one undo step named `text`.
     Q_INVOKABLE void setNotes(int notes, const QString& text = QStringLiteral("Change Notes"));
-    // Switches a note's button (not while MIDI Notes is on).
+    // Switches a note's button (not while MIDI notes choose them).
     Q_INVOKABLE void toggleNote(int pitchClass);
     // The chromagram as shown (dB): the output's and the input's.
     Q_INVOKABLE double levelDb(int pitchClass) const;
@@ -100,7 +101,7 @@ private:
     int buttons_ = 0;  // the note buttons
     int held_ = 0;     // the MIDI notes held (the display "notes")
     int notes_ = 0;    // what is shown: one or the other
-    bool midi_ = false;
+    bool midi_ = false;  // the notes are MIDI's (the display says)
     bool highQuality_ = false;
     double color_ = 100.0, start_ = 240.0, end_ = 2400.0;
     QString caption_;

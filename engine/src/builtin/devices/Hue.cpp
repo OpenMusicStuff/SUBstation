@@ -34,8 +34,11 @@
 //   notes get narrower and louder and the floor between them lower.
 //   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
 //   notes, Post-Shift tunes the notes.
+// - MIDI Notes (on at first): once MIDI notes come (from MIDI From, or the
+//   track's own) they choose the notes instead of the key, each chord held
+//   until the next; until then, and after a reset, the key's.
 // - Its editor reads the input and the output (mono) for a chromagram, and the
-//   notes in use (the MIDI notes held, with MIDI Notes on).
+//   notes in use (and whether they are MIDI's).
 
 #include <algorithm>
 #include <array>
@@ -337,9 +340,10 @@ public:
         NoteC, NumParams = NoteC + 12
     };
     // Its editor's displays: the input and the output (mono, a value a sample: its chromagram), and the notes
-    // in use (their bits, C the lowest; the MIDI notes held while MIDI Notes is on), a value every kNotesSamples.
+    // in use (their bits, C the lowest, and kFromMidi while they are MIDI notes), a value every kNotesSamples.
     enum Display { InputDisplay = 0, OutputDisplay, NotesDisplay, NumDisplays };
     static constexpr int kNotesSamples = 1024;
+    static constexpr int kFromMidi = 1 << 12;
 
     HueProcessor() : BuiltinProcessor(infos(), displayInfos()) {}
 
@@ -409,6 +413,7 @@ public:
 
     void reset() override {
         std::fill(std::begin(held_), std::end(held_), 0);
+        midiNotes_ = 0;
         for (auto& c : ch_) c.clear();
         pos_ = 0;
         frameFill_ = 0;
@@ -420,6 +425,14 @@ protected:
             const ProcessEvent& ev = ctx.inEvents.events[e];
             if (ev.startsNote()) ++held_[ev.key() & 127];
             else if (ev.endsNote() && held_[ev.key() & 127] > 0) --held_[ev.key() & 127];
+        }
+        // MIDI notes, once any come, choose the notes, each chord held until the next (the gaps between chords
+        // don't fall back to the key).
+        if (ctx.inEvents.count > 0) {
+            int bits = 0;
+            for (int k = 0; k < 128; ++k)
+                if (held_[k] > 0) bits |= 1 << (k % 12);
+            if (bits != 0) midiNotes_ = bits;
         }
         // The filters follow the settings: a new design is started when they change, one step per call.
         const DesignKey key = currentKey();
@@ -438,7 +451,7 @@ protected:
         if (chs > 0)
             for (int i = 0; i < numFrames; ++i) publish(OutputDisplay, mono(i));
         for (notesCount_ += numFrames; notesCount_ >= kNotesSamples; notesCount_ -= kNotesSamples)
-            publish(NotesDisplay, static_cast<float>(enabledNotes()));
+            publish(NotesDisplay, static_cast<float>(enabledNotes() | (fromMidi() ? kFromMidi : 0)));
     }
 
 private:
@@ -519,7 +532,7 @@ private:
                 {"mute_low", "Mute Low", "", 0.f, 1.f, 0.f, false, onOff},
                 {"mute_high", "Mute High", "", 0.f, 1.f, 0.f, false, onOff},
                 {"quality", "Quality", "", 0.f, 1.f, 0.f, false, kQuality},
-                {"midi", "MIDI Notes", "", 0.f, 1.f, 0.f, false, onOff},
+                {"midi", "MIDI Notes", "", 0.f, 1.f, 1.f, false, onOff},
             };
             static const char* const kNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
             static const char* const kIds[12] = {"note_c", "note_cs", "note_d", "note_ds", "note_e", "note_f",
@@ -530,15 +543,14 @@ private:
         return kInfos;
     }
 
+    // Whether the notes are MIDI's: MIDI Notes on (as it is at first) and notes come (from MIDI From, or the
+    // track's own), until a reset.
+    bool fromMidi() const noexcept { return isOn(Midi) && midiNotes_ != 0; }
     int enabledNotes() const noexcept {
+        if (fromMidi()) return midiNotes_;
         int bits = 0;
-        if (isOn(Midi)) {
-            for (int k = 0; k < 128; ++k)
-                if (held_[k] > 0) bits |= 1 << (k % 12);
-        } else {
-            for (int c = 0; c < 12; ++c)
-                if (isOn(NoteC + c)) bits |= 1 << c;
-        }
+        for (int c = 0; c < 12; ++c)
+            if (isOn(NoteC + c)) bits |= 1 << c;
         return bits;
     }
     DesignKey currentKey() const noexcept {
@@ -1008,6 +1020,7 @@ private:
     std::array<Channel, kChannels> ch_;
     int pos_ = 0;
     int held_[128] = {};
+    int midiNotes_ = 0;  // the MIDI notes held last (bits): 0 until any come
     double lastStart_ = -1, lastEnd_ = -1;
 
     RealDft fft_, designFft_;

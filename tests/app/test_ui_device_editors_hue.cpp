@@ -1,14 +1,14 @@
 // Hue's editor (ui/qml/devices/editors/HueEditor.qml, HueSpectrum, HueWheel)
 // loaded as the device view loads it, over a real engine: it fits the view's
-// height and, folded, is as wide as the Vintage Hall's, every caption and
-// readout whole; Notes slides open the wheel and the finer controls and shuts
-// again; the spectrum's handles drag Low Cut and High Cut (the band between
-// them both), one undo step a drag, a double-click resetting; a key (a root and
-// a scale) sets the twelve notes in one undo step and is read back from them
-// ("Custom" when they are no scale, a new root moving them); a click on the
-// wheel switches a note; MIDI Notes shows the notes held; what the engine
-// renders reaches the spectrum and the wheel (a growl's A# moved onto A), and
-// they come to rest. With SUBSTATION_UI_SCREENSHOTS set, device-editors-hue*.png
+// height and, folded, is the spectrum alone, as wide as the Vintage Hall's,
+// the key, HQ and the arrow over its top edge; the arrow slides open the wheel
+// and the finer controls and shuts them again; the spectrum's handles drag Low
+// Cut and High Cut, a drag up and down anywhere else Color, one undo step a
+// drag, a double-click resetting; a key (a root and a scale) sets the twelve
+// notes in one undo step and is read back from them ("Custom" when they are no
+// scale, a new root moving them); a click on the wheel switches a note; what
+// the engine renders reaches the spectrum and the wheel (a growl's A# moved
+// onto A), and they come to rest. With SUBSTATION_UI_SCREENSHOTS set, device-editors-hue*.png
 // are saved there.
 
 #include <QQuickItem>
@@ -50,10 +50,11 @@ std::vector<float> growl(double seconds) {
 }
 
 // What shows with Notes folded.
-const std::vector<const char*> kAlwaysShown = {"rootChoice", "scaleChoice", "quality", "midi", "color", "notesButton"};
-const std::vector<const char*> kAll = {"rootChoice", "scaleChoice", "quality", "midi", "color", "notesButton", "hueWheel",
-                                       "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high"};
-const std::vector<const char*> kKnobs = {"color", "wet_gain", "pre_shift", "post_shift"};
+// Over the spectrum's top edge.
+const std::vector<const char*> kOverlaid = {"rootChoice", "scaleChoice", "quality", "notesButton"};
+// Opened, beside it.
+const std::vector<const char*> kOpened = {"hueWheel", "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high"};
+const std::vector<const char*> kKnobs = {"wet_gain", "pre_shift", "post_shift"};
 
 int bitsOf(std::initializer_list<int> notes) {
     int bits = 0;
@@ -216,21 +217,29 @@ private Q_SLOTS:
         QVERIFY(fitted());
         QVERIFY(!find(view, QStringLiteral("notesSection"))->isVisible());
         const double folded = view->implicitWidth();
-        QCOMPARE(folded, std::ceil(rightOf(view, shown.spectrum, kAlwaysShown)) + 8);
-        QCOMPARE(folded, hallWidth);
+        const QRectF face = shown.spectrum->mapRectToItem(view, QRectF(0, 0, shown.spectrum->width(), shown.spectrum->height()));
+        QCOMPARE(folded, std::ceil(face.right()) + 8);
+        QVERIFY2(std::abs(folded - hallWidth) <= 2, qPrintable(QStringLiteral("%1 %2").arg(folded).arg(hallWidth)));
+        // the controls over its top edge, inside it and clear of each other
+        double after = face.left();
+        for (const char* name : kOverlaid) {
+            QQuickItem* item = find(view, QString::fromLatin1(name));
+            QVERIFY2(item && item->isVisible(), name);
+            const QRectF rect = item->mapRectToItem(view, QRectF(0, 0, item->width(), item->height()));
+            QVERIFY2(face.contains(rect) && rect.top() < face.top() + 8 && rect.left() >= after, name);
+            after = rect.right();
+        }
 
         // Notes slides open (not at once), everything inside the body and whole; and shuts again.
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("notesButton"))));
         QVERIFY(view->implicitWidth() < folded + 10);
         QTRY_VERIFY(view->property("reveal").toDouble() == 1.0);
         QVERIFY(fitted());
-        QCOMPARE(view->implicitWidth(), std::ceil(rightOf(view, shown.spectrum, kAll)) + 8);
+        QCOMPARE(view->implicitWidth(), std::ceil(rightOf(view, shown.spectrum, kOpened)) + 8);
         QVERIFY(shown.wheel->width() >= HueWheel::kMinimumSize);
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("notesButton"))));
         QTRY_VERIFY(view->property("reveal").toDouble() == 0.0);
         QCOMPARE(view->implicitWidth(), folded);
-
-        QVERIFY(std::abs(knob(view, "color")->value() - 100.0) < 1e-3);
     }
 
     void spectrumDrags() {
@@ -242,8 +251,9 @@ private Q_SLOTS:
         const auto at = [&](double hz) { return QPointF(spectrum->xOf(hz), y); };
         QCOMPARE(spectrum->partAt(at(240.0)), QStringLiteral("start"));
         QCOMPARE(spectrum->partAt(at(2400.0)), QStringLiteral("end"));
-        QCOMPARE(spectrum->partAt(at(760.0)), QStringLiteral("band"));
-        QCOMPARE(spectrum->partAt(at(60.0)), QString());
+        QCOMPARE(spectrum->partAt(at(760.0)), QStringLiteral("color"));
+        QCOMPARE(spectrum->partAt(at(60.0)), QStringLiteral("color"));
+        QCOMPARE(spectrum->partAt(QPointF(-20, y)), QString());
 
         // Low Cut to the right, as far up as the pixels say (across the view: 30 Hz to 12 kHz), one undo step.
         int steps = undo()->index();
@@ -256,32 +266,36 @@ private Q_SLOTS:
         QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Change Low Cut"));
         tick(20);
 
-        // High Cut down, Shift finely; then the band, both moving together, one undo step.
+        // High Cut down, Shift finely.
         dragSpectrum(spectrum, at(2400.0), -20, Qt::ShiftModifier);
         QVERIFY2(value(shown, "end") < 2400.0 && value(shown, "end") > 2400.0 / std::pow(perPixel, 20 * 0.3),
                  qPrintable(QString::number(value(shown, "end"))));
         tick(20);
-        const double start = value(shown, "start"), end = value(shown, "end");
-        steps = undo()->index();
-        dragSpectrum(spectrum, at(std::sqrt(start * end)), -15);
-        QVERIFY(value(shown, "start") < start);
-        QVERIFY(std::abs(value(shown, "end") / value(shown, "start") - end / start) < 1e-3 * end / start);
-        QCOMPARE(undo()->index(), steps + 1);
-        QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Move Band"));
-        tick(20);
-
         // Low Cut stays under High Cut.
         dragSpectrum(spectrum, at(value(shown, "start")), 400);
         QVERIFY(value(shown, "start") * 1.25 <= value(shown, "end") + 1e-6);
         tick(20);
 
-        // A double-click on a handle resets it; in the band, both.
+        // A double-click on a handle resets it.
         QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(value(shown, "end"))).toPoint());
         QCOMPARE(value(shown, "end"), 2400.0);
         tick(20);
-        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(700.0)).toPoint());
-        QCOMPARE(value(shown, "start"), 240.0);
-        QCOMPARE(value(shown, "end"), 2400.0);
+
+        // Anywhere else: up and down for Color (1.2 % a pixel, Shift finely), one undo step; a double-click resets it.
+        steps = undo()->index();
+        const QPointF middle(spectrum->xOf(700.0), spectrum->height() / 2);
+        const QPoint from = spectrum->mapToScene(middle).toPoint();
+        QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, from);
+        QVERIFY(spectrum->dragging());
+        for (int step = 1; step <= 4; ++step)
+            dragTo(from - QPoint(0, 10 * step));
+        QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, from - QPoint(0, 40));
+        QVERIFY2(std::abs(value(shown, "color") - 148.0) < 2.0, qPrintable(QString::number(value(shown, "color"))));
+        QCOMPARE(undo()->index(), steps + 1);
+        QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Change Color"));
+        tick(20);
+        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, from);
+        QCOMPARE(value(shown, "color"), 100.0);
     }
 
     void keys() {
@@ -329,21 +343,6 @@ private Q_SLOTS:
         // (A# and G#, beside A, are moved onto it: down onto A for A#, up for G#)
         QCOMPARE(HueWheel::moveOf(shown.wheel->notes(), 10), -1);
         QCOMPARE(HueWheel::moveOf(shown.wheel->notes(), 8), 1);
-    }
-
-    void midiShowsHeld() {
-        const Shown shown = hue(growl(1.0), 1.0);
-        QVERIFY(shown.wheel);
-        set(shown, "note_a", 1.0);
-        set(shown, "midi", 1.0);
-        QVERIFY(shown.wheel->midi());
-        QCOMPARE(shown.view->property("keyText").toString(), QStringLiteral("MIDI"));
-        openNotes(shown);
-        // nothing held: no notes shown; a click on the wheel does nothing
-        tick(2);
-        QCOMPARE(shown.wheel->notes(), 0);
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, onNote(shown.wheel, 2));
-        QCOMPARE(value(shown, "note_d"), 0.0);
     }
 
     void displaysReachIt() {

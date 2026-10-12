@@ -81,7 +81,7 @@ another track's part.
   while it monitors (armed, or *In*). A MIDI track with no instrument of its own can
   just feed such a device.
 - Built-in instruments (Synth, Sampler) and plug-ins with a MIDI (event) input have the
-  button; built-in effects play no notes and have none.
+  button; of the built-in effects, Hue (its notes from the chords played) has it too.
 - The notes reach the device when they play on the timeline: plug-in latency on the
   device's own track before it (delay compensation) doesn't delay them. A track's mute
   and solo don't stop its notes reaching a device elsewhere, and a frozen MIDI track
@@ -604,24 +604,28 @@ what lies between notes through more quietly: a growl, a reese or a riddim bass 
 texture while its partials line up with the song's scale. It is made for basses and other
 dense, harmonic sounds, and works on anything.
 
-- **The editor**: on the left a spectrum of what comes out, each frequency coloured by the
-  note it is, over a faint line of what goes in; thin lines in the notes' colours mark the
-  notes it pulls the sound onto. **Low Cut** and **High Cut** are the two handles on it:
-  drag them (Shift: finely), or drag the band between them to move both; double-click a
-  handle to reset it. Beside it: the **Key** (a root and a scale), **HQ**, **MIDI** and
-  **Color**. **Notes ›** slides open the note wheel, the twelve notes round a colour wheel
-  (C at the top): lit notes are kept, shaded ones with an arrow are moved onto the note
-  beside them, dark ones are taken out; click a note to switch it. Inside it the sound
-  plays as petals (what comes out) over a faint outline (what goes in), and the middle
-  glows in the colour the sound is now. Beside the wheel: **Wet Gain**, **Pre-Shift**,
-  **Post-Shift**, **Mute Low** and **Mute High**.
+- **The editor** is a spectrum of what comes out, across the device: each frequency coloured
+  by the note it is, as vivid as **Color** makes the sound, over a faint line of what goes
+  in; thin lines in the notes' colours mark the notes it pulls the sound onto. **Low Cut**
+  and **High Cut** are the two handles at its bottom: drag them (Shift: finely);
+  double-click one to reset it. Drag up and down anywhere else for **Color** (the gauge at
+  the right edge shows it); double-click to reset it. Over its top edge: the **Key** (a
+  root and a scale) and **HQ**; the arrow at the right slides open the note wheel, the
+  twelve notes round a colour wheel (C at the top): lit notes are kept, shaded ones with an
+  arrow are moved onto the note beside them, dark ones are taken out; click a note to
+  switch it. Inside it the sound plays as petals (what comes out) over a faint outline
+  (what goes in), and the middle glows in the colour the sound is now. Beside the wheel:
+  **Wet Gain**, **Pre-Shift**, **Post-Shift**, **Mute Low** and **Mute High**.
 - **The notes**: choose a **Key** (seventeen scales from Major to Power Chord and Root Only,
-  on any root) or click notes on the wheel or the keyboard; a note in any octave counts.
-  Notes that are no scale show as Custom, and a new root moves them with it. With no notes,
-  or all twelve, the sound passes as it is. **MIDI** (MIDI Notes) on: the notes held on the
-  track (or on the track chosen with **MIDI From**, see above) choose them instead, so the
-  scale can follow a chord part, and the wheel shows them as they are played; with nothing
-  held, the sound passes.
+  on any root) or click notes on the wheel; a note in any octave counts. Notes that are no
+  scale show as Custom, and a new root moves them with it. With no notes, or all twelve,
+  the sound passes as it is.
+- **MIDI**: play Hue notes and they choose the notes instead of the key: put it on a MIDI
+  track after an instrument, or pick a MIDI track with **MIDI From** (see above) so the
+  scale follows a chord part. Each chord holds until the next one; until the first note
+  comes (and after the transport stops) the key's notes apply. The Key shows *MIDI Notes*
+  meanwhile, and the wheel and the spectrum show the notes as they are played. (The
+  parameter **MIDI Notes**, on at first, switches this off, for automation.)
 - What happens to each note: an enabled note is kept and made louder (the fewer notes, the
   louder: about +8 dB for one); a note a semitone from an enabled one is moved onto it
   (a note between two enabled ones goes down); the others are taken out. What lies between

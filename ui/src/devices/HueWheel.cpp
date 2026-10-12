@@ -131,7 +131,6 @@ void HueWheel::sync() {
         if (value(noteParam(c)) >= 0.5)
             buttons |= 1 << c;
     buttons_ = buttons;
-    midi_ = value(QStringLiteral("midi")) >= 0.5;
     highQuality_ = value(QStringLiteral("quality")) >= 0.5;
     color_ = value(QStringLiteral("color"));
     start_ = value(QStringLiteral("start"));
@@ -172,12 +171,16 @@ void HueWheel::refreshDisplays() {
     const double dt = tickSeconds();
     const double rate = sampleRate();
 
-    // MIDI: the notes held.
+    // The notes in use, and whether they are MIDI's (the engine's display "notes").
     const std::vector<float> held = readRecent(QStringLiteral("notes"), kRecentSeconds);
     if (!held.empty()) {
-        held_ = int(held.back()) & 0xfff;
-        if (midi_ && held_ != notes_) {
-            showNotes(held_);
+        const int shown = int(held.back());
+        const bool midi = (shown & kFromMidi) != 0;
+        held_ = shown & 0xfff;
+        if (midi != midi_ || (midi && held_ != notes_)) {
+            midi_ = midi;
+            setCursor(hovered_ >= 0 && !midi_ ? Qt::PointingHandCursor : Qt::ArrowCursor);
+            showNotes(midi_ ? held_ : buttons_);
             Q_EMIT notesChanged();
         }
     }

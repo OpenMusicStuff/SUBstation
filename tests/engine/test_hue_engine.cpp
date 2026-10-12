@@ -133,9 +133,27 @@ TEST_CASE("hue: MIDI notes in place of the buttons") {
     const Samples dry = sine(440.0, 2.0, 0.25);
     CHECK(db(windowedAmplitude(in, 440.0, 48000, 24000) / windowedAmplitude(dry, 440.0, 48000, 24000)) > 6.0);
 
-    // nothing held: the sound passes
-    Standalone none("hue", kRate, {{"midi", 1.f}, {"note_a", 1.f}});
-    CHECK(std::abs(toneGainDb(none, 440.0)) < 0.3);
+    // nothing yet: the key's notes (A, kept and louder); MIDI Notes off: the key's whatever is held
+    Standalone none("hue", kRate, {{"note_a", 1.f}});
+    CHECK(toneGainDb(none, 440.0) > 6.0);
+    Standalone off("hue", kRate, {{"midi", 0.f}, {"note_e", 1.f}});
+    Samples a = sine(440.0, 2.0, 0.25);
+    off.run({&a}, {}, 256, [&](int64_t start, int) {
+        off.context().inEvents = start == 0 ? sub::EventList{events.data(), events.size()} : sub::EventList{};
+    });
+    CHECK(db(windowedAmplitude(a, 440.0, 48000, 24000) / windowedAmplitude(dry, 440.0, 48000, 24000)) < -20.0);
+
+    // a chord held until the next: A released, the notes stay {A}
+    Standalone latched("hue", kRate, {{"note_e", 1.f}});
+    std::vector<sub::ProcessEvent> pressed{sub::ProcessEvent::noteOn(0, 57, 100)};
+    std::vector<sub::ProcessEvent> released{sub::ProcessEvent::noteOff(0, 57)};
+    Samples b = sine(440.0, 2.0, 0.25);
+    latched.run({&b}, {}, 256, [&](int64_t start, int) {
+        latched.context().inEvents = start == 0       ? sub::EventList{pressed.data(), pressed.size()}
+                                     : start == 2560 ? sub::EventList{released.data(), released.size()}
+                                                      : sub::EventList{};
+    });
+    CHECK(db(windowedAmplitude(b, 440.0, 72000, 24000) / windowedAmplitude(dry, 440.0, 72000, 24000)) > 6.0);
 }
 
 TEST_CASE("hue: changing the notes does not click") {
@@ -190,7 +208,7 @@ TEST_CASE("hue: its editor's displays") {
     CHECK_EQ(static_cast<int>(notes.back()), (1 << 9) | (1 << 4));
 
     // MIDI: the notes held
-    Standalone midi("hue", kRate, {{"midi", 1.f}});
+    Standalone midi("hue", kRate, {});
     std::vector<sub::ProcessEvent> events{sub::ProcessEvent::noteOn(0, 60, 100), sub::ProcessEvent::noteOn(0, 67, 100)};
     Samples tone = sine(262.0, 0.2, 0.25);
     midi.run({&tone}, {}, 256, [&](int64_t start, int) {
@@ -198,5 +216,5 @@ TEST_CASE("hue: its editor's displays") {
     });
     const std::vector<float> held = midi.display("notes");
     REQUIRE(!held.empty());
-    CHECK_EQ(static_cast<int>(held.back()), (1 << 0) | (1 << 7));
+    CHECK_EQ(static_cast<int>(held.back()), (1 << 0) | (1 << 7) | (1 << 12));  // (and: MIDI's)
 }

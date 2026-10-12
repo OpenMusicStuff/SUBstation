@@ -2,7 +2,6 @@
 
 #include "devices/HueWheel.h"
 #include "input/GestureKey.h"
-#include "model/ParamSpec.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
 
@@ -11,7 +10,6 @@
 #include <QMouseEvent>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <vector>
 
@@ -22,11 +20,12 @@ namespace {
 using sub::app::analysis::EqAnalyzer;
 
 constexpr double kRecentSeconds = 0.2;  // a tick reads this much of the sound at most (after a backlog)
-constexpr double kEaseSeconds = 0.08;   // the handles, to a value set elsewhere
+constexpr double kEaseSeconds = 0.08;   // the handles and Color, to a value set elsewhere
 constexpr double kGlowSeconds = 0.1;
 constexpr double kColumnPixels = 2.0;
-// The parameters' ranges (Start, End), and how far apart the handles stay.
+// The parameters' ranges (Start, End, Color), and how far apart the handles stay.
 constexpr double kStartMin = 80.0, kStartMax = 1800.0, kEndMin = 400.0, kEndMax = 8000.0, kGap = 1.25;
+constexpr double kColorMax = 200.0;
 constexpr double kTopDb = EqAnalyzer::kCeilDb, kBottomDb = -84.0;
 
 // The colour of a frequency: the hue of the note it is, between notes blended (the wheel's hues).
@@ -79,9 +78,7 @@ QString HueSpectrum::partAt(QPointF point) const {
     const double ds = std::abs(point.x() - xs), de = std::abs(point.x() - xe);
     if (std::min(ds, de) <= kGrabPixels)
         return ds <= de ? QStringLiteral("start") : QStringLiteral("end");
-    if (point.x() > xs && point.x() < xe)
-        return QStringLiteral("band");
-    return {};
+    return QStringLiteral("color");
 }
 
 // --- Parameters and animation --------------------------------------------------------------
@@ -89,18 +86,20 @@ QString HueSpectrum::partAt(QPointF point) const {
 void HueSpectrum::sync() {
     start_ = value(QStringLiteral("start"));
     end_ = value(QStringLiteral("end"));
-    midi_ = value(QStringLiteral("midi")) >= 0.5;
+    color_ = value(QStringLiteral("color"));
     int bits = 0;
     for (int c = 0; c < 12; ++c)
         if (value(HueWheel::noteParam(c)) >= 0.5)
             bits |= 1 << c;
-    notes_ = bits;
+    buttons_ = bits;
     startShown_.target = std::log2(std::max(1.0, start_));
     endShown_.target = std::log2(std::max(1.0, end_));
+    colorShown_.target = color_;
     if (!started_ || dragging()) {  // (where they are: the first time, and under the mouse)
         started_ = true;
         startShown_.snap(startShown_.target);
         endShown_.snap(endShown_.target);
+        colorShown_.snap(colorShown_.target);
     }
     update();
 }
@@ -108,18 +107,26 @@ void HueSpectrum::sync() {
 void HueSpectrum::refreshDisplays() {
     const double dt = tickSeconds();
     const double rate = sampleRate();
-    const std::vector<float> held = readRecent(QStringLiteral("notes"), kRecentSeconds);
-    if (!held.empty())
-        held_ = int(held.back()) & 0xfff;
+    bool moving = false;
+    const std::vector<float> notes = readRecent(QStringLiteral("notes"), kRecentSeconds);
+    if (!notes.empty() && int(notes.back()) != shownNotes_) {
+        shownNotes_ = int(notes.back());
+        moving = true;
+        if (((shownNotes_ & kFromMidi) != 0) != midi_) {
+            midi_ = !midi_;
+            Q_EMIT midiChanged();
+        }
+    }
     const std::vector<float> in = readRecent(QStringLiteral("input"), kRecentSeconds);
     const std::vector<float> out = readRecent(QStringLiteral("output"), kRecentSeconds);
     analyzer_.feed(EqAnalyzer::Input, in.data(), in.size(), rate);
     analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate);
 
     const double ease = easeFraction(dt, kEaseSeconds);
-    bool moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output);
+    moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output) || moving;
     moving = startShown_.step(ease, 1e-4) || moving;
     moving = endShown_.step(ease, 1e-4) || moving;
+    moving = colorShown_.step(ease, 1e-2) || moving;
     const double glowTarget = !hovered_.isEmpty() || dragging() ? 1.0 : 0.0;
     if (glow_ != glowTarget) {
         glow_ += (glowTarget - glow_) * easeFraction(dt, kGlowSeconds);
@@ -141,7 +148,7 @@ void HueSpectrum::setHovered(const QString& part) {
     if (part == hovered_)
         return;
     hovered_ = part;
-    setCursor(part.isEmpty() ? Qt::ArrowCursor : part == QLatin1String("band") ? Qt::OpenHandCursor : Qt::SizeHorCursor);
+    setCursor(part.isEmpty() ? Qt::ArrowCursor : part == QLatin1String("color") ? Qt::SizeVerCursor : Qt::SizeHorCursor);
     Q_EMIT hoveredChanged();
     update();
 }
@@ -166,12 +173,10 @@ void HueSpectrum::mousePressEvent(QMouseEvent* event) {
         return;  // (the double-click follows)
     part_ = part;
     gesture_ = newGestureKey();
-    pressX_ = event->position().x();
-    dragStart_ = start_;
-    dragEnd_ = end_;
-    touch(part == QLatin1String("end") ? QStringLiteral("end") : QStringLiteral("start"));
-    if (part == QLatin1String("band"))
-        setCursor(Qt::ClosedHandCursor);
+    lastX_ = event->position().x();
+    lastY_ = event->position().y();
+    dragValue_ = part == QLatin1String("start") ? start_ : part == QLatin1String("end") ? end_ : color_;
+    touch(part);
     Q_EMIT draggingChanged();
     update();
 }
@@ -179,26 +184,27 @@ void HueSpectrum::mousePressEvent(QMouseEvent* event) {
 void HueSpectrum::mouseMoveEvent(QMouseEvent* event) {
     if (gesture_.isEmpty())
         return;
-    const double x = event->position().x();
+    const QPointF pos = event->position();
     const double fine = event->modifiers() & Qt::ShiftModifier ? 0.2 : 1.0;
+    const double dx = pos.x() - lastX_, dy = pos.y() - lastY_;
+    lastX_ = pos.x();
+    lastY_ = pos.y();
+    if (part_ == QLatin1String("color")) {
+        dragValue_ = std::clamp(dragValue_ - dy * kColorPerPixel * fine, -20.0, kColorMax + 20.0);  // (past the ends a little)
+        setParams({{QStringLiteral("color"), std::clamp(dragValue_, 0.0, kColorMax)}}, gesture_,
+                  QStringLiteral("Change Color"));
+        return;
+    }
     // across the view's width the frequency goes kHighHz / kLowHz times
-    const double factor = std::pow(kHighHz / kLowHz, (x - pressX_) * fine / plot().width());
-    pressX_ = x;
+    dragValue_ *= std::pow(kHighHz / kLowHz, dx * fine / plot().width());
     if (part_ == QLatin1String("start")) {
-        dragStart_ = std::clamp(dragStart_ * factor, kStartMin, std::min(kStartMax, end_ / kGap));
-        setParams({{QStringLiteral("start"), dragStart_}}, gesture_, QStringLiteral("Change Low Cut"));
-    } else if (part_ == QLatin1String("end")) {
-        dragEnd_ = std::clamp(dragEnd_ * factor, std::max(kEndMin, start_ * kGap), kEndMax);
-        setParams({{QStringLiteral("end"), dragEnd_}}, gesture_, QStringLiteral("Change High Cut"));
+        dragValue_ = std::clamp(dragValue_, kStartMin * 0.8, kStartMax * 1.25);
+        setParams({{QStringLiteral("start"), std::clamp(dragValue_, kStartMin, std::min(kStartMax, end_ / kGap))}},
+                  gesture_, QStringLiteral("Change Low Cut"));
     } else {
-        // both, as far as either can go
-        const double lowest = std::max(kStartMin / dragStart_, kEndMin / dragEnd_);
-        const double highest = std::min(kStartMax / dragStart_, kEndMax / dragEnd_);
-        const double f = std::clamp(factor, std::min(1.0, lowest), std::max(1.0, highest));
-        dragStart_ *= f;
-        dragEnd_ *= f;
-        setParams({{QStringLiteral("start"), dragStart_}, {QStringLiteral("end"), dragEnd_}}, gesture_,
-                  QStringLiteral("Move Band"));
+        dragValue_ = std::clamp(dragValue_, kEndMin * 0.8, kEndMax * 1.25);
+        setParams({{QStringLiteral("end"), std::clamp(dragValue_, std::max(kEndMin, start_ * kGap), kEndMax)}},
+                  gesture_, QStringLiteral("Change High Cut"));
     }
 }
 
@@ -208,8 +214,7 @@ void HueSpectrum::endDrag() {
     gesture_.clear();
     part_.clear();
     Q_EMIT draggingChanged();
-    hovered_ = QStringLiteral("?");  // (worked out again)
-    setHovered({});
+    update();
 }
 
 void HueSpectrum::mouseReleaseEvent(QMouseEvent* event) {
@@ -226,16 +231,10 @@ void HueSpectrum::mouseDoubleClickEvent(QMouseEvent* event) {
         return;
     }
     endDrag();
-    if (part == QLatin1String("start"))
-        setParams({{QStringLiteral("start"), defaultValue(QStringLiteral("start"))}}, QString(),
-                  QStringLiteral("Reset Low Cut"));
-    else if (part == QLatin1String("end"))
-        setParams({{QStringLiteral("end"), defaultValue(QStringLiteral("end"))}}, QString(),
-                  QStringLiteral("Reset High Cut"));
-    else
-        setParams({{QStringLiteral("start"), defaultValue(QStringLiteral("start"))},
-                   {QStringLiteral("end"), defaultValue(QStringLiteral("end"))}},
-                  QString(), QStringLiteral("Reset Band"));
+    const QString text = part == QLatin1String("start") ? QStringLiteral("Reset Low Cut")
+                         : part == QLatin1String("end") ? QStringLiteral("Reset High Cut")
+                                                        : QStringLiteral("Reset Color");
+    setParams({{part, defaultValue(part)}}, QString(), text);
 }
 
 // --- Painting ------------------------------------------------------------------------------
@@ -249,12 +248,14 @@ void HueSpectrum::paint(SgPainter& p) {
     drawDecadeGrid(p, area, ax);
     const double start = std::exp2(startShown_.value), end = std::exp2(endShown_.value);
     const double xs = ax.position(std::clamp(start, kLowHz, kHighHz)), xe = ax.position(std::clamp(end, kLowHz, kHighHz));
+    const double color = colorShown_.value;
+    const double vivid = std::clamp(color / 100.0, 0.0, 1.0);             // grey at 0 %, its hues at 100 %
+    const double beyond = std::clamp((color - 100.0) / 100.0, 0.0, 1.0);  // and glowing past it
     p.setAntialiasing(true);
 
     // The spectra, a column every kColumnPixels.
     const int n = std::max(2, int(area.width() / kColumnPixels) + 1);
-    std::vector<double> freqs(static_cast<std::size_t>(n));
-    std::vector<double> columnX(static_cast<std::size_t>(n));
+    std::vector<double> freqs(static_cast<std::size_t>(n)), columnX(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const double x = area.left() + area.width() * i / (n - 1);
         columnX[std::size_t(i)] = x;
@@ -264,21 +265,19 @@ void HueSpectrum::paint(SgPainter& p) {
     const std::vector<double> inDb = analyzer_.columns(EqAnalyzer::Input, freqs);
     const bool outLive = analyzer_.live(EqAnalyzer::Output), inLive = analyzer_.live(EqAnalyzer::Input);
 
-    // The notes in use: a thin line in its hue at every octave within the band, glowing as it sounds.
-    const int notes = midi_ ? held_ : notes_;
-    if (notes != 0) {
-        for (int c = 0; c < 12; ++c) {
-            if (!(notes >> c & 1))
+    // The notes in use: a thin line in its hue at every octave within the band, brighter as it sounds.
+    const int notes = midi_ && shownNotes_ >= 0 ? (shownNotes_ & 0xfff) : buttons_;
+    for (int c = 0; c < 12 && notes != 0; ++c) {
+        if (!(notes >> c & 1))
+            continue;
+        const QColor hue = HueWheel::noteColor(c);
+        for (double hz = 440.0 * std::exp2((c - 9 - 48) / 12.0); hz < kHighHz; hz *= 2.0) {
+            if (hz < start || hz > end || hz < kLowHz)
                 continue;
-            const QColor color = HueWheel::noteColor(c);
-            for (double hz = 440.0 * std::exp2((c - 9 - 48) / 12.0); hz < kHighHz; hz *= 2.0) {
-                if (hz < start || hz > end || hz < kLowHz)
-                    continue;
-                const double x = ax.position(hz);
-                const double sounds = outLive ? strength(levelDbAt(hz)) : 0.0;
-                p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()),
-                           withAlpha(color, int(40 + 150 * sounds * sounds)), 1.0 + sounds);
-            }
+            const double x = ax.position(hz);
+            const double sounds = outLive ? strength(levelDbAt(hz)) : 0.0;
+            p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()),
+                       withAlpha(hue, int(40 + 160 * sounds * sounds)), 1.0 + sounds);
         }
     }
 
@@ -289,21 +288,22 @@ void HueSpectrum::paint(SgPainter& p) {
             line[std::size_t(i)] = QPointF(columnX[std::size_t(i)], yOf(inDb[std::size_t(i)]));
         p.drawPolyline(line.data(), n, withAlpha(Theme::textDim(), 130), 1.0);
     }
-    // The output: filled in the colours of its notes (grey outside the band), a glowing line along its top.
+    // The output: filled in the colours of its notes (as vivid as Color; grey outside the band), glowing on top.
     if (outLive) {
         std::vector<QPointF> base(static_cast<std::size_t>(n)), top(static_cast<std::size_t>(n));
         std::vector<QColor> baseColors(static_cast<std::size_t>(n)), topColors(static_cast<std::size_t>(n));
         const QColor grey = Theme::textDim();
         for (int i = 0; i < n; ++i) {
             const std::size_t k = std::size_t(i);
-            const double x = columnX[k], y = yOf(outDb[k]);
+            const double x = columnX[k];
             base[k] = QPointF(x, area.bottom());
-            top[k] = QPointF(x, y);
+            top[k] = QPointF(x, yOf(outDb[k]));
             const double inside = smoothstep(std::min((x - xs) / 6.0 + 0.5, (xe - x) / 6.0 + 0.5));
             const double s = strength(outDb[k]);
-            const QColor color = mixColor(grey, pitchColor(freqs[k]), inside);
-            baseColors[k] = withAlpha(color, int(20 + 20 * inside));
-            topColors[k] = withAlpha(mixColor(color, Qt::white, 0.2 * s * inside), int(90 + 140 * inside * (0.4 + 0.6 * s)));
+            const QColor tint = mixColor(grey, pitchColor(freqs[k]), inside * vivid);
+            const QColor lit = mixColor(tint, Qt::white, (0.15 + 0.35 * beyond) * s * inside);
+            baseColors[k] = withAlpha(tint, int(20 + (20 + 40 * beyond) * inside));
+            topColors[k] = withAlpha(lit, int(90 + (140 + 25 * beyond) * inside * (0.4 + 0.6 * s)));
         }
         p.fillGradientStrip(base.data(), top.data(), baseColors.data(), topColors.data(), n);
         drawGlowPolyline(p, top, withAlpha(Theme::text(), 200), 1.2);
@@ -316,37 +316,57 @@ void HueSpectrum::paint(SgPainter& p) {
     if (xe < area.right())
         p.fillRect(QRectF(xe, area.top(), area.right() - xe, area.height()), shade);
 
-    // The handles: a line, a grip, the frequency.
+    // The handles: a line, a grip and the frequency at the bottom.
     const QFont small = uiFont(7, true);
+    const double gripTop = area.bottom() - 18;
+    const double room = xe - xs - 18 - SgPainter::textWidth(hzText(start), small) - SgPainter::textWidth(hzText(end), small);
     for (const bool isEnd : {false, true}) {
         const QString part = isEnd ? QStringLiteral("end") : QStringLiteral("start");
-        const bool hot = hovered_ == part || part_ == part || hovered_ == QLatin1String("band") || part_ == QLatin1String("band");
+        const bool hot = hovered_ == part || part_ == part;
         const double x = isEnd ? xe : xs, hz = isEnd ? end : start;
-        const QColor color = mixColor(Theme::accent(), Theme::text(), hot ? 0.25 * glow_ : 0.0);
+        const QColor lineColor = mixColor(Theme::accent(), Theme::text(), hot ? 0.25 * glow_ : 0.0);
         if (hot && glow_ > 0.0)
             p.fillRect(QRectF(x - 3, area.top(), 6, area.height()), withAlpha(Theme::accent(), int(40 * glow_)));
-        p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()), withAlpha(color, hot ? 230 : 170), hot ? 1.6 : 1.1);
-        const QRectF grip(x - 3.5, area.top() + 3, 7, 14);
-        p.fillRoundedRect(grip, 2.5, 2.5, color);
+        p.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()), withAlpha(lineColor, hot ? 230 : 160),
+                   hot ? 1.6 : 1.1);
+        const QRectF grip(x - 3.5, gripTop, 7, 14);
+        p.fillRoundedRect(grip, 2.5, 2.5, lineColor);
         for (int line = 0; line < 3; ++line) {
             const double y = grip.top() + 4 + 3 * line;
             p.drawLine(QPointF(grip.left() + 2, y), QPointF(grip.right() - 2, y), withAlpha(Theme::meterBg(), 200), 1.0);
         }
+        // inside the band (the start's to the right of its line, the end's to the left), or outside where it is narrow
         const QString text = hzText(hz);
         const double w = SgPainter::textWidth(text, small) + 4;
-        // inside the band (the start's to the right of its line, the end's to the left), or outside where it is narrow
-        const double room = xe - xs - 18 - SgPainter::textWidth(hzText(start), small) - SgPainter::textWidth(hzText(end), small);
-        const bool inside = room > 0.0;
-        const bool leftOfLine = isEnd == inside;
-        double tx = leftOfLine ? x - 6 - w : x + 6;
-        tx = std::clamp(tx, area.left() + 2, area.right() - w - 2);
-        p.drawText(QRectF(tx, area.top() + 4, w, 12), (leftOfLine ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter,
-                   text, withAlpha(Theme::text(), hot ? 255 : 200), small);
+        const bool leftOfLine = isEnd == (room > 0.0);
+        const double tx = std::clamp(leftOfLine ? x - 6 - w : x + 6, area.left() + 2, area.right() - w - 10);
+        p.drawText(QRectF(tx, gripTop + 1, w, 12), (leftOfLine ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter, text,
+                   withAlpha(Theme::text(), hot ? 255 : 200), small);
     }
+
+    // Color: a gauge at the right edge, its value while hovered or dragged.
+    const bool colorHot = hovered_ == QLatin1String("color") || part_ == QLatin1String("color");
+    const double gaugeTop = area.top() + 24, gaugeBottom = area.bottom() - 4;
+    const double level = gaugeBottom - (gaugeBottom - gaugeTop) * std::clamp(color / kColorMax, 0.0, 1.0);
+    p.fillRoundedRect(QRectF(area.right() - 5, gaugeTop, 3, gaugeBottom - gaugeTop), 1.5, 1.5, withAlpha(Theme::textDim(), 50));
+    p.fillRoundedRect(QRectF(area.right() - 5, level, 3, gaugeBottom - level), 1.5, 1.5,
+                      withAlpha(Theme::accent(), int(150 + 105 * (colorHot ? glow_ : 0.0))));
+    const double mid = gaugeBottom - (gaugeBottom - gaugeTop) * 0.5;  // (100 %)
+    p.drawLine(QPointF(area.right() - 7, mid), QPointF(area.right() - 1, mid), withAlpha(Theme::text(), 120), 1.0);
+    if (colorHot && glow_ > 0.0) {
+        const QString text = QStringLiteral("Color %1 %").arg(std::lround(color));
+        const QFont bold = uiFont(8, true);
+        const double w = SgPainter::textWidth(text, bold) + 10;
+        const QRectF box(area.right() - 10 - w, std::clamp(level - 8, area.top() + 24, area.bottom() - 36), w, 16);
+        p.fillRoundedRect(box, 3, 3, withAlpha(Theme::meterBg(), int(220 * glow_)));
+        p.drawText(box, Qt::AlignCenter, text, withAlpha(Theme::text(), int(255 * glow_)), bold);
+    }
+
     // Before any sound: a hint.
     if (!outLive && !inLive) {
         p.drawText(QRectF(area.left(), area.center().y() - 6, area.width(), 12), Qt::AlignCenter,
-                   QStringLiteral("Drag the handles for Low and High Cut"), withAlpha(Theme::textDim(), 160), uiFont(7));
+                   QStringLiteral("Drag up and down for Color, the handles for Low and High Cut"),
+                   withAlpha(Theme::textDim(), 160), uiFont(7));
     }
 }
 
