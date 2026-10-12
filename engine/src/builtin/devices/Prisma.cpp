@@ -25,7 +25,7 @@
 //   Hann windows over 220 ms grains born every 110 ms, their delay sweeping
 //   at 1 - ratio (a semitone, or Pre-Shift's cents ahead of the notes).
 // - Color fades from the plain mid band (0 %) to the processed one (100 %);
-//   above, the masks are raised to its power (sharper notes, deeper cuts).
+//   above, the notes get louder and narrower and the floor between them lower.
 //   Wet Gain scales the processed band; Post-Shift tunes the note grid.
 
 #include <algorithm>
@@ -582,8 +582,20 @@ private:
                 ++count;
             }
         }
-        const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count));
-        const float exponent = key_.colorExponent / 100.f;
+        // Color past 100 % sharpens (measured at 125, 150, 175 and 200 %): the notes louder (to +7.1 dB) and
+        // narrower (to 2.5 times), the floor between them lower (to -21.3 dB).
+        static constexpr float kPeakDb[5] = {0.f, 1.8f, 5.3f, 7.1f, 7.1f};
+        static constexpr float kFloorDb[5] = {0.f, -4.3f, -9.7f, -15.4f, -21.3f};
+        static constexpr float kNarrow[5] = {1.f, 1.2f, 1.9f, 2.1f, 2.5f};
+        const float over = std::clamp(key_.colorExponent / 100.f - 1.f, 0.f, 1.f) * 4.f;
+        const int oi = std::min(3, static_cast<int>(over));
+        const float of = over - static_cast<float>(oi);
+        auto lerp = [&](const float* t) { return t[oi] + (t[oi + 1] - t[oi]) * of; };
+        const float peak = std::pow(10.f, lerp(kPeakDb) / 20.f);
+        const double narrow = lerp(kNarrow);
+        for (float& g : v) g *= peak;
+        const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
+                                std::pow(10.f, lerp(kFloorDb) / 20.f);
         const double post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
         // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat, at a gain
         // that falls 1.89 dB per enabled note (+19.8 dB with one). The crossovers take most of it away, but
@@ -612,7 +624,7 @@ private:
                 double dist = std::fmod(p - c, 12.0);
                 if (dist < -6) dist += 12;
                 if (dist >= 6) dist -= 12;
-                const double kv = kernel(dist);
+                const double kv = kernel(dist * narrow);
                 sum += v[c] * kv;
                 cover += kv;
             }
@@ -631,20 +643,15 @@ private:
                 if (dist < -6) dist += 12;
                 if (dist >= 6) dist -= 12;
                 if (std::abs(dist) > 1.5) continue;
-                const double shape = 0.85 * std::exp(-std::abs(dist) / 0.19);
+                const double shape = 0.85 * std::exp(-std::abs(dist) * narrow / 0.19);
                 if (lower) fromAbove += v[(src + 11) % 12] * shape;
                 else fromBelow += v[(src + 1) % 12] * shape;
-            }
-            if (exponent > 1.f) {
-                kept = std::pow(kept, exponent);
-                fromBelow = std::pow(fromBelow, exponent);
-                fromAbove = std::pow(fromAbove, exponent);
             }
             // across a semitone at each end of the comb, from it to the flat gain (in dB)
             const double past = std::max(combLow - p, p - combHigh);  // semitones outside the comb
             if (past > -0.5) {
                 const double t = std::min(1.0, past + 0.5);
-                const double outside = std::pow(10.0, outsideDb * (exponent > 1.f ? exponent : 1.f) / 20.0);
+                const double outside = std::pow(10.0, outsideDb / 20.0);
                 kept = std::exp((1 - t) * std::log(std::max(kept, 1e-5)) + t * std::log(outside));
                 fromBelow *= 1 - t;
                 fromAbove *= 1 - t;
