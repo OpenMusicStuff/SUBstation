@@ -647,19 +647,37 @@ inputs listed and one opened; `MidiInputDevices` does the rest)
       ALSA's headers).
 
 Stage 4 — Plug-ins
-- [ ] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),
-      under XWayland on Wayland.
-  - [ ] `Steinberg::Linux::IRunLoop` for the plug-ins: their fds and timers
-        on Qt's event loop (`QSocketNotifier`, `QTimer`).
-  - [ ] Resizing and content scale.
-- [ ] The main window's shortcuts while an editor has the focus
+- [x] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),
+      under XWayland on Wayland. (An X11 window of its own xcb connection, a
+      dialog transient for the main window; built when pkg-config finds xcb.)
+  - [x] `Steinberg::Linux::IRunLoop` for the plug-ins: their fds and timers
+        on Qt's event loop (`QSocketNotifier`, `QTimer`). (`Vst3RunLoop`, from
+        the frame, on the editor event loop of `EditorHost.h`: Qt's,
+        `app::EditorEventLoop`, while the bridge lives; else the engine's own,
+        run by `Engine::idle()`.)
+  - [x] Resizing and content scale. (Both ways, within the view's limits;
+        the scale is `Xft.dpi` over 96. Not yet: following a change of
+        `Xft.dpi` while the editor is open.)
+- [x] The main window's shortcuts while an editor has the focus
       (`PluginEditorKeys`): an xcb native event filter on Linux. Same rules
-      as on Windows.
-- [ ] The test plug-ins (`tests/vst3_plugins`) built as bundles there; the
-      editor tests run on Linux (Xvfb).
+      as on Windows. (Not a filter of Qt's: Qt never sees an editor's keys.
+      The editor window grabs the keys a shortcut can be, synchronously, and
+      asks `PluginEditorKeys` through the engine's key filter; keys it doesn't
+      take are replayed to the plug-in.)
+- [x] The test plug-ins (`tests/vst3_plugins`) built as bundles there; the
+      editor tests run on Linux (Xvfb). (SUB Test Effect has an X11 editor on
+      its own connection, run by the host's `IRunLoop`;
+      tests/engine/test_editors_x11.cpp and test_bridge_plugins on an Xvfb of
+      their own: harness/XDisplay.h.)
+- [ ] Tried with real plug-ins' editors (JUCE, VSTGUI, DPF) under a window
+      manager, X11 and XWayland: focus, keys, resizing, scale. (Stage 7's
+      round of commercial plug-ins.)
 
 Stage 5 — The rest of the platform layer
-- [ ] Plug-in paths checked on Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+- [x] Plug-in paths checked on Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+      (`~/.vst3`, named like a plug-in, was taken for one and never looked
+      in: fixed. A plug-in installed there as a link found and read; Linux's
+      load errors in plain words: no Linux version, a library missing.)
 
 Stage 6 — Feeling native
 - [ ] Linux keeps the system's window frame (`WindowFrame` is Windows only);

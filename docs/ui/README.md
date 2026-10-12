@@ -511,10 +511,10 @@ or shortcut does.
 [PluginEditorKeys](../../ui/src/platform/PluginEditorKeys.h) (in Main.qml, `target: window`). The rules as the user
 sees them: [guide/shortcuts.md](../guide/shortcuts.md).
 
-Plug-in editors are plain Win32 windows (the engine's `EditorWindowWin32.cpp`, window class `SUBstationPluginEditor`; see
-[engine/plugins.md](../engine/plugins.md)), so Qt never sees their keys as key events. Their messages still pass
-through Qt's event loop, so `PluginEditorKeys`, a `QAbstractNativeEventFilter` installed on the application on
-Windows only (`supported`), sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
+On Windows plug-in editors are plain Win32 windows (the engine's `EditorWindowWin32.cpp`, window class
+`SUBstationPluginEditor`; see [engine/plugins.md](../engine/plugins.md)), so Qt never sees their keys as key events.
+Their messages still pass through Qt's event loop, so `PluginEditorKeys`, a `QAbstractNativeEventFilter` installed
+on the application there, sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
 
 1. Is the window (or its root ancestor) a plug-in editor? If not, Qt handles it as usual.
 2. `actionFor(virtualKey, modifiers, textField)` maps the virtual-key code to a Qt key (`qtKey`: letters, digits,
@@ -530,9 +530,19 @@ Windows only (`supported`), sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
    render's dialog is up the window takes no keys, so the plug-in keeps them.
 
 Posting the key to the main window instead wouldn't do: Qt Quick's shortcuts only fire in the window that has the
-focus. `closeForemostEditor()` (Ctrl+W, *View › Close Plug-in Editor*, shown on Windows only) walks the top-level
-windows with `EnumWindows`, top down, and posts `WM_CLOSE` to the first visible editor of this process. The rules
-are plain code, so the tests run `actionFor()` and `keyPressed()` on any platform.
+focus. `closeForemostEditor()` (Ctrl+W, *View › Close Plug-in Editor*, enabled where editors are windows of their
+own: `supported`) walks the top-level windows with `EnumWindows`, top down, and posts `WM_CLOSE` to the first
+visible editor of this process.
+
+On Linux editors are X11 windows of the engine's own connections (`EditorWindowX11.cpp`), whose keys Qt never sees.
+There `PluginEditorKeys` is the engine's key filter (`app::setEditorKeyFilter`, [audio/EditorKeys.h](../../app/src/audio/EditorKeys.h),
+over the engine's [EditorHost.h](../../engine/src/EditorHost.h); the last one made, until it goes): the editor windows grab the keys a shortcut can be and ask it about each by its
+X keysym (`keysymPressed()`: `qtKeyForKeysym()` maps the same keys `qtKey()` does), with the same rules (no text
+field can be told apart there). Not taken, the key goes on to the plug-in. Taken, its action is triggered once the
+event loop runs again (queued): the filter is asked from inside the editor window's own events, and the action may
+close that editor or every one (Ctrl+W, a new project). `closeForemostEditor()` is the engine's
+(`app::closeForemostEditor()`). The rules are plain code, so the tests run `actionFor()`, `keyPressed()` and
+`keysymPressed()` on any platform.
 
 ## Gotchas
 

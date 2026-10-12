@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include "TestSupport.h"
+#include "plugins/Vst3Format.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -454,6 +455,19 @@ private Q_SLOTS:
         QCOMPARE(friendlyScanReason(QStringLiteral("The plug-in crashed while loading.")),
                  QStringLiteral("The plug-in crashed while loading."));
         QCOMPARE(friendlyScanReason(QStringLiteral("  two\t\nlines  ")), QStringLiteral("two lines"));
+        // Linux's (the VST 3 SDK's module_linux.cpp, and dlopen's).
+        const QString binary = QString::fromStdString(sub::vst3::Vst3Format::binaryInBundle("Win.vst3"));
+        QCOMPARE(friendlyScanReason(QStringLiteral("/home/u/.vst3/Win.vst3 is not a module directory.")),
+                 QStringLiteral("It is not a Linux plug-in: it has no %1.").arg(binary));
+        QCOMPARE(friendlyScanReason(QStringLiteral("dlopen failed.\nlibwebkit2gtk-4.0.so.37: cannot open shared object "
+                                                   "file: No such file or directory")),
+                 QStringLiteral("Linux could not load it: a library it needs is missing (libwebkit2gtk-4.0.so.37)."));
+        QCOMPARE(friendlyScanReason(QStringLiteral("dlopen failed.\n/x/A.vst3/Contents/x86_64-linux/A.so: wrong ELF "
+                                                   "class: ELFCLASS32")),
+                 QStringLiteral("Linux could not load it: it is not a 64-bit plug-in."));
+        QCOMPARE(friendlyScanReason(QStringLiteral("dlopen failed.\n/x/A.vst3/Contents/x86_64-linux/A.so: invalid ELF "
+                                                   "header")),
+                 QStringLiteral("Linux could not load it: invalid ELF header."));
     }
 
     void theBundlesBinarySignsIt() {
@@ -491,6 +505,37 @@ private Q_SLOTS:
         QVERIFY(!result.failures[1].reason.isEmpty());
 #ifdef _WIN32
         QCOMPARE(result.failures[0].reason, QStringLiteral("Windows could not load it: it is not a 64-bit Windows plug-in."));
+#elif defined(Q_OS_LINUX)
+        QCOMPARE(result.failures[0].reason, QStringLiteral("It is not a Linux plug-in: it has no %1.")
+                                                .arg(QString::fromStdString(sub::vst3::Vst3Format::binaryInBundle("Junk.vst3"))));
+#endif
+    }
+
+    // Linux: VST 3's folders, the user's (~/.vst3) first, without it where there is no home; a plug-in
+    // installed in it (a link to its bundle, in a vendor's folder, as packages do) found and read.
+    void theSystemsFoldersOnLinux() {
+#ifndef Q_OS_LINUX
+        QSKIP("Linux's folders");
+#else
+        const QString home = tmp_->path() + QStringLiteral("/home");
+        QDir().mkpath(home);
+        const test::ScopedEnv noOverride("SUBSTATION_VST3_PATH", std::nullopt);
+        {
+            const test::ScopedEnv env("HOME", home);
+            QCOMPARE(standardPluginFolders(), QStringList({home + QStringLiteral("/.vst3"), QStringLiteral("/usr/lib/vst3"),
+                                                           QStringLiteral("/usr/local/lib/vst3")}));
+#ifdef SUBSTATION_TEST_PLUGINS_BUNDLE
+            const QString installed = home + QStringLiteral("/.vst3/SUBstation/SUBTestPlugins.vst3");
+            QDir().mkpath(home + QStringLiteral("/.vst3/SUBstation"));
+            QVERIFY(QFile::link(QStringLiteral(SUBSTATION_TEST_PLUGINS_BUNDLE), installed));
+            QCOMPARE(findPluginFiles({home + QStringLiteral("/.vst3")}), QStringList{installed});  // (in it: it is no plug-in)
+            const ScanResult result = PluginScanner(QStringLiteral(SUBSTATION_SCANNER), cacheFile()).scan(QStringList{installed});
+            QCOMPARE(result.plugins.size(), size_t(5));
+            QVERIFY(result.failures.empty());
+#endif
+        }
+        const test::ScopedEnv noHome("HOME", std::nullopt);
+        QCOMPARE(standardPluginFolders(), QStringList({QStringLiteral("/usr/lib/vst3"), QStringLiteral("/usr/local/lib/vst3")}));
 #endif
     }
 
@@ -522,6 +567,8 @@ private Q_SLOTS:
         QCOMPARE(result.failures[0].path, junk);
 #ifdef _WIN32
         QCOMPARE(result.failures[0].reason, QStringLiteral("Windows could not load it: it is not a 64-bit Windows plug-in."));
+#elif defined(Q_OS_LINUX)
+        QVERIFY(result.failures[0].reason.startsWith(QStringLiteral("It is not a Linux plug-in")));
 #endif
         // Unchanged files are not read again...
         Progress again;

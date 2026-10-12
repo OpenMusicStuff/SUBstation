@@ -81,6 +81,7 @@ file.
   path cleaned up (`QDir::cleanPath`), and on Windows with backslashes and in lower case; elsewhere case counts).
 - `pluginFolders()`: `pluginSearchFolders(customPluginFolders())`, what a scan looks in.
 - `findPluginFiles(roots)`: every `.vst3` bundle (a folder) or file under the roots. Nothing inside a bundle is listed.
+  A name that is only ".vst3" is no plug-in: Linux's own folder for them, `~/.vst3`, is looked in.
   Linked folders (symbolic links, junctions) are followed, each real folder once (by its canonical path), so a link
   back up can't loop. A root that is itself a `.vst3` is listed as it is. Unreadable folders are skipped. Sorted
   ignoring case, one entry per `caseKey()` path.
@@ -188,7 +189,11 @@ versions of SUBstation are read as they are.
 `friendlyScanReason(reason)` turns the loader's error into a line for the user: whitespace collapsed; Windows'
 `LoadLibraryW` error numbers named (126: "a file it needs is missing", 193: "it is not a 64-bit Windows plug-in", 1114:
 "it failed to start", others "error N"), as "Windows could not load it: ..."; a
-`LoadLibraryW failed for path ...: <message>` keeps only Windows' message. Other reasons pass through as they are.
+`LoadLibraryW failed for path ...: <message>` keeps only Windows' message. Linux's (the VST 3 SDK's
+`module_linux.cpp`): "<path> is not a module directory." (a file, or a bundle without code for this machine: a
+Windows plug-in) as "It is not a Linux plug-in: it has no Contents/x86_64-linux/Name.so."; "dlopen failed." with
+dlopen's error as "Linux could not load it: ...": a library it needs missing (named), "it is not a 64-bit plug-in"
+(wrong ELF class), else dlopen's reason without its file name. Other reasons pass through as they are.
 
 ## In the application
 

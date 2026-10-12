@@ -3,6 +3,7 @@
 // files, one an area (tracks, inputs, devices, plug-ins, loading, parameters,
 // sources, transport, recording, freezing, reversing, the audio device).
 
+#include "audio/EditorEventLoop.h"
 #include "audio/BridgePrivate.h"
 
 #include "model/Project.h"
@@ -28,6 +29,10 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
     d_->trackIds.insert(kMaster, sub::Engine::kMaster);
     d_->chains.insert(kMaster, engine_.trackChain(sub::Engine::kMaster));
     d_->chainOwner.insert(kMaster, kMaster);
+    if (sub::editorsUseHost()) {  // plug-in editors' windows and run loops (Linux) on Qt's event loop
+        d_->editorLoop = std::make_shared<EditorEventLoop>();
+        sub::setEditorEventLoop(d_->editorLoop);
+    }
 
     d_->pluginTimer.setSingleShot(true);
     connect(&d_->pluginTimer, &QTimer::timeout, this, [this] { guarded("loading plug-ins", [&] { loadNextPlugin(); }); });
@@ -86,6 +91,7 @@ EngineBridge::~EngineBridge() {
     // Their results come to this object, which is going: what is posted to it goes with it.
     d_->pool.waitForDone();
     d_->statePool.waitForDone();
+    if (d_->editorLoop && &sub::editorEventLoop() == d_->editorLoop.get()) sub::setEditorEventLoop(nullptr);
 }
 
 void EngineBridge::shutdown() {

@@ -4,8 +4,8 @@
 //
 // Rendered offline, so no audio device is needed. The editor test opens real
 // (briefly visible) Win32 windows and talks to the test plug-in's view with
-// window messages, as a user's clicks would reach it: Windows only (elsewhere
-// plug-ins show no editor).
+// window messages, as a user's clicks would reach it: Windows only (Linux's
+// editors are test_editors_x11.cpp's).
 
 #ifdef _WIN32
 #include <windows.h>
@@ -382,7 +382,7 @@ TEST_CASE("a plug-in moves to another track as it is") {
 
 TEST_CASE("editor edits, resizes and closes") {
 #ifndef _WIN32
-    SKIP("plug-in editors are Windows only");
+    SKIP("Win32 editor windows (Linux's: test_editors_x11.cpp)");
 #else
     PluginEngine e;
     auto& engine = e.engine;

@@ -37,6 +37,7 @@ option(SUBSTATION_TEST_PLUGINS "Build the VST3 plug-ins and the ASIO driver the 
 option(SUBSTATION_ASIO "Build ASIO support (needs Steinberg's ASIO SDK: see docs/building.md)" ON)
 option(SUBSTATION_PIPEWIRE "Build PipeWire support on Linux (needs libpipewire-0.3-dev: see docs/building.md)" ON)
 option(SUBSTATION_ALSA "Build ALSA sequencer MIDI input on Linux (needs libasound2-dev: see docs/building.md)" ON)
+option(SUBSTATION_X11_EDITORS "Build plug-in editors on Linux, as X11 windows (needs libxcb1-dev: see docs/building.md)" ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)

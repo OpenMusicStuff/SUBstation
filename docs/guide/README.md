@@ -88,9 +88,10 @@ SUBstation is made for Windows; on Linux it runs with these differences:
   exclusive mode (see [audio-setup.md](audio-setup.md)).
 - MIDI inputs are ALSA's sequencer's ports: hardware, and software such as a virtual
   keyboard (see [midi.md](midi.md#midi-input)).
-- VST3 plug-ins load and play, but their own editor windows don't open: edit them in
-  the device view (see [plugins.md](plugins.md#the-plug-ins-editor)). Plug-ins are
-  looked for in `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`.
+- VST3 plug-ins load and play, with their editor windows (X11; on Wayland through
+  XWayland: see [plugins.md](plugins.md#the-plug-ins-editor)). Plug-ins are looked for
+  in `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`; one that has no Linux
+  version (a Windows plug-in) is listed as one that couldn't be read, and why.
 
 ---
 

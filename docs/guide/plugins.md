@@ -63,8 +63,10 @@ sit in the device view beside the built-in devices (see [devices.md](devices.md)
   [automation.md](automation.md).
 - Which keys reach the editor and which go to SUBstation is in
   [shortcuts.md](shortcuts.md#plug-in-editors).
-- On Linux plug-ins' editor windows don't open: the status line says the plug-in has no
-  editor, and you edit its parameters in the device view.
+- On Linux editors are X11 windows (on Wayland through XWayland, as SUBstation itself
+  is). Their scale is the desktop's (its `Xft.dpi` setting). Without an X server they
+  don't open: the status line says the plug-in has no editor, and you edit its
+  parameters in the device view.
 
 ### Presets
 

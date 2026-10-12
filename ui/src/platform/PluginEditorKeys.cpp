@@ -6,6 +6,7 @@
 #include <QVariant>
 #include <QVariantList>
 
+#include "audio/EditorKeys.h"
 #include "input/Shortcuts.h"
 #include "session/ComputerKeyboard.h"
 #include "session/RenderProgress.h"
@@ -26,6 +27,8 @@
 namespace sub::ui {
 
 namespace {
+
+const PluginEditorKeys* filterOwner = nullptr;  // the one the engine's key filter calls (Linux)
 
 constexpr int kVirtualSpace = 0x20;
 
@@ -92,14 +95,27 @@ BOOL CALLBACK findEditor(HWND hwnd, LPARAM found) {  // top-level windows, from 
 }  // namespace
 
 PluginEditorKeys::PluginEditorKeys(QObject* parent) : QObject(parent) {
-    if (supported() && QCoreApplication::instance()) {
+#ifdef Q_OS_WIN
+    if (QCoreApplication::instance()) {
         QCoreApplication::instance()->installNativeEventFilter(this);
         installed_ = true;
     }
+#else
+    if (app::editorsAreEngineWindows()) {
+        app::setEditorKeyFilter(
+            [this](quint32 keysym, int modifiers, bool repeat) { return keysymPressed(keysym, modifiers, repeat); });
+        filterOwner = this;
+        filtering_ = true;
+    }
+#endif
 }
 
 PluginEditorKeys::~PluginEditorKeys() {
     if (installed_ && QCoreApplication::instance()) QCoreApplication::instance()->removeNativeEventFilter(this);
+    if (filtering_ && filterOwner == this) {  // (not a newer one's)
+        app::setEditorKeyFilter(nullptr);
+        filterOwner = nullptr;
+    }
 }
 
 void PluginEditorKeys::setTarget(QObject* target) {
@@ -118,7 +134,7 @@ bool PluginEditorKeys::supported() {
 #ifdef Q_OS_WIN
     return true;
 #else
-    return false;
+    return app::editorsAreEngineWindows();
 #endif
 }
 
@@ -140,8 +156,29 @@ int PluginEditorKeys::qtKey(int vk) {
     }
 }
 
+int PluginEditorKeys::qtKeyForKeysym(quint32 keysym) {
+    if (keysym >= 0x61 && keysym <= 0x7A) return Qt::Key_A + int(keysym - 0x61);    // XK_a..XK_z
+    if (keysym >= 0x30 && keysym <= 0x39) return Qt::Key_0 + int(keysym - 0x30);    // XK_0..XK_9
+    if (keysym >= 0xFFBE && keysym <= 0xFFC9) return Qt::Key_F1 + int(keysym - 0xFFBE);  // XK_F1..XK_F12
+    switch (keysym) {
+        case 0x3D: return Qt::Key_Equal;   // XK_equal
+        case 0x2C: return Qt::Key_Comma;   // XK_comma
+        case 0x2D: return Qt::Key_Minus;   // XK_minus
+        case 0x2E: return Qt::Key_Period;  // XK_period
+        case 0xFF08: return Qt::Key_Backspace;
+        case 0xFF09: return Qt::Key_Tab;
+        case 0xFFFF: return Qt::Key_Delete;
+        case 0xFF50: return Qt::Key_Home;
+        case 0x20: return Qt::Key_Space;
+        default: return 0;
+    }
+}
+
 QObject* PluginEditorKeys::actionFor(int virtualKey, int modifiers, bool textField) const {
-    const int key = qtKey(virtualKey);
+    return actionForKey(qtKey(virtualKey), modifiers, textField);
+}
+
+QObject* PluginEditorKeys::actionForKey(int key, int modifiers, bool textField) const {
     if (key == 0 || !target_) return nullptr;
     const auto mods = Qt::KeyboardModifiers(modifiers) & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     if (!(mods & (Qt::ControlModifier | Qt::AltModifier))) {
@@ -168,15 +205,25 @@ QObject* PluginEditorKeys::actionFor(int virtualKey, int modifiers, bool textFie
 }
 
 bool PluginEditorKeys::keyPressed(int virtualKey, int modifiers, bool textField, bool repeat) {
+    return pressed(qtKey(virtualKey), modifiers, textField, repeat);
+}
+
+bool PluginEditorKeys::keysymPressed(quint32 keysym, int modifiers, bool repeat) {
+    // (Asked from inside the editor window's own events: what the key does, which may close it or every editor,
+    // is done once that is over.)
+    return pressed(qtKeyForKeysym(keysym), modifiers, false, repeat, Qt::QueuedConnection);
+}
+
+bool PluginEditorKeys::pressed(int key, int modifiers, bool textField, bool repeat, Qt::ConnectionType when) {
     if (session_ && session_->render()->active()) return false;  // (the window takes no keys meanwhile)
-    QObject* action = actionFor(virtualKey, modifiers, textField);
+    QObject* action = actionForKey(key, modifiers, textField);
     if (!action) return false;
     const bool held = repeat && !(Qt::KeyboardModifiers(modifiers) & (Qt::ControlModifier | Qt::AltModifier));
     if (!held) {  // (Space held down doesn't start and stop playing over and over)
         if (action->inherits("QQuickShortcut"))
-            QMetaObject::invokeMethod(action, "activated");
+            QMetaObject::invokeMethod(action, "activated", when);
         else
-            QMetaObject::invokeMethod(action, "trigger");
+            QMetaObject::invokeMethod(action, "trigger", when);
     }
     return true;
 }
@@ -189,7 +236,7 @@ bool PluginEditorKeys::closeForemostEditor() {
     PostMessageW(found, WM_CLOSE, 0, 0);
     return true;
 #else
-    return false;
+    return app::closeForemostEditor();
 #endif
 }
 

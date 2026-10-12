@@ -16,6 +16,10 @@
 
 namespace sub::app {
 
+QString BridgeTestAccess::editorTitle(const EngineBridge& bridge, const QString& trackId, const QString& deviceId) {
+    return bridge.editorTitle(trackId, deviceId);
+}
+
 void BridgeTestAccess::injectEvents(EngineBridge& bridge, const std::vector<sub::ProcessorEventRecord>& events) {
     bridge.d_->injectedEvents.insert(bridge.d_->injectedEvents.end(), events.begin(), events.end());
 }

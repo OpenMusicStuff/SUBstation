@@ -3,6 +3,8 @@
 
 #include "plugins/EditorWindow.h"
 
+#include "EditorHost.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -211,6 +213,10 @@ void EditorWindow::setVisible(bool visible) {
 
 bool EditorWindow::isVisible() const { return native_->hwnd && IsWindowVisible(native_->hwnd); }
 
+void EditorWindow::closeAsUser() {
+    if (native_->hwnd) SendMessageW(native_->hwnd, WM_CLOSE, 0, 0);
+}
+
 EditorWindow::Position EditorWindow::position() const {
     RECT window{};
     if (native_->hwnd && !IsIconic(native_->hwnd) && GetWindowRect(native_->hwnd, &window)) return {window.left, window.top};
@@ -356,3 +362,11 @@ LRESULT EditorWindow::Native::handleMessage(EditorWindow& w, HWND hwnd, UINT mes
 }
 
 }  // namespace sub::vst3
+
+namespace sub {
+
+// (Editors' messages and keys come through Qt's event loop: the application's native event filter sees them.)
+bool editorsUseHost() { return false; }
+bool closeForemostEditor() { return false; }
+
+}  // namespace sub

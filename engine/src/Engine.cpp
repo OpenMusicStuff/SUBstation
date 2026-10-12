@@ -2,6 +2,7 @@
 // housekeeping. The rest of Engine is implemented by area: EngineDevice.cpp,
 // EngineTracks.cpp, EngineInput.cpp, EngineChains.cpp, EngineSnapshot.cpp and
 // EngineOffline.cpp.
+#include "EditorHost.h"
 #include "Engine.h"
 
 #include <algorithm>
@@ -260,6 +261,7 @@ void Engine::collectGarbageLocked() {
 }
 
 void Engine::idle(bool releaseAll) {
+    runEditorEvents();  // plug-in editors' windows, file descriptors and timers (Linux), until the application runs them
     std::vector<std::shared_ptr<Processor>> live;
     std::vector<std::shared_ptr<Processor>> dead;
     {
