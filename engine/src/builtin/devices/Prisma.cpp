@@ -208,6 +208,7 @@ struct DesignKey {
     int notes = 0;            // bit per pitch class (C = bit 0)
     int postCents = 0;        // tenths of a cent
     int colorExponent = 100;  // percent, above 100 only
+    int start = 240, end = 2400;  // Hz: where the kept mask goes flat
     bool operator==(const DesignKey&) const = default;
 };
 
@@ -414,6 +415,8 @@ private:
         k.notes = enabledNotes();
         k.postCents = static_cast<int>(std::lround(param(PostShift) * 10));
         k.colorExponent = std::max(100, static_cast<int>(std::lround(param(Color))));
+        k.start = static_cast<int>(std::lround(param(Start)));
+        k.end = static_cast<int>(std::lround(param(End)));
         return k;
     }
     // How much of the processed band is heard (0..1): Color up to 100 %, and nothing with no notes or all twelve.
@@ -575,6 +578,13 @@ private:
         const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count));
         const float exponent = key_.colorExponent / 100.f;
         const double post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
+        // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat, at a gain
+        // that falls 1.89 dB per enabled note (+19.8 dB with one). The crossovers take most of it away, but
+        // what is left overlaps the low and high bands, and a minimum-phase filter's phase depends on its
+        // magnitude everywhere.
+        const double combLow = 12.0 * std::log2(key_.start / 440.0) + 9.0 - 10.0;
+        const double combHigh = 12.0 * std::log2(key_.end / 440.0) + 9.0 + 10.0;
+        const double outsideDb = 19.8 - 1.89 * (count - 1);
         auto kernel = [](double dist) noexcept {
             const double x = std::abs(dist) * 8.0;
             const int i = static_cast<int>(x);
@@ -607,13 +617,23 @@ private:
             if (!on) {
                 const double cs = std::abs(std::cos(std::numbers::pi * d));
                 const double shape = 0.8 * cs * cs * cs;
-                if (bits >> ((cls + 1) % 12) & 1) fromBelow = v[(cls + 1) % 12] * shape;
+                // a note between two enabled ones goes down
                 if (bits >> ((cls + 11) % 12) & 1) fromAbove = v[(cls + 11) % 12] * shape;
+                else if (bits >> ((cls + 1) % 12) & 1) fromBelow = v[(cls + 1) % 12] * shape;
             }
             if (exponent > 1.f) {
                 kept = std::pow(kept, exponent);
                 fromBelow = std::pow(fromBelow, exponent);
                 fromAbove = std::pow(fromAbove, exponent);
+            }
+            // across a semitone at each end of the comb, from it to the flat gain (in dB)
+            const double past = std::max(combLow - p, p - combHigh);  // semitones outside the comb
+            if (past > -0.5) {
+                const double t = std::min(1.0, past + 0.5);
+                const double outside = std::pow(10.0, outsideDb * (exponent > 1.f ? exponent : 1.f) / 20.0);
+                kept = std::exp((1 - t) * std::log(std::max(kept, 1e-5)) + t * std::log(outside));
+                fromBelow *= 1 - t;
+                fromAbove *= 1 - t;
             }
             mag_[0][static_cast<size_t>(k)] = static_cast<float>(kept);
             mag_[1][static_cast<size_t>(k)] = static_cast<float>(fromBelow);
