@@ -142,9 +142,11 @@ inline double butterworthQ(int n, int k) noexcept {
 }
 
 // The analog section made digital by the bilinear transform, pre-warped so `w`
-// (its own frequency, held below Nyquist) lands where it is (the cuts': see the top).
+// (its own frequency) lands exactly where it is (the cuts': see the top). At
+// Nyquist itself, where the warp is infinite, a hair below it: the section all
+// but flat there.
 inline Biquad bilinear(const Analog& a, double w) noexcept {
-    const double wk = std::clamp(w, 1e-6, 0.995 * kPi);
+    const double wk = std::clamp(w, 1e-6, kPi * (1.0 - 1e-6));
     const double K = wk / std::tan(0.5 * wk);  // s = K (1 - z^-1) / (1 + z^-1)
     Biquad q;
     if (a.d2 == 0.0) {  // first order

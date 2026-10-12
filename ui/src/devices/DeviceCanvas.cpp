@@ -128,6 +128,8 @@ void DeviceCanvas::readModulation() {
     QHash<QString, Modulated> modulated;
     if (device() != nullptr) {
         for (const sub::app::Device* d : sub::app::iterDevices(session_->project()->track(trackId_).devices)) {
+            if (!d->enabled)
+                continue;  // (switched off, it moves nothing: the bridge sends the engine none of its mappings)
             for (const sub::app::ModulationMapping& m : d->modulations) {
                 if (m.deviceId != deviceId_ || modulated.contains(m.paramId))
                     continue;

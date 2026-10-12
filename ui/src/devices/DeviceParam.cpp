@@ -125,6 +125,8 @@ void DeviceParam::refreshModulation() {
     sub::app::ModulationMapping mapping;
     if (session_ && session_->project()->hasOwner(trackId_)) {
         for (const sub::app::Device* d : sub::app::iterDevices(session_->project()->track(trackId_).devices)) {
+            if (!d->enabled)
+                continue;  // (switched off, it moves nothing: the bridge sends the engine none of its mappings)
             for (const sub::app::ModulationMapping& m : d->modulations) {
                 if (m.deviceId == deviceId_ && m.paramId == paramId_) {
                     modulator = d->id;

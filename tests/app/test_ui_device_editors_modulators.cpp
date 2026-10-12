@@ -139,12 +139,18 @@ private Q_SLOTS:
         gain.setParamId(QStringLiteral("gain"));
         QVERIFY(gain.modulated());
         QCOMPARE(gain.modulator(), lfo);
+        const double highEnd = project()->device(track, lfo).modulations.front().high;  // (where the drag left it)
         QCOMPARE(gain.modulationFrom(), 0.4);
-        QCOMPARE(gain.modulationTo(), 0.7);
+        QCOMPARE(gain.modulationTo(), highEnd);
         play(0.5);
         QVERIFY(graph->output() >= 0.0);
         QVERIFY(!graph->trail().empty());
-        QVERIFY(gain.modulationValue() >= 0.4 - 1e-9 && gain.modulationValue() <= 0.7 + 1e-9);
+        QVERIFY(gain.modulationValue() >= 0.4 - 1e-9 && gain.modulationValue() <= highEnd + 1e-9);
+        // Switched off, it moves nothing (as the engine has it): the knob shows its own value again.
+        editor()->setDeviceEnabled(track, lfo, false);
+        QVERIFY(!gain.modulated());
+        editor()->setDeviceEnabled(track, lfo, true);
+        QVERIFY(gain.modulated());
         QTest::qWait(50);
         save(grab(), QStringLiteral("lfo-playing"));
 
