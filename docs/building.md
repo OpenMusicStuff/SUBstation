@@ -10,7 +10,8 @@ are is in [architecture.md](architecture.md).
 - **Windows 10/11** is the target: WASAPI and ASIO audio, WinMM MIDI input, VST3 plug-ins with their editors. It
   also builds and runs on **Linux** (the tests run there in CI-like containers): audio through PipeWire, or the
   system's default backend (PulseAudio, ALSA, JACK... via miniaudio, as the *System* driver) where PipeWire doesn't
-  run, VST3 plug-ins without their editors, no MIDI devices (the computer MIDI keyboard still plays).
+  run, MIDI input through ALSA's sequencer, VST3 plug-ins with their editors (X11 windows; on Wayland through
+  XWayland).
 - A C++20 compiler: Visual Studio 2022 or newer (*Desktop development with C++*), MinGW-w64 GCC 13 or newer on
   Windows (the one Qt's installer ships), or GCC 13 / Clang 16 or newer.
 - CMake 3.26 or newer, and Ninja (recommended; Visual Studio's generator works too).
@@ -23,7 +24,10 @@ are is in [architecture.md](architecture.md).
     qml6-module-qtquick-dialogs qml6-module-qtqml-workerscript qml6-module-qt-labs-settings
     qml6-module-qtquick-shapes libgl-dev libxkbcommon-dev` (and `xvfb` to run the UI's tests headless).
 - Linux: `libpipewire-0.3-dev` (and pkg-config), for the PipeWire driver (without it, *System* only); `pipewire`
-  to run its tests (they start a daemon of their own; skipped without it).
+  to run its tests (they start a daemon of their own; skipped without it). `libasound2-dev`, for MIDI input
+  (without it, no MIDI inputs are listed); its live tests need the kernel's sequencer (`/dev/snd/seq`, the
+  `snd-seq` module; skipped without it). `libxcb1-dev`, for plug-in editors (without it, plug-ins show none);
+  `libxcb-xtest0-dev` and `xvfb` to run their tests (on an X server of their own; skipped without Xvfb).
 - On x86-64, a CPU with AVX2 (Intel Haswell, AMD Zen or later) to run it: the engine is compiled with AVX2
   (`/arch:AVX2` with MSVC, `-mavx2 -mfma` with GCC and Clang; with MinGW also `-Wa,-muse-unaligned-vector-move`, as
   GCC can't align the stack for AVX on 64-bit Windows). On arm64 the engine builds with the CPU's baseline (NEON),
@@ -87,6 +91,8 @@ Sources are globbed per library (`file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`): a 
 | `SUBSTATION_ASIO` | `ON` | ASIO support, if the SDK is found (Windows). `OFF` doesn't look for it. |
 | `SUBSTATION_ASIO_SDK` | `$ENV{SUBSTATION_ASIO_SDK}` | The ASIO SDK's folder (the one containing `common/iasiodrv.h`). |
 | `SUBSTATION_PIPEWIRE` | `ON` | PipeWire support on Linux, if pkg-config finds `libpipewire-0.3` (Debian, Ubuntu: `libpipewire-0.3-dev`). Without it the engine has the *System* driver only. |
+| `SUBSTATION_X11_EDITORS` | `ON` | Plug-in editors on Linux, as X11 windows, if pkg-config finds `xcb` (Debian, Ubuntu: `libxcb1-dev`). Without it plug-ins show no editor (`EditorWindowNone.cpp`). |
+| `SUBSTATION_ALSA` | `ON` | MIDI input through ALSA's sequencer on Linux, if pkg-config finds `alsa` (Debian, Ubuntu: `libasound2-dev`). Without it the engine lists no MIDI inputs (`MidiNone.cpp`). |
 | `SUBSTATION_BUILD_BENCHMARKS` | `OFF` | The benchmarks ([benchmarks/README.md](../benchmarks/README.md)). |
 
 Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
@@ -100,7 +106,7 @@ Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
 | `vst3_base`, `vst3_hosting` | static libraries | engine | The VST 3 SDK's interfaces and base library, and its host side (module loading: `module_win32.cpp` or `module_linux.cpp`). `vst3_hosting` is C++17 on purpose: as C++17 the module loader reads paths as UTF-8 (`u8path`); as C++20 it would use the ANSI code page on Windows, and plug-ins with non-ASCII paths would not load. |
 | `mp3lame` | static library (C) | engine | [LAME](../engine/third_party/lame)'s encoding library (`libmp3lame`, its SSE quantizer on x86-64), with a `config.h` of ours; MP3 export (`Mp3Writer.cpp`). |
 | `sub_platform` | static library | platform | What every layer needs from the operating system ([platform/](../platform/CMakeLists.txt), [platform.md](platform.md)): paths and their keys, files, binary fields, threads' priorities; no Qt, nothing of the other layers. `PlatformWin32.cpp` on Windows, `PlatformPosix.cpp` elsewhere. |
-| `sub_engine` | static library | engine | The real-time engine ([engine/](../engine/CMakeLists.txt)): no Qt; on `sub_platform`. Each system's audio drivers, MIDI inputs, plug-in editor windows and VST3 folders are files of their own ([engine/README.md](engine/README.md#platforms)): on Windows WASAPI and, with the SDK, ASIO, WinMM MIDI, Win32 editor windows; on Linux PipeWire (with libpipewire's headers) and elsewhere miniaudio's "System", a MIDI backend without devices and no editor windows. |
+| `sub_engine` | static library | engine | The real-time engine ([engine/](../engine/CMakeLists.txt)): no Qt; on `sub_platform`. Each system's audio drivers, MIDI inputs, plug-in editor windows and VST3 folders are files of their own ([engine/README.md](engine/README.md#platforms)): on Windows WASAPI and, with the SDK, ASIO, WinMM MIDI, Win32 editor windows; on Linux PipeWire (with libpipewire's headers) and elsewhere miniaudio's "System", ALSA's sequencer for MIDI (with its headers; elsewhere a MIDI backend without devices), and X11 editor windows (with xcb's headers; elsewhere none). |
 | `sub_browser` | static library | browser | The browser's file index and search ([browser/](../browser/CMakeLists.txt)): no Qt; `sub_platform`, and a Win32 or POSIX layer of its own for listing and watching folders (inotify's watcher on Linux). |
 | `essentia` | static library | intelligence | [Essentia](../intelligence/third_party/essentia) 2.1-beta5's core and the 29 algorithms the sound similarity uses, with KISS FFT: no other dependency. Built as C++17, its warnings not shown, with `ESSENTIA_STATIC` and `DEBUGGING_ENABLED=0` (public: they shape its headers). AGPLv3: [licensing.md](licensing.md). |
 | `humanbro` | static library | intelligence | [HUMANBRO](../intelligence/third_party/humanbro)'s C++ runtime: MIDI features and the tree ensemble that predicts velocities. Built with its own strict floating-point flags (`/fp:precise`; `-ffp-contract=off -fno-fast-math`). |

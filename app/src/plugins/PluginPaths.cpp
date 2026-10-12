@@ -23,6 +23,12 @@ namespace {
 
 std::filesystem::path fsPath(const QString& path) { return platform::toPath(toBackendPath(path)); }
 
+// Whether a file or folder of this name is a plug-in ("Name.vst3"): not Linux's own folder for them,
+// "~/.vst3", which is named like one.
+bool isPluginName(const QString& name) {
+    return name.size() > 5 && name.endsWith(QStringLiteral(".vst3"), Qt::CaseInsensitive);
+}
+
 // Python's str.lower(), for sorting as it sorted.
 std::string lowerForSort(const QString& s) { return browser::pyLower(s.toStdString()); }
 
@@ -69,7 +75,7 @@ QStringList findPluginFiles(const QStringList& roots) {
     };
     for (const QString& root : roots) {
         const QFileInfo rootInfo(root);
-        if (root.toLower().endsWith(QStringLiteral(".vst3")) && rootInfo.exists()) {
+        if (isPluginName(rootInfo.fileName()) && rootInfo.exists()) {
             add(root);
             continue;
         }
@@ -87,7 +93,7 @@ QStringList findPluginFiles(const QStringList& roots) {
                 QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDir::NoSort);
             for (const QString& name : names) {
                 const QString path = folder.endsWith(QLatin1Char('/')) ? folder + name : folder + QLatin1Char('/') + name;
-                if (name.toLower().endsWith(QStringLiteral(".vst3")))
+                if (isPluginName(name))
                     add(path);
                 else if (QFileInfo(path).isDir())  // following links
                     stack.push_back(path);
@@ -154,6 +160,26 @@ QString friendlyScanReason(const QString& input) {
     const qsizetype cut = reason.lastIndexOf(QStringLiteral(": "));
     if (reason.startsWith(QStringLiteral("LoadLibraryW failed for path")) && cut >= 0)
         return QStringLiteral("Windows could not load it: ") + reason.mid(cut + 2);
+    // Linux (the VST 3 SDK's module_linux.cpp): no code for Linux in it (a Windows plug-in, or a bundle
+    // without its <arch>-linux folder), or dlopen's error.
+    static const QRegularExpression noModule(QStringLiteral("^(.*) is not a module directory\\.$"));
+    if (const QRegularExpressionMatch match = noModule.match(reason); match.hasMatch()) {
+        const QString name = QFileInfo(match.captured(1)).fileName();
+        return QStringLiteral("It is not a Linux plug-in: it has no %1.")
+            .arg(QString::fromStdString(vst3::Vst3Format::binaryInBundle(name.toStdString())));
+    }
+    static const QRegularExpression dlopen(QStringLiteral("^dlopen failed\\. (.*)$"));
+    if (const QRegularExpressionMatch match = dlopen.match(reason); match.hasMatch()) {
+        const QString error = match.captured(1);
+        static const QRegularExpression missing(QStringLiteral("^(\\S+): cannot open shared object file"));
+        if (const QRegularExpressionMatch lib = missing.match(error); lib.hasMatch())
+            return QStringLiteral("Linux could not load it: a library it needs is missing (%1).").arg(lib.captured(1));
+        if (error.contains(QStringLiteral("wrong ELF class")))
+            return QStringLiteral("Linux could not load it: it is not a 64-bit plug-in.");
+        const qsizetype colon = error.indexOf(QStringLiteral(": "));  // (dlerror(): "<file>: <why>")
+        return QStringLiteral("Linux could not load it: ") + (colon >= 0 ? error.mid(colon + 2) : error) +
+               (error.endsWith(QLatin1Char('.')) ? QString() : QStringLiteral("."));
+    }
     return reason;
 }
 

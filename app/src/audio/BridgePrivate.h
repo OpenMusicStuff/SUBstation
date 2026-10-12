@@ -6,6 +6,7 @@
 
 #include "audio/EngineBridge.h"
 
+#include "EditorHost.h"
 #include "Engine.h"
 
 #include <QByteArray>
@@ -119,6 +120,7 @@ struct EngineBridge::Private {
     QMap<QString, QString> pluginErrors;  // device id -> why its plug-in isn't loaded
     QMap<QString, QString> knownPlugins;  // plug-in uid -> file, from the scan: finds moved plug-ins
     std::function<uintptr_t()> ownerWindow = [] { return uintptr_t{0}; };  // the window owning plug-in editors
+    std::shared_ptr<sub::EventLoop> editorLoop;  // plug-in editors' (Linux: EditorEventLoop), while this bridge lives
     QSet<QString> editorsWanted;  // device ids whose editor the user left open
     std::optional<QString> editorsTrack;  // the track whose editors are shown (the selected one)
     std::vector<quint32> hiddenEditors;  // processors of hidden editors, the longest hidden first

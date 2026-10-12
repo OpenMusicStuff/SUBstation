@@ -170,7 +170,7 @@ Every menu entry is an `Action` with an `objectName` (for the tests and `PluginE
 | File | New Project (Ctrl+N), Open… (Ctrl+O), Open Recent, Save (Ctrl+S), Save As… (Ctrl+Shift+S), Export Audio… (Ctrl+Shift+R), Quit (Ctrl+Q) |
 | Edit | Undo (Ctrl+Z) and Redo (Ctrl+Y, Ctrl+Shift+Z) on `Session.undoStack`, their text following `undoText`/`redoText`; Cut, Copy, Paste, Duplicate (Ctrl+D), Rename (Ctrl+R), Split (Ctrl+E), Consolidate (Ctrl+J), Reverse Clips (R), Deactivate / Activate Clips (0); Freeze / Unfreeze Track (Ctrl+Shift+F), Flatten Track, Delete (Del, Backspace), Select All (Ctrl+A); Re-Enable Automation (enabled while `Session.automationOverridden`), Solo Selected Tracks (S); Play / Stop (Space), Record (F9), Record Quantization (a checkable entry per `Session.recordQuantizeChoices`), Go to Start (Home), Loop (Ctrl+L), Find in Browser (Ctrl+F) |
 | Create | Insert Audio Track (Ctrl+T), Insert MIDI Track (Ctrl+Shift+T), Insert Return Track (Ctrl+Alt+T), Insert MIDI Clip (Ctrl+Shift+D, Ctrl+Shift+M: on the arrangement's grid when snapping), Group Tracks (Ctrl+G), Ungroup Tracks (Ctrl+Shift+G), Delete Selected Tracks |
-| View | Browser, Device View, Info View, Clip View (Shift+Tab), Find Track (Q: the find bar, over the arrangement or the clip view: [arrangement.md](arrangement.md#finding-tracks)), Automation (A: `editor.toggleAllAutomation()`), Chords and Key (C: `harmony.shown`, checkable), Close Plug-in Editor (Ctrl+W, Windows only), Zoom In (+, =), Zoom Out (-), Zoom to Arrangement (Z), Narrow Grid (Ctrl+1), Widen Grid (Ctrl+2), Snap to Grid (Ctrl+4) |
+| View | Browser, Device View, Info View, Clip View (Shift+Tab), Find Track (Q: the find bar, over the arrangement or the clip view: [arrangement.md](arrangement.md#finding-tracks)), Automation (A: `editor.toggleAllAutomation()`), Chords and Key (C: `harmony.shown`, checkable), Close Plug-in Editor (Ctrl+W, where editors are windows of their own: Windows, Linux's X11), Zoom In (+, =), Zoom Out (-), Zoom to Arrangement (Z), Narrow Grid (Ctrl+1), Widen Grid (Ctrl+2), Snap to Grid (Ctrl+4) |
 | Options | Preferences… (Ctrl+,), Rescan Plug-ins, Computer MIDI Keyboard (M), MCP Server (`Session.mcp.enabled`, checkable: [app/mcp.md](../app/mcp.md)), Lock Envelopes |
 | Help | About SUBstation |
 
@@ -511,10 +511,10 @@ or shortcut does.
 [PluginEditorKeys](../../ui/src/platform/PluginEditorKeys.h) (in Main.qml, `target: window`). The rules as the user
 sees them: [guide/shortcuts.md](../guide/shortcuts.md).
 
-Plug-in editors are plain Win32 windows (the engine's `EditorWindowWin32.cpp`, window class `SUBstationPluginEditor`; see
-[engine/plugins.md](../engine/plugins.md)), so Qt never sees their keys as key events. Their messages still pass
-through Qt's event loop, so `PluginEditorKeys`, a `QAbstractNativeEventFilter` installed on the application on
-Windows only (`supported`), sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
+On Windows plug-in editors are plain Win32 windows (the engine's `EditorWindowWin32.cpp`, window class
+`SUBstationPluginEditor`; see [engine/plugins.md](../engine/plugins.md)), so Qt never sees their keys as key events.
+Their messages still pass through Qt's event loop, so `PluginEditorKeys`, a `QAbstractNativeEventFilter` installed
+on the application there, sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
 
 1. Is the window (or its root ancestor) a plug-in editor? If not, Qt handles it as usual.
 2. `actionFor(virtualKey, modifiers, textField)` maps the virtual-key code to a Qt key (`qtKey`: letters, digits,
@@ -530,9 +530,19 @@ Windows only (`supported`), sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
    render's dialog is up the window takes no keys, so the plug-in keeps them.
 
 Posting the key to the main window instead wouldn't do: Qt Quick's shortcuts only fire in the window that has the
-focus. `closeForemostEditor()` (Ctrl+W, *View › Close Plug-in Editor*, shown on Windows only) walks the top-level
-windows with `EnumWindows`, top down, and posts `WM_CLOSE` to the first visible editor of this process. The rules
-are plain code, so the tests run `actionFor()` and `keyPressed()` on any platform.
+focus. `closeForemostEditor()` (Ctrl+W, *View › Close Plug-in Editor*, enabled where editors are windows of their
+own: `supported`) walks the top-level windows with `EnumWindows`, top down, and posts `WM_CLOSE` to the first
+visible editor of this process.
+
+On Linux editors are X11 windows of the engine's own connections (`EditorWindowX11.cpp`), whose keys Qt never sees.
+There `PluginEditorKeys` is the engine's key filter (`app::setEditorKeyFilter`, [audio/EditorKeys.h](../../app/src/audio/EditorKeys.h),
+over the engine's [EditorHost.h](../../engine/src/EditorHost.h); the last one made, until it goes): the editor windows grab the keys a shortcut can be and ask it about each by its
+X keysym (`keysymPressed()`: `qtKeyForKeysym()` maps the same keys `qtKey()` does), with the same rules (no text
+field can be told apart there). Not taken, the key goes on to the plug-in. Taken, its action is triggered once the
+event loop runs again (queued): the filter is asked from inside the editor window's own events, and the action may
+close that editor or every one (Ctrl+W, a new project). `closeForemostEditor()` is the engine's
+(`app::closeForemostEditor()`). The rules are plain code, so the tests run `actionFor()`, `keyPressed()` and
+`keysymPressed()` on any platform.
 
 ## Gotchas
 

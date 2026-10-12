@@ -43,6 +43,7 @@
 #include "mainwindow/WindowState.h"
 #include "pianoroll/PianoRoll.h"
 #include "platform/PluginEditorKeys.h"
+#include "EditorHost.h"
 #include "platform/WindowFrame.h"
 #include "session/ArrangementActions.h"
 #include "session/ComputerKeyboard.h"
@@ -810,7 +811,7 @@ private Q_SLOTS:
         // the placeholder there is none, and nothing goes wrong.
         for (const char* name : {"zoomIn", "zoomOut", "zoomToArrangement", "narrowGrid", "widenGrid", "snapToGrid", "clipView"})
             trigger(QString::fromLatin1(name));
-        // Close Plug-in Editor: plug-in editors are Win32 windows.
+        // Close Plug-in Editor: where plug-in editors are windows of their own (Windows, Linux's X11).
         QCOMPARE(find(QStringLiteral("closePluginEditor"))->property("enabled").toBool(),
                  sub::ui::PluginEditorKeys::supported());
     }
@@ -1291,9 +1292,9 @@ private Q_SLOTS:
         auto* keys = window_->findChild<sub::ui::PluginEditorKeys*>();
         QVERIFY(keys);
 #ifdef Q_OS_WIN
-        QVERIFY(keys->supported());  // (only on Windows does it watch messages)
+        QVERIFY(keys->supported());  // (on Windows it watches messages)
 #else
-        QVERIFY(!keys->supported());
+        QCOMPARE(keys->supported(), sub::editorsUseHost());  // (on Linux it is the engine's key filter)
 #endif
         const int ctrl = Qt::ControlModifier;
         session().browser()->setScope({QStringLiteral("samples")});
@@ -1331,6 +1332,26 @@ private Q_SLOTS:
         // Ctrl+Shift+M inserts a MIDI clip.
         QVERIFY(keys->actionFor(vk('M'), ctrl | Qt::ShiftModifier) != nullptr);
         QVERIFY(keys->actionFor(vk('M'), ctrl | Qt::ShiftModifier)->inherits("QQuickShortcut"));
+        // X11's keys (Linux's editors) by their keysyms, and through the engine's key filter where it asks.
+        QCOMPARE(sub::ui::PluginEditorKeys::qtKeyForKeysym(0x66), int(Qt::Key_F));      // XK_f
+        QCOMPARE(sub::ui::PluginEditorKeys::qtKeyForKeysym(0xFFBF), int(Qt::Key_F2));   // XK_F2
+        QCOMPARE(sub::ui::PluginEditorKeys::qtKeyForKeysym(0xFF51), 0);                 // XK_Left: no shortcut's
+        QVERIFY(!keys->keysymPressed(0x63, ctrl));                                      // Ctrl+C: the plug-in's
+        QCOMPARE(keys->actionFor(vk('L'), ctrl), find(QStringLiteral("loop")));
+        if (sub::editorsUseHost()) {
+            const auto& filter = sub::editorKeyFilter();
+            QVERIFY(filter);
+            QVERIFY(filter({0x20, 0, false}));  // Space plays (once the editor's events are over)
+            QVERIFY(!bridge().isPlaying());
+            QTRY_VERIFY(bridge().isPlaying());
+            QVERIFY(filter({0x20, 0, true}));  // held: taken, but once
+            QTest::qWait(10);
+            QVERIFY(bridge().isPlaying());
+            QVERIFY(filter({0x20, 0, false}));
+            QTRY_VERIFY(!bridge().isPlaying());
+            QVERIFY(!filter({0x63, sub::EditorKey::kControl, false}));
+            QVERIFY(!filter({0x73, sub::EditorKey::kShift, false}));  // Shift+S
+        }
         // While a render's dialog is up the window takes no keys, from plug-ins' editors either.
         const QString path = wav(QStringLiteral("keys.wav"), 1.0);
         audioTrack(path, 1.0, 10000.0);

@@ -91,8 +91,8 @@ the focus. Most are also in the menus, which show their keys.
 | Fold / unfold a device | Ctrl+double-click it (or its ▾ button) |
 | Cut / copy / paste / duplicate devices (the device view has the focus) | Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+D |
 | Group the selected devices into a rack / ungroup a rack | Ctrl+G / Ctrl+Shift+G |
-| Show a plug-in's editor (Windows) | double-click its device in the device view |
-| Close the plug-in editor in front (Windows) | Ctrl+W |
+| Show a plug-in's editor | double-click its device in the device view |
+| Close the plug-in editor in front | Ctrl+W |
 
 ## MIDI
 
@@ -117,15 +117,15 @@ edit as out of it. See
 
 ## Plug-in editors
 
-Plug-in editor windows exist on Windows only. There, the Ctrl/Alt shortcuts also work
-while a plug-in's editor window has the focus, except Ctrl+A/C/V/X/Z/Y, which the plug-in
-keeps for its own text fields.
+The Ctrl/Alt shortcuts also work while a plug-in's editor window has the focus, except
+Ctrl+A/C/V/X/Z/Y, which the plug-in keeps for its own text fields.
 
 So do **Space** (play / stop) and **S** (solo): the DAW comes first. They go to the
 plug-in only:
 
-- while it types into a standard Windows text field (most plug-ins draw their own,
-  which can't be told apart, so Space and S never reach those);
+- on Windows, while it types into a standard Windows text field (most plug-ins draw
+  their own, which can't be told apart, so Space and S never reach those; on Linux none
+  can be told apart);
 - and S while the computer MIDI keyboard is on (it plays a note in the main window too).
 
 Held down, Space acts once. Other keys without Ctrl or Alt (Delete, letters, ...) go to

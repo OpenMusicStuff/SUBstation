@@ -3,9 +3,10 @@
 // first, a waiting one moved or deleted, renders waiting for them), missing and
 // moved plug-ins, devices keeping their processor (and state) as they move,
 // what plug-ins report (edits for undo only from a shown editor), editors as far
-// as they work without windows, automating plug-in parameters, and effects on
-// the master. The changes are made as the editor makes them. Skipped without
-// the test plug-ins.
+// as they work without windows (and on Linux an X11 editor, on an X server of
+// the test's own, run by Qt's event loop), automating plug-in parameters, and
+// effects on the master. The changes are made as the editor makes them.
+// Skipped without the test plug-ins.
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
@@ -21,6 +22,10 @@
 #include <QTest>
 
 #include <cmath>
+
+#if SUBSTATION_HAS_X11_EDITORS && SUBSTATION_EDITOR_TESTS
+#include "../engine/harness/XDisplay.h"
+#endif
 
 using namespace sub::app;
 using sub::app::test::Studio;
@@ -277,7 +282,7 @@ private Q_SLOTS:
         QCOMPARE(changed.count(), 1);  // its parameters show anew, once
         QCOMPARE(changed.first(), (QVariantList{track, device}));
         // From a shown editor, it is the user's: an edit for the undo stack, and its lane shows.
-        if (!bridge.openPluginEditor(track, device)) QSKIP("plug-in editors are windows of their own (Windows only)");
+        if (!bridge.openPluginEditor(track, device)) QSKIP("plug-in editors don't open here (Windows, or Linux with a display)");
         BridgeTestAccess::injectEvents(
             bridge, {report(Type::ParamTouched, processor, test::kEffectGain),
                      report(Type::ParamEdited, processor, test::kEffectGain, 0.3f, 0.5f, 7)});
@@ -379,6 +384,34 @@ private Q_SLOTS:
         bridge.closePluginEditor(track, device);
         QVERIFY(!bridge.isPluginEditorOpen(track, device));
     }
+
+#if SUBSTATION_HAS_X11_EDITORS && SUBSTATION_EDITOR_TESTS
+    // Linux: the editor's window, and the plug-in's run loop (its connection, its timer), on Qt's event loop.
+    void anX11EditorRunsOnQtsEventLoop() {
+        subtest::XDisplay display;
+        if (!display.running()) QSKIP(display.whyNot().c_str());
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        const QString track = studio.edit.addAudioTrack(QStringLiteral("Keys"));
+        const QString device = studio.edit.addDevice(track, kPluginKind, effect_);
+        QVERIFY(bridge.openPluginEditor(track, device));
+        subtest::XClient x;
+        // (Its connection's requests and this one's in order each, not across them: waited for.)
+        const std::string title = BridgeTestAccess::editorTitle(bridge, track, device).toStdString();
+        xcb_window_t frame = 0;
+        QTRY_VERIFY((frame = x.topLevel(title)) != 0 && !x.children(frame).empty());
+        const xcb_window_t view = x.children(frame).front();
+        QTRY_VERIFY(x.cardinal(view, "SUB_TEST_TICKS") > 2);  // with nothing but Qt's event loop running
+        // A knob turned in it: the user's edit.
+        QSignalSpy edited(&bridge, &EngineBridge::pluginParamEdited);
+        x.send(view, x.atom("SUB_TEST_EDIT_GAIN"));
+        QTRY_VERIFY((bridge.pollPlugins(), edited.count() > 0));
+        // Its close button.
+        x.close(frame);
+        QTRY_VERIFY((bridge.pollPlugins(), !bridge.isPluginEditorOpen(track, device)));
+        QTRY_COMPARE(x.topLevel(BridgeTestAccess::editorTitle(bridge, track, device).toStdString()), xcb_window_t{0});
+    }
+#endif
 
     void automatingPluginParameters() {
         Studio studio;

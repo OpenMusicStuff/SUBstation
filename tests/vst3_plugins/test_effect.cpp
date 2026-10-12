@@ -5,6 +5,13 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(SUB_TEST_X11)
+#include <xcb/xcb.h>
+
+#include <cstdlib>
+#include <string>
+
+#include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #endif
 
 #include <algorithm>
@@ -250,6 +257,148 @@ private:
 
     TestEffect* effect_;
     HWND hwnd_ = nullptr;
+};
+
+IPlugView* PLUGIN_API TestEffect::createView(FIDString name) {
+    return strcmp(name, ViewType::kEditor) == 0 ? new EffectView(this) : nullptr;
+}
+#elif defined(SUB_TEST_X11)
+// The editor on Linux: an X11 window of its own connection inside the host's,
+// run by the host's run loop (IRunLoop, from the frame), as a real plug-in's
+// would be. It does what the tests ask with client messages (their types are
+// the atoms SUB_TEST_EDIT_GAIN, SUB_TEST_RESIZE: width and height, and
+// SUB_TEST_DIRTY), and tells them on its window's properties: the keys it got
+// (SUB_TEST_KEYS: "keycode:state;" each), its timer's ticks (SUB_TEST_TICKS),
+// and the content scale it was given (SUB_TEST_SCALE: percent).
+class EffectView : public CPluginView,
+                   public IPlugViewContentScaleSupport,
+                   public Linux::IEventHandler,
+                   public Linux::ITimerHandler {
+public:
+    explicit EffectView(TestEffect* effect) : effect_(effect) {
+        ViewRect initial(0, 0, 400, 300);
+        setRect(initial);
+    }
+
+    tresult PLUGIN_API isPlatformTypeSupported(FIDString type) override {
+        return strcmp(type, kPlatformTypeX11EmbedWindowID) == 0 ? kResultTrue : kResultFalse;
+    }
+    tresult PLUGIN_API canResize() override { return kResultTrue; }
+    tresult PLUGIN_API checkSizeConstraint(ViewRect* rect) override {
+        rect->right = rect->left + std::max<int32>(rect->getWidth(), 200);
+        rect->bottom = rect->top + std::max<int32>(rect->getHeight(), 150);
+        return kResultTrue;
+    }
+    tresult PLUGIN_API onSize(ViewRect* newSize) override {
+        CPluginView::onSize(newSize);
+        if (window_) {
+            const uint32_t size[] = {uint32_t(rect.getWidth()), uint32_t(rect.getHeight())};
+            xcb_configure_window(c_, window_, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, size);
+            xcb_flush(c_);
+        }
+        return kResultTrue;
+    }
+    tresult PLUGIN_API setContentScaleFactor(ScaleFactor factor) override {
+        scale_ = factor;
+        return kResultTrue;
+    }
+
+    void attachedToParent() override {
+        c_ = xcb_connect(nullptr, nullptr);
+        if (xcb_connection_has_error(c_)) return;
+        const xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(c_)).data;
+        window_ = xcb_generate_id(c_);
+        const uint32_t values[] = {screen->white_pixel, XCB_EVENT_MASK_KEY_PRESS};
+        xcb_create_window(c_, XCB_COPY_FROM_PARENT, window_,
+                          static_cast<xcb_window_t>(reinterpret_cast<uintptr_t>(systemWindow)), 0, 0,
+                          uint16_t(rect.getWidth()), uint16_t(rect.getHeight()), 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                          screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, values);
+        editGain_ = atom("SUB_TEST_EDIT_GAIN");
+        resize_ = atom("SUB_TEST_RESIZE");
+        dirty_ = atom("SUB_TEST_DIRTY");
+        keys_ = atom("SUB_TEST_KEYS");
+        ticks_ = atom("SUB_TEST_TICKS");
+        const xcb_atom_t scale = atom("SUB_TEST_SCALE");
+        const auto percent = uint32_t(scale_ * 100.f + 0.5f);
+        xcb_change_property(c_, XCB_PROP_MODE_REPLACE, window_, scale, XCB_ATOM_CARDINAL, 32, 1, &percent);
+        xcb_change_property(c_, XCB_PROP_MODE_REPLACE, window_, keys_, XCB_ATOM_STRING, 8, 0, "");
+        xcb_map_window(c_, window_);
+        xcb_flush(c_);
+        if (FUnknownPtr<Linux::IRunLoop> loop(plugFrame); loop) {
+            runLoop_ = loop;
+            runLoop_->registerEventHandler(this, xcb_get_file_descriptor(c_));
+            runLoop_->registerTimer(this, 10);
+        }
+    }
+    void removedFromParent() override {
+        if (runLoop_) {
+            runLoop_->unregisterEventHandler(this);
+            runLoop_->unregisterTimer(this);
+            runLoop_ = nullptr;
+        }
+        if (c_) {
+            if (window_) xcb_destroy_window(c_, window_);
+            xcb_disconnect(c_);
+        }
+        c_ = nullptr;
+        window_ = 0;
+    }
+
+    void PLUGIN_API onFDIsSet(Linux::FileDescriptor) override {
+        while (xcb_generic_event_t* event = xcb_poll_for_event(c_)) {
+            const uint8_t type = event->response_type & 0x7F;
+            if (type == XCB_CLIENT_MESSAGE) {
+                const auto* message = reinterpret_cast<const xcb_client_message_event_t*>(event);
+                if (message->type == editGain_) {
+                    effect_->editGain();
+                } else if (message->type == resize_) {
+                    ViewRect wanted(0, 0, int32(message->data.data32[0]), int32(message->data.data32[1]));
+                    if (plugFrame) plugFrame->resizeView(this, &wanted);
+                } else if (message->type == dirty_) {
+                    effect_->markDirty();
+                }
+            } else if (type == XCB_KEY_PRESS) {
+                const auto* key = reinterpret_cast<const xcb_key_press_event_t*>(event);
+                const std::string text = std::to_string(key->detail) + ":" + std::to_string(key->state) + ";";
+                xcb_change_property(c_, XCB_PROP_MODE_APPEND, window_, keys_, XCB_ATOM_STRING, 8,
+                                    uint32_t(text.size()), text.data());
+            }
+            std::free(event);
+        }
+        xcb_flush(c_);
+    }
+    void PLUGIN_API onTimer() override {
+        ++ticks;
+        xcb_change_property(c_, XCB_PROP_MODE_REPLACE, window_, ticks_, XCB_ATOM_CARDINAL, 32, 1, &ticks);
+        xcb_flush(c_);
+        // Flushing may read what came in into xcb's queue, leaving nothing on the connection to wake
+        // onFDIsSet(): what is queued is done now (as a real plug-in on xcb must).
+        onFDIsSet(xcb_get_file_descriptor(c_));
+    }
+
+    DEFINE_INTERFACES
+        DEF_INTERFACE(IPlugViewContentScaleSupport)
+        DEF_INTERFACE(Linux::IEventHandler)
+        DEF_INTERFACE(Linux::ITimerHandler)
+    END_DEFINE_INTERFACES(CPluginView)
+    REFCOUNT_METHODS(CPluginView)
+
+private:
+    xcb_atom_t atom(const char* name) {
+        xcb_intern_atom_reply_t* reply =
+            xcb_intern_atom_reply(c_, xcb_intern_atom(c_, 0, uint16_t(strlen(name)), name), nullptr);
+        const xcb_atom_t result = reply ? reply->atom : xcb_atom_t(XCB_ATOM_NONE);
+        std::free(reply);
+        return result;
+    }
+
+    TestEffect* effect_;
+    float scale_ = 1.f;
+    xcb_connection_t* c_ = nullptr;
+    xcb_window_t window_ = 0;
+    xcb_atom_t editGain_ = 0, resize_ = 0, dirty_ = 0, keys_ = 0, ticks_ = 0;
+    uint32_t ticks = 0;
+    IPtr<Linux::IRunLoop> runLoop_;
 };
 
 IPlugView* PLUGIN_API TestEffect::createView(FIDString name) {

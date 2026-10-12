@@ -1,8 +1,8 @@
 #pragma once
 // What a system's MIDI input API gives MidiInputDevices (MidiInput.h): the
 // inputs present, and a connection to one. One file per system:
-// MidiWinMM.cpp (Windows); MidiNone.cpp where the engine has no MIDI backend
-// yet (none are ever listed). MidiInputDevices does the rest the same way for
+// MidiWinMM.cpp (Windows), MidiAlsa.cpp (Linux: ALSA's sequencer); MidiNone.cpp
+// where the engine has no MIDI backend (none are ever listed). MidiInputDevices does the rest the same way for
 // every system: the names users see, which inputs are open, closing them.
 
 #include <cstdint>
@@ -29,7 +29,7 @@ std::vector<std::string> systemInputNames();
 // user knows it, for messages. The driver's thread calls `handler` (which
 // outlives the connection) with `port` for every short message (channel and
 // system messages; System Exclusive is ignored), stamped with hostTimeNs()
-// first thing. Throws std::runtime_error with a message for the user (another
+// first thing (or with when the system took it, on that clock). Throws std::runtime_error with a message for the user (another
 // application may have the input).
 std::unique_ptr<InputConnection> openSystemInput(size_t index, const std::string& name, uint16_t port,
                                                  const MidiInputDevices::Handler& handler);

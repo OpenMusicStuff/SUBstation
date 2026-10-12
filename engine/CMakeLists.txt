@@ -213,6 +213,7 @@ add_library(sub_engine STATIC
     src/Recorder.cpp
     src/Metronome.cpp
     src/MidiInput.cpp
+    src/EditorHost.cpp
     src/Warp.cpp
     src/builtin/BuiltinProcessor.cpp
     src/builtin/BuiltinRegistry.cpp
@@ -230,8 +231,46 @@ if (WIN32)
     target_sources(sub_engine PRIVATE src/backends/AudioBackendsWin32.cpp src/backends/MidiWinMM.cpp
                                       src/plugins/EditorWindowWin32.cpp src/plugins/Vst3PlatformWin32.cpp)
 else()
-    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/backends/MidiNone.cpp
-                                      src/plugins/EditorWindowNone.cpp src/plugins/Vst3PlatformPosix.cpp)
+    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/plugins/Vst3PlatformPosix.cpp)
+endif()
+# Plug-in editors on Linux: X11 windows through xcb (libxcb1-dev). Without it,
+# or on other systems but Windows, plug-ins show no editor (EditorWindowNone.cpp).
+if (SUBSTATION_X11_EDITORS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig QUIET)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(XCB IMPORTED_TARGET GLOBAL xcb)
+    endif()
+    if (XCB_FOUND)
+        target_sources(sub_engine PRIVATE src/plugins/EditorWindowX11.cpp src/plugins/Vst3RunLoop.cpp)
+        target_link_libraries(sub_engine PRIVATE PkgConfig::XCB)
+        target_compile_definitions(sub_engine PUBLIC SUBSTATION_HAS_X11_EDITORS=1)
+    else()
+        message(WARNING "xcb not found, so plug-ins show no editor. Install libxcb1-dev, or set "
+                        "SUBSTATION_X11_EDITORS=OFF.")
+    endif()
+endif()
+if (NOT WIN32 AND NOT (SUBSTATION_X11_EDITORS AND XCB_FOUND))
+    target_sources(sub_engine PRIVATE src/plugins/EditorWindowNone.cpp)
+endif()
+# MIDI input on Linux: ALSA's sequencer (libasound2-dev). Without it, or on
+# other systems but Windows, the engine lists no MIDI inputs (MidiNone.cpp).
+if (SUBSTATION_ALSA AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig QUIET)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(ALSA IMPORTED_TARGET GLOBAL alsa)
+    endif()
+    if (ALSA_FOUND)
+        message(STATUS "ALSA: ${ALSA_VERSION}")
+        target_sources(sub_engine PRIVATE src/backends/MidiAlsa.cpp)
+        target_link_libraries(sub_engine PRIVATE PkgConfig::ALSA)
+        target_compile_definitions(sub_engine PUBLIC SUBSTATION_HAS_ALSA=1)
+    else()
+        message(WARNING "ALSA (alsa.pc) not found, so the engine is built without MIDI inputs. Install "
+                        "libasound2-dev, or set SUBSTATION_ALSA=OFF.")
+    endif()
+endif()
+if (NOT WIN32 AND NOT (SUBSTATION_ALSA AND ALSA_FOUND))  # (ALSA_FOUND stays cached when the option is turned off)
+    target_sources(sub_engine PRIVATE src/backends/MidiNone.cpp)
 endif()
 # PipeWire (Linux): the driver Linux builds play through, before miniaudio's
 # "System". Needs libpipewire's headers (libpipewire-0.3-dev); without them the

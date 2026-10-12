@@ -98,8 +98,9 @@ The *MIDI* page lists the MIDI inputs connected, each with a check box. Every in
 used unless turned off here; tracks hear the inputs that are on (all of them, or the
 one they choose). **Refresh** finds inputs plugged in (or taken out) since. An input
 that could not be opened shows in red, with the reason in its tooltip. See
-[midi.md](midi.md#midi-input). On Linux no MIDI inputs are listed: the computer MIDI
-keyboard is the only one.
+[midi.md](midi.md#midi-input). On Linux the inputs are ALSA's sequencer ports (hardware,
+and software such as a virtual keyboard; PipeWire bridges them): an input unplugged and
+plugged in again plays again by itself.
 
 ## Plug-ins
 

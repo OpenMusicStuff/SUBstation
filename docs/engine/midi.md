@@ -2,7 +2,7 @@
 
 How MIDI tracks play: the notes of their clips turned into note events for the track's devices (each
 note on its own, as MIDI 2.0 addresses notes, with its bend: MIDI 2.0's per-note pitch bend), the notes
-the piano roll plays, MIDI input from controllers (WinMM on Windows; MIDI 2.0's packets too) played live
+the piano roll plays, MIDI input from controllers (WinMM on Windows, ALSA's sequencer on Linux; MIDI 2.0's packets too) played live
 and recorded, and devices taking another track's notes. Playback is in the renderer
 ([Renderer.cpp](../../engine/src/Renderer.cpp): `buildNoteEvents`, `startNote`, `bendNotes`,
 `releaseNotes`, `syncTempo`); a bend's rules are in [NoteBend.h](../../engine/src/NoteBend.h); MIDI input
@@ -16,10 +16,11 @@ For what the user sees (MIDI clips, the piano roll, MIDI input, the computer MID
 and [plugins.md](plugins.md) (VST3); chunks, segments and the prologue in [rendering.md](rendering.md);
 audio takes and placement in [recording.md](recording.md).
 
-On platforms other than Windows the engine has no MIDI input devices
-([backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp): none is ever listed or opened). Everything else on
-this page works the same there, including input sent with `Engine::sendMidiInput()` (the computer MIDI keyboard,
-the tests).
+On Linux MIDI inputs are ALSA's sequencer's ports ([backends/MidiAlsa.cpp](../../engine/src/backends/MidiAlsa.cpp),
+[below](#alsas-sequencer-linux)). Where neither it nor WinMM is built (no ALSA headers, other systems) the engine
+has no MIDI input devices ([backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp): none is ever listed or
+opened). Everything else on this page works the same there, including input sent with `Engine::sendMidiInput()`
+(the computer MIDI keyboard, the tests).
 
 ## Overview
 
@@ -65,7 +66,8 @@ the tests).
 | [Renderer.h](../../engine/src/Renderer.h), [Renderer.cpp](../../engine/src/Renderer.cpp) | Note events, note ids, active notes and their bends, preview notes, MIDI input gathering and routing, live notes, MIDI recording, devices' MIDI feeds |
 | [MidiInput.h](../../engine/src/MidiInput.h), [MidiInput.cpp](../../engine/src/MidiInput.cpp) | `MidiInputEvent`, `AudioClock`, `MidiInputDevices` (the same on every system: the names users see, which inputs are open, closing them) |
 | [backends/MidiDriver.h](../../engine/src/backends/MidiDriver.h) | What a system's MIDI API gives `MidiInputDevices`: `systemInputNames()`, `openSystemInput()` (an `InputConnection`, closed when it goes), `shortMessageSize()` |
-| [backends/MidiWinMM.cpp](../../engine/src/backends/MidiWinMM.cpp), [backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp) | Those on Windows (WinMM), and elsewhere (no devices) |
+| [backends/MidiWinMM.cpp](../../engine/src/backends/MidiWinMM.cpp), [backends/MidiAlsa.cpp](../../engine/src/backends/MidiAlsa.cpp), [backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp) | Those on Windows (WinMM), Linux (ALSA's sequencer), and elsewhere (no devices) |
+| [backends/MidiAlsa.h](../../engine/src/backends/MidiAlsa.h) | ALSA's parts that need no sequencer, for the tests: `alsa::inputName`, `alsa::hostTime`, `alsa::Decoder` |
 | [EngineInput.cpp](../../engine/src/EngineInput.cpp) | MIDI ports, `Engine::midiInput` and `umpInput` (decoding), `queueMidiInput` (stamping), `sendMidiInput`, `sendUmp`, `discardMidiInputLocked`, MIDI targets in `startRecording` |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `setProcessorMidiInput`, `processorMidiInput`, `processorInfo` (`acceptsMidi`) |
 | [Recorder.h](../../engine/src/Recorder.h), [Recorder.cpp](../../engine/src/Recorder.cpp) | `RecordedNote` (with its `RecordedBend`s), `MidiRecordingTake`, `RecordingSession::midiNotes`, MIDI results in `finish()` |
@@ -109,7 +111,7 @@ one's anchor.
 (`kAllPorts` or an engine port id), `channel` (`kAllChannels` or 0-15). `accepts(port, status)` checks
 both.
 
-**`MidiInputDevices`**: the system's MIDI inputs (WinMM; none off Windows). `available()` lists them by name (a second
+**`MidiInputDevices`**: the system's MIDI inputs (WinMM on Windows, ALSA's sequencer on Linux). `available()` lists them by name (a second
 device of the same name gets " #2"); `open(name, port)` (throws `std::runtime_error` for the user: not
 connected, or "another application may be using it"), `close`, `closeAll`, `openNames`. Its handler is
 called on the driver's thread for every short message (channel and system messages; System Exclusive is
@@ -240,14 +242,44 @@ Port ids are indices into `midiPorts_`, a list of names kept for the engine's li
 input that isn't open (yet). The engine bridge opens every connected input but those turned off in the
 preferences (`EngineBridge::openMidiInputs()`), and the application adds the computer keyboard as one more
 input, `Computer Keyboard` (`kComputerKeyboard`), which plays through `sendMidiInput`
-([app/engine-bridge.md](../app/engine-bridge.md)). Without MIDI devices (off Windows) it is the only input.
+([app/engine-bridge.md](../app/engine-bridge.md)). Without MIDI devices (`MidiNone.cpp`) it is the only input.
 
 `setTrackMidiInput(track, enabled, device, channel)`: none (`enabled` false), every input (`""`) or one
 by name, on every channel (0) or one (1-16; anything else is `std::invalid_argument`).
 
+### ALSA's sequencer (Linux)
+
+[backends/MidiAlsa.cpp](../../engine/src/backends/MidiAlsa.cpp): one sequencer client for the process,
+"SUBstation", made the first time an input is listed or opened (not tried without `/dev/snd/seq`: no inputs
+then, and again the next time). It has one port of its own, "Input" (written to only by the inputs it
+connects: `NO_EXPORT`), and a thread polling it (and an eventfd that ends it).
+
+- **Listed**: every port others can read from (`READ | SUBS_READ`, not `NO_EXPORT`), but the system's (client
+  0) and its own, by client then port. Named by `alsa::inputName`: the port's name where it starts with its
+  client's (a USB device's "Launchkey MK3 MIDI 1", "Midi Through Port-0"), else "client: port" ("VMPK Output:
+  out"). PipeWire bridges ALSA's MIDI both ways, so this lists what it has too.
+- **Opened**: the input connected to the port (`snd_seq_connect_from`). Sequencer connections are never
+  exclusive, so another application reading it is no error. Its events come in with their source; each is
+  decoded by `alsa::Decoder` (`snd_midi_event_decode`, each message with its status: a 14-bit controller is two
+  controllers; System Exclusive and the sequencer's own events give none) and handed to the handler with the
+  input's port. Closing disconnects it under the mutex the thread calls the handler under, so once it
+  returns the handler isn't called.
+- **Timestamps**: the port is stamped by a queue of the client's own (real time), so each event carries
+  when the sequencer took it, not when the thread got to it. The thread reads the queue's time and
+  `hostTimeNs()` together before it reads what came in, and `alsa::hostTime` places each event as long before
+  that reading as it was before the queue's (read again for an event later than the reading; never later
+  than it).
+- **Hot-plug**: the client hears the system's announcements. A port or client gone (unplugged, the program
+  ended) marks the inputs connected to it lost; a port come connects each lost input again to a port of the
+  same name that none is connected to (another number after being plugged in again). Inputs plugged in
+  for the first time are listed the next time the inputs are (*Refresh* in the MIDI preferences).
+- The client speaks MIDI 1.0: the kernel turns a MIDI 2.0 device's packets (ALSA 1.2.10's UMP) into its
+  messages for it.
+
 ### Stamping (`Engine::midiInput`)
 
-On the driver's thread (WinMM calls back for each `MIM_DATA`; the callback takes `hostTimeNs()` first) or
+On the driver's thread (WinMM calls back for each `MIM_DATA`, and the callback takes `hostTimeNs()` first; ALSA's
+thread passes the time the sequencer stamped, [above](#alsas-sequencer-linux)) or
 the caller's (`sendMidiInput`, which checks the message is a status byte and up to two data bytes, and
 uses "now" when given host time 0):
 
@@ -403,7 +435,7 @@ hangs.
 
 ## Extending it
 
-- **Another MIDI backend** (Windows MIDI Services, ALSA's sequencer on Linux, CoreMIDI on macOS): a file in
+- **Another MIDI backend** (Windows MIDI Services, CoreMIDI on macOS): a file in
   `backends/` implementing [MidiDriver.h](../../engine/src/backends/MidiDriver.h), chosen in
   [engine/CMakeLists.txt](../../engine/CMakeLists.txt): list the inputs by their names, open one as an
   `InputConnection` that calls the handler with its port, the bytes (`shortMessageSize()` for APIs that hand over
@@ -440,6 +472,11 @@ hangs.
 - A device fed by another track hears that track's preview notes too (the piano roll's auditions).
 
 ## Tests
+
+- [tests/engine/test_midi_alsa.cpp](../../tests/engine/test_midi_alsa.cpp): ALSA's sequencer (Linux): input names,
+  events into messages, the sequencer's times into host times; then, where the kernel has a sequencer, a
+  client of the test's own listed, its messages in (port, bytes, times in order), unplugged and plugged in
+  again, and closed.
 
 - [tests/engine/test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp): a bend's curve and
   vibratos (NoteBend.h), MIDI 2.0's packets decoded, the renderer's note ids and bends (sent along a note's

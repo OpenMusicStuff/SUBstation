@@ -10,7 +10,8 @@ which links the engine and nothing of Qt), driven by the application layer's plu
 [app/plugin-scanner.md](../app/plugin-scanner.md). How the user finds and uses plug-ins is in
 [guide/plugins.md](../guide/plugins.md). The `Processor` interface itself is described in [devices.md](devices.md).
 
-Plug-ins load and play on Linux too, but without their editor windows (see [`EditorWindow`](#editorwindow)).
+Plug-ins load and play on Linux too, with their editor windows (X11, under XWayland on Wayland: see
+[`EditorWindow`](#editorwindow)).
 
 ## Files
 
@@ -23,7 +24,10 @@ Plug-ins load and play on Linux too, but without their editor windows (see [`Edi
 | [Vst3Support.h](../../engine/src/plugins/Vst3Support.h) | allocation-free building blocks for the audio thread: `ProcessGuard`, `HostEventList`, `HostParamQueue`, `HostParamChanges`, `ParamChangeQueue`, `SpinLock` |
 | [EditorWindow.h](../../engine/src/plugins/EditorWindow.h) / [.cpp](../../engine/src/plugins/EditorWindow.cpp) | the window holding a plug-in's editor (`IPlugView`, `IPlugFrame`), and what every system's window does with the view |
 | [EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp) | `EditorWindow` on Windows: a Win32 window |
-| [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) | `EditorWindow` off Windows: it never opens |
+| [EditorWindowX11.cpp](../../engine/src/plugins/EditorWindowX11.cpp) | `EditorWindow` on Linux: an X11 window of its own xcb connection; `editorsUseHost()`, `closeForemostEditor()` |
+| [Vst3RunLoop.h](../../engine/src/plugins/Vst3RunLoop.h) / [.cpp](../../engine/src/plugins/Vst3RunLoop.cpp) | VST 3's run loop for plug-ins on Linux (`Steinberg::Linux::IRunLoop`): their file descriptors and timers on the editor event loop |
+| [EditorHost.h](../../engine/src/EditorHost.h) / [.cpp](../../engine/src/EditorHost.cpp) | what editors need from the application on Linux: the main thread's event loop (`EventLoop`, the engine's own until the application gives one), and the key filter (`EditorKey`) |
+| [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) | `EditorWindow` where there is none (not Windows, and not Linux with xcb): it never opens |
 | [Vst3Platform.h](../../engine/src/plugins/Vst3Platform.h) | what hosting does differently on each system: `prepareThreadForModules()`, `systemPluginFolders()`, `binaryInBundle()`; [Vst3PlatformWin32.cpp](../../engine/src/plugins/Vst3PlatformWin32.cpp), [Vst3PlatformPosix.cpp](../../engine/src/plugins/Vst3PlatformPosix.cpp) |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addPluginProcessor()`, `retireProcessorLocked()`, the processor and editor calls (made without the engine lock) |
 | [Engine.cpp](../../engine/src/Engine.cpp) | `Engine::idle()`: plug-ins' main-thread work, destroying removed ones, realigning on latency changes |
@@ -357,15 +361,20 @@ blocks set `ProcessContext::offline`, but the plug-in is still processed in `kRe
 `EditorWindow` is the same class on every system: what it does with the view (attaching it, telling it its size and
 its content scale, detaching it) is [EditorWindow.cpp](../../engine/src/plugins/EditorWindow.cpp)'s, and the window
 itself is a file per system's (`EditorWindow::Native`). `EditorWindow::canHold(view)` says whether this system's
-window can hold a view (the platform type it supports: an HWND on Windows); `Vst3Processor::openEditor()` asks it
-before making one. macOS's (`kPlatformTypeNSView`) and X11's (`kPlatformTypeX11EmbedWindowID`) windows go beside
-Windows'.
+window can hold a view (the platform type it supports: an HWND on Windows, an X11 window on Linux);
+`Vst3Processor::openEditor()` asks it before making one. macOS's (`kPlatformTypeNSView`) goes beside them.
+`closeAsUser()` closes it as its close button would. The frame (`IPlugFrame`) also hands out the window's run loop
+where it has one (Linux).
 
-On platforms other than Windows there are no editor windows yet: [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp)
-stands in, `canHold()` is false and the window never opens, so `openEditor()` returns false (`hasEditor()` still says
-whether the plug-in has one). The application then says the plug-in has no editor, and the device view's generic
-editor (a knob per parameter) is the way to edit it. The rest of this section is about Windows
-([EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp)).
+Where there are no editor windows (not Windows, and not Linux built with xcb):
+[EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) stands in, `canHold()` is false and the window
+never opens, so `openEditor()` returns false (`hasEditor()` still says whether the plug-in has one). The application
+then says the plug-in has no editor, and the device view's generic editor (a knob per parameter) is the way to edit
+it. The same happens on Linux with no X server (`DISPLAY`): the window can't open.
+
+### Windows
+
+[EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp).
 
 A plain Win32 top-level window (class `SUBstationPluginEditor`) holding the plug-in's `IPlugView`, owned by the main
 window so it floats above it; Qt's event loop dispatches its messages like any other window's. Main thread only.
@@ -389,6 +398,53 @@ window so it floats above it; Qt's event loop dispatches its messages like any o
 
 Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEditorKeys`:
 [ui/README.md](../ui/README.md#shortcuts-from-plug-in-editors), [guide/shortcuts.md](../guide/shortcuts.md)).
+
+### Linux (X11)
+
+[EditorWindowX11.cpp](../../engine/src/plugins/EditorWindowX11.cpp): an X11 top-level window holding the view
+(`kPlatformTypeX11EmbedWindowID`: the plug-in makes its own window inside it, on its own connection). Qt runs on X11
+(on Wayland through XWayland) and so do the editors. Main thread only.
+
+- **Its own connection.** Each window connects to the X server itself (`DISPLAY`; none: it doesn't open). Its
+  connection, and the plug-in's file descriptors and timers, run on the **editor event loop**
+  ([EditorHost.h](../../engine/src/EditorHost.h)): the engine's own, run without waiting by `Engine::idle()`, until
+  the application gives its own (the engine bridge installs Qt's: `app::EditorEventLoop`, `QSocketNotifier` and
+  `QTimer`). What is registered is unregistered through the loop it was registered on (kept with it), even if the
+  application's loop changed meanwhile. Events xcb reads while waiting for a reply stay in its queue with nothing left to read on the socket,
+  so the window also looks at its queue every 50 ms.
+- **The plug-in's run loop.** The frame hands the view a `RunLoop` ([Vst3RunLoop.h](../../engine/src/plugins/Vst3RunLoop.h),
+  VST 3's `Steinberg::Linux::IRunLoop`): `registerEventHandler` watches a file descriptor, `registerTimer` starts a
+  timer, each on the editor event loop, holding the handler while it is registered. What the plug-in leaves
+  registered goes when its view is detached.
+- **To the window manager** it is a dialog (`_NET_WM_WINDOW_TYPE_DIALOG`), the owner's transient
+  (`WM_TRANSIENT_FOR`: the main window's X window, `winId()`; a handle that is no window is ignored), with the
+  title in `WM_NAME` and `_NET_WM_NAME`, `WM_CLASS` "plugin-editor", "SUBstation", and closed through
+  `WM_DELETE_WINDOW`. Its position is its own, not its frame's (`StaticGravity`), so reopening it where it was doesn't
+  drift by the frame's size.
+- **Placement**: the last editor's position, kept on the screen, else centred over the owner, cascading by 28 px.
+- **Sizes** are in pixels (VST 3 on Linux). Not resizable: the size hints pin it to the view's size (updated when
+  the view resizes itself). `resizeView()` (the plug-in asks): resizes the window, then `onSize` if the view's size
+  differs. The user resizing it (`ConfigureNotify`): the view is asked what it allows of that size
+  (`checkSizeConstraint`), the window goes to that size if it differs, and the view gets it.
+- **Content scale**: the X resources' `Xft.dpi` over 96 (as desktops set it and Qt reads it), told the view before
+  attaching.
+- **Focus**: when the window gets the focus (`FocusIn`, not from inside), it passes it to the plug-in's window, so
+  keys go to the plug-in.
+- **Keys**: with a key filter set (`setEditorKeyFilter`: the UI's `PluginEditorKeys`), the window grabs the keys a
+  shortcut can be (any key with Ctrl or Alt, Space and S alone, with Caps Lock and Num Lock either way) in
+  synchronous mode: the X server holds each until the filter has said. Taken, the keyboard goes on
+  (`AsyncKeyboard`); not, the key is replayed to the plug-in as if nothing had grabbed it (`ReplayKeyboard`). Keys
+  pressed while a taken key is held come to the window (its grab is active) and go to the window with the focus if
+  the filter doesn't take them. A key held down is reported as a repeat (X repeats the press, with a release at the
+  same time before it). While the main thread is busy, such keys wait for it, in every application. The keyboard
+  changing (`MappingNotify`) grabs them anew. The filter is called from inside the window's events, so what a key
+  does (which may close that editor, or every one) is done after it returns: the UI queues it.
+- **Hidden** (`setVisible(false)`): unmapped (with ICCCM's synthetic `UnmapNotify`), keeping its place; shown again
+  with `_NET_WM_USER_TIME` 0, so it doesn't take the focus.
+- **Closed** (the close button, `closeAsUser()`, the X server gone): marked closed and the view detached; the
+  processor notices in `idle()` and reports `EditorClosed`.
+- **The foremost editor**: the windows open are kept in order, the last focused, opened or brought to front first;
+  `sub::closeForemostEditor()` closes the first of them shown (Ctrl+W from any editor).
 
 ## Real-time rules
 
@@ -421,8 +477,9 @@ sidechain only.
 The tests use four VST3 plug-ins built with the engine ([tests/vst3_plugins/](../../tests/vst3_plugins)): *SUB Test
 Synth*, an instrument with a separate controller (it reports the transport it gets back as parameters, and a note's
 tuning expression bends that note's sine; as a synth reusing voices can, a new note keeps the tuning of the last
-note to end until it gets its own); *SUB Test Effect*, a single-component effect with adjustable latency and,
-on Windows, a Win32 editor; *SUB Test Mono*, a mono effect without a controller; and *SUB Test Note Effect*, an
+note to end until it gets its own); *SUB Test Effect*, a single-component effect with adjustable latency and an
+editor (on Windows a Win32 window; on Linux an X11 window on its own xcb connection, run by the host's `IRunLoop`,
+built where the engine has X11 editors); *SUB Test Mono*, a mono effect without a controller; and *SUB Test Note Effect*, an
 effect with an event input whose output is its input plus each held note's velocity / 127 (DC); plus *SUB Test Sidechain* ([test_sidechain.cpp](../../tests/vst3_plugins/test_sidechain.cpp)),
 whose output is its input plus its sidechain. The tests see only these, never the installed ones: the engine's tests
 load the bundle by its path (`SUBSTATION_TEST_PLUGINS_BUNDLE`, [harness/Fixtures.h](../../tests/engine/harness/Fixtures.h)),
@@ -432,8 +489,12 @@ and the application's tests point `SUBSTATION_VST3_PATH` at folders of their own
   sample-exact notes, pitch, velocity and chords, parameters as the plug-in describes them and changes reaching the
   processor, the transport and loop splitting, repeatable offline renders, effects, automation reaching the plug-in
   and its controller, mono plug-ins on a stereo track, latency compensation (also on the master), state, load errors,
-  chain order, moving to another track as it is, editor edits, resizing and closing (Windows only; skipped
+  chain order, moving to another track as it is, editor edits, resizing and closing (Windows; skipped
   elsewhere), plug-ins without an editor.
+- [tests/engine/test_editors_x11.cpp](../../tests/engine/test_editors_x11.cpp): Linux's editors on an X server of the
+  test's own (Xvfb, [harness/XDisplay.h](../../tests/engine/harness/XDisplay.h)): edits, the plug-in's timer, resizing
+  both ways, state dirty, hiding, closing; the content scale from `Xft.dpi`; the keys a shortcut can be going to the
+  key filter (taken or replayed), others to the plug-in, repeats; the foremost editor closed.
 - [tests/engine/test_preset_names.cpp](../../tests/engine/test_preset_names.cpp): preset names in states as real
   plug-ins keep them (Serum 2, Valhalla, Spitfire, Nuro Audio), what isn't one (binary, other keys, past the first
   64 KB), in a `.vstpreset` (the controller's, the component's first, damaged ones), placeholder program names; and a
@@ -450,4 +511,5 @@ and the application's tests point `SUBSTATION_VST3_PATH` at folders of their own
 - [tests/app/test_bridge_plugins.cpp](../../tests/app/test_bridge_plugins.cpp) and
   [tests/app/test_ui_device_panel_plugins.cpp](../../tests/app/test_ui_device_panel_plugins.cpp): plug-ins in the
   application: projects and their state, missing plug-ins, undo, what plug-ins report, loading after a project opens,
-  the device view's parameters, editor button and presets. Editor tests briefly show real windows on Windows.
+  the device view's parameters, editor button and presets. Editor tests briefly show real windows on Windows; on
+  Linux one opens an X11 editor run by Qt's event loop, on an X server of its own.

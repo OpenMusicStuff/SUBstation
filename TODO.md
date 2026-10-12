@@ -638,25 +638,54 @@ Stage 2 — Audio backends (each listed and made by its system's file behind
 
 Stage 3 — MIDI (each a file behind `backends/MidiDriver.h`: the system's
 inputs listed and one opened; `MidiInputDevices` does the rest)
-- [ ] Linux: an ALSA sequencer backend (`backends/MidiAlsa.cpp`, as
+- [x] Linux: an ALSA sequencer backend (`backends/MidiAlsa.cpp`, as
       `MidiWinMM.cpp`): ports listed, hot-plug, timestamps. (PipeWire bridges
-      ALSA MIDI, so this covers it.)
-- [ ] `MidiNone.cpp` only where none builds.
+      ALSA MIDI, so this covers it.) Built when pkg-config finds `alsa`
+      (libasound2-dev). One client, "SUBstation", with a port of its own the
+      inputs are connected to; the sequencer's own (real-time queue)
+      timestamps turned into host times; an input unplugged connects again
+      when a port of its name comes back; inputs plugged in for the first time
+      listed on *Refresh*, as on Windows. Tests: tests/engine/test_midi_alsa.cpp
+      (names, decoding and times anywhere; the rest against the kernel's
+      sequencer, `/dev/snd/seq`).
+  - [ ] Its tests against the kernel's sequencer run somewhere. (GitHub's
+        runners can't: their Azure kernel has no `snd-seq`, not even in
+        linux-modules-extra; nor do containers. A Linux machine with sound.)
+- [x] `MidiNone.cpp` only where none builds (not Windows, and not Linux with
+      ALSA's headers).
 
 Stage 4 — Plug-ins
-- [ ] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),
-      under XWayland on Wayland.
-  - [ ] `Steinberg::Linux::IRunLoop` for the plug-ins: their fds and timers
-        on Qt's event loop (`QSocketNotifier`, `QTimer`).
-  - [ ] Resizing and content scale.
-- [ ] The main window's shortcuts while an editor has the focus
+- [x] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),
+      under XWayland on Wayland. (An X11 window of its own xcb connection, a
+      dialog transient for the main window; built when pkg-config finds xcb.)
+  - [x] `Steinberg::Linux::IRunLoop` for the plug-ins: their fds and timers
+        on Qt's event loop (`QSocketNotifier`, `QTimer`). (`Vst3RunLoop`, from
+        the frame, on the editor event loop of `EditorHost.h`: Qt's,
+        `app::EditorEventLoop`, while the bridge lives; else the engine's own,
+        run by `Engine::idle()`.)
+  - [x] Resizing and content scale. (Both ways, within the view's limits;
+        the scale is `Xft.dpi` over 96. Not yet: following a change of
+        `Xft.dpi` while the editor is open.)
+- [x] The main window's shortcuts while an editor has the focus
       (`PluginEditorKeys`): an xcb native event filter on Linux. Same rules
-      as on Windows.
-- [ ] The test plug-ins (`tests/vst3_plugins`) built as bundles there; the
-      editor tests run on Linux (Xvfb).
+      as on Windows. (Not a filter of Qt's: Qt never sees an editor's keys.
+      The editor window grabs the keys a shortcut can be, synchronously, and
+      asks `PluginEditorKeys` through the engine's key filter; keys it doesn't
+      take are replayed to the plug-in.)
+- [x] The test plug-ins (`tests/vst3_plugins`) built as bundles there; the
+      editor tests run on Linux (Xvfb). (SUB Test Effect has an X11 editor on
+      its own connection, run by the host's `IRunLoop`;
+      tests/engine/test_editors_x11.cpp and test_bridge_plugins on an Xvfb of
+      their own: harness/XDisplay.h.)
+- [ ] Tried with real plug-ins' editors (JUCE, VSTGUI, DPF) under a window
+      manager, X11 and XWayland: focus, keys, resizing, scale. (Stage 7's
+      round of commercial plug-ins.)
 
 Stage 5 — The rest of the platform layer
-- [ ] Plug-in paths checked on Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+- [x] Plug-in paths checked on Linux (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+      (`~/.vst3`, named like a plug-in, was taken for one and never looked
+      in: fixed. A plug-in installed there as a link found and read; Linux's
+      load errors in plain words: no Linux version, a library missing.)
 
 Stage 6 — Feeling native
 - [ ] Linux keeps the system's window frame (`WindowFrame` is Windows only);

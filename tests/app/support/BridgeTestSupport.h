@@ -27,6 +27,8 @@ namespace sub::app {
 // The tests' window on the bridge's insides (EngineBridge's friend).
 class BridgeTestAccess {
 public:
+    // The title of a device's editor window.
+    static QString editorTitle(const EngineBridge& bridge, const QString& trackId, const QString& deviceId);
     // Reports the next pollPlugins() takes, as if the plug-ins had sent them.
     static void injectEvents(EngineBridge& bridge, const std::vector<sub::ProcessorEventRecord>& events);
     // The plug-ins waiting to load are loaded by hand from here (the timer stopped).

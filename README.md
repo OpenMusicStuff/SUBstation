@@ -70,9 +70,10 @@ You need a C++20 compiler, CMake 3.26 or newer with Ninja, and Qt 6.4 or newer
 - **Linux** (Debian/Ubuntu): GCC 13 or Clang 16, `cmake ninja-build`, and Qt's
   packages (`qt6-base-dev qt6-declarative-dev` and the QML modules the UI imports:
   the list is in [docs/building.md](docs/building.md#requirements)), plus `xvfb`
-  to run the UI's tests headless. Audio goes through the system's default backend
-  (the *System* driver); VST3 plug-ins load without their editors; there are no
-  MIDI devices (the computer MIDI keyboard plays).
+  to run the UI's tests headless. Audio goes through PipeWire (`libpipewire-0.3-dev`;
+  elsewhere the system's default backend, the *System* driver), MIDI input through
+  ALSA's sequencer (`libasound2-dev`), and VST3 plug-ins show their editors as X11
+  windows (`libxcb1-dev`).
 
 Linux:
 

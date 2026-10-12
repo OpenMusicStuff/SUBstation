@@ -260,7 +260,10 @@ concerned (see [Freezing](#freezing)).
   keep running, at most `kMaxHiddenEditors` (8); beyond that the ones hidden longest close, and open again where they
   were when their track is shown. The window `setOwnerWindow` names (the main window's native handle) owns the editor
   windows so they float above it. Titles are `"<plug-in> - <track>"`, updated when the track is renamed. Editors are
-  windows on Windows only; elsewhere plug-ins show none.
+  windows on Windows and on Linux (X11); elsewhere plug-ins show none. On Linux the bridge gives the engine Qt's
+  event loop for them while it lives ([EditorEventLoop.h](../../app/src/audio/EditorEventLoop.h): the editors'
+  connections and the plug-ins' file descriptors and timers on `QSocketNotifier` and `QTimer`; see
+  [engine/plugins.md](../engine/plugins.md#linux-x11)).
 - **Reports** (`dispatchProcessorEvents`, from `Engine::takeProcessorEvents()`):
 
   | Engine event | Bridge |
@@ -520,8 +523,8 @@ See [engine/recording.md](../engine/recording.md) and [guide/recording.md](../gu
 off or gone, and reports an input that can't be opened once (`midiErrors()`). `setMidiInputEnabled` saves the choice
 and applies it. `midiInputs()` lists the inputs; `midiInputChoices()` adds `kComputerKeyboard` ("Computer Keyboard"),
 the input the computer MIDI keyboard plays into, always there; `sendMidi(message, device)` plays a message as if that
-input sent it (`Engine::sendMidiInput`; dropped while no device runs). On Linux the engine has no MIDI devices: only
-the computer keyboard plays. See [engine/midi.md](../engine/midi.md).
+input sent it (`Engine::sendMidiInput`; dropped while no device runs). On Linux the inputs are ALSA's sequencer's
+ports (an engine built without ALSA lists none: then only the computer keyboard plays). See [engine/midi.md](../engine/midi.md).
 
 ## Settings storage
 

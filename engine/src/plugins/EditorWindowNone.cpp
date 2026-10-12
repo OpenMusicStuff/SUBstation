@@ -1,7 +1,8 @@
-// Plug-in editor windows where the engine has none yet (platforms other than
-// Windows): no view is held, the window never opens, so
+// Plug-in editor windows where the engine has none (not Windows, and not Linux
+// with xcb's headers): no view is held, the window never opens, so
 // Processor::openEditor() returns false.
 
+#include "EditorHost.h"
 #include "plugins/EditorWindow.h"
 
 namespace sub::vst3 {
@@ -21,9 +22,17 @@ void EditorWindow::bringToFront() {}
 void EditorWindow::setVisible(bool) {}
 bool EditorWindow::isVisible() const { return false; }
 EditorWindow::Position EditorWindow::position() const { return position_; }
+void EditorWindow::closeAsUser() {}
 
 Steinberg::tresult PLUGIN_API EditorWindow::resizeView(Steinberg::IPlugView*, Steinberg::ViewRect*) {
     return Steinberg::kResultFalse;
 }
 
 }  // namespace sub::vst3
+
+namespace sub {
+
+bool editorsUseHost() { return false; }
+bool closeForemostEditor() { return false; }
+
+}  // namespace sub

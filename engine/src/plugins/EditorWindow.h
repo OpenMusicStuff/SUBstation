@@ -6,9 +6,11 @@
 // the view can resize, and tells the view its content scale (the screen's DPI).
 //
 // Main thread only. The window is the system's: one file per system holds it
-// (`Native`): EditorWindowWin32.cpp, a Win32 window; EditorWindowNone.cpp
-// where plug-ins show no editor yet (it never opens). What every system's
-// window does with the view is EditorWindow.cpp's.
+// (`Native`): EditorWindowWin32.cpp, a Win32 window; EditorWindowX11.cpp, an
+// X11 window (Linux, on Wayland through XWayland) with the plug-ins' run loop
+// (VST 3's IRunLoop, through the frame); EditorWindowNone.cpp where plug-ins
+// show no editor (it never opens). What every system's window does with the
+// view is EditorWindow.cpp's.
 
 #include <cstdint>
 #include <memory>
@@ -20,6 +22,8 @@
 
 namespace sub::vst3 {
 
+class RunLoop;  // Vst3RunLoop.h: VST 3's run loop for plug-ins on Linux
+
 class EditorWindow final : public Steinberg::IPlugFrame {
 public:
     struct Position {  // the window's top-left corner, in screen coordinates
@@ -28,7 +32,7 @@ public:
     };
 
     // Whether this system's window can hold the view (the view supports its
-    // platform type: an HWND on Windows).
+    // platform type: an HWND on Windows, an X11 window on Linux).
     static bool canHold(Steinberg::IPlugView& view);
 
     // Opens the window and attaches the view to it; check isOpen() afterwards. It
@@ -51,10 +55,15 @@ public:
     bool isVisible() const;
     // Where the window is, or was when it went.
     Position position() const;
+    // Closes the window as its close button does (wasClosed() then).
+    void closeAsUser();
 
     // IPlugFrame
     tresult PLUGIN_API resizeView(Steinberg::IPlugView* view, Steinberg::ViewRect* newSize) override;
-    SUB_HOST_OWNED_FUNKNOWN(Steinberg::IPlugFrame)
+    // The frame, and its window's run loop where it has one (Linux).
+    tresult PLUGIN_API queryInterface(const Steinberg::TUID queried, void** obj) override;
+    uint32 PLUGIN_API addRef() override { return 1; }
+    uint32 PLUGIN_API release() override { return 1; }
 
 private:
     struct Native;  // the system's window and what only it needs (EditorWindowWin32.cpp...)
@@ -70,6 +79,10 @@ private:
 
     Steinberg::IPtr<Steinberg::IPlugView> view_;
     std::unique_ptr<Native> native_;
+    struct RunLoopDeleter {  // (the run loop is Linux's alone: VST 3 defines its interface there only)
+        void operator()(RunLoop* loop) const noexcept;
+    };
+    std::unique_ptr<RunLoop, RunLoopDeleter> runLoop_;  // the plug-ins' (Linux): null elsewhere
     bool resizable_ = false;
     bool resizing_ = false;  // inside resizeView: the window resizing itself mustn't size the view back
     bool closed_ = false;
