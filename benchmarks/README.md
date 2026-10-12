@@ -8,6 +8,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [parallel_render_bench.cpp](parallel_render_bench.cpp) | Tracks rendered on one thread and on several: offline (best of three, checked bit-identical on any number of threads) and live through the fake ASIO driver. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
+| [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints (Essentia's descriptors) on a real sample library: how fast they are made and searched, how fast the index analyses a library, and how often a sound's nearest sounds are of its kind; `--split` holds half the queries out, `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
 | [LibraryGen.h](LibraryGen.h) | Makes the synthetic sample libraries. |
 | [PyRandom.h](PyRandom.h), [Json.h](Json.h) | Python's random numbers (so a library is the one the Python generator made), and the reports as JSON. |
@@ -389,3 +390,113 @@ Oversampling (the Saturator's Hi-Quality, the Amp) runs the shared half-band
 stages a tap at a time over the block, which the compiler vectorises. Before it
 did, the same machine measured about 1.4 % for the Saturator's heaviest
 Hi-Quality settings and 2.1-2.2 % for the Amp in Dual Mono.
+
+## Windows: the math library (MinGW against MSVC)
+
+Windows 11, Intel Core Ultra 7 270K Plus, 48 kHz, blocks of 256, 5 s, best of
+three (after: of two runs of that); MinGW GCC 13 (Qt's, msvcrt-based) and MSVC
+14.51 (Visual Studio 18), both Release with AVX2. Before: the C library's exp,
+log2, log10, exp2 and sin; after: `engine/src/rt/FastMath.h`'s, where devices
+call them per sample or per bin (and RtUtils.h's dB helpers). The raw numbers
+are in `results/builtin-devices-mingw-msvc.json`.
+
+| device | MinGW before | MinGW after | MSVC before | MSVC after |
+|---|---|---|---|---|
+| Amp | 0.310 % | **0.312 %** | 0.397 % | 0.397 % |
+| Chorus-Ensemble | 0.194 % | **0.129 %** | 0.179 % | 0.178 % |
+| Compressor | 0.347 % | **0.066 %** | 0.050 % | 0.052 % |
+| Delay | 0.062 % | **0.062 %** | 0.088 % | 0.082 % |
+| Disperser | 0.124 % | **0.123 %** | 0.245 % | 0.246 % |
+| EQ | 0.008 % | **0.008 %** | 0.013 % | 0.014 % |
+| Erosion | 0.085 % | **0.084 %** | 0.097 % | 0.096 % |
+| Gate | 0.072 % | **0.071 %** | 0.077 % | 0.077 % |
+| Limiter | 0.143 % | **0.138 %** | 0.161 % | 0.164 % |
+| Multiband Dynamics | 0.547 % | **0.360 %** | 0.388 % | 0.396 % |
+| Over The Top | 0.697 % | **0.223 %** | 0.224 % | 0.241 % |
+| Phaser-Flanger | 0.274 % | **0.150 %** | 0.208 % | 0.215 % |
+| Reverb | 0.751 % | **0.630 %** | 0.831 % | 0.848 % |
+| Saturator | 0.041 % | **0.041 %** | 0.071 % | 0.070 % |
+| Sidechain | 0.053 % | **0.051 %** | 0.045 % | 0.045 % |
+| Spectral Compressor | 0.626 % | **0.292 %** | 0.346 % | 0.352 % |
+| Transient | 0.177 % | **0.184 %** | 0.162 % | 0.169 % |
+| Utility | 0.004 % | **0.003 %** | 0.006 % | 0.006 % |
+| **all 18** | 4.51 % | **2.93 %** | 3.59 % | 3.65 % |
+
+Profiled (the sampling `--profile` of vital_bench, on a build of the devices),
+MinGW's devices spent up to 85 % of their time in its C library: its `expf`
+converts to double and calls an x87 `exp` (29 ns a value; MSVC's library 1.3 ns,
+FastMath.h's 1.5), and its `exp2`, `log2` and `sin` are as slow (25, 15 and 29
+ns; FastMath.h's 1.3 to 2.5). FastMath.h's functions are branch-free, so GCC
+vectorises the loops calling them, and within 2 ulp (float) and 4 ulp (double)
+of the exact result (`test_fast_math.cpp`). With MSVC they are its library's
+own, clamped alike: its library is as fast, and MSVC vectorises loops calling
+it (it doesn't those calling FastMath.h's: 2 times as slow there), so MSVC is
+unchanged. Elsewhere GCC's code is the faster: the built-in Vital, 8 notes, 1.27 %
+(MinGW) against 1.56 % (MSVC); Disperser 0.12 % against 0.25 %.
+
+# Vital: built-in against the plug-in
+
+```
+vital_bench [--vst3 PATH] [--seconds 10] [--block 256] [--rate 48000]
+    [--notes N] [--set PARAM=VALUE ...] [--json out.json]
+```
+
+The built-in Vital and Vital's VST3 plug-in (by default the installed
+`C:\Program Files\Common Files\VST3\Vital.vst3`, through the engine's VST3 host),
+each a new instance at Vital's init patch, hold the same notes from the first
+block; the time `process()` takes against how long the audio plays is its load on
+one core (best of three). Without `--notes` or `--set`, the scenarios below.
+`--set` takes the built-in's id and plain value; the plug-in gets the same value
+through its parameter of the same name (each setting is printed as both show it).
+The level column (the left side's RMS) shows the two played alike.
+
+## Results
+
+Windows 11, Intel Core Ultra 7 270K Plus, MinGW GCC 13 (Release, `-O3 -mavx2
+-mfma`), against Vital 1.5.5's own build; 48 kHz, blocks of 256, 10 s, best of
+three. The built-in is Vital 1.0.6's source (the open-source release) on KFR's
+FFT; "before" is the same source on the KISS FFT it falls back on. The raw report
+(after) is in `results/vital-vs-vst3.json`.
+
+| scenario | built-in, KISS FFT (before) | built-in, KFR | VST3 |
+|---|---|---|---|
+| silence, no notes | 0.04 % | 0.03 % | 0.23 % |
+| 1 note | 0.72 % | 0.49 % | 0.53 % |
+| 4-note chord | 1.20 % | 0.73 % | 0.84 % |
+| 8-note chord | 2.19 % | 1.27 % | 1.44 % |
+| 8 notes, osc 1 unison 8 | 2.80 % | 1.91 % | 2.15 % |
+| 8 notes, osc 1 unison 16 | 3.60 % | 2.68 % | 3.12 % |
+| 8 notes, 3 oscs unison 8 | 7.06 % | 4.30 % | 4.94 % |
+| 8 notes, oversampling 4x | 3.10 % | 2.13 % | 2.56 % |
+| 16 notes, polyphony 16 | 4.19 % | 2.25 % | 2.68 % |
+
+Playing, the built-in now costs 10-20 % less than the plug-in; silent, almost
+nothing (asleep after a second without voices), where the plug-in keeps running.
+
+Where the time went: `--profile samples.txt` (Windows) samples the thread playing
+each, and `vital_profile_report.py` resolves the built-in's samples with addr2line
+(build with `-DCMAKE_CXX_FLAGS=-g`, which doesn't change the code). Holding 8
+notes on KISS FFT, about 42 % of the built-in's time was the FFT (`kf_bfly4`,
+`transform`): the oscillators' inverse transforms, one a block per voice. Vital's
+own builds use a platform FFT (Intel IPP, JUCE's, Apple's vDSP:
+`fourier_transform.h`), which the vendored code doesn't have.
+
+The FFTs measured for it, each wrapped in Vital's layout as `fourier_transform.h`
+uses it (on Vital's 16-byte-aligned buffers, the spectrum's copy included), N =
+2048, best of seven rounds of 20 000 (a program outside the tree, with each
+library downloaded and built for it; every result within 3e-7 of a
+double-precision DFT):
+
+| FFT | inverse | forward |
+|---|---|---|
+| KISS FFT (Vital's fallback) | 10 195 ns | 10 473 ns |
+| Signalsmith Linear 0.6.4 | 3 072 ns | 3 201 ns |
+| PocketFFT (C++) | 2 300 ns | 2 446 ns |
+| pffft (marton78's) | 1 210 ns | 1 062 ns |
+| FFTW 3.3.10, AVX2, FFTW_MEASURE, in place unaligned | 1 355 ns | 1 059 ns |
+| FFTW 3.3.10, AVX2, FFTW_MEASURE, copied to aligned buffers | 923 ns | 857 ns |
+| KFR 7.2.0, AVX2, out of place | **784 ns** | 880 ns |
+| KFR 7.2.0, AVX2, in place | 885 ns | **748 ns** |
+
+(FFTW_PATIENT planned no faster than FFTW_MEASURE.) The built-in uses KFR: out of
+place for the inverse, in place for the forward.
