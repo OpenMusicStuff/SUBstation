@@ -634,10 +634,17 @@ Stage 2 — Audio backends (each listed and made by its system's file behind
 
 Stage 3 — MIDI (each a file behind `backends/MidiDriver.h`: the system's
 inputs listed and one opened; `MidiInputDevices` does the rest)
-- [ ] Linux: an ALSA sequencer backend (`backends/MidiAlsa.cpp`, as
+- [x] Linux: an ALSA sequencer backend (`backends/MidiAlsa.cpp`, as
       `MidiWinMM.cpp`): ports listed, hot-plug, timestamps. (PipeWire bridges
-      ALSA MIDI, so this covers it.)
-- [ ] `MidiNone.cpp` only where none builds.
+      ALSA MIDI, so this covers it.) Built when pkg-config finds `alsa`
+      (libasound2-dev). One client, "SUBstation", with a port of its own the
+      inputs are connected to; the sequencer's own (real-time queue)
+      timestamps turned into host times; an input unplugged connects again
+      when a port of its name comes back; inputs plugged in for the first time
+      listed on *Refresh*, as on Windows. Tests: tests/engine/test_midi_alsa.cpp
+      (against the kernel's sequencer where it has one: CI loads `snd-seq`).
+- [x] `MidiNone.cpp` only where none builds (not Windows, and not Linux with
+      ALSA's headers).
 
 Stage 4 — Plug-ins
 - [ ] Editors on Linux: `EditorWindowX11.cpp` (`kPlatformTypeX11EmbedWindowID`),

@@ -82,11 +82,12 @@ A saved project's recordings go into a `Recordings` folder beside it.
 
 SUBstation is made for Windows; on Linux it runs with these differences:
 
-- Audio plays through the system's default sound backend (PulseAudio, ALSA, JACK...) as
-  the *System* driver: output only, so audio is recorded only by resampling. There is
-  no ASIO and no exclusive mode (see [audio-setup.md](audio-setup.md)).
-- No MIDI devices are listed; the computer MIDI keyboard plays and records (see
-  [midi.md](midi.md#computer-midi-keyboard)).
+- Audio plays through PipeWire, inputs and all; where PipeWire doesn't run, through the
+  system's default sound backend (PulseAudio, ALSA, JACK...) as the *System* driver:
+  output only, so audio is recorded only by resampling. There is no ASIO and no
+  exclusive mode (see [audio-setup.md](audio-setup.md)).
+- MIDI inputs are ALSA's sequencer's ports: hardware, and software such as a virtual
+  keyboard (see [midi.md](midi.md#midi-input)).
 - VST3 plug-ins load and play, but their own editor windows don't open: edit them in
   the device view (see [plugins.md](plugins.md#the-plug-ins-editor)). Plug-ins are
   looked for in `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`.

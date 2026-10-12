@@ -1,5 +1,5 @@
-// MIDI input where the engine has no MIDI backend yet (platforms other than
-// Windows): no input is ever listed, so none is opened (see MidiDriver.h).
+// MIDI input where the engine has no MIDI backend (not Windows, and not Linux
+// with ALSA's headers): no input is ever listed, so none is opened (see MidiDriver.h).
 // Messages still arrive through Engine::sendMidiInput() (the computer
 // keyboard, tests).
 

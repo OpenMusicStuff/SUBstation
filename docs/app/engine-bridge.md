@@ -516,8 +516,8 @@ See [engine/recording.md](../engine/recording.md) and [guide/recording.md](../gu
 off or gone, and reports an input that can't be opened once (`midiErrors()`). `setMidiInputEnabled` saves the choice
 and applies it. `midiInputs()` lists the inputs; `midiInputChoices()` adds `kComputerKeyboard` ("Computer Keyboard"),
 the input the computer MIDI keyboard plays into, always there; `sendMidi(message, device)` plays a message as if that
-input sent it (`Engine::sendMidiInput`; dropped while no device runs). On Linux the engine has no MIDI devices: only
-the computer keyboard plays. See [engine/midi.md](../engine/midi.md).
+input sent it (`Engine::sendMidiInput`; dropped while no device runs). On Linux the inputs are ALSA's sequencer's
+ports (an engine built without ALSA lists none: then only the computer keyboard plays). See [engine/midi.md](../engine/midi.md).
 
 ## Settings storage
 

@@ -17,8 +17,8 @@
 // the audio thread never waits.
 //
 // Each system's MIDI API is a file of its own behind backends/MidiDriver.h
-// (WinMM's is MidiWinMM.cpp; ALSA's sequencer, CoreMIDI and Windows MIDI
-// Services can be others): it lists the inputs and opens one, and
+// (WinMM's is MidiWinMM.cpp, ALSA's sequencer's MidiAlsa.cpp; CoreMIDI and
+// Windows MIDI Services can be others): it lists the inputs and opens one, and
 // MidiInputDevices does the rest the same way for all of them.
 //
 // MIDI 2.0: Universal MIDI Packets (Ump.h) come in through
@@ -103,7 +103,8 @@ private:
 };
 
 // The system's MIDI input devices (WinMM on Windows: backends/MidiWinMM.cpp;
-// none elsewhere: backends/MidiNone.cpp). Main thread, except the handler,
+// ALSA's sequencer on Linux: backends/MidiAlsa.cpp; none elsewhere:
+// backends/MidiNone.cpp). Main thread, except the handler,
 // which the driver calls on its own thread for every short message (channel
 // and system messages; System Exclusive is ignored), stamped with
 // hostTimeNs() (rt/RtUtils.h).

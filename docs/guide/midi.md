@@ -244,9 +244,8 @@ of their own, to hear them on different instruments.
 
 ## MIDI input
 
-MIDI input comes from controllers and keyboards (WinMM), played live and recorded. On
-Linux SUBstation has no MIDI devices: the [computer MIDI keyboard](#computer-midi-keyboard)
-is the only input.
+MIDI input comes from controllers and keyboards (WinMM on Windows, ALSA's sequencer on
+Linux), played live and recorded, and from the [computer MIDI keyboard](#computer-midi-keyboard).
 
 - Every MIDI input connected is used unless turned off in *Options › Preferences ›
   MIDI* (*Refresh* there finds inputs plugged in since); see
