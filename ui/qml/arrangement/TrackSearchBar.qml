@@ -2,20 +2,20 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// The find bar over the arrangement's lanes (Q): finds tracks by their names,
-// then by what they are (their labels and what those were made from: an
-// instrument's preset, the files they play; Session.trackSearch). Typing goes
-// to the best match; Enter (or Down) to the next, after the last the first
-// again; Shift+Enter (or Up) to the one before; Esc (or ✕) closes it, the lanes
-// taking the keyboard back (closed()). Each match is selected, its groups
-// unfolded, and scrolled into view (Arrangement.revealTrack).
+// The find bar over the arrangement and the clip view (Q): finds tracks by
+// their names, then by what they are (their labels and what those were made
+// from: an instrument's preset, the files they play; Session.trackSearch).
+// Typing goes to the best match; Enter (or Down) to the next, after the last the
+// first again; Shift+Enter (or Up) to the one before; Esc (or ✕) closes it
+// (closed(): the view under it takes the keyboard back). Each match is
+// matchChosen(trackId): the main window shows it (Main.qml's showTrackMatch).
 Rectangle {
     id: bar
 
-    required property Arrangement arrangement
     readonly property alias field: field
 
     signal closed()
+    signal matchChosen(string trackId)
 
     // Q: shows (or, shown, takes the keyboard again), what was typed selected to type over.
     function open() {
@@ -31,7 +31,7 @@ Rectangle {
     }
     function reveal(trackId) {
         if (trackId !== "")
-            arrangement.revealTrack(trackId)
+            matchChosen(trackId)
     }
     function step(forward) {
         reveal(forward ? Session.trackSearch.next() : Session.trackSearch.previous())

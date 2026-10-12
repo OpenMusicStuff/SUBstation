@@ -24,9 +24,10 @@ import SUBstation
 //   functions zoom(factor), zoomToArrangement(), narrowGrid(), widenGrid(),
 //   openClipView() (the selected clips, through Session.arrangement's
 //   clipViewRequested), renameTrack(trackId) (in place; false if it can't be),
-//   focusLanes(), findTrack() (the find bar, Q); properties snap, follow,
+//   focusLanes(), revealTrack(trackId) (selected, unfolded, scrolled to: the
+//   find bar's matches); properties snap, follow,
 //   ioShown (the headers' In/Out column, View › In/Out) (read and write),
-//   trackSearchBar, gridStep (beats, the grid's step whether
+//   gridStep (beats, the grid's step whether
 //   snapping or not), gridLevel; signals statusMessage(text) and
 //   preferencesRequested(page) (a header's Configure...: 0 Audio, 1 MIDI). Clips double-clicked open through
 //   Session.arrangement's clipViewRequested; a click on the ruler plays from
@@ -40,7 +41,6 @@ FocusScope {
     property alias gridLevel: arrangementState.gridLevel
     readonly property Arrangement arrangement: arrangementState
     readonly property ArrangementLanes lanes: lanesItem
-    readonly property TrackSearchBar trackSearchBar: searchBar
 
     // The headers: their name column, In/Out column (while shown) and mixer column, as Ableton's.
     property bool ioShown: true
@@ -75,8 +75,8 @@ FocusScope {
     function focusLanes() {
         lanesItem.forceActiveFocus()
     }
-    function findTrack() {
-        searchBar.open()
+    function revealTrack(trackId) {
+        return arrangementState.revealTrack(trackId)
     }
 
     implicitWidth: 1000
@@ -328,16 +328,5 @@ FocusScope {
             when: !vbar.pressed
             value: arrangementState.vScrollValue / Math.max(1, arrangementState.vScrollTotal)
         }
-    }
-
-    // --- The find bar (Q), over the lanes' top right corner ---
-
-    TrackSearchBar {
-        id: searchBar
-        objectName: "trackSearchBar"
-        x: Math.max(0, view.lanesWidth - width - 12)
-        y: view.rulerHeight + 8
-        arrangement: arrangementState
-        onClosed: lanesItem.forceActiveFocus()
     }
 }

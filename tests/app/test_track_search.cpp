@@ -72,10 +72,12 @@ private Q_SLOTS:
         TrackLabels labels(&f.project, nullptr, nullptr);
         QVERIFY2(labels.toolTip(bbc).contains(QStringLiteral("Core - Horns")), qPrintable(labels.toolTip(bbc)));
 
-        // A name that has the word, then one that has it inside a word, then the
-        // track whose instrument plays horns: names come first, whatever their order.
-        QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("horn")), (QStringList{horn, thorn, bbc}));
-        QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("HORN")), (QStringList{horn, thorn, bbc}));
+        // A name that has the word, then the track whose label says horn (its
+        // instrument plays horns), then a name that has it inside a word: whatever
+        // their order in the arrangement.
+        QVERIFY2(labels.label(bbc).contains(QStringLiteral("Horn")), qPrintable(labels.label(bbc)));
+        QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("horn")), (QStringList{horn, bbc, thorn}));
+        QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("HORN")), (QStringList{horn, bbc, thorn}));
         QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("horns")), QStringList{bbc});
         // Every word, wherever it is: the name has one, the preset the other.
         QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("bbc horn")), QStringList{bbc});
@@ -93,7 +95,7 @@ private Q_SLOTS:
         f.editor.renameTrack(ret, QStringLiteral("Horn Verb"));
         // (The group last: what it holds, its details say, is a horn.)
         QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("horn")),
-                 (QStringList{horn2, horn, ret, thorn, bbc, group}));
+                 (QStringList{horn2, horn, ret, bbc, thorn, group}));
         QCOMPARE(TrackSearch::find(f.project, labels, QStringLiteral("master")), QStringList{kMaster});
         // Words split as names are written: "HornStab", "Kick808".
         f.editor.renameTrack(horn, QStringLiteral("BrassHornStab808"));
@@ -116,18 +118,17 @@ private Q_SLOTS:
         QCOMPARE(search.count(), 3);
         QCOMPARE(search.current(), 0);
         QCOMPARE(search.currentTrackId(), horn);  // the best, at once
-        QCOMPARE(search.next(), thorn);
         QCOMPARE(search.next(), bbc);
+        QCOMPARE(search.next(), thorn);
         QCOMPARE(search.current(), 2);
         QCOMPARE(search.next(), horn);  // after the last, the first again
-        QCOMPARE(search.previous(), bbc);
         QCOMPARE(search.previous(), thorn);
 
         // The project changes: the matches follow once the labels settle, staying on their track.
         f.editor.renameTrack(horn, QStringLiteral("Lead"));
         QTRY_COMPARE(search.count(), 2);
         QCOMPARE(search.currentTrackId(), thorn);
-        QCOMPARE(search.current(), 0);
+        QCOMPARE(search.current(), 1);  // (after the orchestra)
         // Its track no longer matches: the next is the best one.
         f.editor.renameTrack(thorn, QStringLiteral("Pad"));
         QCOMPARE(search.next(), bbc);
@@ -138,6 +139,41 @@ private Q_SLOTS:
         QCOMPARE(search.current(), -1);
         QCOMPARE(search.currentTrackId(), QString());
         QCOMPARE(search.previous(), QString());
+    }
+
+    // From the clip view: the beats its clips span are the area; a match's clip
+    // there is the one overlapping it most (the earliest of equals).
+    void theClipInTheArea() {
+        EditorFixture f;
+        const QString lead = f.editor.addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString bass = f.editor.addMidiTrack(-1, QStringLiteral("Bass"));
+        const QString pad = f.editor.addMidiTrack(-1, QStringLiteral("Pad"));
+        const auto open = f.editor.addMidiClip(lead, 8, 8);    // beats 8 to 16
+        const auto early = f.editor.addMidiClip(bass, 0, 4);
+        const auto little = f.editor.addMidiClip(bass, 6, 3);  // 2 beats in the area
+        const auto most = f.editor.addMidiClip(bass, 12, 8);   // 4 beats in it
+        const auto after = f.editor.addMidiClip(pad, 16, 4);   // touching it: not in it
+        QVERIFY(open && early && little && most && after);
+        TrackLabels labels(&f.project, nullptr, nullptr);
+        TrackSearch search(&f.project, &labels);
+        QCOMPARE(search.clipInArea(bass), QString());  // (no area: the arrangement's)
+
+        search.setArea(lead, {open->clipId});
+        QCOMPARE(search.area(), std::make_optional(std::make_pair(8.0, 16.0)));
+        QCOMPARE(search.clipInArea(bass), most->clipId);
+        QCOMPARE(search.clipInArea(lead), open->clipId);
+        QCOMPARE(search.clipInArea(pad), QString());
+        QCOMPARE(search.clipInArea(QStringLiteral("nope")), QString());
+        // Clips on several tracks ({trackId, clipId}): from the earliest start to the latest end.
+        search.setArea({}, {QVariantMap{{QStringLiteral("trackId"), lead}, {QStringLiteral("clipId"), open->clipId}},
+                            QVariantMap{{QStringLiteral("trackId"), bass}, {QStringLiteral("clipId"), early->clipId}}});
+        QCOMPARE(search.area(), std::make_optional(std::make_pair(0.0, 16.0)));
+        QCOMPARE(search.clipInArea(bass), early->clipId);  // (4 beats, as the last: the earliest of those)
+        search.setArea(lead, {QStringLiteral("gone")});
+        QVERIFY(!search.area());
+        search.setArea(lead, {open->clipId});
+        search.clearArea();
+        QCOMPARE(search.clipInArea(lead), QString());
     }
 };
 

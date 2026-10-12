@@ -4,6 +4,7 @@
 #include "model/Project.h"
 
 #include <QRegularExpression>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <array>
@@ -16,7 +17,7 @@ namespace labels = intelligence::labels;
 namespace {
 
 // How well a track matches, the best first.
-enum Rank { NameWords, NameText, LabelWords, AllWords, AllText, None };
+enum Rank { NameWords, LabelWords, NameText, AllWords, AllText, None };
 
 // The words of a text, in lower case: split at what isn't a letter or a digit,
 // between a lower-case letter and a capital ("BellStab") and between letters
@@ -44,11 +45,10 @@ bool contains(const QStringList& query, const QString& folded) {
 
 Rank rank(const QStringList& query, const Track& track, const labels::TrackLabel* label) {
     if (startsWords(query, wordsOf(track.name))) return NameWords;
-    const QString name = track.name.toCaseFolded();
-    if (contains(query, name)) return NameText;
-    if (!label) return None;
-    const QString labelText = QString::fromStdString(label->label);
+    const QString labelText = label ? QString::fromStdString(label->label) : QString();
     if (startsWords(query, wordsOf(labelText))) return LabelWords;
+    if (contains(query, track.name.toCaseFolded())) return NameText;
+    if (!label) return None;
     QStringList all{track.name, labelText, QString::fromStdString(label->family), QString::fromStdString(label->role)};
     for (const std::string& trait : label->traits) all << QString::fromStdString(trait);
     for (const std::string& detail : label->details) all << QString::fromStdString(detail);
@@ -112,6 +112,41 @@ QString TrackSearch::step(int by) {
     current_ = ((current_ + by) % n + n) % n;
     Q_EMIT changed();
     return currentTrackId();
+}
+
+void TrackSearch::setArea(const QString& trackId, const QVariantList& clipIds) {
+    area_.reset();
+    if (!project_) return;
+    const double tempo = project_->tempo();
+    for (const QVariant& entry : clipIds) {
+        QString track = trackId;
+        QString clipId = entry.toString();
+        if (entry.typeId() == QMetaType::QVariantMap) {
+            const QVariantMap map = entry.toMap();
+            track = map.value(QStringLiteral("trackId")).toString();
+            clipId = map.value(QStringLiteral("clipId")).toString();
+        }
+        const Clip* clip = project_->findClip(track, clipId);
+        if (!clip) continue;
+        const double start = clip->startBeat, end = clip->endBeat(tempo);
+        area_ = area_ ? std::make_pair(std::min(area_->first, start), std::max(area_->second, end))
+                      : std::make_pair(start, end);
+    }
+}
+
+QString TrackSearch::clipInArea(const QString& trackId) const {
+    if (!project_ || !area_ || !project_->hasTrack(trackId)) return {};
+    const double tempo = project_->tempo();
+    QString best;
+    double most = 0.0;
+    for (const Clip& clip : project_->track(trackId).clips) {  // (sorted by start: the earliest wins a tie)
+        const double overlap = std::min(area_->second, clip.endBeat(tempo)) - std::max(area_->first, clip.startBeat);
+        if (overlap > most) {
+            most = overlap;
+            best = clip.id;
+        }
+    }
+    return best;
 }
 
 QString TrackSearch::next() { return step(1); }

@@ -525,8 +525,8 @@ ranks the matches, the best first:
 
 1. the track's name has every word at the start of one of its words (names split as `wordsOf()` splits them: at
    separators, between a lower-case letter and a capital, between letters and digits: `BellStab808`);
-2. its name has every word anywhere (`horn` in `Thorn`);
-3. its label has every word at the start of one of its words;
+2. its label has every word at the start of one of its words (`Orchestral Horn`);
+3. its name has every word anywhere (`horn` in `Thorn`);
 4. its name, label, family, role, traits and details together have every word at the start of one of their words
    (`horn` in a BBC Symphony Orchestra's `Core - Horns`; `bbc horn` across the name and the preset);
 5. those have every word anywhere.
@@ -535,6 +535,12 @@ Within each rank, the arrangement's order: its tracks top to bottom (those folde
 the master. `query` (setting it makes the best match `current`), `matches`, `count`, `current`, `currentTrackId`;
 `next()` and `previous()` step through them, wrapping around. The matches are worked out again on `TrackLabels::changed`
 (a rename, a preset picked) and before each step, staying on the track shown if it still matches (else on the best).
+
+From the clip view the search has an area: `setArea(trackId, clipIds)` (the clips as the clip view is given them:
+ids on `trackId`, or `{trackId, clipId}` maps) makes it the beats from their earliest start to their latest end
+(`clearArea()`: none). `clipInArea(trackId)` is the track's clip overlapping it most (the earliest of equals; only
+touching it is not overlapping), "" for none: the find bar opens that clip in the clip view, or shows the track in
+the arrangement.
 
 ## Files
 
@@ -575,7 +581,7 @@ platform layer's, which the browser and the engine share: [platform.md](platform
 | [Harmony.h](../app/src/intelligence/Harmony.h) | `Harmony` (`Session.harmony`): the song's notes (`songNotes()`), its chords and key inferred from them when asked after a change, the key (the project's, else inferred), `shown` (the setting C toggles) |
 | [Humanizer.h](../app/src/intelligence/Humanizer.h) | `Humanizer` (`Session.humanizer`): the velocity model loaded on first use (`velocityModelPath()`, `velocityAvailable`), `velocities(targets, amount)` with each track's notes as context, `statusMessage` |
 | [TrackLabels.h](../app/src/intelligence/TrackLabels.h) | `TrackLabels` (`Session.trackLabels`): the project's facts (`facts()`, `namedByUser()`), its labels made again when asked after a change, `label()`, `toolTip()`, `describe()`, `changed`, `revision` |
-| [TrackSearch.h](../app/src/intelligence/TrackSearch.h) | `TrackSearch` (`Session.trackSearch`): the find bar's matches, names first, then labels (`find()`), `query`, `next()`, `previous()` |
+| [TrackSearch.h](../app/src/intelligence/TrackSearch.h) | `TrackSearch` (`Session.trackSearch`): the find bar's matches, names first, then labels (`find()`), `query`, `next()`, `previous()`; the clip view's area (`setArea()`, `clipInArea()`) |
 
 A plug-in's preset's name is the engine's to read ([engine/plugins.md](engine/plugins.md#preset-names)): the
 application asks the bridge for it, or reads a project's saved state with the engine's `presetNameFromPreset()`.
@@ -801,9 +807,9 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   name hovered says its label in the info view, and follows its edits. The engine's side of presets' names:
   [engine/plugins.md](engine/plugins.md#tests).
 - [tests/app/test_track_search.cpp](../tests/app/test_track_search.cpp): finding tracks: names first (at the start
-  of their words, then anywhere), then labels, then what the labels were made from (a preset's `Core - Horns`),
-  every word wherever it is, the arrangement's order within each; stepping through the matches, wrapping around,
-  and following the project. [test_ui_mainwindow.cpp](../tests/app/test_ui_mainwindow.cpp): Q, the find bar.
+  of their words), then labels, then names having the words anywhere, then what the labels were made from (a
+  preset's `Core - Horns`), every word wherever it is, the arrangement's order within each; stepping through the
+  matches, wrapping around, and following the project; the clip in the clip view's area. [test_ui_mainwindow.cpp](../tests/app/test_ui_mainwindow.cpp): Q, the find bar.
 - [tests/app/test_sound_similarity.cpp](../tests/app/test_sound_similarity.cpp): the browser's files analysed; Find
   Similar's list, sort, status, filtering by text and places; ending it (another sort, another list, clearing, Ctrl+F);
   a clip's part of a loop; a sound outside the library and `SimilarSounds`; files found later; a sound that can't be

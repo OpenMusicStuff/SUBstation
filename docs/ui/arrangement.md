@@ -32,7 +32,7 @@ What the user does with it: [guide/arrangement.md](../guide/arrangement.md),
 | [TrackHeader.qml](../../ui/qml/arrangement/TrackHeader.qml), [ReturnHeader.qml](../../ui/qml/arrangement/ReturnHeader.qml), [MasterHeader.qml](../../ui/qml/arrangement/MasterHeader.qml) | The headers' controls laid out over a `TrackHeaderItem` |
 | [SendKnobs.qml](../../ui/qml/arrangement/SendKnobs.qml), [AutomationChoosers.qml](../../ui/qml/arrangement/AutomationChoosers.qml), [AutomationChooser.qml](../../ui/qml/arrangement/AutomationChooser.qml) | A header's send knobs and automation choosers |
 | [GridInfo.qml](../../ui/qml/arrangement/GridInfo.qml) | The corner showing the grid's size; a click toggles snapping |
-| [TrackSearchBar.qml](../../ui/qml/arrangement/TrackSearchBar.qml) | The find bar (Q): finding tracks by their names and labels ([below](#finding-tracks)) |
+| [TrackSearchBar.qml](../../ui/qml/arrangement/TrackSearchBar.qml) | The find bar (Q, over the arrangement and the clip view, in Main.qml): finding tracks by their names and labels ([below](#finding-tracks)) |
 | [MenuEntries](../../ui/src/arrangement/MenuEntries.h), [ArrangementMenu.qml](../../ui/qml/arrangement/ArrangementMenu.qml), [ArrangementMenuItem.qml](../../ui/qml/arrangement/ArrangementMenuItem.qml) | Menus worked out in C++ and shown by QML |
 | [WaveformCache](../../ui/src/arrangement/WaveformCache.h) | Waveform tiles: columns per pixel, an LRU of them |
 | [Cursors](../../ui/src/arrangement/Cursors.h) | The bracket cursors for trimming (and, crossed by a two-headed arrow, for stretching) and the add-a-breakpoint cursor |
@@ -183,16 +183,26 @@ How the session dispatches Delete, Cut, Copy, Paste and Ctrl+D on these fields i
 
 ### Finding tracks
 
-Q (View › Find Track, `window.findTrack()`: the clip view closed first) calls the view's `findTrack()`, which shows
-[TrackSearchBar.qml](../../ui/qml/arrangement/TrackSearchBar.qml) over the lanes' top right corner and gives its
-field the keyboard, what was typed selected. What is typed sets `Session.trackSearch.query`
-(`TrackSearch`, which ranks the matches: [intelligence.md](../intelligence.md#finding-tracks)); Enter and Down call
-its `next()`, Shift+Enter and Up `previous()`. Each match goes to `Arrangement::revealTrack(trackId)`: the groups it
-is folded away in unfolded (`editor.setFolded`, view state: no undo step), scrolled so its row is in the middle of
-the lanes if it doesn't show whole, and selected as a click on its name selects it (`selectTrack(id, true)` inside
-`begin/endHeaderClick()`: its name lit, the device view on it). A return or the master is only selected. Esc (or the
-✕) hides the bar and gives the lanes the keyboard back (`closed`). Being a text field, it takes the letters typed
-(S, A, Q...) before the window's one-key shortcuts and the computer MIDI keyboard do.
+Q (View › Find Track, `window.findTrack()`) shows [TrackSearchBar.qml](../../ui/qml/arrangement/TrackSearchBar.qml),
+which Main.qml lays over the arrangement area (the lanes' top right corner, or the clip view's below its rulers), and
+gives its field the keyboard, what was typed selected. From the clip view, it first gives the search its area
+(`Session.trackSearch.setArea(clipView.trackId, clipView.clipIds)`: the beats the clips shown span); from the
+arrangement, none (`clearArea()`). What is typed sets `Session.trackSearch.query` (`TrackSearch`, which ranks the
+matches: [intelligence.md](../intelligence.md#finding-tracks)); Enter and Down call its `next()`, Shift+Enter and Up
+`previous()`. Each match is the bar's `matchChosen(trackId)`, which `window.showTrackMatch()` shows:
+
+- `Arrangement::revealTrack(trackId)` (the view's `revealTrack()`): the groups it is folded away in unfolded
+  (`editor.setFolded`, view state: no undo step), scrolled so its row is in the middle of the lanes if it doesn't
+  show whole, and selected as a click on its name selects it (`selectTrack(id, true)` inside
+  `begin/endHeaderClick()`: its name lit, the device view on it). A return or the master is only selected.
+- Then, if it has a clip in the area (`clipInArea(trackId)`: the one overlapping it most), that clip opens in the
+  clip view (`arrangementArea.openClips()`); else the arrangement shows (the clip view hidden, without
+  `closeClipView()`'s focusing the lanes). The field takes the keyboard back from the clip view, which takes it
+  whenever it opens clips.
+
+Esc (or the ✕) hides the bar (`closed`) and gives the keyboard back to the view under it (the lanes, or the clip
+view's `focusContent()`). Being a text field, it takes the letters typed (S, A, Q...) before the window's one-key
+shortcuts and the computer MIDI keyboard do.
 
 ## The grid and the ruler
 
@@ -686,7 +696,7 @@ from it. The clip view draws its waveforms without a cache ([piano-roll.md](pian
 | [test_ui_arrangement_automation.cpp](../../tests/app/test_ui_arrangement_automation.cpp) | A, parameters showing their lanes, clicking on the line, dragging and bending breakpoints, segments and steps, deleting, time ranges (clear, duplicate, move), the lanes' menus, overriding and re-enabling, controls following automation, the master's lane, lanes below tracks, saving, automation moving with a dragged clip, lane ranges dragged down over several tracks' lanes and extended with Shift-click, drags reaching up into the clips |
 | [test_ui_arrangement_clips.cpp](../../tests/app/test_ui_arrangement_clips.cpp) | Alt on a clip's edge stretching it (the cursor as Alt is pressed, heard while dragging, Shift off the grid, a MIDI clip's notes), Ctrl+Shift on its body sliding its audio or notes (by grid steps, to the file's ends, Alt freely), F showing the fade handles and dragging fades and their curves (heard as they go), double-clicks straightening and removing them, F playing a note instead while the computer MIDI keyboard is on, MIDI clips without fades |
 | [test_ui_arrangement_selection.cpp](../../tests/app/test_ui_arrangement_selection.cpp) | A group's selection shown over the rows it covers and acting on what is in it, drags over every kind of track (folded, frozen, folded groups), Shift-clicks extending clip ranges, a frozen track's stretch dragged with its frozen audio and a move off it refused |
-| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | `findingTracks`: Q, typing jumping to the best match, Enter and Shift+Enter, a match unfolded from its group and scrolled into view, letters typed into the field, Esc |
+| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | `findingTracks`: Q, typing jumping to the best match, Enter and Shift+Enter, a match unfolded from its group and scrolled into view, letters typed into the field, Esc; `findingTracksFromTheClipView`: Q over the clip view, a match's clip in the same beats opened there, one without shown in the arrangement, Esc giving the clip view the keyboard back |
 | [test_ui_arrangement_tracks.cpp](../../tests/app/test_ui_arrangement_tracks.cpp) | Groups (folding, the group's header and bands, dragging headers by their name bars into and out of groups, folded tracks' clips as bars and their lanes as grids, cut, copy and paste), returns and sends, following the playhead while scrolling by hand, the header's controls (volume, solo, the activator, arming, renaming in place), the In/Out column (Audio From and its channel or tap, MIDI From, the monitoring buttons, Audio To and where it goes, hiding the column, a set routed as Ableton users route theirs), sidechains greying out sends, the track menu's freezing and flattening, resizing a track by its bottom edge |
 | [test_session_edit.cpp](../../tests/app/test_session_edit.cpp) | The area commands and the clipboard as the session drives them: splitting, selecting all, duplicating and deleting the selected area, cutting, copying and pasting clips, automation and tracks, reversing (at once and in the background) |
 | [test_selection.cpp](../../tests/app/test_selection.cpp) | The selection's rules |

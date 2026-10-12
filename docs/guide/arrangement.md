@@ -211,12 +211,18 @@ goes on to the next match, after the last back to the first; **Shift+Enter** (or
 back. The bar says which match shows (`2 of 5`). **Esc** closes it; **Q** again selects what you
 typed, to type something else.
 
-Track names come first: tracks whose name has the words you typed, at the start of their words
-(`horn` finds `Horn Stab`), then anywhere in them (`Thorn`). Then tracks whose label has them,
-then those where anything the label was made from has them: `horn` also finds a BBC Symphony
-Orchestra playing its `Core - Horns` preset, whatever you named it. Every word typed must match
-(`serum pluck`), in any case. Within each, they come in the arrangement's order: the tracks top to
-bottom, the returns, the master.
+Track names come first: tracks whose name has the words you typed at the start of its words
+(`horn` finds `Horn Stab`). Then tracks whose label has them (`Orchestral Horn`: a BBC Symphony
+Orchestra playing its `Core - Horns` preset, whatever you named it), then names that have them
+anywhere (`Thorn`), then tracks where anything the label was made from has them (a preset's name,
+a file's). Every word typed must match (`serum pluck`), in any case. Within each, they come in the
+arrangement's order: the tracks top to bottom, the returns, the master.
+
+**In the clip view**, Q finds tracks too, and keeps to the part of the song you are looking at:
+the beats the clips it shows span. A match with a clip there opens that clip in the clip view
+(the one overlapping it most); a match without one shows in the arrangement, selected and
+scrolled to, and the next match with a clip there opens the clip view again. Esc gives the
+keyboard back to the view the bar is over.
 
 Changing the volume or pan of one of several selected tracks changes them all: by the
 same amount when dragged, to the same value when typed or reset.

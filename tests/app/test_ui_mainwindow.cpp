@@ -476,6 +476,71 @@ private Q_SLOTS:
         field->setProperty("text", QString());
     }
 
+    // Q in the clip view: the find bar shows over it, and the beats its clips
+    // span are the search's area. A match with a clip there opens it in the clip
+    // view; one without shows in the arrangement; the bar keeps the keyboard.
+    void findingTracksFromTheClipView() {
+        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Synth Lead"));
+        const QString bass = editor().addMidiTrack(-1, QStringLiteral("Synth Bass"));
+        const QString pad = editor().addMidiTrack(-1, QStringLiteral("Synth Pad"));
+        const auto open = editor().addMidiClip(lead, 8, 8);
+        const auto bassEarly = editor().addMidiClip(bass, 0, 4);
+        const auto bassThere = editor().addMidiClip(bass, 10, 4);
+        const auto padLater = editor().addMidiClip(pad, 20, 4);
+        QVERIFY(open && bassEarly && bassThere && padLater);
+        auto* area = item(QStringLiteral("arrangementArea"));
+        auto* clipView = item(QStringLiteral("clipView"));
+        auto* bar = item(QStringLiteral("trackSearchBar"));
+        auto* field = item(QStringLiteral("trackSearchField"));
+        session().arrangement()->requestClipView({*open}, *open);
+        QTRY_VERIFY(area->property("clipViewShown").toBool());
+
+        key(Qt::Key_Q);
+        QVERIFY(area->property("clipViewShown").toBool());  // (it stays)
+        QVERIFY(bar->isVisible());
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("bass"));
+        QVERIFY(area->property("clipViewShown").toBool());
+        QCOMPARE(clipView->property("trackId").toString(), bass);
+        QCOMPARE(clipView->property("leadClipId").toString(), bassThere->clipId);  // the one in the area
+        QCOMPARE(selection().trackId(), bass);
+        QVERIFY(field->hasActiveFocus());
+        test::screenshot(window_, QStringLiteral("main-window-find-track-clip-view"));
+
+        // No clip there: the arrangement shows it; the next with one, the clip view again.
+        field->setProperty("text", QString());
+        type(QStringLiteral("synth"));
+        QCOMPARE(session().trackSearch()->matches().mid(0, 3), (QStringList{lead, bass, pad}));
+        QCOMPARE(clipView->property("trackId").toString(), lead);
+        key(Qt::Key_Return);
+        QCOMPARE(clipView->property("trackId").toString(), bass);
+        key(Qt::Key_Return);
+        QCOMPARE(selection().trackId(), pad);
+        QVERIFY(!area->property("clipViewShown").toBool());
+        QVERIFY(field->hasActiveFocus());
+        for (int i = 0; i < 8 && selection().trackId() != lead; ++i) key(Qt::Key_Return);  // (round to the first)
+        QCOMPARE(selection().trackId(), lead);
+        QVERIFY(area->property("clipViewShown").toBool());
+        QCOMPARE(clipView->property("leadClipId").toString(), open->clipId);
+        QVERIFY(field->hasActiveFocus());
+
+        // Esc: the bar goes, the clip view has the keyboard.
+        key(Qt::Key_Escape);
+        QVERIFY(!bar->isVisible());
+        QTRY_VERIFY(window_->activeFocusItem() && clipView->isAncestorOf(window_->activeFocusItem()));
+        // Q from the arrangement has no area: a match never opens the clip view.
+        call("toggleClipView");
+        QTRY_VERIFY(!area->property("clipViewShown").toBool());
+        key(Qt::Key_Q);
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("bass"));
+        QCOMPARE(selection().trackId(), bass);
+        QVERIFY(!area->property("clipViewShown").toBool());
+        key(Qt::Key_Escape);
+        session().trackSearch()->setQuery(QString());
+        field->setProperty("text", QString());
+    }
+
     // Create's actions, Undo and Redo (their texts and enabled states).
     void createUndoAndRedo() {
         QVERIFY(!prop(QStringLiteral("undo"), "enabled").toBool());
