@@ -400,7 +400,8 @@ private Q_SLOTS:
         auto* folders = tree()->property("folders").value<sub::ui::FolderTreeModel*>();
         QVERIFY(folders);
         QTRY_COMPARE(folders->count(), 2);  // Drums, Utility Hit.wav (folders first)
-        QCOMPARE(folders->data(folders->index(0), sub::ui::FolderTreeModel::NameRole).toString(), QStringLiteral("Drums"));
+        // (QFileSystemModel sorts a beat after its rows come: they can come in the disk's order)
+        QTRY_COMPARE(folders->data(folders->index(0), sub::ui::FolderTreeModel::NameRole).toString(), QStringLiteral("Drums"));
         QVERIFY(folders->isDir(0) && !folders->isDir(1));
         QCOMPARE(item("browserStatus")->property("text").toString(), QDir::toNativeSeparators(place()));
 
@@ -412,7 +413,7 @@ private Q_SLOTS:
         QCOMPARE(folders->depth(1), 1);
         const QStringList drums{place() + QStringLiteral("/Drums/Kick Deep.wav"),
                                 place() + QStringLiteral("/Drums/Snare Tight.wav")};
-        QCOMPARE(folders->paths({1, 2}), drums);
+        QTRY_COMPARE(folders->paths({1, 2}), drums);
         test::screenshot(window_, QStringLiteral("browser-folder-tree"), QRect(0, 0, 400, window_->height()));
 
         // Selecting a file previews it; Enter adds it; a drag carries its file.
