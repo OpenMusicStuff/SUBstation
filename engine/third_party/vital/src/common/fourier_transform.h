@@ -62,6 +62,28 @@ namespace vital {
       JUCE_LEAK_DETECTOR(FourierTransform)
   };
 
+  #elif SUBSTATION_KFR_FFT
+
+  // SUBstation: KFR's real FFT (compat/kfr_fourier_transform.cpp), in the
+  // layout the IPP build's has: forward, bins 0..N/2 interleaved, unscaled, both
+  // imaginary parts at DC and Nyquist 0; inverse, scaled by 1 / N, those two
+  // ignored, the upper half zeroed. Any number of threads may use one at once.
+  class FourierTransform {
+    public:
+      FourierTransform(int bits);
+      ~FourierTransform();
+
+      void transformRealForward(float* data);
+      void transformRealInverse(float* data);
+
+    private:
+      struct Plan;
+      std::unique_ptr<Plan> plan_;
+      int size_;
+
+      JUCE_LEAK_DETECTOR(FourierTransform)
+  };
+
   #elif JUCE_MODULE_AVAILABLE_juce_dsp
 
   class FourierTransform {

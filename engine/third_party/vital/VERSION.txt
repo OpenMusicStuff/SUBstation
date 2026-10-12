@@ -12,6 +12,7 @@ What is here, as it is upstream unless listed below:
   (KISS FFT, BSD-3-Clause): Vital's own copies.
 
 SUBstation's (not Vital's):
+- compat/kfr_fourier_transform.cpp: Vital's FourierTransform on KFR (above).
 - compat/JuceHeader.h: what the vendored files take from JUCE (leak detector
   and non-copyable macros, a std::string-based String, StringArray, File for
   tuning files, Base64, MemoryOutputStream, denormals off), so JUCE isn't needed.
@@ -24,6 +25,11 @@ SUBstation's (not Vital's):
   - src/unity_build/common.cpp: without the files of Vital's application
     (border_bounds_constrainer, midi_manager, startup, synth_gui_interface,
     synth_base), which aren't vendored; operators.h included first.
+  - src/common/fourier_transform.h: a branch for SUBSTATION_KFR_FFT (after
+    Intel IPP's) declaring FourierTransform, which compat/kfr_fourier_transform.cpp
+    implements on KFR's real FFT (third_party/kfr) in the IPP build's layout.
+    Without it, Vital falls back on KISS FFT, which spent about 40 % of the
+    instrument's time and dropped the Nyquist bin.
 
 Not here: Vital's interface (its window, OpenGL), its plug-in and standalone
 wrappers, its presets and wavetables (under their own licence, not

@@ -254,9 +254,9 @@ std::vector<Modulation> readModulations(const std::string& value) {
     for (const json& entry : data) {
         Modulation modulation;
         if (entry.is_object()) {
-            if (entry.count("source") && entry["source"].is_string()) modulation.source = entry["source"];
+            if (entry.count("source") && entry["source"].is_string()) modulation.source = entry["source"].get<std::string>();
             if (entry.count("destination") && entry["destination"].is_string()) {
-                modulation.destination = entry["destination"];
+                modulation.destination = entry["destination"].get<std::string>();
             }
             if (entry.count("line_mapping")) modulation.lineMapping = entry["line_mapping"].dump();
         }
