@@ -11,6 +11,11 @@ on:
     - cron: '0 7 * * *'  # 07:00 UTC
   workflow_dispatch:
 
+# Checkout, and reading this workflow's past runs (whether master moved since the last).
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
