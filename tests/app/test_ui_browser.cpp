@@ -29,6 +29,7 @@
 #include "intelligence/SoundSimilarity.h"
 #include "editor/ProjectEditor.h"
 #include "mainwindow/FolderTreeModel.h"
+#include "model/Devices.h"
 #include "model/Project.h"
 #include "session/DeviceSelection.h"
 #include "session/Selection.h"
@@ -166,16 +167,14 @@ private Q_SLOTS:
         QVERIFY(settle());
         QStringList effectNames = names();
         effectNames.sort();
-        QCOMPARE(effectNames, (QStringList{QStringLiteral("Amp"), QStringLiteral("Chorus-Ensemble"),
-                                           QStringLiteral("Compressor"), QStringLiteral("Delay"),
-                                           QStringLiteral("Disperser"), QStringLiteral("EQ"),
-                                           QStringLiteral("Erosion"), QStringLiteral("Gate"),
-                                           QStringLiteral("Limiter"), QStringLiteral("Multiband Dynamics"),
-                                           QStringLiteral("Over The Top"), QStringLiteral("Phaser-Flanger"),
-                                           QStringLiteral("Reverb"), QStringLiteral("Saturator"),
-                                           QStringLiteral("Sidechain"), QStringLiteral("Spectral Compressor"),
-                                           QStringLiteral("Transient Shaper"), QStringLiteral("Utility"),
-                                           QStringLiteral("Vintage Hall")}));
+        // Every built-in audio effect the engine registers, whatever they are (a new one needs no change here).
+        QStringList builtinEffects;
+        for (const sub::app::BuiltinDevice& device : sub::app::builtinDevices())
+            if (device.category == QStringLiteral("Audio Effects"))
+                builtinEffects << device.name;
+        builtinEffects.sort();
+        QVERIFY(builtinEffects.size() > 1 && builtinEffects.contains(QStringLiteral("Utility")));
+        QCOMPARE(effectNames, builtinEffects);
         const int utility = int(names().indexOf(QStringLiteral("Utility")));
         QVariant data;
         QMetaObject::invokeMethod(panel_, "dragPayload", Q_RETURN_ARG(QVariant, data),
