@@ -416,16 +416,19 @@ See [intelligence.md](intelligence.md#tests).
 ## CI
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) builds everything (benchmarks too) and runs CTest on every push
-to `master` (and the rewrite's branch), on pull requests, and by hand:
+to `master` (and the rewrite's branch), on pull requests, and by hand, on Linux (Blacksmith's `blacksmith-4vcpu-ubuntu-2404`): GCC, Qt 6.4 from
+Ubuntu's packages, `xvfb` for the UI's tests. It configures with `-G Ninja -DCMAKE_BUILD_TYPE=Release
+-DSUBSTATION_BUILD_BENCHMARKS=ON`, builds with `ninja -C build -k 0` (every error at once) and runs
+`ctest --test-dir build --output-on-failure -j4`. It has no ASIO SDK, so the ASIO tests skip there.
 
-| Job | Runner | Compiler and Qt |
-|---|---|---|
-| Linux | `ubuntu-24.04` | GCC, Qt 6.4 from Ubuntu's packages, `xvfb` for the UI's tests |
-| Windows | `windows-2022` | MSVC 2022, Qt 6.8 (`install-qt-action`) |
+Windows isn't tested on pull requests: a hosted Windows runner takes about 20 minutes a run. Build and run the tests
+locally on Windows before merging (the same configure, build and `ctest` as above, with MSVC and Qt 6.8). The UI's
+tests (`test_ui_*`) open windows and take the focus, so run them when the desktop can be left alone.
 
-Each configures with `-G Ninja -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON`, builds with
-`ninja -C build -k 0` (every error at once) and runs `ctest --test-dir build --output-on-failure -j4`. Neither has
-Steinberg's ASIO SDK, which isn't redistributable, so the ASIO tests skip there.
+[.github/workflows/windows-nightly.yml](../.github/workflows/windows-nightly.yml) runs the same on `windows-2022` once a
+night (07:00 UTC) on `master`, with MSVC 2022 and with MinGW (Qt 6.8's own builds of each, `install-qt-action`),
+UI tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last
+nightly is skipped.
 
 ## Writing tests
 

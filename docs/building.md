@@ -68,7 +68,7 @@ build\bin\substation.exe
 libraries and the QML modules the UI imports next to the executable (and, with MinGW, its runtime DLLs, which the
 plug-in scanner `substation-scan` needs too); without it, run from a prompt with Qt's `bin` folder (and MinGW's) on
 `PATH` instead. Use the compiler the Qt build was made with: MSVC for an `msvc*` Qt, Qt's own MinGW for a `mingw_64`
-one (another GCC may not match its C++ runtime). CI builds and tests both. The build is
+one (another GCC may not match its C++ runtime). A nightly CI run builds and tests both. The build is
 incremental: re-run `ninja -C build` after changing anything. Everything built lands in `build/bin`: `substation`,
 `substation-scan` (the plug-in scanner, which the application starts from its own folder), the test executables,
 and the test plug-ins under `build/testplugins`.
