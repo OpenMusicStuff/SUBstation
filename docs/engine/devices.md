@@ -1981,8 +1981,15 @@ measured from renders of it. The numbers are in
   and `r1`..`r4` (each output tap's peak, at the reverb's rate) and `mod_b`, `mod_d` (where B's and D's moving
   delays are, 0..1). `ringMap()` gives where each part of the loop starts for Size, as the lengths are set, for
   the editor to draw it ([VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h)).
-- **Tail**: Decay times Bass Mult (at least 1) times 1.2, plus Predelay and a second. No latency. About 0.5 % of a
-  core at 48 kHz stereo.
+- **Silence**: once the input has been below -160 dB for longer than it takes to reach the ring (`inputReach`: the
+  fixed delays with Predelay, and 10 ms), and the ring's taps and the wet have stayed below -120 dB for a whole lap
+  (`lapReach`), it sleeps: everything it holds is cleared, the wet is exactly 0 and the reverb is skipped, the dry
+  still going through Dry/Wet (its glide too), the displays at their floor. The other controls aren't followed
+  while it sleeps; any sound over -160 dB wakes it in the block it comes, every control starting where it is, as
+  after a reset. A tail is heard to its end: only below -120 dB does it stop.
+- **Tail**: Decay times Bass Mult (at least 1) times 1.2, plus Predelay and a second. No latency. About 0.25 % of a
+  core at 48 kHz stereo while it plays (Dry/Wet's gains worked out once a block while it doesn't move), 0.03 %
+  asleep (`builtin_devices_bench --device vintage_hall --input sound|silence`).
 
 ### Disperser (`builtin:disperser`, AudioEffect)
 

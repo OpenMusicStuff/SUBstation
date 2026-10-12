@@ -3,12 +3,15 @@
 // thread gives them, its time against how long the audio plays.
 //
 //     builtin_devices_bench [--device ID[,ID...]] [--seconds 10] [--block 256] [--rate 48000]
-//         [--set PARAM=VALUE ...] [--json out.json]
+//         [--set PARAM=VALUE ...] [--input sound|silence|burst] [--json out.json]
 //
 // Without --device, every built-in audio effect at its defaults. --set changes a
 // parameter (by id, plain value) on every device that has it, before it is
 // prepared: a heavy setting (a reverb's quality, oversampling) measured the same
-// way. The load is the best of three runs; 100% would be a whole core.
+// way. --input silence feeds zeros throughout (a device on an idle track: what it
+// costs doing nothing), burst half a second of the sound then silence (a reverb's
+// tail dying away, and what it costs after). The load is the best of three runs;
+// 100% would be a whole core.
 //
 // Qt-free: it links the engine alone.
 
@@ -41,6 +44,7 @@ struct Options {
     int block = 256;
     double rate = 48000.0;
     std::map<std::string, float> settings;
+    std::string input = "sound";
     std::string json;
 };
 
@@ -73,6 +77,10 @@ Options parse(int argc, char** argv) {
             const auto at = setting.find('=');
             if (at == std::string::npos) throw std::runtime_error("--set takes PARAM=VALUE");
             o.settings[setting.substr(0, at)] = std::stof(setting.substr(at + 1));
+        } else if (arg == "--input") {
+            o.input = next();
+            if (o.input != "sound" && o.input != "silence" && o.input != "burst")
+                throw std::runtime_error("--input takes sound, silence or burst");
         } else if (arg == "--json") {
             o.json = next();
         } else {
@@ -133,7 +141,12 @@ int main(int argc, char** argv) {
         }
         const auto frames = static_cast<size_t>(o.seconds * o.rate);
         std::vector<float> left(frames), right(frames);
-        fill(left, right, o.rate);
+        if (o.input != "silence") fill(left, right, o.rate);
+        if (o.input == "burst") {
+            const auto burst = std::min(frames, static_cast<size_t>(0.5 * o.rate));
+            std::fill(left.begin() + static_cast<std::ptrdiff_t>(burst), left.end(), 0.f);
+            std::fill(right.begin() + static_cast<std::ptrdiff_t>(burst), right.end(), 0.f);
+        }
 
         std::printf("%-22s %10s %10s\n", "device", "load", "x realtime");
         Json results = Json::array();
@@ -158,6 +171,7 @@ int main(int argc, char** argv) {
                                     .set("seconds", o.seconds)
                                     .set("block", o.block)
                                     .set("rate", o.rate)
+                                    .set("input", o.input)
                                     .set("results", results);
             if (!report.save(o.json, 2)) throw std::runtime_error("couldn't write " + o.json);
         }

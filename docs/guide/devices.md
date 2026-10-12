@@ -1034,7 +1034,8 @@ it in.
   always shown; **Advanced** opens the rest (the tail's bass and high shelf, the
   diffusion and the modulation).
 - Every control can be automated; Size and Predelay glide (the tail bends in pitch as
-  they move, as tape would). It costs about 0.5 % of a core.
+  they move, as tape would). It costs about 0.25 % of a core while it plays, and next to
+  nothing once its tail has died away (it sleeps until sound comes back).
 
 ### Disperser
 

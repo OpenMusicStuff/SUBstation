@@ -259,3 +259,25 @@ TEST_CASE("its taps' displays light up when the echo passes them") {
     CHECK(std::abs(third - (1362 + 2 * 5839) / 256) <= 1);
     CHECK(*std::max_element(mod.begin(), mod.end()) - *std::min_element(mod.begin(), mod.end()) > 0.05f);
 }
+
+TEST_CASE("silence puts it to sleep: the wet exactly 0, waking as if reset") {
+    // A short tail (0.3 s) dies below -120 dB within a second or two; a lap of quiet after that, it sleeps.
+    const Values settings = {{"decay", 300.f}, {"bass_mult", 1.f}, {"mod_depth", 0.f}};
+    Hall slept(settings);
+    const Samples tail = slept.play(impulse(6 * 48000));
+    CHECK(maxAbs(slice(tail, 0, 48000)) > 0.01);
+    CHECK(maxAbs(slice(tail, 5 * 48000, 6 * 48000)) == 0.0);  // asleep: nothing at all
+    // Any sound wakes it at once, and it plays as one just reset does.
+    const Samples again = slept.play(impulse(48000, 10));
+    const Samples fresh = Hall(settings).play(impulse(48000, 10));
+    double most = 0.0;
+    for (size_t i = 0; i < again.size(); ++i) most = std::max(most, std::abs(double(again[i]) - fresh[i]));
+    CHECK(most < 1e-6);
+    CHECK(maxAbs(again) > 0.01);
+}
+
+TEST_CASE("a long tail is heard to its end: it doesn't sleep while it can be heard") {
+    // At 4 s the tail is still well above -120 dB after 3 s.
+    const Samples tail = Hall().play(impulse(3 * 48000));
+    CHECK(maxAbs(slice(tail, 5 * 48000 / 2, 3 * 48000)) > 1e-4);
+}

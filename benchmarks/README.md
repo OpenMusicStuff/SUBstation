@@ -350,7 +350,7 @@ not the sets with each other.
 
 ```
 builtin_devices_bench [--device ID[,ID...]] [--seconds 10] [--block 256] [--rate 48000]
-    [--set PARAM=VALUE ...] [--json out.json]
+    [--set PARAM=VALUE ...] [--input sound|silence|burst] [--json out.json]
 ```
 
 Each built-in audio effect (or those named), made from the registry and prepared
@@ -358,7 +358,10 @@ at the rate, plays stereo noise and two tones at about -12 dBFS in blocks of
 `--block` frames, as the audio thread gives them; the time its `process()` takes,
 against how long the audio plays, is its load on one core (best of three).
 `--set` changes a parameter, by id and in its own units, on every device that has
-one: the heavy settings below. No engine, no graph: the device alone.
+one: the heavy settings below. `--input silence` plays zeros throughout (a device on
+an idle track: what it costs doing nothing; a reverb that sleeps in silence costs
+next to nothing), `burst` half a second of the sound then silence (a tail dying
+away, then what it costs after). No engine, no graph: the device alone.
 
 ## Results
 
