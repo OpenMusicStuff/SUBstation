@@ -156,10 +156,12 @@ struct Lr4 {
     void clear() noexcept { a.z1 = a.z2 = b.z1 = b.z2 = 0; }
 };
 
-// Two Hann-windowed read heads on a delay line: a pitch shift by `ratio`.
+// Two read heads on a delay line: a pitch shift by `ratio`. The heads crossfade with Hann windows (their
+// gains summing to one) or, for the notes moved a semitone, sine windows (their powers summing to one).
 class Shifter {
 public:
-    void prepare(double rate) {
+    void prepare(double rate, bool constantPower = false) {
+        constantPower_ = constantPower;
         period_ = std::max(16, static_cast<int>(std::lround(kGrainSeconds * rate)));
         // The longest sweep: Pre-Shift's 50 cents or a semitone's (6 %) over two periods.
         size_t size = 1;
@@ -182,8 +184,9 @@ public:
             double age = age_ + head * period_;
             if (age >= twoP) age -= twoP;
             const double s = std::sin(std::numbers::pi * age / twoP);
+            const double gain = constantPower_ ? s : s * s;
             const double delay = slope > 0 ? kMinDelay + slope * age : kMinDelay + (-slope) * (twoP - age);
-            out += s * s * read(delay);
+            out += gain * read(delay);
         }
         write_ = (write_ + 1) & mask_;
         if (++age_ >= 2 * period_) age_ = 0;
@@ -201,6 +204,7 @@ private:
     std::vector<float> buffer_;
     size_t mask_ = 0, write_ = 0;
     int period_ = 2640, age_ = 0;
+    bool constantPower_ = false;
 };
 
 // What the filters are designed for: they are designed again when it changes.
@@ -613,13 +617,20 @@ private:
             const double s = std::sin(std::numbers::pi * d);
             const double notch = on ? 1.0 : s * s;
             double kept = notch * (sum + floorGain * std::max(0.0, 1.0 - cover));
+            // the notes moved: around each removed note with an enabled neighbour (the lower one if both are),
+            // a peak falling exponentially with the distance from it (13.5 dB in 0.3 semitone)
             double fromBelow = 0, fromAbove = 0;
-            if (!on) {
-                const double cs = std::abs(std::cos(std::numbers::pi * d));
-                const double shape = 0.8 * cs * cs * cs;
-                // a note between two enabled ones goes down
-                if (bits >> ((cls + 11) % 12) & 1) fromAbove = v[(cls + 11) % 12] * shape;
-                else if (bits >> ((cls + 1) % 12) & 1) fromBelow = v[(cls + 1) % 12] * shape;
+            for (int src = 0; src < 12; ++src) {
+                if (bits >> src & 1) continue;
+                const bool lower = bits >> ((src + 11) % 12) & 1, upper = bits >> ((src + 1) % 12) & 1;
+                if (!lower && !upper) continue;
+                double dist = std::fmod(p - src, 12.0);
+                if (dist < -6) dist += 12;
+                if (dist >= 6) dist -= 12;
+                if (std::abs(dist) > 1.5) continue;
+                const double shape = 0.85 * std::exp(-std::abs(dist) / 0.19);
+                if (lower) fromAbove += v[(src + 11) % 12] * shape;
+                else fromBelow += v[(src + 1) % 12] * shape;
             }
             if (exponent > 1.f) {
                 kept = std::pow(kept, exponent);
