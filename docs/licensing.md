@@ -2,8 +2,10 @@
 
 SUBstation's own code is under the **MIT licence** ([LICENSE](../LICENSE)). It is built together with third-party
 code under licences of its own, one of which, **Essentia** (the sound similarity's descriptors), is the **GNU Affero
-General Public License v3** (AGPLv3). Every build includes Essentia, so **a SUBstation you distribute (an installer,
-an executable, a zip) is, as a whole, distributed under the AGPLv3's terms**. Your own code stays MIT: anyone may take
+General Public License v3** (AGPLv3), and another, **Vital** (the built-in Vital synth's engine), the **GNU General
+Public License v3** (GPLv3). Every build includes both, so **a SUBstation you distribute (an installer, an
+executable, a zip) is, as a whole, distributed under the AGPLv3's terms** (GPLv3 code may be combined with AGPLv3
+code: section 13 of each; the GPLv3's own conditions, which the AGPLv3's include, hold for Vital's part). Your own code stays MIT: anyone may take
 it under MIT alone; only the combined program carries the AGPL's conditions.
 
 This page says what that asks of you when you ship SUBstation, and which parts need a decision. It is a summary of
@@ -16,6 +18,8 @@ the licences, not legal advice: for a commercial release, have it checked.
 | SUBstation | everything not listed below | MIT | — | yes (MIT code can be part of an AGPL work) |
 | [Essentia](../intelligence/third_party/essentia) 2.1-beta5 | intelligence/third_party/essentia | AGPL-3.0-or-later (or a proprietary licence from the Universitat Pompeu Fabra) | statically linked: the sound similarity's descriptors | — it is what makes the whole AGPL |
 | KISS FFT 1.3.0 | inside Essentia's folder | BSD-3-Clause | Essentia's FFT | yes |
+| [Vital](../engine/third_party/vital) 1.0.6's source | engine/third_party/vital | GPL-3.0-or-later (or a commercial licence from Vital's author) | statically linked: the built-in Vital's synthesis engine | yes (GPLv3 combines with AGPLv3). Its name is a trademark: see [below](#to-decide) |
+| nlohmann JSON 3.1.2, KISS FFT | inside Vital's folder | MIT, BSD-3-Clause | Vital's presets, its FFT | yes |
 | TNT | inside Essentia's core | public domain | Essentia's matrices | yes |
 | [miniaudio](../engine/third_party/miniaudio) | engine/third_party | Unlicense or MIT-0 | audio I/O, decoding | yes |
 | [Signalsmith Stretch, Linear](../engine/third_party) | engine/third_party | MIT | time stretching, FFTs | yes |
@@ -33,7 +37,8 @@ the licences, not legal advice: for a commercial release, have it checked.
 When you give or sell someone a build (the AGPL's "convey"):
 
 1. **Licence it as AGPLv3**: say so where you distribute it, and ship the licence texts: Essentia's
-   [COPYING.txt](../intelligence/third_party/essentia/COPYING.txt) (the AGPLv3), [LICENSE](../LICENSE) (MIT), and the
+   [COPYING.txt](../intelligence/third_party/essentia/COPYING.txt) (the AGPLv3), Vital's
+   [LICENSE](../engine/third_party/vital/LICENSE) (the GPLv3), [LICENSE](../LICENSE) (MIT), and the
    third-party notices (each `third_party` folder's licence files, and Qt's).
 2. **Offer the complete corresponding source** of the build: SUBstation's source at the commit built, Essentia
    included (it is in the repository, with its local changes in
@@ -55,6 +60,17 @@ MIT.
 
 ## To decide
 
+- **Vital's name.** Vital's source is GPLv3, but its name isn't licensed with it: Vital's README asks that "Vital",
+  "Vital Audio", "Tytel" and "Matt Tytel" not be used to market or to name a distribution of binaries built from its
+  source, that builds not connect to vital.audio's web services (SUBstation's don't), and that Vital's own presets
+  (which come with Vital under a licence that doesn't allow passing them on) not be distributed (SUBstation ships
+  none: users load their own `.vital` files). SUBstation's device is called "Vital" in its device list and editor (its
+  kind, `vital`, is what projects save). For your own builds that is just a name; before you distribute or market a
+  build, decide whether to keep it (asking Vital's author, who also offers non-GPL licences:
+  licensing@vital.audio) or to rename the device (`VitalProcessor::name()` in
+  [Vital.cpp](../engine/src/builtin/devices/Vital.cpp) and the UI's texts; projects keep working, as they save the
+  kind), and don't put the name in the product's marketing.
+
 - **ASIO.** Steinberg's ASIO licence agreement (the proprietary one, the only one older SDKs such as 2.3.3 came with)
   adds conditions the AGPL doesn't allow, so a build with ASIO **and** Essentia mustn't be distributed under it.
   Since October 2025 Steinberg offers the ASIO SDK under GPLv3 as well; GPLv3 code may be combined with AGPLv3 code
@@ -73,6 +89,8 @@ MIT.
 
 Not offered as a build option: Essentia makes the fingerprints, and the extractor it replaced is gone (its history is
 in git). The extractor interface stays, so another extractor (a learned embedding, say) could take its place; a build
-with it and without Essentia would then be MIT plus the permissive and LGPL components above (LAME: an LGPL library
-linked statically, so such a build must let its users relink it with a changed LAME, e.g. by shipping its object files
-or its source).
+with it and without Essentia would then be under the GPLv3 as a whole (Vital's engine), with the permissive and LGPL
+components above (LAME: an LGPL library linked statically, so such a build must let its users relink it with a changed
+LAME, e.g. by shipping its object files or its source, as the GPL's source offer does anyway). Without Vital too
+(the built-in Vital removed: `engine/third_party/vital`, the `vital` target, `devices/Vital.cpp` and `VitalPatch`,
+the application layer's Vital files and the editor) it would be MIT plus those.

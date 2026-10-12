@@ -124,8 +124,8 @@ clips' title bars stay as they are.
 
 ## Tracks
 
-**Ctrl+T** inserts an audio track, **Ctrl+Shift+T** a MIDI track (which comes with the
-built-in Synth; see [midi.md](midi.md)). Both are in the *Create* menu and in a
+**Ctrl+T** inserts an audio track, **Ctrl+Shift+T** a MIDI track (empty: add its instrument;
+see [midi.md](midi.md)). Both are in the *Create* menu and in a
 header's right-click menu.
 
 ### Track headers

@@ -48,6 +48,12 @@ What SUBstation doesn't do yet, by area.
 - MIDI effect plug-ins.
 - Notes' bends reach VST3 plug-ins as note expression only (VST3's per-note "tuning"):
   one that doesn't take it plays the notes unbent (there is no MPE fallback).
+- Vital: what Vital's own window has that its editor here doesn't yet: the wavetable
+  editor (wavetables load from files or take basic shapes), drawing LFO shapes and
+  modulation curves, loading a sample into its sample oscillator, loading tunings, and
+  reordering its effects (presets keep all of these, and they play). Changing its
+  wavetables, LFO shapes, modulations or Oversampling restarts held notes (struck again)
+  as its engine is built anew.
 - The Sampler plays one sample (no zones or multisamples). Of Simpler, it doesn't have
   manual slicing (moving or adding slices by hand), slicing to a drum rack, previewing
   slices by clicking them, warp markers within the sample or detecting its tempo (Warp

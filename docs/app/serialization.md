@@ -45,6 +45,7 @@ load:  Session::openProject(path)
 | File | What it holds |
 |---|---|
 | [io/Serialization.h](../../app/src/io/Serialization.h) / [.cpp](../../app/src/io/Serialization.cpp) | `saveProject`, `loadProject`, `saveTemplate`, `loadTemplate`, `projectToJson`, `loadInto`, `tracksFromJson`, `returnsFromJson`, `repairRouting`; `deviceToJson`, `deviceFromJson`; presets: `deviceToPreset`, `presetDevice`, `savePreset`, `loadPreset`; constants `kProjectFormat`, `kProjectVersion`, `kProjectExtension`, `kPresetFormat`, `kPresetVersion`, `kPresetExtension`. Its header comment lists every version's additions. |
+| [io/VitalPresets.h](../../app/src/io/VitalPresets.h) / [.cpp](../../app/src/io/VitalPresets.cpp) | Vital's own presets (`.vital`) as Vital devices and back: `isVitalPreset`, `loadVitalPreset`, `saveVitalPreset`, `vitalPresetText`; a wavetable from a file (`vitalWavetableFromFile`: `.vitaltable` or audio); `kVitalPresetExtension`, `kVitalTableExtension` |
 | [io/Presets.h](../../app/src/io/Presets.h) / [.cpp](../../app/src/io/Presets.cpp) | The preset library: `libraryDir`, `presetFileName`, `groupOf`, `presetPath`, `saveToLibrary`, `listPresets`, `renamePreset`; default presets: `defaultPath`, `saveDefault`, `hasDefault`, `clearDefault`, `defaultDevice`; `kDefaultsFolder` |
 | [model/](../../app/src/model) | The types saved; `repairTree` ([Routing.h](../../app/src/model/Routing.h)), `legacyWarpMode` ([Clip.h](../../app/src/model/Clip.h)), `refreshIds` ([Device.h](../../app/src/model/Device.h)), `ProjectFileError` ([Errors.h](../../app/src/model/Errors.h)) |
 | [model/DeviceState.h](../../app/src/model/DeviceState.h) | the text format inside a built-in device's `state` |
@@ -334,6 +335,25 @@ lists them, and right-clicking beside the devices loads a file (see [guide/devic
   for another device. `listPresets` skips the `Defaults` folder (a device whose name is "Defaults" groups under
   "Defaults (Device)"). `ProjectEditor::setDeviceDefaults` takes it (the session wires `defaultDevice`); `addDevice`
   and `addMidiTrack` make new devices through it. Pasted, duplicated and loaded devices don't use it.
+
+### Vital's presets
+
+Vital's own preset files (`.vital`: JSON) are presets of a built-in Vital ([io/VitalPresets.h](../../app/src/io/VitalPresets.h);
+the engine's [VitalPatch.h](../../engine/src/builtin/VitalPatch.h) reads and writes them,
+[engine/devices.md](../engine/devices.md#vital-builtinvital-instrument)):
+
+- `loadVitalPreset(path)`: a new Vital device (no id) with every parameter (Vital's ids) and the rest of the patch as
+  its state ([model.md](model.md#vital)), named by the preset (else the file). An older Vital's preset is upgraded as
+  Vital upgrades it. `ProjectFileError` if the file can't be read or isn't a Vital preset.
+- `loadPreset(path)` reads a `.vital` file this way too, so a `.vital` file loads wherever a preset does: dropped on a
+  Vital (into it, one undo step: `loadPresetInto`), on a track or between devices (a new Vital), from *Load Preset…*'s
+  dialog, and from the browser's Presets: `isPresetFile` takes `.vital` files, so those in the library's folders are
+  listed with the rest. A `.vital` file dragged in from a file manager (a URL) is a preset too
+  (`presetPaths(mime)`, [BrowserMime.h](../../app/src/browser/BrowserMime.h)).
+- `saveVitalPreset(device, path)`: the device as a `.vital` file Vital opens (`vitalPresetText`; `QSaveFile`).
+- Vital's device menu: *Load Vital Preset…* and *Save Vital Preset…* (`DeviceSelection::loadVitalPreset`,
+  `saveVitalPreset`; their dialogs start where the last was, else Vital's own presets folder: `Documents/Vital`,
+  `~/.local/share/vital`, `vitalPresetFolder()`).
 
 Plug-ins' own `.vstpreset` files (*Load VST3 Preset…* / *Save VST3 Preset…* on a plug-in) are a different thing: the
 engine reads and writes them (`EngineBridge::applyPluginState`, `pluginState`), and loading one is an undoable

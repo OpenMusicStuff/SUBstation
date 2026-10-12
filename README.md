@@ -32,7 +32,10 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
 - **Agents**: an MCP server (off until turned on) through which AI agents such as Claude Code
   read the project: its tracks and what each one is, their devices and clips, the chords
   and key.
-- **Devices**: a built-in Synth, a Sampler after Ableton's Simpler (Classic, 1-Shot and
+- **Devices**: [Vital](https://github.com/mtytel/vital), the spectral warping wavetable synth,
+  built in from its own source (all of it: three wavetable oscillators, a sampler, two filters,
+  envelopes, LFOs, 64 modulations, its effects; `.vital` presets load and save), a simple Synth,
+  a Sampler after Ableton's Simpler (Classic, 1-Shot and
   Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
   The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband
   Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble,

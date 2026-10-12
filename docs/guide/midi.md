@@ -8,8 +8,10 @@ vibrato (MIDI 2.0's per-note pitch bend), MIDI input from controllers and keyboa
 
 ## MIDI tracks and clips
 
-- MIDI tracks (**Ctrl+Shift+T**) come with the built-in **Synth** (see
-  [devices.md](devices.md#synth)).
+- MIDI tracks (**Ctrl+Shift+T**) start empty: add an instrument (the built-in
+  [Vital](devices.md#vital), [Synth](devices.md#synth) or [Sampler](devices.md#sampler), a
+  plug-in or an instrument preset) from the browser, by dropping it on the track, or by double-clicking it
+  with the track selected. Dropping an instrument below the tracks makes a MIDI track with it.
 - To make a MIDI clip, press **Ctrl+Shift+D** (or Ctrl+Shift+M, or use *Create › Insert
   MIDI Clip*, or right-click a MIDI track › *Insert MIDI Clip*): it fills the time
   selection, or is a bar long at the insert marker (or where you right-clicked), and

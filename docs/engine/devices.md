@@ -20,6 +20,10 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/DspBlocks.h](../../engine/src/builtin/DspBlocks.h) | Building blocks the effects share, beside Dsp.h's, all inline: one-pole and DC filters (`dsp::OnePole`, `onePoleCutoff`, `DcBlocker`), a delay line (`DelayLine`, read linearly or with Hermite interpolation), an envelope follower (`EnvelopeFollower`), white noise (`Noise`), `fastTanh`, an LFO with Ableton's shapes and synced rates (`Lfo`, `LfoShape`, `syncedDivisionLabels`, `syncedCycleBeats`), RBJ biquads (`BiquadCoefficients`, `Biquad`), a Linkwitz-Riley crossover and its all-pass (`Crossover`, `CrossoverAllpass`), a sliding maximum for lookahead (`SlidingMax`), linear-phase oversampling by 2, 4 or 8 (`Oversampler`) |
 | [builtin/BuiltinRegistry.h](../../engine/src/builtin/BuiltinRegistry.h) / [.cpp](../../engine/src/builtin/BuiltinRegistry.cpp) | `BuiltinRegistry`, `BuiltinInfo`, `BuiltinCategory`, `SUB_REGISTER_BUILTIN` |
 | [builtin/devices/Synth.cpp](../../engine/src/builtin/devices/Synth.cpp) | the Synth instrument |
+| [builtin/devices/Vital.cpp](../../engine/src/builtin/devices/Vital.cpp) | the Vital instrument: Vital's engine as a device (engines handed to the rendering thread, notes on their own channels, MIDI) |
+| [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`) |
+| [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
+| [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
 | [builtin/SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h) / [.cpp](../../engine/src/builtin/SampleSlicing.cpp) | The Sampler's slicing (`detectOnsets`, `sliceStarts`) and Snap (`nearestZeroCrossing`), shared with the application layer's `sampleSlices` ([app/src/audio/SampleSlices.h](../../app/src/audio/SampleSlices.h)) for the editor |
 | [builtin/devices/Utility.cpp](../../engine/src/builtin/devices/Utility.cpp) | Utility: gain, pan, width |
@@ -230,6 +234,97 @@ resonant low-pass filter. Mono, on both channels. Velocity sets the level.
   oscillator's increment is the key's times 2^(bend/12).
 - It *writes* (does not add) its output: it is the first device on a MIDI track. With no events and no active voice it
   writes silence and skips the work. `tailSamples()` is the release time.
+
+### Vital (`builtin:vital`, Instrument)
+
+[Vital](https://github.com/mtytel/vital)'s own synthesis engine (vendored in
+[engine/third_party/vital](../../engine/third_party/vital), GPLv3: [licensing.md](../licensing.md)) as a built-in
+device. What the user sees is in [guide/devices.md](../guide/devices.md#vital).
+
+**Building Vital without JUCE.** Vital's synthesis code (`src/synthesis`, without `effects_engine`, VitalFX's) and
+the parts of `src/common` it and its presets need are vendored as they are upstream, and built as Vital builds them,
+as two unity files (the `vital` static library, [engine/CMakeLists.txt](../../engine/CMakeLists.txt): the engine's
+SIMD flags, no fast math, warnings off). The files include `JuceHeader.h`; [compat/JuceHeader.h](../../engine/third_party/vital/compat/JuceHeader.h)
+stands in for it with what they use (the leak detector and non-copyable macros, a `String` over `std::string`,
+`StringArray` and `File` for tuning files, `Base64`, `MemoryOutputStream`, switching denormals off) and the standard
+headers JUCE's brings in. `load_save` is trimmed to the presets' upgrade and the wave data conversions (the rest is
+Vital's application), and the common unity file leaves out the application's files: the changes are in
+[local-changes.patch](../../engine/third_party/vital/local-changes.patch). Only `VitalPatch.cpp` and `devices/Vital.cpp`
+include Vital's headers (through `VitalEngine.h`); `sub_engine` links `vital` privately.
+
+**Parameters.** Every parameter of Vital's that its engine has (772: `vital::Parameters`, without the few its older
+versions had, which its presets' upgrade moves elsewhere), in Vital's order, by Vital's ids (`osc_1_level`,
+`filter_1_cutoff`, `modulation_12_amount`), so presets, automation keys and Vital's own names agree. Values are
+Vital's raw ones (what its knobs are linear in and its presets hold); no `logScale`. A value Vital names
+(`string_lookup`) is a list (`valueLabels`) where its names start at 0 and name every value, else steps. Every one is
+`ownText`: `paramText()` gives what Vital shows (`SynthSlider::getAdjustedValue` and `formatValue`: the scale
+(quadratic, cubic, quartic, square root, 2^x), the offset, inverted, multiplied, five characters, Vital's units;
+"1.000 secs", "50.00%", "-6.020dB"), a cutoff (8..136, a MIDI note) in hertz ("440 Hz", "3.52 kHz"), a list's
+names as far as Vital's list has them (a few ranges run past their names: the filters' styles, whose names depend on
+the model in Vital's window). Vital's name lists are found by their names among `synth_strings.h`'s, shortest first,
+since Vital's `ValueDetails` don't say how long theirs are. Hidden (the host's, or of Vital's window): `bypass`,
+`beats_per_minute` (the song's tempo is set every block), `mpe_enabled`, `view_spectrogram`, `osc_N_view_2d`. Not
+automatable: `oversampling` (it rebuilds the engine) and `effect_chain_order`.
+
+**The patch besides its parameters** is the device's state values (`VitalPatch.h`): `modulations` (Vital's list of
+`{source, destination[, line_mapping]}`, slot by slot: slot *i*'s amount and switches are `modulation_<i+1>_*`),
+`wavetables` (the three oscillators' `WavetableCreator` states), `lfos` (the eight `LineGenerator` states), `sample`,
+`tuning`, and as text `preset_name`, `author`, `comments`, `preset_style`, `macro1`..`macro4`: what a `.vital` file
+holds in its `settings` beside the parameters, as Vital writes it. A value left out is Vital's init patch's (a saw
+wavetable, triangle LFOs, noise as the sample, no modulations, 12-tone equal tuning). `setStateValues()` reads them all
+before it builds anything, and throws if one can't be read (the device keeps its patch); unknown names are dropped.
+
+**Engines.** A `vitalpatch::Engine` is Vital's `SoundEngine` with what Vital's `SynthBase` keeps beside it (the
+oscillators' `WavetableCreator`s, the `Tuning`), built whole by `buildEngine()` as Vital loads a preset
+(`LoadSave::jsonToState`): every control set, the modulations connected as `SynthBase::connectModulation` connects them
+(at their slots; one Vital's engine has no source or destination for is left out), the sample, the wavetables rendered,
+the LFOs; then the rate, the oversampling and the modulation switches (as Vital's plug-in's `prepareToPlay`). Building
+one allocates and takes tens of milliseconds, and Vital's engine isn't made to be changed while it plays, so the device
+never changes one the rendering thread has: it builds a new one and hands it over.
+
+- `setStateValues()` (the main thread or the thread loading states) builds an engine for the new patch at the current
+  parameters, under the patch's mutex (so the newest build is the one handed over), and puts it in `pending_` (an
+  atomic pointer; one not yet taken is freed).
+- `idle()` (main thread) frees the engine the rendering thread let go of (`retired_`), and builds a new one when the
+  `oversampling` parameter or the rate isn't the newest engine's.
+- `prepare()` (audio stopped) takes the pending engine as the live one, builds the first, or sets a new rate on the
+  live one directly.
+- `render()`, before each block: takes the pending engine once the last one let go of has been freed and the one
+  before has faded out. The old one fades out over 480 samples (10 ms at 48 kHz) beside the new, then goes to
+  `retired_` for the main thread to free; the notes held play on the new one (struck again: Vital's voices can't move
+  across), with the pedals and each channel's bend. Nothing is allocated or freed on the rendering thread.
+
+**Rendering.** Parameters go to the engine's controls between blocks (`Value::set`, only those that changed: a copy
+of what each was last set to; all of them on a new engine), as Vital's host sets them; the mod and pitch wheel
+parameters reach every channel. The song's tempo is set every block, and while playing its position (`correctToTime`,
+in seconds from the beat position) so synced LFOs and delays follow the song, as Vital's plug-in does. A block is
+rendered in stretches of up to Vital's largest (128 samples, `vital::kMaxBufferSize`), each ending where a bend or a
+MIDI message comes after its start: note-ons and note-offs go in at their sample offsets in the stretch (Vital's
+`noteOn(note, velocity, sample, channel)`), bends and messages at the stretch's start. The output is Vital's stereo
+(the `poly_float` lanes 0 and 1), written (not added): it is the first device on a MIDI track. After a second under
+-120 dBFS with no voice it sleeps (writes silence, skips the work) until a note comes; `reset()` is Vital's
+`allSoundsOff()`. `tailSamples()` is 10 seconds (its releases and effects' tails have no bound it can name).
+
+**Notes and MIDI.** Each note gets a MIDI channel of its own, 1 to 15 in turn, as an MPE controller would give it (up
+to 256 notes held: a table of note id, key, channel and velocity; the oldest gives way). A `NoteBend` sets that
+channel's pitch wheel (`setPitchWheel`), which Vital applies to the voices on it as their "local" pitch bend,
+±48 semitones (`VoiceHandler::kLocalPitchBendRange`): that note alone, `bend` semitones from its key, as the Synth
+does. A bend at its note-on's sample is set before the note starts (Vital takes a voice's bend as it starts it). A
+note-off ends the note with its id (else the oldest on its key and channel). MIDI messages apply to every channel:
+pitch bend (`setZonedPitchWheel`, over Vital's Pitch Bend Range), CC1 the mod wheel, CC64 sustain, CC66 sostenuto,
+CC74 (MPE's slide), channel pressure, polyphonic pressure (the newest note on its key), CC120 all sound off, CC123 all
+notes off.
+
+**Presets.** `readPreset()` reads a `.vital` file's JSON: one saved by an older version is upgraded as Vital upgrades it
+(`LoadSave::updateFromOldVersion`), one by a newer version read for what it shares; every parameter (those it doesn't
+have at their defaults, the rest clamped to their ranges), the state values, its names (named by the file if it has
+no name). `writePreset()` builds an engine for the patch and writes what Vital's `LoadSave::stateToJson` writes: every
+parameter, the 64 modulation slots, the wavetables, the LFOs and the sample as the engine has them (the init patch's
+where the patch leaves them out), the tuning if it isn't the default, the names; Vital opens it. Wavetables come from
+audio files as Vital loads one dropped on its wavetable (`WavetableCreator::initFromAudioFile`: spliced into frames,
+blending as the file's `clm ` chunk says; vocoded; pitched), from `.vitaltable` files, or as basic shapes (a
+`LineGenerator`'s); LFO shapes are `LineGenerator`s. The application layer reads and writes presets and edits the
+patch through these ([app/model.md](../app/model.md#vital)).
 
 ### Sampler (`builtin:sampler`, Instrument)
 
@@ -2050,7 +2145,8 @@ readonly property var editors: ({
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
     "spectral": "SpectralEditor.qml",
-    "transient": "TransientEditor.qml"
+    "transient": "TransientEditor.qml",
+    "vital": "VitalEditor.qml"
 })
 ```
 
@@ -2060,7 +2156,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are seventeen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
+- Today there are eighteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
   48 kHz) and In/Out meters with the threshold marked; the Gate the last 2.5 s of `input`, `output`, `key` and `open`
   with its threshold and Return lines to drag, and in its sidechain section the key EQ's curve (from `gate::keyFilter`,
   the engine's own biquad); the Limiter the level over the last 1.5 s with the gain reduction hanging from the top,
@@ -2089,7 +2185,8 @@ readonly property var editors: ({
   playhead from `phase` and its fit to the kick (`key`, against `input`); the Sampler the sample's waveform as it plays
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and
   the playhead from `position` (drop or double-click to load a sample; loading is an undoable state change through
-  `ProjectEditor::setDeviceState()`, the path kept in the device's state).
+  `ProjectEditor::setDeviceState()`, the path kept in the device's state); Vital nine pages of its parameters and its
+  modulation matrix (see [ui/device-view.md](../ui/device-view.md#device-editors)).
 
 See [ui/device-view.md](../ui/device-view.md#device-editors) for the editors and how to add one.
 
@@ -2390,6 +2487,14 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   pan, filter), voices and legato glide, warping (Re-Pitch, every stretching mode, keys, tempo, repeatable renders,
   resampled past 4 times as fast, also a note already playing), the display of a reversed note, a resonant filter ringing out after the last note,
   and a random LFO restarted by notes rendering the same every time.
+- [test_vital_engine.cpp](../../tests/engine/test_vital_engine.cpp): Vital's listing (every parameter of its engine's,
+  the hidden and unautomatable ones, lists), its texts as Vital shows them; silent until a note, a note at its pitch
+  and its offset in any block, released; a note's bend moving it alone, 48 semitones either way (and at its note-on's
+  sample); MIDI pitch bend, the sustain pedal; a modulation heard (an LFO swinging the level), its state kept, a state
+  it can't read refused; a new patch taking over under a held note without a click; oversampling and rates rebuilding
+  the engine (the pitch holding); sleeping to exact zeros and waking; reset; presets written and read back, older ones
+  upgraded, others refused; the sources and destinations; wavetables of shapes, from wavetable files (with their `clm `
+  chunk), vocoded and pitched, from `.vitaltable` files; LFO shapes heard; through the engine.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
 - [test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp): the Synth and the Sampler play a
   note's bend at its bent pitch, and the Synth bends only the note a bend names.

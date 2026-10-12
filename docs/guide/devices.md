@@ -99,7 +99,7 @@ another track's part.
 A polyphonic subtractive synth (16 voices) with sine, triangle, saw and square
 oscillators (band-limited saw and square), an ADSR envelope, a resonant low-pass
 filter and volume. Velocity sets the level; each voice follows its note's bend
-([midi.md](midi.md#pitch-bends-vibrato-and-slides)). New MIDI tracks come with it.
+([midi.md](midi.md#pitch-bends-vibrato-and-slides)).
 
 | Parameter | Range |
 |---|---|
@@ -110,6 +110,54 @@ filter and volume. Velocity sets the level; each voice follows its note's bend
 | Cutoff | 20 Hz to 20 kHz |
 | Resonance | 0 to 100 % |
 | Volume | −60 to +6 dB |
+
+### Vital
+
+[Vital](https://github.com/mtytel/vital), Matt Tytel's spectral warping wavetable synth,
+built in: its own synthesis engine, so it sounds as Vital does, with all of it: three
+wavetable oscillators (each with frequency morphing and wave warping, up to 16 unison
+voices, stacks and stereo spread), a sample oscillator, two filters (analog, dirty, ladder,
+digital, diode, formant, comb and phaser models), six envelopes, eight LFOs, four random
+LFOs, four macros, 64 modulations, and its nine effects (chorus, compressor, delay,
+distortion, EQ, filter, flanger, phaser, reverb), up to 32 voices, legato and glide, and
+oversampling up to 8×. Every one of Vital's parameters is a parameter here, shown as Vital
+shows it, and can be automated (all but Oversampling and the effects' order) and mapped to
+a rack's macros.
+
+Its editor has nine pages, named in its title bar:
+
+| Page | What it has |
+|---|---|
+| Osc | Oscillator 1, 2 or 3 (chosen on the left): on, level, pan, transpose, tune, the wavetable's frame, frequency morph and warp with their amounts, where it goes (Filter 1, 2, both, the effects, straight out); unison voices, detune, blend, stereo, spreads, phase. On the left the oscillator's wavetable, and **Wavetable…**: load a wavetable (a `.wav` wavetable file, Serum's or Vital's own exported ones, or Vital's `.vitaltable`), any audio file vocoded or pitched into a wavetable as Vital does, or a basic shape (Init, Sine, Triangle, Saw Up, Saw Down, Square) |
+| Sample | The sample oscillator (its noise by default, or a preset's sample) |
+| Filter | Filter 1 or 2: model, style, cutoff, resonance, drive, blend, key track, mix; the comb and formant controls |
+| Env | Envelope 1 to 6 (Envelope 1 is the voices' amplitude): delay, attack, hold, decay, sustain, release and their curves |
+| LFO | LFO 1 to 8: free or synced (and how: trigger, sync, envelope, loop), rate, phase, stereo, delay, fade in, smoothing, key track. On the left its shape, and **Shape…** to set a basic one |
+| Random | Random LFO 1 to 4: style, rate (free or synced), stereo, key track |
+| FX | Each of the nine effects, on the left |
+| Matrix | The modulations: choose a source (an envelope, an LFO, a random LFO, a macro, velocity, the note, aftertouch, the wheels...) and a destination (any of its parameters) and **Add**; each row has its amount, Bipolar, Stereo, Bypass, and × to remove it |
+| Voice | Volume, voices, voice priority and stealing, legato, velocity, pitch bend range, tune and transpose, stereo routing, oversampling; glide; the macros (named as the preset names them); the wheels |
+
+**Vital's presets.** Right-click Vital › *Load Vital Preset…* loads a `.vital` file (Vital's
+own presets, and those made by others: older versions' are upgraded as Vital upgrades them);
+*Save Vital Preset…* saves the patch as a `.vital` file Vital opens. Dropping a `.vital` file
+(from a file manager, or the browser's Presets, where `.vital` files in the preset library's
+folders show) on a Vital loads it, and on a track or between devices adds a Vital with it. A
+loaded preset is one undo step, and the patch (its wavetables, LFO shapes, sample and
+modulations too) is saved with the project and in SUBstation presets. Vital's own factory
+presets and wavetables come with Vital, under their own licence: install Vital to have them,
+and load them from its folder.
+
+**Notes.** Each note plays on its own MIDI channel, as an MPE controller sends them, so a
+note's bend ([midi.md](midi.md#pitch-bends-vibrato-and-slides)) bends that note alone, up to
+48 semitones either way. MIDI pitch bend (over *Bend Range*), the mod wheel, sustain and
+sostenuto pedals, channel and polyphonic pressure and CC74 (MPE's slide) reach every note.
+
+Changing the patch's wavetables, LFO shapes or modulations, a preset, or Oversampling builds
+Vital's engine anew in the background; the notes held play on, the old sound fades out over 10
+ms. What Vital's own window has that this editor doesn't yet: the wavetable editor, drawing
+LFO shapes and modulation curves (presets keep theirs), loading a sample, tunings (presets
+keep theirs) and the effects' order.
 
 ### Sampler
 
