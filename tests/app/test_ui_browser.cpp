@@ -174,7 +174,8 @@ private Q_SLOTS:
                                            QStringLiteral("Over The Top"), QStringLiteral("Phaser-Flanger"),
                                            QStringLiteral("Reverb"), QStringLiteral("Saturator"),
                                            QStringLiteral("Sidechain"), QStringLiteral("Spectral Compressor"),
-                                           QStringLiteral("Transient Shaper"), QStringLiteral("Utility")}));
+                                           QStringLiteral("Transient Shaper"), QStringLiteral("Utility"),
+                                           QStringLiteral("Vintage Hall")}));
         const int utility = int(names().indexOf(QStringLiteral("Utility")));
         QVariant data;
         QMetaObject::invokeMethod(panel_, "dragPayload", Q_RETURN_ARG(QVariant, data),
