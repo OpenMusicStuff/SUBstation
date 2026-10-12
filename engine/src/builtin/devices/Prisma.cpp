@@ -47,7 +47,7 @@
 #ifdef _MSC_VER
 #pragma warning(push, 0)
 #endif
-#include "signalsmith-linear/fft.h"
+#include <kfr/dft.hpp>
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
@@ -62,6 +62,7 @@ using prisma::kNoteKernel;
 
 constexpr int kChannels = 2;
 constexpr int kBlock = 256;           // convolution block (core samples)
+constexpr int kBins = kBlock + 1;     // a block's spectrum (its transform's size is two blocks)
 constexpr int kDesignSize = 16384;    // the masks' frequency grid
 constexpr int kTaps = kDesignSize / 2;
 constexpr int kParts = kTaps / kBlock;
@@ -163,13 +164,18 @@ struct Lr4 {
 class Shifter {
 public:
     void prepare(double rate, bool constantPower = false) {
-        constantPower_ = constantPower;
         period_ = std::max(16, static_cast<int>(std::lround(kGrainSeconds * rate)));
         // The longest sweep: Pre-Shift's 50 cents or a semitone's (6 %) over two periods.
         size_t size = 1;
         while (size < static_cast<size_t>(0.07 * 2 * period_ + kMinDelay + 8)) size <<= 1;
         buffer_.assign(size, 0.f);
         mask_ = size - 1;
+        // the heads' gains over a grain's life (a table: no sine per sample)
+        window_.resize(static_cast<size_t>(2 * period_));
+        for (size_t i = 0; i < window_.size(); ++i) {
+            const double s = std::sin(std::numbers::pi * static_cast<double>(i) / (2.0 * period_));
+            window_[i] = static_cast<float>(constantPower ? s : s * s);
+        }
         clear();
     }
     void clear() noexcept {
@@ -183,12 +189,10 @@ public:
         const double twoP = 2.0 * period_;
         double out = 0;
         for (int head = 0; head < 2; ++head) {
-            double age = age_ + head * period_;
-            if (age >= twoP) age -= twoP;
-            const double s = std::sin(std::numbers::pi * age / twoP);
-            const double gain = constantPower_ ? s : s * s;
+            int age = age_ + head * period_;
+            if (age >= 2 * period_) age -= 2 * period_;
             const double delay = slope > 0 ? kMinDelay + slope * age : kMinDelay + (-slope) * (twoP - age);
-            out += gain * read(delay);
+            out += window_[static_cast<size_t>(age)] * read(delay);
         }
         write_ = (write_ + 1) & mask_;
         if (++age_ >= 2 * period_) age_ = 0;
@@ -203,10 +207,9 @@ private:
         const double f = pos - fl;
         return buffer_[i] * (1 - f) + buffer_[(i + 1) & mask_] * f;
     }
-    std::vector<float> buffer_;
+    std::vector<float> buffer_, window_;
     size_t mask_ = 0, write_ = 0;
     int period_ = 2640, age_ = 0;
-    bool constantPower_ = false;
 };
 
 // What the filters are designed for: they are designed again when it changes.
@@ -218,16 +221,57 @@ struct DesignKey {
     bool operator==(const DesignKey&) const = default;
 };
 
-// A filter in the frequency domain: its partitions' spectra (packed: DC and Nyquist in [0]).
+// A real FFT (KFR's: its N / 2 + 1 bins, unscaled both ways) with the scratch it needs.
+class RealDft {
+public:
+    void resize(size_t size) {
+        plan_ = std::make_unique<kfr::dft_plan_real<float>>(size, kfr::dft_pack_format::CCs);
+        temp_.assign(plan_->temp_size, 0);
+    }
+    void forward(const float* time, Complex* bins) noexcept {
+        plan_->execute(reinterpret_cast<kfr::complex<float>*>(bins), time, temp_.data());
+    }
+    void inverse(const Complex* bins, float* time) noexcept {
+        plan_->execute(time, reinterpret_cast<const kfr::complex<float>*>(bins), temp_.data(), kfr::cinvert_t{});
+    }
+
+private:
+    std::unique_ptr<kfr::dft_plan_real<float>> plan_;
+    std::vector<kfr::u8> temp_;
+};
+
+// Spectra as separate real and imaginary parts, so the multiply-adds vectorise: kBins per block.
+struct Spectra {
+    std::vector<float> re, im;
+    void assign(size_t blocks) {
+        re.assign(blocks * kBins, 0.f);
+        im.assign(blocks * kBins, 0.f);
+    }
+    void set(size_t block, const Complex* bins) noexcept {
+        float* r = re.data() + block * kBins;
+        float* i = im.data() + block * kBins;
+        for (int k = 0; k < kBins; ++k) {
+            r[k] = bins[k].real();
+            i[k] = bins[k].imag();
+        }
+    }
+    const float* real(size_t block) const noexcept { return re.data() + block * kBins; }
+    const float* imag(size_t block) const noexcept { return im.data() + block * kBins; }
+};
+
+// A filter in the frequency domain: its partitions' spectra.
 struct Partitions {
-    std::vector<Complex> spectra = std::vector<Complex>(static_cast<size_t>(kParts * kBlock));
+    Spectra spectra;
     int used = 0;  // partitions with anything in them; 0: the filter is silent
 };
 
-// Pack-aware multiply-accumulate of one partition.
-inline void multiplyAdd(const Complex* x, const Complex* h, Complex* y) noexcept {
-    y[0] += Complex(x[0].real() * h[0].real(), x[0].imag() * h[0].imag());
-    for (int k = 1; k < kBlock; ++k) y[k] += x[k] * h[k];
+// y += x h, over one partition's bins.
+inline void multiplyAdd(const float* __restrict xr, const float* __restrict xi, const float* __restrict hr,
+                        const float* __restrict hi, float* __restrict yr, float* __restrict yi) noexcept {
+    for (int k = 0; k < kBins; ++k) {
+        yr[k] += xr[k] * hr[k] - xi[k] * hi[k];
+        yi[k] += xr[k] * hi[k] + xi[k] * hr[k];
+    }
 }
 
 class PrismaProcessor final : public BuiltinProcessor {
@@ -263,7 +307,7 @@ public:
         fft_.resize(2 * kBlock);
         designFft_.resize(kDesignSize);
         for (auto& c : ch_) {
-            c.history.assign(static_cast<size_t>(kParts * kBlock), Complex{});
+            c.history.assign(kParts);
             for (int s = 0; s < 3; ++s) {
                 // a stage's upper half waits for the processing beneath it: the block, at its rate
                 // (and as the half-band filters of the stages beneath delay it, rounded)
@@ -279,13 +323,14 @@ public:
             c.down.prepare(coreRate_);
         }
         for (auto& set : filters_)
-            for (auto& f : set) f.spectra.assign(static_cast<size_t>(kParts * kBlock), Complex{});
+            for (auto& f : set) f.spectra.assign(kParts);
         mag_.assign(static_cast<size_t>(kFilters), std::vector<float>(kDesignSize / 2 + 1));
         work_.assign(kDesignSize, 0.f);
-        spec_.assign(kDesignSize / 2, Complex{});
+        spec_.assign(kDesignSize / 2 + 1, Complex{});
         timeBuf_.assign(2 * kBlock, 0.f);
-        freqBuf_.assign(kBlock, Complex{});
-        accum_.assign(static_cast<size_t>(kFilters) * 2, std::vector<Complex>(kBlock));
+        freqBuf_.assign(kBins, Complex{});
+        accumRe_.assign(kBins, 0.f);
+        accumIm_.assign(kBins, 0.f);
         blockOut_.assign(static_cast<size_t>(kFilters) * 2, std::vector<float>(kBlock));
 
         // The filters for the current settings, now (no audio is running).
@@ -325,6 +370,7 @@ protected:
         if (designing_) runDesignStep();
 
         updateCrossovers();
+        preRatio_ = std::exp2(param(PreShift) / 1200.0);
         const int chs = std::min(numChannels, kChannels);
         if (factor_ == 1) {
             for (int i = 0; i < numFrames; ++i) {
@@ -361,11 +407,12 @@ private:
         size_t highPos[3] = {};
         Lr4 lowLp, midHp, midLp, highHp;
         Shifter pre, up, down;
-        std::vector<Complex> history;  // the mid band's last blocks, as spectra
+        Spectra history;  // the mid band's last blocks, as spectra
         int historyPos = 0;
         float prevIn[kBlock] = {};
         float inMid[kBlock] = {}, inLow[kBlock] = {}, inHigh[kBlock] = {};
         float outBlock[kBlock] = {};
+        bool resting = false;  // the shifters cleared while the processed band isn't heard
         double frameIn[8] = {}, frameOut[8] = {};
         void clear() {
             for (auto& q : qmf) q.clear();
@@ -375,7 +422,8 @@ private:
             }
             lowLp.clear(); midHp.clear(); midLp.clear(); highHp.clear();
             pre.clear(); up.clear(); down.clear();
-            std::fill(history.begin(), history.end(), Complex{});
+            std::fill(history.re.begin(), history.re.end(), 0.f);
+            std::fill(history.im.begin(), history.im.end(), 0.f);
             historyPos = 0;
             std::fill(std::begin(prevIn), std::end(prevIn), 0.f);
             std::fill(std::begin(inMid), std::end(inMid), 0.f);
@@ -499,8 +547,7 @@ private:
         const double low = c.lowLp(x);
         const double mid = c.midLp(c.midHp(x));
         const double high = c.highHp(x);
-        const double pre = param(PreShift);
-        const float m = pre != 0 ? c.pre.process(static_cast<float>(mid), std::exp2(pre / 1200.0)) : static_cast<float>(mid);
+        const float m = preRatio_ != 1.0 ? c.pre.process(static_cast<float>(mid), preRatio_) : static_cast<float>(mid);
         c.inLow[pos_] = static_cast<float>(low);
         c.inHigh[pos_] = static_cast<float>(high);
         c.inMid[pos_] = m;
@@ -514,11 +561,25 @@ private:
         std::copy(std::begin(c.prevIn), std::end(c.prevIn), timeBuf_.begin());
         std::copy(std::begin(c.inMid), std::end(c.inMid), timeBuf_.begin() + kBlock);
         std::copy(std::begin(c.inMid), std::end(c.inMid), std::begin(c.prevIn));
-        fft_.fft(timeBuf_.data(), freqBuf_.data());
+        fft_.forward(timeBuf_.data(), freqBuf_.data());
         c.historyPos = (c.historyPos + kParts - 1) % kParts;
-        std::copy(freqBuf_.begin(), freqBuf_.end(), c.history.begin() + c.historyPos * kBlock);
+        c.history.set(static_cast<size_t>(c.historyPos), freqBuf_.data());
 
         const bool fading = fade_ > 0;
+        // Nothing of the processed band heard (no notes, all twelve, Color 0): the band passes, and the filters
+        // and shifters rest (the input's spectra are still kept, for when they are heard again).
+        if (!fading && wetRamp_[0] == 0.f && wetRamp_[kBlock - 1] == 0.f) {
+            if (!c.resting) {
+                c.up.clear();
+                c.down.clear();
+                c.resting = true;
+            }
+            const bool muteLow = isOn(MuteLow), muteHigh = isOn(MuteHigh);
+            for (int k = 0; k < kBlock; ++k)
+                c.outBlock[k] = (muteLow ? 0.f : c.inLow[k]) + (muteHigh ? 0.f : c.inHigh[k]) + c.inMid[k];
+            return;
+        }
+        c.resting = false;
         const float scale = 1.f / (2 * kBlock);
         for (int set = 0; set < (fading ? 2 : 1); ++set) {
             const int which = set == 0 ? active_ : 1 - active_;
@@ -529,13 +590,17 @@ private:
                     std::fill(out.begin(), out.end(), 0.f);
                     continue;
                 }
-                auto& acc = accum_[static_cast<size_t>(set * kFilters + f)];
-                std::fill(acc.begin(), acc.end(), Complex{});
+                std::fill(accumRe_.begin(), accumRe_.end(), 0.f);
+                std::fill(accumIm_.begin(), accumIm_.end(), 0.f);
                 for (int part = 0; part < p.used; ++part) {
-                    const Complex* x = c.history.data() + ((c.historyPos + part) % kParts) * kBlock;
-                    multiplyAdd(x, p.spectra.data() + part * kBlock, acc.data());
+                    const auto x = static_cast<size_t>((c.historyPos + part) % kParts);
+                    const auto h = static_cast<size_t>(part);
+                    multiplyAdd(c.history.real(x), c.history.imag(x), p.spectra.real(h), p.spectra.imag(h),
+                                accumRe_.data(), accumIm_.data());
                 }
-                fft_.ifft(acc.data(), timeBuf_.data());
+                for (int k = 0; k < kBins; ++k)
+                    freqBuf_[static_cast<size_t>(k)] = Complex(accumRe_[static_cast<size_t>(k)], accumIm_[static_cast<size_t>(k)]);
+                fft_.inverse(freqBuf_.data(), timeBuf_.data());
                 for (int k = 0; k < kBlock; ++k) out[static_cast<size_t>(k)] = timeBuf_[static_cast<size_t>(kBlock + k)] * scale;
             }
         }
@@ -678,20 +743,19 @@ private:
             return;
         }
         // log magnitude -> cepstrum
-        spec_[0] = Complex(std::log(std::max(mag[0], kMaskFloor)), std::log(std::max(mag[static_cast<size_t>(half)], kMaskFloor)));
-        for (int k = 1; k < half; ++k) spec_[static_cast<size_t>(k)] = Complex(std::log(std::max(mag[static_cast<size_t>(k)], kMaskFloor)), 0.f);
-        designFft_.ifft(spec_.data(), work_.data());
+        for (int k = 0; k <= half; ++k)
+            spec_[static_cast<size_t>(k)] = Complex(std::log(std::max(mag[static_cast<size_t>(k)], kMaskFloor)), 0.f);
+        designFft_.inverse(spec_.data(), work_.data());
         const float inv = 1.f / kDesignSize;
         // fold onto the causal half
         work_[0] *= inv;
         for (int n = 1; n < half; ++n) work_[static_cast<size_t>(n)] *= 2 * inv;
         work_[static_cast<size_t>(half)] *= inv;
         std::fill(work_.begin() + half + 1, work_.end(), 0.f);
-        designFft_.fft(work_.data(), spec_.data());
+        designFft_.forward(work_.data(), spec_.data());
         // exp -> the minimum-phase spectrum
-        spec_[0] = Complex(std::exp(spec_[0].real()), std::exp(spec_[0].imag()));
-        for (int k = 1; k < half; ++k) spec_[static_cast<size_t>(k)] = std::exp(spec_[static_cast<size_t>(k)]);
-        designFft_.ifft(spec_.data(), work_.data());
+        for (int k = 0; k <= half; ++k) spec_[static_cast<size_t>(k)] = std::exp(spec_[static_cast<size_t>(k)]);
+        designFft_.inverse(spec_.data(), work_.data());
         // the impulse response's first kTaps samples, its tail faded
         const int fadeStart = kTaps * 7 / 8;
         int last = 0;
@@ -708,7 +772,8 @@ private:
         for (int part = 0; part < out.used; ++part) {
             std::fill(timeBuf_.begin(), timeBuf_.end(), 0.f);
             std::copy(work_.begin() + part * kBlock, work_.begin() + (part + 1) * kBlock, timeBuf_.begin());
-            fft_.fft(timeBuf_.data(), out.spectra.data() + part * kBlock);
+            fft_.forward(timeBuf_.data(), freqBuf_.data());
+            out.spectra.set(static_cast<size_t>(part), freqBuf_.data());
         }
     }
 
@@ -719,7 +784,7 @@ private:
     int held_[128] = {};
     double lastStart_ = -1, lastEnd_ = -1;
 
-    signalsmith::linear::RealFFT<float> fft_, designFft_;
+    RealDft fft_, designFft_;
     std::array<std::array<Partitions, kFilters>, 2> filters_;
     int active_ = 0, pending_ = 0, fade_ = 0;
     DesignKey key_;
@@ -728,11 +793,12 @@ private:
     std::vector<std::vector<float>> mag_;
     std::vector<float> work_, timeBuf_;
     std::vector<Complex> spec_, freqBuf_;
-    std::vector<std::vector<Complex>> accum_;
+    std::vector<float> accumRe_, accumIm_;
     std::vector<std::vector<float>> blockOut_;
     SmoothedValue wetAmount_;
     std::array<float, kBlock> wetRamp_{};
     int wetNotes_ = 0;    // the notes of the filters heard
+    double preRatio_ = 1.0;
     int frameFill_ = 0;   // host samples gathered into the current frame
 };
 

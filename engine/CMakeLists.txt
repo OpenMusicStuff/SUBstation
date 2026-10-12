@@ -360,7 +360,7 @@ target_include_directories(sub_engine PUBLIC src)
 # Signalsmith Stretch (time stretching / pitch shifting) and its FFT library:
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
-target_link_libraries(sub_engine PRIVATE signalsmith_linear mp3lame vital)
+target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital)  # (kfr_fft: Prisma's FFTs)
 target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)
