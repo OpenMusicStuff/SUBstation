@@ -34,6 +34,10 @@ jobs:
       - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
         with:
           key: linux-gcc
+          # Saves are keyed linux-gcc-<time>; restoring asks for the bare prefix as the primary key,
+          # which Blacksmith's cache matches exactly (never hitting). The same prefix as a restore key
+          # is matched as a prefix there too.
+          restore-keys: linux-gcc
           max-size: 2G
       - name: Configure
         run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
