@@ -27,6 +27,7 @@
 #include <cmath>
 
 #include "builtin/DspBlocks.h"
+#include "rt/FastMath.h"
 
 namespace sub::chorus {
 
@@ -134,7 +135,7 @@ inline double triangle(double phase) noexcept {
 // The modulation at absolute phase `phase` (cycles): a sine, or in Vibrato
 // the sine morphed towards the triangle by `shape` (0..1).
 inline double lfoValue(Mode mode, double phase, double shape) noexcept {
-    const double sine = std::sin(kTwoPi * phase);
+    const double sine = fastmath::sin(kTwoPi * phase);
     if (mode != Mode::Vibrato || shape <= 0.0) return sine;
     return sine + shape * (triangle(phase) - sine);
 }

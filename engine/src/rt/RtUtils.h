@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "rt/FastMath.h"
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define SUB_RT_X86 1
@@ -203,21 +204,21 @@ inline void atomicStoreMax(std::atomic<float>& target, float value) noexcept {
     }
 }
 
-inline float dbToGain(float db) noexcept { return db <= -120.f ? 0.f : std::pow(10.f, db / 20.f); }
+// dB and gain, through FastMath.h's exp and log10 (MinGW's take 10-20 times as long),
+// e^(ln 10 / 20 nepers a dB): dbToGain() with a floor (silence below -120 dB),
+// expDbToGain() without (what gain computers work out every sample).
+inline constexpr float kNepersPerDb = 0.11512925f;
+inline float dbToGain(float db) noexcept { return db <= -120.f ? 0.f : fastmath::exp(db * kNepersPerDb); }
+inline float expDbToGain(float db) noexcept { return fastmath::exp(db * kNepersPerDb); }
 
 // A level in dB, the gain nudged off zero so silence reads about -180 dB, not -inf.
-inline float gainToDb(float gain) noexcept { return 20.f * std::log10(gain + 1e-9f); }
-
-// dB to gain through exp() (ln 10 / 20 nepers a dB), without dbToGain()'s
-// floor: what gain computers work out every sample, where pow() costs more.
-inline constexpr float kNepersPerDb = 0.11512925f;
-inline float expDbToGain(float db) noexcept { return std::exp(db * kNepersPerDb); }
+inline float gainToDb(float gain) noexcept { return 20.f * fastmath::log10(gain + 1e-9f); }
 
 // A one-pole smoother's coefficient for a time constant of `seconds`: what is
 // left of a step after `samples` samples (one by default). A smoother that
 // follows x does y = x + c (y - x); a glide moves 1 - c of the way.
 inline double onePoleCoefficient(double seconds, double sampleRate, double samples = 1.0) noexcept {
-    return std::exp(-samples / (seconds * sampleRate));
+    return fastmath::exp(-samples / (seconds * sampleRate));
 }
 
 // Adds a stereo signal into another over `frames` samples, as it is or times `gain`.

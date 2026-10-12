@@ -61,6 +61,7 @@
 #include "builtin/Dsp.h"
 #include "builtin/DspBlocks.h"
 #include "builtin/MultibandDesign.h"
+#include "rt/FastMath.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -468,12 +469,12 @@ private:
                 }
                 float level;
                 if (rmsShare == 0.f) {
-                    level = kDbPerLog2 * std::log2(held + 1e-9f);
+                    level = kDbPerLog2 * fastmath::log2(held + 1e-9f);
                 } else if (rmsShare == 1.f) {
-                    level = 0.5f * kDbPerLog2 * std::log2(meanSquare + 1e-18f);
+                    level = 0.5f * kDbPerLog2 * fastmath::log2(meanSquare + 1e-18f);
                 } else {  // switching Peak/RMS: a crossfade of the two levels
-                    const float peakDb = kDbPerLog2 * std::log2(held + 1e-9f);
-                    const float rmsDb = 0.5f * kDbPerLog2 * std::log2(meanSquare + 1e-18f);
+                    const float peakDb = kDbPerLog2 * fastmath::log2(held + 1e-9f);
+                    const float rmsDb = 0.5f * kDbPerLog2 * fastmath::log2(meanSquare + 1e-18f);
                     level = peakDb + rmsShare * (rmsDb - peakDb);
                 }
                 const float inDb = band.inDb.value;
@@ -502,15 +503,15 @@ private:
             }
 
             // The gains: a band switched off takes the mid band's.
-            const float midGain = std::exp(total[mb::Mid] * kNepersPerDb);
+            const float midGain = expDbToGain(total[mb::Mid]);
             const float lowGain = lowOn == 0.f ? midGain
                                   : lowOn == 1.f
-                                      ? std::exp(total[mb::Low] * kNepersPerDb)
-                                      : lowOn * std::exp(total[mb::Low] * kNepersPerDb) + (1.f - lowOn) * midGain;
+                                      ? expDbToGain(total[mb::Low])
+                                      : lowOn * expDbToGain(total[mb::Low]) + (1.f - lowOn) * midGain;
             const float highGain = highOn == 0.f ? midGain
                                    : highOn == 1.f
-                                       ? std::exp(total[mb::High] * kNepersPerDb)
-                                       : highOn * std::exp(total[mb::High] * kNepersPerDb) + (1.f - highOn) * midGain;
+                                       ? expDbToGain(total[mb::High])
+                                       : highOn * expDbToGain(total[mb::High]) + (1.f - highOn) * midGain;
             const float gains[mb::kBands] = {lowGain * audible[mb::Low], midGain * audible[mb::Mid],
                                              highGain * audible[mb::High]};
             for (int k = 0; k < N; ++k)

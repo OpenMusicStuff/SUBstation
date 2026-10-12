@@ -66,6 +66,7 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/SpectralDesign.h"
+#include "rt/FastMath.h"
 #include "rt/RtUtils.h"
 
 #ifdef _MSC_VER
@@ -619,15 +620,15 @@ private:
             float* level = level_[0].data();
             const float* e0 = env_[0].data();
             const float* e1 = env_[detectors_ - 1].data();
-            for (int k = first; k < end; ++k) level[k] = 20.f * std::log10(std::max(e0[k], e1[k])) + pinkCal_[k];
+            for (int k = first; k < end; ++k) level[k] = 20.f * fastmath::log10(std::max(e0[k], e1[k])) + pinkCal_[k];
         } else {
             float* l0 = level_[0].data();
             float* l1 = level_[1].data();
             const auto link = static_cast<float>(link_);
             for (int k = first; k < end; ++k) {
                 const auto i = static_cast<size_t>(k);
-                const float a = 20.f * std::log10(env_[0][i]) + pinkCal_[i];
-                const float b = 20.f * std::log10(env_[1][i]) + pinkCal_[i];
+                const float a = 20.f * fastmath::log10(env_[0][i]) + pinkCal_[i];
+                const float b = 20.f * fastmath::log10(env_[1][i]) + pinkCal_[i];
                 const float loudest = std::max(a, b);
                 l0[k] = a + link * (loudest - a);
                 l1[k] = b + link * (loudest - b);
@@ -751,7 +752,7 @@ private:
             } else {
                 value = power[p.k0] + p.t * (power[p.k1] - power[p.k0]);
             }
-            const float db = 10.f * std::log10(value + 1e-30f) + p.pinkDb;
+            const float db = 10.f * fastmath::log10(value + 1e-30f) + p.pinkDb;
             out[j] = db > kFloorDb ? std::min(db, kTopDb) : kFloorDb;  // (an overflowed power's NaN: the floor)
         }
     }

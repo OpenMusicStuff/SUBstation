@@ -30,6 +30,8 @@
 #include <complex>
 #include <numbers>
 
+#include "rt/FastMath.h"
+
 namespace sub::disperser {
 
 constexpr int kMaxStages = 64;
@@ -60,10 +62,12 @@ struct Stage {
 // The stages for a frequency (Hz) and a pinch (Q).
 inline Stage design(double freq, double pinch, double sampleRate) noexcept {
     const double w0 = 2.0 * kPi * stageFrequency(freq, sampleRate) / sampleRate;
-    const double a = std::sin(w0) / (2.0 * std::clamp(pinch, kMinPinch, kMaxPinch));
+    double sinW0, cosW0;
+    fastmath::sincos(w0, sinW0, cosW0);
+    const double a = sinW0 / (2.0 * std::clamp(pinch, kMinPinch, kMaxPinch));
     Stage s;
-    s.k1 = -std::cos(w0);
-    s.c1 = std::sin(w0);
+    s.k1 = -cosW0;
+    s.c1 = sinW0;
     s.k2 = (1.0 - a) / (1.0 + a);
     s.c2 = 2.0 * std::sqrt(a) / (1.0 + a);
     return s;

@@ -25,6 +25,7 @@
 
 #include "builtin/DisperserDesign.h"
 #include "builtin/DspBlocks.h"
+#include "rt/FastMath.h"
 
 namespace sub::phaser {
 
@@ -94,7 +95,7 @@ inline const std::vector<std::string>& waveLabels() {
 constexpr double kQOctavesPerSpread = 5.058893689053568;  // log2(kMaxQ / kMinQ)
 inline double qOfSpreadUnclamped(double spread) noexcept {
     constexpr double kLog2Max = 2.321928094887362;  // log2(kMaxQ)
-    return std::exp2(kLog2Max - kQOctavesPerSpread * spread);
+    return fastmath::exp2(kLog2Max - kQOctavesPerSpread * spread);
 }
 inline double qOfSpread(double spread01) noexcept { return qOfSpreadUnclamped(std::clamp(spread01, 0.0, 1.0)); }
 
@@ -215,9 +216,9 @@ inline double softCenterLog2(double log2Hz, double sampleRate) noexcept {
 inline double centerHzAt(double log2Center, double blend, double mod, double sampleRate) noexcept {
     constexpr double kInside = 0.8408964152537145;  // 2^-kCenterEdge
     const double log2Hz = log2Center + (1.0 - blend) * kPhaserOctaves * mod;
-    const double hz = std::exp2(log2Hz);
+    const double hz = fastmath::exp2(log2Hz);
     if (hz < kInside * disperser::kNyquistLimit * sampleRate && hz * kInside > kMinStageHz) return hz;
-    return std::exp2(softCenterLog2(log2Hz, sampleRate));
+    return fastmath::exp2(softCenterLog2(log2Hz, sampleRate));
 }
 inline double phaserCenterHz(double centerHz, double blend, double mod, double sampleRate) noexcept {
     return centerHzAt(std::log2(std::clamp(centerHz, kMinCenter, kMaxCenter)), blend, mod, sampleRate);
@@ -238,7 +239,7 @@ inline double delaySamples(double delayMs, double sampleRate) noexcept {
 
 // The flanger's delay for a time in ms (two octaves per unit of modulation),
 // and the doubler's (15 % per unit), unclamped.
-inline double flangerMsAt(double timeMs, double mod) noexcept { return timeMs * std::exp2(kFlangerOctaves * mod); }
+inline double flangerMsAt(double timeMs, double mod) noexcept { return timeMs * fastmath::exp2(kFlangerOctaves * mod); }
 inline double doublerMsAt(double timeMs, double mod) noexcept { return timeMs * (1.0 + kDoublerDepth * mod); }
 
 // The delay a delay mode plays (Phaser: the flanger's mapping), in ms, held to what the line reads.

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "builtin/Dsp.h"
+#include "rt/FastMath.h"
 
 namespace sub::dsp {
 
@@ -231,7 +232,7 @@ public:
     static float shape(LfoShape s, double phase, uint32_t cycle) noexcept {
         const auto p = static_cast<float>(phase);
         switch (s) {
-        case LfoShape::Sine: return static_cast<float>(std::sin(kTwoPi * phase));
+        case LfoShape::Sine: return static_cast<float>(fastmath::sin(kTwoPi * phase));
         case LfoShape::Triangle: return p < 0.25f ? 4.f * p : (p < 0.75f ? 2.f - 4.f * p : 4.f * p - 4.f);
         case LfoShape::SawUp: return 2.f * p - 1.f;
         case LfoShape::SawDown: return 1.f - 2.f * p;
@@ -239,7 +240,7 @@ public:
         case LfoShape::Random: return hashToBipolar(cycle);
         case LfoShape::RandomSmooth: {
             const float from = hashToBipolar(cycle), to = hashToBipolar(cycle + 1);
-            const float t = 0.5f - 0.5f * static_cast<float>(std::cos(kPi * phase));
+            const float t = 0.5f - 0.5f * static_cast<float>(fastmath::cos(kPi * phase));
             return from + t * (to - from);
         }
         }

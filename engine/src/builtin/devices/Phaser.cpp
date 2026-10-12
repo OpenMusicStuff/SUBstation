@@ -53,6 +53,7 @@
 #include "builtin/Dsp.h"
 #include "builtin/DspBlocks.h"
 #include "builtin/PhaserDesign.h"
+#include "rt/FastMath.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -549,10 +550,10 @@ private:
     // The delay times now: as set once their glides have landed (exactly: no round trip through
     // log2 and exp2), else where the glides are.
     double flangeMsNow() const noexcept {
-        return logFlange_.settled(targets_.logFlange) ? targets_.flangeMs : std::exp2(logFlange_.value);
+        return logFlange_.settled(targets_.logFlange) ? targets_.flangeMs : fastmath::exp2(logFlange_.value);
     }
     double doublerMsNow() const noexcept {
-        return logDoubler_.settled(targets_.logDoubler) ? targets_.doublerMs : std::exp2(logDoubler_.value);
+        return logDoubler_.settled(targets_.logDoubler) ? targets_.doublerMs : fastmath::exp2(logDoubler_.value);
     }
 
     // Channel c's stages for its modulation `m`, at where Center, Spread and Blend are.
