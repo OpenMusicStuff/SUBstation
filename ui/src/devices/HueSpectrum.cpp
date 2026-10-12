@@ -20,7 +20,8 @@ namespace {
 using sub::app::analysis::EqAnalyzer;
 
 constexpr double kRecentSeconds = 0.2;  // a tick reads this much of the sound at most (after a backlog)
-constexpr double kGlowSeconds = 0.1;
+constexpr double kGlowSeconds = 0.12;   // a side's glow, the gauge's
+constexpr double kFollowSeconds = 0.12; // the sides, following a new Low or High Cut
 constexpr double kColumnPixels = 2.0;
 // The parameters' ranges (Start, End, Color), and how far apart Low and High Cut stay.
 constexpr double kStartMin = 80.0, kStartMax = 1800.0, kEndMin = 400.0, kEndMax = 8000.0, kGap = 1.25;
@@ -93,10 +94,16 @@ void HueSpectrum::sync() {
         if (value(HueWheel::noteParam(c)) >= 0.5)
             bits |= 1 << c;
     buttons_ = bits;
-    // (where they are at once: nothing slides in as the device is added, or as automation moves them)
-    startShown_.snap(std::log2(std::max(1.0, start_)));
-    endShown_.snap(std::log2(std::max(1.0, end_)));
+    // The sides follow a new Low or High Cut (refreshDisplays()); the first time they are there at once, so nothing
+    // slides in as the device is added.
+    startShown_.target = std::log2(std::max(1.0, start_));
+    endShown_.target = std::log2(std::max(1.0, end_));
     colorShown_.snap(color_);
+    if (!started_ && device() != nullptr) {
+        started_ = true;
+        startShown_.snap(startShown_.target);
+        endShown_.snap(endShown_.target);
+    }
     update();
 }
 
@@ -119,9 +126,20 @@ void HueSpectrum::refreshDisplays() {
     analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate);
 
     moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output) || moving;
-    const double glowTarget = !hovered_.isEmpty() || dragging() ? 1.0 : 0.0;
+    const double follow = easeFraction(dt, kFollowSeconds), fade = easeFraction(dt, kGlowSeconds);
+    moving = startShown_.step(follow, 1e-4) || moving;
+    moving = endShown_.step(follow, 1e-4) || moving;
+    // the side under the mouse (or dragged) glows; the gauge lights while Color is
+    const auto lit = [&](const char* part) {
+        return hovered_ == QLatin1String(part) || part_ == QLatin1String(part) ? 1.0 : 0.0;
+    };
+    sideGlow_[0].target = lit("start");
+    sideGlow_[1].target = lit("end");
+    moving = sideGlow_[0].step(fade, 1e-3) || moving;
+    moving = sideGlow_[1].step(fade, 1e-3) || moving;
+    const double glowTarget = lit("color");
     if (glow_ != glowTarget) {
-        glow_ += (glowTarget - glow_) * easeFraction(dt, kGlowSeconds);
+        glow_ += (glowTarget - glow_) * fade;
         if (std::abs(glow_ - glowTarget) < 1e-3)
             glow_ = glowTarget;
         moving = true;
@@ -140,7 +158,7 @@ void HueSpectrum::setHovered(const QString& part) {
     if (part == hovered_)
         return;
     hovered_ = part;
-    setCursor(part.isEmpty() ? Qt::ArrowCursor : part == QLatin1String("color") ? Qt::SizeVerCursor : Qt::SizeHorCursor);
+    setCursor(part.isEmpty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
     Q_EMIT hoveredChanged();
     update();
 }
@@ -301,60 +319,81 @@ void HueSpectrum::paint(SgPainter& p) {
         drawGlowPolyline(p, top, withAlpha(Theme::text(), 200), 1.2);
     }
 
-    // The band's shape: the crossovers' (Linkwitz-Riley, 24 dB/octave) as a soft curve over the spectrum, the sides
-    // it leaves alone dimmed as far as they fall, each corner a dot; brighter, with its frequency, under the mouse.
+    // The band's sides: the crossovers' slopes (Linkwitz-Riley, 24 dB/octave), only where they fall, fading in from
+    // the corner and out towards the bottom; the side moved (hovered or dragged) glows in the colour of its note.
     {
         const double flatY = area.top() + 26, dbSpan = 48.0;  // 0 dB under the buttons, -48 dB at the bottom
-        const auto gainAt = [&](double hz) {
-            const double l = std::pow(hz / start, 4.0), h = std::pow(hz / end, 4.0);
-            return (l / (1.0 + l)) * (1.0 / (1.0 + h));
-        };
-        std::vector<QPointF> curve(static_cast<std::size_t>(n)), roof(static_cast<std::size_t>(n));
-        std::vector<QColor> roofColors(static_cast<std::size_t>(n)), curveColors(static_cast<std::size_t>(n));
-        for (int i = 0; i < n; ++i) {
-            const std::size_t k = std::size_t(i);
-            const double g = gainAt(freqs[k]);
-            const double db = 20.0 * std::log10(std::max(g, 1e-6));
-            const double y = std::min(area.bottom(), flatY - db / dbSpan * (area.bottom() - flatY));
-            curve[k] = QPointF(columnX[k], y);
-            roof[k] = QPointF(columnX[k], area.top());
-            roofColors[k] = withAlpha(QColor(0, 0, 0), int(85 * (1.0 - g)));
-            curveColors[k] = withAlpha(QColor(0, 0, 0), int(55 * (1.0 - g)));
-        }
-        p.fillGradientStrip(roof.data(), curve.data(), roofColors.data(), curveColors.data(), n);
-        const bool lowHot = hovered_ == QLatin1String("start") || part_ == QLatin1String("start");
-        const bool highHot = hovered_ == QLatin1String("end") || part_ == QLatin1String("end");
-        // the curve: faint, each side brighter while it is hovered or dragged
-        std::vector<QPointF> side;
-        const auto stroke = [&](int from, int to, bool hot) {
-            side.assign(curve.begin() + from, curve.begin() + to);
-            if (side.size() < 2)
-                return;
-            const double lift = hot ? glow_ : 0.0;
-            drawGlowPolyline(p, side, withAlpha(Theme::text(), int(70 + 110 * lift)), 1.0 + 0.4 * lift);
-        };
-        int split = 0;  // the curve's middle (in log frequency), where its sides meet
-        const double middle = std::sqrt(start * end);
-        while (split < n - 1 && freqs[std::size_t(split)] < middle)
-            ++split;
-        stroke(0, split + 1, lowHot);
-        stroke(split, n, highHot);
-
-        const QFont small = uiFont(7, true);
+        const double reach = area.bottom() - flatY;
         for (const bool isEnd : {false, true}) {
-            const bool hot = isEnd ? highHot : lowHot;
-            const double hz = isEnd ? end : start, x = isEnd ? xe : xs;
-            const double y = flatY + 6.0 / dbSpan * (area.bottom() - flatY);  // (its corner: 6 dB down)
-            const double lift = hot ? glow_ : 0.0;
-            if (lift > 0.0)
-                p.fillRadialGlow(QPointF(x, y), 9.0, withAlpha(Theme::text(), int(70 * lift)), 4);
-            p.fillEllipse(QPointF(x, y), 2.2 + 0.8 * lift, 2.2 + 0.8 * lift, withAlpha(Theme::text(), int(130 + 125 * lift)));
-            // its frequency: faint by the corner, clear under the mouse (outside the band, where the side is)
-            const QString text = hzText(hz);
-            const double w = SgPainter::textWidth(text, small) + 4;
-            const double tx = std::clamp(isEnd ? x + 5 : x - 5 - w, area.left() + 2, area.right() - w - 10);
-            p.drawText(QRectF(tx, y + 3, w, 12), (isEnd ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, text,
-                       withAlpha(Theme::text(), int(90 + 165 * lift)), small);
+            const double cut = isEnd ? end : start, xCut = isEnd ? xe : xs;
+            const double lift = sideGlow_[isEnd ? 1 : 0].value;
+            const QColor glowColor = mixColor(pitchColor(cut), Qt::white, 0.45);
+            // the glow: over the side, strongest by the slope's corner, fading out towards the edge and down
+            if (lift > 0.0) {
+                std::vector<QPointF> tops, bottoms;
+                std::vector<QColor> topColors, bottomColors;
+                for (int i = 0; i < n; ++i) {
+                    const std::size_t k = std::size_t(i);
+                    const double x = columnX[k];
+                    const double into = isEnd ? (x - xCut) : (xCut - x);  // px out from the corner (< 0: in the band)
+                    if (into < -10.0)
+                        continue;
+                    const double span = isEnd ? area.right() - xCut : xCut - area.left();
+                    const double t = into < 0.0 ? smoothstep(1.0 + into / 10.0)
+                                                : 1.0 - 0.75 * smoothstep(into / std::max(20.0, span));
+                    tops.push_back(QPointF(x, area.top()));
+                    bottoms.push_back(QPointF(x, area.bottom()));
+                    topColors.push_back(withAlpha(glowColor, int(46 * lift * t)));
+                    bottomColors.push_back(withAlpha(glowColor, int(10 * lift * t)));
+                }
+                if (tops.size() >= 2)
+                    p.fillGradientStrip(tops.data(), bottoms.data(), topColors.data(), bottomColors.data(),
+                                        int(tops.size()));
+            }
+            // the slope: a thin line with a soft glow, as bright as it is steep near the corner, fading as it falls
+            std::vector<QPointF> above, below, coreAbove, coreBelow;
+            std::vector<QColor> soft, core;
+            for (int i = 0; i < n; ++i) {
+                const std::size_t k = std::size_t(i);
+                const double f = freqs[k];
+                const double r = std::pow(isEnd ? f / cut : cut / f, 4.0);  // past the corner: rising
+                const double db = -20.0 * std::log10(1.0 + r);
+                const double down = -db / dbSpan;
+                if (down > 1.05 || db > -0.05)
+                    continue;
+                const double y = flatY + down * reach;
+                const double a = smoothstep(-db / 4.0) * (1.0 - smoothstep(down / 1.05));
+                const double alpha = a * (0.45 + 0.55 * lift);
+                above.push_back(QPointF(columnX[k], y - 3.0));
+                below.push_back(QPointF(columnX[k], y + 3.0));
+                coreAbove.push_back(QPointF(columnX[k], y - 0.7 - 0.3 * lift));
+                coreBelow.push_back(QPointF(columnX[k], y + 0.7 + 0.3 * lift));
+                const QColor line = mixColor(Theme::text(), glowColor, lift);
+                soft.push_back(withAlpha(line, int(45 * alpha)));
+                core.push_back(withAlpha(line, int(220 * alpha)));
+            }
+            const int count = int(above.size());
+            if (count >= 2) {
+                std::vector<QPointF> mid(above.size());
+                for (std::size_t k = 0; k < above.size(); ++k)
+                    mid[k] = (above[k] + below[k]) / 2.0;
+                std::vector<QColor> clear(soft.size());
+                for (std::size_t k = 0; k < soft.size(); ++k)
+                    clear[k] = withAlpha(soft[k], 0);
+                p.fillGradientStrip(above.data(), mid.data(), clear.data(), soft.data(), count);
+                p.fillGradientStrip(mid.data(), below.data(), soft.data(), clear.data(), count);
+                p.fillGradientStrip(coreAbove.data(), coreBelow.data(), core.data(), core.data(), count);
+            }
+            // its frequency by the corner, while it glows
+            if (lift > 0.0) {
+                const QFont small = uiFont(7, true);
+                const QString text = hzText(cut);
+                const double w = SgPainter::textWidth(text, small) + 4;
+                const double y = flatY + 8.0 / dbSpan * reach;
+                const double tx = std::clamp(isEnd ? xCut + 6 : xCut - 6 - w, area.left() + 2, area.right() - w - 10);
+                p.drawText(QRectF(tx, y, w, 12), (isEnd ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, text,
+                           withAlpha(Theme::text(), int(255 * lift)), small);
+            }
         }
     }
 

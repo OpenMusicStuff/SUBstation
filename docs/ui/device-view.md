@@ -1190,16 +1190,17 @@ The editors:
     vivid as Color (grey at 0 %, its hues at 100 %, lighter and stronger towards 200 %), grey outside the band, a
     glowing line along its top; the input a faint line behind; within the band, the notes in use (the buttons, or
     the MIDI notes once they choose them) as thin lines in their hues at every octave, brighter as they sound.
-    The band's shape over it: the crossovers' curve (Linkwitz-Riley, 24 dB/octave either side; 0 dB under the
-    buttons, -48 at the bottom), faint with a soft glow, what it leaves alone dimmed as far as it falls, a dot at
-    each corner (6 dB down) with its frequency beside it outside the band. A drag across anywhere left of the band
-    (or within 6 px of its corner) sets Low Cut (`start`), right of it High Cut (`end`); Shift a fifth as far; one
-    undo step a drag ("Change Low Cut", "Change High Cut"), Low Cut staying 1.25 times under High Cut; a double-click
+    The band's sides over it: the crossovers' slopes (Linkwitz-Riley, 24 dB/octave; 0 dB under the buttons, -48 at
+    the bottom), only where they fall, a thin line with a soft glow fading in from each corner and out towards the
+    bottom. A drag across anywhere left of the band (or within 6 px of its corner) sets Low Cut (`start`), right of
+    it High Cut (`end`); Shift a fifth as far; one undo step a drag ("Change Low Cut", "Change High Cut"), Low Cut
+    staying 1.25 times under High Cut; a double-click
     resets it. In the band a drag up and down is Color (1.2 % a pixel, Shift a fifth; "Change Color"), a
     double-click resets it ("Reset Color"); a gauge at the right edge shows it (a tick at 100 %), and its value while
-    hovered or dragged. Hovered or dragged, that side of the curve, its dot and its frequency light up. Everything is
-    where its parameter is at once (nothing slides in as the device is added). It repaints only while something
-    moves.
+    hovered or dragged. The side hovered or dragged glows (fading in and out over 0.12 s), in its cut's note's
+    colour, strongest by its corner, with its frequency beside it; the sides follow a new cut smoothly (0.12 s), but
+    the first time they are where they are (nothing slides in as the device is added). The cursor is the pointing
+    hand over all of it. It repaints only while something moves.
   - [HueWheel](../../ui/src/devices/HueWheel.h) (square; 110 px at least): the twelve pitch
     classes round a colour wheel, C at the top and clockwise by semitone, each in its hue (`noteColor`: the hue
     wheel from C's red). A ring of segments: the enabled notes lit in their hues (stronger as Color rises), the notes

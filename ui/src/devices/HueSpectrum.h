@@ -11,15 +11,16 @@
 // - Inside the band, the notes in use (the key's, or the MIDI notes once they
 //   choose them: the display "notes") as thin lines in their hues at every
 //   octave (the comb the sound is pulled onto), each brighter as it sounds.
-// - The band's shape: the crossovers' curve (24 dB/octave either side) soft over
-//   the spectrum, what it leaves alone dimmed as far as it falls, a dot and the
-//   frequency at each corner. Drag across anywhere left of the band (or by its
-//   corner) for Low Cut, right of it for High Cut (Shift: finely), one undo step
-//   a drag; a double-click resets it. Hovered or dragged, that side lights up.
+// - The band's sides: the crossovers' slopes (24 dB/octave), only where they
+//   fall, fading in from each corner and out towards the bottom. Drag across
+//   anywhere left of the band (or by its corner) for Low Cut, right of it for
+//   High Cut (Shift: finely), one undo step a drag; a double-click resets it.
+//   The side moved glows (in the colour of its note) with its frequency, and
+//   follows the mouse smoothly (and any change of the cut made elsewhere).
 // - In the band, drag up for more Color, down for less (Shift: finely); a
 //   double-click resets it. A gauge at the right edge shows it, and its value
 //   while hovered or dragged.
-// Everything is where its parameter is at once (nothing slides in).
+// When the device is added everything is where it is at once (nothing slides in).
 // The editor lays its buttons over the top edge, clear of all this. The analyzer
 // is the EQ's (analysis::EqAnalyzer: tilted 4.5 dB/octave, rising fast, falling
 // slowly). It repaints only while something moves.
@@ -96,9 +97,12 @@ private:
     bool midi_ = false;        // the notes are MIDI's
 
     sub::app::analysis::EqAnalyzer analyzer_;
-    Eased startShown_, endShown_, colorShown_;  // (always snapped: where the parameters are)
+    Eased startShown_, endShown_;  // the sides (log2 Hz), following the cuts
+    Eased colorShown_;             // (snapped: where Color is)
+    Eased sideGlow_[2];            // the low and the high side's glow (0..1)
+    bool started_ = false;         // the sides placed (at once) the first time
     bool animating_ = false;
-    double glow_ = 0.0;  // the corners' and the gauge's highlight while hovered or dragged (0..1)
+    double glow_ = 0.0;  // the gauge's highlight while Color is hovered or dragged (0..1)
 
     // Dragging.
     QString gesture_;
