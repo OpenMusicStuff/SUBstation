@@ -23,6 +23,10 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
   and key worked out from its MIDI and shown over the notes (notes out of the key in
   red), and block chords or a bass line written from them; MIDI input from
   controllers and the computer keyboard.
+- **Track labels**: hover over a track's name to see what it is, in a few words
+  ("Washed Out Serum Pluck", "Orchestral Trumpet", "Sad Piano Line"), worked out from its
+  name, its instrument's preset, its files, its notes, its effects and their amounts, and
+  its mixer, with what each was; for people, and as context for agents.
 - **Devices**: a built-in Synth, a Sampler after Ableton's Simpler (Classic, 1-Shot and
   Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
   The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband

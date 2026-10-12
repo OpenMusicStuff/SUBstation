@@ -302,6 +302,9 @@ public:
     std::optional<QString> pluginPath(const PluginRef& plugin) const;
     // A plug-in device's current state (a .vstpreset); none if it isn't loaded.
     std::optional<QByteArray> pluginState(const QString& trackId, const QString& deviceId);
+    // The preset (patch, instrument) a loaded plug-in device says it has ("": none
+    // told; none if it isn't loaded): its program list's name or one in its state (Vst3Processor).
+    std::optional<QString> pluginPresetName(const QString& trackId, const QString& deviceId);
     // Gives a loaded plug-in device a state (a .vstpreset read from a file) now,
     // as the plug-in's own (no undo step: the caller records one). "" if the
     // plug-in took it, else why not (another plug-in's settings, a broken file).
@@ -514,6 +517,7 @@ Q_SIGNALS:
     void pluginParamsRebuilt(const QString& trackId, const QString& deviceId);  // the parameter list changed
     void pluginEditorChanged(const QString& trackId, const QString& deviceId);  // its editor opened or closed
     void pluginStateDirty();  // a plug-in changed in a way no edit shows: the project has changes
+    void pluginPresetChanged(const QString& trackId, const QString& deviceId);  // pluginPresetName() is another
     void devicesLoaded(const QString& trackId);  // its devices' processors were (re)created
     // A project's plug-ins loading: loaded, of how many ((0, 0): all done).
     void pluginsLoading(int loaded, int total);

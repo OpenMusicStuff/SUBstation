@@ -6,6 +6,7 @@
 #include "controls/Automation.h"
 #include "controls/Meter.h"
 #include "editor/ProjectEditor.h"
+#include "intelligence/TrackLabels.h"
 #include "model/Automation.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
@@ -125,6 +126,7 @@ void TrackHeaderItem::setTrackId(const QString& trackId) {
     trackId_ = trackId;
     refresh();
     Q_EMIT trackIdChanged();
+    Q_EMIT nameToolTipChanged();  // (otherwise only when the labels change: asking is a labelling)
 }
 
 void TrackHeaderItem::setMeter(Meter* meter) {
@@ -332,6 +334,10 @@ QColor TrackHeaderItem::barText() const {
     return luma > 0.45 ? fixed.accentText : fixed.text;
 }
 
+QString TrackHeaderItem::nameToolTip() const {
+    return session_ && session_->trackLabels() ? session_->trackLabels()->toolTip(trackId_) : QString();
+}
+
 QVariantList TrackHeaderItem::lanes() const {
     QVariantList list;
     for (const LaneRow& lane : row_.lanes) {
@@ -384,7 +390,7 @@ void TrackHeaderItem::connectAll() {
     if (!session_ || !arrangement_) return;
     app::Project* p = session_->project();
     app::EngineBridge* bridge = session_->bridge();
-    connected_ = {session_.data(), p, bridge, session_->selection(), arrangement_.data()};
+    connected_ = {session_.data(), p, bridge, session_->selection(), arrangement_.data(), session_->trackLabels()};
     connect(p, &app::Project::trackChanged, this, [this](const QString& id) {
         if (id == trackId_) {
             refresh();
@@ -439,7 +445,9 @@ void TrackHeaderItem::connectAll() {
     connect(arrangement_, &Arrangement::renameRequested, this, [this](const QString& id) {
         if (id == trackId_) startRename();
     });
+    connect(session_->trackLabels(), &app::TrackLabels::changed, this, &TrackHeaderItem::nameToolTipChanged);
     refresh();
+    Q_EMIT nameToolTipChanged();
 }
 
 void TrackHeaderItem::refresh() {
