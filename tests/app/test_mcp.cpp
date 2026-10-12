@@ -1,13 +1,16 @@
 // The MCP server (Session.mcp): the protocol in both eras (2026-07-28's
 // per-request versions and headers, the legacy initialize handshake), its
 // errors; the tools on a real session (the project, tracks with their labels,
-// one track in full, finding tracks, the harmony); Streamable HTTP over a real
+// one track in full, finding tracks, the harmony, a device's parameters, the
+// notes); agents' edits, each a change apart from the undo stack, rewound and
+// restored, and the two histories refusing to undo each other's work; Streamable HTTP over a real
 // socket on localhost (DNS rebinding refused, keep-alive, chunked bodies); and
 // turning the server on and off, its port kept.
 
 #include "SessionFixture.h"
 #include "TestSupport.h"
 
+#include "editor/AgentHistory.h"
 #include "intelligence/TrackLabels.h"
 #include "mcp/McpHttpServer.h"
 #include "mcp/McpProtocol.h"
@@ -22,6 +25,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QUndoCommand>
 
 using namespace sub::app;
 using test::SessionFixture;
@@ -57,6 +61,8 @@ mcp::Headers headersFor(const QJsonObject& message, const QString& version = mcp
 }
 
 QJsonObject result(const mcp::Reply& reply) { return reply.body->value(QStringLiteral("result")).toObject(); }
+// A tool call's structured content.
+QJsonObject structured(const QJsonObject& called) { return called.value(QStringLiteral("structuredContent")).toObject(); }
 int errorCode(const mcp::Reply& reply) {
     return reply.body->value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt();
 }
@@ -352,12 +358,341 @@ private Q_SLOTS:
         const QJsonArray chords = out.value(QStringLiteral("chords")).toArray();
         QVERIFY(!chords.isEmpty());
         QCOMPARE(chords[0].toObject().value(QStringLiteral("chord")).toString(), QStringLiteral("C"));
-        QCOMPARE(out.value(QStringLiteral("tracks")).toArray().first().toString(), lead);
+        QVERIFY(!out.contains(QStringLiteral("tracks")));  // (only asked for)
+        out = structured(call(protocol, QStringLiteral("get_harmony"), {{QStringLiteral("include_tracks"), true}}));
+        const QJsonObject heard = out.value(QStringLiteral("tracks")).toArray().first().toObject();
+        QCOMPARE(heard.value(QStringLiteral("id")).toString(), lead);
+        QCOMPARE(heard.value(QStringLiteral("name")).toString(), f.project().track(lead).name);
         out = call(protocol, QStringLiteral("get_harmony"), {{QStringLiteral("start_beat"), 100}})
                   .value(QStringLiteral("structuredContent")).toObject();
         QVERIFY(out.value(QStringLiteral("chords")).toArray().isEmpty());
         QVERIFY(call(protocol, QStringLiteral("get_harmony"), {{QStringLiteral("start_beat"), 4}, {QStringLiteral("end_beat"), 2}})
                     .value(QStringLiteral("isError")).toBool());
+    }
+
+    void theToolsReadParametersAndNotes() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString delay = f.editor().addDevice(lead, QStringLiteral("delay"));
+        const auto clip = f.editor().addMidiClip(lead, 4, 4);
+        QVERIFY(clip);
+        f.editor().setClipNotes(*clip, {{60, 0, 1, 100}, {67, 2, 1, 90}}, QStringLiteral("Notes"));
+
+        // Every parameter: its value as it is, in its units and as the device shows it.
+        QJsonObject out = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                                          {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay}}));
+        const QJsonArray params = out.value(QStringLiteral("parameters")).toArray();
+        const int total = out.value(QStringLiteral("total")).toInt();
+        QVERIFY(total > 2);
+        QCOMPARE(params.size(), total);
+        QCOMPARE(params[0].toObject().value(QStringLiteral("id")).toString(), automation::kDeviceOn);
+        const QJsonObject first = params[1].toObject();
+        QVERIFY(first.contains(QStringLiteral("value")));
+        QVERIFY(!first.value(QStringLiteral("text")).toString().isEmpty());
+        QVERIFY(first.value(QStringLiteral("max")).toDouble() > first.value(QStringLiteral("min")).toDouble());
+        // Found by words of their names, a page at a time.
+        const QString name = first.value(QStringLiteral("name")).toString();
+        out = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                               {QStringLiteral("query"), name.toUpper()}}));
+        QVERIFY(out.value(QStringLiteral("total")).toInt() >= 1);
+        QCOMPARE(out.value(QStringLiteral("parameters")).toArray()[0].toObject().value(QStringLiteral("name")).toString(), name);
+        out = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                               {QStringLiteral("limit"), 1}, {QStringLiteral("offset"), 1}}));
+        QCOMPARE(out.value(QStringLiteral("parameters")).toArray().size(), 1);
+        QCOMPARE(out.value(QStringLiteral("nextOffset")).toInt(), 2);
+        QVERIFY(call(protocol, QStringLiteral("get_device_parameters"),
+                     {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), QStringLiteral("nope")}})
+                    .value(QStringLiteral("isError")).toBool());
+
+        // The notes, on the song's timeline: as rows ([start, length, pitch, velocity]), or objects.
+        out = structured(call(protocol, QStringLiteral("get_notes"), {{QStringLiteral("track_id"), lead}}));
+        QCOMPARE(out.value(QStringLiteral("fields")).toArray(),
+                 (QJsonArray{QStringLiteral("startBeat"), QStringLiteral("length"), QStringLiteral("pitch"), QStringLiteral("velocity")}));
+        const QJsonArray rows = out.value(QStringLiteral("notes")).toArray();
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows[1].toArray(), (QJsonArray{6.0, 1.0, 67, 90}));
+        QVERIFY(!out.contains(QStringLiteral("muted")));
+        out = structured(call(protocol, QStringLiteral("get_notes"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("format"), QStringLiteral("objects")}}));
+        const QJsonArray notes = out.value(QStringLiteral("notes")).toArray();
+        QCOMPARE(notes[1].toObject().value(QStringLiteral("startBeat")).toDouble(), 6.0);
+        QCOMPARE(notes[1].toObject().value(QStringLiteral("name")).toString(), QStringLiteral("G3"));
+        QVERIFY(call(protocol, QStringLiteral("get_notes"),
+                     {{QStringLiteral("track_id"), lead}, {QStringLiteral("format"), QStringLiteral("xml")}})
+                    .value(QStringLiteral("isError")).toBool());
+        out = structured(call(protocol, QStringLiteral("get_notes"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("start_beat"), 5}}));
+        QCOMPARE(out.value(QStringLiteral("notes")).toArray().size(), 1);
+        // A muted note: its row is listed as muted.
+        std::vector<Note> withMuted = f.project().clip(lead, clip->clipId).notes;
+        withMuted[0].muted = true;
+        f.editor().setClipNotes(*clip, withMuted, QStringLiteral("Mute"));
+        out = structured(call(protocol, QStringLiteral("get_notes"), {{QStringLiteral("track_id"), lead}}));
+        QCOMPARE(out.value(QStringLiteral("muted")).toArray(), QJsonArray{0});
+
+        // Nothing selected in time: the selection's context says so.
+        QVERIFY(call(protocol, QStringLiteral("get_selection_context")).value(QStringLiteral("isError")).toBool());
+
+        // The user's time selection, for a part written there.
+        f.selection().setTimeRange(4, 8, {lead}, QSet<ClipRef>{*clip});
+        out = structured(call(protocol, QStringLiteral("get_project")));
+        const QJsonObject range = out.value(QStringLiteral("timeSelection")).toObject();
+        QCOMPARE(range.value(QStringLiteral("startBeat")).toDouble(), 4.0);
+        QCOMPARE(range.value(QStringLiteral("endBeat")).toDouble(), 8.0);
+        QCOMPARE(range.value(QStringLiteral("trackIds")).toArray()[0].toString(), lead);
+        QCOMPARE(range.value(QStringLiteral("clips")).toArray()[0].toObject().value(QStringLiteral("clipId")).toString(),
+                 clip->clipId);
+
+        // ...and in one call, all a part written there needs: each track in it
+        // with its notes there (a group's tracks, not the group), the chords, the tempo.
+        const QString pad = f.editor().addMidiTrack(-1, QStringLiteral("Pad"));
+        const QString group = f.editor().groupTracks({pad});
+        f.selection().setTimeRange(4, 8, {lead, group, pad}, QSet<ClipRef>{*clip});
+        out = structured(call(protocol, QStringLiteral("get_selection_context")));
+        QCOMPARE(out.value(QStringLiteral("startBeat")).toDouble(), 4.0);
+        QCOMPARE(out.value(QStringLiteral("endBeat")).toDouble(), 8.0);
+        QCOMPARE(out.value(QStringLiteral("selectedClips")).toArray().size(), 1);
+        QCOMPARE(out.value(QStringLiteral("tempo")).toDouble(), 120.0);
+        const QJsonArray context = out.value(QStringLiteral("tracks")).toArray();
+        QCOMPARE(context.size(), 2);
+        const QJsonObject leadContext = context[0].toObject();
+        QCOMPARE(leadContext.value(QStringLiteral("id")).toString(), lead);
+        QVERIFY(!leadContext.value(QStringLiteral("details")).toArray().isEmpty());
+        QCOMPARE(leadContext.value(QStringLiteral("notes")).toArray().size(), 2);
+        QCOMPARE(leadContext.value(QStringLiteral("muted")).toArray(), QJsonArray{0});
+        QCOMPARE(context[1].toObject().value(QStringLiteral("id")).toString(), pad);
+        QVERIFY(context[1].toObject().value(QStringLiteral("notes")).toArray().isEmpty());
+        QVERIFY(out.value(QStringLiteral("harmony")).toObject().contains(QStringLiteral("chords")));
+    }
+
+    // --- Edits: the agents' history ----------------------------------------------------------
+
+    void agentEditsAreChangesApartFromUndo() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString delay = f.editor().addDevice(lead, QStringLiteral("delay"));
+        const QJsonObject param = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                                                  {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay}}))
+                                      .value(QStringLiteral("parameters")).toArray()[1].toObject();
+        const QString id = param.value(QStringLiteral("id")).toString();
+        const double was = param.value(QStringLiteral("value")).toDouble();
+        // (The end of its range it isn't at.)
+        const double target = param.value(QStringLiteral("max")).toDouble() == was ? param.value(QStringLiteral("min")).toDouble()
+                                                                                 : param.value(QStringLiteral("max")).toDouble();
+        const int undoSteps = f.stack().count();
+        f.s().undoStack()->setClean();
+
+        // A parameter set: the model has it, the user's undo stack doesn't.
+        QJsonObject out = structured(call(protocol, QStringLiteral("set_device_parameters"),
+                                          {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                                           {QStringLiteral("parameters"), QJsonArray{QJsonObject{{QStringLiteral("id"), id},
+                                                                                                {QStringLiteral("value"), target}}}}}));
+        const int first = out.value(QStringLiteral("changeId")).toInt();
+        QCOMPARE(first, 1);
+        QCOMPARE(f.project().device(lead, delay).params.value(id), target);
+        QCOMPARE(f.stack().count(), undoSteps);
+        QCOMPARE(history.count(), 1);
+        QVERIFY(history.changes()[0].text.contains(QStringLiteral("Lead")));
+        QCOMPARE(history.changes()[0].tracks, QStringList{lead});
+        QVERIFY(!f.s().clean());  // (unsaved: an agent changed it)
+        QVERIFY(f.lastMessage().startsWith(QStringLiteral("Agent: ")));
+        // Out of range, or not there: errors the model can correct, nothing changed.
+        QVERIFY(call(protocol, QStringLiteral("set_device_parameters"),
+                     {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                      {QStringLiteral("parameters"), QJsonArray{QJsonObject{{QStringLiteral("id"), id},
+                                                                            {QStringLiteral("value"), 1e9}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("set_device_parameters"),
+                     {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                      {QStringLiteral("parameters"), QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("nope")},
+                                                                            {QStringLiteral("value"), 1}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QCOMPARE(history.count(), 1);
+        // The same again changes nothing: no change.
+        out = structured(call(protocol, QStringLiteral("set_device_parameters"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay},
+                               {QStringLiteral("parameters"), QJsonArray{QJsonObject{{QStringLiteral("id"), id},
+                                                                                     {QStringLiteral("value"), target}}}}}));
+        QVERIFY(out.value(QStringLiteral("changeId")).isNull());
+        QCOMPARE(history.count(), 1);
+
+        // The mixer, and a part written over a stretch, on a copy of the track.
+        out = structured(call(protocol, QStringLiteral("set_mixer"),
+                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("volume_db"), -6}, {QStringLiteral("pan"), 0.25}}));
+        QCOMPARE(out.value(QStringLiteral("changeId")).toInt(), 2);
+        QCOMPARE(f.project().track(lead).volumeDb, -6.0);
+        QCOMPARE(f.project().track(lead).pan, 0.25);
+        out = structured(call(protocol, QStringLiteral("duplicate_track"), {{QStringLiteral("track_id"), lead}}));
+        const QString copy = out.value(QStringLiteral("trackId")).toString();
+        QVERIFY(f.project().hasTrack(copy));
+        // (A row, as get_notes gives them, and an object.)
+        const QJsonArray notes{QJsonArray{8.5, 1, 64, 90},
+                               QJsonObject{{QStringLiteral("pitch"), 60}, {QStringLiteral("start_beat"), 8},
+                                           {QStringLiteral("length"), 2}}};
+        out = structured(call(protocol, QStringLiteral("write_midi_clip"),
+                              {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_beat"), 8},
+                               {QStringLiteral("end_beat"), 12}, {QStringLiteral("notes"), notes}}));
+        const Clip* written = f.project().findClip(copy, out.value(QStringLiteral("clipId")).toString());
+        QVERIFY(written);
+        QCOMPARE(written->startBeat, 8.0);
+        QCOMPARE(written->notes.size(), size_t{2});
+        QCOMPARE(written->notes[0].pitch, 60);  // (sorted, in the clip's own beats)
+        QCOMPARE(written->notes[1].start, 0.5);
+        QCOMPARE(written->notes[1].velocity, 90);
+        QVERIFY(call(protocol, QStringLiteral("write_midi_clip"),
+                     {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_beat"), 8}, {QStringLiteral("end_beat"), 12},
+                      {QStringLiteral("notes"), QJsonArray{QJsonObject{{QStringLiteral("pitch"), 60},
+                                                                       {QStringLiteral("start_beat"), 20},
+                                                                       {QStringLiteral("length"), 1}}}}})
+                    .value(QStringLiteral("isError")).toBool());  // (a note outside the clip)
+        QVERIFY(call(protocol, QStringLiteral("write_midi_clip"),
+                     {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_beat"), 8}, {QStringLiteral("end_beat"), 12},
+                      {QStringLiteral("notes"), QJsonArray{QJsonArray{8, 1}}}})
+                    .value(QStringLiteral("isError")).toBool());  // (a row without its pitch)
+        QCOMPARE(f.stack().count(), undoSteps);
+        QCOMPARE(history.count(), 4);
+
+        // Listed; rewound on its own, out of order, and restored.
+        const QJsonArray listed = structured(call(protocol, QStringLiteral("list_agent_changes")))
+                                      .value(QStringLiteral("changes")).toArray();
+        QCOMPARE(listed.size(), 4);
+        QCOMPARE(listed[1].toObject().value(QStringLiteral("tool")).toString(), QStringLiteral("set_mixer"));
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}}));
+        QCOMPARE(out.value(QStringLiteral("rewound")).toArray().size(), 1);
+        QCOMPARE(f.project().device(lead, delay).params.value(id, was), was);
+        QCOMPARE(f.project().track(lead).volumeDb, -6.0);  // (the later change stays)
+        QVERIFY(!history.find(first)->applied);
+        out = structured(call(protocol, QStringLiteral("restore_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}}));
+        QCOMPARE(out.value(QStringLiteral("restored")).toArray().size(), 1);
+        QCOMPARE(f.project().device(lead, delay).params.value(id), target);
+        // All of them, the last first: the copy goes, the mixer is back.
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("all"), true}}));
+        QCOMPARE(out.value(QStringLiteral("rewound")).toArray().size(), 4);
+        QVERIFY(!f.project().hasTrack(copy));
+        QCOMPARE(f.project().track(lead).volumeDb, 0.0);
+        QCOMPARE(history.appliedCount(), 0);
+
+        // Edits turned off: the agent only reads.
+        f.s().mcp()->setEditsAllowed(false);
+        QVERIFY(call(protocol, QStringLiteral("set_mixer"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("pan"), 1}})
+                    .value(QStringLiteral("isError")).toBool());
+        QCOMPARE(f.project().track(lead).pan, 0.0);
+        f.s().mcp()->setEditsAllowed(true);
+        QSettings().remove(McpServer::kEditsKey);
+
+        // Saved: clean again; another project: no changes.
+        f.s().agentChanges()->setClean();
+        QVERIFY(f.s().clean());
+        f.s().newProject();
+        QCOMPARE(history.count(), 0);
+    }
+
+    void theHistoriesDontUndoEachOther() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"));
+        const auto setPan = [&](const QString& track, double pan) {
+            return structured(call(protocol, QStringLiteral("set_mixer"),
+                                   {{QStringLiteral("track_id"), track}, {QStringLiteral("pan"), pan}}))
+                .value(QStringLiteral("changeId")).toInt();
+        };
+
+        // The user pans, then an agent pans the same track: Undo would put the
+        // user's "before" back over the agent's pan, so it is refused (saying so)...
+        f.editor().setTrackParam(lead, TrackField::Pan, -0.5);
+        const int agentPan = setPan(lead, 0.5);
+        const int userSteps = f.stack().index();
+        f.s().undo();
+        QCOMPARE(f.stack().index(), userSteps);
+        QCOMPARE(f.project().track(lead).pan, 0.5);
+        QVERIFY(f.lastMessage().startsWith(QStringLiteral("Can't undo")));
+        QVERIFY(f.lastMessage().contains(QStringLiteral("Rewind it first")));
+        // ...until the agent's change is rewound.
+        QVERIFY(history.rewind(agentPan).isEmpty());
+        QCOMPARE(f.project().track(lead).pan, -0.5);
+        f.s().undo();
+        QCOMPARE(f.stack().index(), userSteps - 1);
+        QCOMPARE(f.project().track(lead).pan, 0.0);
+        // Restoring it now would put the agent's pan over the user's undo: refused.
+        QVERIFY(history.restore(agentPan).contains(QStringLiteral("you changed the same since")));
+        f.s().redo();
+        QCOMPARE(f.project().track(lead).pan, -0.5);
+
+        // What doesn't touch the same goes either way: another track, another setting.
+        const int bassPan = setPan(bass, 1.0);
+        f.editor().setTrackParam(lead, TrackField::VolumeDb, -3.0);
+        f.s().undo();
+        QCOMPARE(f.project().track(lead).volumeDb, 0.0);
+        QCOMPARE(f.project().track(bass).pan, 1.0);
+        QVERIFY(history.rewind(bassPan).isEmpty());
+        QCOMPARE(f.project().track(bass).pan, 0.0);
+
+        // An agent can't take back what the user changed the same of since.
+        const int agentAgain = setPan(lead, 0.75);
+        f.editor().setTrackParam(lead, TrackField::Pan, -1.0);
+        const QString why = history.rewind(agentAgain);
+        QVERIFY(why.contains(QStringLiteral("you changed the same since")));
+        QCOMPARE(f.project().track(lead).pan, -1.0);
+        QVERIFY(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("all"), true}})
+                    .value(QStringLiteral("isError")).toBool());
+        // A later change on the same comes first.
+        f.s().undo();  // (the user's -1 goes: the agent's 0.75 is back)
+        const int later = setPan(lead, 0.1);
+        QVERIFY(history.rewind(agentAgain).contains(QStringLiteral("the later change")));
+        QVERIFY(history.rewindFrom(agentAgain).isEmpty());  // (the later one first, then it)
+        QCOMPARE(f.project().track(lead).pan, -0.5);
+        QVERIFY(!history.find(later)->applied);
+
+        // A track an agent made can't go while the user's edit of it stays; once
+        // it went, that edit can't come back (it would edit a track that isn't there).
+        const QString made = structured(call(protocol, QStringLiteral("duplicate_track"), {{QStringLiteral("track_id"), lead}}))
+                                 .value(QStringLiteral("trackId")).toString();
+        f.editor().renameTrack(made, QStringLiteral("Mine"));
+        QVERIFY(history.rewindAll().contains(QStringLiteral("you changed the same since")));
+        QVERIFY(f.project().hasTrack(made));
+        f.s().undo();
+        QVERIFY(history.rewindAll().isEmpty());
+        QVERIFY(!f.project().hasTrack(made));
+        f.s().redo();  // (the rename of a track that went: refused, not a crash)
+        QVERIFY(f.lastMessage().startsWith(QStringLiteral("Can't redo")));
+        QVERIFY(!f.project().hasTrack(made));
+    }
+
+    void footprintsOverlapByRegion() {
+        using Regions = QStringList;
+        QVERIFY(AgentHistory::overlaps(Regions{QStringLiteral("track/a")}, Regions{QStringLiteral("track/a/clips")}));
+        QVERIFY(AgentHistory::overlaps(Regions{QStringLiteral("track/a/devices/d/param/x")},
+                                       Regions{QStringLiteral("track/a/devices")}));
+        QVERIFY(!AgentHistory::overlaps(Regions{QStringLiteral("track/a/devices/d/param/x")},
+                                        Regions{QStringLiteral("track/a/devices/d/param/xy")}));
+        QVERIFY(!AgentHistory::overlaps(Regions{QStringLiteral("track/a")}, Regions{QStringLiteral("track/ab")}));
+        QVERIFY(!AgentHistory::overlaps(Regions{QStringLiteral("order/a")}, Regions{QStringLiteral("order/b")}));
+        QVERIFY(AgentHistory::overlaps(Regions{QStringLiteral("order")}, Regions{QStringLiteral("order/b")}));
+        QVERIFY(AgentHistory::overlaps(Regions{QStringLiteral("*")}, Regions{QStringLiteral("settings/tempo")}));
+        QVERIFY(!AgentHistory::overlaps(Regions{}, Regions{QStringLiteral("*")}));
+
+        // What the model's commands touch, macros by their parts.
+        SessionFixture f;
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"));
+        f.editor().setTrackParam(lead, TrackField::Pan, 0.5);
+        const QUndoCommand* pan = f.stack().command(f.stack().index() - 1);
+        QCOMPARE(AgentHistory::footprint(*pan, f.project()),
+                 QStringList{QStringLiteral("track/%1/field/pan").arg(lead)});
+        f.editor().addMidiClip(lead, 0, 4);
+        QVERIFY(AgentHistory::footprint(*f.stack().command(f.stack().index() - 1), f.project())
+                    .contains(QStringLiteral("track/%1/clips").arg(lead)));
+        const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"));
+        f.editor().groupTracks({lead, bass});  // (a macro)
+        const QStringList grouped = AgentHistory::footprint(*f.stack().command(f.stack().index() - 1), f.project());
+        QVERIFY(grouped.contains(QStringLiteral("order")));
+        QVERIFY(!grouped.contains(QStringLiteral("*")));
     }
 
     // --- Streamable HTTP ---------------------------------------------------------------------
@@ -484,7 +819,7 @@ private Q_SLOTS:
             Client client(static_cast<quint16>(free));
             const auto response = client.send(post(request(QStringLiteral("tools/list")), {}, static_cast<quint16>(free)));
             QVERIFY(response);
-            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 5);
+            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 17);
         }
 
         // A session made now starts it as the settings say; a port taken says why.

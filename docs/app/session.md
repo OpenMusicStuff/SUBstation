@@ -46,7 +46,8 @@ reads them as constant properties:
 | `similarity` | `SoundSimilarity` | finding similar sounds ([intelligence.md](../intelligence.md)); the browser's Find Similar uses it |
 | `harmony` | `Harmony` | the song's chords and key, from its MIDI ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
 | `trackLabels` | `TrackLabels` | what each track is, in a few words, and what that was made from ([intelligence.md](../intelligence.md#track-labels-the-application-side)); the tooltip over a track's name, and what the MCP server tells agents of each track |
-| `mcp` | `McpServer` | the MCP server agents read the project through ([mcp.md](mcp.md)); its `statusMessage` is the session's |
+| `mcp` | `McpServer` | the MCP server agents read and edit the project through ([mcp.md](mcp.md)); its `statusMessage` is the session's |
+| `agentChanges` | `AgentHistory` | what agents changed through it, apart from the undo stack: each change rewound and restored on its own (View › Agent Changes); `undo()` and `redo()` refuse to undo over an agent's change ([mcp.md](mcp.md#the-agents-history)) |
 | `trackSearch` | `TrackSearch` | the arrangement's find bar (Q): the tracks matching a query, names first, then labels ([intelligence.md](../intelligence.md#finding-tracks)) |
 | `arrangement` | `ArrangementActions` | [below](#the-arrangements-actions-arrangementactions) |
 | `deviceSelection` | `DeviceSelection` | [below](#the-device-view-deviceselection) |

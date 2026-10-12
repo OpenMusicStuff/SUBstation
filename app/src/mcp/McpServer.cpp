@@ -14,11 +14,18 @@ namespace sub::app {
 namespace {
 
 const QString kInstructions = QStringLiteral(
-    "SUBstation is a digital audio workstation (DAW). These tools read the project open in it right now, as the user "
-    "works on it: its settings, its tracks and what each one is (a label worked out from its name, instrument "
-    "presets, audio files, notes, effects and mixer), its devices and clips, and the song's chords and key. Times "
+    "SUBstation is a digital audio workstation (DAW). These tools read and edit the project open in it right now, as "
+    "the user works on it: its settings, its tracks and what each one is (a label worked out from its name, "
+    "instrument presets, audio files, notes, effects and mixer), its devices, their parameters and clips, the notes, "
+    "and the song's chords and key. Times "
     "are in beats (quarter notes) from the start of the song; levels in dB; pan from -1 (left) to 1 (right). Call "
-    "get_project first, then list_tracks; ids from those go to get_track. The tools only read: they change nothing.");
+    "get_project first (it has the user's selection), then list_tracks; ids from those go to get_track. For what the "
+    "user selected (\"this part\", \"the selection\"), get_selection_context gives it all in one call: its tracks, "
+    "their notes there and the chords. Notes come as rows [startBeat, length, pitch, velocity], and write_midi_clip "
+    "takes them so. The edit "
+    "tools (set_device_parameters, write_midi_clip...) change the project as the user watches: each call is one "
+    "change in the agent's history, which the user sees apart from their own undo and can rewind (as can "
+    "rewind_agent_changes). Change what was asked for, and say what you changed.");
 
 }  // namespace
 
@@ -30,6 +37,7 @@ McpServer::McpServer(Session& session, QObject* parent)
     QSettings settings;
     enabled_ = settings.value(kEnabledKey, false).toBool();
     port_ = std::clamp(settings.value(kPortKey, kDefaultPort).toInt(), 1, 65535);
+    editsAllowed_ = settings.value(kEditsKey, true).toBool();
     apply(false);
 }
 
@@ -50,6 +58,13 @@ void McpServer::setEnabled(bool enabled) {
     enabled_ = enabled;
     QSettings().setValue(kEnabledKey, enabled);
     apply(true);
+}
+
+void McpServer::setEditsAllowed(bool allowed) {
+    if (allowed == editsAllowed_) return;
+    editsAllowed_ = allowed;
+    QSettings().setValue(kEditsKey, allowed);
+    Q_EMIT changed();
 }
 
 void McpServer::setPort(int port) {
