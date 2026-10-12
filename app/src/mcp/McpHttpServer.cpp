@@ -26,6 +26,7 @@ QByteArray reason(int status) {
     case 413: return "Content Too Large";
     case 415: return "Unsupported Media Type";
     case 431: return "Request Header Fields Too Large";
+    case 501: return "Not Implemented";
     default: return "Error";
     }
 }
@@ -160,10 +161,21 @@ bool HttpServer::serve(QTcpSocket* socket, Connection& connection) {
         headers.insert(lines[i].left(colon).trimmed().toLower(), lines[i].mid(colon + 1).trimmed());
     }
 
-    // The body: chunked, or as long as Content-Length says (none: none).
+    // The body: chunked, or as long as Content-Length says (none: none). Another
+    // transfer coding, or chunks and a length both (RFC 9112 6.1), can't be told
+    // where it ends: refused, and the connection closed (what follows it can't be read).
     QByteArray body;
     qsizetype end = headEnd + 4;
-    if (headers.value("transfer-encoding").toLower().contains("chunked")) {
+    const QByteArray transferEncoding = headers.value("transfer-encoding").trimmed().toLower();
+    if (headers.contains("transfer-encoding") && transferEncoding != "chunked") {
+        respond(socket, 501, errorBody(code::kInvalidRequest, QStringLiteral("Only chunked bodies, or a Content-Length.")), true);
+        return false;
+    }
+    if (!transferEncoding.isEmpty() && headers.contains("content-length")) {
+        respond(socket, 400, errorBody(code::kInvalidRequest, QStringLiteral("Transfer-Encoding and Content-Length both.")), true);
+        return false;
+    }
+    if (!transferEncoding.isEmpty()) {
         bool bad = false;
         const std::optional<QByteArray> unchunked = unchunk(data, end, end, bad);
         if (bad) {

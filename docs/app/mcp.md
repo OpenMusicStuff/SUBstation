@@ -71,7 +71,8 @@ Tools list in the order they were added (the spec asks for a deterministic order
 `mcp::HttpServer` listens on `QHostAddress::LocalHost` only, on the application's thread (the tools read the
 session there, as everything else does; each answers in well under a millisecond for a song). It speaks HTTP/1.1
 itself, enough for MCP: one endpoint, `/mcp`; requests kept alive until `Connection: close`; bodies by
-`Content-Length` or chunked, at most 4 MB; headers at most 64 KB.
+`Content-Length` or chunked, at most 4 MB; headers at most 64 KB. Another transfer coding is 501, and chunks with a
+`Content-Length` too 400 (RFC 9112 6.1), the connection closed: where the body ends can't be told.
 
 - **POST /mcp** with `Content-Type: application/json`: the message, answered with `application/json` (never an SSE
   stream: no progress to report), or 202 with no body for a notification.

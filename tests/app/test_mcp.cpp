@@ -432,6 +432,20 @@ private Q_SLOTS:
                                "\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}");
         QCOMPARE(response->status, 403);
 
+        // Bodies that can't be told where they end: refused, the connection closed.
+        {
+            Client gzip(port);
+            response = gzip.send("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                                 "Transfer-Encoding: gzip\r\nContent-Length: 2\r\n\r\n{}");
+            QCOMPARE(response->status, 501);
+            QVERIFY(gzip.closed());
+            Client both(port);
+            response = both.send("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                                 "Transfer-Encoding: chunked\r\nContent-Length: 7\r\n\r\n2\r\n{}\r\n0\r\n\r\n");
+            QCOMPARE(response->status, 400);
+            QVERIFY(both.closed());
+        }
+
         // Connection: close.
         response = client.send("POST /mcp HTTP/1.1\r\nHost: [::1]:" + QByteArray::number(port) +
                                "\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " +
