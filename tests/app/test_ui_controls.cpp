@@ -516,10 +516,14 @@ private Q_SLOTS:
         QCOMPARE(scope->samples().front(), feed.samples[1008]);  // the last crossing leaving 1024 after it
         QVERIFY(scope->tracePoints().size() >= 148);
         const int reads = feed.reads;
-        // Nothing new: no read, and it shrinks by 0.8 an update.
+        // Nothing new: no read; it holds for a while (a gap between device
+        // buffers mustn't flicker it), then shrinks by 0.8 an update.
         const float before = scope->samples()[25];
-        scope->poll();
+        for (int i = 1; i < OscilloscopeItem::kHoldUpdates; ++i)
+            scope->poll();
         QCOMPARE(feed.reads, reads);
+        QCOMPARE(scope->samples()[25], before);
+        scope->poll();
         QVERIFY(qAbs(scope->samples()[25] - before * 0.8f) < 1e-6f);
         for (int i = 0; i < 60 && !scope->samples().empty(); ++i)
             scope->poll();
@@ -532,6 +536,12 @@ private Q_SLOTS:
         scope->setVisible(true);
         scope->poll();
         QCOMPARE(feed.reads, reads + 1);
+        QVERIFY(!scope->samples().empty());
+        // Silence the device sends (zeros): a flat trace, kept (no blinking on and off).
+        feed.samples = QList<float>(2048, 0.0f);
+        feed.written += 512;
+        scope->poll();
+        QCOMPARE(int(scope->samples().size()), 1024);
         scope->setFeed(nullptr);
     }
 

@@ -355,6 +355,15 @@ public:
     // that, the ones hidden longest close, and open again (where they were) when shown.
     Q_INVOKABLE void showPluginEditors(const QString& trackId);
     Q_INVOKABLE bool isPluginEditorOpen(const QString& trackId, const QString& deviceId);
+    // Ctrl+Shift+W, as a browser's Ctrl+Shift+T: the editor the user last
+    // closed on this track (with its close button or the device's) opens again;
+    // pressed again, the one closed before it, and so on (up to
+    // kClosedEditorsKept). With none closed (or none whose device is still
+    // there), the editor of the first device in the track's chain that has one
+    // (brought to the front if it is open). False (and a status message) if no
+    // device there has an editor.
+    Q_INVOKABLE bool reopenClosedPluginEditor(const QString& trackId);
+    static constexpr int kClosedEditorsKept = 16;
     void closeAllEditors();
     // The engine's housekeeping, and what plug-ins reported since (the meter timer does it).
     void pollPlugins();
@@ -600,6 +609,7 @@ private:
     std::optional<QString> paramIdAt(quint32 processorId, int index);
     QString editorTitle(const QString& trackId, const QString& deviceId) const;
     void updateEditorTitles(const QString& trackId);
+    void noteEditorClosed(const QString& trackId, const QString& deviceId);
     void dispatchProcessorEvents(const std::vector<sub::ProcessorEventRecord>& events);
     // Loading (BridgeLoading.cpp).
     void deferPlugin(const QString& deviceId);

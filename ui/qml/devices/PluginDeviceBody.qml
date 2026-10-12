@@ -4,7 +4,8 @@ import SUBstation
 
 // The body of a plug-in device: its parameters (those a generic editor offers:
 // PluginParams), four to a page in a 2×2 grid, the device's title bar paging
-// through them (`pages`, `page`); or what it says instead: that it is loading
+// through them (`pages`, `page`): centred under the title bar (KnobQuadrants),
+// so the margins left and right are equal; or what it says instead: that it is loading
 // (a project just opened), why it didn't load (missing, failed: it keeps its
 // place), or that it has no parameters to show (use its own editor). The
 // message is cut to four lines (MESSAGE_LINES), so a long one keeps the device
@@ -23,7 +24,7 @@ Item {
     readonly property alias message: message
 
     implicitWidth: 216 - 2
-    implicitHeight: grid.y + grid.implicitHeight + 6
+    implicitHeight: grid.y + grid.implicitHeight
 
     PluginParams {
         id: params
@@ -55,19 +56,21 @@ Item {
         ToolTip.delay: 700
     }
 
-    Grid {
+    KnobQuadrants {
         id: grid
-        x: 8
-        y: message.visible ? message.y + message.height + 4 : 6
-        columns: body.columns
-        columnSpacing: 16
-        rowSpacing: 14  // (DeviceKnobPages's)
+        y: message.visible ? message.y + message.height + 4 - 6 : 0
+        width: body.width
+        height: body.height - y
+        cells: pluginCells
 
         Repeater {
+            id: pluginCells
             model: params.loaded ? params.indices.slice(body.page * body.perPage, (body.page + 1) * body.perPage) : []
             PluginParamKnob {
                 required property int modelData
                 objectName: "param_" + modelData
+                x: grid.cellX(pluginCells.model.indexOf(modelData), implicitWidth)
+                y: grid.cellY(pluginCells.model.indexOf(modelData))
                 trackId: body.trackId
                 deviceId: body.deviceId
                 index: modelData

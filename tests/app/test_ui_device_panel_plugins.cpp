@@ -157,7 +157,11 @@ private Q_SLOTS:
         const QPointF waveAt = cell(synth, test::kSynthWave)->mapToScene(QPointF());
         const QPointF sixAt = cell(synth, 6)->mapToScene(QPointF());
         QCOMPARE(gainAt.y(), waveAt.y());
-        QCOMPARE(waveAt.x() - gainAt.x(), 84.0 + 16.0);  // PARAM_WIDTH and the grid's spacing
+        // Centred across the body: equal margins left and right.
+        QQuickItem* body = test::part(f, "body");
+        const double bodyLeft = body->mapToScene(QPointF()).x();
+        QCOMPARE(waveAt.x() - gainAt.x(), 84.0 + 9.0);  // PARAM_WIDTH and the columns' spacing
+        QVERIFY(qAbs((gainAt.x() - bodyLeft) - (bodyLeft + body->width() - (waveAt.x() + 84.0))) <= 1.0);
         QCOMPARE(sixAt.x(), gainAt.x());
         QVERIFY(sixAt.y() > gainAt.y());
         test::click(window(), test::centerOf(test::part(f, "nextButton")));

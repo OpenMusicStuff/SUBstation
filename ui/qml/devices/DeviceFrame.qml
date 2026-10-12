@@ -5,7 +5,7 @@ import SUBstation
 
 // A device in the device view, as Ableton draws one: its frame (PANEL_ALT in
 // a line of its title bar's colour, 3 px corners), its title bar (DEVICE_HEADER,
-// the selection's teal while selected: the fold triangle, the round on/off
+// the selection's teal while selected: the fold triangle, the square on/off
 // switch, the name with its tooltip, a plug-in's editor button,
 // the sidechain button of a device with a sidechain input, the page arrows
 // while there is more than one page, or the pages' names as tabs for an editor
@@ -142,14 +142,13 @@ Item {
         height: frame.height
     }
 
-    // The on/off switch: a round one.
+    // The on/off switch: a square one.
     component Activator: ToggleButton {
         id: activator
         role: "activator"
         checkable: false
         tooltip: qsTr("Device On/Off")
         background: Rectangle {
-            radius: width / 2
             color: activator.look.background
             border.width: 1
             border.color: Theme.border

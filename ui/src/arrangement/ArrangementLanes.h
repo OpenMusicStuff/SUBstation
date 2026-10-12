@@ -53,7 +53,9 @@
 //                                        too: it is a grid like any other)
 // Double-click a clip: the selected clips (or just it) open in the clip view;
 // with F held, a fade's dot straightens its curve and its square removes it.
-// On an automation lane each click of a double-click counts. Wheel: Alt
+// On an automation lane each click of a double-click counts, and a third click
+// soon after (a triple-click) selects everything on its track, clips and
+// automation (Arrangement::selectTrackContent), for Delete to clear. Wheel: Alt
 // resizes (or folds) the track, Ctrl zooms around the mouse (1.2 a notch),
 // Shift or a horizontal wheel scrolls sideways (80 px a notch), otherwise up
 // and down (48 px a notch). Right-click: the lane's, the clip's or the time
@@ -316,6 +318,10 @@ private:
     std::optional<std::tuple<QString, bool, bool>> hoverFade_;  // (clip id, out, curve)
     std::optional<arrangement::Hover> hoverPoint_;
     std::optional<QPointF> hoverPos_;
+    // The last double-click on an automation lane (its owner, where): a press
+    // there within the double-click interval (laneDoubleClickTime_) is a triple-click.
+    std::optional<std::pair<QString, QPointF>> laneDoubleClick_;
+    QElapsedTimer laneDoubleClickTime_;
     QTimer edgeScroll_;  // scrolls while a selecting drag is near the top or bottom
     QElapsedTimer edgeWait_;  // since the mouse came near the edge (it scrolls after kEdgeDelayMs)
     QPointF dragPos_;  // where the mouse was at the gesture's last move

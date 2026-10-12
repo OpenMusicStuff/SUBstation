@@ -9,9 +9,15 @@
 // kWindow after it, so steady tones stand still; with none, it shows the newest
 // window. trace() turns the samples into one column per pixel (the column's
 // highest then lowest sample), built when the samples change, not on every
-// paint. When no new audio comes, the trace shrinks by kFadePerUpdate each
-// update (0.64 per 33 ms) and stops repainting once flat. It skips its work
-// while hidden.
+// paint. When no new audio comes for kHoldUpdates updates (longer than any
+// device buffer), the trace shrinks by kFadePerUpdate each update (0.64 per
+// 33 ms) and stops repainting once flat. Without the hold, an update that
+// fell between two device buffers (a buffer longer than kUpdateMs, or the
+// timer firing twice in one buffer) faded or cleared the trace and the next
+// one restored it, so it flickered, most visibly in silence (a bright flat
+// line blinking against the axis). Audio that comes, however quiet, always
+// shows (silence as a flat line): a threshold there would blink the trace on
+// and off as a dying tail hovers around it. It skips its work while hidden.
 //
 // kWindow is a fixed number of samples (about 21 ms at 48 kHz) because the
 // engine's sample rate is behind its edit lock, which the scope shouldn't take
@@ -45,6 +51,7 @@ public:
     static constexpr int kUpdateMs = 16;  // ~60 fps
     static constexpr double kFadePerUpdate = 0.8;  // while no audio comes (as fast as 0.64 per 33 ms)
     static constexpr double kSilent = 1e-4;        // below this the trace counts as flat and stops repainting
+    static constexpr int kHoldUpdates = 10;        // updates without audio before the fade (~160 ms)
 
     explicit OscilloscopeItem(QQuickItem* parent = nullptr);
 
@@ -81,6 +88,7 @@ private:
     std::vector<QPointF> trace_;
     quint64 written_ = 0;
     bool hasWritten_ = false;
+    int staleUpdates_ = 0;  // updates since the feed last moved
 };
 
 }  // namespace sub::ui

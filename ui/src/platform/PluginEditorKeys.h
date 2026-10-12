@@ -34,6 +34,8 @@
 //
 // Ctrl+W (View › Close Plug-in Editor) closes the foremost editor, from the
 // main window or from any editor (closeForemostEditor()).
+// Ctrl+Shift+W (View › Reopen Closed Plug-in Editor) reopens the selected
+// track's editor closed last, from either too (an Action like any other).
 //
 // Where plug-ins show no editor (neither Windows nor Linux with X11 editors)
 // nothing is installed and closeForemostEditor() does nothing. The rules

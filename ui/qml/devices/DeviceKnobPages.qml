@@ -3,9 +3,10 @@ import SUBstation
 
 // The body of a built-in device without an editor of its own: a knob per
 // parameter (or a list), four to a page in a 2×2 grid (PARAMS_PER_PAGE,
-// PARAM_COLUMNS) with rowSpacing between its rows (DevicePanel's deviceHeight
-// has room for it), the device's title bar paging through them (`pages`,
-// `page`, as an editor's).
+// PARAM_COLUMNS), centred under the title bar (KnobQuadrants:
+// equal margins left and right; DevicePanel's deviceHeight has room for its
+// rowSpacing), the device's title bar paging through them (`pages`, `page`,
+// as an editor's).
 Item {
     id: body
 
@@ -19,7 +20,7 @@ Item {
     readonly property int rowSpacing: 14
 
     implicitWidth: 216 - 2
-    implicitHeight: 6 + grid.implicitHeight + 6
+    implicitHeight: grid.implicitHeight
 
     DeviceParams {
         id: params
@@ -28,19 +29,22 @@ Item {
         deviceId: body.deviceId
     }
 
-    Grid {
+    KnobQuadrants {
         id: grid
-        x: 8
-        y: 6
-        columns: body.columns
-        columnSpacing: 16
+        width: body.width
+        height: body.height
         rowSpacing: body.rowSpacing
+        cells: deviceCells
 
         Repeater {
+            id: deviceCells
             model: params.ids.slice(body.page * body.perPage, (body.page + 1) * body.perPage)
             DeviceParamKnob {
                 required property string modelData
+                required property int index
                 objectName: "param_" + modelData
+                x: grid.cellX(index, implicitWidth)
+                y: grid.cellY(index)
                 trackId: body.trackId
                 deviceId: body.deviceId
                 paramId: modelData

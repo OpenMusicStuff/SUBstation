@@ -118,13 +118,13 @@ class Theme : public QObject {
     Q_PROPERTY(QString monoFontFamily READ monoFontFamily CONSTANT)
 
     // Metrics the stylesheet used everywhere.
-    Q_PROPERTY(int radius READ radius CONSTANT)                  // buttons, boxes, line edits: 3 px corners
+    Q_PROPERTY(int radius READ radius CONSTANT)                  // boxes, line edits: 3 px corners (buttons are square)
     Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)    // the transport bar's boxes and buttons
     Q_PROPERTY(int scrollBarWidth READ scrollBarWidth CONSTANT)  // 12 px
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)              // a button's icon: 14 px
 
 public:
-    static constexpr const char* kUiFontFamily = "Segoe UI";
+    static constexpr const char* kUiFontFamily = "Inter";  // bundled (ui/fonts), loaded by uiFont()
     static constexpr const char* kMonoFontFamily = "Consolas";  // MONO_FONT
     static constexpr int kRadius = 3;
     static constexpr int kControlHeight = 28;
@@ -255,7 +255,7 @@ public:
         QColor background;  // transparent for none
         QColor text;
         int border = 1;  // px of border()
-        int radius = 3;
+        int radius = 0;  // square: no rounded buttons
         int paddingH = 12, paddingV = 4;
         int minWidth = 0, minHeight = 0;
         qreal pointSize = 9.0;
