@@ -13,9 +13,14 @@
 
 #include "builtin/VitalPatch.h"
 
+// sound_engine.h first: it brings in Vital's framework/processor.h from its own
+// directory. sample_source.h's bare "processor.h" would otherwise find our
+// engine/src/Processor.h on a case-insensitive filesystem (Windows) and leave
+// vital::Processor undeclared.
+#include "sound_engine.h"
+
 #include "line_generator.h"
 #include "sample_source.h"
-#include "sound_engine.h"
 #include "synth_parameters.h"
 #include "tuning.h"
 #include "wavetable_creator.h"
