@@ -1,8 +1,7 @@
-# Builds everything and runs the tests: on Linux with Qt 6.4 (Ubuntu's), and on
-# Windows (the product's platform) with MSVC and with MinGW (Qt's own builds of
-# each). Without Steinberg's ASIO SDK, which isn't redistributable: the ASIO
-# tests skip. MinGW only on pushes and by hand, not on pull requests. Compiles go
-# through ccache (sccache for MSVC), its cache kept between runs.
+# Builds everything and runs the tests on Linux with Qt 6.4 (Ubuntu's). Windows (the
+# product's platform) is tested locally and nightly (windows-nightly.yml), not here. Without
+# Steinberg's ASIO SDK, which isn't redistributable: the ASIO tests skip. Compiles go
+# through ccache, its cache kept between runs.
 name: CI
 
 on:
@@ -38,72 +37,6 @@ jobs:
           max-size: 2G
       - name: Configure
         run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-      - name: Build
-        run: ninja -C build -k 0
-      - name: Test
-        run: ctest --test-dir build --output-on-failure -j4
-
-  windows:
-    name: Windows (MSVC, Qt 6.8)
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: A 1920x1080 screen (the UI tests' windows don't fit the runner's 1024x768)
-        shell: powershell
-        continue-on-error: true
-        run: |
-          Set-DisplayResolution -Width 1920 -Height 1080 -Force
-          Add-Type -AssemblyName System.Windows.Forms
-          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.*'
-          arch: win64_msvc2022_64
-          cache: true
-      - uses: ilammy/msvc-dev-cmd@v1
-      # (sccache caches nothing compiled with /Zi: Release has no debug information)
-      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
-        with:
-          key: windows-msvc
-          variant: sccache
-          max-size: 2G
-      - name: Configure
-        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-      - name: Build
-        run: ninja -C build -k 0
-      - name: Test
-        run: ctest --test-dir build --output-on-failure -j4
-
-  windows-mingw:
-    name: Windows (MinGW, Qt 6.8)
-    if: github.event_name != 'pull_request'
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: A 1920x1080 screen (the UI tests' windows don't fit the runner's 1024x768)
-        shell: powershell
-        continue-on-error: true
-        run: |
-          Set-DisplayResolution -Width 1920 -Height 1080 -Force
-          Add-Type -AssemblyName System.Windows.Forms
-          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.*'
-          arch: win64_mingw
-          tools: 'tools_mingw1310 tools_ninja'
-          cache: true
-      - name: Use Qt's MinGW and Ninja
-        shell: pwsh
-        run: |
-          "$env:IQTA_TOOLS\mingw1310_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          "$env:IQTA_TOOLS\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
-        with:
-          key: windows-mingw
-          max-size: 2G
-      - name: Configure
-        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: ninja -C build -k 0
       - name: Test
