@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <thread>
 #include <vector>
@@ -20,8 +21,8 @@ constexpr int kSize = 1 << kBits;
 struct Buffer {
     std::vector<float> storage = std::vector<float>(2 * kSize + 32);
     float* data() {
-        auto p = reinterpret_cast<uintptr_t>(storage.data());
-        return reinterpret_cast<float*>((p + 63) & ~uintptr_t(63)) + 4;
+        auto p = reinterpret_cast<std::uintptr_t>(storage.data());
+        return reinterpret_cast<float*>((p + 63) & ~std::uintptr_t(63)) + 4;
     }
 };
 

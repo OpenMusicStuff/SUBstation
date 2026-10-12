@@ -641,7 +641,7 @@ QString DeviceSelection::vitalPresetFolder() const {
 }
 
 bool DeviceSelection::loadVitalPreset(const QString& deviceId, const QString& path) {
-    if (path.isEmpty()) return false;
+    if (path.isEmpty() || !isVitalPreset(path)) return false;  // (other presets: loadPresetInto)
     QSettings().setValue(QString::fromLatin1(kVitalPresetFolderKey), QFileInfo(path).absolutePath());
     return loadPresetInto(deviceId, path);
 }

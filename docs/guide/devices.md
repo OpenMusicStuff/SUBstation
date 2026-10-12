@@ -154,8 +154,8 @@ note's bend ([midi.md](midi.md#pitch-bends-vibrato-and-slides)) bends that note 
 sostenuto pedals, channel and polyphonic pressure and CC74 (MPE's slide) reach every note.
 
 Changing the patch's wavetables, LFO shapes or modulations, a preset, or Oversampling builds
-Vital's engine anew in the background; the notes held play on, the old sound fades out over 10
-ms. What Vital's own window has that this editor doesn't yet: the wavetable editor, drawing
+Vital's engine anew in the background; the notes held are struck again on it while the old
+sound fades out over 10 ms. What Vital's own window has that this editor doesn't yet: the wavetable editor, drawing
 LFO shapes and modulation curves (presets keep theirs), loading a sample, tunings (presets
 keep theirs) and the effects' order.
 

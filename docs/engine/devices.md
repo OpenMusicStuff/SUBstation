@@ -2236,7 +2236,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are eighteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
+- Today there are nineteen. The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
   48 kHz) and In/Out meters with the threshold marked; the Gate the last 2.5 s of `input`, `output`, `key` and `open`
   with its threshold and Return lines to drag, and in its sidechain section the key EQ's curve (from `gate::keyFilter`,
   the engine's own biquad); the Limiter the level over the last 1.5 s with the gain reduction hanging from the top,
