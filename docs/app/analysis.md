@@ -30,6 +30,7 @@ thread, each time an editor reads its device's displays. The editors' scene-grap
 |---|---|
 | [Fft.h](../../app/src/analysis/Fft.h) | `sub::app::analysis`: `fft` (radix-2, in place, forward or inverse, in `double`), `rfft` (the first n / 2 + 1 bins of a real signal cut or zero-padded to n), `hann`, `isPowerOfTwo` |
 | [Spectrum.h](../../app/src/analysis/Spectrum.h) | `sub::app::analysis`: `FallingSpectrum` (the Delay's analyzer), `EqAnalyzer` (the EQ's) |
+| [Chroma.h](../../app/src/analysis/Chroma.h) | `sub::app::analysis::Chroma`: Hue's chromagram, the twelve pitch classes' levels in its input and output (a Hann-windowed FFT of the latest samples, bins of 6 Hz at most: 8192 points at 48 kHz; each bin's power shared between the two classes either side of its pitch, over the band Hue processes; a full-scale sine in one class reads 0 dB; rising at once, falling 30 dB/s) |
 | [SidechainFit.h](../../app/src/analysis/SidechainFit.h) | `sub::app::sidechainFit`: `Ring` and `Capture` (the displays and the hits), `spectra` → `Spectra`, `clashEnvelope`, `reduction`, `shape`, `curveAt`, `fitPoints` → `FitPoint`s, `analyze` → `Fit`; the constants (`kCharacters`, `kRangeDb`, `kClashDb`, ...). Its header comment is the design. |
 
 The transforms follow numpy's conventions (an unscaled forward transform, the inverse divided by n; a symmetric Hann

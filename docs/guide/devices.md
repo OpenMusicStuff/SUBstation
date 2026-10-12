@@ -596,25 +596,37 @@ dashed yellow line.
 It adds **latency**: 53 ms at 48 kHz (58 ms at 44.1 kHz). Playback is compensated, but
 you'll feel it while monitoring live input through it.
 
-### Prisma
+### Hue
 
-Pulls a sound into key. Prisma keeps the parts of the spectrum that sit on the notes you
+Pulls a sound into key. Hue keeps the parts of the spectrum that sit on the notes you
 choose, moves the notes a semitone off them onto them, takes the other notes out, and lets
 what lies between notes through more quietly: a growl, a reese or a riddim bass keeps its
 texture while its partials line up with the song's scale. It is made for basses and other
 dense, harmonic sounds, and works on anything.
 
-- **The notes**: the twelve buttons (C to B) choose the scale; a note in any octave counts.
-  With no notes, or all twelve, the sound passes as it is. **MIDI Notes** on: the notes held
-  on the track (or on the track chosen with **MIDI From**, see above) choose them instead,
-  so the scale can follow a chord part; with nothing held, the sound passes.
+- **The editor**: on the left a colour wheel of the twelve notes (C at the top), each in its
+  own hue: lit notes are kept, shaded ones with an arrow are moved onto the note beside
+  them, dark ones are taken out; click a note to switch it. Inside it the sound between
+  Low Cut and High Cut plays as petals (what comes out) over a faint outline (what goes
+  in), so you can see the partials being pulled into key; the middle glows in the colour
+  the sound is now. Beside it: the **Key** (a root and a scale), **HQ**, **MIDI**, **High
+  Cut**, **Low Cut** and **Color**. **Notes ›** slides open a keyboard to choose the notes
+  one by one, with **Wet Gain**, **Pre-Shift**, **Post-Shift**, **Mute Low** and **Mute High**.
+- **The notes**: choose a **Key** (seventeen scales from Major to Power Chord and Root Only,
+  on any root) or click notes on the wheel or the keyboard; a note in any octave counts.
+  Notes that are no scale show as Custom, and a new root moves them with it. With no notes,
+  or all twelve, the sound passes as it is. **MIDI** (MIDI Notes) on: the notes held on the
+  track (or on the track chosen with **MIDI From**, see above) choose them instead, so the
+  scale can follow a chord part, and the wheel shows them as they are played; with nothing
+  held, the sound passes.
 - What happens to each note: an enabled note is kept and made louder (the fewer notes, the
   louder: about +8 dB for one); a note a semitone from an enabled one is moved onto it
   (a note between two enabled ones goes down); the others are taken out. What lies between
   notes (detuned, noisy parts) passes more quietly, more so the fewer notes are enabled.
-- **Start** and **End** (80 Hz to 1.8 kHz, 400 Hz to 8 kHz): the band that is processed;
-  below Start and above End the sound passes as it is (the low band keeps a bass's sub
-  untouched). The band works within 160 Hz to 4 kHz whatever they are set to.
+- **Low Cut** and **High Cut** (the parameters Start and End; 80 Hz to 1.8 kHz, 400 Hz to
+  8 kHz): the band that is processed; below and above it the sound passes as it is (the
+  low band keeps a bass's sub untouched). The band works within 160 Hz to 4 kHz whatever
+  they are set to.
 - **Color** (0 to 200 %): from the plain sound (0 %) to the processed one (100 %); past
   100 % the notes get louder and narrower and what lies between them quieter.
 - **Wet Gain** (±6 dB): the level of the processed band.
@@ -628,7 +640,7 @@ dense, harmonic sounds, and works on anything.
   lands on the note exactly and cleanly. The latency is the same; it costs about twice the
   CPU (still about half a percent of a core). Switching crossfades.
 
-Prisma's latency is about 11 ms (the engine lines the other tracks up with it). Changing
+Hue's latency is about 11 ms (the engine lines the other tracks up with it). Changing
 the notes takes a few milliseconds to be heard and fades in, so chords played from MIDI
 change smoothly.
 

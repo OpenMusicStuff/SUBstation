@@ -1,12 +1,12 @@
 #pragma once
-// Prisma: data measured from the reference effect (chroma-study/probe, gaintable.py and maskmodel3.py).
+// Hue: data measured from the reference effect (chroma-study/probe, gaintable.py and maskmodel3.py).
 // kNoteGainCentiDb[set][c]: the mask's gain at pitch class c's centre, in hundredths of a dB, for each set
 // of enabled classes (bit c = class c, C = 0); 0 where c is not enabled. Normalised out of the mid band's crossovers.
 // kNoteKernel: the falloff of an enabled note's share of the mask, at 0, 1/8, ... 2 semitones from it.
 
 #include <cstdint>
 
-namespace sub::prisma {
+namespace sub::hue {
 
 inline constexpr int16_t kNoteGainCentiDb[4096][12] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -4137,4 +4137,4 @@ inline constexpr float kColorFloorDb[kColorSteps][kColorCountPoints] = {
     {-7.9f, -12.6f, -14.1f, -14.1f, -13.5f},
 };
 
-}  // namespace sub::prisma
+}  // namespace sub::hue

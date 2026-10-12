@@ -1,4 +1,4 @@
-// Built-in "Prisma" device: a spectral pitch quantizer for basses and other
+// Built-in "Hue" device: a spectral pitch quantizer for basses and other
 // harmonic sounds. It keeps the parts of the spectrum that sit on the notes of
 // a chosen scale (or the MIDI notes it is played), moves the notes a semitone
 // off them onto them, takes out the other notes and lets what lies between
@@ -9,7 +9,7 @@
 //   untouched) down to a core of 22.05-24 kHz, where everything else happens.
 // - Masks: the notes are filters made from magnitude masks over the pitch of
 //   each frequency: an enabled note's gain (measured per set of notes:
-//   PrismaData.h) falling off over a semitone or two, exact zeros on the notes
+//   HueData.h) falling off over a semitone or two, exact zeros on the notes
 //   taken out, and between notes a floor that depends on how many notes are
 //   enabled. A note a semitone off an enabled one (the lower one if both are)
 //   is moved onto it: a band about it, then a pitch shifter.
@@ -34,6 +34,8 @@
 //   notes get narrower and louder and the floor between them lower.
 //   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
 //   notes, Post-Shift tunes the notes.
+// - Its editor reads the input and the output (mono) for a chromagram, and the
+//   notes in use (the MIDI notes held, with MIDI Notes on).
 
 #include <algorithm>
 #include <array>
@@ -48,7 +50,7 @@
 
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
-#include "builtin/PrismaData.h"
+#include "builtin/HueData.h"
 #include "rt/RtUtils.h"
 
 #ifdef _MSC_VER
@@ -63,14 +65,14 @@ namespace sub {
 namespace {
 
 using Complex = std::complex<float>;
-using prisma::kColorCountPoints;
-using prisma::kColorCounts;
-using prisma::kColorFloorDb;
-using prisma::kColorKernel;
-using prisma::kColorLiftDb;
-using prisma::kKernelPoints;
-using prisma::kNoteGainCentiDb;
-using prisma::kNoteKernel;
+using hue::kColorCountPoints;
+using hue::kColorCounts;
+using hue::kColorFloorDb;
+using hue::kColorKernel;
+using hue::kColorLiftDb;
+using hue::kKernelPoints;
+using hue::kNoteGainCentiDb;
+using hue::kNoteKernel;
 
 constexpr int kChannels = 2;
 constexpr int kBlock = 256;           // convolution block (core samples)
@@ -328,17 +330,21 @@ inline void multiplyAdd(const float* __restrict xr, const float* __restrict xi, 
     }
 }
 
-class PrismaProcessor final : public BuiltinProcessor {
+class HueProcessor final : public BuiltinProcessor {
 public:
     enum Param {
         Start = 0, End, Color, WetGain, PreShift, PostShift, MuteLow, MuteHigh, Quality, Midi,
         NoteC, NumParams = NoteC + 12
     };
+    // Its editor's displays: the input and the output (mono, a value a sample: its chromagram), and the notes
+    // in use (their bits, C the lowest; the MIDI notes held while MIDI Notes is on), a value every kNotesSamples.
+    enum Display { InputDisplay = 0, OutputDisplay, NotesDisplay, NumDisplays };
+    static constexpr int kNotesSamples = 1024;
 
-    PrismaProcessor() : BuiltinProcessor(infos()) {}
+    HueProcessor() : BuiltinProcessor(infos(), displayInfos()) {}
 
-    std::string typeId() const override { return "builtin:prisma"; }
-    std::string name() const override { return "Prisma"; }
+    std::string typeId() const override { return "builtin:hue"; }
+    std::string name() const override { return "Hue"; }
     bool acceptsMidi() const override { return true; }
     int latencySamples() const override { return latency_; }
     int tailSamples() const override { return latency_ + kTaps * factor_; }
@@ -424,9 +430,21 @@ protected:
         }
         if (designing_) runDesignStep();
 
+        const int chs = std::min(numChannels, kChannels);
+        const auto mono = [&](int i) { return chs > 1 ? 0.5f * (channels[0][i] + channels[1][i]) : channels[0][i]; };
+        if (chs > 0)
+            for (int i = 0; i < numFrames; ++i) publish(InputDisplay, mono(i));
+        process(channels, chs, numFrames);
+        if (chs > 0)
+            for (int i = 0; i < numFrames; ++i) publish(OutputDisplay, mono(i));
+        for (notesCount_ += numFrames; notesCount_ >= kNotesSamples; notesCount_ -= kNotesSamples)
+            publish(NotesDisplay, static_cast<float>(enabledNotes()));
+    }
+
+private:
+    void process(float* const* channels, int chs, int numFrames) noexcept {
         updateCrossovers();
         preRatio_ = std::exp2(param(PreShift) / 1200.0);
-        const int chs = std::min(numChannels, kChannels);
         if (factor_ == 1) {
             for (int i = 0; i < numFrames; ++i) {
                 for (int c = 0; c < chs; ++c) {
@@ -455,7 +473,6 @@ protected:
         }
     }
 
-private:
     struct Channel {
         Qmf qmf[3];
         std::vector<double> highDelay[3];
@@ -483,6 +500,10 @@ private:
             std::fill(std::begin(frameOut), std::end(frameOut), 0.0);
         }
     };
+
+    static std::vector<DisplayInfo> displayInfos() {
+        return {{"input", 1}, {"output", 1}, {"notes", kNotesSamples}};
+    }
 
     static const std::vector<ParamInfo>& infos() {
         static const std::vector<ParamInfo> kInfos = [] {
@@ -821,7 +842,7 @@ private:
                 ++count;
             }
         }
-        // Color past 100 % sharpens (measured at 125, 150, 175 and 200 %, PrismaData.h): the notes narrower and
+        // Color past 100 % sharpens (measured at 125, 150, 175 and 200 %, HueData.h): the notes narrower and
         // louder, the floor between them lower, the more so the fewer notes are enabled. Between the measured
         // Colors, linear; the moved notes' bands narrow too (to 1.8 times).
         static constexpr float kNarrow[5] = {1.f, 1.1f, 1.4f, 1.6f, 1.8f};
@@ -1006,12 +1027,13 @@ private:
     std::array<std::vector<float>, 5> out_;
     SmoothedValue wetAmount_;
     std::array<float, kBlock> wetRamp_{};
+    int notesCount_ = 0;  // host samples towards the next value of the notes' display
     int frameFill_ = 0;   // host samples gathered into the current frame
     double preRatio_ = 1.0;
 };
 
 }  // namespace
 
-SUB_REGISTER_BUILTIN(PrismaProcessor, AudioEffect);
+SUB_REGISTER_BUILTIN(HueProcessor, AudioEffect);
 
 }  // namespace sub
