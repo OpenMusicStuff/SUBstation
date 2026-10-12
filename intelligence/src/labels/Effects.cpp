@@ -548,7 +548,22 @@ DeviceReading readDevice(const DeviceFact& device) {
         break;
     }
     case E::Gate: add("Gated", 0.45, "gate"); break;
-    case E::Transient: add("Punchy", 0.3, "punch"); break;
+    case E::Transient: {
+        // The built-in shaper by its Attack: turning onsets up is punchy, down soft, and at about 0 % it does
+        // nothing to them. A plug-in, known only by its name, is taken to add punch.
+        const auto attack = device.kind == "transient" ? builtinParam(device, "attack") : std::nullopt;
+        if (!attack) {
+            add("Punchy", 0.3, "punch");
+            break;
+        }
+        reading.summary += ", attack " + std::string(*attack > 0.0 ? "+" : "") +
+                           std::to_string(static_cast<int>(std::lround(*attack))) + "%";
+        if (*attack >= 20.0)
+            add("Punchy", 0.3, "punch");
+        else if (*attack <= -20.0)
+            add("Soft", 0.3, "punch");
+        break;
+    }
     case E::Utility:
         if (const auto width = builtinParam(device, "width")) {
             reading.summary += ", width " + std::to_string(static_cast<int>(std::lround(*width))) + "%";

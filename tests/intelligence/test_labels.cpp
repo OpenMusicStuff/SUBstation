@@ -241,6 +241,17 @@ TEST_CASE("how much effects do") {
     CHECK_EQ(first(builtin("utility", "Utility", {{"width", "Width", 0, 0, "%", ""}})), std::string("Mono"));
     CHECK_EQ(first(plugin("Wider", "Fx|Spatial")), std::string("Wide"));
     CHECK_EQ(first(builtin("sidechain", "Sidechain", {percent("depth", 100)})), std::string("Pumping"));
+    // The built-in Transient Shaper by its Attack: up punchy, down soft, about 0 % (its default) nothing; a
+    // transient plug-in, by its name only, punchy.
+    const auto shaper = [](double attack) {
+        return builtin("transient", "Transient Shaper", {{"attack", "Attack", attack, (attack + 100) / 200, "%", ""}});
+    };
+    CHECK_EQ(first(shaper(70)), std::string("Punchy"));
+    CHECK_EQ(first(shaper(-60)), std::string("Soft"));
+    CHECK_EQ(first(shaper(0)), std::string());
+    CHECK_EQ(first(shaper(10)), std::string());
+    CHECK_EQ(readDevice(shaper(70)).summary, std::string("Transient Shaper, attack +70%"));
+    CHECK_EQ(first(plugin("Transient Master", "Fx|Dynamics")), std::string("Punchy"));
     // The built-in Reverb by its Dry/Wet; the Saturator by where its drive (dB) is in its range: 0 dB is no drive.
     CHECK_EQ(first(builtin("reverb", "Reverb", {percent("mix", 50)})), std::string("Washed Out"));
     CHECK_EQ(first(builtin("reverb", "Reverb", {percent("mix", 0)})), std::string());
