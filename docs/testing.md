@@ -70,7 +70,9 @@ all controls, and it opens after its delay even for a control that has left the 
 ("cannot find any window to open popup in"): a Loader takes its item out of the window at once but deletes it only
 later, and the tip closes itself only when its control is deleted. So the host closes the shared tooltip before it
 takes an editor away (`clear()`), else a tip a test's last hover started could fail the next test on that warning
-(`aTooltipWaitingAsTheEditorGoes`). By hand:
+(`aTooltipWaitingAsTheEditorGoes`). On any platform the window hears of a drag's cursor put back only later, as
+the cursor's own move, and one that came in during a test's next drag would be taken as part of it: a test that drags
+something else after a knob or value box lets go with `releaseDrag()`, which waits for it. By hand:
 
 ```sh
 xvfb-run -a -s "-screen 0 1920x1080x24" env QT_QPA_PLATFORM=xcb build/bin/test_ui_arrangement
