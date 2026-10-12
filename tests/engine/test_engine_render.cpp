@@ -334,9 +334,12 @@ TEST_CASE("over the top") {
     CHECK_NEAR(render(loud, 0.f), loud, 0.5);  // the crossovers sum flat
     CHECK_NEAR(render(quiet, 0.f), quiet, 0.5);
     const double squashedLoud = render(loud, 100.f), squashedQuiet = render(quiet, 100.f);
-    CHECK(squashedLoud < loud - 3);  // down from above,
-    CHECK(squashedQuiet > quiet + 15);  // up from below
+    CHECK(squashedLoud < loud - 10);  // down from above,
+    CHECK(squashedQuiet > quiet + 10);  // up from below
     CHECK(squashedLoud - squashedQuiet < 12);  // 37 dB apart went in
+    // As Live's Amount: half way is half the change in dB, not half the processed signal.
+    CHECK_NEAR(render(quiet, 50.f) - quiet, (squashedQuiet - quiet) / 2, 1.5);
+    CHECK_NEAR(render(loud, 50.f) - loud, (squashedLoud - loud) / 2, 1.5);
 }
 
 TEST_CASE("source peaks and samples") {
