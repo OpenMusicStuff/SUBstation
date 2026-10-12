@@ -15,6 +15,7 @@
 #include "intelligence/Humanizer.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/TrackLabels.h"
+#include "intelligence/TrackSearch.h"
 #include "model/Project.h"
 #include "plugins/PluginFolderModel.h"
 #include "plugins/PluginIndex.h"
@@ -57,6 +58,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<Harmony>("Harmony");
     registerUncreatable<Humanizer>("Humanizer");
     registerUncreatable<TrackLabels>("TrackLabels");
+    registerUncreatable<TrackSearch>("TrackSearch");
     registerUncreatable<PluginListModel>("PluginListModel");
     registerUncreatable<PluginFolderModel>("PluginFolderModel");
     registerUncreatable<ArrangementActions>("ArrangementActions");

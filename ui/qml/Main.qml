@@ -244,6 +244,13 @@ ApplicationWindow {
         Session.browser.focusSearch()
     }
 
+    // Q: the arrangement's find bar (the clip view closed first), finding tracks by their names and labels.
+    function findTrack() {
+        arrangementArea.closeClipView()
+        if (arrangement.findTrack)
+            arrangement.findTrack()
+    }
+
     // Shift+Tab: the clip view goes back to the arrangement; or the selected clips open in it.
     function toggleClipView() {
         if (arrangementArea.clipViewShown)
@@ -504,6 +511,7 @@ ApplicationWindow {
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
                 Action { id: infoViewAction; objectName: "infoView"; text: qsTr("&Info View"); checkable: true; checked: true }
                 Action { objectName: "clipView"; text: qsTr("&Clip View"); shortcut: "Shift+Tab"; onTriggered: window.toggleClipView() }
+                Action { objectName: "findTrack"; text: qsTr("Find &Track"); shortcut: "Q"; onTriggered: window.findTrack() }
                 Action { objectName: "automation"; text: qsTr("&Automation"); shortcut: "A"; onTriggered: Session.editor.toggleAllAutomation() }
                 // The track headers' In/Out column (Audio From and To, monitoring), as Ableton's.
                 Action {

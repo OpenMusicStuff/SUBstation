@@ -86,6 +86,7 @@ class RenderProgress;
 class Selection;
 class SoundSimilarity;
 class TrackLabels;
+class TrackSearch;
 
 class Session : public QObject {
     Q_OBJECT
@@ -100,6 +101,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::Harmony* harmony READ harmony CONSTANT)
     Q_PROPERTY(sub::app::Humanizer* humanizer READ humanizer CONSTANT)
     Q_PROPERTY(sub::app::TrackLabels* trackLabels READ trackLabels CONSTANT)
+    Q_PROPERTY(sub::app::TrackSearch* trackSearch READ trackSearch CONSTANT)
     Q_PROPERTY(sub::app::ArrangementActions* arrangement READ arrangement CONSTANT)
     Q_PROPERTY(sub::app::DeviceSelection* deviceSelection READ deviceSelection CONSTANT)
     Q_PROPERTY(sub::app::RenderProgress* render READ render CONSTANT)
@@ -188,6 +190,7 @@ public:
     Harmony* harmony() const { return harmony_; }
     Humanizer* humanizer() const { return humanizer_; }
     TrackLabels* trackLabels() const { return trackLabels_; }
+    TrackSearch* trackSearch() const { return trackSearch_; }
     ArrangementActions* arrangement() const { return arrangement_; }
     DeviceSelection* deviceSelection() const { return devices_; }
     RenderProgress* render() const { return render_; }
@@ -471,6 +474,7 @@ private:
     Harmony* harmony_ = nullptr;
     Humanizer* humanizer_ = nullptr;
     TrackLabels* trackLabels_ = nullptr;
+    TrackSearch* trackSearch_ = nullptr;
     BrowserController* browser_ = nullptr;
     PresetIndex* presets_ = nullptr;
     RenderProgress* render_ = nullptr;

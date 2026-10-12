@@ -33,7 +33,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 `Session(engine, options)` makes, in order: the `Project`, the `QUndoStack`, the `ProjectEditor`, the `Selection`, the
 `EngineBridge` (on the engine it is given, which outlives it), the `PluginIndex`, the `SoundSimilarity` (which
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the
-`Humanizer`, the `TrackLabels` (what each track is, in words), the `BrowserController` (which starts the plug-in
+`Humanizer`, the `TrackLabels` (what each track is, in words), the `TrackSearch` (finding tracks by their names and labels), the `BrowserController` (which starts the plug-in
 scan, and points the sound similarity at its index), the `PresetIndex`, the `RenderProgress`, and the parts `ArrangementActions`, `DeviceSelection`,
 `ComputerKeyboard`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`. They are its children, and QML
 reads them as constant properties:
@@ -45,6 +45,7 @@ reads them as constant properties:
 | `similarity` | `SoundSimilarity` | finding similar sounds ([intelligence.md](../intelligence.md)); the browser's Find Similar uses it |
 | `harmony` | `Harmony` | the song's chords and key, from its MIDI ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
 | `trackLabels` | `TrackLabels` | what each track is, in a few words, and what that was made from ([intelligence.md](../intelligence.md#track-labels-the-application-side)); the tooltip over a track's name, and the MCP server's context (`describe()`) |
+| `trackSearch` | `TrackSearch` | the arrangement's find bar (Q): the tracks matching a query, names first, then labels ([intelligence.md](../intelligence.md#finding-tracks)) |
 | `arrangement` | `ArrangementActions` | [below](#the-arrangements-actions-arrangementactions) |
 | `deviceSelection` | `DeviceSelection` | [below](#the-device-view-deviceselection) |
 | `render` | `RenderProgress` | [below](#renders-in-the-background) |
