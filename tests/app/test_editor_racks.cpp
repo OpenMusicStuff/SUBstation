@@ -213,7 +213,7 @@ private Q_SLOTS:
     void instrumentRacks() {
         EditorFixture f;
         Project& p = f.project;
-        const QString keys = f.editor.addMidiTrack();
+        const QString keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString synth = f.track(keys).devices[0].id;
         const QString rack = f.editor.groupDevices(keys, {synth});
         QVERIFY(deviceIsInstrument(p.device(keys, rack)));
@@ -523,7 +523,7 @@ private Q_SLOTS:
     void ungroupingLayeredInstrumentsIsRefused() {
         EditorFixture f;
         Project& p = f.project;
-        const QString keys = f.editor.addMidiTrack();
+        const QString keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString rack = f.editor.groupDevices(keys, {f.track(keys).devices[0].id});
         const QString second = f.editor.addRackChain(keys, rack);
         f.editor.addDevice(keys, "synth", -1, second);  // two instruments: a chain has one

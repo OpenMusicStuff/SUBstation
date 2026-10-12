@@ -55,7 +55,7 @@ private Q_SLOTS:
         Session& s = f.s();
         TempDir dir;
         f.editor().addAudioTrack();
-        f.editor().addMidiTrack();
+        f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.editor().setTempo(98.0);
         QVERIFY(!s.clean());
         const QString path = dir.path(QStringLiteral("song.gilproj"));

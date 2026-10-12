@@ -60,6 +60,32 @@ else()
     target_link_libraries(mp3lame PRIVATE m)
 endif()
 
+# --- Vital (GPLv3): the built-in Vital instrument's synthesis engine -------------
+# Vendored in third_party/vital (see its README.md): Vital's synthesis code and
+# the parts of its src/common the engine and its presets need, without JUCE (a
+# stand-in for JuceHeader.h in compat/). Built as Vital builds it, as two unity
+# files, with the engine's SIMD flags and its warnings not shown.
+set(_vital ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vital)
+add_library(vital STATIC ${_vital}/src/unity_build/synthesis.cpp ${_vital}/src/unity_build/common.cpp)
+file(GLOB _vital_dirs LIST_DIRECTORIES true ${_vital}/src/synthesis/* ${_vital}/src/common/wavetable)
+list(FILTER _vital_dirs EXCLUDE REGEX "\\.(cpp|h)$")
+target_include_directories(vital SYSTEM PUBLIC
+    ${_vital}/compat ${_vital}/third_party ${_vital}/src/common ${_vital}/src/interface/look_and_feel ${_vital_dirs})
+set_target_properties(vital PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if (MSVC)
+    target_compile_options(vital PRIVATE /W0 /bigobj)
+    target_compile_definitions(vital PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+else()
+    target_compile_options(vital PRIVATE -w -fno-math-errno)
+endif()
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    if (MSVC)
+        target_compile_options(vital PRIVATE /arch:AVX2)
+    else()
+        target_compile_options(vital PRIVATE -mavx2 -mfma)
+    endif()
+endif()
+
 # --- VST3 SDK (MIT; the parts we use are vendored in third_party/vst3sdk) --------
 set(VST3_SDK ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vst3sdk CACHE INTERNAL "The vendored VST 3 SDK")
 
@@ -218,6 +244,7 @@ add_library(sub_engine STATIC
     src/builtin/BuiltinProcessor.cpp
     src/builtin/BuiltinRegistry.cpp
     src/builtin/SampleSlicing.cpp
+    src/builtin/VitalPatch.cpp
     ${BUILTIN_DEVICE_SOURCES}
     ${CMAKE_CURRENT_BINARY_DIR}/generated/BuiltinDevices.cpp
     src/plugins/EditorWindow.cpp
@@ -295,7 +322,7 @@ target_include_directories(sub_engine PUBLIC src)
 # Signalsmith Stretch (time stretching / pitch shifting) and its FFT library:
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
-target_link_libraries(sub_engine PRIVATE signalsmith_linear mp3lame)
+target_link_libraries(sub_engine PRIVATE signalsmith_linear mp3lame vital)
 target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)
@@ -334,6 +361,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         check_cxx_compiler_flag("-Wa,-muse-unaligned-vector-move" SUB_HAVE_UNALIGNED_VECTOR_MOVE)
         if (SUB_HAVE_UNALIGNED_VECTOR_MOVE)
             target_compile_options(sub_engine PRIVATE -Wa,-muse-unaligned-vector-move)
+            target_compile_options(vital PRIVATE -Wa,-muse-unaligned-vector-move)
         endif()
     endif()
 endif()

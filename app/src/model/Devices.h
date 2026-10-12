@@ -35,9 +35,6 @@ const BuiltinDevice* builtinDevice(const QString& kind);
 // How the browser's Built-in category groups the devices: (category, kinds), in order.
 std::vector<std::pair<QString, QStringList>> builtinCategories();
 
-// New MIDI tracks come with it, ready to play.
-inline const QString kDefaultInstrument = QStringLiteral("synth");
-
 // Whether a device of this kind (and plug-in) is an instrument.
 bool isInstrument(const QString& kind, const std::optional<PluginRef>& plugin = std::nullopt);
 // An instrument, or a rack with one in it (an instrument rack: it plays the track's notes).

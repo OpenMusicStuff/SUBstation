@@ -120,7 +120,7 @@ private Q_SLOTS:
         QVERIFY(view.selected().isEmpty());
         // Another track shown: its devices.
         view.selectDevice(a);
-        const QString other = f.editor().addMidiTrack();
+        const QString other = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.selection().selectTrack(other);
         QCOMPARE(view.trackId(), other);
         QVERIFY(view.selected().isEmpty() && view.anchor().isEmpty());
@@ -479,7 +479,7 @@ private Q_SLOTS:
         QCOMPARE(kinds(f.project().track(track).devices), (QStringList{QStringLiteral("utility"), QStringLiteral("utility")}));
 
         // An instrument preset with an audio track selected: on a new MIDI track, one undo step.
-        const QString keys = f.editor().addMidiTrack();
+        const QString keys = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.selection().selectTrack(keys);
         const QString pad = view.savePreset(f.project().track(keys).devices[0].id, QStringLiteral("Pad"));
         f.selection().selectTrack(track);

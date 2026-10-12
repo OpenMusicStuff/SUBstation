@@ -1,0 +1,35 @@
+Vital (GPLv3, see LICENSE), https://github.com/mtytel/vital
+Commit 636ca0ef517a4db087a6a08a6a8a5e704e21f836 (2022-04-20), Vital 1.0.6's source.
+
+What is here, as it is upstream unless listed below:
+- src/synthesis/: Vital's synthesis engine, without effects_engine/ (VitalFX's).
+- src/common/: what the engine and its presets need: synth_constants.h,
+  synth_parameters, synth_types, line_generator, fourier_transform.h, tuning,
+  load_save (trimmed, see below), wavetable/ (the wavetable creators).
+- src/interface/look_and_feel/synth_strings.h: the parameters' value names.
+- src/unity_build/: synthesis.cpp and common.cpp, the files Vital builds as.
+- third_party/json (nlohmann's JSON 3.1.2, MIT), third_party/kissfft
+  (KISS FFT, BSD-3-Clause): Vital's own copies.
+
+SUBstation's (not Vital's):
+- compat/JuceHeader.h: what the vendored files take from JUCE (leak detector
+  and non-copyable macros, a std::string-based String, StringArray, File for
+  tuning files, Base64, MemoryOutputStream, denormals off), so JUCE isn't needed.
+- Local changes (local-changes.patch, against the commit above):
+  - src/common/load_save.{h,cpp}: trimmed to the wave data conversions
+    (convertBufferToPcm, convertPcmToFloatBuffer), the presets' upgrade from
+    older versions (updateFromOldVersion), getAuthor, getLicense and comparing
+    versions: the rest is Vital's application (SynthBase, its folders, its
+    config file). The functions kept are unchanged.
+  - src/unity_build/common.cpp: without the files of Vital's application
+    (border_bounds_constrainer, midi_manager, startup, synth_gui_interface,
+    synth_base), which aren't vendored; operators.h included first.
+
+Not here: Vital's interface (its window, OpenGL), its plug-in and standalone
+wrappers, its presets and wavetables (under their own licence, not
+redistributable), JUCE.
+
+SUBstation uses it for its built-in Vital instrument (engine/src/builtin/
+devices/Vital.cpp, VitalPatch.h, VitalEngine.h). Vital's README asks that its
+names ("Vital", "Vital Audio", "Tytel", "Matt Tytel") not be used to market or
+to name a distribution of binaries built from it: see docs/licensing.md.

@@ -105,7 +105,7 @@ public:
     // clips; a MIDI track: by its instrument, "# Synth"). Its id.
     Q_INVOKABLE QString addAudioTrack(int index = -1, const QString& name = {});
     QString addAudioTrack(int index, const QString& name, const TrackParent& parent);
-    // A MIDI track with the default instrument (as its default preset has it).
+    // A MIDI track with no devices: the user picks its instrument.
     Q_INVOKABLE QString addMidiTrack(int index = -1, const QString& name = {});
     // A MIDI track with a built-in `instrument` ("": none), or with an
     // instrument `plugin` (as its default preset has it, if there is one; its
@@ -572,6 +572,18 @@ public:
     // model's: store it first.
     bool loadPresetInto(const QString& trackId, const QString& deviceId, const Device& preset,
                         const QString& text = QStringLiteral("Load Preset"));
+    // --- Vital (EditorVital.cpp) ---
+    // A Vital device's modulation slot `slot` (0..63) from `source` to
+    // `destination` (both "": the slot cleared, its amount and settings back to
+    // their defaults). A new source sets the slot's Bipolar as Vital does for
+    // it. One undo step. False if it isn't a Vital, or Vital's engine has no
+    // such source or destination.
+    Q_INVOKABLE bool setVitalModulation(const QString& trackId, const QString& deviceId, int slot,
+                                        const QString& source, const QString& destination);
+    // A new modulation, in the first free slot (the slot already joining them
+    // if one does): its slot; -1 if none is free (or as setVitalModulation refuses).
+    Q_INVOKABLE int addVitalModulation(const QString& trackId, const QString& deviceId, const QString& source,
+                                       const QString& destination);
     // A rack's name ("": named by its kind again).
     Q_INVOKABLE void renameRack(const QString& trackId, const QString& deviceId, const QString& name,
                                 const QString& text = QStringLiteral("Rename Rack"));

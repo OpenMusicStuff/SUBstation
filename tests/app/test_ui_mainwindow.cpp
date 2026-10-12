@@ -409,7 +409,7 @@ private Q_SLOTS:
     // unfolded, scrolled into view. What is typed goes into the field, not to the
     // one-key shortcuts; Esc closes it, the lanes taking the keyboard back.
     void findingTracks() {
-        for (int i = 0; i < 24; ++i) editor().addMidiTrack();
+        for (int i = 0; i < 24; ++i) editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString tower = editor().addMidiTrack(2, QStringLiteral("Bell Tower"));
         // The bell stab, named otherwise by the user, at the bottom in a folded group.
         const auto clips = editor().addClips({}, 0.0, {{QStringLiteral("C:/x/C_BellStab1.wav"), 1.0}});
@@ -563,7 +563,7 @@ private Q_SLOTS:
 
     // A found track shows whole, its automation lanes too, though its own lane was in view.
     void aFoundTracksAutomationShowsWhole() {
-        for (int i = 0; i < 12; ++i) editor().addMidiTrack();
+        for (int i = 0; i < 12; ++i) editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString last = editor().addMidiTrack(-1, QStringLiteral("Last Synth"));
         editor().showAutomation(last);
         editor().addAutomationLane(last);  // (lanes below its own: a taller row)

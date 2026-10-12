@@ -77,7 +77,7 @@ private Q_SLOTS:
         int count = f.stack.count();
         QVERIFY(!f.editor.loadPresetInto(track, compressor, presetOf(p.device(track, utility))));
         QCOMPARE(f.stack.count(), count);
-        const QString keys = f.editor.addMidiTrack();
+        const QString keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString instrumentRack = f.editor.groupDevices(keys, {f.track(keys).devices[0].id});
         const QString effectRack = f.editor.groupDevices(track, {utility});
         count = f.stack.count();
@@ -176,10 +176,10 @@ private Q_SLOTS:
         QVERIFY(first != second && first != factory && second != factory);
         QCOMPARE(p.device(track, f.editor.addDevice(track, "compressor")).params, newDevice("compressor").params);  // (no default)
         // A new MIDI track's instrument starts as its default too.
-        const QString keys = f.editor.addMidiTrack();
+        const QString keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.editor.setDeviceParam(keys, f.track(keys).devices[0].id, "volume", -9.0);
         saveDefault(f.track(keys).devices[0], root);
-        QCOMPARE(f.track(f.editor.addMidiTrack()).devices[0].params.value("volume"), -9.0);
+        QCOMPARE(f.track(f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"))).devices[0].params.value("volume"), -9.0);
 
         QVERIFY(clearDefault("utility", std::nullopt, root));
         QVERIFY(!clearDefault("utility", std::nullopt, root));

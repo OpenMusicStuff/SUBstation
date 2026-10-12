@@ -107,7 +107,7 @@ class TestUiDeviceEditors : public QObject, public sub::app::test::EditorHarness
 
     // A MIDI track whose instrument is a Sampler, its editor shown: (track, device, editor, its waveform).
     std::tuple<QString, QString, QQuickItem*, SampleView*> sampler() {
-        const QString track = editor()->addMidiTrack();
+        const QString track = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString device = editor()->addDevice(track, QStringLiteral("sampler"));
         QQuickItem* view = show(QStringLiteral("sampler"), track, device);
         return {track, device, view, view ? find<SampleView>(view, QStringLiteral("sampleView")) : nullptr};
@@ -499,7 +499,7 @@ private Q_SLOTS:
     // --- The Delay ----------------------------------------------------------------------------
 
     void delay() {
-        const QString track = editor()->addMidiTrack();
+        const QString track = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString device = editor()->addDevice(track, QStringLiteral("delay"));
         QQuickItem* view = show(QStringLiteral("delay"), track, device);
         QVERIFY(view);
@@ -705,7 +705,7 @@ private Q_SLOTS:
     // --- The EQ --------------------------------------------------------------------------------
 
     void eq() {
-        const QString track = editor()->addMidiTrack();
+        const QString track = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString device = editor()->addDevice(track, QStringLiteral("eq"));
         QQuickItem* view = show(QStringLiteral("eq"), track, device);
         QVERIFY(view);
@@ -1330,7 +1330,7 @@ private Q_SLOTS:
         QCOMPARE(p->macro(), -1);
 
         // A parameter choosing between named values: a list.
-        const QString keys = editor()->addMidiTrack();
+        const QString keys = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString sampler = editor()->addDevice(keys, QStringLiteral("sampler"));
         QQuickItem* loop = showKnob(keys, sampler, QStringLiteral("loop"));
         auto* list = qvariant_cast<QQuickItem*>(loop->property("list"));
@@ -1433,7 +1433,7 @@ private Q_SLOTS:
         save(grab(), QStringLiteral("eq-collapsed.png"));
 
         // The Sampler: a pluck, part of it played, looping, a note playing.
-        const QString keys = editor()->addMidiTrack();
+        const QString keys = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString sampler = editor()->addDevice(keys, QStringLiteral("sampler"));
         std::vector<float> pluck(static_cast<size_t>(kSampleRate));
         for (int i = 0; i < kSampleRate; ++i) {
@@ -1454,7 +1454,7 @@ private Q_SLOTS:
         save(grab(), QStringLiteral("sampler.png"));
 
         // A 1-Shot: a kick, its pitch falling, faded out; filtered, the LFO on.
-        const QString kicks = editor()->addMidiTrack();
+        const QString kicks = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString oneShot = editor()->addDevice(kicks, QStringLiteral("sampler"));
         std::vector<float> kick(static_cast<size_t>(kSampleRate / 2));
         double phase = 0.0;
@@ -1476,7 +1476,7 @@ private Q_SLOTS:
         save(grab(), QStringLiteral("sampler-oneshot.png"));
 
         // Sliced: a beat, cut at its transients, a slice playing.
-        const QString beats = editor()->addMidiTrack();
+        const QString beats = editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString slicer = editor()->addDevice(beats, QStringLiteral("sampler"));
         std::vector<float> loop(static_cast<size_t>(kSampleRate * 2), 0.f);
         quint32 noise = 777;

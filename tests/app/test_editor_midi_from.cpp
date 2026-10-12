@@ -35,8 +35,8 @@ struct Setup {
 
 Setup setUp(EditorFixture& f) {
     Setup s;
-    s.keys = f.editor.addMidiTrack();
-    s.lead = f.editor.addMidiTrack();
+    s.keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
+    s.lead = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
     s.synth = f.track(s.lead).devices[0].id;
     s.audio = f.editor.addAudioTrack();
     return s;
@@ -193,7 +193,7 @@ private Q_SLOTS:
         const auto clip = s.editor().addMidiClip(keys, 0.0, 4.0);
         QVERIFY(clip);
         s.editor().setClipNotes(*clip, {Note{69, 0.0, 4.0, 127}}, QStringLiteral("Notes"));
-        const QString lead = s.editor().addMidiTrack();
+        const QString lead = s.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString synth = s.project().track(lead).devices[0].id;
         QVERIFY(s.bridge().acceptsMidi(lead, synth));
         QVERIFY(std::abs(s.render(4000)[3000 * 2]) == 0.f);  // its own track has no notes

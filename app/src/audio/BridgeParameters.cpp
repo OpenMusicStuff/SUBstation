@@ -185,8 +185,8 @@ std::vector<ParamSpec> EngineBridge::deviceParamSpecs(const QString& trackId, co
         const sub::ParamInfo& info = infos[index];
         if (!info.automatable || info.hidden || info.readOnly) continue;
         std::function<QString(double)> text;
-        if (isPlugin) {
-            // The plug-in's own text, while it is there.
+        if (isPlugin || info.ownText) {
+            // The plug-in's (or the device's) own text, while it is there.
             const QPointer<EngineBridge> self(this);
             text = [self, id, index = static_cast<int>(index)](double value) {
                 if (self) {

@@ -1,0 +1,1342 @@
+diff --git a/engine/third_party/vital/src/common/load_save.cpp b/engine/third_party/vital/src/common/load_save.cpp
+index 751e6d7..92fa931 100644
+--- a/engine/third_party/vital/src/common/load_save.cpp
++++ b/engine/third_party/vital/src/common/load_save.cpp
+@@ -14,48 +14,20 @@
+  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++// SUBstation: Vital's load_save.cpp trimmed to what doesn't need Vital's
++// application (SynthBase, MidiManager, its folders and config file): the
++// conversions of wave data between float and PCM, the upgrade of presets saved
++// by older versions, and comparing versions. Loading a preset into the engine
++// is SUBstation's (engine/src/builtin/vital/VitalPatch.cpp). The functions kept
++// are as Vital has them.
++
+ #include "load_save.h"
+ #include "modulation_connection_processor.h"
+ #include "sound_engine.h"
+-#include "midi_manager.h"
+ #include "sample_source.h"
+-#include "synth_base.h"
+ #include "synth_constants.h"
+ #include "synth_oscillator.h"
+-
+-#define QUOTE(x) #x
+-#define STRINGIFY(x) QUOTE(x)
+-
+-namespace {
+-  const std::string kLinuxUserDataDirectory = "~/.local/share/vital/";
+-  const std::string kAvailablePacksFile = "available_packs.json";
+-  const std::string kInstalledPacksFile = "packs.json";
+-
+-  Time getBuildTime() {
+-    StringArray date_tokens;
+-    date_tokens.addTokens(STRINGIFY(BUILD_DATE), true);
+-    if (date_tokens.size() != 5)
+-      return Time::getCompilationDate();
+-
+-    int year = date_tokens[0].getIntValue();
+-    int month = date_tokens[1].getIntValue() - 1;
+-    int day = date_tokens[2].getIntValue();
+-    int hour = date_tokens[3].getIntValue();
+-    int minute = date_tokens[4].getIntValue();
+-
+-    return Time(year, month, day, hour, minute);
+-  }
+-} // namespace
+-
+-const std::string LoadSave::kUserDirectoryName = "User";
+-const std::string LoadSave::kPresetFolderName = "Presets";
+-const std::string LoadSave::kWavetableFolderName = "Wavetables";
+-const std::string LoadSave::kSkinFolderName = "Skins";
+-const std::string LoadSave::kSampleFolderName = "Samples";
+-const std::string LoadSave::kLfoFolderName = "LFOs";
+-
+-const std::string LoadSave::kAdditionalWavetableFoldersName = "wavetable_folders";
+-const std::string LoadSave::kAdditionalSampleFoldersName = "sample_folders";
++#include "wavetable_creator.h"
+ 
+ void LoadSave::convertBufferToPcm(json& data, const std::string& field) {
+   if (data.count(field) == 0)
+@@ -91,181 +63,6 @@ void LoadSave::convertPcmToFloatBuffer(json& data, const std::string& field) {
+   data[field] = encoded.toStdString();
+ }
+ 
+-json LoadSave::stateToJson(SynthBase* synth, const CriticalSection& critical_section) {
+-  json settings_data;
+-  vital::control_map& controls = synth->getControls();
+-  for (auto& control : controls)
+-    settings_data[control.first] = control.second->value();
+-
+-  vital::Sample* sample = synth->getSample();
+-  if (sample)
+-    settings_data["sample"] = sample->stateToJson();
+-
+-  json modulations;
+-  vital::ModulationConnectionBank& modulation_bank = synth->getModulationBank();
+-  for (int i = 0; i < vital::kMaxModulationConnections; ++i) {
+-    vital::ModulationConnection* connection = modulation_bank.atIndex(i);
+-    json modulation_data;
+-    modulation_data["source"] = connection->source_name;
+-    modulation_data["destination"] = connection->destination_name;
+-
+-    LineGenerator* line_mapping = connection->modulation_processor->lineMapGenerator();
+-    if (!line_mapping->linear())
+-      modulation_data["line_mapping"] = line_mapping->stateToJson();
+-
+-    modulations.push_back(modulation_data);
+-  }
+-
+-  settings_data["modulations"] = modulations;
+-
+-  if (synth->getWavetableCreator(0)) {
+-    json wavetables;
+-    for (int i = 0; i < vital::kNumOscillators; ++i) {
+-      WavetableCreator* wavetable_creator = synth->getWavetableCreator(i);
+-      wavetables.push_back(wavetable_creator->stateToJson());
+-    }
+-
+-    settings_data["wavetables"] = wavetables;
+-  }
+-
+-  json lfos;
+-  for (int i = 0; i < vital::kNumLfos; ++i) {
+-    LineGenerator* lfo_source = synth->getLfoSource(i);
+-    lfos.push_back(lfo_source->stateToJson());
+-  }
+-
+-  settings_data["lfos"] = lfos;
+-
+-  json data;
+-  data["synth_version"] = ProjectInfo::versionString;
+-  data["preset_name"] = synth->getPresetName().toStdString();
+-  data["author"] = synth->getAuthor().toStdString();
+-  data["comments"] = synth->getComments().toStdString();
+-  data["preset_style"] = synth->getStyle().toStdString();
+-  for (int i = 0; i < vital::kNumMacros; ++i) {
+-    std::string name = synth->getMacroName(i).toStdString();
+-    data["macro" + std::to_string(i + 1)] = name;
+-  }
+-  data["settings"] = settings_data;
+-  return data;
+-}
+-
+-void LoadSave::loadControls(SynthBase* synth, const json& data) {
+-  vital::control_map controls = synth->getControls();
+-  for (auto& control : controls) {
+-    std::string name = control.first;
+-    if (data.count(name)) {
+-      vital::mono_float value = data[name];
+-      control.second->set(value);
+-    }
+-    else {
+-      vital::ValueDetails details = vital::Parameters::getDetails(name);
+-      control.second->set(details.default_value);
+-    }
+-  }
+-
+-  synth->modWheelGuiChanged(controls["mod_wheel"]->value());
+-}
+-
+-void LoadSave::loadModulations(SynthBase* synth, const json& modulations) {
+-  synth->clearModulations();
+-  vital::ModulationConnectionBank& modulation_bank = synth->getModulationBank();
+-  int index = 0;
+-  for (const json& modulation : modulations) {
+-    std::string source = modulation["source"];
+-    std::string destination = modulation["destination"];
+-    vital::ModulationConnection* connection = modulation_bank.atIndex(index);
+-    index++;
+-
+-    if (synth->getEngine()->getModulationSource(source) == nullptr ||
+-        synth->getEngine()->getMonoModulationDestination(destination) == nullptr) {
+-      continue;
+-    }
+-    
+-    if (source.length() && destination.length()) {
+-      connection->source_name = source;
+-      connection->destination_name = destination;
+-      synth->connectModulation(connection);
+-    }
+-
+-    if (modulation.count("line_mapping"))
+-      connection->modulation_processor->lineMapGenerator()->jsonToState(modulation["line_mapping"]);
+-    else
+-      connection->modulation_processor->lineMapGenerator()->initLinear();
+-  }
+-}
+-
+-void LoadSave::loadSample(SynthBase* synth, const json& json_sample) {
+-  vital::Sample* sample = synth->getSample();
+-  if (sample)
+-    sample->jsonToState(json_sample);
+-}
+-
+-void LoadSave::loadWavetables(SynthBase* synth, const json& wavetables) {
+-  if (synth->getWavetableCreator(0) == nullptr)
+-    return;
+-
+-  int i = 0;
+-  for (const json& wavetable : wavetables) {
+-    WavetableCreator* wavetable_creator = synth->getWavetableCreator(i);
+-    wavetable_creator->jsonToState(wavetable);
+-    wavetable_creator->render();
+-    i++;
+-  }
+-}
+-
+-void LoadSave::loadLfos(SynthBase* synth, const json& lfos) {
+-  int i = 0;
+-  for (const json& lfo : lfos) {
+-    LineGenerator* lfo_source = synth->getLfoSource(i);
+-    lfo_source->jsonToState(lfo);
+-    lfo_source->render();
+-    i++;
+-  }
+-}
+-
+-void LoadSave::loadSaveState(std::map<std::string, String>& state, json data) {
+-  if (data.count("preset_name")) {
+-    std::string preset_name = data["preset_name"];
+-    state["preset_name"] = preset_name;
+-  }
+-
+-  if (data.count("author")) {
+-    std::string author = data["author"];
+-    state["author"] = author;
+-  }
+-
+-  if (data.count("comments")) {
+-    std::string comments = data["comments"];
+-    state["comments"] = comments;
+-  }
+-
+-  if (data.count("preset_style")) {
+-    std::string style = data["preset_style"];
+-    state["style"] = style;
+-  }
+-
+-  for (int i = 0; i < vital::kNumMacros; ++i) {
+-    std::string key = "macro" + std::to_string(i + 1);
+-    if (data.count(key)) {
+-      std::string name = data[key];
+-      state[key] = name;
+-    }
+-    else
+-      state[key] = "MACRO " + std::to_string(i + 1);
+-  }
+-}
+-
+-void LoadSave::initSaveInfo(std::map<std::string, String>& save_info) {
+-  save_info["preset_name"] = "";
+-  save_info["author"] = "";
+-  save_info["comments"] = "";
+-  save_info["style"] = "";
+-
+-  for (int i = 0; i < vital::kNumMacros; ++i)
+-    save_info["macro" + std::to_string(i + 1)] = "MACRO " + std::to_string(i + 1);
+-}
+-
+ json LoadSave::updateFromOldVersion(json state) {
+   json settings = state["settings"];
+   json modulations = settings["modulations"];
+@@ -1024,96 +821,6 @@ json LoadSave::updateFromOldVersion(json state) {
+   return state;
+ }
+ 
+-bool LoadSave::jsonToState(SynthBase* synth, std::map<std::string, String>& save_info, json data) {
+-  std::string version = data["synth_version"];
+-  
+-  int compare_feature_versions = compareFeatureVersionStrings(version, ProjectInfo::versionString);
+-  if (compare_feature_versions > 0)
+-    return false;
+-  
+-  int compare_versions = compareVersionStrings(version, ProjectInfo::versionString);
+-  if (compare_versions < 0 || data["settings"].count("sub_octave"))
+-    data = updateFromOldVersion(data);
+-  
+-  json settings = data["settings"];
+-  json modulations = settings["modulations"];
+-  json sample = settings["sample"];
+-  json wavetables = settings["wavetables"];
+-  json lfos = settings["lfos"];
+-
+-  loadControls(synth, settings);
+-  loadModulations(synth, modulations);
+-  loadSample(synth, sample);
+-  loadWavetables(synth, wavetables);
+-  loadLfos(synth, lfos);
+-  loadSaveState(save_info, data);
+-  synth->checkOversampling();
+-  
+-  return true;
+-}
+-
+-String LoadSave::getAuthorFromFile(const File& file) {
+-  static constexpr int kMaxCharacters = 40;
+-  static constexpr int kMinSize = 60;
+-  FileInputStream file_stream(file);
+-
+-  if (file_stream.getTotalLength() < kMinSize)
+-    return "";
+-
+-  file_stream.readByte();
+-  file_stream.readByte();
+-  MemoryBlock author_memory_block;
+-  file_stream.readIntoMemoryBlock(author_memory_block, 6);
+-
+-  char end_quote = file_stream.readByte();
+-  char colon = file_stream.readByte();
+-  char begin_quote = file_stream.readByte();
+-  if (author_memory_block.toString() != "author" || end_quote != '"' || colon != ':' || begin_quote != '"') {
+-    try {
+-      json parsed_json_state = json::parse(file.loadFileAsString().toStdString(), nullptr, false);
+-      return getAuthor(parsed_json_state);
+-    }
+-    catch (const json::exception& e) {
+-      return "";
+-    }
+-  }
+-
+-  MemoryBlock name_memory_block;
+-  file_stream.readIntoMemoryBlock(name_memory_block, kMaxCharacters);
+-  String name = name_memory_block.toString();
+-
+-  if (!name.contains("\""))
+-    return name.toStdString();
+-
+-  StringArray tokens;
+-  tokens.addTokens(name, "\"", "");
+-
+-  return tokens[0];
+-}
+-
+-String LoadSave::getStyleFromFile(const File& file) {
+-  static constexpr int kMinSize = 5000;
+-  FileInputStream file_stream(file);
+-
+-  if (file_stream.getTotalLength() < kMinSize)
+-    return "";
+-
+-  MemoryBlock style_memory_block;
+-  file_stream.readIntoMemoryBlock(style_memory_block, kMinSize);
+-
+-  StringArray tokens;
+-  tokens.addTokens(style_memory_block.toString(), "\"", "");
+-  bool found_style = false;
+-  for (String token : tokens) {
+-    if (found_style && token.trim() != ":")
+-      return token;
+-    if (token == "preset_style")
+-      found_style = true;
+-  }
+-
+-  return "";
+-}
+-
+ std::string LoadSave::getAuthor(json data) {
+   if (data.count("author"))
+     return data["author"];
+@@ -1126,780 +833,6 @@ std::string LoadSave::getLicense(json data) {
+   return "";
+ }
+ 
+-File LoadSave::getConfigFile() {
+-#if defined(JUCE_DATA_STRUCTURES_H_INCLUDED)
+-  PropertiesFile::Options config_options;
+-  config_options.applicationName = "Vial";
+-  config_options.osxLibrarySubFolder = "Application Support";
+-  config_options.filenameSuffix = "config";
+-
+-#ifdef LINUX
+-  config_options.folderName = "." + String(ProjectInfo::projectName).toLowerCase();
+-#else
+-  config_options.folderName = String(ProjectInfo::projectName).toLowerCase();
+-#endif
+-
+-  return config_options.getDefaultFile();
+-#else
+-  return File();
+-#endif
+-}
+-
+-void LoadSave::writeCrashLog(String crash_log) {
+-  File data_dir = getDataDirectory();
+-  if (!data_dir.exists() || !data_dir.isDirectory())
+-    return;
+-  File file = data_dir.getChildFile("crash.txt");
+-  file.replaceWithText(crash_log);
+-}
+-
+-void LoadSave::writeErrorLog(String error_log) {
+-  File data_dir = getDataDirectory();
+-  if (!data_dir.exists() || !data_dir.isDirectory())
+-    return; 
+-
+-  File file = getDataDirectory().getChildFile("errors.txt");
+-  file.appendText(error_log + "\n");
+-}
+-
+-File LoadSave::getFavoritesFile() {
+-#if defined(JUCE_DATA_STRUCTURES_H_INCLUDED)
+-  PropertiesFile::Options config_options;
+-  config_options.applicationName = "Vial";
+-  config_options.osxLibrarySubFolder = "Application Support";
+-  config_options.filenameSuffix = "favorites";
+-
+-#ifdef LINUX
+-  config_options.folderName = "." + String(ProjectInfo::projectName).toLowerCase();
+-#else
+-  config_options.folderName = String(ProjectInfo::projectName).toLowerCase();
+-#endif
+-
+-  return config_options.getDefaultFile();
+-#else
+-  return File();
+-#endif
+-}
+-
+-File LoadSave::getDefaultSkin() {
+-#if defined(JUCE_DATA_STRUCTURES_H_INCLUDED)
+-  PropertiesFile::Options config_options;
+-  config_options.applicationName = "Vial";
+-  config_options.osxLibrarySubFolder = "Application Support";
+-  config_options.filenameSuffix = "skin";
+-
+-#ifdef LINUX
+-  config_options.folderName = "." + String(ProjectInfo::projectName).toLowerCase();
+-#else
+-  config_options.folderName = String(ProjectInfo::projectName).toLowerCase();
+-#endif
+-
+-  return config_options.getDefaultFile();
+-#else
+-  return File();
+-#endif
+-}
+-
+-json LoadSave::getConfigJson() {
+-  File config_file = getConfigFile();
+-  if (!config_file.exists())
+-    return json();
+-
+-  try {
+-    json parsed = json::parse(config_file.loadFileAsString().toStdString(), nullptr, false);
+-    if (parsed.is_discarded())
+-      return json();
+-    return parsed;
+-  }
+-  catch (const json::exception& e) {
+-    return json();
+-  }
+-}
+-
+-json LoadSave::getFavoritesJson() {
+-  File favorites_file = getFavoritesFile();
+-  if (!favorites_file.exists())
+-    return json();
+-
+-  try {
+-    json parsed = json::parse(favorites_file.loadFileAsString().toStdString(), nullptr, false);
+-    if (parsed.is_discarded())
+-      return json();
+-    return parsed;
+-  }
+-  catch (const json::exception& e) {
+-    return json();
+-  }
+-}
+-
+-void LoadSave::addFavorite(const File& new_favorite) {
+-  json favorites = getFavoritesJson();
+-  favorites[new_favorite.getFullPathName().toStdString()] = 1;
+-  saveJsonToFavorites(favorites);
+-}
+-
+-void LoadSave::removeFavorite(const File& old_favorite) {
+-  json favorites = getFavoritesJson();
+-  std::string path = old_favorite.getFullPathName().toStdString();
+-
+-  if (favorites.count(path)) {
+-    favorites.erase(path);
+-    saveJsonToFavorites(favorites);
+-  }
+-}
+-
+-std::set<std::string> LoadSave::getFavorites() {
+-  json favorites_json = getFavoritesJson();
+-  
+-  std::set<std::string> favorites;
+-  for (auto& pair : favorites_json.items())
+-    favorites.insert(pair.key());
+-
+-  return favorites;
+-}
+-
+-void LoadSave::saveJsonToConfig(json config_state) {
+-  File config_file = getConfigFile();
+-
+-  if (!config_file.exists())
+-    config_file.create();
+-  config_file.replaceWithText(config_state.dump());
+-}
+-
+-void LoadSave::saveJsonToFavorites(json favorites_json) {
+-  File favorites_file = getFavoritesFile();
+-
+-  if (!favorites_file.exists())
+-    favorites_file.create();
+-  favorites_file.replaceWithText(favorites_json.dump());
+-}
+-
+-void LoadSave::saveAuthor(std::string author) {
+-  json data = getConfigJson();
+-
+-  data["author"] = author;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::savePreferredTTWTLanguage(std::string language) {
+-  json data = getConfigJson();
+-  data["ttwt_language"] = language;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveVersionConfig() {
+-  json data = getConfigJson();
+-
+-  data["synth_version"] = ProjectInfo::versionString;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveContentVersion(std::string version) {
+-  json data = getConfigJson();
+-
+-  data["content_version"] = version;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveUpdateCheckConfig(bool check_for_updates) {
+-  json data = getConfigJson();
+-  data["check_for_updates"] = check_for_updates;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveWorkOffline(bool work_offline) {
+-  json data = getConfigJson();
+-  data["work_offline"] = work_offline;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveLoadedSkin(const std::string& name) {
+-  json data = getConfigJson();
+-  data["loaded_skin"] = name;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveAnimateWidgets(bool animate_widgets) {
+-  json data = getConfigJson();
+-  data["animate_widgets"] = animate_widgets;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveDisplayHzFrequency(bool hz_frequency) {
+-  json data = getConfigJson();
+-  data["hz_frequency"] = hz_frequency;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveAuthenticated(bool authenticated) {
+-  json data = getConfigJson();
+-  data["authenticated"] = authenticated;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveWindowSize(float window_size) {
+-  json data = getConfigJson();
+-  data["window_size"] = window_size;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveLayoutConfig(vital::StringLayout* layout) {
+-  std::wstring chromatic_layout;
+-  wchar_t up_key;
+-  wchar_t down_key;
+-
+-  if (layout) {
+-    chromatic_layout = layout->getLayout();
+-    up_key = layout->getUpKey();
+-    down_key = layout->getDownKey();
+-  }
+-  else {
+-    chromatic_layout = getComputerKeyboardLayout();
+-    std::pair<wchar_t, wchar_t> octave_controls = getComputerKeyboardOctaveControls();
+-    down_key = octave_controls.first;
+-    up_key = octave_controls.second;
+-  }
+-
+-  json layout_data;
+-
+-  layout_data["chromatic_layout"] = chromatic_layout;
+-  layout_data["octave_up"] = up_key;
+-  layout_data["octave_down"] = down_key;
+-
+-  json data = getConfigJson();
+-  data["keyboard_layout"] = layout_data;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::saveMidiMapConfig(MidiManager* midi_manager) {
+-  MidiManager::midi_map midi_learn_map = midi_manager->getMidiLearnMap();
+-
+-  json midi_mapping_data;
+-
+-  for (auto& midi_mapping : midi_learn_map) {
+-    json midi_map_data;
+-    midi_map_data["source"] = midi_mapping.first;
+-
+-    json destinations_data;
+-    for (auto& midi_destination : midi_mapping.second) {
+-      json destination_data;
+-
+-      destination_data["destination"] = midi_destination.first;
+-      destination_data["min_range"] = midi_destination.second->min;
+-      destination_data["max_range"] = midi_destination.second->max;
+-      destinations_data.push_back(destination_data);
+-    }
+-
+-    midi_map_data["destinations"] = destinations_data;
+-    midi_mapping_data.push_back(midi_map_data);
+-  }
+-
+-  json data = getConfigJson();
+-  data["midi_learn"] = midi_mapping_data;
+-  saveJsonToConfig(data);
+-}
+-
+-void LoadSave::loadConfig(MidiManager* midi_manager, vital::StringLayout* layout) {
+-  json data = getConfigJson();
+-
+-  // Computer Keyboard Layout
+-  if (layout) {
+-    layout->setLayout(getComputerKeyboardLayout());
+-    std::pair<wchar_t, wchar_t> octave_controls = getComputerKeyboardOctaveControls();
+-    layout->setDownKey(octave_controls.first);
+-    layout->setUpKey(octave_controls.second);
+-  }
+-
+-  // Midi Learn Map
+-  if (data.count("midi_learn")) {
+-    MidiManager::midi_map midi_learn_map = midi_manager->getMidiLearnMap();
+-
+-    json midi_mapping_data = data["midi_learn"];
+-    for (json& midi_map_data : midi_mapping_data) {
+-      int source = midi_map_data["source"];
+-
+-      if (midi_map_data.count("destinations")) {
+-        json destinations_data = midi_map_data["destinations"];
+-        for (json& midi_destination : destinations_data) {
+-          std::string dest = midi_destination["destination"];
+-          midi_learn_map[source][dest] = &vital::Parameters::getDetails(dest);
+-        }
+-      }
+-    }
+-    midi_manager->setMidiLearnMap(midi_learn_map);
+-  }
+-}
+-
+-bool LoadSave::hasDataDirectory() {
+-  json data = getConfigJson();
+-  if (data.count("data_directory")) {
+-    std::string path = data["data_directory"];
+-    File directory(path);
+-    File packages = directory.getChildFile(kInstalledPacksFile);
+-    return directory.exists() && directory.isDirectory() && packages.exists();
+-  }
+-  return false;
+-}
+-
+-File LoadSave::getAvailablePacksFile() {
+-  json data = getConfigJson();
+-  if (data.count("data_directory") == 0)
+-    return File();
+-
+-  std::string path = data["data_directory"];
+-  File directory(path);
+-  if (!directory.exists() || !directory.isDirectory())
+-    return File();
+-
+-  return directory.getChildFile(kAvailablePacksFile);
+-}
+-
+-json LoadSave::getAvailablePacks() {
+-  File packs_file = getAvailablePacksFile();
+-  if (!packs_file.exists())
+-    return json();
+-
+-  try {
+-    json parsed = json::parse(packs_file.loadFileAsString().toStdString(), nullptr, false);
+-    if (parsed.is_discarded())
+-      return json();
+-    return parsed;
+-  }
+-  catch (const json::exception& e) {
+-    return json();
+-  }
+-}
+-
+-File LoadSave::getInstalledPacksFile() {
+-  json data = getConfigJson();
+-  if (data.count("data_directory") == 0)
+-    return File();
+-
+-  std::string path = data["data_directory"];
+-  File directory(path);
+-  if (!directory.exists() || !directory.isDirectory())
+-    return File();
+-
+-  return directory.getChildFile(kInstalledPacksFile);
+-}
+-
+-json LoadSave::getInstalledPacks() {
+-  File packs_file = getInstalledPacksFile();
+-  if (!packs_file.exists())
+-    return json();
+-
+-  try {
+-    json parsed = json::parse(packs_file.loadFileAsString().toStdString(), nullptr, false);
+-    if (parsed.is_discarded())
+-      return json();
+-    return parsed;
+-  }
+-  catch (const json::exception& e) {
+-    return json();
+-  }
+-}
+-
+-void LoadSave::saveInstalledPacks(const json& packs) {
+-  File packs_file = getInstalledPacksFile();
+-
+-  if (!packs_file.exists())
+-    packs_file.create();
+-  packs_file.replaceWithText(packs.dump());
+-}
+-
+-void LoadSave::markPackInstalled(int id) {
+-  json packs = getInstalledPacks();
+-  packs[std::to_string(id)] = 1;
+-  saveInstalledPacks(packs);
+-}
+-
+-void LoadSave::markPackInstalled(const std::string& name) {
+-  json packs = getInstalledPacks();
+-  std::string cleaned = String(name).removeCharacters(" ._").toLowerCase().toStdString();
+-
+-  packs[cleaned] = 1;
+-  saveInstalledPacks(packs);
+-}
+-
+-void LoadSave::saveDataDirectory(const File& data_directory) {
+-  json data = getConfigJson();
+-  std::string path = data_directory.getFullPathName().toStdString();
+-  data["data_directory"] = path;
+-  saveJsonToConfig(data);
+-}
+-
+-bool LoadSave::isInstalled() {
+-  return getDataDirectory().exists();
+-}
+-
+-bool LoadSave::wasUpgraded() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("synth_version"))
+-    return true;
+-
+-  std::string version = data["synth_version"];
+-  return compareVersionStrings(version, ProjectInfo::versionString) < 0;
+-}
+-
+-bool LoadSave::isExpired() {
+-  return getDaysToExpire() < 0;
+-}
+-
+-bool LoadSave::doesExpire() {
+-#ifdef EXPIRE_DAYS
+-  return true;
+-#else
+-  return false;
+-#endif
+-}
+-
+-int LoadSave::getDaysToExpire() {
+-#ifdef EXPIRE_DAYS
+-  Time current_time = Time::getCurrentTime();
+-  Time build_time = getBuildTime();
+-
+-  RelativeTime time_since_compile = current_time - build_time;
+-  int days_since_compile = time_since_compile.inDays();
+-  return EXPIRE_DAYS - days_since_compile;
+-#else
+-  return 0;
+-#endif
+-}
+-
+-bool LoadSave::shouldCheckForUpdates() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("check_for_updates"))
+-    return true;
+-
+-  return data["check_for_updates"];
+-}
+-
+-bool LoadSave::shouldWorkOffline() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("work_offline"))
+-    return false;
+-
+-  return data["work_offline"];
+-}
+-
+-std::string LoadSave::getLoadedSkin() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("loaded_skin"))
+-    return "";
+-
+-  return data["loaded_skin"];
+-}
+-
+-bool LoadSave::shouldAnimateWidgets() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("animate_widgets"))
+-    return true;
+-
+-  return data["animate_widgets"];
+-}
+-
+-bool LoadSave::displayHzFrequency() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("hz_frequency"))
+-    return false;
+-
+-  return data["hz_frequency"];
+-}
+-
+-bool LoadSave::authenticated() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("authenticated"))
+-    return false;
+-
+-  return data["authenticated"];
+-}
+-
+-int LoadSave::getOversamplingAmount() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("oversampling_amount"))
+-    return 2;
+-
+-  return data["oversampling_amount"];
+-}
+-
+-float LoadSave::loadWindowSize() {
+-  static constexpr float kMinWindowSize = 0.25f;
+-  
+-  json data = getConfigJson();
+-
+-  if (!data.count("window_size"))
+-    return 1.0f;
+-
+-  return std::max<float>(kMinWindowSize, data["window_size"]);
+-}
+-
+-String LoadSave::loadVersion() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("synth_version"))
+-    return "0.0.0";
+-
+-  std::string version = data["synth_version"];
+-  return version;
+-}
+-
+-String LoadSave::loadContentVersion() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("content_version"))
+-    return "0.0";
+-
+-  std::string version = data["content_version"];
+-  return version;
+-}
+-
+-std::wstring LoadSave::getComputerKeyboardLayout() {
+-  json data = getConfigJson();
+-
+-  if (data.count("keyboard_layout")) {
+-    json layout = data["keyboard_layout"];
+-
+-    if (layout.count("chromatic_layout"))
+-      return layout["chromatic_layout"];
+-  }
+-
+-  return vital::kDefaultKeyboard;
+-}
+-
+-std::string LoadSave::getPreferredTTWTLanguage() {
+-  json data = getConfigJson();
+-
+-  if (!data.count("ttwt_language"))
+-    return "";
+-
+-  std::string language = data["ttwt_language"];
+-  return language;
+-}
+-
+-std::string LoadSave::getAuthor() {
+-  json data = getConfigJson();
+-
+-  if (data.count("author"))
+-    return data["author"];
+-
+-  return "";
+-}
+-
+-std::pair<wchar_t, wchar_t> LoadSave::getComputerKeyboardOctaveControls() {
+-  std::pair<wchar_t, wchar_t> octave_controls(vital::kDefaultKeyboardOctaveDown, vital::kDefaultKeyboardOctaveUp);
+-  json data = getConfigJson();
+-
+-  if (data.count("keyboard_layout")) {
+-    json layout = data["keyboard_layout"];
+-    std::wstring down = layout["octave_down"];
+-    std::wstring up = layout["octave_up"];
+-    octave_controls.first = down[0];
+-    octave_controls.second = up[0];
+-  }
+-
+-  return octave_controls;
+-}
+-
+-void LoadSave::saveAdditionalFolders(const std::string& name, std::vector<std::string> folders) {
+-  json data = getConfigJson();
+-  json wavetable_folders;
+-  for (std::string& folder : folders)
+-    wavetable_folders.push_back(folder);
+-  data[name] = wavetable_folders;
+-
+-  saveJsonToConfig(data);
+-}
+-
+-std::vector<std::string> LoadSave::getAdditionalFolders(const std::string& name) {
+-  json data = getConfigJson();
+-  std::vector<std::string> folders;
+-
+-  if (data.count(name)) {
+-    json folder_list = data[name];
+-    for (json& folder : folder_list)
+-      folders.push_back(folder);
+-  }
+-
+-  return folders;
+-}
+-
+-File LoadSave::getDataDirectory() {
+-  json data = getConfigJson();
+-  if (data.count("data_directory")) {
+-    std::string path = data["data_directory"];
+-    File folder(path);
+-    if (folder.exists() && folder.isDirectory())
+-      return folder;
+-  }
+-
+-#ifdef LINUX
+-  File directory = File(kLinuxUserDataDirectory);
+-  String xdg_data_home = SystemStats::getEnvironmentVariable ("XDG_DATA_HOME", {});
+-
+-  if (!xdg_data_home.trim().isEmpty())
+-    directory = File(xdg_data_home).getChildFile("vial");
+-
+-#elif defined(__APPLE__)
+-  File home_directory = File::getSpecialLocation(File::userHomeDirectory);
+-  File directory = home_directory.getChildFile("Music").getChildFile("Vial");
+-#else
+-  File documents_dir = File::getSpecialLocation(File::userDocumentsDirectory);
+-  File directory = documents_dir.getChildFile("Vial");
+-#endif
+-
+-  return directory;
+-}
+-
+-std::vector<File> LoadSave::getDirectories(const String& folder_name) {
+-  File data_dir = getDataDirectory();
+-  std::vector<File> directories;
+-
+-  if (!data_dir.exists() || !data_dir.isDirectory())
+-    return directories;
+-
+-  Array<File> sub_folders;
+-  sub_folders.add(data_dir);
+-  data_dir.findChildFiles(sub_folders, File::findDirectories, false);
+-  for (const File& sub_folder : sub_folders) {
+-    File directory = sub_folder.getChildFile(folder_name);
+-    if (directory.exists() && directory.isDirectory())
+-      directories.push_back(directory);
+-  }
+-
+-  return directories;
+-}
+-
+-std::vector<File> LoadSave::getPresetDirectories() {
+-  return getDirectories(kPresetFolderName);
+-}
+-
+-std::vector<File> LoadSave::getWavetableDirectories() {
+-  return getDirectories(kWavetableFolderName);
+-}
+-
+-std::vector<File> LoadSave::getSkinDirectories() {
+-  return getDirectories(kSkinFolderName);
+-}
+-
+-std::vector<File> LoadSave::getSampleDirectories() {
+-  return getDirectories(kSampleFolderName);
+-}
+-
+-std::vector<File> LoadSave::getLfoDirectories() {
+-  return getDirectories(kLfoFolderName);
+-}
+-
+-File LoadSave::getUserDirectory() {
+-  File directory = getDataDirectory().getChildFile(kUserDirectoryName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-File LoadSave::getUserPresetDirectory() {
+-  File directory = getUserDirectory().getChildFile(kPresetFolderName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-File LoadSave::getUserWavetableDirectory() {
+-  File directory = getUserDirectory().getChildFile(kWavetableFolderName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-File LoadSave::getUserSkinDirectory() {
+-  File directory = getUserDirectory().getChildFile(kSkinFolderName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-File LoadSave::getUserSampleDirectory() {
+-  File directory = getUserDirectory().getChildFile(kSampleFolderName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-File LoadSave::getUserLfoDirectory() {
+-  File directory = getUserDirectory().getChildFile(kLfoFolderName);
+-  if (!directory.exists())
+-    directory.createDirectory();
+-  return directory;
+-}
+-
+-void LoadSave::getAllFilesOfTypeInDirectories(Array<File>& files, const String& extensions,
+-                                              const std::vector<File>& directories) {
+-  files.clear();
+-  for (const File& directory : directories) {
+-    if (directory.exists() && directory.isDirectory())
+-      directory.findChildFiles(files, File::findFiles, true, extensions);
+-  }
+-}
+-
+-void LoadSave::getAllPresets(Array<File>& presets) {
+-  getAllFilesOfTypeInDirectories(presets, String("*.") + vital::kPresetExtension, getPresetDirectories());
+-}
+-
+-void LoadSave::getAllWavetables(Array<File>& wavetables) {
+-  getAllFilesOfTypeInDirectories(wavetables, vital::kWavetableExtensionsList, getWavetableDirectories());
+-}
+-
+-void LoadSave::getAllSkins(Array<File>& skins) {
+-  getAllFilesOfTypeInDirectories(skins, String("*.") + vital::kSkinExtension, getSkinDirectories());
+-}
+-
+-void LoadSave::getAllLfos(Array<File>& lfos) {
+-  getAllFilesOfTypeInDirectories(lfos, String("*.") + vital::kLfoExtension, getLfoDirectories());
+-}
+-
+-void LoadSave::getAllSamples(Array<File>& samples) {
+-  getAllFilesOfTypeInDirectories(samples, "*.wav", getSampleDirectories());
+-}
+-
+-void LoadSave::getAllUserPresets(Array<File>& presets) {
+-  std::vector<File> directories = {
+-    getDataDirectory().getChildFile(kPresetFolderName),
+-    getUserPresetDirectory()
+-  };
+-  getAllFilesOfTypeInDirectories(presets, String("*.") + vital::kPresetExtension, directories);
+-}
+-
+-void LoadSave::getAllUserWavetables(Array<File>& wavetables) {
+-  std::vector<File> directories = {
+-    getDataDirectory().getChildFile(kWavetableFolderName),
+-    getUserWavetableDirectory()
+-  }; 
+-  getAllFilesOfTypeInDirectories(wavetables, vital::kWavetableExtensionsList, directories);
+-}
+-
+-void LoadSave::getAllUserLfos(Array<File>& lfos) {
+-  std::vector<File> directories = {
+-    getDataDirectory().getChildFile(kLfoFolderName),
+-    getUserLfoDirectory()
+-  };
+-  getAllFilesOfTypeInDirectories(lfos, String("*.") + vital::kLfoExtension, directories);
+-}
+-
+-void LoadSave::getAllUserSamples(Array<File>& samples) {
+-  std::vector<File> directories = {
+-    getDataDirectory().getChildFile(kSampleFolderName),
+-    getUserSampleDirectory()
+-  }; 
+-  getAllFilesOfTypeInDirectories(samples, "*.wav", directories);
+-}
+-
+ int LoadSave::compareFeatureVersionStrings(String a, String b) {
+   a.trim();
+   b.trim();
+@@ -1933,24 +866,3 @@ int LoadSave::compareVersionStrings(String a, String b) {
+   return compareVersionStrings(a.fromFirstOccurrenceOf(".", false, true),
+                                b.fromFirstOccurrenceOf(".", false, true));
+ }
+-
+-File LoadSave::getShiftedFile(const String directory_name, const String& extensions,
+-                              const std::string& additional_folders_name, const File& current_file, int shift) {
+-  FileSorterAscending file_sorter;
+-
+-  std::vector<File> directories = getDirectories(directory_name);
+-  std::vector<std::string> additional = getAdditionalFolders(additional_folders_name);
+-  for (const std::string& path : additional)
+-    directories.push_back(File(path));
+-
+-  Array<File> all_files;
+-  getAllFilesOfTypeInDirectories(all_files, extensions, directories);
+-  if (all_files.isEmpty())
+-    return File();
+-
+-  all_files.sort(file_sorter);
+-  int index = all_files.indexOf(current_file);
+-  if (index < 0)
+-    return all_files[0];
+-  return all_files[(index + shift + all_files.size()) % all_files.size()];
+-}
+diff --git a/engine/third_party/vital/src/common/load_save.h b/engine/third_party/vital/src/common/load_save.h
+index be192da..2443a60 100644
+--- a/engine/third_party/vital/src/common/load_save.h
++++ b/engine/third_party/vital/src/common/load_save.h
+@@ -14,6 +14,8 @@
+  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++// SUBstation: Vital's load_save.h trimmed to what load_save.cpp keeps (see there).
++
+ #pragma once
+ 
+ #include "JuceHeader.h"
+@@ -25,27 +27,8 @@
+ 
+ using json = nlohmann::json;
+ 
+-namespace vital {
+-  class StringLayout;
+-}
+-
+-class MidiManager;
+-class SynthBase;
+-
+ class LoadSave {
+   public:
+-    class FileSorterAscending {
+-      public:
+-        FileSorterAscending() { }
+-
+-        static int compareElements(File a, File b) {
+-          return a.getFullPathName().toLowerCase().compareNatural(b.getFullPathName().toLowerCase());
+-        }
+-
+-      private:
+-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FileSorterAscending)
+-    };
+-
+     enum PresetStyle {
+       kBass,
+       kLead,
+@@ -60,124 +43,14 @@ class LoadSave {
+     };
+ 
+     static const int kMaxCommentLength = 500;
+-    static const std::string kUserDirectoryName;
+-    static const std::string kPresetFolderName;
+-    static const std::string kWavetableFolderName;
+-    static const std::string kSkinFolderName;
+-    static const std::string kSampleFolderName;
+-    static const std::string kLfoFolderName;
+-    static const std::string kAdditionalWavetableFoldersName;
+-    static const std::string kAdditionalSampleFoldersName;
+-
+     static void convertBufferToPcm(json& data, const std::string& field);
+     static void convertPcmToFloatBuffer(json& data, const std::string& field);
+-    static json stateToJson(SynthBase* synth, const CriticalSection& critical_section);
+-
+-    static void loadControls(SynthBase* synth, const json& data);
+-    static void loadModulations(SynthBase* synth, const json& modulations);
+-    static void loadSample(SynthBase* synth, const json& sample);
+-    static void loadWavetables(SynthBase* synth, const json& wavetables);
+-    static void loadLfos(SynthBase* synth, const json& lfos);
+-    static void loadSaveState(std::map<std::string, String>& save_info, json data);
+-
+-    static void initSaveInfo(std::map<std::string, String>& save_info);
+     static json updateFromOldVersion(json state);
+-    static bool jsonToState(SynthBase* synth, std::map<std::string, String>& save_info, json state);
+-
+-    static String getAuthorFromFile(const File& file);
+-    static String getStyleFromFile(const File& file);
+     static std::string getAuthor(json file);
+     static std::string getLicense(json state);
+-
+-    static File getConfigFile();
+-    static void writeCrashLog(String crash_log);
+-    static void writeErrorLog(String error_log);
+-    static json getConfigJson();
+-    static File getFavoritesFile();
+-    static File getDefaultSkin();
+-    static json getFavoritesJson();
+-    static void addFavorite(const File& new_favorite);
+-    static void removeFavorite(const File& old_favorite);
+-    static std::set<std::string> getFavorites();
+-    static bool hasDataDirectory();
+-    static File getAvailablePacksFile();
+-    static json getAvailablePacks();
+-    static File getInstalledPacksFile();
+-    static json getInstalledPacks();
+-    static void saveInstalledPacks(const json& packs);
+-    static void markPackInstalled(int id);
+-    static void markPackInstalled(const std::string& name);
+-    static void saveDataDirectory(const File& data_directory);
+-    static bool isInstalled();
+-    static bool wasUpgraded();
+-    static bool isExpired();
+-    static bool doesExpire();
+-    static int getDaysToExpire();
+-    static bool shouldCheckForUpdates();
+-    static bool shouldWorkOffline();
+-    static std::string getLoadedSkin();
+-    static bool shouldAnimateWidgets();
+-    static bool displayHzFrequency();
+-    static bool authenticated();
+-    static int getOversamplingAmount();
+-    static float loadWindowSize();
+-    static String loadVersion();
+-    static String loadContentVersion();
+-    static void saveJsonToConfig(json config_state);
+-    static void saveJsonToFavorites(json favorites_json);
+-    static void saveAuthor(std::string author);
+-    static void savePreferredTTWTLanguage(std::string language);
+-    static void saveLayoutConfig(vital::StringLayout* layout);
+-    static void saveVersionConfig();
+-    static void saveContentVersion(std::string version);
+-    static void saveUpdateCheckConfig(bool check_for_updates);
+-    static void saveWorkOffline(bool work_offline);
+-    static void saveLoadedSkin(const std::string& name);
+-    static void saveAnimateWidgets(bool animate_widgets);
+-    static void saveDisplayHzFrequency(bool display_hz);
+-    static void saveAuthenticated(bool authenticated);
+-    static void saveWindowSize(float window_size);
+-    static void saveMidiMapConfig(MidiManager* midi_manager);
+-    static void loadConfig(MidiManager* midi_manager, vital::StringLayout* layout = nullptr);
+-
+-    static std::wstring getComputerKeyboardLayout();
+-    static std::string getPreferredTTWTLanguage();
+-    static std::string getAuthor();
+-    static std::pair<wchar_t, wchar_t> getComputerKeyboardOctaveControls();
+-    static void saveAdditionalFolders(const std::string& name, std::vector<std::string> folders);
+-    static std::vector<std::string> getAdditionalFolders(const std::string& name);
+-
+-    static File getDataDirectory();
+-    static std::vector<File> getDirectories(const String& folder_name);
+-    static std::vector<File> getPresetDirectories();
+-    static std::vector<File> getWavetableDirectories();
+-    static std::vector<File> getSkinDirectories();
+-    static std::vector<File> getSampleDirectories();
+-    static std::vector<File> getLfoDirectories();
+-    static File getUserDirectory();
+-    static File getUserPresetDirectory();
+-    static File getUserWavetableDirectory();
+-    static File getUserSkinDirectory();
+-    static File getUserSampleDirectory();
+-    static File getUserLfoDirectory();
+-    static void getAllFilesOfTypeInDirectories(Array<File>& files, const String& extensions,
+-                                               const std::vector<File>& directories);
+-    static void getAllPresets(Array<File>& presets);
+-    static void getAllWavetables(Array<File>& wavetables);
+-    static void getAllSkins(Array<File>& skins);
+-    static void getAllLfos(Array<File>& lfos);
+-    static void getAllSamples(Array<File>& samples);
+-    static void getAllUserPresets(Array<File>& presets);
+-    static void getAllUserWavetables(Array<File>& wavetables);
+-    static void getAllUserLfos(Array<File>& lfos);
+-    static void getAllUserSamples(Array<File>& samples);
+     static int compareFeatureVersionStrings(String a, String b);
+     static int compareVersionStrings(String a, String b);
+ 
+-    static File getShiftedFile(const String directory_name, const String& extensions,
+-                               const std::string& additional_folders_name, const File& current_file, int shift);
+-
+   private:
+     LoadSave() { }
+ };
+-
+diff --git a/engine/third_party/vital/src/unity_build/common.cpp b/engine/third_party/vital/src/unity_build/common.cpp
+index fd8e0db..be00781 100644
+--- a/engine/third_party/vital/src/unity_build/common.cpp
++++ b/engine/third_party/vital/src/unity_build/common.cpp
+@@ -14,19 +14,18 @@
+  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
+-#if !HEADLESS
+-#include "border_bounds_constrainer.cpp"
+-#endif
++
++// SUBstation: without the files of Vital's application (border_bounds_constrainer,
++// midi_manager, startup, synth_gui_interface, synth_base), which aren't vendored;
++// operators.h first, as one of those brought it in before synth_strings.h needs it.
++
++#include "operators.h"
+ 
+ #include "line_generator.cpp"
+-#include "midi_manager.cpp"
+ #include "tuning.cpp"
+-#include "startup.cpp"
+-#include "synth_gui_interface.cpp"
+ #include "synth_parameters.cpp"
+ #include "load_save.cpp"
+ #include "synth_types.cpp"
+-#include "synth_base.cpp"
+ #include "wavetable_component_factory.cpp"
+ #include "wavetable_keyframe.cpp"
+ #include "file_source.cpp"

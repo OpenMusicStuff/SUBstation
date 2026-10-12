@@ -120,6 +120,7 @@ struct ParamInfo {
     bool automatable = true;
     bool readOnly = false;                 // set by the processor itself (a meter or a display)
     bool hidden = false;                   // not for a generic editor (e.g. a plug-in's own bypass)
+    bool ownText = false;                  // shown as the processor's paramText() has it, not by its unit
 
     // The number of steps between the lowest and highest value of a discrete
     // parameter (a list, or whole values); 0 for a continuous one.

@@ -111,7 +111,7 @@ class TestUiPianoRoll : public QObject {
     // A MIDI track (with the Synth) and a one-bar clip at beat 4, open in the
     // piano roll (as by inserting a MIDI clip on its lane).
     void openMidiClip() {
-        trackId_ = session().editor()->addMidiTrack();
+        trackId_ = session().editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = session().editor()->addMidiClip(trackId_, 4.0, 4.0);
         QVERIFY(ref);
         clipId_ = ref->clipId;
@@ -542,7 +542,7 @@ private Q_SLOTS:
         openMidiClip();  // A: beats 4-8
         sub::app::ProjectEditor& editor = *session().editor();
         const auto later = editor.addMidiClip(trackId_, 12.0, 4.0);  // A again: 12-16
-        const QString other = editor.addMidiTrack();
+        const QString other = editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto between = editor.addMidiClip(other, 8.0, 4.0);  // B: 8-12
         QVERIFY(later && between);
         editor.setClipNotes({trackId_, clipId_}, {note(60, 0, 1)}, QStringLiteral("Notes"));
@@ -918,7 +918,7 @@ private Q_SLOTS:
     void fittedOnceShown() {
         // Opened while hidden (the device view showing), the clip is fitted when it shows.
         clipView_->setVisible(false);
-        trackId_ = session().editor()->addMidiTrack();
+        trackId_ = session().editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         clipId_ = session().editor()->addMidiClip(trackId_, 4.0, 2.0)->clipId;
         session().editor()->setClipNotes({trackId_, clipId_}, {note(84, 0.0, 1.0), note(88, 1.0, 1.0)},
                                          QStringLiteral("setup"));

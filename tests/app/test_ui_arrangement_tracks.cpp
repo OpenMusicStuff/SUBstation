@@ -1398,7 +1398,7 @@ private Q_SLOTS:
     }
 
     void midiHeaderControls() {
-        const QString track = editor().addMidiTrack();
+        const QString track = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         h_->settle();
         TrackHeaderItem* h = header(track);
         QVERIFY(h->midi());

@@ -277,7 +277,7 @@ private Q_SLOTS:
 
     void recordedBendsBecomeTheNotesBends() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         RecordedTake take{track, {}, 0.0, 2.0, {}, true};  // two seconds: four beats at 120 BPM
         RecordedTakeNote played{0.5, 1.5, 60, 100, {}};
         for (int i = 0; i <= 50; ++i) played.bend.emplace_back(i * 0.01, 2.0 * i / 50.0);  // up a tone over a beat (half a second)
@@ -295,7 +295,7 @@ private Q_SLOTS:
 
     void bentNotesPlayAtTheirBentPitch() {
         SessionFixture s;
-        const QString track = s.editor().addMidiTrack();  // with the Synth (a saw)
+        const QString track = s.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));  // with the Synth (a saw)
         const QString synth = s.project().track(track).devices[0].id;
         s.editor().setDeviceParam(track, synth, QStringLiteral("wave"), 0.0);  // a sine
         s.editor().setDeviceParam(track, synth, QStringLiteral("cutoff"), 20000.0);

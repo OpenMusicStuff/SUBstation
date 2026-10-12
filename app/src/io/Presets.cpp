@@ -1,6 +1,7 @@
 #include "io/Presets.h"
 
 #include "io/Serialization.h"
+#include "io/VitalPresets.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
 #include "model/Paths.h"
@@ -35,7 +36,7 @@ QString stemOf(const QString& fileName) {
 }
 
 bool isPresetFile(const QFileInfo& info) {
-    return info.isFile() && info.fileName().toLower().endsWith(kPresetExtension);
+    return info.isFile() && (info.fileName().toLower().endsWith(kPresetExtension) || isVitalPreset(info.fileName()));
 }
 
 QString rootOr(const QString& root) { return root.isEmpty() ? libraryDir() : root; }

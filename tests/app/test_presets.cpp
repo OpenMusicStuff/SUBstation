@@ -311,8 +311,8 @@ private Q_SLOTS:
 
     void builtInDevicesComeFromTheEngine() {
         QVERIFY(!builtinDevices().empty());
-        QVERIFY(builtinDevice(kDefaultInstrument) != nullptr);
-        QVERIFY(builtinDevice(kDefaultInstrument)->instrument);
+        QVERIFY(builtinDevice("synth") != nullptr && builtinDevice("synth")->instrument);
+        QVERIFY(builtinDevice("vital") != nullptr && builtinDevice("vital")->instrument);
         QVERIFY(isInstrument("synth") && !isInstrument("utility") && !isInstrument("nothing"));
         // Instruments first, then by name.
         const auto categories = builtinCategories();

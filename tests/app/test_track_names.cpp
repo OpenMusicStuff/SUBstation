@@ -100,7 +100,7 @@ private Q_SLOTS:
     // A MIDI track: its instrument's name, as it changes.
     void midiTracksAreNamedByTheirInstrument() {
         EditorFixture f;
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         QCOMPARE(f.track(track).name, QStringLiteral("1 Synth"));
         QCOMPARE(f.track(track).nameTemplate, QStringLiteral("# Synth"));
         const QString synth = f.track(track).devices.front().id;
@@ -130,7 +130,7 @@ private Q_SLOTS:
     void numbersFollowTheTracksPlaces() {
         EditorFixture f;
         const QString a = f.editor.addAudioTrack();
-        const QString b = f.editor.addMidiTrack();
+        const QString b = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString vox = f.editor.addAudioTrack(-1, QStringLiteral("Vox"));  // (no #: no number)
         const QString c = f.editor.addAudioTrack();
         QCOMPARE(names(f.project), (QStringList{"1 Audio", "2 Synth", "Vox", "4 Audio"}));
@@ -195,7 +195,7 @@ private Q_SLOTS:
         f.editor.addAudioTrack();
         const QString kick = audioTrack(f, {"kick.wav"});
         f.editor.renameTrack(kick, QStringLiteral("# Drums"));
-        f.editor.addMidiTrack();
+        f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         QJsonObject data = projectToJson(f.project);
         QJsonArray tracks = data.value(QStringLiteral("tracks")).toArray();
         QCOMPARE(tracks.at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("# Drums"));

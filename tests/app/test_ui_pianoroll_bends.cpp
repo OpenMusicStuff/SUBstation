@@ -75,7 +75,7 @@ class TestUiPianoRollBends : public QObject {
 
     // A MIDI track (with the Synth) and a one-bar clip at beat 4 holding `notes`, open in the piano roll.
     void openClip(const std::vector<Note>& notes) {
-        trackId_ = session().editor()->addMidiTrack();
+        trackId_ = session().editor()->addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = session().editor()->addMidiClip(trackId_, 4.0, 4.0);
         QVERIFY(ref);
         clipId_ = ref->clipId;

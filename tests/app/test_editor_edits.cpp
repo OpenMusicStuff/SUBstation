@@ -279,7 +279,7 @@ private Q_SLOTS:
         EditorFixture f;
         const QString a = f.editor.addAudioTrack();
         const QString b = f.editor.addAudioTrack();
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const int steps = f.stack.count();
         f.editor.setTrackInput(a, {2, 3});
         f.editor.setTrackMonitor(a, "in");
@@ -398,7 +398,7 @@ private Q_SLOTS:
     void pasteOntoAnotherKindOfTrackGoesBackWhereItCameFrom() {
         EditorFixture f;
         const QString audio = f.editor.addAudioTrack();
-        const QString midi = f.editor.addMidiTrack();
+        const QString midi = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.editor.addClips(audio, 0.0, {{"a.wav", 1.0}});
         const auto content = f.editor.copyRange(0.0, 2.0, {audio});
         QCOMPARE(f.editor.pasteTargets(*content, midi), std::optional<QStringList>(QStringList{audio}));
@@ -550,7 +550,7 @@ private Q_SLOTS:
     void deactivatingSplitsOffTheStretchInTheRange() {
         EditorFixture f;
         const QString a = f.editor.addAudioTrack();
-        const QString m = f.editor.addMidiTrack();
+        const QString m = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         f.editor.addClips(a, 0.0, {{"a.wav", 4.0}});  // beats 0-8
         const auto notes = f.editor.addMidiClip(m, 0.0, 8.0);
         f.editor.setClipNotes(*notes, {Note{60, 0.0, 1.0}, Note{62, 3.0, 1.0}}, "Add Note");

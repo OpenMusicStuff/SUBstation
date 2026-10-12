@@ -123,7 +123,7 @@ private Q_SLOTS:
         QVERIFY(!group.isEmpty());
 
         // A MIDI track: the default instrument, a compressor after it, notes, and its volume automated.
-        const QString midiTrack = editor().addMidiTrack();
+        const QString midiTrack = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         QVERIFY(!midiTrack.isEmpty());
         QVERIFY(!editor().addDevice(midiTrack, QStringLiteral("compressor")).isEmpty());
         const auto clip = editor().addMidiClip(midiTrack, 0.0, 4.0);

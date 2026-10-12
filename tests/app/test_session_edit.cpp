@@ -537,7 +537,7 @@ private Q_SLOTS:
 
     void reversingNeedsAudioClips() {
         SessionFixture f;
-        const QString track = f.editor().addMidiTrack();
+        const QString track = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto ref = f.editor().addMidiClip(track, 0.0, 4.0);
         f.selection().selectClips(f.editor(), {*ref});
         f.s().reverseClips();

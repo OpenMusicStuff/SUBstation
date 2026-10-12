@@ -126,7 +126,7 @@ private Q_SLOTS:
         const QString a = ab[0], b = ab[1];
         const QString group = f.editor.groupTracks({a, b});
         InsertionPoint point = f.editor.insertionPoint(a);
-        const QString added = f.editor.addMidiTrack(*point.index, "M", kDefaultInstrument, std::nullopt, point.parent);
+        const QString added = f.editor.addMidiTrack(*point.index, "M", "synth", std::nullopt, point.parent);
         QCOMPARE(f.track(added).parent, std::optional<QString>(group));
         QCOMPARE(p.trackIndex(added), p.trackIndex(a) + 1);
         QCOMPARE(f.track(added).color, f.track(group).color);  // a new track takes its group's colour

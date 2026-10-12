@@ -10,10 +10,12 @@
 #include <functional>
 
 #include "audio/EngineBridge.h"
+#include "builtin/VitalPatch.h"
 #include "editor/EditorSupport.h"
 #include "editor/ProjectEditor.h"
 #include "io/Presets.h"
 #include "io/Serialization.h"
+#include "io/VitalPresets.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
 #include "model/Ids.h"
@@ -27,6 +29,7 @@ namespace {
 
 constexpr const char* kPresetFolderKey = "presets/dir";
 constexpr const char* kVst3PresetFolderKey = "plugins/preset_dir";
+constexpr const char* kVitalPresetFolderKey = "vital/preset_dir";
 const QString kNestedTooDeep = QStringLiteral("The preset can't go there: racks nest at most 8 deep.");
 
 bool has(int modifiers, Qt::KeyboardModifier modifier) { return (modifiers & modifier) != 0; }
@@ -620,6 +623,37 @@ bool DeviceSelection::saveVst3Preset(const QString& deviceId, const QString& pat
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(*state) != state->size()) {
         Q_EMIT statusMessage(QStringLiteral("Could not save the preset: ") + file.errorString());
+        return false;
+    }
+    return true;
+}
+
+// --- Vital's presets -----------------------------------------------------------------------------
+
+QString DeviceSelection::vitalPresetFolder() const {
+    const QString stored = QSettings().value(QString::fromLatin1(kVitalPresetFolderKey)).toString();
+    if (!stored.isEmpty() && QFileInfo(stored).isDir()) return stored;
+    const QString documents = QDir::homePath() + QStringLiteral("/Documents");
+    for (const QString& folder : {documents + QStringLiteral("/Vital"), QDir::homePath() + QStringLiteral("/.local/share/vital")}) {
+        if (QFileInfo(folder).isDir()) return folder;
+    }
+    return documents;
+}
+
+bool DeviceSelection::loadVitalPreset(const QString& deviceId, const QString& path) {
+    if (path.isEmpty()) return false;
+    QSettings().setValue(QString::fromLatin1(kVitalPresetFolderKey), QFileInfo(path).absolutePath());
+    return loadPresetInto(deviceId, path);
+}
+
+bool DeviceSelection::saveVitalPreset(const QString& deviceId, const QString& path) {
+    const Device* device = trackId_.isEmpty() ? nullptr : project_->findDevice(trackId_, deviceId);
+    if (path.isEmpty() || device == nullptr || device->kind != QLatin1String(vitalpatch::kKind)) return false;
+    QSettings().setValue(QString::fromLatin1(kVitalPresetFolderKey), QFileInfo(path).absolutePath());
+    try {
+        sub::app::saveVitalPreset(*device, path);
+    } catch (const ProjectFileError& error) {
+        Q_EMIT statusMessage(error.message());
         return false;
     }
     return true;

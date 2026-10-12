@@ -138,6 +138,7 @@ struct ProcessorParam {
     Q_PROPERTY(bool automatable MEMBER automatable)
     Q_PROPERTY(bool readOnly MEMBER readOnly)
     Q_PROPERTY(bool hidden MEMBER hidden)
+    Q_PROPERTY(bool ownText MEMBER ownText)
     Q_PROPERTY(int stepCount READ stepCount)
 
 public:
@@ -153,6 +154,7 @@ public:
     bool automatable = true;
     bool readOnly = false;  // set by the processor itself (a meter)
     bool hidden = false;  // not for a generic editor (a plug-in's own bypass)
+    bool ownText = false;  // its text is the processor's (EngineBridge::deviceParamText), not its unit's
 
     // Steps between the lowest and highest value of a discrete parameter; 0 if continuous.
     int stepCount() const;

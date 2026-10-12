@@ -376,7 +376,7 @@ private Q_SLOTS:
 
     void aMidiLeadOpensAloneInThePianoRoll() {
         threeTracks();
-        const QString midiTrack = editor().addMidiTrack();
+        const QString midiTrack = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto midiClip = editor().addMidiClip(midiTrack, 0.0, 4.0);
         QVERIFY(midiClip);
         // Led by an audio clip: the audio clips among them.
@@ -412,7 +412,7 @@ private Q_SLOTS:
 
     void theWindowsShortcutsWorkOverAudioClips() {
         threeTracks();
-        const QString midiTrack = editor().addMidiTrack();
+        const QString midiTrack = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const auto midiClip = editor().addMidiClip(midiTrack, 0.0, 4.0);
         open({*midiClip});
         auto* grid = clipView_->findChild<sub::ui::NoteGrid*>(QStringLiteral("noteGrid"));

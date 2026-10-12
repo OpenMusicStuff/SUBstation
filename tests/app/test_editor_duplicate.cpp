@@ -47,7 +47,7 @@ private Q_SLOTS:
         EditorFixture f;
         Project& p = f.project;
         const QString source = f.editor.addAudioTrack();
-        const QString track = f.editor.addMidiTrack();
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const ClipRef clip = *f.editor.addMidiClip(track, 0.0, 4.0);
         f.editor.setClipNotes(clip, {Note{60, 0.0, 1.0}}, "Add Note");
         const QString synth = f.track(track).devices[0].id;

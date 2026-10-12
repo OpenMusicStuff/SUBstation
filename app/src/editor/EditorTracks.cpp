@@ -94,9 +94,7 @@ QString ProjectEditor::addAudioTrack(int index, const QString& name, const Track
     return insertTrack(std::move(track), index, parent, QStringLiteral("Insert Audio Track"), true);
 }
 
-QString ProjectEditor::addMidiTrack(int index, const QString& name) {
-    return addMidiTrack(index, name, kDefaultInstrument);
-}
+QString ProjectEditor::addMidiTrack(int index, const QString& name) { return addMidiTrack(index, name, QString()); }
 
 QString ProjectEditor::addMidiTrack(int index, const QString& name, const QString& instrument,
                                     const std::optional<PluginRef>& plugin, const TrackParent& parent) {
