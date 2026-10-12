@@ -13,6 +13,7 @@
 #include <QQuickWindow>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 #include <QUndoStack>
 
@@ -24,6 +25,7 @@
 #include "audio/AudioSettings.h"
 #include "audio/EngineBridge.h"
 #include "editor/ProjectEditor.h"
+#include "mcp/McpServer.h"
 #include "model/Project.h"
 #include "plugins/PluginIndex.h"
 #include "session/AudioPreferences.h"
@@ -192,6 +194,52 @@ private Q_SLOTS:
                          sub::ui::Theme::window());
             test::screenshot(window_, QStringLiteral("preferences-look-and-feel-") + name.toLower());
         }
+        close(QStringLiteral("preferencesDialog"));
+    }
+
+    // Preferences › Agents: the MCP server on and off, its port (applied at once,
+    // kept), its address and the command adding it to Claude Code; its state.
+    void agentsPage() {
+        sub::app::McpServer& mcp = *session().mcp();
+        const auto freePort = [] {
+            QTcpServer probe;
+            return probe.listen(QHostAddress::LocalHost) ? int(probe.serverPort()) : 0;
+        };
+        const int first = freePort();
+        QVERIFY(first > 0);
+        mcp.setPort(first);
+        open(QStringLiteral("preferencesDialog"));
+        object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 4);
+        QQuickItem* enabled = nullptr;
+        QTRY_VERIFY((enabled = shown(QStringLiteral("mcpEnabled"))) != nullptr);
+        QVERIFY(!enabled->property("checked").toBool());
+        QCOMPARE(shown(QStringLiteral("mcpStatus"))->property("text").toString(), QStringLiteral("Off."));
+        QCOMPARE(shown(QStringLiteral("mcpUrl"))->property("text").toString(), mcp.url());
+        QCOMPARE(shown(QStringLiteral("mcpCommand"))->property("text").toString(), mcp.claudeCodeCommand());
+
+        QTest::mouseClick(window_, Qt::LeftButton, {}, enabled->mapToScene(QPointF(10, enabled->height() / 2)).toPoint());
+        QTRY_VERIFY(mcp.running());
+        QVERIFY(enabled->property("checked").toBool());
+        QCOMPARE(shown(QStringLiteral("mcpStatus"))->property("text").toString(), QStringLiteral("Running."));
+        test::screenshot(window_, QStringLiteral("preferences-agents"));
+
+        // Another port: it moves there (and says so in the address).
+        const int second = freePort();
+        QQuickItem* port = shown(QStringLiteral("mcpPort"));
+        port->setProperty("text", QString::number(second));
+        QVERIFY(QMetaObject::invokeMethod(port, "editingFinished"));
+        QCOMPARE(mcp.port(), second);
+        QVERIFY(mcp.running());
+        QVERIFY(shown(QStringLiteral("mcpUrl"))->property("text").toString().contains(QString::number(second)));
+        // Not a port: as it was.
+        port->setProperty("text", QStringLiteral("99999"));
+        QVERIFY(QMetaObject::invokeMethod(port, "editingFinished"));
+        QCOMPARE(mcp.port(), second);
+        QCOMPARE(port->property("text").toString(), QString::number(second));
+
+        QTest::mouseClick(window_, Qt::LeftButton, {}, enabled->mapToScene(QPointF(10, enabled->height() / 2)).toPoint());
+        QTRY_VERIFY(!mcp.running());
+        QVERIFY(!mcp.enabled());
         close(QStringLiteral("preferencesDialog"));
     }
 

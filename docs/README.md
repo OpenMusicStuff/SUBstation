@@ -67,6 +67,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Session](app/session.md) | `session/`, `files/`: the main window's logic: files, transport, Edit and Create commands, renders, preferences; the File Manager (missing files found, files replaced) and hot swaps |
 | [Plug-in scanner](app/plugin-scanner.md) | `plugins/`, `tools/scanner`: finding and reading VST3 plug-ins in child processes |
 | [Analysis](app/analysis.md) | `analysis/`: signal maths for the devices' editors (the Sidechain's fit, spectra) |
+| [MCP server](app/mcp.md) | `mcp/`: agents reading the project through the Model Context Protocol: the protocol (both eras), Streamable HTTP on localhost, the tools |
 
 ### UI
 
@@ -102,4 +103,4 @@ operating system.
 
 | Page | Covers |
 |---|---|
-| [Intelligence](intelligence.md) | sound similarity: the method and why, the fingerprint, comparing, the background index and its store, measurements; harmony: a song's chords and key from its MIDI, block chords and bass lines from them; humanizing: velocities from HUMANBRO's model (vendored, its model shipped); track labels: what each track is, in words, from its names, presets, files, notes, effects and mixer; later MIDI generation by machine learning, a timing model, chords from audio, an MCP server |
+| [Intelligence](intelligence.md) | sound similarity: the method and why, the fingerprint, comparing, the background index and its store, measurements; harmony: a song's chords and key from its MIDI, block chords and bass lines from them; humanizing: velocities from HUMANBRO's model (vendored, its model shipped); track labels: what each track is, in words, from its names, presets, files, notes, effects and mixer; finding tracks; later MIDI generation by machine learning, a timing model, chords from audio |

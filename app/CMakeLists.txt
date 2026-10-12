@@ -11,7 +11,7 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.h)
 qt_add_library(sub_app STATIC ${APP_SOURCES})
 add_library(sub::app ALIAS sub_app)
 target_include_directories(sub_app PUBLIC src)
-target_link_libraries(sub_app PUBLIC Qt6::Core Qt6::Gui sub_engine sub_browser sub_intelligence)
+target_link_libraries(sub_app PUBLIC Qt6::Core Qt6::Gui Qt6::Network sub_engine sub_browser sub_intelligence)
 # puff (zlib licence): inflate, for Ableton Live Sets (gzip-compressed XML; io/LiveSet.cpp).
 add_library(puff STATIC third_party/puff/puff.c)
 target_include_directories(puff SYSTEM PUBLIC third_party/puff)

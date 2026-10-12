@@ -609,6 +609,17 @@ ApplicationWindow {
                         checked = Qt.binding(() => Session.computerKeyboard.enabled)
                     }
                 }
+                // Agents read the project through it (Preferences › Agents: its port, its address).
+                Action {
+                    objectName: "mcpServer"
+                    text: qsTr("M&CP Server")
+                    checkable: true
+                    checked: Session.mcp.enabled
+                    onTriggered: {
+                        Session.mcp.enabled = checked
+                        checked = Qt.binding(() => Session.mcp.enabled)
+                    }
+                }
                 MenuSeparator {}
                 Action {
                     objectName: "lockEnvelopes"
