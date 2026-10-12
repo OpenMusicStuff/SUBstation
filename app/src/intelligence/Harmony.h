@@ -8,8 +8,8 @@
 // notes as they play them (the part each clip plays, on the timeline; none of
 // a deactivated clip). Audio
 // is for later. The piano roll shows them over its notes (the chord lane, notes
-// out of the key tinted red) and writes parts from them (Generate); MIDI
-// generation and the MCP server will take them as context.
+// out of the key tinted red) and writes parts from them (Generate); the MCP
+// server hands them to agents (get_harmony), and MIDI generation will take them.
 //
 // Inferring takes well under a millisecond for a song, so nothing runs in the
 // background and nothing is kept but the last result: a change to what it

@@ -62,6 +62,7 @@ namespace sub::app::test {
 // The host window's QML.
 inline constexpr const char* kEditorHost = R"QML(
 import QtQuick
+import QtQuick.Controls
 import SUBstation
 
 Window {
@@ -74,8 +75,21 @@ Window {
         return loader.item
     }
     function clear() {
+        // Qt's shared tooltip closed first (its delay stopped): the Loader takes the
+        // editor out of the window at once but deletes it only later, and a tip still
+        // waiting for a control in it would open meanwhile, with no window to open in.
+        loader.ToolTip.toolTip.close()
         loader.sourceComponent = null
         loader.source = ""
+    }
+    // The tooltip Qt shares among all controls (one per engine) shown for `item`
+    // after `delay` ms, as hovering a control asks it to.
+    function waitingToolTip(item, delay) {
+        const tip = loader.ToolTip.toolTip
+        tip.parent = item
+        tip.delay = delay
+        tip.text = "waiting"
+        tip.open()
     }
     function editorFor(kind) {
         return DeviceEditors.editorFor(kind)
@@ -144,6 +158,24 @@ Window {
     }
 }
 )QML";
+
+// Whether the system's cursor has moved to `at` (in the window), as the window heard of it.
+class CursorArrival : public QObject {
+public:
+    explicit CursorArrival(QPoint at) : at_(at) {}
+    bool arrived = false;
+
+protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::MouseMove && event->spontaneous() &&
+            (static_cast<QMouseEvent*>(event)->scenePosition().toPoint() - at_).manhattanLength() <= 1)
+            arrived = true;
+        return false;
+    }
+
+private:
+    QPoint at_;
+};
 
 class EditorHarness {
 protected:
@@ -510,6 +542,18 @@ protected:
         QGuiApplication::sendEvent(window, &event);
     }
     void dragTo(QPoint pos, Qt::KeyboardModifiers modifiers = Qt::NoModifier) { dragTo(window_, pos, modifiers); }
+
+    // Lets go at `at` of a knob's or value box's drag pressed at `began`, and waits for the system's cursor to get
+    // back there: the drag puts it back where it began (DragCursor), and the window hears of that later, as the
+    // cursor's own move. One that came in while the next drag was under way would be taken as part of it (as far
+    // as from here to there). (Not waited for long: a drag that never moved the cursor puts nothing back.)
+    void releaseDrag(QPoint began, QPoint at) {
+        CursorArrival arrival(began);
+        window_->installEventFilter(&arrival);
+        QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, at);
+        QTest::qWaitFor([&] { return arrival.arrived; }, 1000);
+        window_->removeEventFilter(&arrival);
+    }
 
     static void wheel(QQuickWindow* window, QPoint pos, int angle, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
         QWheelEvent event(QPointF(pos), QPointF(window->mapToGlobal(pos)), QPoint(), QPoint(0, angle), Qt::NoButton,

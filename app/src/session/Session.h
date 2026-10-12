@@ -87,6 +87,7 @@ class Selection;
 class SoundSimilarity;
 class TrackLabels;
 class TrackSearch;
+class McpServer;
 
 class Session : public QObject {
     Q_OBJECT
@@ -110,6 +111,8 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::HotSwap* hotSwap READ hotSwap CONSTANT)
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
     Q_PROPERTY(sub::app::MidiPreferences* midiPreferences READ midiPreferences CONSTANT)
+    // The MCP server agents read the project through (Options › MCP Server).
+    Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
 
     // The window's title: "<project name>[*] - SUBstation" (* while there are unsaved changes).
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
@@ -200,6 +203,7 @@ public:
     AudioPreferences* audioPreferences() const { return audioPreferences_; }
     MidiPreferences* midiPreferences() const { return midiPreferences_; }
     PresetIndex* presets() const { return presets_; }
+    McpServer* mcp() const { return mcp_; }
 
     QString title() const;
     bool clean() const;
@@ -475,6 +479,7 @@ private:
     Humanizer* humanizer_ = nullptr;
     TrackLabels* trackLabels_ = nullptr;
     TrackSearch* trackSearch_ = nullptr;
+    McpServer* mcp_ = nullptr;
     BrowserController* browser_ = nullptr;
     PresetIndex* presets_ = nullptr;
     RenderProgress* render_ = nullptr;

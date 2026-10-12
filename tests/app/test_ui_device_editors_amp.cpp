@@ -1274,7 +1274,7 @@ private Q_SLOTS:
         const QPoint at = centerOf(knobOf(s.view, QStringLiteral("gain")));
         QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, at);
         dragTo(window_, at - QPoint(0, 30));
-        QTest::mouseRelease(window_, Qt::LeftButton, Qt::NoModifier, at - QPoint(0, 30));
+        releaseDrag(at, at - QPoint(0, 30));
         const QPoint t = scenePoint(s.tone, s.tone->handlePos(2));
         QTest::mousePress(window_, Qt::LeftButton, Qt::NoModifier, t);
         dragTo(window_, t + QPoint(0, 16));
@@ -1284,7 +1284,8 @@ private Q_SLOTS:
 
         QCOMPARE(param(s.track, s.device, QStringLiteral("type")), 3.0);
         QVERIFY(param(s.track, s.device, QStringLiteral("gain")) > 5.0);
-        QVERIFY(std::abs(param(s.track, s.device, QStringLiteral("treble")) - 3.0) < 0.05);
+        const double treble = param(s.track, s.device, QStringLiteral("treble"));
+        QVERIFY2(std::abs(treble - 3.0) < 0.05, qPrintable(QString::number(treble)));
         QCOMPARE(param(s.track, s.device, QStringLiteral("dual")), 1.0);
         for (const char* id : {"type", "gain", "treble", "dual"})
             QCOMPARE(engineParam(s, id), float(param(s.track, s.device, QString::fromLatin1(id))));

@@ -29,6 +29,9 @@ meters are C++ scene-graph items. It also builds and runs on Linux.
   its mixer, with what each was; for people, and as context for agents. Press Q to find a
   track by its name or by what it is (`horn` finds the orchestra playing horns), Enter for
   the next match.
+- **Agents**: an MCP server (off until turned on) through which AI agents such as Claude Code
+  read the project: its tracks and what each one is, their devices and clips, the chords
+  and key.
 - **Devices**: a built-in Synth, a Sampler after Ableton's Simpler (Classic, 1-Shot and
   Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
   The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband

@@ -19,6 +19,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 #include <QUndoStack>
 
@@ -37,6 +38,7 @@
 #include "intelligence/Harmony.h"
 #include "intelligence/TrackLabels.h"
 #include "intelligence/TrackSearch.h"
+#include "mcp/McpServer.h"
 #include "model/Project.h"
 #include "mainwindow/WindowState.h"
 #include "pianoroll/PianoRoll.h"
@@ -540,6 +542,45 @@ private Q_SLOTS:
         key(Qt::Key_Escape);
         session().trackSearch()->setQuery(QString());
         field->setProperty("text", QString());
+    }
+
+    // Options › MCP Server turns the server on and off (checked as it is).
+    void theMcpServerAction() {
+        sub::app::McpServer& mcp = *session().mcp();
+        QTcpServer probe;  // (a free port)
+        QVERIFY(probe.listen(QHostAddress::LocalHost));
+        const int port = probe.serverPort();
+        probe.close();
+        mcp.setPort(port);
+        QVERIFY(!prop(QStringLiteral("mcpServer"), "checked").toBool());
+        trigger(QStringLiteral("mcpServer"));
+        QVERIFY(mcp.enabled() && mcp.running());
+        QVERIFY(prop(QStringLiteral("mcpServer"), "checked").toBool());
+        QTRY_VERIFY(status().contains(mcp.url()));
+        mcp.setEnabled(false);
+        QVERIFY(!prop(QStringLiteral("mcpServer"), "checked").toBool());
+    }
+
+    // A found track shows whole, its automation lanes too, though its own lane was in view.
+    void aFoundTracksAutomationShowsWhole() {
+        for (int i = 0; i < 12; ++i) editor().addMidiTrack();
+        const QString last = editor().addMidiTrack(-1, QStringLiteral("Last Synth"));
+        editor().showAutomation(last);
+        editor().addAutomationLane(last);  // (lanes below its own: a taller row)
+        editor().addAutomationLane(last);
+        auto* arrangement = item(QStringLiteral("arrangement"))->property("arrangement").value<sub::ui::Arrangement*>();
+        const auto* row = arrangement->layout().rowFor(last);
+        QVERIFY(row && row->height() > row->mainHeight);
+        QVERIFY(row->height() < arrangement->lanesHeight());
+        // Its own lane at the view's bottom edge, its automation below it.
+        arrangement->setScrollY(row->top + row->mainHeight - arrangement->lanesHeight());
+        QVERIFY(arrangement->scrollY() <= row->top);
+        QVERIFY(row->top + row->mainHeight <= arrangement->scrollY() + arrangement->lanesHeight());
+        QVERIFY(row->top + row->height() > arrangement->scrollY() + arrangement->lanesHeight());
+        QVERIFY(arrangement->revealTrack(last));
+        row = arrangement->layout().rowFor(last);
+        QVERIFY(arrangement->scrollY() <= row->top);
+        QVERIFY(row->top + row->height() <= arrangement->scrollY() + arrangement->lanesHeight());
     }
 
     // Create's actions, Undo and Redo (their texts and enabled states).
