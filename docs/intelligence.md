@@ -7,8 +7,8 @@ the piano roll's chord lane, its notes out of the key in red, and Generate's blo
 **humanizing** (the piano roll's Humanize › Velocity: velocities from HUMANBRO's XGBoost model, through its C++ library,
 vendored) and **track labels** (what each track is, in a few words: "Washed Out Serum Pluck", from its names, presets,
 notes, effects and mixer; the tooltip over a track's name); later MIDI generation by machine learning (melodies,
-accompaniment), a timing model for Humanize › Timing, chords from audio, and an MCP server for agents, which will take
-the harmony and the track labels as context. It is a layer of its own, as
+accompaniment), a timing model for Humanize › Timing, and chords from audio. The MCP server agents read the project
+through ([app/mcp.md](app/mcp.md)) hands them the harmony and the track labels. It is a layer of its own, as
 the browser's backend is: the static library `sub_intelligence` ([intelligence/src](../intelligence/src), namespace
 `sub::intelligence`), with no Qt, and knowing nothing of the engine or the browser; its application side is
 [app/src/intelligence](../app/src/intelligence) (`SoundSimilarity`, `Session.similarity`; `Harmony`,
@@ -333,8 +333,8 @@ waits for it, a tenth of a second for the longest parts.
 
 [labels/](../intelligence/src/labels) (namespace `sub::intelligence::labels`) says what each track of a project is, in
 a few words, as a producer would name it: "Washed Out Serum Pluck", "Orchestral Trumpet", "Sad Piano Line", "Echoing
-Bell Stab", "Drum Group (Kick, Snare)". People see it over a track's name (its tooltip); the MCP server will hand it to
-agents as context, with the track's family ("synth", "drums"...), its role ("pluck", "kick"), every trait found, and
+Bell Stab", "Drum Group (Kick, Snare)". People see it over a track's name (its tooltip); the MCP server hands it to
+agents as context ([app/mcp.md](app/mcp.md): `list_tracks`, `get_track`), with the track's family ("synth", "drums"...), its role ("pluck", "kick"), every trait found, and
 what the label was made from. It is pure functions of the facts it is told (`TrackFacts`: plain values, no Qt), as
 harmony is: the same project always gives the same labels, and the details say why.
 
@@ -488,7 +488,7 @@ decoded once while it stays the same).
 
 ### What would make it better
 
-- An agent over the labels and their details (the MCP server's): to name a track better, or to answer "which is the
+- An agent over the labels and their details (through the MCP server: [app/mcp.md](app/mcp.md)): to name a track better, or to answer "which is the
   lead?".
 - Sound: the similarity's fingerprint of a track's audio (or of its frozen render) as one more source; a kick sounds
   like a kick whatever its file is called.
@@ -739,7 +739,7 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   take its own.
 - **Swapping similar samples** (the sampler, the drum rack, a file manager): `SoundSimilarity::find()` with the
   sample's file, then step through `SimilarSounds::best()`.
-- **Another part of the module** (MIDI generation, an MCP server...): a folder of its own under `intelligence/src`
+- **Another part of the module** (MIDI generation...): a folder of its own under `intelligence/src`
   beside `similarity/` and `harmony/`, sharing `core/`; its Qt side under `app/src/intelligence`. What it needs to know
   of a song's harmony: `Session.harmony` (`chords()`, `key()`), or `inferHarmony()` on notes of its own.
 - **A chord quality**: its intervals and suffix in `Quality` and `qualityInfo()` (Chords.cpp), its prior in `kPrior`

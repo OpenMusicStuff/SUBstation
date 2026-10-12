@@ -53,7 +53,7 @@ add_subdirectory(intelligence)  # (after the engine: it decodes with its miniaud
 add_subdirectory(tools/scanner)
 
 if (SUBSTATION_BUILD_APP)
-    find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
+    find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2)
     qt_standard_project_setup()
     # The QML files in ui/qml's folders import SUBstation themselves: no qmldir
     # in each folder (Qt 6.8+ asks; older Qts don't know the policy).

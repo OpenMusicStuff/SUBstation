@@ -573,7 +573,11 @@ Later
       vendored): the piano roll's Humanize › Velocity.
 - [ ] A timing model for Humanize › Timing (now random nudges).
 - [ ] Chord recognition over a whole project.
-- [ ] An MCP server for agents.
+- [x] An MCP server for agents: its foundations (app/src/mcp: both eras of the protocol,
+      Streamable HTTP on localhost, off until turned on; read-only tools: the project,
+      tracks and their labels, one track, finding tracks, the harmony).
+- [ ] MCP: tools that edit (through ProjectEditor, an undo step each).
+- [ ] MCP: resources, change notifications (subscriptions/listen), a stdio bridge.
 
 ---
 

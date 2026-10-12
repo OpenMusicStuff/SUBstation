@@ -4,8 +4,8 @@
 //
 // What each track is, in a few words ("Washed Out Serum Pluck", "Orchestral
 // Trumpet", "Drum Group"), with what the words were made from: shown over a
-// track's name in the arrangement (its tooltip, in the info view), and the
-// context the MCP server will hand agents (describe()).
+// track's name in the arrangement (its tooltip, in the info view), and what
+// the MCP server tells agents of each track (McpTools: list_tracks, get_track).
 //
 // It tells the labeller what the project holds: each track's name (and whether
 // it is the user's own), its devices and racks, the preset each plug-in has

@@ -19,6 +19,7 @@
 #include "intelligence/TrackLabels.h"
 #include "intelligence/TrackSearch.h"
 #include "io/Presets.h"
+#include "mcp/McpServer.h"
 #include "model/Automation.h"
 #include "model/ParamSpec.h"
 #include "model/Project.h"
@@ -67,6 +68,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     files_ = new FileManager(project_, editor_, selection_, bridge_, browser_, hotSwap_, this);
     audioPreferences_ = new AudioPreferences(bridge_, this);
     midiPreferences_ = new MidiPreferences(bridge_, this);
+    mcp_ = new McpServer(*this, this);  // (last: its tools read the parts above)
     finishFreeze_ = [this](FreezeRender& render) { return bridge_->finishFreeze(render); };
     wire();
 }
@@ -93,7 +95,7 @@ void Session::wire() {
                             static_cast<QObject*>(plugins_), static_cast<QObject*>(arrangement_),
                             static_cast<QObject*>(devices_), static_cast<QObject*>(keyboard_),
                             static_cast<QObject*>(humanizer_), static_cast<QObject*>(files_),
-                            static_cast<QObject*>(hotSwap_)}) {
+                            static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_)}) {
         connect(source, SIGNAL(statusMessage(QString)), this, SIGNAL(statusMessage(QString)));
     }
     connect(editor_, &ProjectEditor::refused, this, &Session::statusMessage);  // an edit a frozen track can't take

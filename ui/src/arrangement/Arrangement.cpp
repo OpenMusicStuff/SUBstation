@@ -401,9 +401,11 @@ bool Arrangement::revealTrack(const QString& trackId) {
             if (p->track(*parent).folded) editor()->setFolded(*parent, false);  // (the layout follows at once)
         }
         if (const Row* row = layout_.rowFor(trackId); row && !row->hidden) {
+            // (The whole row, its automation lanes too; one taller than the lanes at its top.)
             const int scroll = view_.scrollY();
-            if (row->top < scroll || row->top + row->mainHeight > scroll + lanesHeight_) {
-                setScrollY(row->top - std::max(0.0, (lanesHeight_ - row->mainHeight) / 2.0));
+            const int height = row->height();
+            if (row->top < scroll || row->top + height > scroll + lanesHeight_) {
+                setScrollY(row->top - std::max(0.0, (lanesHeight_ - height) / 2.0));
             }
         }
     }
