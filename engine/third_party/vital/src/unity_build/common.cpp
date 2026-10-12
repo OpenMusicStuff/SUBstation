@@ -14,19 +14,18 @@
  * along with vital.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if !HEADLESS
-#include "border_bounds_constrainer.cpp"
-#endif
+
+// SUBstation: without the files of Vital's application (border_bounds_constrainer,
+// midi_manager, startup, synth_gui_interface, synth_base), which aren't vendored;
+// operators.h first, as one of those brought it in before synth_strings.h needs it.
+
+#include "operators.h"
 
 #include "line_generator.cpp"
-#include "midi_manager.cpp"
 #include "tuning.cpp"
-#include "startup.cpp"
-#include "synth_gui_interface.cpp"
 #include "synth_parameters.cpp"
 #include "load_save.cpp"
 #include "synth_types.cpp"
-#include "synth_base.cpp"
 #include "wavetable_component_factory.cpp"
 #include "wavetable_keyframe.cpp"
 #include "file_source.cpp"
