@@ -1,69 +1,152 @@
 # SUBstation
 
-A basic DAW for Windows with an Ableton-style arrangement view. It is one C++20
-program: a real-time audio engine (ASIO, or WASAPI through miniaudio; VST3
-hosting) and a browser backend with no Qt in them, an application layer on Qt
-Core and Qt Gui that holds the project, its editing and undo, and mirrors it into
-the engine, and a Qt Quick (QML) UI whose arrangement, piano roll, envelopes and
-meters are C++ scene-graph items. It also builds and runs on Linux.
+A DAW for Windows (and Linux) built around an Ableton-style arrangement view, written
+from scratch in C++20. It has a real-time audio engine with ASIO, WASAPI and PipeWire,
+VST3 hosting and delay compensation everywhere. It comes with more than twenty built-in
+devices, including the whole of [Vital](https://github.com/mtytel/vital) compiled in from
+its source. It can import Ableton Live Sets. It also has some ideas you won't find in
+other DAWs: tracks that describe themselves, a sidechain that fits its curve to your
+kick, sample hot-swapping while the song plays, and an MCP server so AI agents like
+Claude Code can read and edit your song while you watch.
+
+> This project kinda started out as a meme, but I'm starting to think it's actually much
+> better for my specific workflow than Ableton is. You may or may not find it a good
+> replacement, but I know for certain a lot of issues that bothered me the most with
+> Ableton (crashing on switching audio devices, slow project save and load times) are
+> solved with this DAW. The end goal, however, is to re-invent the way I make music with a
+> DAW. Right now, features are very limited to my specific workflow, but I will continue
+> adding stuff that make it more versatile and suited for everyone's music production needs.
+
+## What makes it different
+
+- **Tracks that know what they are.** Hover over a track's name and it tells you what it
+  is in a few words ("Washed Out Serum Pluck", "Orchestral Trumpet", "Sad Piano Line").
+  The label is worked out from the track's name, its instrument's preset, its files, its
+  notes, its effects and their settings, and its mixer. Press **Q** to find a track by
+  name *or* by what it is: `horn` finds the orchestra track that's playing horns.
+- **AI agents in the session.** A built-in MCP server (off until you turn it on) lets
+  Claude Code, or any other agent that speaks MCP, read the whole project: tracks, what
+  each one is, devices and every parameter, clips, notes, chords and key. It can also
+  edit them: "darken the pad", "pull the drums down 2 dB", "write a better piano part
+  over the bars I selected". An agent's changes are kept out of your undo history. They
+  show up in their own list (*View › Agent Changes*), where you can rewind or restore
+  each one separately. ([Agents guide](docs/guide/agents.md))
+- **A sidechain that listens.** The Sidechain device ducks the bass along a curve you
+  draw or one it *fits to the kick*. It compares the two spectra, shows where they clash,
+  and shapes the curve so the bass is gone while the kick's energy in the clash peaks and
+  comes back as that energy fades. Tight, Natural or Loose; Lows Only; lookahead; or Auto,
+  which refits at every hit.
+- **Hot-swap samples while the song plays.** Right-click an audio clip › *Hot-Swap Sample*
+  and every file you click in the browser plays in its place, in the song, right away.
+  The sounds most like the original are listed first. The File Manager can also find
+  missing samples and replace one file everywhere it plays.
+- **Find Similar Sounds.** The browser analyses your library in the background (timbre,
+  envelope and pitch, using Essentia's audio descriptors), so any sample can pull up its
+  closest matches out of hundreds of thousands of files.
+- **Harmony-aware MIDI.** The song's chords and key are worked out from its MIDI and shown
+  over the piano roll, with out-of-key notes in red. *Generate* writes block chords
+  (voice-led so each chord moves as little as possible) or a bass line from them.
+- **Humanize that learned from pianists.** The piano roll's humanize sets velocities with a
+  machine-learning model trained on real piano performances, not random jitter.
+- **Per-note bends.** Draw pitch bends, vibrato and glides on single notes (MIDI 2.0
+  per-note pitch bend), sent to VST3 plug-ins as note expression.
+- **Vital, built in.** The spectral warping wavetable synth is compiled in from its own
+  source with all of it included: three wavetable oscillators, the sampler, both filters,
+  envelopes, LFOs, 64 modulations, its effects, and `.vital` presets that load and save.
+- **Effects with something to show.** Vintage Hall clones a classic 1970s digital concert
+  hall. Disperser runs up to 64 all-pass stages and draws its group delay. Transient
+  Shaper draws each hit as it plays. Over The Top is tuned against Ableton's OTT renders.
+- **Fast and steady.** Rendering runs on many threads and gives bit-identical output on
+  any number of them. Switching audio devices doesn't take the session down, and plug-in
+  scanning runs in a separate process so a crashing plug-in can't take SUBstation with it.
+- **Themes.** Default, *Disableton* (Live 12's look), *Flashbang* (light) and *Gay*
+  (rainbow over purple-black). ([Look and Feel](docs/guide/look-and-feel.md))
 
 ## Features
 
-- **Arrangement**: audio and MIDI tracks, group tracks (nesting, folding), return
-  tracks and sends, a master with its own effects; track headers laid out as Ableton's,
-  with an In/Out column routing each track as Ableton does (Audio From with Pre FX, Post
-  FX or Post Mixer; Audio To its group, Main, another track's input or a device's
-  sidechain, or Sends Only); clip editing with snapping
-  (trimming, stretching, sliding a clip's content), clip fades with curves,
-  deactivating clips (0, as in Ableton), time selections, undo/redo for every edit.
-- **Audio clips**: real-time warping (Signalsmith Stretch) with several warp modes,
-  transpose and detune; tempo and key read from sample file names.
-- **MIDI**: a piano roll with legato, quantize and humanize tools (velocities from a
-  machine-learning model trained on pianists' performances, timing); the song's chords
-  and key worked out from its MIDI and shown over the notes (notes out of the key in
-  red), and block chords or a bass line written from them; MIDI input from
-  controllers and the computer keyboard.
-- **Track labels**: hover over a track's name to see what it is, in a few words
-  ("Washed Out Serum Pluck", "Orchestral Trumpet", "Sad Piano Line"), worked out from its
-  name, its instrument's preset, its files, its notes, its effects and their amounts, and
-  its mixer, with what each was; for people, and as context for agents. Press Q to find a
-  track by its name or by what it is (`horn` finds the orchestra playing horns), Enter for
-  the next match.
-- **Agents**: an MCP server (off until turned on) through which AI agents such as Claude Code
-  read the project: its tracks and what each one is, their devices and clips, the chords
-  and key.
-- **Devices**: [Vital](https://github.com/mtytel/vital), the spectral warping wavetable synth,
-  built in from its own source (all of it: three wavetable oscillators, a sampler, two filters,
-  envelopes, LFOs, 64 modulations, its effects; `.vital` presets load and save), a simple Synth,
-  a Sampler after Ableton's Simpler (Classic, 1-Shot and
-  Slice modes, slicing at transients, warping, a filter and an LFO), Utility, the Over
-  The Top multiband compressor, Compressor (with sidechain), Gate, Limiter, Multiband
-  Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble,
-  Phaser-Flanger, Reverb, Vintage Hall (a 1970s digital concert hall, cloned from a
-  classic), Disperser (phase dispersion through up to 64 all-pass stages, its group delay
-  drawn), Transient Shaper (onsets and tails shaped, the hit drawn as it plays), EQ and
-  Sidechain; racks with parallel chains, macros and presets.
-- **VST3 plug-ins**: instruments and effects, their own editors, presets, sidechains,
-  latency compensation everywhere, crash-safe scanning.
-- **Automation** of every parameter, played sample-accurately.
-- **Recording** from ASIO inputs, with count-in and latency-corrected takes, and
-  resampling of any track or the master.
-- **Browser** with instant search over hundreds of thousands of samples, preview,
-  and ranking by use; *Find Similar Sounds* by timbre, envelope and pitch, from
-  Essentia's audio descriptors, the library analysed in the background.
-- **Multi-threaded rendering**, bit-identical on any number of threads; WAV and MP3 export of the
-  arrangement, the loop or a time selection.
-- **Projects**: `.gilproj` files, a template every new project starts as, and **importing Ableton
-  Live Sets** (tracks, groups, clips, VST3 plug-ins with their settings, Live's EQ Eight,
-  Compressor, Delay, Utility and Simpler, Drum Racks as a track a pad, automation).
+### Arrangement and mixing
 
-See the [user guide](docs/guide/README.md) for how each of these behaves, and
+- Audio and MIDI tracks, group tracks (nesting, folding), return tracks and sends, and a
+  master with its own effects. Track headers are laid out like Ableton's.
+- An In/Out column routes each track the way Ableton does. *Audio From* can be Pre FX,
+  Post FX or Post Mixer. *Audio To* can be the track's group, Main, another track's input,
+  a device's sidechain, or Sends Only.
+- Clip editing with snapping: trimming, stretching, sliding a clip's content. Also clip
+  fades with curves, deactivating clips (**0**, as in Ableton), time selections, and edge
+  scrolling.
+- Sidechains, and delay compensation on every path, including per send.
+- Freezing tracks, groups and returns in the background (**Ctrl+Shift+F**), and flattening
+  frozen tracks.
+- Undo and redo for every edit.
+
+### Audio
+
+- Real-time warping (Signalsmith Stretch) with several warp modes, transpose and detune,
+  clip gain and pan, and reversing.
+- Tempo and key are read from sample file names, so loops come in already set up.
+- Recording from ASIO inputs, with a count-in and latency-corrected takes. Any track or
+  the master can be resampled.
+
+### MIDI
+
+- A piano roll with legato, timing, quantize and humanize tools, a velocity lane, and a
+  bend mode for per-note pitch bends, vibrato and glides.
+- Chords and key detection, and chord and bass generation (see above).
+- MIDI input from controllers (WinMM on Windows, ALSA on Linux) and from the computer
+  keyboard. A MIDI track's notes can feed other tracks' devices.
+
+### Devices
+
+- **Instruments**: Vital, Synth, and Sampler. The Sampler follows Ableton's Simpler, with
+  Classic, 1-Shot and Slice modes, slicing at transients, warping, a filter and an LFO.
+- **Dynamics**: Compressor (with sidechain), Gate, Limiter, Multiband Dynamics, Spectral
+  Compressor, Over The Top, Transient Shaper, Sidechain.
+- **Colour and distortion**: Saturator, Amp, Erosion.
+- **Time and modulation**: Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall,
+  Disperser.
+- **Utility**: EQ, Utility.
+- Racks with parallel chains, macros and presets. Every parameter can be automated and is
+  played sample-accurately.
+- **VST3 plug-ins**: instruments and effects, with their own editors, presets and
+  sidechains, latency compensation, and crash-safe scanning.
+
+### Browser
+
+- Instant search over hundreds of thousands of samples, preview, and results ranked by how
+  often you use them.
+- Find Similar Sounds and hot-swapping (see above).
+
+### Projects and export
+
+- `.gilproj` projects that save and load quickly, and a template every new project starts
+  from.
+- **Importing Ableton Live Sets**: tracks, groups, clips, VST3 plug-ins with their
+  settings, Live's EQ Eight, Compressor, Delay, Utility and Simpler, Drum Racks (one track
+  per pad), and automation.
+- WAV and MP3 export of the arrangement, the loop or a time selection.
+
+See the [user guide](docs/guide/README.md) for how each of these behaves, the
+[keyboard shortcuts](docs/guide/shortcuts.md), and
 [what isn't implemented yet](docs/guide/limitations.md).
+
+## Under the hood
+
+SUBstation is one C++20 program in layers:
+
+- a real-time audio engine (ASIO, WASAPI through miniaudio, PipeWire on Linux; VST3
+  hosting) and a browser backend, neither of which uses Qt;
+- an application layer on Qt Core and Qt Gui that holds the project, its editing and
+  undo, and mirrors it into the engine;
+- a Qt Quick (QML) UI whose arrangement, piano roll, envelopes, meters and device displays
+  are C++ scene-graph items.
+
+The render workers run at real-time priority, and the engine keeps to strict real-time
+rules (see [Architecture](docs/architecture.md)). It runs on Windows 10/11 and Linux.
 
 ## Setup
 
 You need a C++20 compiler, CMake 3.26 or newer with Ninja, and Qt 6.4 or newer
-(Core, Gui, Qml, Quick, QuickControls2, Test). A CPU with AVX2 runs it.
+(Core, Gui, Qml, Quick, QuickControls2, Test). It needs a CPU with AVX2.
 
 - **Windows 10/11**: Visual Studio 2022 or newer with the *Desktop development
   with C++* workload, and Qt's *MSVC 2022 64-bit* build of a Qt 6 release (6.5 or
@@ -113,6 +196,12 @@ build/bin/substation                  # or: build/bin/substation path/to/song.gi
 output device; change it in *Options → Preferences* ([audio setup](docs/guide/audio-setup.md)).
 The browser starts with your Music folder as a Place. Add more with *Add Folder…*.
 
+To let Claude Code into your session, turn on *Options › MCP Server* and run:
+
+```sh
+claude mcp add --transport http substation http://127.0.0.1:7381/mcp
+```
+
 ## Tests
 
 ```sh
@@ -124,6 +213,8 @@ makes a few test VST3 plug-ins for them, and a fake ASIO driver when the ASIO SD
 there (without it, the ASIO tests are skipped). Engine tests render offline; the
 application layer's tests drive it without a window; the UI's tests drive the real
 QML views (on Linux under `xvfb-run`). See [docs/testing.md](docs/testing.md).
+[benchmarks/](benchmarks/README.md) measures the renderer, the built-in devices, Vital
+and the browser backend.
 
 ## Project layout
 
@@ -146,14 +237,12 @@ docs/                documentation
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): layers, threads, real-time rules
-- [Licensing](docs/licensing.md): MIT, and what Essentia's AGPLv3 asks of a build you distribute
-- [Building](docs/building.md) and [testing](docs/testing.md)
 - [User guide](docs/guide/README.md) and [keyboard shortcuts](docs/guide/shortcuts.md)
+- [Agents](docs/guide/agents.md): connecting Claude Code and other MCP agents
+- [Architecture](docs/architecture.md): layers, threads, real-time rules
+- [Building](docs/building.md) and [testing](docs/testing.md)
 - [Code reference](docs/README.md): the engine, the application layer, the UI, the browser
-
-Note:
-This project kinda started out as a meme, but I'm starting to think it's actually much better for my specific workflow than Ableton is. You may or may not find it a good replacement, but I know for certain a lot of issues that bothered me the most with Ableton (crashing on switching audio devices, slow project save and load times) are solved with this DAW. The end goal, however, is to re-invent the way I make music with a DAW. Right now, features are very limited to my specific workflow, but I will continue adding stuff that make it more versatile and suited for everyone's music production needs. 
+- [Licensing](docs/licensing.md): MIT, and what Essentia's AGPLv3 asks of a build you distribute
 
 ## Licence
 
