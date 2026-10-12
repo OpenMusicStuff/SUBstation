@@ -104,17 +104,24 @@ double aliasDb(const Samples& x, double freq, double rate = kSampleRate) {
 int64_t frameAt(double seconds, double rate = kSampleRate) { return static_cast<int64_t>(std::lround(seconds * rate)); }
 
 #ifdef NDEBUG  // (the timed tests are Release only)
-// The CPU seconds an amp with `values` takes over `left` and `right` (after playing `before`,
-// untimed): the best of three runs.
-double bestOfThree(const ParamValues& values, const Samples& left, const Samples& right, const Samples& before) {
-    double best = 1e9;
+// What an amp with `values` costs over `left` and `right` (after playing `before`, untimed): the
+// best of three runs, in CPU seconds, and in the thread clock's ticks to compare two costs by. (On
+// Windows the seconds count at the scheduler's tick, about 16 ms: a run shorter than one can read
+// 0, and two such runs compare as equal.)
+struct Cost {
+    double seconds = 1e9;
+    double ticks = 1e300;
+};
+Cost bestOfThree(const ParamValues& values, const Samples& left, const Samples& right, const Samples& before) {
+    Cost best;
     for (int run = 0; run < 3; ++run) {
         Amp a(kSampleRate, values);
         if (!before.empty()) a.play(before, before);
         Samples l = left, r = right;
-        const double start = threadSeconds();
+        const double start = threadSeconds(), startTicks = threadTicks();
         a.run({&l, &r});
-        best = std::min(best, threadSeconds() - start);
+        best.ticks = std::min(best.ticks, threadTicks() - startTicks);
+        best.seconds = std::min(best.seconds, threadSeconds() - start);
     }
     return best;
 }
@@ -1188,11 +1195,12 @@ TEST_CASE("the amp's displays show its input, each stage's drive, the sag and it
 #ifdef NDEBUG
 TEST_CASE("the amp's cost stays bounded") {
     const Samples n = noise(static_cast<size_t>(10 * kSampleRate), 28, 0.25f);
-    const double dual = bestOfThree(model(amp::Lead, {{"gain", 10.f}, {"dual", 1.f}}), n, n, {});
-    const double mono = bestOfThree(model(amp::Lead, {{"gain", 10.f}}), n, n, {});
-    INFO("Dual " + std::to_string(10.0 * dual) + " %, Mono " + std::to_string(10.0 * mono) + " % of real time");
-    CHECK(dual < 0.1 * 10.0);
-    CHECK(mono < dual);
+    const Cost dual = bestOfThree(model(amp::Lead, {{"gain", 10.f}, {"dual", 1.f}}), n, n, {});
+    const Cost mono = bestOfThree(model(amp::Lead, {{"gain", 10.f}}), n, n, {});
+    INFO("Dual " + std::to_string(10.0 * dual.seconds) + " %, Mono " + std::to_string(10.0 * mono.seconds) +
+         " % of real time; Mono " + std::to_string(mono.ticks / dual.ticks) + " of Dual");
+    CHECK(dual.seconds < 0.1 * 10.0);
+    CHECK(mono.ticks < dual.ticks);
 
     // A model change's first block (32 frames: two cells, the two models' levels) costs about two
     // steady ones, each level from its model's tables, made in prepare(): medians over 60 changes.
@@ -1290,7 +1298,8 @@ TEST_CASE("an amp at rest sleeps through silence and wakes as a fresh one") {
         Samples before = slice(n, 0, kSampleRate);
         before.resize(static_cast<size_t>(4 * kSampleRate), 0.f);  // (asleep by its end)
         const ParamValues lead = model(amp::Lead, {{"gain", 10.f}, {"dual", 1.f}});
-        const double playing = bestOfThree(lead, n, n, {}), silent = bestOfThree(lead, quiet, quiet, before);
+        const double playing = bestOfThree(lead, n, n, {}).ticks,
+                     silent = bestOfThree(lead, quiet, quiet, before).ticks;
         INFO("silence " + std::to_string(silent / playing) + " of the noise's time");
         CHECK(silent < 0.5 * playing);
     }
