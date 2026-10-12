@@ -7,7 +7,8 @@ are, or what Serum's filter is set to, and it looks for itself. Ask it to darken
 or write a better piano part over the bars you selected, and it does it while you watch.
 
 What an agent changes isn't in **Edit › Undo**: each change it makes is listed apart, in **View › Agent Changes**,
-where you can rewind it on its own (and restore it), whatever you did since.
+where you can rewind it on its own (and restore it), unless you changed the same thing since
+([your work comes first](#rewinding-what-an-agent-did)).
 
 ## Turning it on
 
