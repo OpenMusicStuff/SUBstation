@@ -300,8 +300,7 @@ public:
         for (NestedAllpass& ap : allpasses_) ap.clear();
         for (Line& l : plain_) l.clear();
         for (Damping& d : damping_) d.reset();
-        wander_[0].reset(0x2545f491u);
-        wander_[1].reset(0x9e3779b9u);
+        resetWander();
         for (int& p : downPhase_) p = 0;
         hostCount_ = 0;
         outL_ = outR_ = 0.f;
@@ -427,6 +426,12 @@ private:
         return static_cast<int64_t>((halfSamples_[0] + halfSamples_[1]) * divider_) + static_cast<int64_t>(0.01 * hostRate_);
     }
 
+    // B's and D's moving delays back to where they start, each from its own seed.
+    void resetWander() noexcept {
+        wander_[0].reset(0x2545f491u);
+        wander_[1].reset(0x9e3779b9u);
+    }
+
     // Everything it holds (all below -120 dB) is let go: it wakes as from a reset, the controls as they are.
     void fallAsleep() noexcept {
         for (int side = 0; side < 2; ++side) {
@@ -442,6 +447,7 @@ private:
         for (NestedAllpass& ap : allpasses_) ap.clear();
         for (Line& l : plain_) l.clear();
         for (Damping& d : damping_) d.reset();
+        resetWander();  // (as reset() leaves them: waking, the modulation starts as a fresh hall's)
         for (int& p : downPhase_) p = 0;
         hostCount_ = 0;
         outL_ = outR_ = 0.f;

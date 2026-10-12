@@ -262,18 +262,22 @@ TEST_CASE("its taps' displays light up when the echo passes them") {
 
 TEST_CASE("silence puts it to sleep: the wet exactly 0, waking as if reset") {
     // A short tail (0.3 s) dies below -120 dB within a second or two; a lap of quiet after that, it sleeps.
-    const Values settings = {{"decay", 300.f}, {"bass_mult", 1.f}, {"mod_depth", 0.f}};
-    Hall slept(settings);
-    const Samples tail = slept.play(impulse(6 * 48000));
-    CHECK(maxAbs(slice(tail, 0, 48000)) > 0.01);
-    CHECK(maxAbs(slice(tail, 5 * 48000, 6 * 48000)) == 0.0);  // asleep: nothing at all
-    // Any sound wakes it at once, and it plays as one just reset does.
-    const Samples again = slept.play(impulse(48000, 10));
-    const Samples fresh = Hall(settings).play(impulse(48000, 10));
-    double most = 0.0;
-    for (size_t i = 0; i < again.size(); ++i) most = std::max(most, std::abs(double(again[i]) - fresh[i]));
-    CHECK(most < 1e-6);
-    CHECK(maxAbs(again) > 0.01);
+    // (With the modulation moving too: it wakes with B's and D's delays where a reset puts them.)
+    for (const float depth : {0.f, 100.f}) {
+        INFO("mod_depth " + std::to_string(depth));
+        const Values settings = {{"decay", 300.f}, {"bass_mult", 1.f}, {"mod_depth", depth}};
+        Hall slept(settings);
+        const Samples tail = slept.play(impulse(6 * 48000));
+        CHECK(maxAbs(slice(tail, 0, 48000)) > 0.01);
+        CHECK(maxAbs(slice(tail, 5 * 48000, 6 * 48000)) == 0.0);  // asleep: nothing at all
+        // Any sound wakes it at once, and it plays as one just reset does.
+        const Samples again = slept.play(impulse(48000, 10));
+        const Samples fresh = Hall(settings).play(impulse(48000, 10));
+        double most = 0.0;
+        for (size_t i = 0; i < again.size(); ++i) most = std::max(most, std::abs(double(again[i]) - fresh[i]));
+        CHECK(most < 1e-6);
+        CHECK(maxAbs(again) > 0.01);
+    }
 }
 
 TEST_CASE("a long tail is heard to its end: it doesn't sleep while it can be heard") {
