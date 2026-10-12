@@ -642,7 +642,11 @@ inputs listed and one opened; `MidiInputDevices` does the rest)
       timestamps turned into host times; an input unplugged connects again
       when a port of its name comes back; inputs plugged in for the first time
       listed on *Refresh*, as on Windows. Tests: tests/engine/test_midi_alsa.cpp
-      (against the kernel's sequencer where it has one: CI loads `snd-seq`).
+      (names, decoding and times anywhere; the rest against the kernel's
+      sequencer, `/dev/snd/seq`).
+  - [ ] Its tests against the kernel's sequencer run somewhere. (GitHub's
+        runners can't: their Azure kernel has no `snd-seq`, not even in
+        linux-modules-extra; nor do containers. A Linux machine with sound.)
 - [x] `MidiNone.cpp` only where none builds (not Windows, and not Linux with
       ALSA's headers).
 
