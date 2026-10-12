@@ -292,6 +292,24 @@ TrackHeaderItem {
         mainTop: header.rowY(header.isGroup ? 2 : 1) + (header.isReturn ? 0 : header.chooserGap)  // (clear of the name bar)
     }
 
+    // Over the name (where TrackHeaderItem paints it): what the track is, in words
+    // (its label, then what that was made from). Hovering only: presses go through.
+    Item {
+        objectName: "nameHover"
+        x: header.nameLeft
+        y: header.pad
+        width: Math.max(0, header.nameRight - header.nameLeft)
+        height: header.box
+        visible: !header.renaming
+
+        HoverHandler {
+            id: nameHover
+        }
+        ToolTip.visible: nameHover.hovered && header.nameToolTip !== ""
+        ToolTip.text: header.nameToolTip
+        ToolTip.delay: 700
+    }
+
     TextField {
         id: rename
         objectName: "rename"

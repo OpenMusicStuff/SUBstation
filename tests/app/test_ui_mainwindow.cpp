@@ -7,8 +7,8 @@
 // tooltips, the session's warnings,
 // Export Audio, the clip view over the arrangement, nothing scrolled out of
 // the arrangement or the piano roll drawn over the browser, Edit › Rename, the
-// window's place kept, and the rules of the shortcuts taken from plug-ins'
-// editors. Runs on a display (xvfb here). With $SUBSTATION_SCREENS set, it
+// window's place kept, the rules of the shortcuts taken from plug-ins'
+// editors, what a track's name says hovered (its label, in the info view), and finding tracks (Q). Runs on a display (xvfb here). With $SUBSTATION_SCREENS set, it
 // saves screenshots there.
 
 #include <QDir>
@@ -29,11 +29,14 @@
 
 #include "UiTestSupport.h"
 #include "arrangement/Arrangement.h"
+#include "arrangement/TrackHeaderItem.h"
 #include "audio/EngineBridge.h"
 #include "browser/BrowserController.h"
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "intelligence/Harmony.h"
+#include "intelligence/TrackLabels.h"
+#include "intelligence/TrackSearch.h"
 #include "model/Project.h"
 #include "mainwindow/WindowState.h"
 #include "pianoroll/PianoRoll.h"
@@ -99,6 +102,10 @@ class TestUiMainWindow : public QObject {
         QVERIFY(QMetaObject::invokeMethod(action, "trigger"));
     }
     void key(Qt::Key key, Qt::KeyboardModifiers modifiers = Qt::NoModifier) { QTest::keyClick(window_, key, modifiers); }
+    // Types the text, a key at a time.
+    void type(const QString& text) {
+        for (const QChar c : text) QTest::keyClick(window_, c.toLatin1());
+    }
     QString status() { return prop(QStringLiteral("statusText"), "text").toString(); }
     bool shown(const QString& dialog) { return prop(dialog, "visible").toBool(); }
     // Answers a message box (its value: "save", "discard", "cancel", "ok"...).
@@ -354,6 +361,185 @@ private Q_SLOTS:
         QTRY_VERIFY(!popped());
         trigger(QStringLiteral("infoView"));
         QVERIFY(item(QStringLiteral("infoView"))->isVisible());
+    }
+
+    // Hovered, a track's name says what the track is: its label as the info
+    // view's title, what that was made from below it (Session.trackLabels).
+    void aTracksNameSaysWhatItIs() {
+        const auto clips = editor().addClips({}, 0.0, {{QStringLiteral("C:/x/C_BellStab1.wav"), 1.0}});
+        QCOMPARE(clips.size(), 1);
+        const QString track = clips.front().trackId;
+        const QString delay = editor().addDevice(track, QStringLiteral("delay"));
+        editor().setDeviceParam(track, delay, QStringLiteral("mix"), 40.0);
+        // (A Repeater's items have no QObject parent: found among the items.)
+        const auto findHeader = [&](auto&& self, QQuickItem* in) -> sub::ui::TrackHeaderItem* {
+            for (QQuickItem* child : in->childItems()) {
+                if (child->objectName() == QStringLiteral("header:") + track) return qobject_cast<sub::ui::TrackHeaderItem*>(child);
+                if (auto* found = self(self, child)) return found;
+            }
+            return nullptr;
+        };
+        sub::ui::TrackHeaderItem* header = nullptr;
+        QTRY_VERIFY((header = findHeader(findHeader, window_->contentItem())) != nullptr);
+        QTRY_COMPARE(header->nameToolTip().section(u'\n', 0, 0), QStringLiteral("Echoing Bell Stab"));
+        auto* title = item(QStringLiteral("infoTitle"));
+        auto* text = item(QStringLiteral("infoText"));
+        const QPoint nowhere(window_->width() / 2, window_->height() / 3);
+        QTest::mouseMove(window_, nowhere);
+        QTest::mouseMove(window_, header->mapToScene(QPointF(header->nameLeft() + 12, 10)).toPoint());
+        QTRY_COMPARE(title->property("text").toString(), QStringLiteral("Echoing Bell Stab"));
+        // (What it says follows the edits once they settle: the mix just set.)
+        QTRY_VERIFY(text->property("text").toString().contains(QStringLiteral("Effect: Delay, 40% wet")));
+        const QString body = text->property("text").toString();
+        QVERIFY2(body.contains(QStringLiteral("Audio: \u201CC_BellStab1\u201D")), qPrintable(body));
+        test::screenshot(window_, QStringLiteral("main-window-track-label"));
+        // Renamed by the user: the label stays what the track is; it follows what it holds.
+        editor().renameTrack(track, QStringLiteral("glass"));
+        editor().removeDevices(track, {delay});
+        QTRY_COMPARE(title->property("text").toString(), QStringLiteral("Bell Stab"));
+        QTest::mouseMove(window_, nowhere);
+        editor().deleteTracks({track});
+    }
+
+    // Q: the find bar finds tracks by their names, then by what they are (their
+    // labels); typing goes to the best match, Enter on through the others (Shift:
+    // back); each is selected as a click on its name selects it, its group
+    // unfolded, scrolled into view. What is typed goes into the field, not to the
+    // one-key shortcuts; Esc closes it, the lanes taking the keyboard back.
+    void findingTracks() {
+        for (int i = 0; i < 24; ++i) editor().addMidiTrack();
+        const QString tower = editor().addMidiTrack(2, QStringLiteral("Bell Tower"));
+        // The bell stab, named otherwise by the user, at the bottom in a folded group.
+        const auto clips = editor().addClips({}, 0.0, {{QStringLiteral("C:/x/C_BellStab1.wav"), 1.0}});
+        QCOMPARE(clips.size(), 1);
+        const QString stab = clips.front().trackId;
+        editor().renameTrack(stab, QStringLiteral("glass"));
+        const QString group = editor().groupTracks({stab});
+        editor().setFolded(group, true);
+        QCOMPARE(session().trackLabels()->label(stab), QStringLiteral("Bell Stab"));
+        auto* arrangement = item(QStringLiteral("arrangement"))->property("arrangement").value<sub::ui::Arrangement*>();
+        QVERIFY(arrangement);
+        QCOMPARE(arrangement->scrollY(), 0);
+        auto* bar = item(QStringLiteral("trackSearchBar"));
+        auto* field = item(QStringLiteral("trackSearchField"));
+        auto* count = item(QStringLiteral("trackSearchCount"));
+        QVERIFY(bar && field && count);
+        QVERIFY(!bar->isVisible());
+
+        call("focusLanes");
+        key(Qt::Key_Q);
+        QVERIFY(bar->isVisible());
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("bell"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("bell"));
+        const QStringList matches = session().trackSearch()->matches();
+        QCOMPARE(matches.first(), tower);  // its name says so: first
+        QVERIFY(matches.contains(stab));   // its label
+        QCOMPARE(selection().trackId(), tower);
+        QVERIFY(arrangement->headerSelected(tower));
+        QCOMPARE(count->property("text").toString(), QStringLiteral("1 of %1").arg(matches.size()));
+
+        for (int i = 0; i < matches.size() && selection().trackId() != stab; ++i) key(Qt::Key_Return);
+        QCOMPARE(selection().trackId(), stab);
+        QVERIFY(arrangement->headerSelected(stab));
+        QVERIFY(!project().track(group).folded);
+        const auto* row = arrangement->layout().rowFor(stab);
+        QVERIFY(row && !row->hidden);
+        QVERIFY(arrangement->scrollY() > 0);
+        QVERIFY(arrangement->scrollY() <= row->top);
+        QVERIFY(row->top + row->mainHeight <= arrangement->scrollY() + arrangement->lanesHeight());
+        test::screenshot(window_, QStringLiteral("main-window-find-track"));
+        key(Qt::Key_Return, Qt::ShiftModifier);
+        QCOMPARE(selection().trackId(), matches.at(matches.indexOf(stab) - 1));
+        // After the last match, the first again.
+        for (int i = 0; i < matches.size() && selection().trackId() != matches.last(); ++i) key(Qt::Key_Down);
+        key(Qt::Key_Return);
+        QCOMPARE(selection().trackId(), tower);
+
+        // Letters are typed, not shortcuts (S solos, Q finds).
+        type(QStringLiteral(" sqz"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("bell sqz"));
+        QVERIFY(!project().track(tower).solo);
+        QCOMPARE(count->property("text").toString(), QStringLiteral("No match"));
+        QCOMPARE(selection().trackId(), tower);  // (where it was)
+
+        key(Qt::Key_Escape);
+        QVERIFY(!bar->isVisible());
+        QTRY_VERIFY(item(QStringLiteral("lanes"))->hasActiveFocus());
+        // Q again: what was typed is selected, to type over.
+        key(Qt::Key_Q);
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("glass"));
+        QCOMPARE(field->property("text").toString(), QStringLiteral("glass"));
+        QCOMPARE(selection().trackId(), stab);
+        QVERIFY(QMetaObject::invokeMethod(bar, "close"));
+        session().trackSearch()->setQuery(QString());
+        field->setProperty("text", QString());
+    }
+
+    // Q in the clip view: the find bar shows over it, and the beats its clips
+    // span are the search's area. A match with a clip there opens it in the clip
+    // view; one without shows in the arrangement; the bar keeps the keyboard.
+    void findingTracksFromTheClipView() {
+        const QString lead = editor().addMidiTrack(-1, QStringLiteral("Synth Lead"));
+        const QString bass = editor().addMidiTrack(-1, QStringLiteral("Synth Bass"));
+        const QString pad = editor().addMidiTrack(-1, QStringLiteral("Synth Pad"));
+        const auto open = editor().addMidiClip(lead, 8, 8);
+        const auto bassEarly = editor().addMidiClip(bass, 0, 4);
+        const auto bassThere = editor().addMidiClip(bass, 10, 4);
+        const auto padLater = editor().addMidiClip(pad, 20, 4);
+        QVERIFY(open && bassEarly && bassThere && padLater);
+        auto* area = item(QStringLiteral("arrangementArea"));
+        auto* clipView = item(QStringLiteral("clipView"));
+        auto* bar = item(QStringLiteral("trackSearchBar"));
+        auto* field = item(QStringLiteral("trackSearchField"));
+        session().arrangement()->requestClipView({*open}, *open);
+        QTRY_VERIFY(area->property("clipViewShown").toBool());
+
+        key(Qt::Key_Q);
+        QVERIFY(area->property("clipViewShown").toBool());  // (it stays)
+        QVERIFY(bar->isVisible());
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("bass"));
+        QVERIFY(area->property("clipViewShown").toBool());
+        QCOMPARE(clipView->property("trackId").toString(), bass);
+        QCOMPARE(clipView->property("leadClipId").toString(), bassThere->clipId);  // the one in the area
+        QCOMPARE(selection().trackId(), bass);
+        QVERIFY(field->hasActiveFocus());
+        test::screenshot(window_, QStringLiteral("main-window-find-track-clip-view"));
+
+        // No clip there: the arrangement shows it; the next with one, the clip view again.
+        field->setProperty("text", QString());
+        type(QStringLiteral("synth"));
+        QCOMPARE(session().trackSearch()->matches().mid(0, 3), (QStringList{lead, bass, pad}));
+        QCOMPARE(clipView->property("trackId").toString(), lead);
+        key(Qt::Key_Return);
+        QCOMPARE(clipView->property("trackId").toString(), bass);
+        key(Qt::Key_Return);
+        QCOMPARE(selection().trackId(), pad);
+        QVERIFY(!area->property("clipViewShown").toBool());
+        QVERIFY(field->hasActiveFocus());
+        for (int i = 0; i < 8 && selection().trackId() != lead; ++i) key(Qt::Key_Return);  // (round to the first)
+        QCOMPARE(selection().trackId(), lead);
+        QVERIFY(area->property("clipViewShown").toBool());
+        QCOMPARE(clipView->property("leadClipId").toString(), open->clipId);
+        QVERIFY(field->hasActiveFocus());
+
+        // Esc: the bar goes, the clip view has the keyboard.
+        key(Qt::Key_Escape);
+        QVERIFY(!bar->isVisible());
+        QTRY_VERIFY(window_->activeFocusItem() && clipView->isAncestorOf(window_->activeFocusItem()));
+        // Q from the arrangement has no area: a match never opens the clip view.
+        call("toggleClipView");
+        QTRY_VERIFY(!area->property("clipViewShown").toBool());
+        key(Qt::Key_Q);
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("bass"));
+        QCOMPARE(selection().trackId(), bass);
+        QVERIFY(!area->property("clipViewShown").toBool());
+        key(Qt::Key_Escape);
+        session().trackSearch()->setQuery(QString());
+        field->setProperty("text", QString());
     }
 
     // Create's actions, Undo and Redo (their texts and enabled states).

@@ -190,6 +190,11 @@ public:
     // Ctrl+R: rename a track (or a return) in place, scrolled into view (false:
     // it can't be: the master, or a track folded away in its group).
     Q_INVOKABLE bool renameTrack(const QString& trackId);
+    // The find bar's match (Q): a track (a return, the master) selected as a
+    // click on its name selects it (lit up, its devices shown), the groups it is
+    // folded away in unfolded, and scrolled to the middle of the lanes if it
+    // doesn't show whole. False if there is no such track.
+    Q_INVOKABLE bool revealTrack(const QString& trackId);
     // Alt+wheel over a track (its header or its lane), as one gesture: down
     // shrinks it, and once it is as small as it gets, folds it (a group: hides
     // its tracks too); up unfolds a folded track, then makes it taller. A turn

@@ -37,6 +37,7 @@ ApplicationWindow {
     readonly property alias infoView: infoView
     readonly property alias clipView: clipView
     readonly property alias arrangementArea: arrangementArea
+    readonly property alias trackSearchBar: trackSearchBar
     readonly property alias pluginKeys: pluginKeys
     readonly property alias titleBar: titleBar
     // Set once the close was confirmed (no render running, nothing unsaved or the user said so).
@@ -242,6 +243,31 @@ ApplicationWindow {
         window.requestActivate()
         browserAction.checked = true
         Session.browser.focusSearch()
+    }
+
+    // Q: the find bar, finding tracks by their names and labels. From the clip
+    // view, the beats its clips span are the search's area: a match with a clip
+    // there opens in the clip view, the others in the arrangement.
+    function findTrack() {
+        if (arrangementArea.clipViewShown)
+            Session.trackSearch.setArea(clipView.trackId, clipView.clipIds)
+        else
+            Session.trackSearch.clearArea()
+        trackSearchBar.open()
+    }
+
+    // A match of the find bar: selected, unfolded and scrolled to in the
+    // arrangement; and its clip in the search's area in the clip view, if it has
+    // one (else the arrangement shows). The find bar keeps the keyboard.
+    function showTrackMatch(trackId) {
+        if (arrangement.revealTrack)
+            arrangement.revealTrack(trackId)
+        const clipId = Session.trackSearch.clipInArea(trackId)
+        if (clipId !== "")
+            arrangementArea.openClips([clipId], trackId, clipId)
+        else
+            arrangementArea.clipViewShown = false
+        trackSearchBar.field.forceActiveFocus()
     }
 
     // Shift+Tab: the clip view goes back to the arrangement; or the selected clips open in it.
@@ -504,6 +530,7 @@ ApplicationWindow {
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
                 Action { id: infoViewAction; objectName: "infoView"; text: qsTr("&Info View"); checkable: true; checked: true }
                 Action { objectName: "clipView"; text: qsTr("&Clip View"); shortcut: "Shift+Tab"; onTriggered: window.toggleClipView() }
+                Action { objectName: "findTrack"; text: qsTr("Find &Track"); shortcut: "Q"; onTriggered: window.findTrack() }
                 Action { objectName: "automation"; text: qsTr("&Automation"); shortcut: "A"; onTriggered: Session.editor.toggleAllAutomation() }
                 // The track headers' In/Out column (Audio From and To, monitoring), as Ableton's.
                 Action {
@@ -680,6 +707,22 @@ ApplicationWindow {
                     onCloseRequested: arrangementArea.closeClipView()
                     onLocateRequested: beat => Session.locate(beat)
                     onStatusMessage: message => window.showMessage(message)
+                }
+
+                // The find bar (Q), over the top right of the arrangement's lanes, or of the clip view.
+                TrackSearchBar {
+                    id: trackSearchBar
+                    objectName: "trackSearchBar"
+                    x: Math.max(0, (arrangement.lanesWidth ?? parent.width) - width - 12)
+                    y: arrangementArea.clipViewShown ? 60 : (arrangement.rulerHeight ?? 0) + 8  // (below the rulers)
+                    z: 1
+                    onMatchChosen: trackId => window.showTrackMatch(trackId)
+                    onClosed: {
+                        if (arrangementArea.clipViewShown)
+                            clipView.focusContent()
+                        else
+                            window.focusLanes()
+                    }
                 }
             }
 

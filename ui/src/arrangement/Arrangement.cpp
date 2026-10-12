@@ -392,6 +392,27 @@ bool Arrangement::renameTrack(const QString& trackId) {
     return true;
 }
 
+bool Arrangement::revealTrack(const QString& trackId) {
+    app::Project* p = project();
+    app::Selection* s = selection();
+    if (!p || !s || !(trackId == app::kMaster || p->hasTrack(trackId) || p->hasReturn(trackId))) return false;
+    if (p->hasTrack(trackId)) {
+        for (auto parent = p->track(trackId).parent; parent && p->hasTrack(*parent); parent = p->track(*parent).parent) {
+            if (p->track(*parent).folded) editor()->setFolded(*parent, false);  // (the layout follows at once)
+        }
+        if (const Row* row = layout_.rowFor(trackId); row && !row->hidden) {
+            const int scroll = view_.scrollY();
+            if (row->top < scroll || row->top + row->mainHeight > scroll + lanesHeight_) {
+                setScrollY(row->top - std::max(0.0, (lanesHeight_ - row->mainHeight) / 2.0));
+            }
+        }
+    }
+    beginHeaderClick();
+    s->selectTrack(trackId, true);
+    endHeaderClick();
+    return true;
+}
+
 void Arrangement::wheelResize(const QString& trackId, int delta) {
     app::Project* p = project();
     if (!p) return;

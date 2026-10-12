@@ -173,6 +173,57 @@ Once you rename a track to anything else, its name stays what you typed. Project
 older SUBstation have their `3 Audio`, `2 MIDI` and `1 Group` tracks named and numbered this way
 when opened (an older SUBstation can't open projects saved now).
 
+### What a track is
+
+Hover over a track's name to see what the track *is*, in a few words: `Washed Out Serum Pluck`,
+`Orchestral Trumpet`, `Sad Piano Line`, `Echoing Bell Stab`, `Drum Group`. The label is worked out
+from everything about the track:
+
+- what you named it, if you did;
+- the preset its instrument has loaded (Serum's `PL - Electric Flow` is a pluck; a BBC Symphony
+  Orchestra's `Core - Trumpet` a trumpet), its racks' names, the instrument itself, a sampler's
+  sample;
+- its audio files' names (`OS_LDNB_174_Amaj_Sad_Piano_Line.wav` is a sad piano line: pack codes,
+  tempos and keys are left out);
+- its notes: low and one at a time is a bass, notes struck together are chords, fast ones over a
+  wide range an arp;
+- its effects and how much they do: a reverb half wet washes it out, a delay echoes, OTT squashes,
+  a sidechain pumps, a narrow EQ sounds like a telephone; its sends to returns;
+- its fader and pan (a very quiet track says so).
+
+Below the label, the tooltip lists what it was made from: the instrument and preset, the notes,
+the files, each effect and its amount, the sends and the mixer. With the info view showing (at
+the bottom left), the label is its title. A group is named by what it holds (`Drum Group`,
+`Synth & Bass Group`), a return by its effect (`Reverb Return`).
+
+Tracks that would get the same label are told apart: by something only one of them has, by their
+register (`High Serum Chords`, `Low Serum Chords`), by their presets' or files' own names
+(`Serum Pluck (Dynasty)`), else numbered. A trait every track shares (the same reverb on all of
+them) says little, so it shows only where it stands out. The label follows the track as you change
+it, a moment after you stop. Your track's own name never changes.
+
+### Finding a track
+
+Press **Q** (or *View › Find Track*) and type: the find bar at the top right of the lanes jumps to
+the track that best matches, selects it as a click on its name would (its devices show in the
+device view) and scrolls to it, opening the groups it is folded away in. **Enter** (or **Down**)
+goes on to the next match, after the last back to the first; **Shift+Enter** (or **Up**) goes
+back. The bar says which match shows (`2 of 5`). **Esc** closes it; **Q** again selects what you
+typed, to type something else.
+
+Track names come first: tracks whose name has the words you typed at the start of its words
+(`horn` finds `Horn Stab`). Then tracks whose label has them (`Orchestral Horn`: a BBC Symphony
+Orchestra playing its `Core - Horns` preset, whatever you named it), then names that have them
+anywhere (`Thorn`), then tracks where anything the label was made from has them (a preset's name,
+a file's). Every word typed must match (`serum pluck`), in any case. Within each, they come in the
+arrangement's order: the tracks top to bottom, the returns, the master.
+
+**In the clip view**, Q finds tracks too, and keeps to the part of the song you are looking at:
+the beats the clips it shows span. A match with a clip there opens that clip in the clip view
+(the one overlapping it most); a match without one shows in the arrangement, selected and
+scrolled to, and the next match with a clip there opens the clip view again. Esc gives the
+keyboard back to the view the bar is over.
+
 Changing the volume or pan of one of several selected tracks changes them all: by the
 same amount when dragged, to the same value when typed or reset.
 

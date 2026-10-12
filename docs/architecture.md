@@ -47,6 +47,8 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
                 │ intelligence) on the GUI thread. Its library: the browser's files   │
                 │ Harmony: pure functions; Harmony (app/src/intelligence) calls them  │
                 │ on the GUI thread with the song's MIDI notes when asked             │
+                │ Labels: pure functions; TrackLabels (app/src/intelligence) calls    │
+                │ them on the GUI thread with the project's facts when asked          │
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐
   platform      │ sub_platform, under the engine, the browser and the intelligence:   │
@@ -60,7 +62,7 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
 | Application layer | [app/src](../app/src): `model/`, `editor/`, `io/`, `audio/`, `session/`, `files/`, `browser/`, `intelligence/`, `plugins/`, `analysis/` | `sub_app` | Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence` | [app/](README.md#application-layer) |
 | Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, the platform layer, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
 | Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library, the platform layer | [browser.md](browser.md) |
-| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
+| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
 
