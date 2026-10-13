@@ -164,8 +164,12 @@ void HueSpectrum::setHovered(const QString& part) {
 }
 
 void HueSpectrum::hoverMoveEvent(QHoverEvent* event) {
-    if (!dragging())
-        setHovered(partAt(event->position()));
+    if (dragging())
+        return;
+    // (over the editor's buttons laid on it: nothing of its own is hovered)
+    const QPointF at = event->position();
+    QQuickItem* over = childAt(at.x(), at.y());
+    setHovered(over != nullptr && over->isVisible() ? QString() : partAt(at));
 }
 
 void HueSpectrum::hoverLeaveEvent(QHoverEvent*) {
@@ -322,7 +326,7 @@ void HueSpectrum::paint(SgPainter& p) {
     // The band's sides: the crossovers' slopes (Linkwitz-Riley, 24 dB/octave), only where they fall, fading in from
     // the corner and out towards the bottom; the side moved (hovered or dragged) glows in the colour of its note.
     {
-        const double flatY = area.top() + 26, dbSpan = 48.0;  // 0 dB under the buttons, -48 dB at the bottom
+        const double flatY = area.top() + 30, dbSpan = 48.0;  // 0 dB under the buttons, -48 dB at the bottom
         const double reach = area.bottom() - flatY;
         for (const bool isEnd : {false, true}) {
             const double cut = isEnd ? end : start, xCut = isEnd ? xe : xs;
@@ -399,7 +403,7 @@ void HueSpectrum::paint(SgPainter& p) {
 
     // Color: a gauge at the right edge, its value while hovered or dragged.
     const bool colorHot = hovered_ == QLatin1String("color") || part_ == QLatin1String("color");
-    const double gaugeTop = area.top() + 24, gaugeBottom = area.bottom() - 4;
+    const double gaugeTop = area.top() + 30, gaugeBottom = area.bottom() - 4;
     const double level = gaugeBottom - (gaugeBottom - gaugeTop) * std::clamp(color / kColorMax, 0.0, 1.0);
     p.fillRoundedRect(QRectF(area.right() - 5, gaugeTop, 3, gaugeBottom - gaugeTop), 1.5, 1.5, withAlpha(Theme::textDim(), 50));
     p.fillRoundedRect(QRectF(area.right() - 5, level, 3, gaugeBottom - level), 1.5, 1.5,
@@ -410,7 +414,7 @@ void HueSpectrum::paint(SgPainter& p) {
         const QString text = QStringLiteral("Color %1 %").arg(std::lround(color));
         const QFont bold = uiFont(8, true);
         const double w = SgPainter::textWidth(text, bold) + 10;
-        const QRectF box(area.right() - 10 - w, std::clamp(level - 8, area.top() + 24, area.bottom() - 36), w, 16);
+        const QRectF box(area.right() - 10 - w, std::clamp(level - 8, area.top() + 30, area.bottom() - 24), w, 16);
         p.fillRoundedRect(box, 3, 3, withAlpha(Theme::meterBg(), int(220 * glow_)));
         p.drawText(box, Qt::AlignCenter, text, withAlpha(Theme::text(), int(255 * glow_)), bold);
     }

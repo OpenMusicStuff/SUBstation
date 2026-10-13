@@ -233,17 +233,18 @@ Item {
         width: Math.max(implicitWidth, editor.spectrumWidth)
         height: Math.max(implicitHeight, editor.height)
 
-        // Over its top edge: the key and HQ at the left, the arrow at the right.
+        // Over its top edge: the key and HQ at the left, the arrow at the right (a little bigger than the body's).
         Row {
             id: overlay
-            x: 5
-            y: 5
-            spacing: 3
+            x: 6
+            y: 6
+            spacing: 4
 
             KeyChoice {
                 id: rootChoice
                 objectName: "rootChoice"
-                width: 36
+                width: 40
+                height: 19
                 enabled: !editor.midi
                 names: editor.rootNames
                 index: editor.buttons === 0 && !editor.key ? -1 : editor.shownRoot()
@@ -253,7 +254,8 @@ Item {
             KeyChoice {
                 id: scaleChoice
                 objectName: "scaleChoice"
-                width: 108
+                width: 120
+                height: 19
                 enabled: !editor.midi
                 names: editor.scales.map(scale => scale.name)
                 index: editor.key ? editor.key.scale : -1
@@ -269,7 +271,8 @@ Item {
             ParamButton {
                 id: hqButton
                 objectName: "quality"
-                width: 30
+                width: 34
+                height: 19
                 param: p.get("quality")
                 text: qsTr("HQ")
                 tooltip: qsTr("High Quality: each moved note through a shifter of its own, tuned to it: it lands on\n"
@@ -281,9 +284,9 @@ Item {
             id: notesButton
             objectName: "notesButton"
             x: parent.width - width - 12  // (clear of the Color gauge)
-            y: 5
-            width: 22
-            height: 16
+            y: 6
+            width: 25
+            height: 19
             role: "small"
             checkable: false
             checked: editor.expanded
