@@ -222,7 +222,8 @@ private Q_SLOTS:
         QCOMPARE(face.topLeft(), QPointF(0, 0));  // (no margins)
         QCOMPARE(face.height(), view->height());
         QCOMPARE(folded, std::ceil(face.right()));
-        QVERIFY2(std::abs(folded - hallWidth) <= 2, qPrintable(QStringLiteral("%1 %2").arg(folded).arg(hallWidth)));
+        // about as wide as the Vintage Hall folded (each sizes its cells by its own texts, in the font there is)
+        QVERIFY2(std::abs(folded - hallWidth) <= 0.08 * hallWidth, qPrintable(QStringLiteral("%1 %2").arg(folded).arg(hallWidth)));
         // the controls over its top edge, inside it and clear of each other
         double after = face.left();
         for (const char* name : kOverlaid) {
@@ -280,10 +281,13 @@ private Q_SLOTS:
         QVERIFY(value(shown, "start") * 1.25 <= value(shown, "end") + 1e-6);
         tick(20);
 
-        // A double-click on a handle resets it.
+        // A double-click on a side resets it.
         QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(value(shown, "end"))).toPoint());
         QCOMPARE(value(shown, "end"), 2400.0);
-        tick(20);
+        tick(40);
+        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier, spectrum->mapToScene(at(60.0)).toPoint());
+        QCOMPARE(value(shown, "start"), 240.0);
+        tick(40);  // (the sides follow; and no double-click with what comes next)
 
         // Anywhere else: up and down for Color (1.2 % a pixel, Shift finely), one undo step; a double-click resets it.
         steps = undo()->index();
@@ -371,16 +375,18 @@ private Q_SLOTS:
         settle(shown);
         QCOMPARE(wheel->levelDb(9), sub::app::analysis::Chroma::kFloorDb);
         engine()->renderOffline(0.0, int(kSampleRate * 1.0));
-        tick(4, 20);
-        QVERIFY(wheel->animating());
+        tick(1, 20);
+        // The spectrum, as the sound comes (its analyzer falls back fast once it stops): its 8th partial (A#4,
+        // 466 Hz) moved onto A4 (440 Hz).
         QVERIFY(shown.spectrum->animating());
+        QVERIFY2(shown.spectrum->levelDbAt(440.0) > shown.spectrum->levelDbAt(466.16) + 3,
+                 qPrintable(QStringLiteral("%1 %2").arg(shown.spectrum->levelDbAt(440.0)).arg(shown.spectrum->levelDbAt(466.16))));
+        tick(3, 20);
+        QVERIFY(wheel->animating());
         // The growl is an A#: in, A# is loud; out, it is moved onto A, the A louder than the A# left.
         QVERIFY2(wheel->inputLevelDb(10) > wheel->inputLevelDb(9) + 3, qPrintable(QString::number(wheel->inputLevelDb(10))));
         QVERIFY2(wheel->levelDb(9) > wheel->levelDb(10) + 6,
                  qPrintable(QStringLiteral("%1 %2").arg(wheel->levelDb(9)).arg(wheel->levelDb(10))));
-        // The spectrum too: its 8th partial (A#4, 466 Hz) out moved onto A4 (440 Hz).
-        QVERIFY2(shown.spectrum->levelDbAt(440.0) > shown.spectrum->levelDbAt(466.16) + 6,
-                 qPrintable(QStringLiteral("%1 %2").arg(shown.spectrum->levelDbAt(440.0)).arg(shown.spectrum->levelDbAt(466.16))));
         // Nothing more: they fall and rest.
         settle(shown, 4000);
         QVERIFY(!wheel->animating());
