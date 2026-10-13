@@ -53,7 +53,7 @@ HueSpectrum::HueSpectrum(QQuickItem* parent) : DeviceCanvas(parent) {
 
 // --- Geometry ------------------------------------------------------------------------------
 
-QRectF HueSpectrum::plot() const { return QRectF(1, 1, std::max(10.0, width() - 2), std::max(10.0, height() - 2)); }
+QRectF HueSpectrum::plot() const { return QRectF(0, 0, std::max(10.0, width()), std::max(10.0, height())); }
 
 LogAxis HueSpectrum::axis() const {
     const QRectF p = plot();
@@ -252,7 +252,7 @@ void HueSpectrum::mouseDoubleClickEvent(QMouseEvent* event) {
 void HueSpectrum::paint(SgPainter& p) {
     const QRectF all(0, 0, width(), height());
     const QRectF area = plot();
-    p.fillRoundedRect(all, 3, 3, Theme::meterBg());
+    p.fillRect(all, Theme::meterBg());  // (edge to edge of the body)
     p.setClipRect(area);
     const LogAxis ax = axis();
     drawDecadeGrid(p, area, ax);

@@ -25,8 +25,9 @@ Item {
     // The knobs' cells: as wide as their captions and every text their readouts take (EditorTextsWidth).
     readonly property int cellWidth: Math.max(52, cellTexts.needed)
     readonly property int groupGap: 7  // either side of a group's line
-    // The spectrum: as wide as the Vintage Hall folded (its loop, beside it four cells, their gaps and lines).
-    readonly property int spectrumWidth: Math.max(110, height - 12) + 4 * cellWidth + 33
+    // The spectrum, from edge to edge of the body (no margins): as wide as the Vintage Hall folded (its loop, beside
+    // it four cells, their gaps and lines, and its margins).
+    readonly property int spectrumWidth: Math.max(110, height - 12) + 4 * cellWidth + 49
     // Whether MIDI notes choose the notes (the engine says so once they come).
     readonly property bool midi: spectrum.midi || wheel.midi
     // Open: the wheel and the finer controls shown. `reveal` follows it, 0..1, as the section slides.
@@ -144,8 +145,9 @@ Item {
             chooseKey(shownRoot(), scale)
     }
 
-    implicitWidth: Math.ceil(notesSection.x + notesSection.width) + 8
-    implicitHeight: 6 + Math.max(spectrum.implicitHeight, finer.implicitHeight) + 6
+    // (a margin after the rest as it opens; none round the spectrum)
+    implicitWidth: Math.ceil(notesSection.x + notesSection.width + 8 * reveal)
+    implicitHeight: Math.max(spectrum.implicitHeight, 6 + finer.implicitHeight + 6)
 
     DeviceParamMap {
         id: p
@@ -228,10 +230,8 @@ Item {
         session: Session
         trackId: editor.trackId
         deviceId: editor.deviceId
-        x: 8
-        y: 6
         width: Math.max(implicitWidth, editor.spectrumWidth)
-        height: Math.max(implicitHeight, editor.height - 12)
+        height: Math.max(implicitHeight, editor.height)
 
         // Over its top edge: the key and HQ at the left, the arrow at the right.
         Row {
@@ -306,7 +306,6 @@ Item {
         id: notesSection
         objectName: "notesSection"
         x: spectrum.x + spectrum.width
-        y: 6
         width: Math.round(editor.reveal * notesRow.implicitWidth)
         height: spectrum.height
         visible: editor.reveal > 0
@@ -330,7 +329,7 @@ Item {
                 deviceId: editor.deviceId
                 caption: editor.keyText
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(implicitWidth, notesSection.height)  // (square, as tall as the spectrum)
+                width: Math.max(implicitWidth, notesSection.height - 12)  // (square, as tall as the body less its margins)
                 height: width
 
                 HoverHandler {

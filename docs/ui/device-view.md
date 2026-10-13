@@ -1173,8 +1173,9 @@ The editors:
     loud as `output`, Decay and the loop's length. Dragged up and down it sets Decay (doubling every 50 px), across
     Size (0.8 % a pixel), Shift a sixth as far, one undo step a drag ("Change Decay and Size"); a double-click resets
     both. It repaints only while something moves: once the glow is under -60 dB and the comets have faded it rests.
-- **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages: its spectrum across the body
-  (as wide as the Vintage Hall folded: its loop, four cells and their gaps), and over its top edge the key (a root and
+- **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages, no margins round its spectrum: the
+  spectrum fills the body from edge to edge (as wide as the Vintage Hall folded: its loop, four cells, their gaps and
+  its margins), and over its top edge the key (a root and
   a scale, `KeyChoice` drop-downs) and HQ (Quality) at the left, the arrow at the right (a `fold` icon turning as it
   opens). The key sets the twelve note buttons at once (`HueWheel.setNotes`, one undo step, "Change Key"):
   seventeen scales (Major to Locrian, Phrygian Dominant, the pentatonics, Blues, the triads, Power Chord, Root Only)

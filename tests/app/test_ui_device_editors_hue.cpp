@@ -218,7 +218,9 @@ private Q_SLOTS:
         QVERIFY(!find(view, QStringLiteral("notesSection"))->isVisible());
         const double folded = view->implicitWidth();
         const QRectF face = shown.spectrum->mapRectToItem(view, QRectF(0, 0, shown.spectrum->width(), shown.spectrum->height()));
-        QCOMPARE(folded, std::ceil(face.right()) + 8);
+        QCOMPARE(face.topLeft(), QPointF(0, 0));  // (no margins)
+        QCOMPARE(face.height(), view->height());
+        QCOMPARE(folded, std::ceil(face.right()));
         QVERIFY2(std::abs(folded - hallWidth) <= 2, qPrintable(QStringLiteral("%1 %2").arg(folded).arg(hallWidth)));
         // the controls over its top edge, inside it and clear of each other
         double after = face.left();
