@@ -1175,13 +1175,17 @@ The editors:
     both. It repaints only while something moves: once the glow is under -60 dB and the comets have faded it rests.
 - **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages, no margins round its spectrum: the
   spectrum fills the body from edge to edge (as wide as the Vintage Hall folded: its loop, four cells, their gaps and
-  its margins), and over its top edge the key (a root and
-  a scale, `KeyChoice` drop-downs) and HQ (Quality) at the left, the arrow at the right (a `fold` icon turning as it
-  opens). The key sets the twelve note buttons at once (`HueWheel.setNotes`, one undo step, "Change Key"):
-  seventeen scales (Major to Locrian, Phrygian Dominant, the pentatonics, Blues, the triads, Power Chord, Root Only)
-  and No Notes. It is read back from the buttons: the key last chosen (`DeviceViews` "key", not saved) while they
-  still are it, else the first scale in the list on the lowest root they are, else "Custom" (a new root then moves
-  the notes with it). Once MIDI notes choose the notes (`midi`, from the display `notes`) both show MIDI and are
+  its margins), and over its top edge the key and HQ (Quality) at the left, the arrow at the right (a `fold` icon
+  turning as it opens). The key is a `KeyChoice` drop-down of Auto and the twelve roots: Auto (the parameter `auto`,
+  on at first) follows the song's key (`Session.harmony.keyLabel`: the project's, else inferred; shown "Auto · Am",
+  its notes handed to the wheel and the spectrum as `autoNotes`; the engine has it as `ProcessContext::keyTonic`).
+  Choosing a root leaves Auto and shows the scale drop-down beside it, both setting the twelve note buttons and Auto
+  off at once (`HueWheel.setNotes`, one undo step, "Change Key"; out of Auto the scale last chosen, else the song
+  key's mode); Auto again is one undo step ("Follow the Song's Key"). Seventeen scales (Major to Locrian, Phrygian
+  Dominant, the pentatonics, Blues, the triads, Power Chord, Root Only) and No Notes. The key is read back from the
+  buttons: the key last chosen (`DeviceViews` "key", not saved) while they still are it, else the first scale in the
+  list on the lowest root they are, else "Custom" (a new root then moves the notes with it). Once MIDI notes choose
+  the notes (`midi`, from the display `notes`) the key shows MIDI Notes and is
   disabled. The arrow (folded at first; `DeviceViews` "notes") slides the rest open beside the spectrum
   (`reveal`, 220 ms, clipped): the note wheel, as tall as the spectrum, then Wet Gain and Pre-Shift over
   Post-Shift and Mute Low over Mute High.

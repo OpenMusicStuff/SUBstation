@@ -53,6 +53,13 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     similarityOptions.analyse = options_.analyseSounds;
     similarity_ = new SoundSimilarity(similarityOptions, this);
     harmony_ = new Harmony(project_, this);
+    // The song's key reaches the engine, for the devices that follow it (Hue's Auto): now, and as it changes.
+    const auto pushKey = [this] {
+        const std::optional<Key> key = harmony_->key();
+        engine_.setSongKey(key ? key->tonic : -1, key && key->minor);
+    };
+    connect(harmony_, &Harmony::changed, this, pushKey);
+    pushKey();
     humanizer_ = new Humanizer(project_, this);
     trackLabels_ = new TrackLabels(project_, bridge_, plugins_, this);
     trackSearch_ = new TrackSearch(project_, trackLabels_, this);

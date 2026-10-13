@@ -34,9 +34,12 @@
 //   notes get narrower and louder and the floor between them lower.
 //   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
 //   notes, Post-Shift tunes the notes.
+// - Auto (on at first): the notes are the song's key's scale (major or natural
+//   minor; ProcessContext::keyTonic, the project's key or the one its notes are
+//   in), else (off, or no key known) the twelve note buttons.
 // - MIDI Notes (on at first): once MIDI notes come (from MIDI From, or the
-//   track's own) they choose the notes instead of the key, each chord held
-//   until the next; until then, and after a reset, the key's.
+//   track's own) they choose the notes instead, each chord held until the
+//   next; until then, and after a reset, Auto's or the buttons'.
 // - Its editor reads the input and the output (mono) for a chromagram, and the
 //   notes in use (and whether they are MIDI's).
 
@@ -336,14 +339,16 @@ inline void multiplyAdd(const float* __restrict xr, const float* __restrict xi, 
 class HueProcessor final : public BuiltinProcessor {
 public:
     enum Param {
-        Start = 0, End, Color, WetGain, PreShift, PostShift, MuteLow, MuteHigh, Quality, Midi,
+        Start = 0, End, Color, WetGain, PreShift, PostShift, MuteLow, MuteHigh, Quality, Midi, Auto,
         NoteC, NumParams = NoteC + 12
     };
     // Its editor's displays: the input and the output (mono, a value a sample: its chromagram), and the notes
-    // in use (their bits, C the lowest, and kFromMidi while they are MIDI notes), a value every kNotesSamples.
+    // in use (their bits, C the lowest; kFromMidi while they are MIDI notes, kFromKey while the song key's), a
+    // value every kNotesSamples.
     enum Display { InputDisplay = 0, OutputDisplay, NotesDisplay, NumDisplays };
     static constexpr int kNotesSamples = 1024;
     static constexpr int kFromMidi = 1 << 12;
+    static constexpr int kFromKey = 1 << 13;
 
     HueProcessor() : BuiltinProcessor(infos(), displayInfos()) {}
 
@@ -426,6 +431,8 @@ protected:
             if (ev.startsNote()) ++held_[ev.key() & 127];
             else if (ev.endsNote() && held_[ev.key() & 127] > 0) --held_[ev.key() & 127];
         }
+        keyTonic_ = ctx.keyTonic;
+        keyMinor_ = ctx.keyMinor;
         // MIDI notes, once any come, choose the notes, each chord held until the next (the gaps between chords
         // don't fall back to the key).
         if (ctx.inEvents.count > 0) {
@@ -451,7 +458,7 @@ protected:
         if (chs > 0)
             for (int i = 0; i < numFrames; ++i) publish(OutputDisplay, mono(i));
         for (notesCount_ += numFrames; notesCount_ >= kNotesSamples; notesCount_ -= kNotesSamples)
-            publish(NotesDisplay, static_cast<float>(enabledNotes() | (fromMidi() ? kFromMidi : 0)));
+            publish(NotesDisplay, static_cast<float>(enabledNotes() | (fromMidi() ? kFromMidi : fromKey() ? kFromKey : 0)));
     }
 
 private:
@@ -533,6 +540,7 @@ private:
                 {"mute_high", "Mute High", "", 0.f, 1.f, 0.f, false, onOff},
                 {"quality", "Quality", "", 0.f, 1.f, 0.f, false, kQuality},
                 {"midi", "MIDI Notes", "", 0.f, 1.f, 1.f, false, onOff},
+                {"auto", "Auto", "", 0.f, 1.f, 1.f, false, onOff},
             };
             static const char* const kNames[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
             static const char* const kIds[12] = {"note_c", "note_cs", "note_d", "note_ds", "note_e", "note_f",
@@ -546,8 +554,16 @@ private:
     // Whether the notes are MIDI's: MIDI Notes on (as it is at first) and notes come (from MIDI From, or the
     // track's own), until a reset.
     bool fromMidi() const noexcept { return isOn(Midi) && midiNotes_ != 0; }
+    // Whether they are the song key's: Auto on and a key known (and no MIDI notes).
+    bool fromKey() const noexcept { return !fromMidi() && isOn(Auto) && keyTonic_ >= 0; }
     int enabledNotes() const noexcept {
         if (fromMidi()) return midiNotes_;
+        if (fromKey()) {
+            static constexpr int kMajor[7] = {0, 2, 4, 5, 7, 9, 11}, kMinor[7] = {0, 2, 3, 5, 7, 8, 10};
+            int bits = 0;
+            for (const int step : keyMinor_ ? kMinor : kMajor) bits |= 1 << ((keyTonic_ + step) % 12);
+            return bits;
+        }
         int bits = 0;
         for (int c = 0; c < 12; ++c)
             if (isOn(NoteC + c)) bits |= 1 << c;
@@ -1021,6 +1037,8 @@ private:
     int pos_ = 0;
     int held_[128] = {};
     int midiNotes_ = 0;  // the MIDI notes held last (bits): 0 until any come
+    int keyTonic_ = -1;  // the song's key (ProcessContext's), as the last block had it
+    bool keyMinor_ = false;
     double lastStart_ = -1, lastEnd_ = -1;
 
     RealDft fft_, designFft_;

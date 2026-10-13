@@ -94,6 +94,7 @@ void HueSpectrum::sync() {
         if (value(HueWheel::noteParam(c)) >= 0.5)
             bits |= 1 << c;
     buttons_ = bits;
+    auto_ = value(QStringLiteral("auto")) >= 0.5;
     // The sides follow a new Low or High Cut (refreshDisplays()); the first time they are there at once, so nothing
     // slides in as the device is added.
     startShown_.target = std::log2(std::max(1.0, start_));
@@ -280,7 +281,9 @@ void HueSpectrum::paint(SgPainter& p) {
     const bool outLive = analyzer_.live(EqAnalyzer::Output), inLive = analyzer_.live(EqAnalyzer::Input);
 
     // The notes in use: a thin line in its hue at every octave within the band, brighter as it sounds.
-    const int notes = midi_ && shownNotes_ >= 0 ? (shownNotes_ & 0xfff) : buttons_;
+    const int notes = midi_ && shownNotes_ >= 0 ? (shownNotes_ & 0xfff)
+                      : auto_ && autoNotes_ >= 0     ? autoNotes_
+                                                     : buttons_;
     for (int c = 0; c < 12 && notes != 0; ++c) {
         if (!(notes >> c & 1))
             continue;

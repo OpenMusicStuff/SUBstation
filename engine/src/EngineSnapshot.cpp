@@ -212,6 +212,8 @@ void Engine::rebuildSnapshotLocked() {
     snap->tempo = tempo_;
     snap->timeSigNum = timeSigNum_;
     snap->timeSigDen = timeSigDen_;
+    snap->keyTonic = keyTonic_;
+    snap->keyMinor = keyMinor_;
     const double spb = snap->samplesPerBeat();
     snap->loopStart = std::llround(loopStartBeat_ * spb);
     snap->loopEnd = std::llround(loopEndBeat_ * spb);

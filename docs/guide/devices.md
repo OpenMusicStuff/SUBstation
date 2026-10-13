@@ -617,10 +617,15 @@ dense, harmonic sounds, and works on anything.
   switch it. Inside it the sound plays as petals (what comes out) over a faint outline
   (what goes in), and the middle glows in the colour the sound is now. Beside the wheel:
   **Wet Gain**, **Pre-Shift**, **Post-Shift**, **Mute Low** and **Mute High**.
-- **The notes**: choose a **Key** (seventeen scales from Major to Power Chord and Root Only,
-  on any root) or click notes on the wheel; a note in any octave counts. Notes that are no
-  scale show as Custom, and a new root moves them with it. With no notes, or all twelve,
-  the sound passes as it is.
+- **The notes**: at first the key is **Auto**: Hue follows the song's key, the project's
+  key or, without one, the key its MIDI tracks are in (as the piano roll's chord lane
+  infers it), using its major or natural minor scale; the key menu shows it ("Auto · Am").
+  With no key to follow yet, the sound passes. Choose a root (C to B) to pick the key
+  yourself: a scale menu appears beside it (seventeen scales from Major to Power Chord
+  and Root Only; at first the song key's major or minor). Clicking notes on the wheel also
+  leaves Auto, starting from the notes it had. A note in any octave counts. Notes that
+  are no scale show as Custom, and a new root moves them with it. With no notes, or all
+  twelve, the sound passes as it is. Choose Auto again to follow the song.
 - **MIDI**: play Hue notes and they choose the notes instead of the key: put it on a MIDI
   track after an instrument, or pick a MIDI track with **MIDI From** (see above) so the
   scale follows a chord part. Each chord holds until the next one; until the first note

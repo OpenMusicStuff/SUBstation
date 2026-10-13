@@ -256,6 +256,8 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     context.tempo = snap.tempo;
     context.timeSigNum = snap.timeSigNum;
     context.timeSigDen = snap.timeSigDen;
+    context.keyTonic = snap.keyTonic;
+    context.keyMinor = snap.keyMinor;
     context.playing = playing_;
     context.looping = flags.loop && !recording_;
     context.loopStartBeat = snap.loopStart / spb;

@@ -41,6 +41,8 @@ class HueSpectrum : public DeviceCanvas {
     Q_PROPERTY(bool dragging READ dragging NOTIFY draggingChanged)
     Q_PROPERTY(QString hovered READ hovered NOTIFY hoveredChanged)  // "start", "end", "color" or ""
     Q_PROPERTY(bool midi READ midi NOTIFY midiChanged)  // MIDI notes choose the notes (the display "notes" says)
+    // The song key's notes (bits) as Auto uses them (the editor's): -1, no key known.
+    Q_PROPERTY(int autoNotes READ autoNotes WRITE setAutoNotes NOTIFY autoNotesChanged)
 
 public:
     static constexpr int kMinimumWidth = 200;
@@ -57,6 +59,14 @@ public:
     bool dragging() const { return !gesture_.isEmpty(); }
     QString hovered() const { return hovered_; }
     bool midi() const { return midi_; }
+    int autoNotes() const { return autoNotes_; }
+    void setAutoNotes(int notes) {
+        if (notes == autoNotes_)
+            return;
+        autoNotes_ = notes;
+        Q_EMIT autoNotesChanged();
+        update();
+    }
     // Where a frequency is across the view, and the frequency at a point across.
     Q_INVOKABLE double xOf(double hz) const;
     Q_INVOKABLE double hzAt(double x) const;
@@ -70,6 +80,7 @@ Q_SIGNALS:
     void draggingChanged();
     void hoveredChanged();
     void midiChanged();
+    void autoNotesChanged();
 
 protected:
     void sync() override;
@@ -95,6 +106,8 @@ private:
     int buttons_ = 0;          // the note buttons
     int shownNotes_ = -1;      // the display's (bits, and kFromMidi), -1 before any
     bool midi_ = false;        // the notes are MIDI's
+    bool auto_ = true;         // the parameter Auto
+    int autoNotes_ = -1;
 
     sub::app::analysis::EqAnalyzer analyzer_;
     Eased startShown_, endShown_;  // the sides (log2 Hz), following the cuts

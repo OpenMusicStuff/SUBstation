@@ -24,7 +24,8 @@ graph is spread over threads in [scheduler.md](scheduler.md).
 
 `RenderSnapshot` holds everything a chunk needs, with every position in samples:
 
-- `sampleRate`, `tempo`, `timeSigNum`/`timeSigDen`, `samplesPerBeat()`.
+- `sampleRate`, `tempo`, `timeSigNum`/`timeSigDen`, `samplesPerBeat()`, and the song's key (`keyTonic`,
+  `keyMinor`: `Engine::setSongKey`), handed to every device in its `ProcessContext`.
 - The loop (`loopEnabled`, `loopStart`, `loopEnd`): enabled only if the loop is at least 256
   samples long.
 - `tracks`: `TrackRender`s in routing order, every track after those that feed it.

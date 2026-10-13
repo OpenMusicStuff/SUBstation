@@ -501,6 +501,9 @@ public:
     void setTempo(double bpm);
     double tempo();
     void setTimeSignature(int numerator, int denominator);
+    // The song's key, for the devices that follow the harmony (ProcessContext::keyTonic, keyMinor): its tonic's
+    // pitch class (0 = C), or -1 when none is known. Throws std::invalid_argument for a tonic past 11.
+    void setSongKey(int tonic, bool minor);
     void setLoop(bool enabled, double startBeat, double endBeat);
     void setMetronome(bool enabled);
     bool metronome() const { return shared_.metronome.load(std::memory_order_relaxed); }
@@ -832,6 +835,8 @@ private:
     double tempo_ = 120.0;
     int timeSigNum_ = 4;
     int timeSigDen_ = 4;
+    int keyTonic_ = -1;
+    bool keyMinor_ = false;
     bool loopEnabled_ = false;
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 16.0;

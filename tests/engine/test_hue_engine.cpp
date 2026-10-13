@@ -3,7 +3,8 @@
 // out, notes a semitone off moved onto the enabled ones; MIDI notes in place of the buttons;
 // changing the notes without a click; and other rates, mono and silence. High Quality: its latency,
 // the sound passed with no notes, and a moved note landing on the enabled one's pitch exactly. Its
-// editor's displays: the input and output a sample a value, the notes in use (the held ones from MIDI).
+// editor's displays: the input and output a sample a value, the notes in use (the held ones from MIDI). Auto:
+// the song key's scale, the buttons without a key or with Auto off.
 
 #include <algorithm>
 #include <cmath>
@@ -46,7 +47,7 @@ TEST_CASE("hue: listing") {
     std::vector<std::string> ids;
     for (const auto& p : info.params) ids.push_back(p.id);
     CHECK(ids == (std::vector<std::string>{"start", "end", "color", "wet_gain", "pre_shift", "post_shift", "mute_low",
-                                           "mute_high", "quality", "midi", "note_c", "note_cs", "note_d", "note_ds", "note_e",
+                                           "mute_high", "quality", "midi", "auto", "note_c", "note_cs", "note_d", "note_ds", "note_e",
                                            "note_f", "note_fs", "note_g", "note_gs", "note_a", "note_as", "note_b"}));
     for (const auto& p : info.params) {
         INFO(p.id);
@@ -217,4 +218,32 @@ TEST_CASE("hue: its editor's displays") {
     const std::vector<float> held = midi.display("notes");
     REQUIRE(!held.empty());
     CHECK_EQ(static_cast<int>(held.back()), (1 << 0) | (1 << 7) | (1 << 12));  // (and: MIDI's)
+}
+
+TEST_CASE("hue: Auto follows the song's key") {
+    // A minor: A kept, A# (out of the key) moved away (onto A); the display says the notes are the key's
+    Standalone hue("hue", kRate, {});
+    hue.context().keyTonic = 9;
+    hue.context().keyMinor = true;
+    CHECK(toneGainDb(hue, 440.0) > -2.0);
+    const std::vector<float> notes = hue.display("notes");
+    REQUIRE(!notes.empty());
+    const int aMinor = (1 << 9) | (1 << 11) | (1 << 0) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 7);
+    CHECK_EQ(static_cast<int>(notes.back()), aMinor | (1 << 13));
+    Standalone moved("hue", kRate, {});
+    moved.context().keyTonic = 9;
+    moved.context().keyMinor = true;
+    CHECK(toneGainDb(moved, 466.16) < -10.0);
+    // A major: C# in, C out (moved onto C#... or B: either way away)
+    Standalone major("hue", kRate, {});
+    major.context().keyTonic = 9;
+    CHECK(toneGainDb(major, 523.25) < -10.0);  // (C5: well inside the band)
+
+    // no key known, or Auto off: the buttons (none: the sound passes)
+    Standalone none("hue", kRate, {});
+    CHECK(std::abs(toneGainDb(none, 440.0)) < 0.3);
+    Standalone off("hue", kRate, {{"auto", 0.f}});
+    off.context().keyTonic = 9;
+    off.context().keyMinor = true;
+    CHECK(std::abs(toneGainDb(off, 466.16)) < 0.3);
 }

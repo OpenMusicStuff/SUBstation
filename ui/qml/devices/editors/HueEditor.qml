@@ -5,9 +5,11 @@ import SUBstation
 // Hue's editor: its spectrum across the device (HueSpectrum: what comes out
 // coloured by the notes it is, over what goes in, the notes' comb; the band it
 // processes between Low Cut and High Cut as handles to drag; drag up and down
-// anywhere else for Color), with its controls over the top edge: the key (a
-// root and a scale, setting the twelve notes at once; "Custom" when they are no
-// scale, "MIDI" once MIDI notes choose them), HQ, and at the right the arrow
+// anywhere else for Color), with its controls over the top edge: the key (Auto,
+// at first: the song's key, the project's or the one its MIDI tracks are in, as
+// the harmony infers it; or a root, and beside it a scale, setting the twelve
+// notes at once; "Custom" when they are no scale; "MIDI" once MIDI notes choose
+// them), HQ, and at the right the arrow
 // that slides open the rest (folded at first; not saved: how the device is
 // looked at): the note wheel (HueWheel: the twelve notes round a colour wheel
 // as Hue treats them, the sound's chromagram inside; click a note to switch
@@ -93,9 +95,24 @@ Item {
         }
         return null
     }
+    // Auto: the notes are the song's key's (Session.harmony: the project's key, else the one its notes are in).
+    readonly property bool autoKey: p.get("auto") ? p.get("auto").value >= 0.5 : true
+    readonly property string songKey: Session.harmony.keyLabel  // "A Minor"; "": none known
+    readonly property bool songMinor: songKey.endsWith("Minor")
+    // The song key's notes (bits; -1: none known), as the engine takes them (major, or natural minor).
+    readonly property int songNotes: {
+        const tonic = songKey.split(" ")[0]  // (the key's names spell Eb, Ab and Bb flat)
+        const flats = { "Eb": 3, "Ab": 8, "Bb": 10 }
+        const root = flats[tonic] !== undefined ? flats[tonic] : rootNames.indexOf(tonic)
+        return root < 0 ? -1 : bitsOf(root, songMinor ? 1 : 0)
+    }
+    // "Am", "F#": the song key, short.
+    readonly property string songKeyShort: songKey === "" ? "" : songKey.split(" ")[0] + (songMinor ? "m" : "")
     readonly property string keyText: {
         if (editor.midi)
             return qsTr("MIDI")
+        if (editor.autoKey)
+            return editor.songKey !== "" ? editor.songKey : qsTr("Auto")
         if (editor.buttons === 0)
             return qsTr("No Notes")
         if (!editor.key)
@@ -125,7 +142,10 @@ Item {
         wheel.setNotes(bitsOf(root, scale), qsTr("Change Key"))
     }
     function chooseRoot(root) {
-        if (editor.key) {
+        if (editor.autoKey) {  // out of Auto: the scale last chosen, else the song key's mode
+            const chosen = DeviceViews.value(deviceId, "key", null)
+            chooseKey(root, chosen ? chosen.scale : (editor.songMinor ? 1 : 0))
+        } else if (editor.key) {
             chooseKey(root, editor.key.scale)
         } else if (editor.buttons !== 0) {  // Custom: the notes move with the root
             const shift = (root - shownRoot() + 12) % 12
@@ -153,7 +173,7 @@ Item {
         id: p
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["start", "end", "color", "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high", "quality",
+        ids: ["start", "end", "color", "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high", "quality", "auto",
               "note_c", "note_cs", "note_d", "note_ds", "note_e", "note_f", "note_fs", "note_g", "note_gs", "note_a",
               "note_as", "note_b"]
     }
@@ -184,6 +204,7 @@ Item {
         property string tooltip: ""
         signal chosen(int index)
 
+        implicitWidth: Math.ceil(choiceButton.implicitWidth)
         implicitHeight: 16
 
         RoleButton {
@@ -232,6 +253,7 @@ Item {
         deviceId: editor.deviceId
         width: Math.max(implicitWidth, editor.spectrumWidth)
         height: Math.max(implicitHeight, editor.height)
+        autoNotes: editor.songNotes
 
         // Over its top edge: the key and HQ at the left, the arrow at the right (a little bigger than the body's).
         Row {
@@ -240,32 +262,42 @@ Item {
             y: 6
             spacing: 4
 
+            // Auto, or a root (entry 0: Auto; then C to B).
             KeyChoice {
                 id: rootChoice
                 objectName: "rootChoice"
-                width: 40
+                width: Math.max(40, implicitWidth)
                 height: 19
                 enabled: !editor.midi
-                names: editor.rootNames
-                index: editor.buttons === 0 && !editor.key ? -1 : editor.shownRoot()
-                tooltip: qsTr("The key's root: the scale moves with it (Custom notes too)")
-                onChosen: index => editor.chooseRoot(index)
+                names: [qsTr("Auto")].concat(editor.rootNames)
+                index: editor.autoKey ? 0 : editor.buttons === 0 && !editor.key ? -1 : editor.shownRoot() + 1
+                text: editor.midi ? qsTr("MIDI Notes")
+                                  : editor.autoKey ? (editor.songKey !== "" ? qsTr("Auto · %1").arg(editor.songKeyShort)
+                                                                            : qsTr("Auto"))
+                                                   : ""
+                tooltip: editor.midi ? qsTr("The MIDI notes played to Hue choose the notes (each chord held until the next)")
+                                     : editor.autoKey ? (editor.songKey !== ""
+                                                         ? qsTr("Auto: the song's key, %1 (the project's key, or the one its MIDI tracks are in).\n"
+                                                                + "Choose a root to pick the key yourself").arg(editor.songKey)
+                                                         : qsTr("Auto: the song's key, once there is one (the project's key, or the one its\n"
+                                                                + "MIDI tracks are in; until then the sound passes). Choose a root to pick the key yourself"))
+                                                      : qsTr("The key's root: the scale moves with it (Custom notes too). Auto: the song's key")
+                onChosen: index => index === 0 ? wheel.setAuto(true) : editor.chooseRoot(index - 1)
             }
+            // The scale, beside a root chosen.
             KeyChoice {
                 id: scaleChoice
                 objectName: "scaleChoice"
+                visible: !editor.autoKey && !editor.midi
                 width: 120
                 height: 19
-                enabled: !editor.midi
                 names: editor.scales.map(scale => scale.name)
                 index: editor.key ? editor.key.scale : -1
-                text: editor.midi ? qsTr("MIDI Notes")
-                                  : editor.buttons === 0 ? qsTr("No Notes") : editor.key ? "" : qsTr("Custom")
+                text: editor.buttons === 0 ? qsTr("No Notes") : editor.key ? "" : qsTr("Custom")
                 extra: [{ name: qsTr("No Notes"), index: -1 }]
-                tooltip: editor.midi ? qsTr("The MIDI notes played to Hue choose the notes (each chord held until the next)")
-                                     : qsTr("The scale: sets the twelve notes at once (Custom: notes that are no scale;\n"
-                                            + "the arrow at the right opens the wheel to choose them one by one).\n"
-                                            + "Notes from a MIDI track (MIDI From, or the track's own) choose them instead")
+                tooltip: qsTr("The scale: sets the twelve notes at once (Custom: notes that are no scale;\n"
+                              + "the arrow at the right opens the wheel to choose them one by one).\n"
+                              + "Notes from a MIDI track (MIDI From, or the track's own) choose them instead")
                 onChosen: index => editor.chooseScale(index)
             }
             ParamButton {
@@ -331,6 +363,7 @@ Item {
                 trackId: editor.trackId
                 deviceId: editor.deviceId
                 caption: editor.keyText
+                autoNotes: editor.songNotes
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(implicitWidth, notesSection.height - 12)  // (square, as tall as the body less its margins)
                 height: width

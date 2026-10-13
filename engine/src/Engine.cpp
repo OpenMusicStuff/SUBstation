@@ -159,6 +159,15 @@ void Engine::setTimeSignature(int numerator, int denominator) {
     rebuildSnapshotLocked();
 }
 
+void Engine::setSongKey(int tonic, bool minor) {
+    if (tonic < -1 || tonic > 11) throw std::invalid_argument("Unknown key");
+    std::lock_guard lock(mutex_);
+    if (tonic == keyTonic_ && (tonic < 0 || minor == keyMinor_)) return;
+    keyTonic_ = tonic;
+    keyMinor_ = tonic >= 0 && minor;
+    rebuildSnapshotLocked();
+}
+
 void Engine::setLoop(bool enabled, double startBeat, double endBeat) {
     std::lock_guard lock(mutex_);
     loopEnabled_ = enabled;

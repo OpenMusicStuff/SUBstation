@@ -438,6 +438,8 @@ struct RenderSnapshot {
     double tempo = 120.0;
     int timeSigNum = 4;
     int timeSigDen = 4;
+    int keyTonic = -1;  // the song's key (Engine::setSongKey): -1 none
+    bool keyMinor = false;
     bool loopEnabled = false;
     int64_t loopStart = 0;
     int64_t loopEnd = 0;

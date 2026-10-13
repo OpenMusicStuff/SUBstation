@@ -75,17 +75,45 @@ void HueWheel::setNotes(int notes, const QString& text) {
     sub::app::OrderedMap<QString, double> values;
     for (int c = 0; c < kClasses; ++c)
         values.insert(noteParam(c), (notes >> c & 1) ? 1.0 : 0.0);
+    values.insert(QStringLiteral("auto"), 0.0);
     setParams(values, QString(), text);
+}
+
+void HueWheel::setAuto(bool on) {
+    if (device() == nullptr)
+        return;
+    setParams({{QStringLiteral("auto"), on ? 1.0 : 0.0}}, QString(),
+              on ? QStringLiteral("Follow the Song's Key") : QStringLiteral("Choose the Key"));
+}
+
+int HueWheel::sourceNotes() const {
+    if (midi_)
+        return held_;
+    return auto_ && autoNotes_ >= 0 ? autoNotes_ : buttons_;
+}
+
+void HueWheel::setAutoNotes(int notes) {
+    if (notes == autoNotes_)
+        return;
+    autoNotes_ = notes;
+    showNotes(sourceNotes());
+    Q_EMIT notesChanged();
+    update();
 }
 
 void HueWheel::toggleNote(int pitchClass) {
     if (device() == nullptr || midi_ || pitchClass < 0 || pitchClass >= kClasses)
         return;
-    const bool on = buttons_ >> pitchClass & 1;
+    const int from = sourceNotes();
+    const bool on = from >> pitchClass & 1;
+    const QString text = on ? QStringLiteral("Take Out %1").arg(noteName(pitchClass))
+                            : QStringLiteral("Add %1").arg(noteName(pitchClass));
     touch(noteParam(pitchClass));
-    setParams({{noteParam(pitchClass), on ? 0.0 : 1.0}}, QString(),
-              on ? QStringLiteral("Take Out %1").arg(noteName(pitchClass))
-                 : QStringLiteral("Add %1").arg(noteName(pitchClass)));
+    if (auto_) {  // (the key's notes become the buttons, that one switched)
+        setNotes(from ^ (1 << pitchClass), text);
+        return;
+    }
+    setParams({{noteParam(pitchClass), on ? 0.0 : 1.0}}, QString(), text);
 }
 
 void HueWheel::setCaption(const QString& caption) {
@@ -131,13 +159,14 @@ void HueWheel::sync() {
         if (value(noteParam(c)) >= 0.5)
             buttons |= 1 << c;
     buttons_ = buttons;
+    auto_ = value(QStringLiteral("auto")) >= 0.5;
     highQuality_ = value(QStringLiteral("quality")) >= 0.5;
     color_ = value(QStringLiteral("color"));
     start_ = value(QStringLiteral("start"));
     end_ = value(QStringLiteral("end"));
     quality_.target = highQuality_ ? 1.0 : 0.0;
     colorShown_.target = std::clamp(color_ / 100.0, 0.0, 2.0);
-    showNotes(midi_ ? held_ : buttons_);
+    showNotes(sourceNotes());
     if (!started_) {  // (the first time: as they are, not easing in from nothing)
         started_ = true;
         for (int c = 0; c < kClasses; ++c) {
@@ -180,7 +209,7 @@ void HueWheel::refreshDisplays() {
         if (midi != midi_ || (midi && held_ != notes_)) {
             midi_ = midi;
             setCursor(hovered_ >= 0 && !midi_ ? Qt::PointingHandCursor : Qt::ArrowCursor);
-            showNotes(midi_ ? held_ : buttons_);
+            showNotes(sourceNotes());
             Q_EMIT notesChanged();
         }
     }

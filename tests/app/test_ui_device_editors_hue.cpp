@@ -51,7 +51,8 @@ std::vector<float> growl(double seconds) {
 
 // What shows with Notes folded.
 // Over the spectrum's top edge.
-const std::vector<const char*> kOverlaid = {"rootChoice", "scaleChoice", "quality", "notesButton"};
+// Over the spectrum's top edge (the scale only beside a root chosen: not in Auto, as it starts).
+const std::vector<const char*> kOverlaid = {"rootChoice", "quality", "notesButton"};
 // Opened, beside it.
 const std::vector<const char*> kOpened = {"hueWheel", "wet_gain", "pre_shift", "post_shift", "mute_low", "mute_high"};
 const std::vector<const char*> kKnobs = {"wet_gain", "pre_shift", "post_shift"};
@@ -305,11 +306,15 @@ private Q_SLOTS:
         const Shown shown = hue(growl(1.0), 1.0);
         QVERIFY(shown.view && shown.wheel);
         QQuickItem* view = shown.view;
-        QCOMPARE(view->property("keyText").toString(), QStringLiteral("No Notes"));
+        // Auto at first (the song's key; this song has none: "Auto"), the scale hidden.
+        QCOMPARE(view->property("keyText").toString(), QStringLiteral("Auto"));
+        QVERIFY(!find(view, QStringLiteral("scaleChoice"))->isVisible());
 
         // F Minor (scale 1): the seven notes, one undo step.
         const int steps = undo()->index();
-        choose(view, "rootChoice", 5);  // (no notes: the root alone gives its Major)
+        choose(view, "rootChoice", 6);  // F (entry 0: Auto). Out of Auto, with no key known: its Major
+        QCOMPARE(value(shown, "auto"), 0.0);
+        QVERIFY(find(view, QStringLiteral("scaleChoice"))->isVisible());
         QCOMPARE(notes(shown), bitsOf({5, 7, 9, 10, 0, 2, 4}));
         choose(view, "scaleChoice", 1);
         QCOMPARE(notes(shown), bitsOf({5, 7, 8, 10, 0, 1, 3}));
@@ -319,14 +324,14 @@ private Q_SLOTS:
         QCOMPARE(shown.wheel->caption(), QStringLiteral("F Minor"));
 
         // Another root keeps the scale.
-        choose(view, "rootChoice", 2);
+        choose(view, "rootChoice", 3);
         QCOMPARE(notes(shown), bitsOf({2, 4, 5, 7, 9, 10, 0}));
         QCOMPARE(view->property("keyText").toString(), QStringLiteral("D Minor"));
 
         // A note off the scale: Custom; a new root moves the notes with it.
         shown.wheel->toggleNote(1);
         QCOMPARE(view->property("keyText").toString(), QStringLiteral("Custom"));
-        choose(view, "rootChoice", 4);
+        choose(view, "rootChoice", 5);
         QCOMPARE(notes(shown), bitsOf({4, 6, 7, 9, 11, 0, 2, 3}));
 
         // The wheel (under Notes) switches notes, one undo step each.
@@ -346,6 +351,14 @@ private Q_SLOTS:
         // (A# and G#, beside A, are moved onto it: down onto A for A#, up for G#)
         QCOMPARE(HueWheel::moveOf(shown.wheel->notes(), 10), -1);
         QCOMPARE(HueWheel::moveOf(shown.wheel->notes(), 8), 1);
+
+        // Auto again: one undo step, the notes left as they were
+        const int beforeAuto = undo()->index();
+        choose(view, "rootChoice", 0);
+        QCOMPARE(value(shown, "auto"), 1.0);
+        QCOMPARE(undo()->index(), beforeAuto + 1);
+        QCOMPARE(view->property("keyText").toString(), QStringLiteral("Auto"));
+        QVERIFY(!find(view, QStringLiteral("scaleChoice"))->isVisible());
     }
 
     void displaysReachIt() {
@@ -383,7 +396,7 @@ private Q_SLOTS:
         QVERIFY(shown.view && shown.wheel);
         tick(4);
         save(grab(), QStringLiteral("hue-empty.png"));
-        choose(shown.view, "rootChoice", 5);
+        choose(shown.view, "rootChoice", 6);
         choose(shown.view, "scaleChoice", 5);  // F Phrygian
         settle(shown);
         save(grab(), QStringLiteral("hue-idle.png"));
@@ -403,7 +416,7 @@ private Q_SLOTS:
         QTest::qWait(50);
         save(grab(), QStringLiteral("hue-notes.png"));
         // A power chord: most notes taken out, the ones beside moved.
-        choose(shown.view, "rootChoice", 10);
+        choose(shown.view, "rootChoice", 11);
         choose(shown.view, "scaleChoice", 15);
         play(1.5, 10);
         QTest::qWait(50);

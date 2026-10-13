@@ -12,7 +12,8 @@
 //   output as petals in each note's hue, the input as a faint outline behind
 //   them, so what Hue pulled into key shows against what came in; in the middle
 //   a bloom in the colour the sound is now (its notes' hues, as loud as each).
-// Once MIDI notes choose the notes it shows them (the device's display "notes").
+// With Auto on it shows the song key's notes (`autoNotes`, the editor's); once
+// MIDI notes choose the notes, those (the device's display "notes").
 // Click a note to switch it on or off (one undo step); hover shows it.
 //
 // Everything moves on in refreshDisplays() by the time since the last tick; it
@@ -36,6 +37,9 @@ class HueWheel : public DeviceCanvas {
     Q_PROPERTY(int notes READ notes NOTIFY notesChanged)  // the notes shown (bits, C the lowest)
     Q_PROPERTY(bool midi READ midi NOTIFY notesChanged)
     Q_PROPERTY(bool highQuality READ highQuality NOTIFY notesChanged)
+    Q_PROPERTY(bool autoKey READ autoKey NOTIFY notesChanged)  // Auto: the song key's notes
+    // The song key's notes (bits), as Auto uses them: -1, no key known.
+    Q_PROPERTY(int autoNotes READ autoNotes WRITE setAutoNotes NOTIFY notesChanged)
     Q_PROPERTY(QString caption READ caption WRITE setCaption NOTIFY captionChanged)  // in the middle: the key
     Q_PROPERTY(int hoveredNote READ hoveredNote NOTIFY hoveredNoteChanged)           // -1: none
     Q_PROPERTY(bool animating READ animating NOTIFY animatingChanged)
@@ -51,6 +55,9 @@ public:
     int notes() const { return notes_; }
     bool midi() const { return midi_; }
     bool highQuality() const { return highQuality_; }
+    bool autoKey() const { return auto_; }
+    int autoNotes() const { return autoNotes_; }
+    void setAutoNotes(int notes);
     QString caption() const { return caption_; }
     void setCaption(const QString& caption);
     int hoveredNote() const { return hovered_; }
@@ -64,9 +71,12 @@ public:
     Q_INVOKABLE static QString noteParam(int pitchClass);
     // Where a note set moves a pitch class: +1 up, -1 down (onto the lower neighbour when both are on), 0 none.
     Q_INVOKABLE static int moveOf(int notes, int pitchClass);
-    // Sets the twelve note buttons to `notes` (bits), one undo step named `text`.
+    // Sets the twelve note buttons to `notes` (bits) and Auto off, one undo step named `text`.
     Q_INVOKABLE void setNotes(int notes, const QString& text = QStringLiteral("Change Notes"));
-    // Switches a note's button (not while MIDI notes choose them).
+    // Auto on (the song key's notes) or off (the buttons'), one undo step.
+    Q_INVOKABLE void setAuto(bool on);
+    // Switches a note (not while MIDI notes choose them): with Auto on, the key's notes become the buttons, that
+    // one switched, and Auto goes off (one undo step).
     Q_INVOKABLE void toggleNote(int pitchClass);
     // The chromagram as shown (dB): the output's and the input's.
     Q_INVOKABLE double levelDb(int pitchClass) const;
@@ -93,6 +103,7 @@ protected:
 
 private:
     void showNotes(int notes);   // what is drawn follows a new set of notes
+    int sourceNotes() const;     // the notes in use: MIDI's, Auto's or the buttons'
     bool advance(double dt);     // moves every animation on: whether anything moved
     void setHovered(int note);
     QPointF pointAt(double angle, double radius) const;  // angle: in pitch classes, clockwise from the top
@@ -102,6 +113,8 @@ private:
     int held_ = 0;     // the MIDI notes held (the display "notes")
     int notes_ = 0;    // what is shown: one or the other
     bool midi_ = false;  // the notes are MIDI's (the display says)
+    bool auto_ = true;    // the parameter Auto
+    int autoNotes_ = -1;
     bool highQuality_ = false;
     double color_ = 100.0, start_ = 240.0, end_ = 2400.0;
     QString caption_;
