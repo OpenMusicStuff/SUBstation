@@ -357,39 +357,58 @@ void HueSpectrum::paint(SgPainter& p) {
                     p.fillGradientStrip(tops.data(), bottoms.data(), topColors.data(), bottomColors.data(),
                                         int(tops.size()));
             }
-            // the slope: a thin line with a soft glow, as bright as it is steep near the corner, fading as it falls
-            std::vector<QPointF> above, below, coreAbove, coreBelow;
-            std::vector<QColor> soft, core;
-            for (int i = 0; i < n; ++i) {
-                const std::size_t k = std::size_t(i);
-                const double f = freqs[k];
+            // the slope: a thin line with a soft glow, fading in from the corner and out as it falls. Sampled finely
+            // across and kept a point every pixel or so along it (it is steep low down), each side offset at right
+            // angles to it and feathered to nothing, so it is smooth however steep.
+            struct Point {
+                QPointF at;
+                double alpha;
+            };
+            std::vector<Point> line;
+            const QColor lineColor = mixColor(Theme::text(), glowColor, lift);
+            for (double x = area.left(); x <= area.right(); x += 0.25) {
+                const double f = ax.valueAt(x);
                 const double r = std::pow(isEnd ? f / cut : cut / f, 4.0);  // past the corner: rising
                 const double db = -20.0 * std::log10(1.0 + r);
                 const double down = -db / dbSpan;
                 if (down > 1.05 || db > -0.05)
                     continue;
-                const double y = flatY + down * reach;
+                const QPointF at(x, flatY + down * reach);
+                if (!line.empty()) {
+                    const QPointF d = at - line.back().at;
+                    if (d.x() * d.x() + d.y() * d.y() < 1.0)
+                        continue;
+                }
                 const double a = smoothstep(-db / 4.0) * (1.0 - smoothstep(down / 1.05));
-                const double alpha = a * (0.45 + 0.55 * lift);
-                above.push_back(QPointF(columnX[k], y - 3.0));
-                below.push_back(QPointF(columnX[k], y + 3.0));
-                coreAbove.push_back(QPointF(columnX[k], y - 0.7 - 0.3 * lift));
-                coreBelow.push_back(QPointF(columnX[k], y + 0.7 + 0.3 * lift));
-                const QColor line = mixColor(Theme::text(), glowColor, lift);
-                soft.push_back(withAlpha(line, int(45 * alpha)));
-                core.push_back(withAlpha(line, int(220 * alpha)));
+                line.push_back({at, a * (0.45 + 0.55 * lift)});
             }
-            const int count = int(above.size());
+            const int count = int(line.size());
             if (count >= 2) {
-                std::vector<QPointF> mid(above.size());
-                for (std::size_t k = 0; k < above.size(); ++k)
-                    mid[k] = (above[k] + below[k]) / 2.0;
-                std::vector<QColor> clear(soft.size());
-                for (std::size_t k = 0; k < soft.size(); ++k)
-                    clear[k] = withAlpha(soft[k], 0);
-                p.fillGradientStrip(above.data(), mid.data(), clear.data(), soft.data(), count);
-                p.fillGradientStrip(mid.data(), below.data(), soft.data(), clear.data(), count);
-                p.fillGradientStrip(coreAbove.data(), coreBelow.data(), core.data(), core.data(), count);
+                // each point's normal: at right angles to the line through its neighbours
+                std::vector<QPointF> normal(line.size());
+                for (int i = 0; i < count; ++i) {
+                    const QPointF d = line[std::size_t(std::min(i + 1, count - 1))].at - line[std::size_t(std::max(i - 1, 0))].at;
+                    const double length = std::max(1e-9, std::hypot(d.x(), d.y()));
+                    normal[std::size_t(i)] = QPointF(-d.y() / length, d.x() / length);
+                }
+                // a band either side of the line, from `inner` to `outer` px out, its colour fading from `from` to `to`
+                const auto band = [&](double inner, double outer, double fromAlpha, double toAlpha) {
+                    for (const double side : {-1.0, 1.0}) {
+                        std::vector<QPointF> in(line.size()), out(line.size());
+                        std::vector<QColor> inColors(line.size()), outColors(line.size());
+                        for (std::size_t k = 0; k < line.size(); ++k) {
+                            in[k] = line[k].at + normal[k] * (side * inner);
+                            out[k] = line[k].at + normal[k] * (side * outer);
+                            inColors[k] = withAlpha(lineColor, int(255 * fromAlpha * line[k].alpha));
+                            outColors[k] = withAlpha(lineColor, int(255 * toAlpha * line[k].alpha));
+                        }
+                        p.fillGradientStrip(in.data(), out.data(), inColors.data(), outColors.data(), count);
+                    }
+                };
+                band(0.0, 3.5, 0.16, 0.0);                       // the glow
+                const double core = 0.55 + 0.35 * lift;
+                band(0.0, core, 0.85, 0.85);                     // the line
+                band(core, core + 0.9, 0.85, 0.0);               // its edge, feathered (antialiased)
             }
             // its frequency by the corner, while it glows
             if (lift > 0.0) {
