@@ -1126,7 +1126,7 @@ private Q_SLOTS:
         QCOMPARE(session().browser()->similarTo(), clipOf(0).path);
         session().browser()->clearSimilar();
         QCOMPARE(session().browser()->similarTo(), QString());
-        // Hot-Swap Sample: every clip playing its file, the browser listing the sounds most like it.
+        // Hot-Swap Sample: the clips of its track playing its file, the browser listing the sounds most like it.
         QVERIFY(menu.triggerText(QStringLiteral("Hot-Swap Sample")));
         sub::app::HotSwap& hotSwap = *session().hotSwap();
         QVERIFY(hotSwap.active());

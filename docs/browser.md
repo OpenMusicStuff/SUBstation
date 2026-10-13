@@ -485,8 +485,7 @@ application ends, which stops the backend's threads (saving the index) and waits
 - **The hot-swap bar** (`hotSwapBar`), over the similar bar while `Session.hotSwap.active`: "Hot-Swap *name*
   (*uses*)", its Similar (`HotSwap::findSimilar`: the sounds like the one swapped in now) and a ✕ (`stop()`). Esc
   with the list (or the tree) having the keyboard ends the hot swap too; a hot swap starting gives it the keyboard.
-  A press outside the panel ends it (an `OutsidePresses`, but in `hotSwapKeepers`: the main window gives the File
-  Manager and the transport bar), and so does a drag starting from the panel (`startDrag`).
+  A press elsewhere in the window leaves it running; a drag starting from the panel (`startDrag`) ends it.
 - **The sidebar** ([BrowserSidebar.qml](../ui/qml/browser/BrowserSidebar.qml)) in a `SplitView` beside the results: a
   click sets `scope`; Add Folder… asks for a folder (`FolderDialog`, `addPlaceRequested`); a right-click opens the
   entry's `ActionMenu`.

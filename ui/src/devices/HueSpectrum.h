@@ -16,11 +16,11 @@
 //   anywhere left of the band (or by its corner) for Low Cut, right of it for
 //   High Cut (Shift: finely), one undo step a drag; a double-click resets it.
 //   The side moved glows (in the colour of its note) with its frequency, and
-//   follows the mouse smoothly (and any change of the cut made elsewhere).
+//   stays under the mouse (and is where a cut made elsewhere puts it) at once.
 // - In the band, drag up for more Color, down for less (Shift: finely); a
 //   double-click resets it. A gauge at the right edge shows it, and its value
 //   while hovered or dragged.
-// When the device is added everything is where it is at once (nothing slides in).
+// Everything is where its parameter is at once (nothing slides in or lags).
 // The editor lays its buttons over the top edge, clear of all this. The analyzer
 // is the EQ's (analysis::EqAnalyzer: tilted 4.5 dB/octave, rising fast, falling
 // slowly). It repaints only while something moves.
@@ -110,10 +110,8 @@ private:
     int autoNotes_ = -1;
 
     sub::app::analysis::EqAnalyzer analyzer_;
-    Eased startShown_, endShown_;  // the sides (log2 Hz), following the cuts
-    Eased colorShown_;             // (snapped: where Color is)
-    Eased sideGlow_[2];            // the low and the high side's glow (0..1)
-    bool started_ = false;         // the sides placed (at once) the first time
+    Eased startShown_, endShown_, colorShown_;  // (always snapped: the sides in log2 Hz, and Color)
+    Eased sideGlow_[2];                         // the low and the high side's glow (0..1)
     bool animating_ = false;
     double glow_ = 0.0;  // the gauge's highlight while Color is hovered or dragged (0..1)
 

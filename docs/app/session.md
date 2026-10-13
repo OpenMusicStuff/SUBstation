@@ -298,15 +298,15 @@ reversed clip was reversed from; frozen tracks take it).
   menu: `revealRequested`, the UI shows the panel and the row; a filter hiding the file is cleared).
 
 **`HotSwap`** (`Session.hotSwap`, [HotSwap.h](../../app/src/files/HotSwap.h)) links the browser to a file's uses:
-`startClip(ref)` (an audio clip's menu) and `startFile(path)` (the File Manager) take every clip and sampler playing
-the file (but frozen tracks'), and ask the browser for the sounds most like it (`BrowserController::findSimilar`; for
+`startClip(ref)` (an audio clip's menu) takes every clip and sampler of the clip's track playing its file, and
+`startFile(path)` (the File Manager) every one in the project (but frozen tracks', either way), and ask the browser for the sounds most like it (`BrowserController::findSimilar`; for
 a clip, like the part of its file it plays). While `active`, `swap(path)` (the browser's `fileChosen`) puts each file
 chosen in their place through `replaceFile` with a merge key of the hot swap's own, so all of it is one undo step,
 worked out from the clips as they were before it began; back on the file it began with, the merged command is
 obsolete and leaves the stack. `commit(path)` (the browser's double-click or Enter) swaps and ends; `stop()` ends.
 It never outlives what the user is doing with it: the undo stack moving but for its own swaps (any other edit, an undo,
-a redo) ends it, and so do `Project::reset` and none of what it swaps being left; the browser panel ends it on a press
-outside it (but the File Manager and the transport bar) and when a drag starts there, so a sample dragged out while
+a redo) ends it, and so do `Project::reset` and none of what it swaps being left; the browser panel ends it when a drag starts
+there (a press elsewhere leaves it running), so a sample dragged out while
 one runs is added, never swapped in. `path`, `name`, `originPath` and `usesText` are for the browser's bar and the
 File Manager's lit button.
 

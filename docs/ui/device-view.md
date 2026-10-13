@@ -1212,8 +1212,8 @@ The editors:
     resets it. In the band a drag up and down is Color (1.2 % a pixel, Shift a fifth; "Change Color"), a
     double-click resets it ("Reset Color"); a gauge at the right edge shows it (a tick at 100 %), and its value while
     hovered or dragged. The side hovered or dragged glows (fading in and out over 0.12 s), in its cut's note's
-    colour, strongest by its corner, with its frequency beside it; the sides follow a new cut smoothly (0.12 s), but
-    the first time they are where they are (nothing slides in as the device is added). The cursor is the pointing
+    colour, strongest by its corner, with its frequency beside it; the sides are where the cuts are at once (under
+    the mouse while dragged, and nothing slides in as the device is added). The cursor is the pointing
     hand over all of it. It repaints only while something moves.
   - [HueWheel](../../ui/src/devices/HueWheel.h) (square; 110 px at least): the twelve pitch
     classes round a colour wheel, C at the top and clockwise by semitone, each in its hue (`noteColor`: the hue

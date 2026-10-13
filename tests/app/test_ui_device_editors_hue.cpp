@@ -269,6 +269,9 @@ private Q_SLOTS:
         QCOMPARE(value(shown, "end"), 2400.0);
         QCOMPARE(undo()->index(), steps + 1);
         QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Change Low Cut"));
+        // The side is under the mouse at once (no easing after it): its corner grabs where the cut now is.
+        QCOMPARE(spectrum->partAt(at(value(shown, "start")) + QPointF(HueSpectrum::kGrabPixels - 1, 0)),
+                 QStringLiteral("start"));
         tick(20);
 
         // High Cut down, Shift finely.

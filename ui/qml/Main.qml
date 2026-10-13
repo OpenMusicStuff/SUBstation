@@ -688,7 +688,6 @@ ApplicationWindow {
             BrowserPanel {
                 id: browser
                 visible: browserAction.checked
-                hotSwapKeepers: [fileManager, transportBar]  // (a hot swap goes on while the song is played from there)
                 SplitView.preferredWidth: 300
                 SplitView.minimumWidth: 120
             }

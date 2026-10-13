@@ -75,8 +75,8 @@ While a hot swap runs (an audio clip's right-click menu › *Hot-Swap Sample*, o
 File Manager), a bar over the list says what it swaps, and the list starts with the
 sounds most like it. Each audio file you click (or reach with the arrow keys) plays in
 its place in the song at once; double-click one (or press **Enter**) to keep it, **Esc**
-or the bar's **✕** end it, and so does a click outside the browser, a drag out of it,
-or any other edit. The bar's *Similar* lists the sounds like the one swapped in now.
+or the bar's **✕** end it, and so does a drag out of it or any other edit (a click
+elsewhere doesn't). The bar's *Similar* lists the sounds like the one swapped in now.
 See [file-manager.md](file-manager.md#hot-swap).
 
 ## Preview
