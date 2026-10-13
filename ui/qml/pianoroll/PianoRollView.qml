@@ -9,7 +9,8 @@ import SUBstation
 // off; the bend button (B) shows the notes' bend curves to edit (MIDI 2.0's
 // per-note pitch bend), with the bend bar at the grid's top right. The clips
 // it shows are the roll's (`roll.setClips(refs)`, or
-// `roll.setClip(trackId, clipId)`; the clip view sets them).
+// `roll.setClip(trackId, clipId)`; the clip view sets them). The velocity
+// lane's top edge drags to resize it (double-click: back to 72 px).
 //
 //   ┌──────────┬────────────────────────────┬───┐
 //   │ hear bend│ PianoRuler (24 px)         │   │
@@ -19,7 +20,7 @@ import SUBstation
 //   │          │             │ NoteTools │  │ a │
 //   │          │             └───────────┘  │ r │
 //   ├──────────┼────────────────────────────┼───┤
-//   │ Velocity │ VelocityLane (72 px)       │   │
+//   │ Velocity │ VelocityLane (72 px, drag) │   │
 //   ├──────────┼────────────────────────────┤   │
 //   │          │ hbar                       │   │
 //   └──────────┴────────────────────────────┴───┘
@@ -39,7 +40,11 @@ Item {
 
     readonly property int keysWidth: 64
     readonly property int rulerHeight: 24
-    readonly property int velocityHeight: 72
+    readonly property int defaultVelocityHeight: 72
+    readonly property int minVelocityHeight: 32
+    // The note grid keeps at least this much when the lane grows.
+    readonly property int minGridHeight: 48
+    property int velocityHeight: defaultVelocityHeight
     readonly property int barWidth: Theme.scrollBarWidth
 
     // Play from this arrangement beat (the ruler was clicked).
@@ -199,6 +204,46 @@ Item {
         RollPlayhead {
             anchors.fill: parent
             roll: pianoRoll
+        }
+    }
+
+    // The velocity lane's top edge, across the label and the lane: drag it to
+    // resize the lane, double-click it for the default height.
+    MouseArea {
+        id: velocityHandle
+        objectName: "velocityHandle"
+        y: velocityLane.y - 3
+        width: velocityLane.x + velocityLane.width
+        height: 6
+        cursorShape: Qt.SplitVCursor
+        hoverEnabled: true
+        preventStealing: true
+
+        property real pressY: 0
+        property int pressHeight: 0
+
+        function resize(h) {
+            const most = Math.max(view.minVelocityHeight,
+                                  view.height - view.rulerHeight - view.barWidth - view.minGridHeight)
+            view.velocityHeight = Math.round(Math.max(view.minVelocityHeight, Math.min(most, h)))
+        }
+
+        onPressed: mouse => {
+            pressY = mapToItem(view, mouse.x, mouse.y).y
+            pressHeight = view.velocityHeight
+        }
+        onPositionChanged: mouse => {
+            if (pressed)
+                resize(pressHeight - (mapToItem(view, mouse.x, mouse.y).y - pressY))
+        }
+        onDoubleClicked: resize(view.defaultVelocityHeight)
+
+        Rectangle {
+            y: 2
+            width: parent.width
+            height: 2
+            color: Theme.accent
+            visible: velocityHandle.containsMouse || velocityHandle.pressed
         }
     }
 
