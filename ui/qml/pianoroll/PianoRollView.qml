@@ -9,7 +9,8 @@ import SUBstation
 // off; the bend button (B) shows the notes' bend curves to edit (MIDI 2.0's
 // per-note pitch bend), with the bend bar at the grid's top right. The clips
 // it shows are the roll's (`roll.setClips(refs)`, or
-// `roll.setClip(trackId, clipId)`; the clip view sets them).
+// `roll.setClip(trackId, clipId)`; the clip view sets them). The velocity
+// lane's top edge drags to resize it (double-click: back to 72 px).
 //
 //   ┌──────────┬────────────────────────────┬───┐
 //   │ hear bend│ PianoRuler (24 px)         │   │
@@ -19,7 +20,7 @@ import SUBstation
 //   │          │             │ NoteTools │  │ a │
 //   │          │             └───────────┘  │ r │
 //   ├──────────┼────────────────────────────┼───┤
-//   │ Velocity │ VelocityLane (72 px)       │   │
+//   │ Velocity │ VelocityLane (72 px, drag) │   │
 //   ├──────────┼────────────────────────────┤   │
 //   │          │ hbar                       │   │
 //   └──────────┴────────────────────────────┴───┘
@@ -39,7 +40,17 @@ Item {
 
     readonly property int keysWidth: 64
     readonly property int rulerHeight: 24
-    readonly property int velocityHeight: 72
+    readonly property int defaultVelocityHeight: 72
+    readonly property int minVelocityHeight: 32
+    // The note grid keeps at least this much when the lane grows.
+    readonly property int minGridHeight: 48
+    // The lane's height as dragged; it shows shorter while the view is too
+    // short for it (the note grid keeping minGridHeight, the lane at least
+    // minVelocityHeight), and comes back when the view grows again.
+    property int velocityHeight: defaultVelocityHeight
+    readonly property int maxVelocityHeight: Math.max(minVelocityHeight,
+        height - rulerHeight - barWidth - minGridHeight)
+    readonly property int shownVelocityHeight: Math.min(velocityHeight, maxVelocityHeight)
     readonly property int barWidth: Theme.scrollBarWidth
 
     // Play from this arrangement beat (the ruler was clicked).
@@ -118,7 +129,7 @@ Item {
         x: view.keysWidth
         y: view.rulerHeight
         width: Math.max(0, view.width - view.keysWidth - view.barWidth)
-        height: Math.max(0, view.height - view.rulerHeight - view.velocityHeight - view.barWidth)
+        height: Math.max(0, view.height - view.rulerHeight - view.shownVelocityHeight - view.barWidth)
         clip: true
         session: Session
         roll: pianoRoll
@@ -174,7 +185,7 @@ Item {
     Rectangle {
         y: noteGrid.y + noteGrid.height
         width: view.keysWidth
-        height: view.velocityHeight
+        height: view.shownVelocityHeight
         color: Theme.panel
 
         Label {
@@ -191,7 +202,7 @@ Item {
         x: view.keysWidth
         y: noteGrid.y + noteGrid.height
         width: noteGrid.width
-        height: view.velocityHeight
+        height: view.shownVelocityHeight
         clip: true
         session: Session
         roll: pianoRoll
@@ -199,6 +210,48 @@ Item {
         RollPlayhead {
             anchors.fill: parent
             roll: pianoRoll
+        }
+    }
+
+    // The velocity lane's top edge, across the label and the lane: drag it to
+    // resize the lane, double-click it for the default height.
+    MouseArea {
+        id: velocityHandle
+        objectName: "velocityHandle"
+        y: velocityLane.y - 3
+        width: velocityLane.x + velocityLane.width
+        height: 6
+        cursorShape: Qt.SplitVCursor
+        hoverEnabled: true
+        preventStealing: true
+
+        property real pressY: 0
+        property int pressHeight: 0
+
+        // A drag that doesn't change what shows (a short view's lane held at
+        // its limit) keeps the stored height, to come back as the view grows.
+        function resize(h) {
+            const shown = Math.round(Math.max(view.minVelocityHeight, Math.min(view.maxVelocityHeight, h)))
+            if (shown !== view.shownVelocityHeight)
+                view.velocityHeight = shown
+        }
+
+        onPressed: mouse => {
+            pressY = mapToItem(view, mouse.x, mouse.y).y
+            pressHeight = view.shownVelocityHeight
+        }
+        onPositionChanged: mouse => {
+            if (pressed)
+                resize(pressHeight - (mapToItem(view, mouse.x, mouse.y).y - pressY))
+        }
+        onDoubleClicked: view.velocityHeight = view.defaultVelocityHeight
+
+        Rectangle {
+            y: 2
+            width: parent.width
+            height: 2
+            color: Theme.accent
+            visible: velocityHandle.containsMouse || velocityHandle.pressed
         }
     }
 
