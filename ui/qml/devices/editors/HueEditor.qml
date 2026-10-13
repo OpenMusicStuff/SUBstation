@@ -309,7 +309,7 @@ Item {
                 text: qsTr("HQ")
                 tooltip: qsTr("High Quality: each moved note through a shifter of its own, tuned to it: it lands on\n"
                               + "the note exactly, cleanly (about twice the CPU, the same latency).\n"
-                              + "Off: Low Latency, moving notes as the original does (a few cents off, a little rough)")
+                              + "Off: Low Latency, moving notes through two shared shifters (a few cents off, a little rough)")
             }
         }
         RoleButton {
