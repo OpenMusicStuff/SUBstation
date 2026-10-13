@@ -39,6 +39,7 @@ QtObject {
         "eq": "EqEditor.qml",
         "erosion": "ErosionEditor.qml",
         "gate": "GateEditor.qml",
+        "hue": "HueEditor.qml",
         "lfo": "LfoEditor.qml",
         "limiter": "LimiterEditor.qml",
         "multiband": "MultibandEditor.qml",

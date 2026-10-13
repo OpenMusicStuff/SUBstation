@@ -92,6 +92,10 @@ struct ProcessContext {
     bool looping = false;    // playback wraps from loopEndBeat to loopStartBeat
     double loopStartBeat = 0.0;
     double loopEndBeat = 0.0;
+    // The song's key (the project's, or the one its notes are in: Engine::setSongKey): its tonic's pitch class
+    // (0 = C; -1: none known) and whether it is minor. Devices that follow the harmony read it (Hue's Auto).
+    int keyTonic = -1;
+    bool keyMinor = false;
     bool offline = false;    // rendering an export (or a test), not live
     EventList inEvents;
 

@@ -17,8 +17,8 @@
 // signature, the key; not a fader, a loop or a tempo) marks it stale and,
 // kSettleMs later (once for all the edits of a drag in that time), emits
 // changed(). It is inferred again the next time it is asked for, on the
-// application's thread: with no piano roll showing, nobody asks, and it costs
-// nothing.
+// application's thread: the session asks for the key each time, to hand it to
+// the engine (Engine::setSongKey: Hue's Auto follows it).
 //
 // The key is the project's when it has one, else the one the notes are most
 // likely in (none: too few notes to tell).

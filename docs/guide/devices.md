@@ -86,7 +86,7 @@ another track's part.
   while it monitors (armed, or *In*). A MIDI track with no instrument of its own can
   just feed such a device.
 - Built-in instruments (Synth, Sampler) and plug-ins with a MIDI (event) input have the
-  button; built-in effects play no notes and have none.
+  button; of the built-in effects, Hue (its notes from the chords played) has it too.
 - The notes reach the device when they play on the timeline: plug-in latency on the
   device's own track before it (delay compensation) doesn't delay them. A track's mute
   and solo don't stop its notes reaching a device elsewhere, and a frozen MIDI track
@@ -600,6 +600,67 @@ dashed yellow line.
 
 It adds **latency**: 53 ms at 48 kHz (58 ms at 44.1 kHz). Playback is compensated, but
 you'll feel it while monitoring live input through it.
+
+### Hue
+
+Pulls a sound into key. Hue keeps the parts of the spectrum that sit on the notes you
+choose, moves the notes a semitone off them onto them, takes the other notes out, and lets
+what lies between notes through more quietly: a growl, a reese or a riddim bass keeps its
+texture while its partials line up with the song's scale. It is made for basses and other
+dense, harmonic sounds, and works on anything.
+
+- **The editor** is a spectrum of what comes out, across the device: each frequency coloured
+  by the note it is, as vivid as **Color** makes the sound, over a faint line of what goes
+  in; thin lines in the notes' colours mark the notes it pulls the sound onto. A soft
+  filter curve shows the band processed: drag across the far left for **Low Cut** and the
+  far right for **High Cut** (Shift: finely); double-click there to reset it. Drag up and
+  down in the band for **Color** (the gauge at the right edge shows it); double-click to
+  reset it. Over its top edge: the **Key** (a
+  root and a scale) and **HQ**; the arrow at the right slides open the note wheel, the
+  twelve notes round a colour wheel (C at the top): lit notes are kept, shaded ones with an
+  arrow are moved onto the note beside them, dark ones are taken out; click a note to
+  switch it. Inside it the sound plays as petals (what comes out) over a faint outline
+  (what goes in), and the middle glows in the colour the sound is now. Beside the wheel:
+  **Wet Gain**, **Pre-Shift**, **Post-Shift**, **Mute Low** and **Mute High**.
+- **The notes**: at first the key is **Auto**: Hue follows the song's key, the project's
+  key or, without one, the key its MIDI tracks are in (as the piano roll's chord lane
+  infers it), using its major or natural minor scale; the key menu shows it ("Auto · Am").
+  With no key to follow yet, the sound passes. Choose a root (C to B) to pick the key
+  yourself: a scale menu appears beside it (seventeen scales from Major to Power Chord
+  and Root Only; at first the song key's major or minor). Clicking notes on the wheel also
+  leaves Auto, starting from the notes it had. A note in any octave counts. Notes that
+  are no scale show as Custom, and a new root moves them with it. With no notes, or all
+  twelve, the sound passes as it is. Choose Auto again to follow the song.
+- **MIDI**: play Hue notes and they choose the notes instead of the key: put it on a MIDI
+  track after an instrument, or pick a MIDI track with **MIDI From** (see above) so the
+  scale follows a chord part. Each chord holds until the next one; until the first note
+  comes (and after the transport stops) the key's notes apply. The Key shows *MIDI Notes*
+  meanwhile, and the wheel and the spectrum show the notes as they are played. (The
+  parameter **MIDI Notes**, on at first, switches this off, for automation.)
+- What happens to each note: an enabled note is kept and made louder (the fewer notes, the
+  louder: about +8 dB for one); a note a semitone from an enabled one is moved onto it
+  (a note between two enabled ones goes down); the others are taken out. What lies between
+  notes (detuned, noisy parts) passes more quietly, more so the fewer notes are enabled.
+- **Low Cut** and **High Cut** (the parameters Start and End; 80 Hz to 1.8 kHz, 400 Hz to
+  8 kHz): the band that is processed; below and above it the sound passes as it is (the
+  low band keeps a bass's sub untouched). The band works within 160 Hz to 4 kHz whatever
+  they are set to.
+- **Color** (0 to 200 %): from the plain sound (0 %) to the processed one (100 %); past
+  100 % the notes get louder and narrower and what lies between them quieter.
+- **Wet Gain** (±6 dB): the level of the processed band.
+- **Pre-Shift** (±50 cents): shifts the band's pitch before the notes are picked (to catch
+  a detuned sound); **Post-Shift** (±50 cents): tunes the notes themselves.
+- **Mute Low** and **Mute High**: take the bands outside Start and End away, to hear the
+  processed band alone.
+- **Quality**: **Low Latency** moves the notes a semitone off through two shared shifters,
+  landing a few cents from the note with a little roughness (part of its sound).
+  **High Quality** moves each note through a shifter of its own, tuned to that note: it
+  lands on the note exactly and cleanly. The latency is the same; it costs about twice the
+  CPU (still about half a percent of a core). Switching crossfades.
+
+Hue's latency is about 11 ms (the engine lines the other tracks up with it). Changing
+the notes takes a few milliseconds to be heard and fades in, so chords played from MIDI
+change smoothly.
 
 ### Saturator
 

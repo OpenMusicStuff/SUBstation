@@ -687,7 +687,7 @@ renamed or grouped; the time signature, the key; a new project) marks the result
 `changed` once for every change in that time (a drag's edits). A fader, the loop, the tempo or an audio track change
 nothing: what they change is compared first (`heardTracks()`, the time signature and the key). The
 chords and key are inferred again only when asked for after that, on the application's thread: nothing runs in the
-background, and with no piano roll showing nobody asks. The piano roll asks when it hears `changed` (and when it opens
+background, and the session asks for the key each time (it hands it to the engine for Hue's Auto: `Engine::setSongKey`). The piano roll asks when it hears `changed` (and when it opens
 a clip or shows), maps the chords over the part its clip plays into the clip's own beats, and draws them; Generate asks
 too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`), on at first.
 
