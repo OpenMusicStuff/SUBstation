@@ -228,8 +228,12 @@ Item {
         property real pressY: 0
         property int pressHeight: 0
 
+        // A drag that doesn't change what shows (a short view's lane held at
+        // its limit) keeps the stored height, to come back as the view grows.
         function resize(h) {
-            view.velocityHeight = Math.round(Math.max(view.minVelocityHeight, Math.min(view.maxVelocityHeight, h)))
+            const shown = Math.round(Math.max(view.minVelocityHeight, Math.min(view.maxVelocityHeight, h)))
+            if (shown !== view.shownVelocityHeight)
+                view.velocityHeight = shown
         }
 
         onPressed: mouse => {
