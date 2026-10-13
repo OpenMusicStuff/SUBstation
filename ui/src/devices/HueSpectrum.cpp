@@ -21,7 +21,6 @@ using sub::app::analysis::EqAnalyzer;
 
 constexpr double kRecentSeconds = 0.2;  // a tick reads this much of the sound at most (after a backlog)
 constexpr double kGlowSeconds = 0.12;   // a side's glow, the gauge's
-constexpr double kFollowSeconds = 0.12; // the sides, following a new Low or High Cut
 constexpr double kColumnPixels = 2.0;
 // The parameters' ranges (Start, End, Color), and how far apart Low and High Cut stay.
 constexpr double kStartMin = 80.0, kStartMax = 1800.0, kEndMin = 400.0, kEndMax = 8000.0, kGap = 1.25;
@@ -95,16 +94,10 @@ void HueSpectrum::sync() {
             bits |= 1 << c;
     buttons_ = bits;
     auto_ = value(QStringLiteral("auto")) >= 0.5;
-    // The sides follow a new Low or High Cut (refreshDisplays()); the first time they are there at once, so nothing
-    // slides in as the device is added.
-    startShown_.target = std::log2(std::max(1.0, start_));
-    endShown_.target = std::log2(std::max(1.0, end_));
+    // The sides are where Low and High Cut are at once: under the mouse while dragged, with no lag behind it.
+    startShown_.snap(std::log2(std::max(1.0, start_)));
+    endShown_.snap(std::log2(std::max(1.0, end_)));
     colorShown_.snap(color_);
-    if (!started_ && device() != nullptr) {
-        started_ = true;
-        startShown_.snap(startShown_.target);
-        endShown_.snap(endShown_.target);
-    }
     update();
 }
 
@@ -127,9 +120,7 @@ void HueSpectrum::refreshDisplays() {
     analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate);
 
     moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output) || moving;
-    const double follow = easeFraction(dt, kFollowSeconds), fade = easeFraction(dt, kGlowSeconds);
-    moving = startShown_.step(follow, 1e-4) || moving;
-    moving = endShown_.step(follow, 1e-4) || moving;
+    const double fade = easeFraction(dt, kGlowSeconds);
     // the side under the mouse (or dragged) glows; the gauge lights while Color is
     const auto lit = [&](const char* part) {
         return hovered_ == QLatin1String(part) || part_ == QLatin1String(part) ? 1.0 : 0.0;

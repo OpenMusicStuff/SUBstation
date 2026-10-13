@@ -518,19 +518,24 @@ private Q_SLOTS:
         BrowserController& browser = *f.s().browser();
         const int steps = f.stack().count();
         const size_t tracks = f.project().tracks().size();
-        // Started on one clip: every clip playing its file, and the browser lists similar sounds.
+        // Started on a file (the File Manager): every clip playing it.
+        QVERIFY(hot.startFile(kick));
+        QCOMPARE(hot.usesText(), QStringLiteral("2 clips"));
+        hot.stop();
+        // Started on one clip: only its track's clips playing its file, and the browser lists similar sounds.
         QSignalSpy similar(&browser, &BrowserController::similarChanged);
         QVERIFY(hot.startClip({a, QStringLiteral("Ac")}));
         QVERIFY(hot.active());
         QCOMPARE(hot.name(), QStringLiteral("Kick"));
-        QCOMPARE(hot.usesText(), QStringLiteral("2 clips"));
+        QCOMPARE(hot.usesText(), QStringLiteral("1 clip"));
+        QCOMPARE(hot.uses().clips, (ClipRefs{{a, QStringLiteral("Ac")}}));
         QCOMPARE(hot.originPath(), kick);
         QVERIFY(!similar.isEmpty());
         QVERIFY(samePath(browser.similarTo(), kick));
-        // What the user chooses in the browser plays in its place, at once, everywhere.
+        // What the user chooses in the browser plays in its place, at once, on that track only.
         browser.chooseFile(first);
         QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), first);
-        QCOMPARE(clipPath(f.project(), b, QStringLiteral("Bc")), first);
+        QCOMPARE(clipPath(f.project(), b, QStringLiteral("Bc")), kick);
         QCOMPARE(hot.name(), QStringLiteral("Kick 2"));
         browser.chooseFile(second);
         QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), second);

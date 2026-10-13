@@ -57,7 +57,11 @@ bool HotSwap::start(const FileUses& uses, const QString& path, const std::option
 bool HotSwap::startClip(const ClipRef& ref) {
     const Clip* clip = project_->findClip(ref.trackId, ref.clipId);
     if (!clip || !clip->isAudio() || clip->path.isEmpty()) return false;
-    const FileUses uses = fileUses(*project_, clip->path);
+    // Only the clip's track: the same sample elsewhere in the project is left as it is.
+    FileUses uses = fileUses(*project_, clip->path);
+    const auto elsewhere = [&ref](const auto& use) { return use.trackId != ref.trackId; };
+    uses.clips.removeIf(elsewhere);
+    uses.devices.removeIf(elsewhere);
     return !uses.isEmpty() && start(uses, clip->path, ref);
 }
 

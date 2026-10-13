@@ -1,9 +1,9 @@
 #pragma once
 // Hot-swapping samples, as Ableton's Hot-Swap: Session.hotSwap.
 //
-// Started on a file (an audio clip's menu: the clip's file; a File Manager
-// row's hot swap button), it takes every clip and sampler of the project
-// playing that file, and links the browser to them: the browser lists the
+// Started on an audio clip (its menu), it takes every clip and sampler of the
+// clip's track playing the clip's file; started on a file (a File Manager row's
+// hot swap button), every clip and sampler of the project playing it. It links the browser to them: the browser lists the
 // sounds most like it at once (Find Similar Sounds: for a clip, like the part
 // of its file it plays), and every audio file the user chooses there (a click
 // let go of without a drag, the arrow keys, in any list or a place's folder
@@ -16,9 +16,9 @@
 //
 // It never outlives what the user is doing with it: any other edit, an undo
 // or redo (the undo stack moving but for its own swaps) ends it, and the UI
-// ends it on a press outside the browser (but the File Manager and the
-// transport bar) and when a drag starts from the browser. A sample dragged out
-// of the browser while one runs is added, never swapped in.
+// ends it when a drag starts from the browser. A press elsewhere (selecting a
+// clip, the transport) leaves it running. A sample dragged out of the browser
+// while one runs is added, never swapped in.
 //
 // findSimilar() lists the sounds most like what is swapped in now (the
 // browser bar's Similar). Clips and devices on frozen tracks are left out (a
@@ -69,8 +69,8 @@ public:
     // `anchor` plays, if given (a clip's). False (and a statusMessage) if none
     // of it can be swapped: all on frozen tracks.
     bool start(const FileUses& uses, const QString& path, const std::optional<ClipRef>& anchor = std::nullopt);
-    // Every clip and sampler playing this clip's file (an audio clip's menu);
-    // the similar sounds are like the part of it this clip plays.
+    // Every clip and sampler on this clip's track playing its file (an audio
+    // clip's menu); the similar sounds are like the part of it this clip plays.
     bool startClip(const ClipRef& clip);
     // Every clip and sampler playing a file (a File Manager row).
     Q_INVOKABLE bool startFile(const QString& path);

@@ -83,7 +83,8 @@ browser plays in its place at once, so you hear it in the song, while it plays.
 Start it from:
 
 - an audio clip's right-click menu › **Hot-Swap Sample**: the clip's file, in every
-  clip and sampler of the project that plays it;
+  clip and sampler of that clip's track that plays it (the same sample on other tracks
+  is left as it is);
 - a file's **hot swap button** in the File Manager (or *Hot-Swap* in its menu): every
   clip and sampler that plays it.
 
@@ -109,10 +110,10 @@ Each try works like [replacing a file](#replacing-a-file), from the clips as the
 before the hot swap began: trying a long sample, then a short one, leaves no clip cut
 short by the long one.
 
-A hot swap ends as soon as you do something else, keeping the sample swapped in last:
+Clicking elsewhere (selecting a clip, playing and stopping the song) leaves a hot swap
+running. It ends when you do something else with the project, keeping the sample
+swapped in last:
 
-- you click anywhere but the browser, the File Manager and the transport bar (so you
-  can still play and stop the song while you try samples);
 - you start dragging something out of the browser: what you drag is added where you
   drop it, never swapped in;
 - you make any other edit, or undo (**Ctrl+Z** also takes back its samples);

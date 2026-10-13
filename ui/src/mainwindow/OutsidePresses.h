@@ -3,7 +3,7 @@
 // Tells when a mouse button is pressed anywhere outside an item: in its window
 // away from it, or in another window of the application. The browser stops a
 // preview that way ("a preview stops when you click anywhere outside the
-// browser", as its application-wide event filter did), and ends a hot swap.
+// browser", as its application-wide event filter did).
 // Presses while `ignore` is true (the browser's own menus or lists open), and
 // presses in the items of `alsoInside`, count as inside. It only watches while
 // `enabled`.

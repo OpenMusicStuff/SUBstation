@@ -26,16 +26,14 @@ import SUBstation
 // clicked (let go of without a drag) or reached with the arrow keys swaps in at
 // once, a double-click or Enter keeps it and ends the hot swap, as Esc or the
 // bar's ✕ do. Its Similar lists the sounds most like what is swapped in. The
-// list takes the keyboard when a hot swap starts. A press anywhere outside the
-// browser (but `hotSwapKeepers`: the File Manager, the transport bar) ends it,
-// and so does a drag starting here: what is dragged out is added, not swapped.
+// list takes the keyboard when a hot swap starts. A press elsewhere in the
+// window leaves it running; a drag starting here ends it: what is dragged out
+// is added, not swapped.
 Rectangle {
     id: panel
 
     readonly property var browser: Session.browser
     readonly property var hotSwap: Session.hotSwap
-    // Items a press in doesn't end a hot swap (the window's File Manager and transport bar).
-    property var hotSwapKeepers: []
     // The results list has the keyboard (Ctrl+R renames the preset there).
     readonly property bool listFocused: results.activeFocus
     readonly property alias searchField: search
@@ -185,15 +183,6 @@ Rectangle {
         enabled: panel.browser.previewing
         ignore: sidebarMenu.visible || resultMenu.visible || sort.popup.visible
         onPressed: panel.browser.stopPreview()
-    }
-
-    // A press anywhere else ends a hot swap: the user is doing something else.
-    OutsidePresses {
-        item: panel
-        enabled: panel.hotSwap.active
-        alsoInside: panel.hotSwapKeepers
-        ignore: sidebarMenu.visible || resultMenu.visible || sort.popup.visible
-        onPressed: panel.hotSwap.stop()
     }
 
     // Carries a drag out of the browser (the platform's drag: to the arrangement, the device view...).

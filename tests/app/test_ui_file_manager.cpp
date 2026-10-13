@@ -181,15 +181,16 @@ private Q_SLOTS:
         browser.setSearchText(QString());
     }
 
-    // A press in the File Manager keeps a hot swap going; one anywhere else ends it.
-    void pressesElsewhereEndIt() {
+    // A press in the File Manager, or anywhere else in the window, keeps a hot swap going.
+    void pressesElsewhereKeepItGoing() {
         clipTrack(kick(), QStringLiteral("A"));
         QTRY_COMPARE(rows(), 1);
         QVERIFY(files().hotSwap(kick()));
         test::click(window_, test::at(item("fileSummary"), QPointF(2, 2)));
         QVERIFY(hotSwap().active());
         test::click(window_, test::centerOf(item("outside")));
-        QVERIFY(!hotSwap().active());
+        QVERIFY(hotSwap().active());
+        hotSwap().stop();
     }
 
     void hotSwapFromARow() {
@@ -251,7 +252,6 @@ Window {
         id: browser
         width: 500
         height: 640
-        hotSwapKeepers: [files]
     }
     FileManagerPanel {
         id: files
@@ -259,7 +259,7 @@ Window {
         width: 400
         height: 640
     }
-    // Somewhere else in the window (a press here ends a hot swap).
+    // Somewhere else in the window (a press here leaves a hot swap running).
     Rectangle {
         objectName: "outside"
         y: 640

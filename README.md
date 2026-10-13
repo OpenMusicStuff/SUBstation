@@ -37,7 +37,8 @@ Claude Code can read and edit your song while you watch.
   comes back as that energy fades. Tight, Natural or Loose; Lows Only; lookahead; or Auto,
   which refits at every hit.
 - **Hot-swap samples while the song plays.** Right-click an audio clip › *Hot-Swap Sample*
-  and every file you click in the browser plays in its place, in the song, right away.
+  and every file you click in the browser plays in its place on that track, in the song,
+  right away.
   The sounds most like the original are listed first. The File Manager can also find
   missing samples and replace one file everywhere it plays.
 - **Find Similar Sounds.** The browser analyses your library in the background (timbre,
