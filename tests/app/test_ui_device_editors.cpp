@@ -48,6 +48,7 @@
 #include "devices/EqGraph.h"
 #include "devices/EqView.h"
 #include "devices/FilterGraph.h"
+#include "devices/GigaTuneMeter.h"
 #include "devices/ReductionGraph.h"
 #include "devices/SampleView.h"
 #include "editor/ProjectEditor.h"
@@ -207,8 +208,8 @@ private Q_SLOTS:
 
     void registry() {
         for (const char* kind : {"amp", "chorus", "compressor", "delay", "disperser", "envelope", "eq", "erosion",
-                                 "gate", "lfo", "limiter", "multiband", "phaser", "reverb", "sampler", "saturator",
-                                 "sidechain", "spectral", "transient", "vintage_hall", "vital"}) {
+                                 "gate", "gigatune", "lfo", "limiter", "multiband", "phaser", "reverb", "sampler",
+                                 "saturator", "sidechain", "spectral", "transient", "vintage_hall", "vital"}) {
             QVariant url;
             QMetaObject::invokeMethod(root_.get(), "editorFor", Q_RETURN_ARG(QVariant, url),
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));
@@ -220,6 +221,61 @@ private Q_SLOTS:
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));
             QCOMPARE(url.toString(), QString());
         }
+    }
+
+    // --- GigaTune -----------------------------------------------------------------------------
+
+    void gigatune() {
+        // A voice at A4 +20 cents (445 Hz).
+        const QString track = audioTrackWith(tone(445.0, 2 * kSampleRate), QStringLiteral("voice"), 2.0);
+        QVERIFY(!track.isEmpty());
+        const QString device = editor()->addDevice(track, QStringLiteral("gigatune"));
+        QQuickItem* view = show(QStringLiteral("gigatune"), track, device);
+        QVERIFY(view);
+        // Compact: the key, the scale and HQ over the display and four knobs, fitting the view.
+        auto* meter = find<GigaTuneMeter>(view, QStringLiteral("gigatuneMeter"));
+        QVERIFY(meter);
+        for (const char* name : {"keyChoice", "scaleChoice", "quality", "speed", "strength", "pitch", "formant"})
+            QVERIFY2(find<QQuickItem>(view, QString::fromLatin1(name)), name);
+        QVERIFY(view->implicitHeight() <= bodyHeight());
+        QVERIFY(view->implicitWidth() < 340);
+        auto* key = find<QQuickItem>(view, QStringLiteral("keyChoice"));
+        QCOMPARE(key->property("names").toStringList().size(), 13);  // Song, C to B
+
+        // The scale's notes along the display follow Key and Scale (Song with no song key: all twelve).
+        QCOMPARE(meter->notes(), 0xfff);
+        editor()->setDeviceParams(track, device, {{QStringLiteral("key"), 3.0}, {QStringLiteral("scale"), 3.0}});
+        QCOMPARE(meter->notes(), 0x6b5);  // D minor: D E F G A A# C
+        undo()->undo();
+        QCOMPARE(meter->notes(), 0xfff);
+
+        // Its knobs edit the model as the generic ones do (undoably).
+        auto* pitch = qvariant_cast<KnobItem*>(
+            qvariant_cast<QQuickItem*>(find(view, QStringLiteral("pitch"))->property("knob"))->property("knob"));
+        QVERIFY(pitch);
+        editor()->setDeviceParam(track, device, QStringLiteral("pitch"), 5.0);
+        QCOMPARE(pitch->value(), 5.0);
+        undo()->undo();
+        QCOMPARE(pitch->value(), 0.0);
+
+        // What the engine hears reaches the display: A4, the needle 20 cents sharp, the dot pulled onto it.
+        // (in one render: renderOffline resets the devices)
+        QVERIFY(!meter->voiced());
+        engine_->renderOffline(0.0, kSampleRate);
+        for (int tick = 0; tick < 6; ++tick)
+            refreshDisplays();
+        QVERIFY(meter->voiced());
+        QCOMPARE(meter->note(), 69);
+        QVERIFY2(std::abs(meter->needleCents() - 19.56) < 0.5, qPrintable(QString::number(meter->needleCents())));
+        QVERIFY2(std::abs(meter->dotCents()) < 1.0, qPrintable(QString::number(meter->dotCents())));
+        QVERIFY(meter->presence() > 0.5);
+        QTest::qWait(50);
+        save(grab(), QStringLiteral("gigatune.png"));
+        // Nothing more comes: the voice fades out.
+        for (int tick = 0; tick < 60; ++tick)
+            refreshDisplays();
+        QVERIFY(!meter->voiced());
+        QVERIFY(meter->presence() < 0.05);
     }
 
     // --- The Compressor ----------------------------------------------------------------------

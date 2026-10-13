@@ -24,6 +24,8 @@ the licences, not legal advice: for a commercial release, have it checked.
 | TNT | inside Essentia's core | public domain | Essentia's matrices | yes |
 | [miniaudio](../engine/third_party/miniaudio) | engine/third_party | Unlicense or MIT-0 | audio I/O, decoding | yes |
 | [Signalsmith Stretch, Linear](../engine/third_party) | engine/third_party | MIT | time stretching, FFTs | yes |
+| [fastpitch](../engine/third_party/fastpitch) 1.0.0 | engine/third_party/fastpitch | MIT | pitch tracking (pYIN): GigaTune | yes |
+| [swift-f0](../engine/third_party/swift-f0) 0.3.0's model | engine/third_party/swift-f0 (its weights in engine/src/builtin/SwiftF0Data.h) | MIT | pitch tracking (SwiftF0): GigaTune's High Quality | yes |
 | [VST 3 SDK](../engine/third_party/vst3sdk) 3.8.1 | engine/third_party | MIT | plug-in hosting | yes |
 | [puff](../app/third_party/puff) 2.3 (zlib 1.3.1's contrib) | app/third_party/puff | zlib | inflate: reading Ableton Live Sets | yes |
 | [LAME](../engine/third_party/lame) 3.100 (its encoding library only) | engine/third_party/lame | LGPL-2.0-or-later | statically linked: MP3 export | yes (the LGPL's relinking condition is met by shipping the whole program's source, as the AGPL asks anyway; ship its [COPYING](../engine/third_party/lame/COPYING)). MP3's patents have expired. |

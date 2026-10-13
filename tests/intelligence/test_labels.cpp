@@ -187,6 +187,7 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("transient", "Transient Shaper")) == Effect::Transient);
     CHECK(classify(builtin("vintage_hall", "Vintage Hall")) == Effect::Reverb);
     CHECK(classify(builtin("hue", "Hue")) == Effect::PitchCorrection);
+    CHECK(classify(builtin("gigatune", "GigaTune")) == Effect::PitchCorrection);
     CHECK(classify(serum("")) == Effect::Instrument);
     // The words of their names: "verb" a reverb, "dist" a distortion...
     CHECK(classify(plugin("ValhallaVintageVerb", "Fx")) == Effect::Reverb);

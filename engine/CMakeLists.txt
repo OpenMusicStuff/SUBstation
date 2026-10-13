@@ -21,6 +21,11 @@ else()
     target_link_libraries(miniaudio PUBLIC ${CMAKE_DL_LIBS} Threads::Threads m)
 endif()
 
+# fastpitch (MIT, header-only): pYIN as librosa has it, for GigaTune. Its SIMD follows the
+# compiler's flags, so only the engine includes it (builtin/GigaTuneDesign.cpp, built with AVX2).
+add_library(fastpitch INTERFACE)
+target_include_directories(fastpitch SYSTEM INTERFACE third_party/fastpitch/include)
+
 # --- LAME (LGPL v2): its MP3 encoding library, for exporting MP3 (Mp3Writer.cpp) ---
 # Vendored unmodified in third_party/lame (see its VERSION.txt), compiled as C
 # with a config.h of ours (what LAME's configure would find).
@@ -281,6 +286,8 @@ add_library(sub_engine STATIC
     src/Warp.cpp
     src/builtin/BuiltinProcessor.cpp
     src/builtin/BuiltinRegistry.cpp
+    src/builtin/GigaTuneDesign.cpp
+    src/builtin/SwiftF0.cpp
     src/builtin/SampleSlicing.cpp
     src/builtin/VitalPatch.cpp
     ${BUILTIN_DEVICE_SOURCES}
@@ -360,7 +367,7 @@ target_include_directories(sub_engine PUBLIC src)
 # Signalsmith Stretch (time stretching / pitch shifting) and its FFT library:
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
-target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital)  # (kfr_fft: Hue's FFTs)
+target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital fastpitch)  # (kfr_fft: Hue's FFTs)
 target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)

@@ -104,6 +104,8 @@ Claude Code can read and edit your song while you watch.
 - **Colour and distortion**: Saturator, Amp, Erosion.
 - **Time and modulation**: Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall,
   Disperser.
+- **Pitch**: GigaTune (pitch correction for a voice: a key's notes, retune speed, pitch and
+  formant shifts), Hue.
 - **Utility**: EQ, Utility.
 - Racks with parallel chains, macros and presets. Every parameter can be automated and is
   played sample-accurately.
@@ -221,7 +223,7 @@ and the browser backend.
 ```
 engine/src/          the real-time audio engine and plug-in hosting (sub_engine; no Qt)
 engine/third_party/  miniaudio (public domain / MIT-0), Signalsmith Stretch and Linear, the VST 3 SDK subset (MIT),
-                     LAME's MP3 encoder (LGPL)
+                     fastpitch's pYIN and swift-f0's SwiftF0 model (MIT), LAME's MP3 encoder (LGPL)
 intelligence/third_party/  Essentia 2.1-beta5's core and the algorithms used (AGPLv3), HUMANBRO's runtime
 browser/src/         the browser's file index and search (sub_browser; no Qt)
 app/src/             the application layer (sub_app; Qt Core and Gui): model/, editor/, io/, audio/,
