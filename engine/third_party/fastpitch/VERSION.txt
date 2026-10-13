@@ -1,0 +1,8 @@
+fastpitch 1.0.0 (MIT), a header-only pYIN pitch tracker that matches librosa.pyin
+frame for frame. Local repository, commit 6dbbc79ad5f8298efcfd8485404d5490663b1fcf,
+unmodified: include/fastpitch/pyin.hpp and LICENSE only.
+
+GigaTune (engine/src/builtin/GigaTuneDesign.h) uses its YIN stage and observation
+model (fastpitch::detail::Model and YinWorker) frame by frame, with a streaming
+Viterbi decoder of its own over the same HMM: fastpitch's Decoder backtracks only
+once the whole signal is in.

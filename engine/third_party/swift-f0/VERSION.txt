@@ -1,0 +1,8 @@
+swift-f0 0.3.0 (MIT), https://github.com/lars76/swift-f0, commit d1ba77fe5331310b778ebe126b6cb3656d41d24f
+(Release 0.3.0), unmodified: swift_f0/model.onnx (sha256 6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22)
+and LICENSE.
+
+The engine runs the network itself (engine/src/builtin/SwiftF0.cpp), with no ONNX Runtime: make_data.py writes
+its weights into engine/src/builtin/SwiftF0Data.h (python make_data.py; it needs numpy and onnx). Checked
+against ONNX Runtime by tests/engine/test_swiftf0_engine.cpp. GigaTune's High Quality mode tracks the pitch
+with it.

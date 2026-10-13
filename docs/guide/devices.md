@@ -662,6 +662,60 @@ Hue's latency is about 11 ms (the engine lines the other tracks up with it). Cha
 the notes takes a few milliseconds to be heard and fades in, so chords played from MIDI
 change smoothly.
 
+### GigaTune
+
+Pitch correction for a single voice: a sung or rapped part, a lead line. GigaTune hears the
+pitch, picks the note of the key it is nearest, and moves the voice onto it, its formants
+(the character of the voice) staying where they are. It is made to be exact: a held note
+comes out on its note's frequency to a hundredth of a cent, and with nothing to do the sound
+passes untouched, sample for sample.
+
+- **Key** and **Scale**: the notes it corrects to. At first both are **Song**: GigaTune
+  follows the song's key (the project's key or, without one, the key its MIDI tracks are
+  in), with its major or natural minor scale. Choose a root (C to B) or a scale to pick
+  them yourself: Chromatic, Major, Minor, Harmonic Minor, Melodic Minor, Dorian, Phrygian,
+  Lydian, Mixolydian, Locrian, Major Pentatonic, Minor Pentatonic or Blues. With Song and
+  no key known it corrects to all twelve notes. Another note takes over only once it is
+  nearer by a fifth of a semitone, so a voice hovering between two notes doesn't flip back
+  and forth.
+- **Retune Speed** (0 to 400 ms): how fast the voice is pulled onto the note (the
+  correction's time constant), from its own pitch at the start of each note. At 0 it is on
+  the note at once and held there exactly: the hard, stepped sound. Slower settings keep
+  scoops and vibrato and only pull the note's centre into tune.
+- **Strength** (0 to 100 %): how much of the correction is made. At 0 the voice passes as
+  it is.
+- **Pitch** (±12 semitones): moves the corrected voice up or down, its formants kept.
+- **Formant** (±12 semitones): moves the formants without moving the pitch: deeper or
+  smaller-sounding. It acts on the voiced sound; breaths and sibilants pass as they were.
+- **Quality**: how it hears the pitch, refined to a hundredth of a cent either way.
+  **High Quality** (at first) uses SwiftF0, a small neural network trained to find a
+  voice's pitch: it holds on to the voice through breath, noise and reverb, where other
+  trackers drop out or slip to an octave or another multiple below. **Low Latency** uses
+  pYIN, the probabilistic tracker librosa uses (from the vendored fastpitch library), and
+  works with as little latency as MAutoPitch: it hears each moment from the 32 ms around
+  it and decides at once, holding the last pitch it heard for the few milliseconds it
+  hasn't heard yet. It tunes held notes about as closely as High Quality; where a note
+  starts it is a few milliseconds behind. It is also better on stacked or doubled vocals
+  and harmonies, where it follows the period the voices share (so correcting it keeps
+  their intervals), while High Quality picks one voice. Quality can't be automated:
+  changing it changes the latency, and the device starts again (a short silence).
+- It moves the pitch by cutting the voice into grains one period long, centred on its
+  pulses, and laying them a new period apart (PSOLA), so the voice keeps its timbre.
+  It is made for one voice at a time: on chords, doubled vocals or a full mix it has no
+  single pitch to follow. Both channels are moved alike, by the pitch of their sum.
+- It adds **latency**: 21 ms with Low Latency (MAutoPitch's: 1024 samples at 48 kHz) and
+  about 277 ms with High Quality (SwiftF0 decides each moment 193 ms after it, and the
+  grains need the periods either side), at any sample rate. Playback is compensated; Low Latency is short enough to sing through
+  while recording, High Quality isn't.
+- **The editor** is compact: Key, Scale and **HQ** (Quality: lit for High Quality, off for
+  Low Latency) along the top, and under them a tuner-like display beside the Retune Speed,
+  Strength, Pitch and Formant knobs. The display shows the note the voice is being
+  corrected to, as it comes out (under it the note that comes out, while Pitch moves it),
+  and a cents scale of that note: the needle is the pitch heard, the lit dot where the
+  correction takes it, and the band in the middle glows green while the result is in tune.
+  Along the bottom are the twelve notes, those the key and scale correct to lit and the
+  one being corrected to glowing. Song's choices name the song's key once it is known.
+
 ### Saturator
 
 Saturation and distortion after Ableton's Saturator: the sound is driven into a curve

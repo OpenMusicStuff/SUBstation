@@ -41,6 +41,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Reverb: [ReverbEditor.qml](../../ui/qml/devices/editors/ReverbEditor.qml), [ReverbFilterPad](../../ui/src/devices/ReverbFilterPad.h), [ReverbSpinPad](../../ui/src/devices/ReverbSpinPad.h), [ReverbDecayGraph](../../ui/src/devices/ReverbDecayGraph.h), the application layer's [ReverbResponse.h](../../app/src/audio/ReverbResponse.h) | |
 | Disperser: [DisperserEditor.qml](../../ui/qml/devices/editors/DisperserEditor.qml), [DispersionGraph](../../ui/src/devices/DispersionGraph.h) | |
 | EQ: [EqEditor.qml](../../ui/qml/devices/editors/EqEditor.qml), [EqWindow.qml](../../ui/qml/devices/editors/EqWindow.qml), [EqWindows.qml](../../ui/qml/devices/editors/EqWindows.qml), [EqBandPanel.qml](../../ui/qml/devices/editors/EqBandPanel.qml), [EqCorner.qml](../../ui/qml/devices/editors/EqCorner.qml), [EqGraphMenus.qml](../../ui/qml/devices/editors/EqGraphMenus.qml), [EqGraph](../../ui/src/devices/EqGraph.h), [EqView](../../ui/src/devices/EqView.h), [EqTypeIcon](../../ui/src/devices/EqTypeIcon.h) | |
+| GigaTune: [GigaTuneEditor.qml](../../ui/qml/devices/editors/GigaTuneEditor.qml), [GigaTuneMeter](../../ui/src/devices/GigaTuneMeter.h), the application layer's [GigaTuneScale.h](../../app/src/audio/GigaTuneScale.h) | |
 | Hue: [HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml), [HueSpectrum](../../ui/src/devices/HueSpectrum.h), [HueWheel](../../ui/src/devices/HueWheel.h), the application layer's [Chroma.h](../../app/src/analysis/Chroma.h) | |
 | Vintage Hall: [VintageHallEditor.qml](../../ui/qml/devices/editors/VintageHallEditor.qml), [VintageHallLoop](../../ui/src/devices/VintageHallLoop.h), the application layer's [VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h) | |
 | Transient Shaper: [TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml), [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h), [TransientGraph](../../ui/src/devices/TransientGraph.h), the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) | |
@@ -335,6 +336,7 @@ readonly property var editors: ({
     "eq": "EqEditor.qml",
     "erosion": "ErosionEditor.qml",
     "gate": "GateEditor.qml",
+    "gigatune": "GigaTuneEditor.qml",
     "hue": "HueEditor.qml",
     "limiter": "LimiterEditor.qml",
     "multiband": "MultibandEditor.qml",
@@ -1182,6 +1184,27 @@ The editors:
     loud as `output`, Decay and the loop's length. Dragged up and down it sets Decay (doubling every 50 px), across
     Size (0.8 % a pixel), Shift a sixth as far, one undo step a drag ("Change Decay and Size"); a double-click resets
     both. It repaints only while something moves: once the glow is under -60 dB and the comets have faded it rests.
+- **GigaTune** ([GigaTuneEditor.qml](../../ui/qml/devices/editors/GigaTuneEditor.qml)): compact (about 300 px). Along
+  the top the Key and Scale drop-downs (`ParamChoice`s, as wide as their longest names; Song's named with the song's
+  key once known, "Song · Am", "Song · Minor", from `Session.harmony.keyLabel` as Hue reads it) and HQ at the right
+  (a `ParamButton` over Quality: lit High Quality, off Low Latency). Under them its display
+  ([GigaTuneMeter](../../ui/src/devices/GigaTuneMeter.h), 156 px) beside the four `EditorKnob`s, Speed (Retune
+  Speed) and Strength over Pitch and Formant.
+  - The display, as a tuner's: the note corrected to (its name large, the octave beside it; under it "out D5" while
+    Pitch moves it), the pitch heard (`pitch`) and where the correction takes it (`corrected`) in cents of that note
+    at the top right, a cents scale (±50) with the pitch heard as a needle (a notch past the end beyond it) and where
+    it is taken as a lit dot, the stretch between them tinted (the correction being made), a band round 0 (±5 cents)
+    that glows green while the result is in tune, and along the bottom the twelve notes (the black keys a little
+    shorter), those corrected to lit (`gigatuneScaleNotes()`: the engine's `scaleNotes()`, with the song's key passed
+    in as `songTonic` and `songMinor`) and the one corrected to (`note`) glowing in the accent colour.
+  - It reads the three displays' newest values (`readRecent`, 20 ms) each tick; nothing for `kSilentSeconds`
+    (250 ms) counts as no voice.
+  - Its animation, in `advance()` by `tickSeconds()`: the needle and the dot ease to the newest values (τ 45 and
+    30 ms), snapping where the note changes or the voice comes in (no sweep across from another note's cents); the
+    note's name slides 6 px up and fades into the next (τ 70 ms); the notes along the bottom light at once (τ 30 ms)
+    and fade (τ 250 ms); the in-tune band's glow eases (τ 120 ms); while no voice is heard everything but the scale
+    fades out (τ 220 ms; back in τ 60 ms), the name dimming to the last note heard. It repaints only while
+    something moves.
 - **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages, no margins round its spectrum: the
   spectrum fills the body from edge to edge (as wide as the Vintage Hall folded: its loop, four cells, their gaps and
   its margins), and over its top edge the key and HQ (Quality) at the left, the arrow at the right (a `fold` icon
