@@ -133,7 +133,8 @@ the playhead, taking no clicks. `focusNotes()` gives the note grid the keyboard;
 the velocities give it to the notes too (`PianoRoll::focusGrid()`). The scroll bars follow the roll except while
 dragged (then the roll follows them: `scrollToX`, `scrollToY`). The velocity lane's top edge (`velocityHandle`, across the
 "Velocity" label and the lane) drags to resize it (`velocityHeight`, 32 px up to what leaves the note grid 48 px);
-double-clicking it puts it back to 72 px. The ruler, the keys, the note grid and the velocity
+double-clicking it puts it back to 72 px. A view too short for the dragged height shows the lane shorter
+(`shownVelocityHeight`, never under 32 px) and gives it back when it grows. The ruler, the keys, the note grid and the velocity
 lane have `clip: true` (and the clip view's `ClipWaveform`): a scene-graph item isn't clipped to itself, and notes or
 the playhead scrolled out of the grid would show over the keys and the browser.
 

@@ -44,7 +44,13 @@ Item {
     readonly property int minVelocityHeight: 32
     // The note grid keeps at least this much when the lane grows.
     readonly property int minGridHeight: 48
+    // The lane's height as dragged; it shows shorter while the view is too
+    // short for it (the note grid keeping minGridHeight, the lane at least
+    // minVelocityHeight), and comes back when the view grows again.
     property int velocityHeight: defaultVelocityHeight
+    readonly property int maxVelocityHeight: Math.max(minVelocityHeight,
+        height - rulerHeight - barWidth - minGridHeight)
+    readonly property int shownVelocityHeight: Math.min(velocityHeight, maxVelocityHeight)
     readonly property int barWidth: Theme.scrollBarWidth
 
     // Play from this arrangement beat (the ruler was clicked).
@@ -123,7 +129,7 @@ Item {
         x: view.keysWidth
         y: view.rulerHeight
         width: Math.max(0, view.width - view.keysWidth - view.barWidth)
-        height: Math.max(0, view.height - view.rulerHeight - view.velocityHeight - view.barWidth)
+        height: Math.max(0, view.height - view.rulerHeight - view.shownVelocityHeight - view.barWidth)
         clip: true
         session: Session
         roll: pianoRoll
@@ -179,7 +185,7 @@ Item {
     Rectangle {
         y: noteGrid.y + noteGrid.height
         width: view.keysWidth
-        height: view.velocityHeight
+        height: view.shownVelocityHeight
         color: Theme.panel
 
         Label {
@@ -196,7 +202,7 @@ Item {
         x: view.keysWidth
         y: noteGrid.y + noteGrid.height
         width: noteGrid.width
-        height: view.velocityHeight
+        height: view.shownVelocityHeight
         clip: true
         session: Session
         roll: pianoRoll
@@ -223,14 +229,12 @@ Item {
         property int pressHeight: 0
 
         function resize(h) {
-            const most = Math.max(view.minVelocityHeight,
-                                  view.height - view.rulerHeight - view.barWidth - view.minGridHeight)
-            view.velocityHeight = Math.round(Math.max(view.minVelocityHeight, Math.min(most, h)))
+            view.velocityHeight = Math.round(Math.max(view.minVelocityHeight, Math.min(view.maxVelocityHeight, h)))
         }
 
         onPressed: mouse => {
             pressY = mapToItem(view, mouse.x, mouse.y).y
-            pressHeight = view.velocityHeight
+            pressHeight = view.shownVelocityHeight
         }
         onPositionChanged: mouse => {
             if (pressed)
