@@ -28,6 +28,7 @@
 #include "session/ArrangementActions.h"
 #include "session/AudioPreferences.h"
 #include "session/ComputerKeyboard.h"
+#include "session/ModulationLearn.h"
 #include "session/DeviceSelection.h"
 #include "session/MidiPreferences.h"
 #include "session/RenderProgress.h"
@@ -73,6 +74,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     arrangement_ = new ArrangementActions(editor_, selection_, bridge_, render_, this);
     devices_ = new DeviceSelection(editor_, selection_, bridge_, this);
     keyboard_ = new ComputerKeyboard(bridge_, this);
+    learn_ = new ModulationLearn(project_, editor_, this);
     hotSwap_ = new HotSwap(project_, editor_, undoStack_, bridge_, browser_, this);
     files_ = new FileManager(project_, editor_, selection_, bridge_, browser_, hotSwap_, this);
     audioPreferences_ = new AudioPreferences(bridge_, this);
@@ -109,6 +111,7 @@ void Session::wire() {
     for (QObject* source : {static_cast<QObject*>(bridge_), static_cast<QObject*>(browser_),
                             static_cast<QObject*>(plugins_), static_cast<QObject*>(arrangement_),
                             static_cast<QObject*>(devices_), static_cast<QObject*>(keyboard_),
+                            static_cast<QObject*>(learn_),
                             static_cast<QObject*>(humanizer_), static_cast<QObject*>(files_),
                             static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_)}) {
         connect(source, SIGNAL(statusMessage(QString)), this, SIGNAL(statusMessage(QString)));

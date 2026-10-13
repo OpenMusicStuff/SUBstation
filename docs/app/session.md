@@ -24,6 +24,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 | [DeviceSelection.h](../../app/src/session/DeviceSelection.h) | `DeviceSelection`: the device view's selection, clipboard, presets and drops |
 | [RenderProgress.h](../../app/src/session/RenderProgress.h), [Renders.h](../../app/src/session/Renders.h) | The render progress the UI shows as a modal dialog; the renders in the background (`ExportAudioRender`, `FreezeTracksRender`, `ReverseClipsRender`) |
 | [ComputerKeyboard.h](../../app/src/session/ComputerKeyboard.h) | The computer MIDI keyboard |
+| [ModulationLearn.h](../../app/src/session/ModulationLearn.h) | A modulator's Map: the next parameter touched on its track is mapped to it |
 | [AudioPreferences.h](../../app/src/session/AudioPreferences.h), [MidiPreferences.h](../../app/src/session/MidiPreferences.h) | Preferences › Audio and › MIDI, without their widgets |
 | [SessionSupport.h](../../app/src/session/SessionSupport.h) | Small helpers the parts share (plug-in refs from QML maps, clip refs for QML) |
 | [files/FileManager.h](../../app/src/files/FileManager.h), [files/HotSwap.h](../../app/src/files/HotSwap.h) | The File Manager and hot swaps ([below](#the-file-manager-and-hot-swaps-filemanager-hotswap)); what they work from: [files/ProjectFiles.h](../../app/src/files/ProjectFiles.h) (the files a project plays, and what plays each) and [files/MissingFiles.h](../../app/src/files/MissingFiles.h) (finding missing files again) |
@@ -35,7 +36,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the
 `Humanizer`, the `TrackLabels` (what each track is, in words), the `TrackSearch` (finding tracks by their names and labels), the `BrowserController` (which starts the plug-in
 scan, and points the sound similarity at its index), the `PresetIndex`, the `RenderProgress`, and the parts `ArrangementActions`, `DeviceSelection`,
-`ComputerKeyboard`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, and last the `McpServer` (its tools
+`ComputerKeyboard`, `ModulationLearn`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, and last the `McpServer` (its tools
 read the parts above). They are its children, and QML
 reads them as constant properties:
 
@@ -53,6 +54,7 @@ reads them as constant properties:
 | `deviceSelection` | `DeviceSelection` | [below](#the-device-view-deviceselection) |
 | `render` | `RenderProgress` | [below](#renders-in-the-background) |
 | `computerKeyboard` | `ComputerKeyboard` | [below](#the-computer-midi-keyboard) |
+| `modulationLearn` | `ModulationLearn` | a modulator (an LFO, an Envelope) waiting for the next parameter touched on its track (`ProjectEditor::parameterTouched`) to be mapped to it: `start`, `stop`, `toggle`, `isLearning`, `active`; its own controls don't count, it says why for another track's or a switch, and it stops once it maps one, its modulator goes or the project is replaced ([ui/device-view.md](../ui/device-view.md#modulators)) |
 | `files`, `hotSwap` | `FileManager`, `HotSwap` | [below](#the-file-manager-and-hot-swaps-filemanager-hotswap) |
 | `audioPreferences`, `midiPreferences` | `AudioPreferences`, `MidiPreferences` | [below](#preferences) |
 

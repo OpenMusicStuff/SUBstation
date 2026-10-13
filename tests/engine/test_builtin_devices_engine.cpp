@@ -50,7 +50,7 @@ TEST_CASE("every built-in effect takes NaN, infinity and absurd levels as silenc
                 }
             }
             CHECK(finite);
-            CHECK(energy > 0.0);
+            if (!info.isModulator()) CHECK(energy > 0.0);  // (a modulator puts out its value: an envelope at rest, 0)
         }
     }
 }

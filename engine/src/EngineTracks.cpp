@@ -396,4 +396,10 @@ void Engine::setTrackAutomation(uint32_t trackId, const std::vector<AutomationLa
     rebuildSnapshotLocked();
 }
 
+void Engine::setTrackModulation(uint32_t trackId, const std::vector<ModulationDesc>& modulation) {
+    std::lock_guard lock(mutex_);
+    trackLocked(trackId).modulation = modulation;
+    rebuildSnapshotLocked();
+}
+
 }  // namespace sub

@@ -42,7 +42,8 @@ is in [app/model.md](../app/model.md); overrides are the engine bridge's ([below
 | [Snapshot.h](../../engine/src/Snapshot.h) | `AutomationRender` (an envelope as the renderer plays it), `TrackParams` (fader atomics and smoothing), `EdgeRender::level` (a send's envelope), `StripRender::automation`, `volume`, `pan` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | `automationNodes()`, `buildAutomationLocked()` (faders), `buildChainLocked()` (device parameters and rack chain faders), send levels on edges |
 | [EngineTracks.cpp](../../engine/src/EngineTracks.cpp) | `Engine::setTrackAutomation()` |
-| [Renderer.h](../../engine/src/Renderer.h), [Renderer.cpp](../../engine/src/Renderer.cpp) | `automateInsert()`, `fillLane()`, `applyFader()`, `sumEdge()`, `automationTime()`, `kAutomationStep` |
+| [Renderer.h](../../engine/src/Renderer.h), [Renderer.cpp](../../engine/src/Renderer.cpp) | `automateInsert()`, `fillLane()`, `applyFader()`, `sumEdge()`, `automationTime()`, `kAutomationStep`; modulation: `runModulators()`, `modulateInsert()` |
+| [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc`, `modulationTarget()`, `kMaxModulators` (see [Modulation](#modulation)) |
 
 ## Key types
 
@@ -297,6 +298,47 @@ the gain depends on the timeline alone and live and offline renders agree. Stopp
   sample, in time with the latency before the parameter's device, whichever chain it is in. A macro overridden by
   hand stops moving them; a nearer rack's macro wins over an outer one's for the same parameter.
 
+## Modulation
+
+A **modulator** (`Processor::isModulator()`: the built-in LFO and Envelope, see
+[devices.md](devices.md#lfo-builtinlfo-modulator)) moves parameters of other devices on its
+track as automation would, from what it plays rather than from an envelope.
+
+- **What moves what**: `Engine::setTrackModulation(trackId, descs)` replaces a track's (0: the
+  master's) `ModulationDesc`s: the modulator's processor, the device's, the parameter's id, the
+  normalized `low` (at the modulator's 0) and `high` (at its 1), and `invert`. The application
+  layer's bridge sends what the model maps (see [app/engine-bridge.md](../app/engine-bridge.md)).
+- **In the snapshot** (`buildChainLocked`): each chain gets a `ModulationRender` per parameter
+  of its devices that a modulator *on the same strip* moves (`StripRender::modulation`, by
+  insert): the modulator, the device, the parameter's index and step count, the range. Refused
+  (kept, not played): a device elsewhere, a source that isn't a modulator or is the device
+  itself, a parameter it doesn't have or that is read-only, a parameter already moved (the
+  first wins). **A modulated parameter's automation lane is left out** of the chain meanwhile
+  (modulation wins); it plays again once the modulation goes. A strip's own chain also lists
+  every modulator on the strip, racks' too, depth first (`StripRender::modulators`: the
+  processor, the `RackRender` and chain it is in, its insert).
+- **Playing** (`Renderer::processInserts`): before the strip's devices,
+  `runModulators()` runs each of the strip's modulators (up to `kMaxModulators`, 32) over the
+  chunk's slices exactly as `processDevice()` runs a device (its own automation, the
+  modulations of it by modulators run before it, its sidechain, its notes or a MIDI feed),
+  into a scratch buffer of its own (`WorkerScratch::modulation`), which it writes its value
+  into, 0..1 a frame; one switched off fills it with the value it last held
+  (`Processor::heldModulation()`). A modulator in a rack takes its reset request first (before
+  its rack's chain would, after the run). In the chain itself a modulator isn't processed:
+  the audio goes past it (waiting for its sidechain as any sidechained device makes the strip
+  wait, as the engine aligned it).
+- **The parameters**: `processDevice()` calls `modulateInsert()` for each modulation of the
+  device after its automation lanes: the modulator's value at the slice's start and every
+  `kAutomationStep` (64) samples, mapped (`modulationTarget`: held to 0..1, inverted, over
+  low..high) and quantized for discrete parameters, handed over with `Processor::automate()`
+  where it changes, as a sloped envelope is. So built-in devices split their blocks there and
+  plug-ins get sample-accurate VST3 parameter changes. A modulator that hasn't run yet in this
+  chunk (one moving a modulator before it) gives its held value. Modulation is not delayed by
+  the latency before its target (it is the strip's own, live), and not quantized to the timeline
+  as automation is: it depends on how the chunk falls only by where its 64-sample steps start.
+- **Its value afterwards**: the engine leaves a parameter where its modulation last put it; the
+  bridge sets its own value back when it stops (as it does for automation).
+
 ## The mixer's control names
 
 The mixer is `processorId` 0 with a name: `volume`, `pan`, `send:<engine track id>`. More (mute, say) would be more
@@ -306,6 +348,9 @@ names: a branch in `buildAutomationLocked()` and a target in `StripRender`, plus
 `EngineBridge::engineLane()`.
 
 ## Invariants and real-time rules
+
+- Modulation allocates nothing either: the modulators' buffers are per-worker scratch
+  (`kMaxModulators` of `kMaxBlock`), and their values go through the same `automate()` buffer.
 
 - Nothing on the audio thread allocates: `automate()` writes into a preallocated buffer; fader and send lanes fill
   per-worker scratch (`autoGain`, `autoPanLeft`, `autoPanRight`, `edgeGain`).
@@ -348,6 +393,8 @@ names: a branch in `buildAutomationLocked()` and a target in `StripRender`, plus
 - [tests/app/test_automation_model.cpp](../../tests/app/test_automation_model.cpp): the application layer's curve and
   volume law against the engine's, and device parameters mapping as the engine does.
 - [tests/engine/test_sends_engine.cpp](../../tests/engine/test_sends_engine.cpp): send automation in time.
+- [tests/engine/test_modulators_engine.cpp](../../tests/engine/test_modulators_engine.cpp): modulation through the
+  engine (every 64 samples, ranges and inverted, ahead of automation, in racks, modulators moving modulators).
 - [tests/engine/test_racks_engine.cpp](../../tests/engine/test_racks_engine.cpp): automation of a nested device and of
   a chain's fader in time behind latent devices.
 - [tests/engine/test_sidechain_engine.cpp](../../tests/engine/test_sidechain_engine.cpp): a device after one that waits

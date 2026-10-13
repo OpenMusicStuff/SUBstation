@@ -22,8 +22,9 @@ namespace sub::app {
 struct BuiltinDevice {
     QString kind;  // its id: "utility"
     QString name;  // "Utility"
-    QString category;  // "Instruments" or "Audio Effects": how the browser groups them
+    QString category;  // "Instruments", "Audio Effects" or "Modulators": how the browser groups them
     bool instrument = false;
+    bool modulator = false;  // it moves other devices' parameters (an LFO, an envelope), not audio
     QMap<QString, double> defaults;  // param id -> its default value
     const sub::BuiltinInfo* info = nullptr;  // the engine's description (its parameters)
 };
@@ -37,6 +38,9 @@ std::vector<std::pair<QString, QStringList>> builtinCategories();
 
 // Whether a device of this kind (and plug-in) is an instrument.
 bool isInstrument(const QString& kind, const std::optional<PluginRef>& plugin = std::nullopt);
+// Whether a device of this kind is a modulator (a built-in LFO or envelope:
+// its `modulations` move parameters of other devices on its track).
+bool isModulator(const QString& kind);
 // An instrument, or a rack with one in it (an instrument rack: it plays the track's notes).
 bool deviceIsInstrument(const Device& device);
 // Whether a preset can be loaded into a device in place: a device of the same

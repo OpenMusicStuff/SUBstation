@@ -8,7 +8,9 @@ import SUBstation
 // parameter that chooses between named values, a list. Under it all a
 // ParamArea: a press touches `menuParam`, a right press opens its menu. The
 // cell shows what it is given and says what the user does (moved, chosen,
-// touched); the parameter's own type does the rest.
+// touched); the parameter's own type does the rest. The knob shows what a
+// modulator does to `menuParam` (its range, where it is now) and a ring while a
+// modulator's Map waits for it.
 Item {
     id: cell
 
@@ -83,6 +85,11 @@ Item {
             step: cell.stepped ? 1 : 0
             value: cell.value
             automation: cell.automation
+            modulated: cell.menuParam ? cell.menuParam.modulated : false
+            modulationFrom: cell.menuParam ? cell.menuParam.modulationFrom : 0
+            modulationTo: cell.menuParam ? cell.menuParam.modulationTo : 1
+            modulationValue: cell.menuParam ? cell.menuParam.modulationValue : -1
+            mappable: cell.menuParam ? cell.menuParam.mappable : false
             formatter: cell.formatter
             onMoved: (v, key) => cell.moved(v, key)
             onTouched: cell.touched()

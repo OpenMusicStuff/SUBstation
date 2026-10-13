@@ -71,7 +71,10 @@ void EngineBridge::setKnownPlugins(const std::vector<PluginInfo>& plugins) {
         }
     }
     for (const QString& trackId : reloadedTracks) {
-        if (project_->hasOwner(trackId)) pushEnabled(trackId);
+        if (project_->hasOwner(trackId)) {
+            pushEnabled(trackId);
+            pushModulation(trackId);
+        }
         pushAutomation(trackId);
         Q_EMIT devicesLoaded(trackId);
     }
@@ -332,6 +335,8 @@ void EngineBridge::dispatchProcessorEvents(const std::vector<sub::ProcessorEvent
             d.paramInfos.remove(event.processorId);
             d.paramSpecs.remove(event.processorId);
             pushAutomation(trackId);  // its parameters may be elsewhere in the list now
+            d.modulation.remove(trackId);  // (and what modulators move of them)
+            if (project_->hasOwner(trackId)) pushModulation(trackId);
             Q_EMIT pluginParamsRebuilt(trackId, deviceId);
             break;
         case Type::EditorClosed:

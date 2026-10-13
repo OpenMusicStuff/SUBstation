@@ -25,6 +25,8 @@
 // - render: the render running in the background, for its modal dialog
 //   (RenderProgress);
 // - computerKeyboard: the computer MIDI keyboard (ComputerKeyboard);
+// - modulationLearn: a modulator's Map: the next parameter touched is mapped
+//   to it (ModulationLearn);
 // - files: the File Manager: the files the project plays, missing ones found
 //   again, one replaced by another (FileManager);
 // - hotSwap: a hot swap: the browser's selection swapped into clips or
@@ -78,6 +80,7 @@ class Harmony;
 class HotSwap;
 class Humanizer;
 class MidiPreferences;
+class ModulationLearn;
 class PluginIndex;
 class PresetIndex;
 class Project;
@@ -108,6 +111,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::DeviceSelection* deviceSelection READ deviceSelection CONSTANT)
     Q_PROPERTY(sub::app::RenderProgress* render READ render CONSTANT)
     Q_PROPERTY(sub::app::ComputerKeyboard* computerKeyboard READ computerKeyboard CONSTANT)
+    Q_PROPERTY(sub::app::ModulationLearn* modulationLearn READ modulationLearn CONSTANT)
     Q_PROPERTY(sub::app::FileManager* files READ files CONSTANT)
     Q_PROPERTY(sub::app::HotSwap* hotSwap READ hotSwap CONSTANT)
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
@@ -202,6 +206,7 @@ public:
     DeviceSelection* deviceSelection() const { return devices_; }
     RenderProgress* render() const { return render_; }
     ComputerKeyboard* computerKeyboard() const { return keyboard_; }
+    ModulationLearn* modulationLearn() const { return learn_; }
     FileManager* files() const { return files_; }
     HotSwap* hotSwap() const { return hotSwap_; }
     AudioPreferences* audioPreferences() const { return audioPreferences_; }
@@ -497,6 +502,7 @@ private:
     ArrangementActions* arrangement_ = nullptr;
     DeviceSelection* devices_ = nullptr;
     ComputerKeyboard* keyboard_ = nullptr;
+    ModulationLearn* learn_ = nullptr;
     HotSwap* hotSwap_ = nullptr;
     FileManager* files_ = nullptr;
     AudioPreferences* audioPreferences_ = nullptr;

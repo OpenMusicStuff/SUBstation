@@ -153,6 +153,40 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
         snap.midiFeeds.push_back({static_cast<int>(entry.midiSource), entry.midiFeed});
     }
 
+    // The parameters of the chain's devices that modulators on the strip move
+    // (the first to name one moves it; not their automation meanwhile).
+    std::vector<std::pair<const Processor*, int>> modulated;
+    for (const ModulationDesc& desc : build.track->modulation) {
+        const auto found = processors_.find(desc.processorId);
+        const auto source = processors_.find(desc.modulatorId);
+        if (found == processors_.end() || found->second.chainId != chainId || source == processors_.end() ||
+            desc.processorId == desc.modulatorId || !source->second.processor->isModulator() ||
+            !build.slotOf.contains(source->second.processor.get())) {
+            continue;
+        }
+        const std::shared_ptr<Processor>& processor = found->second.processor;
+        const auto place = std::find(chain.inserts.begin(), chain.inserts.end(), processor);
+        if (place == chain.inserts.end()) continue;
+        const auto& infos = processor->params();
+        const auto info = std::find_if(infos.begin(), infos.end(), [&](const ParamInfo& p) { return p.id == desc.param; });
+        if (info == infos.end() || info->readOnly) continue;
+        const int param = static_cast<int>(info - infos.begin());
+        if (std::find(modulated.begin(), modulated.end(), std::pair<const Processor*, int>{processor.get(), param}) != modulated.end()) continue;
+        modulated.emplace_back(processor.get(), param);
+        ModulationRender route;
+        route.modulator = source->second.processor;
+        route.processor = processor;
+        route.param = param;
+        route.steps = info->stepCount();
+        route.insert = static_cast<int>(place - chain.inserts.begin());
+        route.low = std::clamp(desc.low, 0.f, 1.f);
+        route.high = std::clamp(desc.high, 0.f, 1.f);
+        route.invert = desc.invert;
+        out.modulation.push_back(std::move(route));
+    }
+    std::stable_sort(out.modulation.begin(), out.modulation.end(),
+                     [](const ModulationRender& a, const ModulationRender& b) { return a.insert < b.insert; });
+
     // The envelopes of the chain's devices' parameters (and switches), each as
     // late as the strip's input plus the latency before its device.
     for (const AutomationLaneDesc& desc : build.track->automation) {
@@ -184,6 +218,8 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
         const auto& infos = processor->params();
         const auto info = std::find_if(infos.begin(), infos.end(), [&](const ParamInfo& p) { return p.id == desc.param; });
         if (info == infos.end() || info->readOnly) continue;
+        const std::pair<const Processor*, int> target{processor.get(), static_cast<int>(info - infos.begin())};
+        if (std::find(modulated.begin(), modulated.end(), target) != modulated.end()) continue;
         AutomationRender lane;
         lane.processor = processor;
         lane.param = static_cast<int>(info - infos.begin());
@@ -197,6 +233,21 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
                      [](const AutomationRender& a, const AutomationRender& b) { return a.insert < b.insert; });
     std::stable_sort(out.switches.begin(), out.switches.end(),
                      [](const SwitchRender& a, const SwitchRender& b) { return a.lane.insert < b.lane.insert; });
+
+    // A strip's own chain: every modulator on the strip, in the order they run.
+    if (depth == 0) collectModulators(out, nullptr, 0, out.modulators);
+}
+
+void Engine::collectModulators(const StripRender& chain, const RackRender* rack, int chainIndex,
+                               std::vector<ModulatorRender>& out) {
+    for (size_t i = 0; i < chain.inserts.size(); ++i) {
+        if (chain.inserts[i]->isModulator()) {
+            out.push_back({chain.inserts[i], rack, chainIndex, static_cast<int>(i)});
+        }
+        const RackRender* inner = i < chain.racks.size() ? chain.racks[i].get() : nullptr;
+        if (!inner) continue;
+        for (size_t c = 0; c < inner->chains.size(); ++c) collectModulators(inner->chains[c], inner, static_cast<int>(c), out);
+    }
 }
 
 // ---------------------------------------------------------------------------

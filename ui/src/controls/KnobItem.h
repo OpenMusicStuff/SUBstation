@@ -14,7 +14,11 @@
 // `parser`, typing a digit (the knob has the focus after a click) opens a small
 // text field (editRequested); applyTyped() parses and sets what was typed.
 // A dot in its corner marks it automated ("on", red) or its automation
-// overridden ("off", grey).
+// overridden ("off", grey). A modulated knob (a modulator moves its parameter)
+// shows the range it moves over (`modulationFrom`..`modulationTo`, 0..1 of the
+// knob's travel) as an arc of the theme's modulation colour and where it is now
+// (`modulationValue`, < 0: not known yet) as its pointer, its own value faint;
+// a ring round it while a modulator's Map waits for it (`mappable`).
 //
 // `moved(value, gestureKey)` is emitted for user changes only, never for
 // `value` set from outside: every value of one drag shares a gesture key (a new
@@ -57,6 +61,11 @@ class KnobItem : public SgCanvas {
     Q_PROPERTY(bool wheel READ wheel WRITE setWheel NOTIFY wheelChanged)
     Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY lookChanged)
     Q_PROPERTY(QString automation READ automation WRITE setAutomation NOTIFY lookChanged)
+    Q_PROPERTY(bool modulated READ modulated WRITE setModulated NOTIFY lookChanged)
+    Q_PROPERTY(qreal modulationFrom READ modulationFrom WRITE setModulationFrom NOTIFY lookChanged)
+    Q_PROPERTY(qreal modulationTo READ modulationTo WRITE setModulationTo NOTIFY lookChanged)
+    Q_PROPERTY(qreal modulationValue READ modulationValue WRITE setModulationValue NOTIFY lookChanged)
+    Q_PROPERTY(bool mappable READ mappable WRITE setMappable NOTIFY lookChanged)
     Q_PROPERTY(QJSValue formatter READ formatter WRITE setFormatter NOTIFY textChanged)
     Q_PROPERTY(QJSValue parser READ parser WRITE setParser NOTIFY typeableChanged)
     Q_PROPERTY(QString text READ text NOTIFY textChanged)  // the value as the formatter has it (the tooltip)
@@ -95,6 +104,16 @@ public:
     void setColor(const QColor& color);
     QString automation() const { return automation_; }
     void setAutomation(const QString& state);  // "", "on" or "off"
+    bool modulated() const { return modulated_; }
+    void setModulated(bool modulated);
+    qreal modulationFrom() const { return modulationFrom_; }
+    void setModulationFrom(qreal fraction);
+    qreal modulationTo() const { return modulationTo_; }
+    void setModulationTo(qreal fraction);
+    qreal modulationValue() const { return modulationValue_; }
+    void setModulationValue(qreal fraction);
+    bool mappable() const { return mappable_; }
+    void setMappable(bool mappable);
     QJSValue formatter() const { return formatter_; }
     void setFormatter(const QJSValue& formatter);
     QJSValue parser() const { return parser_; }
@@ -170,6 +189,9 @@ private:
     bool wheel_ = true;
     QColor color_;
     QString automation_;
+    bool modulated_ = false;
+    double modulationFrom_ = 0.0, modulationTo_ = 1.0, modulationValue_ = -1.0;
+    bool mappable_ = false;
     QJSValue formatter_;
     QJSValue parser_;
     std::function<QString(double)> format_;

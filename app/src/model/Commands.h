@@ -431,6 +431,22 @@ private:
     void apply(const MacroMappings& state);
 };
 
+// A modulator's mappings (Device::modulations): what it moves, over which
+// range, which way up. Target: (track id, modulator id); a drag of a range merges.
+class SetModulationsCommand : public MergeableCommand<SetModulationsCommand, std::pair<QString, QString>,
+                                                      std::vector<ModulationMapping>> {
+public:
+    SetModulationsCommand(Project* project, const QString& trackId, const QString& modulatorId,
+                          std::vector<ModulationMapping> old, std::vector<ModulationMapping> nw, const QString& text,
+                          QString mergeKey = {});
+
+    void redo() override;
+    void undo() override;
+
+    const QString& trackId() const { return target_.first; }
+    const QString& modulatorId() const { return target_.second; }
+};
+
 // Replaces a device's state: a plug-in's whole state (loading a preset), a
 // built-in device's besides its parameters (a sampler's sample); base64.
 class SetDeviceStateCommand : public ValueCommand<DeviceTarget, std::optional<QString>> {

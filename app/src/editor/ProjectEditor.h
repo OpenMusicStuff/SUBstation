@@ -537,6 +537,34 @@ public:
     std::optional<std::pair<QString, int>> macroOf(const QString& trackId, const QString& deviceId,
                                                    const QString& paramId) const;
 
+    // --- Modulation (EditorModulation.cpp) ---
+
+    // A modulator (an LFO, an Envelope: isModulator()) moves parameters of the
+    // other devices on its track (Device::modulations). Map one to it, over its
+    // normalized `low`..`high`, upside down with `invert`; a parameter follows
+    // one modulator at a time (another's mapping of it goes, in the same undo
+    // step). EditError for a device that isn't a modulator, a target not on its
+    // track (or the modulator itself), a rack, or a parameter that can't be
+    // automated.
+    void mapModulation(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                       const QString& paramId, double low = 0.0, double high = 1.0, bool invert = false);
+    // Whether a parameter can be modulated (one that can be automated: not a rack's).
+    Q_INVOKABLE bool canModulate(const QString& trackId, const QString& deviceId, const QString& paramId) const;
+    // A mapping's range (normalized, held to 0..1; `low` > `high`: the other way
+    // round) and which way up: one undo step (one per gesture, with a merge key).
+    Q_INVOKABLE void setModulationRange(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                        const QString& paramId, double low, double high, const QString& mergeKey = {});
+    Q_INVOKABLE void setModulationInverted(const QString& trackId, const QString& modulatorId,
+                                           const QString& deviceId, const QString& paramId, bool invert);
+    // A parameter no longer modulated (by whichever modulator moves it); its own value counts again.
+    Q_INVOKABLE void unmapModulation(const QString& trackId, const QString& deviceId, const QString& paramId);
+    // Everything a modulator moves, unmapped. One undo step.
+    Q_INVOKABLE void clearModulations(const QString& trackId, const QString& modulatorId);
+    // The modulator moving a parameter ("": none).
+    Q_INVOKABLE QString modulatorOf(const QString& trackId, const QString& deviceId, const QString& paramId) const;
+    // The modulators on a track (or the master), in its chain's order (racks' depth first).
+    Q_INVOKABLE QStringList modulators(const QString& trackId) const;
+
     // --- A device's settings (EditorDeviceSettings.cpp) ---
 
     // Change a parameter. The automation lane shows it (parameterTouched).
@@ -718,6 +746,8 @@ public:
                                         const QString& name = {});
     Q_INVOKABLE bool tryMapMacro(const QString& trackId, const QString& rackId, int index, const QString& deviceId,
                                  const QString& paramId, double low = 0.0, double high = 1.0);
+    Q_INVOKABLE bool tryMapModulation(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                      const QString& paramId);
 
 Q_SIGNALS:
     // (track id, device id) when the user adds a plug-in (not on undo or redo):

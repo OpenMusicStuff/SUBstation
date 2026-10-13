@@ -215,7 +215,7 @@ private Q_SLOTS:
         QFile file(target);
         QVERIFY(file.open(QIODevice::ReadOnly));
         const QJsonObject data = QJsonDocument::fromJson(file.readAll()).object();
-        QCOMPARE(data[QStringLiteral("version")].toInt(), 22);
+        QCOMPARE(data[QStringLiteral("version")].toInt(), kProjectVersion);  // (bends since 22)
         const QJsonArray saved = data[QStringLiteral("tracks")].toArray()[0].toObject()[QStringLiteral("clips")]
                                      .toArray()[0].toObject()[QStringLiteral("notes")].toArray();
         QCOMPARE(saved[0].toArray().size(), 6);  // (its fifth value written: false)

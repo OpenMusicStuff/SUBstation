@@ -26,6 +26,7 @@
 #include "session/AudioPreferences.h"
 #include "session/ComputerKeyboard.h"
 #include "session/DeviceSelection.h"
+#include "session/ModulationLearn.h"
 #include "session/MidiPreferences.h"
 #include "session/RenderProgress.h"
 #include "session/Selection.h"
@@ -69,6 +70,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<DeviceSelection>("DeviceSelection");
     registerUncreatable<RenderProgress>("RenderProgress");
     registerUncreatable<ComputerKeyboard>("ComputerKeyboard");
+    registerUncreatable<ModulationLearn>("ModulationLearn");
     registerUncreatable<FileManager>("FileManager");
     registerUncreatable<FileListModel>("FileListModel");
     registerUncreatable<HotSwap>("HotSwap");

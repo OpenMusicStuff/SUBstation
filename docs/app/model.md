@@ -183,6 +183,12 @@ no MIDI input closes a cycle, and a device on any track (a return, the master) m
   normalized `low`..`high` (`low > high` turns it the other way, 0.5..1 is its upper half; `target()`). Racks nest at most `kMaxRackDepth` = 8 deep (the
   engine's limit). A rack with an instrument in it is an *Instrument Rack* (`deviceIsInstrument`), otherwise an
   *Audio Effect Rack*. `name` is the preset it was saved as or loaded from (none: named by its kind; `deviceName`).
+- **Modulator** (a built-in device whose engine category is `Modulator`: `isModulator(kind)`, the `"lfo"` and the
+  `"envelope"`): `modulations` is a list of `ModulationMapping{deviceId, paramId, low, high, invert}`: the parameter
+  of another device on its track (anywhere: in racks too) that it moves, over its normalized `low`..`high` (`low >
+  high` the other way), upside down with `invert` (`target()`). A parameter follows one modulator at most; while it
+  does, its own value and its automation wait (the engine plays the modulation instead). The engine plays it: see
+  [engine/automation.md](../engine/automation.md#modulation).
 
 Device ids are unique in the whole project, so a device is found wherever it sits: `Project::device(track, id)` and
 `findDevice()` search racks too, `Project::deviceOwner(id)` finds its track. The tree helpers:
@@ -197,7 +203,12 @@ Device ids are unique in the whole project, so a device is found wherever it sit
 - `containerOf`: the chain a device is in (none = the track's own).
 - `rackDepth(devices, chain)`: how many racks a chain is in; `rackHeight(device)`: how deep racks nest inside a
   device. `rackDepth + rackHeight ≤ kMaxRackDepth` is checked before any insert or move.
-- `refreshIds(device)`: new ids for a device, everything in it and its chains, in place; macro mappings follow their
+- `renamedModulations(mappings, renamed)`: modulation mappings to devices given new ids, renamed (the others
+  dropped): a duplicated track's modulators, and devices pasted together, keep moving the copies.
+- `pruneModulations(devices, isModulator)`: drops the modulation mappings a track's devices can't have (to a device
+  not among them, to the modulator itself, of a device that isn't a modulator, a parameter mapped already: the
+  first stays); the editor runs it on every change of a track's devices, and loading on every track.
+- `refreshIds(device)`: new ids for a device, everything in it and its chains, in place; macro (and modulation) mappings follow their
   devices and mappings to devices not in it go. Used for presets, pasted devices, duplicated chains and duplicated
   tracks.
 
@@ -465,6 +476,7 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `SetChainsCommand` | several tracks' devices at once (a device moving between tracks stays the same device) |
 | `SetDeviceParamCommand`, `SetDeviceParamsCommand` | one parameter; several at once (a macro and what it moves) |
 | `UpdateChainCommand`, `SetMacrosCommand`, `SetDeviceNameCommand` | a rack chain's name or mixer; a rack's macro mappings, with the values of the parameters a range change moves (merging per gesture); a rack's name |
+| `SetModulationsCommand` | a modulator's mappings (`Device::modulations`): a range dragged merges per gesture; Invert, unmapping one or all |
 | `SetDeviceStateCommand` | a device's state (a plug-in preset, a sampler's sample) |
 | `ReplaceFilesCommand` | other files in some files' place: the clip lists of the tracks playing them and the states of the built-in devices naming them (`DeviceStates`), together; merging per hot swap (the same tracks and devices); `relink` for files only found somewhere else (frozen tracks take those) |
 | `SetDeviceEnabledCommand`, `SetDeviceSidechainCommand`, `SetDeviceMidiFromCommand` | on/off; sidechain; MIDI input (`Device::midiFrom`, "Change MIDI Input" / "Remove MIDI Input") |
@@ -561,8 +573,8 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   keep their state; their automation moves with them in the same step), `removeDevice(s)` [Q], `setDevicesFolded`
   [Q], `setChainListShown` [Q], `setRackDevicesShown` [Q] (view state), `setDeviceDefaults` (where new devices come
   from: default presets). Changing a track's devices deletes the automation of devices (and rack chains) that left
-  the track, and macro mappings to them, in the same step; and the mappings and automation of macros a rack no longer
-  has.
+  the track, and macro and modulation mappings to them, in the same step; and the mappings and automation of macros
+  a rack no longer has. Devices pasted together keep their modulators' mappings among them (`renamedModulations`).
 - **A device's settings**: `setDeviceParam` [Q] (a C++ form takes `old` for plug-ins, whose values the model doesn't
   hold), `setDeviceParams` [Q] (several of a built-in device's at once: one step, merging per gesture while the same
   parameters change), `touchParameter` [Q], `setDeviceState`, `loadPresetInto` (a preset into a device of its kind:
@@ -577,6 +589,13 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   last, at 0; those taken away with their values, mappings and automation, one step), `renameMacro` [Q] (`""` or
   "Macro N": by its number), `setMacroRange` [Q] (a mapping's `low`..`high`, held to 0..1; the parameter goes where
   its macro puts it in the new range, in the same `SetMacrosCommand`, merging per gesture).
+- **Modulation** (EditorModulation.cpp): `mapModulation` (a parameter of another device on the modulator's track,
+  over `low`..`high`, which way up; it moves over from another modulator in the same step, "Map Modulation" through
+  `setDevices`; `EditError` for a device that isn't a modulator, the modulator itself, another track's device, a
+  rack, or a parameter that can't be automated: hidden, read-only), `tryMapModulation` [Q], `canModulate` [Q],
+  `setModulationRange` [Q] (held to 0..1, merging per gesture), `setModulationInverted` [Q], `unmapModulation` [Q]
+  (from whichever modulator moves it), `clearModulations` [Q], `modulatorOf` [Q], `modulators` [Q] (a track's, in
+  chain order, racks' depth first).
 - **Envelopes**: `setEnvelope`, `addAutomationPoint` [Q], `moveAutomationPoints`, `deleteAutomationPoints` [Q],
   `setAutomationCurve`, `clearEnvelope` [Q], `deleteAutomationRange`, `moveAutomationRange`,
   `duplicateAutomationRange`, `copyAutomationRange`, `cutAutomationRange`, `pasteAutomation`,
@@ -669,6 +688,7 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   groups, returns and the master take no instrument.
 - Racks never nest deeper than `kMaxRackDepth`.
 - Macro mappings only name devices inside their rack, and macros the rack has.
+- Modulation mappings are only a modulator's, name other devices on its track, and each parameter once.
 - A rack has 1 to 16 macros, and a value for each.
 - A device's `midiFrom` names a MIDI track other than its own, or is empty: deleting or flattening the source takes
   it away in the same step, and loading repairs edited files.
