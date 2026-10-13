@@ -240,7 +240,7 @@ Item {
             if (pressed)
                 resize(pressHeight - (mapToItem(view, mouse.x, mouse.y).y - pressY))
         }
-        onDoubleClicked: resize(view.defaultVelocityHeight)
+        onDoubleClicked: view.velocityHeight = view.defaultVelocityHeight
 
         Rectangle {
             y: 2
