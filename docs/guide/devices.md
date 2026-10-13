@@ -704,8 +704,8 @@ passes untouched, sample for sample.
   It is made for one voice at a time: on chords, doubled vocals or a full mix it has no
   single pitch to follow. Both channels are moved alike, by the pitch of their sum.
 - It adds **latency**: 21 ms with Low Latency (MAutoPitch's: 1024 samples at 48 kHz) and
-  about 277 ms with High Quality (SwiftF0 waits 176 ms for what follows each moment), at
-  any sample rate. Playback is compensated; Low Latency is short enough to sing through
+  about 277 ms with High Quality (SwiftF0 decides each moment 193 ms after it, and the
+  grains need the periods either side), at any sample rate. Playback is compensated; Low Latency is short enough to sing through
   while recording, High Quality isn't.
 - **The editor** is compact: Key, Scale and **HQ** (Quality: lit for High Quality, off for
   Low Latency) along the top, and under them a tuner-like display beside the Retune Speed,
