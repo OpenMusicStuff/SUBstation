@@ -17,7 +17,7 @@
 //   and a high band; the mid band goes through the kept notes' filter and the
 //   moved notes' bands, all minimum-phase (no latency of their own). The latency
 //   is one convolution block (256 core samples) and the half-band filters'.
-// - Quality: Low Latency moves the notes (as the reference) through two
+// - Quality: Low Latency moves the notes through two
 //   shifters, up and down, whose heads drift in and out of phase on each note:
 //   it lands a little off its pitch, with sidebands. High Quality gives each
 //   pitch class moved a shifter of its own, its heads a whole number of that
@@ -30,7 +30,7 @@
 // - The shifters: two read heads on a delay line, crossfaded with Hann windows
 //   over grains two periods long, their delay sweeping at 1 - ratio.
 // - Color fades from the plain mid band (0 %) to the processed one (100 %);
-//   above (as measured on the reference, by how many notes are enabled), the
+//   above (tuned by how many notes are enabled), the
 //   notes get narrower and louder and the floor between them lower.
 //   Wet Gain scales the processed band; Pre-Shift shifts the mid band before the
 //   notes, Post-Shift tunes the notes.
@@ -86,12 +86,14 @@ constexpr int kBins = kBlock + 1;     // a block's spectrum (its transform's siz
 constexpr int kDesignSize = 16384;    // the masks' frequency grid
 constexpr int kTaps = kDesignSize / 2;
 constexpr int kParts = kTaps / kBlock;
+constexpr int kMaskChunk = 1024;  // the masks' bins designed in an audio callback
+constexpr int kMaskSteps = (kDesignSize / 2 + 1 + kMaskChunk - 1) / kMaskChunk;
 constexpr float kGrainSeconds = 0.11f;
 constexpr float kMinDelay = 3.f;      // core samples a head reads behind at the least
 constexpr float kMaskFloor = 1e-5f;   // -100 dB: where a mask is zero (the log needs a floor)
-constexpr float kMinStart = 160.f;    // Start and End work within these (as the reference's do), whatever
+constexpr float kMinStart = 160.f;    // Start and End work within these, whatever
 constexpr float kMaxEnd = 4000.f;     // they are set to
-// The notes moved (measured on the reference): a band about each, its gain 0.85 times the note's it lands on,
+// The notes moved: a band about each, its gain 0.85 times the note's it lands on,
 // falling exponentially away from it (13.5 dB in 0.3 semitone).
 constexpr double kMoveGain = 0.85;
 constexpr double kMoveWidth = 0.19;
@@ -106,7 +108,7 @@ enum Slot {
 };
 
 // Half-band all-pass coefficients (polyphase, four: a transition 0.1075 of the rate wide), chosen so the
-// bands' delay follows the reference's across the spectrum (its 34 samples at a quarter of the rate).
+// bands' delay is the same across the spectrum (34 samples at a quarter of the rate).
 constexpr std::array<double, 4> kHalfband = {0.0761664965, 0.2733758376, 0.5325590391, 0.8277213729};
 
 // A first-order all-pass in the decimated domain: (c + z^-1) / (1 + c z^-1).
@@ -783,21 +785,28 @@ private:
 
     // --- Filter design (in steps on the rendering thread; nothing allocated) -------------------------
 
+    // A design, a step an audio callback: the masks' setup, then their bins kMaskChunk at a time, then one filter
+    // a step (the slots this design uses; the others go silent).
     void runDesignStep() noexcept {
         if (designStep_ == 0) {
-            computeMasks();
+            prepareMasks();
             ++designStep_;
             return;
         }
-        // one filter a step: the slots this design uses (the others go silent)
-        const int slot = designStep_ - 1;
+        if (designStep_ <= kMaskSteps) {
+            const int from = (designStep_ - 1) * kMaskChunk;
+            maskBins(from, std::min(kDesignSize / 2 + 1, from + kMaskChunk));
+            ++designStep_;
+            return;
+        }
+        const int slot = designStep_ - 1 - kMaskSteps;
         Partitions& out = filters_[static_cast<size_t>(1 - active_)][static_cast<size_t>(slot)];
         if (!slotUsed_[slot]) {
             out.used = 0;
         } else {
             designMinimum(mag_[static_cast<size_t>(slot)], out);
         }
-        if (++designStep_ > kSlots) finishDesign();
+        if (++designStep_ > kMaskSteps + kSlots) finishDesign();
     }
 
     void finishDesign() noexcept {
@@ -859,10 +868,23 @@ private:
     }
 
     // The magnitude masks over the design grid's bins (core rate), for the slots the design uses.
-    void computeMasks() noexcept {
+    // The per-design values the masks' bins are made from (prepareMasks()).
+    struct MaskSetup {
+        int bits = 0;
+        float v[12] = {};       // each enabled note's gain
+        int move[12] = {};      // each pitch class's move
+        float noteKernel[kKernelPoints] = {};
+        float floorGain = 0.f;
+        double narrow = 1.0, post = 0.0, combLow = 0.0, combHigh = 0.0, outsideDb = 0.0;
+    };
+
+    void prepareMasks() noexcept {
+        MaskSetup& m = mask_;
         const int bits = key_.notes;
         const bool hq = key_.highQuality;
-        float v[12] = {};
+        m.bits = bits;
+        float* v = m.v;
+        std::fill(std::begin(m.v), std::end(m.v), 0.f);
         int count = 0;
         for (int c = 0; c < 12; ++c) {
             if (bits >> c & 1) {
@@ -878,7 +900,7 @@ private:
         const int oi = std::min(3, static_cast<int>(over));
         const float of = over - static_cast<float>(oi);
         auto lerp = [&](const float* t) { return t[oi] + (t[oi + 1] - t[oi]) * of; };
-        const double narrow = lerp(kNarrow);
+        m.narrow = lerp(kNarrow);
         // a step's value (dB) for this many notes: 0 at 100 %, then the table's (by count) at 125 ... 200 %
         auto byCount = [&](const float (*table)[kColorCountPoints], int step) noexcept {
             if (step < 0) return 0.f;
@@ -892,23 +914,22 @@ private:
         auto colorDb = [&](const float (*table)[kColorCountPoints]) noexcept {
             return byCount(table, oi - 1) + (byCount(table, oi) - byCount(table, oi - 1)) * of;
         };
-        float noteKernel[kKernelPoints];
         for (int i = 0; i < kKernelPoints; ++i) {
             const float from = oi == 0 ? kNoteKernel[i] : kColorKernel[oi - 1][i];
-            noteKernel[i] = from + (kColorKernel[oi][i] - from) * of;
+            m.noteKernel[i] = from + (kColorKernel[oi][i] - from) * of;
         }
         const float lift = std::pow(10.f, colorDb(kColorLiftDb) / 20.f);
-        for (float& g : v) g *= lift;
-        const float floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
-                                std::pow(10.f, colorDb(kColorFloorDb) / 20.f);
-        const double post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
+        for (float& g : m.v) g *= lift;
+        m.floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
+                      std::pow(10.f, colorDb(kColorFloorDb) / 20.f);
+        m.post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
         // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat (Low Latency, as
-        // the reference: at a gain falling 1.89 dB per enabled note, +19.8 dB with one; the crossovers take most
+        // at a gain falling 1.89 dB per enabled note, +19.8 dB with one; the crossovers take most
         // of it away, but a minimum-phase filter's phase depends on its magnitude everywhere).
-        const double combLow = 12.0 * std::log2(key_.start / 440.0) + 9.0 - 10.0;
-        const double combHigh = 12.0 * std::log2(key_.end / 440.0) + 9.0 + 10.0;
-        const double outsideDb = 19.8 - 1.89 * (count - 1);
-        int move[12];
+        m.combLow = 12.0 * std::log2(key_.start / 440.0) + 9.0 - 10.0;
+        m.combHigh = 12.0 * std::log2(key_.end / 440.0) + 9.0 + 10.0;
+        m.outsideDb = 19.8 - 1.89 * (count - 1);
+        int* move = m.move;
         for (int c = 0; c < 12; ++c) move[c] = moveOf(bits, c);
         // which slots this design uses
         for (bool& used : slotUsed_) used = false;
@@ -918,7 +939,17 @@ private:
         } else {
             slotUsed_[FromBelow] = slotUsed_[FromAbove] = true;
         }
+    }
 
+    // The masks' bins `from` .. `to` (exclusive), from the setup prepareMasks() made.
+    void maskBins(int from, int to) noexcept {
+        const MaskSetup& m = mask_;
+        const int bits = m.bits;
+        const float* v = m.v;
+        const int* move = m.move;
+        const float* noteKernel = m.noteKernel;
+        const double narrow = m.narrow, post = m.post, combLow = m.combLow, combHigh = m.combHigh;
+        const double floorGain = m.floorGain, outsideDb = m.outsideDb;
         auto kernel = [&](double dist) noexcept {
             const double x = std::abs(dist) * 8.0;
             const int i = static_cast<int>(x);
@@ -932,8 +963,7 @@ private:
             if (d >= 6) d -= 12;
             return d;
         };
-        const int bins = kDesignSize / 2 + 1;
-        for (int k = 0; k < bins; ++k) {
+        for (int k = from; k < to; ++k) {
             const double f = std::max(20.0, k * coreRate_ / kDesignSize);
             const double p = 12.0 * std::log2(f / 440.0) + 9.0 - post;  // semitones above C
             const double nearest = std::round(p);
@@ -1048,6 +1078,7 @@ private:
     DesignKey key_, heard_;
     bool designing_ = false;
     int designStep_ = 0;
+    MaskSetup mask_;
     bool slotUsed_[kSlots] = {};
     int movedNext_[12] = {}, nextPeriod_[12] = {};
     double movedSlope_[12] = {};

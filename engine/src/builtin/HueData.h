@@ -1,5 +1,5 @@
 #pragma once
-// Hue: data measured from the reference effect (chroma-study/probe, gaintable.py and maskmodel3.py).
+// Hue's tuning data.
 // kNoteGainCentiDb[set][c]: the mask's gain at pitch class c's centre, in hundredths of a dB, for each set
 // of enabled classes (bit c = class c, C = 0); 0 where c is not enabled. Normalised out of the mid band's crossovers.
 // kNoteKernel: the falloff of an enabled note's share of the mask, at 0, 1/8, ... 2 semitones from it.
@@ -4112,9 +4112,9 @@ inline constexpr float kNoteKernel[kKernelPoints] = {
     1.00000f, 0.88634f, 0.79557f, 0.66715f, 0.46397f, 0.27855f, 0.17202f, 0.10783f, 0.00006f, 0.02697f, 0.05070f, 0.02938f, 0.01319f, 0.00534f, 0.00000f, 0.00000f, 0.00000f,
 };
 
-// Color past 100 % (chroma-study/probe, colorsets.py and colorfit.py: the masks of five sets of notes at 125, 150,
-// 175 and 200 %): the kernel at each, and the enabled notes' lift and the floor's change (dB) by how many notes are
-// enabled (at kColorCounts of them, between them linear, past the last as the last).
+// Color past 100 % (fitted on the masks of five sets of notes at 125, 150, 175 and 200 %): the kernel at each,
+// and the enabled notes' lift and the floor's change (dB) by how many notes are enabled (at kColorCounts of them,
+// between them linear, past the last as the last).
 inline constexpr int kColorSteps = 4;  // 125, 150, 175, 200 %
 inline constexpr int kColorCountPoints = 5;
 inline constexpr int kColorCounts[kColorCountPoints] = {1, 2, 3, 5, 7};
