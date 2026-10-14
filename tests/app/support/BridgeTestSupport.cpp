@@ -30,6 +30,8 @@ void BridgeTestAccess::loadNextPlugin(EngineBridge& bridge) { bridge.loadNextPlu
 
 void BridgeTestAccess::pollMeters(EngineBridge& bridge) { bridge.pollMeters(); }
 
+void BridgeTestAccess::finishDecoding(EngineBridge& bridge) { bridge.d_->pool.waitForDone(); }
+
 void BridgeTestAccess::setBusy(EngineBridge& bridge, bool busy) { bridge.d_->busy += busy ? 1 : -1; }
 
 }  // namespace sub::app

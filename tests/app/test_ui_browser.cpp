@@ -17,7 +17,9 @@
 #include <QUndoStack>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -43,6 +45,38 @@ namespace {
 extern const char* const kWindow;
 
 std::vector<float> tone(double seconds) { return std::vector<float>(size_t(seconds * test::kSampleRate), 0.2f); }
+
+// Sounds like their names (the browser hears what files sound like: SoundSearch.h): a kick (a falling sine), a
+// snare (a tone and noise), a plain sine.
+std::vector<float> kickSound() {
+    std::vector<float> s(size_t(0.6 * test::kSampleRate));
+    double phase = 0.0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        const double t = double(i) / test::kSampleRate;
+        phase += 2.0 * std::numbers::pi * (50.0 + 100.0 * std::exp(-t / 0.03)) / test::kSampleRate;
+        s[i] = float(0.9 * std::sin(phase) * std::exp(-t / 0.25));
+    }
+    return s;
+}
+std::vector<float> snareSound() {
+    std::vector<float> s(size_t(0.5 * test::kSampleRate));
+    uint32_t noise = 2;
+    float previous = 0.f;
+    for (size_t i = 0; i < s.size(); ++i) {
+        const double t = double(i) / test::kSampleRate;
+        noise = noise * 1664525u + 1013904223u;
+        const float n = float(noise >> 8) / 8388608.f - 1.f;
+        const double tone = std::sin(2.0 * std::numbers::pi * 190.0 * t) * std::exp(-t / 0.05);
+        s[i] = float(0.6 * (0.5 * tone + 0.5 * (n - 0.6 * previous) * std::exp(-t / 0.12)));
+        previous = n;
+    }
+    return s;
+}
+std::vector<float> sine(double hz, double seconds) {
+    std::vector<float> s(size_t(seconds * test::kSampleRate));
+    for (size_t i = 0; i < s.size(); ++i) s[i] = float(0.5 * std::sin(2.0 * std::numbers::pi * hz * double(i) / test::kSampleRate));
+    return s;
+}
 
 }  // namespace
 
@@ -113,9 +147,9 @@ private Q_SLOTS:
         if (!test::haveDisplay()) QSKIP("needs a display: Qt Quick's software renderer draws none of this geometry");
         dir_ = std::make_unique<test::TempDir>();
         QDir().mkpath(place() + QStringLiteral("/Drums"));
-        test::writeWav(place() + QStringLiteral("/Drums/Kick Deep.wav"), tone(0.2));
-        test::writeWav(place() + QStringLiteral("/Drums/Snare Tight.wav"), tone(0.2));
-        test::writeWav(place() + QStringLiteral("/Utility Hit.wav"), tone(0.2));
+        test::writeWav(place() + QStringLiteral("/Drums/Kick Deep.wav"), kickSound());
+        test::writeWav(place() + QStringLiteral("/Drums/Snare Tight.wav"), snareSound());
+        test::writeWav(place() + QStringLiteral("/Utility Hit.wav"), sine(440.0, 0.2));
         QFile notes(place() + QStringLiteral("/Drums/notes.txt"));
         QVERIFY(notes.open(QIODevice::WriteOnly));
         notes.write("not audio");
@@ -334,6 +368,8 @@ private Q_SLOTS:
 
     // Used items rank first; Name sorts by name (test_used_items_rank_first).
     void usedItemsRankFirst() {
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));  // Rank (after Best)
+        QCOMPARE(browser().sort(), QStringLiteral("rank"));
         browser().setScope({QStringLiteral("all")});
         search(QStringLiteral("e"));
         const QStringList before = names();
@@ -341,7 +377,7 @@ private Q_SLOTS:
         for (int i = 0; i < 3; ++i) browser().activate(int(before.size()) - 1);  // double-clicks (more than any other's)
         search(QStringLiteral("e "));
         QCOMPARE(names().first(), last);
-        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 2));
         QCOMPARE(browser().sort(), QStringLiteral("name"));
         QVERIFY(settle());
         QStringList sorted = before;
@@ -349,8 +385,10 @@ private Q_SLOTS:
         QCOMPARE(names(), sorted);
         QCOMPARE(QSettings().value(QStringLiteral("browser/sort")).toString(), QStringLiteral("name"));
         QCOMPARE(item("sort")->property("displayText").toString(), QStringLiteral("Name"));
-        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 0));
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));
         QCOMPARE(browser().sort(), QStringLiteral("rank"));
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 0));
+        QCOMPARE(browser().sort(), QStringLiteral("best"));
     }
 
     // A list searched again for a change elsewhere keeps its current item
@@ -473,7 +511,7 @@ private Q_SLOTS:
         test::screenshot(window_, QStringLiteral("browser-similar"), QRect(0, 0, 400, window_->height()));
         test::click(window_, test::centerOf(item("clearSimilar")));
         QTRY_VERIFY(!item("similarBar")->isVisible());
-        QCOMPARE(browser().sort(), QStringLiteral("rank"));
+        QCOMPARE(browser().sort(), QStringLiteral("best"));  // (the sort before)
         QVERIFY(settle());
         QCOMPARE(results().total(), 3);
     }
@@ -490,6 +528,8 @@ private Q_SLOTS:
 
         // Add Folder…: the folder dialog; the folder chosen is listed and shown.
         const int add = sidebarRow({QStringLiteral("add")});
+        QMetaObject::invokeMethod(item("sidebarList"), "positionViewAtIndex", Q_ARG(int, add), Q_ARG(int, 4));  // (ListView.Contain)
+        QTest::qWait(50);
         QQuickItem* entry = nullptr;
         QMetaObject::invokeMethod(item("sidebarList"), "itemAtIndex", Q_RETURN_ARG(QQuickItem*, entry), Q_ARG(int, add));
         test::click(window_, test::centerOf(entry));

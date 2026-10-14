@@ -4,13 +4,15 @@ import SUBstation
 
 // The Delay's editor, laid out as Ableton's: each side's time (Sync on: a grid
 // of sixteenths and an offset; off: a time knob) and the link between them (the
-// right side greyed out while linked); the filter on the echoes (FilterGraph: a
-// curve to drag across for its frequency, up and down for its width, over a
-// spectrum of the input) with its switch, frequency and width; the mode the
-// time changes in and ping pong; and on the right the feedback with its freeze,
-// over the dry/wet mix. Every control shows its parameter as it is now (its
-// automation's value while that plays), sets it undoably, touches it when
-// pressed, and right-click gives its menu.
+// right side greyed out while linked), the feedback with its freeze under them;
+// the filter on the echoes (FilterGraph: a curve to drag across for its
+// frequency, up and down for its width, over a spectrum of the input) with its
+// switch, frequency and width, and under it, where Ableton has its modulation,
+// the Character: Swing (every other echo late), Drive (saturation in the loop)
+// and Duck (the echoes dip while the input plays); on the right the mode the
+// time changes in and ping pong, over the dry/wet mix. Every control shows its
+// parameter as it is now (its automation's value while that plays), sets it
+// undoably, touches it when pressed, and right-click gives its menu.
 Item {
     id: editor
 
@@ -21,15 +23,15 @@ Item {
     readonly property var divisions: ["1", "2", "3", "4", "5", "6", "8", "16"]  // the sixteenths, as the engine lists them
     readonly property int sideWidth: 56
     readonly property int linkWidth: 18
-    readonly property int graphWidth: 220
-    readonly property int modeWidth: 62
+    readonly property int graphWidth: 226
     readonly property int rightWidth: 64
     readonly property int spacing: 10
 
-    // The device's body: 2 * SIDE_WIDTH + LINK_WIDTH + GRAPH_WIDTH + MODE_WIDTH + RIGHT_WIDTH + 4 * SPACING + 18,
-    // less the frame's border.
-    implicitWidth: 2 * sideWidth + linkWidth + graphWidth + modeWidth + rightWidth + 4 * spacing + 18 - 2
-    implicitHeight: 6 + Math.max(leftSide.implicitHeight, rightColumn.implicitHeight, 120) + 6
+    // The device's body: 2 * SIDE_WIDTH + LINK_WIDTH + GRAPH_WIDTH + RIGHT_WIDTH + 2 * SPACING + 16, less the
+    // frame's border.
+    implicitWidth: 2 * sideWidth + linkWidth + graphWidth + rightWidth + 2 * spacing + 16 - 2
+    implicitHeight: 6 + Math.max(sides.implicitHeight + 4 + feedbackRow.implicitHeight, rightColumn.implicitHeight,
+                                 140) + 6
 
     // The parameters, by id.
     readonly property var params: {
@@ -44,13 +46,40 @@ Item {
     Instantiator {
         id: paramObjects
         model: ["l_sync", "l_division", "l_time", "l_offset", "r_sync", "r_division", "r_time", "r_offset", "link",
-                "feedback", "freeze", "filter", "freq", "width", "mode", "ping_pong", "mix"]
+                "feedback", "freeze", "filter", "freq", "width", "mode", "ping_pong", "mix", "swing", "drive", "duck"]
         DeviceParam {
             required property string modelData
             session: Session
             trackId: editor.trackId
             deviceId: editor.deviceId
             paramId: modelData
+        }
+    }
+
+    // A Character control: its name over a box to drag or type in.
+    component CharacterBox: Column {
+        id: cell
+
+        property string paramId: ""
+        property string title: ""
+        property string tooltip: ""
+
+        spacing: 1
+
+        EditorCaption {
+            width: parent.width
+            text: cell.title
+        }
+        ParamBox {
+            objectName: cell.paramId
+            width: parent.width
+            param: editor.params[cell.paramId] || null
+            step: 0.5
+            decimals: 1
+            defaultValue: 0.0
+            formatter: v => v.toFixed(1) + " %"
+            sampleText: "100.0 %"
+            tooltip: cell.tooltip
         }
     }
 
@@ -146,33 +175,83 @@ Item {
         height: editor.height - 12
         spacing: editor.spacing
 
-        Row {
-            id: sides
+        // The sides' times, and under them the feedback with its freeze.
+        Item {
+            width: sides.width
             height: parent.height
 
-            Side {
-                id: leftSide
-                prefix: "l"
-                title: qsTr("Left")
+            Row {
+                id: sides
+
+                Side {
+                    id: leftSide
+                    prefix: "l"
+                    title: qsTr("Left")
+                }
+                Item {
+                    width: editor.linkWidth
+                    height: leftSide.height
+
+                    ParamButton {
+                        objectName: "link"
+                        // Level with the sixteenths, as Ableton's is.
+                        y: leftSide.height / 2 - height / 2
+                        width: parent.width
+                        param: editor.params["link"] || null
+                        iconName: "link"
+                        tooltip: qsTr("Link: the right side follows the left")
+                    }
+                }
+                Side {
+                    id: rightSide
+                    objectName: "rightSide"
+                    prefix: "r"
+                    title: qsTr("Right")
+                    enabled: !(editor.params["link"] && editor.params["link"].value >= 0.5)
+                }
             }
-            ParamButton {
-                objectName: "link"
-                anchors.verticalCenter: parent.verticalCenter
-                width: editor.linkWidth
-                param: editor.params["link"] || null
-                iconName: "link"
-                tooltip: qsTr("Link: the right side follows the left")
-            }
-            Side {
-                id: rightSide
-                objectName: "rightSide"
-                prefix: "r"
-                title: qsTr("Right")
-                enabled: !(editor.params["link"] && editor.params["link"].value >= 0.5)
+
+            Row {
+                id: feedbackRow
+                anchors.bottom: parent.bottom
+                width: sides.width
+                spacing: 4
+
+                ParamKnob {
+                    id: feedback
+                    objectName: "feedback"
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: 26
+                    param: editor.params["feedback"] || null
+                }
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: sides.width - feedback.width - freeze.width - 2 * feedbackRow.spacing
+
+                    EditorCaption {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignLeft
+                        text: qsTr("Feedback")
+                    }
+                    EditorReadout {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignLeft
+                        text: feedback.param ? feedback.param.text : ""
+                    }
+                }
+                ParamButton {
+                    id: freeze
+                    objectName: "freeze"
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 24
+                    param: editor.params["freeze"] || null
+                    iconName: "infinity"
+                    tooltip: qsTr("Freeze: what is in the delay goes round for ever, new input is ignored")
+                }
             }
         }
 
-        // The filter on the echoes.
+        // The filter on the echoes, and the Character under it.
         Column {
             width: editor.graphWidth
             height: parent.height
@@ -185,7 +264,7 @@ Item {
                 trackId: editor.trackId
                 deviceId: editor.deviceId
                 width: parent.width
-                height: Math.max(implicitHeight, parent.height - filterRow.height - 3)
+                height: Math.max(implicitHeight, parent.height - filterRow.height - character.height - 2 * 3)
 
                 HoverHandler {
                     id: graphHover
@@ -238,83 +317,105 @@ Item {
                     tooltip: qsTr("Filter width, in octaves")
                 }
             }
-        }
-
-        // How a change of time sounds, and ping pong.
-        Column {
-            width: editor.modeWidth
-            spacing: 2
-
-            EditorCaption {
+            // Where Ableton has its modulation: the echoes' groove and grit.
+            Column {
+                id: character
+                objectName: "character"
                 width: parent.width
-                text: qsTr("Mode")
-            }
-            Repeater {
-                model: [[qsTr("Repitch"), qsTr("Repitch: time changes glide, pitching the echoes as a tape delay does")],
-                        [qsTr("Fade"), qsTr("Fade: time changes crossfade")],
-                        [qsTr("Jump"), qsTr("Jump: time changes switch at once")]]
-                ParamButton {
-                    required property var modelData
-                    required property int index
-                    objectName: "mode" + modelData[0]
+                spacing: 1
+
+                Row {  // the title, a line either side
                     width: parent.width
-                    param: editor.params["mode"] || null
-                    choice: index
-                    text: modelData[0]
-                    tooltip: modelData[1]
+                    spacing: 6
+
+                    readonly property real lineWidth: (width - characterTitle.implicitWidth - 2 * spacing) / 2
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.lineWidth
+                        height: 1
+                        color: Theme.border
+                    }
+                    EditorCaption {
+                        id: characterTitle
+                        text: qsTr("Character")
+                    }
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.lineWidth
+                        height: 1
+                        color: Theme.border
+                    }
+                }
+                Row {
+                    width: parent.width
+                    spacing: 8
+
+                    readonly property real cellWidth: (width - 2 * spacing) / 3
+
+                    CharacterBox {
+                        width: parent.cellWidth
+                        paramId: "swing"
+                        title: qsTr("Swing")
+                        tooltip: qsTr("Swing: every other echo comes late, by up to half the time")
+                    }
+                    CharacterBox {
+                        width: parent.cellWidth
+                        paramId: "drive"
+                        title: qsTr("Drive")
+                        tooltip: qsTr("Drive: tape-like saturation in the feedback loop, each echo dirtier than the last")
+                    }
+                    CharacterBox {
+                        width: parent.cellWidth
+                        paramId: "duck"
+                        title: qsTr("Duck")
+                        tooltip: qsTr("Duck: the echoes dip while the input plays, and swell back in the gaps")
+                    }
                 }
             }
-            Item {
-                width: 1
-                height: 10
-            }
-            ParamButton {
-                objectName: "pingPong"
-                width: parent.width
-                param: editor.params["ping_pong"] || null
-                text: qsTr("Ping Pong")
-                tooltip: qsTr("The echoes bounce from left to right")
-            }
         }
 
-        // The feedback, with its freeze beside it, over the dry/wet mix.
+        // How a change of time sounds and ping pong, over the dry/wet mix.
         Item {
             id: rightColumn
             width: editor.rightWidth
             height: parent.height
-            implicitHeight: top.implicitHeight + bottom.implicitHeight
+            implicitHeight: top.implicitHeight + 6 + bottom.implicitHeight
 
             Column {
                 id: top
                 width: parent.width
-                spacing: 1
+                spacing: 2
 
                 EditorCaption {
                     width: parent.width
-                    text: qsTr("Feedback")
+                    text: qsTr("Mode")
                 }
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 2
-
-                    ParamKnob {
-                        id: feedback
-                        objectName: "feedback"
-                        size: 30
-                        param: editor.params["feedback"] || null
-                    }
+                Repeater {
+                    model: [[qsTr("Repitch"), qsTr("Repitch: time changes glide, pitching the echoes as a tape delay does")],
+                            [qsTr("Fade"), qsTr("Fade: time changes crossfade")],
+                            [qsTr("Jump"), qsTr("Jump: time changes switch at once")]]
                     ParamButton {
-                        objectName: "freeze"
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 22
-                        param: editor.params["freeze"] || null
-                        iconName: "infinity"
-                        tooltip: qsTr("Freeze: what is in the delay goes round for ever, new input is ignored")
+                        required property var modelData
+                        required property int index
+                        objectName: "mode" + modelData[0]
+                        width: parent.width
+                        param: editor.params["mode"] || null
+                        choice: index
+                        text: modelData[0]
+                        tooltip: modelData[1]
                     }
                 }
-                EditorReadout {
+                Item {
+                    width: 1
+                    height: 6
+                }
+                ParamButton {
+                    objectName: "pingPong"
                     width: parent.width
-                    text: feedback.param ? feedback.param.text : ""
+                    param: editor.params["ping_pong"] || null
+                    text: qsTr("Ping Pong")
+                    tooltip: qsTr("The echoes bounce from left to right")
                 }
             }
             Column {

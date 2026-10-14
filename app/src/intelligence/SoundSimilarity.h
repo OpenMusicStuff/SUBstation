@@ -17,6 +17,12 @@
 // The browser shows a search's result as its "similar" sort
 // (BrowserController::findSimilar). The sampler and the drum rack can step
 // through a result's best() to swap in similar sounds.
+//
+// It also hands out what the sound tagger makes of every analysed file
+// (tags(): what it is, how it sounds; tagging/SoundTagger.h), which the
+// browser searches and labels files by: taken from the index again when
+// fingerprints or the library changed, at most every kTagsMs, on a thread of
+// its own (a 200 000-file table takes some 50 ms to make), then `tagsChanged`.
 
 #include <QList>
 #include <QMetaObject>
@@ -25,9 +31,12 @@
 #include <QPair>
 #include <QPointer>
 #include <QString>
+#include <QTimer>
 
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <optional>
 #include <string_view>
 
@@ -74,6 +83,7 @@ class SoundSimilarity : public QObject {
 public:
     // sound-index.bin in localDataDir(), or SUBSTATION_SOUND_INDEX if set.
     static QString defaultStorePath();
+    static constexpr int kTagsMs = 1500;  // the least time between takings of the tags while files are analysed
 
     struct Options {
         std::optional<QString> storePath;  // none: defaultStorePath(); empty: not saved
@@ -114,15 +124,31 @@ public:
 
     intelligence::SoundIndex& backend() { return *index_; }
 
+    // The library's analysed files' tags, as last taken (null before the first;
+    // immutable: hold on to it as long as needed).
+    std::shared_ptr<const intelligence::tagging::SoundTagTable> tags() const { return tags_; }
+    // Takes them from the index now, on this thread, if fingerprints or the library changed (tests).
+    void takeTags();
+    // A file's tags (Qt's path, however it is spelt where names ignore case), if it was analysed.
+    std::optional<intelligence::tagging::SoundTags> tagsOf(const QString& path) const;
+
 Q_SIGNALS:
     void found(const sub::app::SimilarSounds& result);  // of the latest find()
     void progressChanged();
+    void tagsChanged();
 
 private:
     std::unique_ptr<intelligence::SoundIndex> index_;
     QPointer<FileIndex> library_;
     QMetaObject::Connection libraryUpdates_;
     intelligence::SoundIndexStatus status_;
+    void takeTagsInTheBackground();
+    void setTags(std::shared_ptr<const intelligence::tagging::SoundTagTable> tags);
+
+    std::shared_ptr<const intelligence::tagging::SoundTagTable> tags_;
+    QTimer tagsTimer_;
+    std::thread tagsThread_;              // making the next table (joined before the next, and on close)
+    std::atomic<bool> makingTags_{false};
     bool closed_ = false;
 };
 

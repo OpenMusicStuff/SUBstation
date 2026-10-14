@@ -31,6 +31,8 @@ QtObject {
     // kind -> the editor's file, beside this one.
     readonly property var editors: ({
         "amp": "AmpEditor.qml",
+        "arpeggiator": "ArpeggiatorEditor.qml",
+        "bitcrusher": "BitcrusherEditor.qml",
         "chorus": "ChorusEditor.qml",
         "compressor": "CompressorEditor.qml",
         "delay": "DelayEditor.qml",

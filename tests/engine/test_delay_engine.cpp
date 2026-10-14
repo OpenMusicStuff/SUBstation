@@ -1,4 +1,5 @@
-// The built-in Delay: synced and free times, offset, link, feedback, ping pong, freeze, the filter and the modes.
+// The built-in Delay: synced and free times, offset, link, feedback, ping pong, freeze, the filter, the modes,
+// swing, drive and duck.
 
 #include <algorithm>
 #include <cmath>
@@ -210,4 +211,72 @@ TEST_CASE("the input display is the input in mono") {
     REQUIRE(values.size() > static_cast<size_t>(kClick));
     CHECK_NEAR(values[kClick], 0.75, 1e-3);
     CHECK_EQ(countNonzero(values), size_t{1});
+}
+
+TEST_CASE("swing puts every other echo late") {
+    DelayEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = clickTrack(engine);
+    delay(engine, track,
+          {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"feedback", 50.f}, {"swing", 50.f}});
+    const auto left = echoes(channel(engine.renderOffline(0.0, kSampleRate), 0), 0.02);
+    const int64_t step = kSampleRate / 10;
+    REQUIRE(left.size() >= 4);
+    // Half swing: the odd echoes a quarter of the time late, the even ones on time.
+    CHECK_NEAR(left[0], kClick + step + step / 4, 2);
+    CHECK_NEAR(left[1], kClick + 2 * step, 2);
+    CHECK_NEAR(left[2], kClick + 3 * step + step / 4, 2);
+    CHECK_NEAR(left[3], kClick + 4 * step, 2);
+}
+
+TEST_CASE("swing in ping pong") {
+    DelayEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = clickTrack(engine, 1.f, 0.f);
+    delay(engine, track,
+          {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"feedback", 50.f},
+           {"ping_pong", 1.f}, {"swing", 100.f}});
+    const Samples out = engine.renderOffline(0.0, kSampleRate / 2);
+    const auto left = echoes(channel(out, 0), 0.01), right = echoes(channel(out, 1), 0.01);
+    const int64_t step = kSampleRate / 10;
+    REQUIRE(left.size() >= 2);
+    REQUIRE(!right.empty());
+    // Full swing: left half the time late, then right (half the time after it), then left again.
+    CHECK_NEAR(left[0], kClick + step + step / 2, 2);
+    CHECK_NEAR(right[0], kClick + 2 * step, 2);
+    CHECK_NEAR(left[1], kClick + 3 * step + step / 2, 2);
+}
+
+TEST_CASE("drive saturates the echoes") {
+    DelayEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = clickTrack(engine);
+    const uint32_t device =
+        delay(engine, track, {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}});
+    setParam(engine, device, "drive", 100.f);
+    const Samples left = channel(engine.renderOffline(0.0, kSampleRate / 2), 0);
+    // A full-scale click into a tanh 8 times louder, and down as much after.
+    CHECK_APPROX_REL(maxAbs(left), std::tanh(8.0) / 8.0, 0.01);
+    CHECK_NEAR(firstEcho(left, 0.05), kClick + kSampleRate / 10, 2);
+}
+
+TEST_CASE("duck dips the echoes while the input plays") {
+    const auto wetLevel = [](float duck) {
+        DelayEngine e;
+        auto& engine = e.engine;
+        const std::string path = makeWav(stereo(sine(440.0, 1.0, 0.5)), 2);
+        engine.loadSource(path);
+        const uint32_t track = engine.addTrack();
+        engine.setTrackClips(track, {clip(path, 0.0, 1.0, 0.0, 1.f)});
+        delay(engine, track,
+              {{"l_sync", 0.f}, {"l_time", 50.f}, {"r_sync", 0.f}, {"r_time", 50.f}, {"feedback", 80.f}, {"duck", duck}});
+        const Samples left = channel(engine.renderOffline(0.0, 2 * kSampleRate), 0);
+        // While the sine plays, and the echoes ringing on well after it.
+        return std::pair{rms(slice(left, kSampleRate / 2, kSampleRate * 9 / 10)),
+                         rms(slice(left, kSampleRate * 16 / 10, kSampleRate * 19 / 10))};
+    };
+    const auto [playing, open] = wetLevel(0.f);
+    const auto [ducked, after] = wetLevel(100.f);
+    CHECK(ducked < 0.25 * playing);
+    CHECK(after > 0.4 * open);  // swells back once the input stops
 }

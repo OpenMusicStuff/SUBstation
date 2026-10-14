@@ -207,9 +207,10 @@ private Q_SLOTS:
     // --- The registry -----------------------------------------------------------------------
 
     void registry() {
-        for (const char* kind : {"amp", "chorus", "compressor", "delay", "disperser", "envelope", "eq", "erosion",
-                                 "gate", "gigatune", "lfo", "limiter", "multiband", "phaser", "reverb", "sampler",
-                                 "saturator", "sidechain", "spectral", "transient", "vintage_hall", "vital"}) {
+        for (const char* kind : {"amp", "arpeggiator", "bitcrusher", "chorus", "compressor", "delay", "disperser",
+                                 "envelope", "eq", "erosion", "gate", "gigatune", "lfo", "limiter", "multiband",
+                                 "phaser", "reverb", "sampler", "saturator", "sidechain", "spectral", "transient",
+                                 "vintage_hall", "vital"}) {
             QVariant url;
             QMetaObject::invokeMethod(root_.get(), "editorFor", Q_RETURN_ARG(QVariant, url),
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));
@@ -618,6 +619,19 @@ private Q_SLOTS:
             const double expected = 2500.0 * std::pow(18000.0 / 50.0, 60.0 / 600.0);
             QVERIFY2(std::abs(value("freq") / expected - 1) < 0.01, qPrintable(QString::number(value("freq"))));
             QCOMPARE(undo()->count(), before + 1);
+        }
+
+        // As Ableton lays it out: the feedback under the sides' times, the Character (where Ableton has its
+        // modulation) under the filter: Swing, Drive and Duck, boxes to type in.
+        const auto top = [&](const char* name) {
+            return find(view, QString::fromLatin1(name))->mapToItem(view, QPointF()).y();
+        };
+        QVERIFY(top("feedback") > top("lOffset"));
+        QVERIFY(top("swing") > top("freq"));
+        for (const char* id : {"swing", "drive", "duck"}) {
+            auto* box = qvariant_cast<ValueBoxItem*>(find(view, QString::fromLatin1(id))->property("box"));
+            QVERIFY2(box && box->applyTyped(QStringLiteral("40")), id);
+            QCOMPARE(value(id), 40.0);
         }
 
         // The spectrum of the input shows behind the filter's curve: a 1 kHz tone peaks at 1 kHz.

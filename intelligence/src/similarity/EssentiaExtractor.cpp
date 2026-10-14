@@ -20,6 +20,7 @@
 
 #include "core/AudioReader.h"
 #include "similarity/Descriptors.h"
+#include "tagging/SoundTagger.h"
 
 namespace sub::intelligence {
 
@@ -523,7 +524,10 @@ Extraction EssentiaExtractor::extract(const SoundBuffer& sound, float* out, cons
         if (analysed == 0) return Extraction::Silent;
     }
     try {
-        return s.analyse(samples, analysed, fileSeconds, truncated, out, cancel);
+        const Extraction extraction = s.analyse(samples, analysed, fileSeconds, truncated, out, cancel);
+        if (extraction == Extraction::Done)
+            tagging::infer(out, out + kDims, out + kDims + tagging::embeddingDims());
+        return extraction;
     } catch (const essentia::EssentiaException& e) {
         throw AudioError(std::string("cannot analyse: ") + e.what());
     }
@@ -531,7 +535,7 @@ Extraction EssentiaExtractor::extract(const SoundBuffer& sound, float* out, cons
 
 const std::vector<FeatureInfo>& featureInfo() {
     static const std::vector<FeatureInfo> info = [] {
-        std::vector<FeatureInfo> a(kDims);
+        std::vector<FeatureInfo> a(kDims + static_cast<size_t>(tagging::embeddingDims() + tagging::outputCount()));
         static const char* const partNames[kParts] = {"attack", "body", "tail"};
         static const char* const contour[kContourPoints] = {"level20ms",  "level40ms",  "level80ms",  "level160ms",
                                                             "level320ms", "level640ms", "level1280ms", "level2560ms"};
@@ -573,6 +577,15 @@ const std::vector<FeatureInfo>& featureInfo() {
         a[feature::Complexity] = {"complexity", Aspect::Tonality, 0.1f};
         a[feature::Dissonance] = {"dissonance", Aspect::Tonality, 0.01f};
         a[feature::Salience] = {"salience", Aspect::Tonality, 0.01f};
+        // The tagger's: its embedding (ReLU activations, mostly 0..3), then its outputs (not compared).
+        size_t at = kDims;
+        for (int i = 0; i < tagging::embeddingDims(); ++i) a[at++] = {"embedding" + std::to_string(i + 1), Aspect::Embedding, 0.05f};
+        for (int k = 0; k < tagging::kKinds; ++k)
+            a[at++] = {std::string("kind:") + tagging::kindName(static_cast<tagging::Kind>(k)), Aspect::Tags, 1.f};
+        a[at++] = {"loop", Aspect::Tags, 1.f};
+        for (const char* source : {"acoustic", "electric", "synthetic"}) a[at++] = {std::string("source:") + source, Aspect::Tags, 1.f};
+        for (int q = 0; q < 10; ++q) a[at++] = {"quality" + std::to_string(q + 1), Aspect::Tags, 1.f};
+        for (int w = 0; w < tagging::wordCount(); ++w) a[at++] = {std::string("word:") + tagging::wordName(w), Aspect::Tags, 1.f};
         return a;
     }();
     return info;
@@ -586,13 +599,17 @@ const FeatureSchema& essentiaSchema() {
         s.settings = std::string("essentia=") + ESSENTIA_VERSION +
                      " rate=44100 frame=1024 hop=256 window=hann mel=htk40:20-16000:power:dbpow:dct2"
                      " band=20-16000 rolloff=0.85 contrast=6:20-16000 peaks=-60dB dissonance=100 salience=200-5000/4"
-                     " pitch=yin1024x4@11025(mean4):21.5-2000:0.15 envelope=2ms analysed=6s";
+                     " pitch=yin1024x4@11025(mean4):21.5-2000:0.15 envelope=2ms analysed=6s tagger=" +
+                     tagging::modelId();
         s.features = featureInfo();
+        s.tagged = true;
         // Timbre, TimbreMotion, Spectrum, Envelope, Pitch, Rhythm: as tuned on a
         // 5000-file sample library; TimbreSpread, Contrast, SpectralShape,
         // Tonality: 1 each, as measured on Dirt-Samples, held out
-        // (docs/intelligence.md, sound_similarity_bench). No embedding yet.
-        s.weights.weight = {0.5f, 1.5f, 2.5f, 2.0f, 0.5f, 0.5f, 1.f, 1.f, 1.f, 1.f, 0.f};
+        // (docs/intelligence.md, sound_similarity_bench). The tagger's embedding: 3,
+        // as measured on Dirt-Samples (never trained on), both halves (more
+        // gained nothing more). Its outputs: never compared.
+        s.weights.weight = {0.5f, 1.5f, 2.5f, 2.0f, 0.5f, 0.5f, 1.f, 1.f, 1.f, 1.f, 3.f, 0.f};
         return s;
     }();
     return schema;

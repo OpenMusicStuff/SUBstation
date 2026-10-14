@@ -16,6 +16,9 @@
 // features it has. Two unrelated sounds are about 2 apart (the expected squared
 // difference of two independent z-scores); a sound and itself, 0.
 //
+// Aspects weighed 0 cost nothing when they come last (the tagger's outputs,
+// Aspect::Tags): distance() stops at the last feature that counts.
+//
 // Level never counts (extractors measure relative to a sound's own peak), and
 // length and duration are a feature or two of their aspects, clipped like the
 // rest: they can't outweigh what a sound sounds like.
@@ -62,8 +65,7 @@ public:
     // The weighted mean of the aspects' mean squared z-differences.
     float distance(const float* a, const float* b) const {
         float sum = 0.f;
-        const size_t dims = share_.size();
-        for (size_t d = 0; d < dims; ++d) {
+        for (size_t d = 0; d < active_; ++d) {
             const float z = (a[d] - b[d]) * inverseSpread_[d];
             const float z2 = z * z;
             sum += share_[d] * (z2 < kClip ? z2 : kClip);
@@ -82,6 +84,7 @@ private:
     std::vector<float> spread_;
     std::vector<float> inverseSpread_;
     std::vector<float> share_;  // the aspect's weight / (its features * the total weight)
+    size_t active_ = 0;         // the features up to the last one that counts (the tagger's outputs, last, don't)
 };
 
 }  // namespace sub::intelligence

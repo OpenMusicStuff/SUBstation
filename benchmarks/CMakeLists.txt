@@ -15,6 +15,8 @@
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
 #                           library: speed, and how often a one-shot's nearest
 #                           sounds are of its kind (the intelligence module alone)
+#   sound_features_dump     Essentia's descriptors of a list of files, to train
+#                           the sound tagger on (tools/sound_tagger)
 
 add_executable(parallel_render_bench parallel_render_bench.cpp Json.h)
 target_include_directories(parallel_render_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -46,6 +48,10 @@ sub_project_warnings(vital_bench)
 add_executable(sound_similarity_bench sound_similarity_bench.cpp)
 target_link_libraries(sound_similarity_bench PRIVATE sub_intelligence)
 sub_project_warnings(sound_similarity_bench)
+
+add_executable(sound_features_dump sound_features_dump.cpp)
+target_link_libraries(sound_features_dump PRIVATE sub_intelligence)
+sub_project_warnings(sound_features_dump)
 
 if (SUBSTATION_BUILD_APP)
     add_executable(browser_backend_bench

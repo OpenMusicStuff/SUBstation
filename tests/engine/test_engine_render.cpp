@@ -278,6 +278,26 @@ TEST_CASE("a clip waits for its source") {
     CHECK_APPROX(at(engine.renderOffline(0.0, 1000), 500, 0), 0.5);
 }
 
+TEST_CASE("a source let go of is cached again") {
+    RenderEngine e;
+    auto& engine = e.engine;
+    const std::string wav = dcWav();
+    const auto source = engine.loadSource(wav);
+    engine.releaseUnusedSources();  // (no clip uses it yet)
+    CHECK(engine.cachedSource(wav) == nullptr);
+    const uint32_t track = engine.addTrack();
+    engine.setTrackClips(track, {clip(wav, 0.0, 1.0)});
+    CHECK(allEqual(engine.renderOffline(0.0, 1000), 0.0));
+    engine.cacheSource(sub::AudioSource::load(wav, kSampleRate / 2));  // not at the engine's rate: no
+    CHECK(engine.cachedSource(wav) == nullptr);
+    engine.cacheSource(source);
+    CHECK(engine.cachedSource(wav) == source);
+    CHECK_APPROX(at(engine.renderOffline(0.0, 1000), 500, 0), 0.5);
+    // Another decoding of a file cached already doesn't replace it.
+    engine.cacheSource(sub::AudioSource::load(wav, kSampleRate));
+    CHECK(engine.cachedSource(wav) == source);
+}
+
 TEST_CASE("remove a track") {
     RenderEngine e;
     auto& engine = e.engine;

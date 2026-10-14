@@ -1,8 +1,9 @@
 # Browser
 
 The browser lists built-in devices, plug-ins, presets and the audio files under the user's places, searches them as
-you type, ranks what you use most first, and lists the sounds most like one (Find Similar Sounds, with the
-intelligence module: [intelligence.md](intelligence.md)). It is three layers: the file index and search, a C++ backend with no Qt
+you type (by name, and by what samples sound like: "hard trap snare"), orders them by what matches, what you use and
+what fits the project (the Best sort), and lists the sounds most like one (Find Similar Sounds). What samples sound
+like is the intelligence module's sound tagger ([intelligence.md](intelligence.md#sound-tagging-what-a-sound-is-and-the-words-for-it)). It is three layers: the file index and search, a C++ backend with no Qt
 in [browser/src](../browser/src) (the static library `sub_browser`, namespace `sub::browser`); the browser's logic and
 models in the application layer, [app/src/browser](../app/src/browser) (`BrowserController`, `Session.browser`); and
 the panel, QML in [ui/qml/browser](../ui/qml/browser). How it behaves for the user is in
@@ -53,7 +54,7 @@ measurements and the profile that led to the design.
 
 | File | What it holds |
 |---|---|
-| [Model.h](../browser/src/Model.h) / [Model.cpp](../browser/src/Model.cpp) | What a search reads: `FolderFiles` (one folder's file names, packed), `SnapFolder`, `Snapshot`, `ExternalItem`/`ExternalGroup` (devices, plug-ins, presets), `UsageRecord`/`Usage` (use counts and `rank()`), `Sort`, `Query` (with `score` for `Sort::Score`), `Hit`, `Result` (with `find()`), `placePrefix()`. |
+| [Model.h](../browser/src/Model.h) / [Model.cpp](../browser/src/Model.cpp) | What a search reads: `FolderFiles` (one folder's file names, packed), `SnapFolder`, `Snapshot`, `ExternalItem`/`ExternalGroup` (devices, plug-ins, presets), `UsageRecord`/`Usage` (use counts and `rank()`), `Sort`, `Query` (with `score` for `Sort::Score`, `sounds` and `fit`), `SoundMatcher`, `folderHash()`/`fileHash()`, `Hit`, `Result` (with `find()`), `placePrefix()`. |
 | [Indexer.h](../browser/src/Indexer.h) / [Indexer.cpp](../browser/src/Indexer.cpp) | The indexer thread: the folder tree, the walk, folder times, watching, publishing snapshots, the saved index (`save()`/`load()`). Also `Limits`, `PlaceSpec`, `IndexStatus`. |
 | [Search.h](../browser/src/Search.h) / [Search.cpp](../browser/src/Search.cpp) | Filtering and ordering: `runSearch()`, `matchQuality()`, `UsageCache`, `SearchInputs`. |
 | [Text.h](../browser/src/Text.h) / [Text.cpp](../browser/src/Text.cpp) | Python's `str.lower()`, `str.casefold()`, `str.split()` and the regex word starts (`pyLower`, `pyCasefold`, `pySplit`, `wordStarts`), `unicodeVersion()`; on the platform layer's WTF-8 (`platform/Unicode.h`). |
@@ -78,10 +79,11 @@ See [building.md](building.md).
 | [BrowserSearch.h](../app/src/browser/BrowserSearch.h) | What to ask the search for: the sorts (`sortOrders()`), the group numbers, `Scope`, `scopeQuery()`, `placePrefix()`, `pluginTag()`. The sort orders are documented here. |
 | [BrowserItem.h](../app/src/browser/BrowserItem.h) | `BrowserItem` (and its `key()`), `ItemKind`, `builtinItems()`, `pluginItem()`. |
 | [ItemListModel.h](../app/src/browser/ItemListModel.h) | The list shown: paged, draggable. |
-| [SidebarModel.h](../app/src/browser/SidebarModel.h) | The sidebar as a flat list. |
+| [SidebarModel.h](../app/src/browser/SidebarModel.h) | The sidebar as a flat list: a collapsed entry's sub-entries are left out (`BrowserController::setExpanded`; Samples starts collapsed, the choice kept in the settings, `browser/collapsed`). |
 | [BrowserMime.h](../app/src/browser/BrowserMime.h) | The drag formats and their readers (`pluginRefs`, `deviceKinds`, `presetPaths`, `movedDevices`). |
 | [Library.h](../app/src/browser/Library.h) | `Library`: use counts kept in `library.json`, and `rank()`. |
 | [PresetIndex.h](../app/src/browser/PresetIndex.h) | `PresetIndex`: the presets in the user's library as items, listed again when they change. |
+| [SoundSearch.h](../app/src/browser/SoundSearch.h) | The browser's side of the sound tagger: `soundMatching()` (a search's `SoundMatcher` from the tags and a sidebar's sound), `soundLabel()` and `soundToolTip()` (a row's "Snare · Punchy"), `soundCategories()` (Samples › Kicks...). |
 | [PathKeys.h](../app/src/browser/PathKeys.h) | Paths as the browser compares them: `normalPath`, `toBackendPath`/`fromBackendPath`, `pathKey`, `caseKey`, `audioKey`, `localDataDir()`, `localDataFile()` (a file there, or where an environment variable says: the tests' way to keep the user's files out of their runs). Its keys match what the Python version wrote (the system's separators and Windows' own lower case); the rest of the application tells whether two paths are one file with `pathIdentity`/`samePath` ([model/Paths.h](../app/src/model/Paths.h)). |
 
 The plug-ins the browser lists come from the plug-in index ([app/src/plugins](../app/src/plugins),
@@ -139,6 +141,7 @@ into (groups, tag, place prefix):
 | Plug-ins, or *Instruments* / *Audio Effects* | plug-ins | the category (`pluginTag()`) | |
 | Presets, or a device's `["presets", name]` | presets | the device's name | |
 | A place `["place", path]` | audio | | `placePrefix(path)` |
+| A sound `["sounds", word]` (Samples › Kicks: "kick") | audio, those that sound like the word | | |
 
 An external item's tag is what `tag` filters on: a built-in device's category, a plug-in's *Instruments* or *Audio
 Effects*, the device a preset is for. The place prefix (`sub::browser::placePrefix()`) is the place's path with one
@@ -258,14 +261,29 @@ Matching and ordering are defined by the reference's `find()` (the rules are in
 [BrowserSearch.h](../app/src/browser/BrowserSearch.h)):
 
 - **Terms**: `pySplit(pyLower(text))`, as `query.lower().split()`.
-- **Match**: every term is in the item's lower-case name or its lower-case detail. For files the detail is the
-  folder's, so whether a term is in it is worked out once per folder.
+- **Match**: every term is in the item's lower-case name or its lower-case detail, or, for a file, is heard in it
+  (`Query::sounds`, below). For files the detail is the folder's, so whether a term is in it is worked out once per
+  folder.
+- **Sounds** (`Query::sounds`, the application's: the sound tagger's): made once a search for its terms, a
+  `SoundMatcher` tells for each file, by the hash of its path (`fileHash()`: FNV-1a of `Snapshot::join` of its
+  folder's path and its name, made from each folder's part once, `folderHash()`), whether to keep it (a sidebar's
+  sound: only kicks), which terms it is heard as (a bit each), and how well it fits them (0..1). Null, or a null
+  matcher (no term the tagger reads, no sound filter): nothing is hashed, and searches are as they were.
 - **Place filter**: the folder's path (in lower case where names ignore case) plus the separator starts with the
   prefix.
 - **Tag filter**: external items with that tag only.
 - **Rank** (`sortByRank`): items with a use rank above 0 first, by rank, then match quality (stable); then the unused
   ones by match quality, best first, keeping the list's own order (a counting sort over quality buckets); items with a
-  negative rank last. With no terms every quality is 0, so only the used items move.
+  negative rank last. With no terms every quality is 0, so only the used items move. With sounds heard, the files of a
+  quality bucket are ordered by how well they sound like the terms (stable): files matched by sound alone have
+  quality 0, after every name match.
+- **Best** (`sortByBest`, the default): a blend, the highest first (stable): with terms, 0.5 × relevance + 0.3 × use
+  + 0.2 × fit, where relevance is the name's (0.6 to 1 by its match quality, so an exact name beats a word start) and
+  the sound's (how well it sounds like the terms) together, `1 - (1 - name)(1 - sound)` (named so *and* sounding so
+  comes first), use is `1 - exp(-rank / 1.5)` (a use this week about half), and fit is `Query::fit` (how well a file
+  fits the project, by `fileHash()`; 0.5 for other items and unknown files). With no terms, 0.6 × use + 0.4 × fit, or,
+  under a sound filter (Samples › Kicks), 0.3 × how well it sounds like the word + 0.4 × use + 0.3 × fit. Items ranked
+  below 0 come last, as in Rank.
 - **Score** (`sortByScore`, the "similar" sort): indexed files by `Query::score(path)` (the path as shown,
   `Snapshot::join` of the folder's and the name), the highest first, stable over the list's own order; files it gives
   NaN, and items other than indexed files, are left out. The score function is the application's (a finished
@@ -395,7 +413,8 @@ fresh, other items are the ones handed over with `setItems()`, by key.
 
 `ItemListModel` roles: `name`, `path`, `kind`, `detail`, `key`, `display` (the name, and for a plug-in or a preset its
 detail: "Name   (Vendor)"), `toolTip` (the item's tooltip or path, and how often it was used), `icon` ("waveform",
-"plugin" or "preset"), `uses`, `instrument`, `plugin` (a plug-in's `PluginRef` fields). `get(row)` returns every role
+"plugin" or "preset"), `uses`, `instrument`, `plugin` (a plug-in's `PluginRef` fields), `tags` (a file's label: what
+the sound tagger hears in it). `get(row)` returns every role
 of a row by name (`rowMap()`, [ListModels.h](../app/src/ListModels.h), as the plug-ins' and the File Manager's lists do).
 
 [SidebarModel](../app/src/browser/SidebarModel.h) is the sidebar as a flat list: *CATEGORIES* (All, Samples, Built-in
@@ -442,6 +461,15 @@ library folder are listed under "Other". A result's menu (`resultActions(row)`) 
 name)`: the new path, or "" with a status message), Delete (`deletePreset(path)`: the file moves to the system's trash,
 `QFile::moveToTrash`) and Show in Folder.
 
+**Sounds.** With a sound similarity, the controller hands every search its tags (`SoundSimilarity::tags()`) as a
+`SoundMatcher` factory (`soundMatching()`: the terms the tagger reads, and a `["sounds", word]` scope's word as a
+filter) and, for the Best sort, the session's `SoundSuggestions::fit()`. The results' rows carry each file's label
+(`BrowserItem::tags`, the `tags` role: "Snare · Punchy · Bright") and their tooltips what else it might be and
+everything it is heard as. When the tags change (more files analysed, at most every 1.5 s: `SoundSimilarity::kTagsMs`)
+or the project's sounds do (`SoundSuggestions::changed`, under Best), a list of samples is searched again, keeping
+its place. The sidebar has the sounds under Samples (`soundCategories()`), only with a sound similarity. The footer
+says what the project is under Best ("12 items, best for Techno, Punchy · A Minor": `SoundSuggestions::summary`).
+
 **Find Similar.** With a sound similarity (`Options::similarity`, the session's `SoundSimilarity`), the controller
 points it at its index (`setLibrary`: the sounds analysed are the index's files) and offers *Find Similar Sounds* in an
 audio file's menu (`resultActions`; an audio clip's in the arrangement calls the same). `findSimilar(path, start,
@@ -453,7 +481,7 @@ latest search's only), the list is searched with its `scorer()` (`FileIndex::sea
 Text and places filter it as any list; a place shows its files, not its tree. While the library is still being
 analysed, the sound is searched again every 2 s (`kRefineMs`) as more sounds are analysed, keeping the list's place,
 and the status says how far the analysis got ("12 sounds like Kick.wav (analysing 1200 of 5091…)"). Choosing *Rank* or
-*Name*, a sidebar entry that isn't files, Ctrl+F, or `clearSimilar()` ends it. A sound that can't be analysed says why
+*Name* (or *Best*), a sidebar entry that isn't files, Ctrl+F, or `clearSimilar()` ends it. A sound that can't be analysed says why
 in the status line (`statusMessage`). When the controller shuts down it lets go of the sound similarity before its
 index closes.
 
@@ -478,7 +506,7 @@ application ends, which stops the backend's threads (saving the index) and waits
 [BrowserPanel.qml](../ui/qml/browser/BrowserPanel.qml) on `Session.browser`:
 
 - **The search field and the sort.** Typing sets `searchText`; Enter or Down selects the first result; a ✕ clears it.
-  The sort is a `ChoiceBox` of `sorts` (Rank, Name; Similarity while the list shows similar sounds).
+  The sort is a `ChoiceBox` of `sorts` (Best, Rank, Name; Similarity while the list shows similar sounds).
 - **The similar bar** (`similarBar`), under them while `similarTo` is set: "Similar to *name*" (the path as its
   tooltip) and a ✕ (`clearSimilar()`). The main window shows the browser when Find Similar starts (from a clip's menu
   with the browser hidden).
@@ -504,6 +532,8 @@ application ends, which stops the backend's threads (saving the index) and waits
 - **Renaming a preset** in place (Ctrl+R with the list focused, or its menu's Rename…): a text field over its row;
   Enter applies (`renamePreset`), Esc cancels. Deleting asks first ("Move the preset to the Recycle Bin?").
 - **The footer**: the headphones (`previewEnabled`) and the status.
+- **A file's label**: on the right of its row, dimmed (`tagsLabel`), at most half the row's width; the name is elided
+  first.
 - **Text**: the sidebar's entries, the results and the folder tree in `Theme.listFont` (10 pt, a point more than the
   rest of the UI: Qt Quick draws small text smaller than the widgets did), the sidebar's headings in
   `Theme.listHeadingFont` (8.5 pt bold); a row is its text's height and 4 px (at least 20 px, 22 in the sidebar).
@@ -544,6 +574,10 @@ Item kinds are numbered alike in `sub::browser::Kind` and `sub::app::ItemKind` (
 - The index lists what the reference's walk lists, in the same order, and the search orders as the reference's `find()`
   does, for every character. A change to either has to change the reference
   ([BrowserReference.h](../tests/app/support/BrowserReference.h)) too, or be a deliberate break of that parity.
+  Sounds and the Best sort are outside it (the reference has no tagger): with no `sounds` and no `fit`, searches are
+  exactly what they were, and the parity tests run that way; sounds and Best are tested on their own.
+- What a search hears (`SoundMatcher`) and how files fit (`fit`) are read on the search thread: they must only read
+  what doesn't change (the tagger's immutable tables).
 
 ## Extending it
 
@@ -556,7 +590,10 @@ Item kinds are numbered alike in `sub::browser::Kind` and `sub::app::ItemKind` (
 - **New filters** (items hidden from search) belong in `scopeQuery()` and the native `Query`; `Library` keeps
   unknown fields so later versions can store what they need per item.
 - **Another order by something worked out elsewhere** (similar sounds are one: tempo or key could be others): a
-  `Query::score` function and `Sort::Score`, as the "similar" sort does; the backend needs nothing new.
+  `Query::score` function and `Sort::Score`, as the "similar" sort does; the backend needs nothing new. Something the
+  Best sort should weigh: into the application's `fit`.
+- **Another way to find files by what they are** (a tempo, a key from a name): a `SoundMatcher` reads any table the
+  application keeps by `fileHash()`; the words it hears are the tagger's (`tagging::meaningOf`).
 - **Another audio extension**: add it to `FileIndex::audioExtensions()`. The saved index records the extensions it was
   made with, so the next start lists everything again.
 - **Changing the saved format**: bump `kFormat` in `Indexer.cpp`; old files are then ignored.
@@ -596,7 +633,9 @@ Item kinds are numbered alike in `sub::browser::Kind` and `sub::app::ItemKind` (
   unknown fields kept, a bad `library.json` ignored, the records the backend gets, match quality preferring name starts,
   rank putting used items first, the sidebar entries' queries.
 - [tests/app/test_browser_native.cpp](../tests/app/test_browser_native.cpp) also holds `Sort::Score` to the
-  reference's `findScored()`: random scores (with ties and files without one), search text and places.
+  reference's `findScored()`: random scores (with ties and files without one), search text and places; and sounds
+  and Best (`soundsMatchAndBestBlends`): `fileHash()` is the path's hash, a term matches by name or by sound, a sound
+  filter leaves files out, files alike by name are ordered by sound, Best blends matching, use and fit.
 - [tests/app/test_sound_similarity.cpp](../tests/app/test_sound_similarity.cpp): Find Similar in the controller, with
   a real sound similarity ([intelligence.md](intelligence.md#tests)).
 - [tests/app/test_browser_controller.cpp](../tests/app/test_browser_controller.cpp): the controller and its models:

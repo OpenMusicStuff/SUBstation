@@ -108,7 +108,8 @@ only tracks and the edges between them.
 - **Sources**: `sources_` caches decoded `AudioSource`s by `sourceKey()` (the path normalised and
   lower-cased, so one file is decoded once whatever its spelling). `loadSource()` decodes without
   holding the lock and retries if the sample rate changed meanwhile; it rebuilds the snapshot,
-  so clips waiting for the file become audible. A new sample rate reloads every source
+  so clips waiting for the file become audible (as `cacheSource()` does, for one it had let go
+  of: `releaseUnusedSources()`). A new sample rate reloads every source
   (`reloadSourcesLocked()`). See [warp.md](warp.md) for decoding.
 
 Every call that changes something the renderer reads ends with `rebuildSnapshotLocked()`.

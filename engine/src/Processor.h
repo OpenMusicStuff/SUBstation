@@ -80,6 +80,21 @@ struct EventList {
     size_t count = 0;
 };
 
+// Where a MIDI effect (Processor::isMidiEffect()) writes the notes it plays:
+// appended in time order, offsets relative to the start of its process() call.
+// Full, the rest is dropped.
+struct EventOutput {
+    ProcessEvent* events = nullptr;
+    size_t capacity = 0;
+    size_t count = 0;
+
+    bool add(const ProcessEvent& event) noexcept {
+        if (count >= capacity) return false;
+        events[count++] = event;
+        return true;
+    }
+};
+
 // Where the block sits on the timeline. The renderer splits blocks where the
 // playhead jumps (loop wrap-around), so a block is always one continuous stretch.
 struct ProcessContext {
@@ -99,6 +114,7 @@ struct ProcessContext {
     bool keyMinor = false;
     bool offline = false;    // rendering an export (or a test), not live
     EventList inEvents;
+    EventOutput* outEvents = nullptr;  // a MIDI effect's notes, for the devices after it (null for the others)
 
     // Samples a beat lasts at the block's tempo (0 without one).
     double samplesPerBeat() const noexcept { return tempo > 0.0 ? sampleRate * 60.0 / tempo : 0.0; }
@@ -322,6 +338,19 @@ public:
     // its value (0..1) at every frame into the first channel it is handed (the
     // others it may leave or fill alike), never the strip's audio.
     virtual bool isModulator() const { return false; }
+
+    // --- MIDI effects ----------------------------------------------------------
+    // A MIDI effect (an arpeggiator) plays its chain's notes: the renderer runs
+    // it before the chain's other devices (wherever it sits in the chain, as a
+    // modulator is), handing it the notes in ctx.inEvents and taking what it
+    // writes to ctx.outEvents as the notes the rest of the chain hears. Events
+    // it doesn't handle (raw MIDI: controllers, pitch bend) it passes on. It
+    // never touches the audio.
+    virtual bool isMidiEffect() const { return false; }
+    // Rendering thread: switched off (or bypassed by its automation), it isn't
+    // run and the chain hears the notes as they come; the notes it was still
+    // playing it ends here (note-offs at offset 0 into `out`), each chunk it is off.
+    virtual void endMidiNotes(EventOutput& /*out*/) noexcept {}
     // Rendering thread: the value it ended its last chunk on, which the
     // parameters it moves keep while it isn't run (switched off).
     float heldModulation() const noexcept { return heldModulation_; }

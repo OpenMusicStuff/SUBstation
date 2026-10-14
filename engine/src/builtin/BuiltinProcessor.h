@@ -96,6 +96,14 @@ protected:
     // In render(): publishes a value of display `index` (one per its samplesPerValue).
     void publish(int index, float value) noexcept { displayStreams_[static_cast<size_t>(index)]->push(value); }
 
+    // In render() of a MIDI effect: a note it plays, its offset relative to the
+    // stretch (as its events are); false if there is no room for it.
+    bool emit(const ProcessContext& ctx, ProcessEvent event) const noexcept {
+        if (!ctx.outEvents) return false;
+        event.sampleOffset += stretchStart_;
+        return ctx.outEvents->add(event);
+    }
+
     // In render(): the sidechain over the stretch being rendered (render() gets
     // part of a block when automation splits it); null: silence.
     const float* sidechain(int channel) const noexcept {

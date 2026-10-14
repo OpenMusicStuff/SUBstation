@@ -35,6 +35,8 @@ public:
     static void stopPluginTimer(EngineBridge& bridge);
     static void loadNextPlugin(EngineBridge& bridge);
     static void pollMeters(EngineBridge& bridge);
+    // The files being decoded are, in the engine's cache; the bridge hears of it from the event loop.
+    static void finishDecoding(EngineBridge& bridge);
     // As if a plug-in's (or driver's) call were running a message loop.
     static void setBusy(EngineBridge& bridge, bool busy);
 };

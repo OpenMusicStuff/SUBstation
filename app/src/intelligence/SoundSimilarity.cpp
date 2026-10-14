@@ -68,6 +68,9 @@ SoundSimilarity::SoundSimilarity(Options options, QObject* parent) : QObject(par
     index_ = std::make_unique<intelligence::SoundIndex>(std::move(o));
     // From the index's threads: take it on this object's thread.
     index_->setWakeCallback([this] { QMetaObject::invokeMethod(this, [this] { take(); }, Qt::QueuedConnection); });
+    tagsTimer_.setSingleShot(true);
+    tagsTimer_.setInterval(kTagsMs);
+    connect(&tagsTimer_, &QTimer::timeout, this, &SoundSimilarity::takeTagsInTheBackground);
 }
 
 SoundSimilarity::~SoundSimilarity() { close(); }
@@ -118,8 +121,46 @@ void SoundSimilarity::take() {
     const auto& s = update.status;
     const bool changed = s.analysing != status_.analysing || s.library != status_.library ||
                          s.analysed != status_.analysed || s.failed != status_.failed;
+    const bool fingerprints = s.version != status_.version || s.library != status_.library;
     status_ = s;
     if (changed) Q_EMIT progressChanged();
+    // The tags: at once the first time (the saved fingerprints), then at most every kTagsMs.
+    if ((fingerprints || !tags_) && !tagsTimer_.isActive()) {
+        if (!tags_ && !makingTags_.load()) takeTagsInTheBackground();
+        else tagsTimer_.start();
+    }
+}
+
+std::optional<intelligence::tagging::SoundTags> SoundSimilarity::tagsOf(const QString& path) const {
+    return index_->tagsOf(toBackendPath(normalPath(path)));
+}
+
+void SoundSimilarity::takeTags() {
+    if (closed_) return;
+    setTags(index_->tags());
+}
+
+void SoundSimilarity::takeTagsInTheBackground() {
+    if (closed_) return;
+    if (makingTags_.load()) {  // (one at a time: the next after it)
+        tagsTimer_.start();
+        return;
+    }
+    if (tagsThread_.joinable()) tagsThread_.join();
+    makingTags_ = true;
+    tagsThread_ = std::thread([this] {
+        auto tags = index_->tags();
+        // (Dropped if this object is gone first: close() joins this thread, so the index outlives it.)
+        QMetaObject::invokeMethod(this, [this, tags = std::move(tags)]() mutable { setTags(std::move(tags)); },
+                                  Qt::QueuedConnection);
+        makingTags_ = false;
+    });
+}
+
+void SoundSimilarity::setTags(std::shared_ptr<const intelligence::tagging::SoundTagTable> tags) {
+    if (closed_ || !tags || tags == tags_) return;
+    tags_ = std::move(tags);
+    Q_EMIT tagsChanged();
 }
 
 bool SoundSimilarity::waitIdle(double seconds) { return index_->waitIdle(seconds); }
@@ -127,6 +168,8 @@ bool SoundSimilarity::waitIdle(double seconds) { return index_->waitIdle(seconds
 void SoundSimilarity::close() {
     if (closed_) return;
     closed_ = true;
+    tagsTimer_.stop();
+    if (tagsThread_.joinable()) tagsThread_.join();
     if (libraryUpdates_) disconnect(libraryUpdates_);
     index_->setLibrarySource(nullptr);
     index_->close();

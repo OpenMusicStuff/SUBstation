@@ -9,8 +9,15 @@
 // adds it, as a double-click does (activate()). A preview stops when the user
 // clicks anywhere outside the browser (the UI calls stopPreview()).
 //
-// Lists are sorted by Rank (what is used most first) or Name; see
-// BrowserSearch.h. An item counts as used when it is added to the project from
+// Lists are sorted by Best (the default: how well items match, how much they
+// were used lately, how well they fit the project: SoundSuggestions), Rank
+// (what is used most first) or Name; see BrowserSearch.h.
+//
+// Samples are found by what they sound like as well as by their names (with a
+// sound similarity: its tagger's tags, SoundSearch.h): "hard trap snare" finds
+// the snares that sound hard and trappy, Samples › Kicks lists every kick, and
+// each file's row says what it is ("Snare · Punchy · Bright"). As more files
+// are analysed, lists that hear sounds are searched again, keeping their place. An item counts as used when it is added to the project from
 // here, by double-click, Enter or a drag that is dropped somewhere; Library
 // keeps the counts. Uses are counted but the list is not re-sorted then: the
 // selection stays put.
@@ -68,6 +75,7 @@
 #include "browser/Library.h"
 #include "browser/SidebarModel.h"
 #include "intelligence/SoundSimilarity.h"
+#include "intelligence/SoundSuggestions.h"
 #include "plugins/PluginIndex.h"
 
 class QFileSystemModel;
@@ -77,7 +85,7 @@ namespace sub::app {
 class BrowserController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
-    Q_PROPERTY(QString sort READ sort WRITE setSort NOTIFY sortChanged)  // "rank" or "name"; "similar" (Find Similar)
+    Q_PROPERTY(QString sort READ sort WRITE setSort NOTIFY sortChanged)  // "best", "rank" or "name"; "similar" (Find Similar)
     Q_PROPERTY(QVariantList sorts READ sorts NOTIFY sortsChanged)        // [{value, label}]
     // Find Similar: the sound the list shows the sounds most like ("" when it
     // doesn't), and its name.
@@ -120,6 +128,8 @@ public:
         // What finds similar sounds (the session's; it analyses the files this
         // index lists). Null: Find Similar isn't offered.
         SoundSimilarity* similarity = nullptr;
+        // How files fit the project, for the Best sort (the session's). Null: they all fit alike.
+        SoundSuggestions* suggestions = nullptr;
     };
 
     static constexpr int kRefineMs = 2000;  // while the library is analysed, how often a similar list is searched again
@@ -236,6 +246,13 @@ public:
     // or unchanged name; or it couldn't be: a statusMessage says why).
     Q_INVOKABLE QString renamePreset(const QString& path, const QString& name);
 
+    // --- Sidebar ---
+    // Collapses or expands an entry with sub-entries ([kind]: Samples, Built-in,
+    // Plug-ins, Presets), remembered (Samples starts collapsed). Collapsing the
+    // entry whose sub-entry is shown shows the entry itself.
+    Q_INVOKABLE void setExpanded(const QStringList& scope, bool expanded);
+    bool isExpanded(const QString& kind) const { return !collapsed_.contains(kind); }
+
     // --- Context menus ---
     // A sidebar entry's actions, in order, as {action, label} ({} for a
     // separator): "removePlace" for a place; "rescanPlugins" for Plug-ins;
@@ -292,6 +309,8 @@ private:
 
     void refresh(bool keep);
     void buildSidebar(std::optional<Scope> select = std::nullopt);
+    std::vector<SidebarModel::Entry> sidebarEntries() const;
+    bool expandFor(const Scope& scope);  // expands the entry a sub-entry is under; true if it was collapsed
     void setScopeValue(const Scope& scope);
     bool treeWanted() const;
     void showResults(const SearchResult& result);
@@ -313,8 +332,10 @@ private:
     void similarProgress();
     void leaveSimilar();
     bool showsAudioOnly() const;
+    void soundsChanged();
 
     QStringList places_;
+    QStringList collapsed_;  // the kinds of the entries whose sub-entries aren't listed
     std::unique_ptr<Library> library_;
     FileIndex* index_ = nullptr;
     PluginIndex* plugins_ = nullptr;
@@ -324,7 +345,7 @@ private:
     mutable QFileSystemModel* folderModel_ = nullptr;  // made when the UI first asks
 
     QString searchText_;
-    QString sort_ = QStringLiteral("rank");
+    QString sort_ = kBestSort;
     Scope scope_;
     QTimer searchTimer_;  // merges changes to the search text that come together
     bool searching_ = false;    // results asked for and not shown yet
@@ -349,6 +370,7 @@ private:
         SimilarSounds result;
     };
     QPointer<SoundSimilarity> similarity_;  // (the session's: it may go first when the session does)
+    QPointer<SoundSuggestions> suggestions_;
     std::optional<Similar> similar_;
     QString sortBeforeSimilar_;
     QTimer refineTimer_;

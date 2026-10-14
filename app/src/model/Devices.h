@@ -22,8 +22,9 @@ namespace sub::app {
 struct BuiltinDevice {
     QString kind;  // its id: "utility"
     QString name;  // "Utility"
-    QString category;  // "Instruments", "Audio Effects" or "Modulators": how the browser groups them
+    QString category;  // "Instruments", "MIDI Effects", "Audio Effects" or "Modulators": how the browser groups them
     bool instrument = false;
+    bool midiEffect = false;  // it plays its chain's notes (an arpeggiator), before the chain's devices hear them
     bool modulator = false;  // it moves other devices' parameters (an LFO, an envelope), not audio
     QMap<QString, double> defaults;  // param id -> its default value
     const sub::BuiltinInfo* info = nullptr;  // the engine's description (its parameters)

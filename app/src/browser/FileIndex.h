@@ -31,6 +31,7 @@
 #include "Browser.h"
 #include "browser/BrowserItem.h"
 #include "browser/Library.h"
+#include "tagging/SoundTagTable.h"
 
 namespace sub::app {
 
@@ -38,15 +39,17 @@ namespace sub::app {
 class SearchResult {
 public:
     SearchResult() = default;
-    SearchResult(std::shared_ptr<const browser::Result> result, QMap<QString, BrowserItem> items);
+    SearchResult(std::shared_ptr<const browser::Result> result, QMap<QString, BrowserItem> items,
+                 std::shared_ptr<const intelligence::tagging::SoundTagTable> tags = nullptr);
 
     bool isNull() const { return !result_; }
     int total() const;
     uint64_t generation() const;
     double searchMs() const;  // how long the search took on its thread
-    // Rows [start, start + count): files are made fresh, other items are the
-    // ones handed over with FileIndex::setItems() (by key) as they were when
-    // the search ran.
+    // Rows [start, start + count): files are made fresh (with what the sound
+    // tagger hears in them, as the search heard it), other items are the ones
+    // handed over with FileIndex::setItems() (by key) as they were when the
+    // search ran.
     std::vector<BrowserItem> items(int start, int count) const;
     // The row of an item (an indexed file by path, others by key), or -1.
     int find(const BrowserItem& item) const;
@@ -54,6 +57,7 @@ public:
 private:
     std::shared_ptr<const browser::Result> result_;
     QMap<QString, BrowserItem> items_;
+    std::shared_ptr<const intelligence::tagging::SoundTagTable> tags_;
 };
 
 // The library's use counts as the backend takes them: (key, score, last used or NaN).
@@ -93,13 +97,22 @@ public:
     void setItems(int group, const std::vector<std::pair<BrowserItem, QString>>& items);
     void setUsage(const Library& library);
 
+    // What a search hears in sounds, and how files fit the project (both
+    // optional): browser::Query::sounds and ::fit. `tags` labels the files of
+    // its results.
+    struct Sounds {
+        std::shared_ptr<const intelligence::tagging::SoundTagTable> tags;
+        std::function<std::shared_ptr<const browser::SoundMatcher>(const std::vector<std::string>&)> matching;
+        std::function<float(uint64_t)> fit;
+    };
+
     // Starts a search (stopping any that runs); its results come as `results`.
-    // `sort` is "rank", "name" or "similar" (by `score`: an indexed file's by its
-    // path in the backend's form, the highest first; files without one left
-    // out); `now` is the library's time (for how recent uses are).
+    // `sort` is "best", "rank", "name" or "similar" (by `score`: an indexed
+    // file's by its path in the backend's form, the highest first; files
+    // without one left out); `now` is the library's time (for how recent uses are).
     uint64_t search(const QString& text, const QString& sort, double now, const std::vector<int>& groups,
                     const QString& tag = {}, const std::string& placePrefix = {},
-                    std::function<double(std::string_view)> score = {});
+                    std::function<double(std::string_view)> score = {}, Sounds sounds = {});
 
     // Blocks until the index settled and no search runs (tests, benchmarks).
     bool waitIdle(double seconds = 10.0);
@@ -119,6 +132,7 @@ private:
     QMap<int, QMap<QString, BrowserItem>> groups_;  // by group number: later groups win a key both have
     QMap<QString, BrowserItem> items_;  // the other items, by key
     std::pair<bool, uint64_t> state_{true, 0};  // indexing, index version
+    std::shared_ptr<const intelligence::tagging::SoundTagTable> searchTags_;  // the latest search's
     bool closed_ = false;
 };
 

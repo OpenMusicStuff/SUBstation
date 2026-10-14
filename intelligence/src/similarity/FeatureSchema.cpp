@@ -17,6 +17,7 @@ const char* aspectName(Aspect aspect) {
         case Aspect::SpectralShape: return "spectralShape";
         case Aspect::Tonality: return "tonality";
         case Aspect::Embedding: return "embedding";
+        case Aspect::Tags: return "tags";
     }
     return "";
 }

@@ -15,6 +15,7 @@
 #include "Text.h"
 #include "browser/BrowserMime.h"
 #include "browser/PathKeys.h"
+#include "browser/SoundSearch.h"
 #include "io/Presets.h"
 #include "model/Errors.h"
 #include "model/Numbers.h"
@@ -25,6 +26,14 @@ namespace {
 
 constexpr const char* kPlacesKey = "browser/places";
 constexpr const char* kSortKey = "browser/sort";
+constexpr const char* kCollapsedKey = "browser/collapsed";
+
+// The entry a sub-entry is listed under (its kind), or "" for one at the top.
+QString parentKind(const Scope& scope) {
+    if (scope.kind == QStringLiteral("sounds")) return QStringLiteral("samples");
+    if (scope.kind == QStringLiteral("place") || scope.sub.isEmpty()) return {};
+    return scope.kind;
+}
 const QStringList kPluginCategories{QStringLiteral("Instruments"), QStringLiteral("Audio Effects")};
 
 // Whether text has words (Python's text.split()).
@@ -46,6 +55,7 @@ BrowserController::BrowserController(PluginIndex* plugins, Options options, QObj
     for (const QString& place : settings.value(QString::fromLatin1(kPlacesKey)).toStringList())
         if (!place.isEmpty()) places_ << normalPath(place);
     if (places_.isEmpty()) places_ = defaultPlaces();
+    collapsed_ = settings.value(QString::fromLatin1(kCollapsedKey), QStringList{QStringLiteral("samples")}).toStringList();
     library_ = std::make_unique<Library>(options.libraryPath, options.clock);
 
     index_ = new FileIndex(this, options.indexPath, options.maxFiles, options.maxDepth);
@@ -85,6 +95,13 @@ BrowserController::BrowserController(PluginIndex* plugins, Options options, QObj
             if (!similar_ || !similarity_) return;
             refinedAt_ = similarity_->analysedFiles();
             similar_->generation = similarity_->find(similar_->path, similar_->start, similar_->length);
+        });
+        connect(similarity_, &SoundSimilarity::tagsChanged, this, &BrowserController::soundsChanged);
+    }
+    suggestions_ = options.suggestions;
+    if (suggestions_) {
+        connect(suggestions_, &SoundSuggestions::changed, this, [this] {
+            if (sort_ == kBestSort) soundsChanged();
         });
     }
 
@@ -138,14 +155,27 @@ void BrowserController::setScope(const QStringList& list) {
         Q_EMIT addPlaceRequested();
         return;
     }
-    if (scope == scope_ || sidebar_->find(scope) < 0) return;
+    if (scope == scope_) return;
+    if (sidebar_->find(scope) < 0) {  // a sub-entry of a collapsed entry: it is expanded
+        if (!expandFor(scope)) return;
+        sidebar_->setEntries(sidebarEntries());
+        if (sidebar_->find(scope) < 0) return;
+    }
     setScopeValue(scope);
     if (similar_ && !showsAudioOnly()) leaveSimilar();  // (similar sounds are files: Samples or a place)
     refresh(false);
 }
 
 bool BrowserController::showsAudioOnly() const {
-    return scope_.kind == QStringLiteral("samples") || scope_.kind == QStringLiteral("place");
+    return scope_.kind == QStringLiteral("samples") || scope_.kind == QStringLiteral("place") ||
+           scope_.kind == QStringLiteral("sounds");
+}
+
+void BrowserController::soundsChanged() {
+    // More files analysed, or the project's sounds changed: a list with
+    // samples is searched again, keeping its place (the rows' labels with it).
+    if (similar_ || treeWanted() || searchTimer_.isActive()) return;  // (a search on its way takes them in)
+    if (showsAudioOnly() || scope_.kind == QStringLiteral("all")) refresh(true);
 }
 
 void BrowserController::setScopeValue(const Scope& scope) {
@@ -196,22 +226,38 @@ void BrowserController::choose(int row) {
 
 // --- Sidebar ------------------------------------------------------------------------------
 
-void BrowserController::buildSidebar(std::optional<Scope> select) {
+std::vector<SidebarModel::Entry> BrowserController::sidebarEntries() const {
     std::vector<SidebarModel::Entry> entries;
     auto section = [&](const QString& title) { entries.push_back({title, Scope{{}, {}}, true, 0, {}, {}, true}); };
     auto entry = [&](const QString& title, const Scope& scope, const QString& icon, const QString& toolTip = {},
                      int depth = 0) { entries.push_back({title, scope, false, depth, icon, toolTip, false}); };
+    // An entry with sub-entries (`names`, each made by `sub`), listed while it is expanded.
+    auto group = [&](const QString& title, const QString& kind, const QString& icon, const QString& toolTip,
+                     const QStringList& names, auto sub) {
+        entry(title, {kind, {}}, icon, toolTip);
+        entries.back().expandable = !names.isEmpty();
+        entries.back().expanded = isExpanded(kind);
+        if (entries.back().expanded)
+            for (const QString& name : names) sub(name);
+    };
     const QString plugin = QStringLiteral("plugin");
     section(QStringLiteral("CATEGORIES"));
     entry(QStringLiteral("All"), {QStringLiteral("all"), {}}, QStringLiteral("search"));
-    entry(QStringLiteral("Samples"), {QStringLiteral("samples"), {}}, QStringLiteral("waveform"));
-    entry(QStringLiteral("Built-in"), {QStringLiteral("builtin"), {}}, plugin);
-    for (const QString& name : builtinCategoryNames()) entry(name, {QStringLiteral("builtin"), name}, plugin, {}, 1);
-    entry(QStringLiteral("Plug-ins"), {QStringLiteral("plugins"), {}}, plugin, pluginsToolTip_);
-    for (const QString& name : kPluginCategories) entry(name, {QStringLiteral("plugins"), name}, plugin, {}, 1);
-    entry(QStringLiteral("Presets"), {QStringLiteral("presets"), {}}, QStringLiteral("preset"), presetsToolTip());
-    for (const QString& name : presetGroups_)
-        entry(name, {QStringLiteral("presets"), name}, QStringLiteral("preset"), {}, 1);
+    // What they sound like: Samples › Kicks...
+    const auto sounds = similarity_ ? soundCategories() : std::vector<std::pair<QString, QString>>();
+    QStringList soundTitles;
+    for (const auto& category : sounds) soundTitles << category.first;
+    group(QStringLiteral("Samples"), QStringLiteral("samples"), QStringLiteral("waveform"), {}, soundTitles,
+          [&](const QString& title) {
+              const QString word = sounds[static_cast<size_t>(soundTitles.indexOf(title))].second;
+              entry(title, {QStringLiteral("sounds"), word}, QStringLiteral("waveform"), {}, 1);
+          });
+    group(QStringLiteral("Built-in"), QStringLiteral("builtin"), plugin, {}, builtinCategoryNames(),
+          [&](const QString& name) { entry(name, {QStringLiteral("builtin"), name}, plugin, {}, 1); });
+    group(QStringLiteral("Plug-ins"), QStringLiteral("plugins"), plugin, pluginsToolTip_, kPluginCategories,
+          [&](const QString& name) { entry(name, {QStringLiteral("plugins"), name}, plugin, {}, 1); });
+    group(QStringLiteral("Presets"), QStringLiteral("presets"), QStringLiteral("preset"), presetsToolTip(), presetGroups_,
+          [&](const QString& name) { entry(name, {QStringLiteral("presets"), name}, QStringLiteral("preset"), {}, 1); });
     section(QStringLiteral("PLACES"));
     for (const QString& place : places_) {
         const QString name = QFileInfo(place).fileName();
@@ -219,7 +265,30 @@ void BrowserController::buildSidebar(std::optional<Scope> select) {
               QStringLiteral("folder"), QDir::toNativeSeparators(place));
     }
     entries.push_back({QStringLiteral("Add Folder…"), {QStringLiteral("add"), {}}, false, 0, {}, {}, true});
-    sidebar_->setEntries(std::move(entries));
+    return entries;
+}
+
+bool BrowserController::expandFor(const Scope& scope) {
+    const QString parent = parentKind(scope);
+    if (parent.isEmpty() || isExpanded(parent)) return false;
+    collapsed_.removeAll(parent);
+    QSettings().setValue(QString::fromLatin1(kCollapsedKey), collapsed_);
+    return true;
+}
+
+void BrowserController::setExpanded(const QStringList& list, bool expanded) {
+    const QString kind = Scope::fromList(list).kind;
+    if (kind.isEmpty() || isExpanded(kind) == expanded) return;
+    if (expanded) collapsed_.removeAll(kind);
+    else collapsed_ << kind;
+    QSettings().setValue(QString::fromLatin1(kCollapsedKey), collapsed_);
+    sidebar_->setEntries(sidebarEntries());
+    if (!expanded && parentKind(scope_) == kind) setScope({kind});  // (its sub-entry shown went)
+}
+
+void BrowserController::buildSidebar(std::optional<Scope> select) {
+    if (select) expandFor(*select);
+    sidebar_->setEntries(sidebarEntries());
 
     Scope target{QStringLiteral("samples"), {}};
     if (select && sidebar_->find(*select) >= 0) target = *select;
@@ -313,9 +382,9 @@ void BrowserController::setPresets(std::vector<BrowserItem> items, QStringList g
     presetRoot_ = std::move(root);
     index_->setItems(kPresetsGroup, taggedByDetail(presetItems_));
     const Scope presets{QStringLiteral("presets"), {}};
-    const QStringList shown = sidebar_->children(presets);
+    const bool changed = groups != presetGroups_;
     presetGroups_ = std::move(groups);
-    if (shown != presetGroups_) {  // the sidebar lists the groups: made again
+    if (changed) {  // the sidebar lists the groups: made again
         Scope scope = scope_;
         if (scope.kind == QStringLiteral("presets") && !scope.sub.isEmpty() && !presetGroups_.contains(scope.sub))
             scope = presets;  // (its group went)
@@ -448,7 +517,7 @@ void BrowserController::leaveSimilar() {
     if (similarity_) similarity_->cancel();  // (a sound still being analysed for it needn't be)
     similar_.reset();
     refineTimer_.stop();
-    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : QStringLiteral("rank");
+    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : kBestSort;
     Q_EMIT sortChanged();
     Q_EMIT sortsChanged();
     Q_EMIT similarChanged();
@@ -500,8 +569,14 @@ void BrowserController::refresh(bool keep) {
     } else {
         keep_.reset();
     }
+    FileIndex::Sounds sounds;
+    if (similarity_) {
+        sounds.tags = similarity_->tags();
+        sounds.matching = soundMatching(sounds.tags, query.sounds);
+    }
+    if (suggestions_ && sort_ == kBestSort) sounds.fit = suggestions_->fit();
     index_->search(searchText_, sort_, library_->now(), query.groups, query.tag, query.placePrefix,
-                   similar_ ? similar_->result.scorer() : nullptr);
+                   similar_ ? similar_->result.scorer() : nullptr, std::move(sounds));
     setSearching(true);
 }
 
@@ -618,6 +693,9 @@ void BrowserController::updateStatus() {
         setStatusText(items + QStringLiteral(" (") + busy + QStringLiteral("…)"));
     } else if (kind != QStringLiteral("builtin") && index_->indexing()) {
         setStatusText(items + QStringLiteral(" (Indexing…)"));
+    } else if (sort_ == kBestSort && suggestions_ && !suggestions_->summary().isEmpty() && kind != QStringLiteral("builtin") &&
+               kind != QStringLiteral("plugins") && kind != QStringLiteral("presets")) {
+        setStatusText(items + QStringLiteral(", best for ") + suggestions_->summary());
     } else {
         setStatusText(items);
     }

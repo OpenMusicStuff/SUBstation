@@ -257,7 +257,7 @@ Rectangle {
                     return 0
                 }
                 tooltip: panel.browser.similarTo !== "" ? qsTr("Similarity: the most similar sounds first")
-                                                        : qsTr("Sort the list: Rank puts what you use most first")
+                                                        : qsTr("Sort the list: Best weighs what matches, what you use and what fits your project; Rank puts what you use most first")
                 onChosen: index => panel.browser.sort = panel.browser.sorts[index].value
             }
         }

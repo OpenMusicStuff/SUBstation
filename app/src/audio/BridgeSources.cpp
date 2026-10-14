@@ -1,7 +1,8 @@
 // Audio sources: files decoded in a thread pool (of two), at the engine's rate,
 // for clips and previews. Each file is decoded once (keyed by pathIdentity(), so
 // two spellings of a file share one source); what waits for it runs on the main
-// thread when it is ready.
+// thread when it is ready. The engine's cache holds the bridge's sources again
+// when they are decoded or asked for: a reset can let go of them there only.
 
 #include <QFileInfo>
 
@@ -24,6 +25,8 @@ void EngineBridge::requestSource(const QString& path, std::function<void()> then
     const QString key = pathIdentity(path);
     const auto source = d_->sources.constFind(key);
     if (source != d_->sources.constEnd() && (*source)->sampleRate() == static_cast<uint32_t>(engine_.sampleRate())) {
+        // (The engine may have let go of it on reset: a deactivated clip's, a frozen track's clips'.)
+        engine_.cacheSource(*source);
         if (then) then();
         return;
     }
@@ -53,6 +56,9 @@ void EngineBridge::requestSource(const QString& path, std::function<void()> then
 
 void EngineBridge::onLoaded(const QString& path, std::shared_ptr<sub::AudioSource> source) {
     const QString key = pathIdentity(path);
+    // (A reset since it was decoded may have had the engine let go of it: a project opened
+    // meanwhile that uses it plays it now.)
+    engine_.cacheSource(source);
     d_->sources.insert(key, std::move(source));
     const std::vector<std::function<void()>> callbacks = d_->loading.take(key);
     Q_EMIT sourceReady(path);

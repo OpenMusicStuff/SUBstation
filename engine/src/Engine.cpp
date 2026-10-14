@@ -80,6 +80,16 @@ std::shared_ptr<AudioSource> Engine::cachedSource(const std::string& path) {
     return it == sources_.end() ? nullptr : it->second;
 }
 
+void Engine::cacheSource(std::shared_ptr<AudioSource> source) {
+    std::lock_guard lock(mutex_);
+    const auto rate = static_cast<uint32_t>(sampleRate_);
+    if (!source || source->sampleRate() != rate) return;
+    auto& slot = sources_[sourceKey(source->path())];
+    if (slot && slot->sampleRate() == rate) return;  // (still cached, or decoded again since)
+    slot = std::move(source);
+    rebuildSnapshotLocked();  // clips waiting for this file become audible
+}
+
 void Engine::releaseUnusedSources() {
     std::lock_guard lock(mutex_);
     std::unordered_set<std::string> used;
