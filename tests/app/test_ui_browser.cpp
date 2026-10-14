@@ -7,6 +7,7 @@
 // set, it saves screenshots.
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -108,10 +109,17 @@ class TestUiBrowser : public QObject {
     QString place() const { return dir_->path(QStringLiteral("Place")); }
 
     // Until the browser shows its latest search's results.
+    // (Quiet for a moment: a search can start another as it ends, an index's change coming in meanwhile,
+    // and on a busy machine that one starts later. It is waited for too.)
     bool settle() {
-        const bool done = QTest::qWaitFor([this] { return !browser().searching(); }, 5000);
-        QTest::qWait(10);
-        return done && !browser().searching();
+        QElapsedTimer waited;
+        waited.start();
+        do {
+            if (!QTest::qWaitFor([this] { return !browser().searching(); }, int(std::max<qint64>(1, 5000 - waited.elapsed()))))
+                return false;
+            QTest::qWait(10);
+        } while (browser().searching() && waited.elapsed() < 5000);
+        return !browser().searching();
     }
     // Until the index is done and has `count` files at least.
     bool indexed(int count) {
