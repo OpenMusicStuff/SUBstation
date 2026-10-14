@@ -72,11 +72,12 @@ void SandboxedProcessor::send(Kind kind, std::string body) const {
     link_.sandbox->send({kind, link_.instance, 0, std::move(body)});
 }
 
-void SandboxedProcessor::ask(Kind kind, std::string body, Asked asked) const {
-    if (ended()) return;
+uint32_t SandboxedProcessor::ask(Kind kind, std::string body, Asked asked) const {
+    if (ended()) return 0;
     const uint32_t request = Sandbox::newRequest();
     asked_[request] = std::move(asked);
     link_.sandbox->send({kind, link_.instance, request, std::move(body)});
+    return request;
 }
 
 // --- The reader thread's -------------------------------------------------------------------
@@ -311,10 +312,12 @@ void SandboxedProcessor::setState(const std::vector<uint8_t>& state) {
         return;
     }
     // Loading (it takes it once loaded, before it says so), or busy: whether it was taken comes later.
+    // Loading, it isn't Ready until then (if it loaded before this came, it says so first).
     Asked asked;
     asked.what = Asked::What::SetState;
     asked.state = state;
-    ask(Kind::SetState, std::move(out.bytes), std::move(asked));
+    const uint32_t request = ask(Kind::SetState, std::move(out.bytes), std::move(asked));
+    if (status_ == Status::Loading) stateAsLoading_ = request;
 }
 
 // --- Main-thread housekeeping ----------------------------------------------------------------
@@ -337,11 +340,22 @@ void SandboxedProcessor::applyLoaded(const LoadedInfo& info) {
         presetName_ = info.presetName;
     }
     setParams(info.params, info.values);
+    if (!info.problem.empty()) {
+        problem_ = info.problem;
+        pushEvent(ProcessorEvent::Type::Problem);
+    }
+    if (stateAsLoading_ != 0) {  // (a state set as it loaded, which it took after it said so: its answer is next)
+        loadedWaiting_ = true;
+        return;
+    }
+    becomeReady();
+}
+
+void SandboxedProcessor::becomeReady() {
+    loadedWaiting_ = false;
     status_ = Status::Ready;
-    problem_ = info.problem;
     ready_.store(true, std::memory_order_release);
     pushEvent(ProcessorEvent::Type::Loaded);
-    if (!info.problem.empty()) pushEvent(ProcessorEvent::Type::Problem);
 }
 
 void SandboxedProcessor::apply(const Message& message, bool& latencyChanged) {
@@ -420,6 +434,10 @@ void SandboxedProcessor::apply(const Message& message, bool& latencyChanged) {
                     } else {
                         problem_ = std::move(data);
                         pushEvent(ProcessorEvent::Type::Problem);
+                    }
+                    if (message.request == stateAsLoading_) {
+                        stateAsLoading_ = 0;
+                        if (loadedWaiting_) becomeReady();  // (with that state's values: they came just before)
                     }
                     break;
             }

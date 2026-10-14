@@ -117,6 +117,7 @@ private Q_SLOTS:
         bridge.storePluginStates();
         const QString path = dir.path(QStringLiteral("states.gilproj"));
         saveProject(studio.project, path);
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.isLoading(wav), kLoadTimeoutMs);  // (decoded before it goes)
         studio.project.clear();
 
         loadProject(studio.project, path);
@@ -125,6 +126,7 @@ private Q_SLOTS:
         const QString again = dir.path(QStringLiteral("again.gilproj"));
         saveProject(studio.project, again);
         QTRY_VERIFY_WITH_TIMEOUT(bridge.pluginsPending() == 0, kLoadTimeoutMs);
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.isLoading(wav), kLoadTimeoutMs);
         const QString fxAgain = studio.project.tracks()[0].id;
         const QString keyedAgain = studio.project.tracks()[1].id;
         const QString fxDevice = deviceOf(studio, 0);

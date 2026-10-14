@@ -13,7 +13,8 @@
 //    object, like most JUCE plug-ins). Gain, a Latency parameter that delays the
 //    audio and reports it, a bypass parameter, state, and a Win32 editor that
 //    can resize itself and edit a parameter on request (on Windows; elsewhere
-//    it has no editor).
+//    it has no editor). With SUB_TEST_EFFECT_SLOW_LOAD_MS set, it takes that
+//    long to initialize.
 //  * SUB Test Mono: mono in, mono out, no edit controller.
 //  * SUB Test Note Effect: an effect with an event input (as a vocoder or a
 //    pitch corrector has), no edit controller: its output is its input plus,

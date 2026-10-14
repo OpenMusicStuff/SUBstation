@@ -217,6 +217,8 @@ void HostServer::handleForInstance(Instance& instance, const Message& message) {
         }
         case Kind::SetState:
             processor.setState(sandbox::readBytes(in));
+            // Its values before the answer: one set as it loaded is ready with them (SandboxedProcessor).
+            if (instance.announced) report(instance);
             reply(message, true);
             break;
         case Kind::OpenEditor: {
@@ -322,10 +324,12 @@ void HostServer::loadNext() {
         instance.state = {};
         instance.loaded = true;
         // What came for it meanwhile, in order, before it says it has loaded: a state set
-        // right after it was asked for is its state from its first block.
+        // right after it was asked for is its state from its first block. That is what came
+        // before it began loading, then what came while it loaded.
         waiting.swap(instance.waiting);
         for (Message& message : waiting) handle(std::move(message));
         waiting.clear();
+        for (Message& message : takeIncomingFor(id)) handle(std::move(message));
         Processor& processor = *instance.processor;
         info.name = processor.name();
         info.hasEditor = processor.hasEditor();
@@ -341,6 +345,7 @@ void HostServer::loadNext() {
         platform::ByteWriter out;
         sandbox::writeLoaded(out, info);
         send({Kind::Loaded, id, 0, std::move(out.bytes)});
+        instance.announced = true;
     } catch (const std::exception& error) {
         instance.failure = *error.what() ? error.what() : "It could not be loaded.";
     } catch (...) {
@@ -362,6 +367,23 @@ void HostServer::loadNext() {
         out.u8(0);
         send({Kind::Busy, 0, 0, std::move(out.bytes)});
     }
+}
+
+// The messages for instance `id` read while it loaded, in order, taken from among the others'
+// (up to its Destroy, which stays where it is: it comes once the instance has said it loaded).
+std::deque<Message> HostServer::takeIncomingFor(uint32_t id) {
+    std::deque<Message> taken;
+    std::lock_guard lock(incomingMutex_);
+    for (auto it = incoming_.begin(); it != incoming_.end();) {
+        if (it->instance != id) {
+            ++it;
+            continue;
+        }
+        if (it->kind == Kind::Destroy) break;
+        taken.push_back(std::move(*it));
+        it = incoming_.erase(it);
+    }
+    return taken;
 }
 
 void HostServer::idleAll() {

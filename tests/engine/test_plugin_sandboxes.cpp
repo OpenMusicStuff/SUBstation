@@ -243,6 +243,25 @@ TEST_CASE("sandbox: a state set as it loads is its state from its first block") 
     CHECK(engine.processorState(other).empty() || engine.processorState(other) == state);
 }
 
+TEST_CASE("sandbox: a state that comes while it is loading is its state once it says it has loaded") {
+    const ScopedEnvironment slow("SUB_TEST_EFFECT_SLOW_LOAD_MS", "500");
+    SandboxEngine e;
+    auto& engine = e.engine;
+    const uint32_t clip = clipTrack(engine, dcWav());
+    const uint32_t first = addPlugin(engine, engine.trackChain(clip), "SUB Test Effect");
+    REQUIRE(engine.waitForPlugins(10000));
+    engine.setProcessorParam(first, FX_GAIN, 0.1f);
+    const std::vector<uint8_t> state = engine.processorState(first);
+    engine.removeProcessor(first);
+    const uint32_t effect = addPlugin(engine, engine.trackChain(clip), "SUB Test Effect");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));  // (its load under way: 500 ms)
+    engine.setProcessorState(effect, state);
+    // At once, not at its next report.
+    REQUIRE(until(engine, [&] { return engine.processorInfo(effect).status == PluginStatus::Ready; }));
+    CHECK_APPROX(engine.processorParam(effect, FX_GAIN), 0.1);
+    CHECK_ALLCLOSE(engine.renderOffline(0.0, 1000), 0.1, 1e-6, 0.0);
+}
+
 TEST_CASE("sandbox: adding a plug-in doesn't wait for it to load") {
     const ScopedEnvironment slow("SUB_TEST_PLUGIN_SLOW_LOAD_MS", "700");
     SandboxEngine e;

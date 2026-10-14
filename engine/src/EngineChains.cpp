@@ -268,7 +268,8 @@ uint32_t Engine::addBuiltinProcessor(uint32_t chainId, const std::string& type, 
 }
 
 uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format, const std::string& path,
-                                    const std::string& uid, int index, const PluginIdentity& identity) {
+                                    const std::string& uid, int index, const PluginIdentity& identity,
+                                    const std::vector<uint8_t>& state) {
     if (format != "VST3") throw std::invalid_argument("Unsupported plug-in format: " + format);
     double rate = 0.0;
     {
@@ -279,7 +280,7 @@ uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format,
     // Loading can take a while (and show dialogs), so it doesn't hold the lock. (In a
     // sandbox it doesn't take the time here: the plug-in loads there meanwhile.)
     ProcessorEntry::Plugin plugin{path, uid, identity, {}};
-    auto processor = makePlugin(plugin, {}, rate, plugin.problem);
+    auto processor = makePlugin(plugin, state, rate, plugin.problem);
     std::lock_guard lock(mutex_);
     if (sampleRate_ != rate) processor->prepare(sampleRate_, Renderer::kMaxBlock);  // the device changed meanwhile
     if (!chains_.contains(chainId)) {  // its track went while the plug-in loaded (a dialog's message loop)
@@ -287,6 +288,12 @@ uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format,
         throw std::invalid_argument("Unknown chain id " + std::to_string(chainId));
     }
     const uint32_t id = insertProcessorLocked(chainId, std::move(processor), index);
+    if (!plugin.problem.empty()) {  // (its state, in this process; in a sandbox it says so as it loads)
+        ProcessorEventRecord problem;
+        problem.type = ProcessorEvent::Type::Problem;
+        problem.processorId = id;
+        engineEvents_.push_back(problem);
+    }
     processors_[id].plugin = std::move(plugin);
     return id;
 }

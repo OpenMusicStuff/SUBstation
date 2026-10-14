@@ -474,8 +474,12 @@ public:
     // in the chain at once and loads there meanwhile: ProcessorEvent::Loaded or
     // LoadFailed, processorInfo().status). Main thread; throws std::runtime_error
     // with a message for the user if it can't be loaded (or no sandbox started).
+    // `state` (none: as it starts) is restored as it loads (in a sandbox, before it
+    // says it has loaded); one it doesn't take is a ProcessorEvent::Problem
+    // (processorInfo().problem says why), not an exception.
     uint32_t addPluginProcessor(uint32_t chainId, const std::string& format, const std::string& path,
-                                const std::string& uid, int index, const PluginIdentity& identity = {});
+                                const std::string& uid, int index, const PluginIdentity& identity = {},
+                                const std::vector<uint8_t>& state = {});
     // Removes a device (a rack with its chains and everything in them).
     void removeProcessor(uint32_t processorId);
     // Reorders a chain; `processorIds` must be the chain's processors, each once.

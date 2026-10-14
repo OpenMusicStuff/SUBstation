@@ -358,8 +358,9 @@ while it loads; in a sandbox none does.
 ### Plug-ins in sandboxes
 
 With plug-ins in sandboxes ([engine/sandboxes.md](../engine/sandboxes.md)), `loadPlugin` adds a plug-in to the engine
-at once, never deferred: the engine starts loading it in its sandbox and returns (its state, set right after, is its
-state from its first block). The device has its processor, and `sandboxLoading` keeps it until the engine says it has
+at once, never deferred: the engine starts loading it in its sandbox and returns. Its state goes with it
+(`addPluginProcessor`'s `state`, in either mode), so it has it before it says it has loaded: its values then and its
+first block are its state's. The device has its processor, and `sandboxLoading` keeps it until the engine says it has
 loaded, couldn't, or crashed ([BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)). The rest is as above: the
 same progress (`pluginsLoading`, counting both kinds), `pluginPending` (the device view says it is loading),
 `prioritizePlugins` and `loadPluginNow` (they go first in their sandboxes: `Engine::prioritizeProcessors`), renders

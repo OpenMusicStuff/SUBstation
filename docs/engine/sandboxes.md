@@ -76,7 +76,8 @@ stuck in a plug-in. A crash ends it without the system's dialog (Windows: `SetEr
   slow plug-in holds up only its own sandbox's plug-ins, and only between messages (a value's text asked for waits
   for that one load, not for every load queued). `Prioritize` reorders the loads (the selected track's first, an
   editor asked for next). Messages for a plug-in that hasn't loaded yet wait with it, and are dealt with as it has
-  loaded, before it says so (`Loaded`): a state set right after it was added is its state from its first block.
+  loaded, before it says so (`Loaded`), those that came while it was loading too: a state set right after it was
+  added is its state from its first block, and the values it says it has are that state's.
   Every 30 ms it idles the plug-ins (`Processor::idle()`: restarts, parameters, editors) and reports what changed
   (`Report`): the values that changed since the engine last heard them, a rebuilt parameter list, a new latency or
   preset name, and the `ProcessorEvent`s. `HoldIdle` pauses that while a render runs in the background, as
@@ -181,10 +182,12 @@ device view, with *Reload* ([app/engine-bridge.md](../app/engine-bridge.md#plug-
   shared memory, wake-ups between processes (with a child of its own, `ipc_test_child`).
 - [tests/engine/test_plugin_sandboxes.cpp](../../tests/engine/test_plugin_sandboxes.cpp): a plug-in in a sandbox
   rendering sample for sample as in the application (notes, parameters, automation, latency, sidechains); parameters,
-  texts, the transport and state from there; a state set as it loads; adding one not waiting for it to load (*SUB Test
-  Crasher* loading slowly), prioritising; the sandboxes each mode makes; a crash taking down its sandbox and no other,
-  together taking down all, reloading as last known; a hung plug-in holding up the audio thread for one block;
-  reloading into another mode and back; no host program; a plug-in that can't load there.
+  texts, the transport and state from there; a state set as it loads, before or while it loads (*SUB Test Effect*
+  loading slowly); adding one not waiting for it to load (*SUB Test Crasher* loading slowly), prioritising; the
+  sandboxes each mode makes; a crash taking down its sandbox and no other, together taking down all, reloading as last
+  known; a hung plug-in holding up the audio thread for one block, and an offline render for one wait; a render not
+  waiting on the main thread for a sandbox loading; reloading into another mode and back; no host program; a plug-in
+  that can't load there; a garbled message's counts.
 - [tests/engine/test_plugin_sandboxes_x11.cpp](../../tests/engine/test_plugin_sandboxes_x11.cpp): sandboxed editors on
   Xvfb: opened, titled, hidden, closed by the user; the key table; the foremost of several sandboxes' editors.
 - [tests/app/test_bridge_sandboxes.cpp](../../tests/app/test_bridge_sandboxes.cpp): a project opening without waiting

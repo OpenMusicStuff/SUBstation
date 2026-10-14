@@ -5,7 +5,9 @@
 // It is in its chain at once and loads in its sandbox meanwhile: until it has
 // (status() Loading), and if it couldn't (Failed) or its sandbox ended
 // (Crashed), it passes its input on as a missing plug-in does. (Loading it again
-// is a new one, from this one's last state: Engine::reloadProcessor().) Then:
+// is a new one, from this one's last state: Engine::reloadProcessor().) A state
+// set while it loads is its state before it is Ready: it stays Loading until its
+// sandbox has taken it, and passes its input on meanwhile. Then:
 //
 // - Audio: process() hands each block to the sandbox in shared memory (the
 //   track's audio, its sidechain, notes, automation and the UI's parameter
@@ -131,7 +133,8 @@ private:
     void setParams(std::vector<ParamInfo> params, const std::vector<float>& values);
     void pushEvent(ProcessorEvent::Type type);
     void send(Kind kind, std::string body = {}) const;
-    void ask(Kind kind, std::string body, Asked asked) const;
+    uint32_t ask(Kind kind, std::string body, Asked asked) const;  // the request (0: its sandbox ended)
+    void becomeReady();
     bool waitDone(uint32_t sent, int64_t timeoutMicroseconds) noexcept;
     void waitForOfflineReset();
     bool loaded() const { return status_ == Status::Ready; }
@@ -164,6 +167,8 @@ private:
 
     // The main thread's copy of the plug-in.
     Status status_ = Status::Loading;
+    uint32_t stateAsLoading_ = 0;  // the last state set as it loaded: Ready once that is answered
+    bool loadedWaiting_ = false;   // it said it has loaded, before that answer
     std::string problem_;
     std::string name_;
     bool hasEditor_ = false;

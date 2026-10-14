@@ -68,8 +68,9 @@ private:
         std::atomic<bool> stop{false};
         std::atomic<bool> stopped{false};  // its audio thread has ended
         bool loaded = false;
+        bool announced = false;              // it said it has loaded (Loaded)
         std::string failure;                 // why it didn't load ("" : it did, or hasn't yet)
-        std::deque<sandbox::Message> waiting;  // what came for it before it loaded
+        std::deque<sandbox::Message> waiting;  // what came for it before it began loading
         std::vector<float> sentValues;         // its values as the engine last heard them
     };
 
@@ -82,6 +83,7 @@ private:
     void create(const sandbox::Message& message);
     void destroy(uint32_t id);
     void loadNext();
+    std::deque<sandbox::Message> takeIncomingFor(uint32_t id);
     void idleAll();
     void report(Instance& instance);
     bool keyTaken(const KeyPress& key);

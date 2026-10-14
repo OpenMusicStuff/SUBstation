@@ -16,9 +16,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "base/source/fstreamer.h"
@@ -54,6 +57,9 @@ public:
     tresult PLUGIN_API initialize(FUnknown* context) override {
         const tresult result = SingleComponentEffect::initialize(context);
         if (result != kResultOk) return result;
+        if (const char* slow = std::getenv("SUB_TEST_EFFECT_SLOW_LOAD_MS")) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::atoi(slow)));
+        }
         addAudioInput(STR16("Input"), SpeakerArr::kStereo);
         addAudioOutput(STR16("Output"), SpeakerArr::kStereo);
         parameters.addParameter(new RangeParameter(STR16("Gain"), kFxGain, STR16("x"), 0.0, 2.0, 1.0));

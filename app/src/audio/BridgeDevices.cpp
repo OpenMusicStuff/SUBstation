@@ -483,14 +483,19 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
     }
     // Its state as it was when the device went away (undo), else as saved.
     const std::optional<QString> saved = device.state;
+    std::optional<QByteArray> state;
+    if (d_->pluginStates.contains(deviceId)) state = d_->pluginStates.value(deviceId);
+    if (!state && saved && !saved->isEmpty()) state = fromBase64(*saved);
     quint32 processorId = 0;
     std::optional<QString> failure;
     {
         const BusyScope busy(d_->busy);
         try {
+            // (Its state with it: in a sandbox, it has it before it says it has loaded.)
             processorId = engine_.addPluginProcessor(chainId, plugin.format.toStdString(), path->toStdString(),
                                                      plugin.uid.toStdString(), -1,
-                                                     {plugin.name.toStdString(), plugin.vendor.toStdString()});
+                                                     {plugin.name.toStdString(), plugin.vendor.toStdString()},
+                                                     state ? stateBytes(*state) : std::vector<uint8_t>{});
         } catch (const std::exception& error) {
             failure = QString::fromStdString(error.what());
         }
@@ -501,10 +506,7 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
     }
     d_->pluginIds.insert(processorId, *path);
     d_->pluginErrors.remove(deviceId);
-    std::optional<QByteArray> state;
-    if (d_->pluginStates.contains(deviceId)) state = d_->pluginStates.take(deviceId);
-    if (!state && saved && !saved->isEmpty()) state = fromBase64(*saved);
-    if (state && !state->isEmpty()) setPluginState(processorId, plugin.name, *state);  // (in a sandbox: as it loads)
+    d_->pluginStates.remove(deviceId);
     noteSandboxLoading(deviceId, processorId);
     return processorId;
 }
