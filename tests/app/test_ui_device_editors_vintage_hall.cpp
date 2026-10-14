@@ -13,6 +13,7 @@
 #include <QQuickWindow>
 #include <QTest>
 #include <QUndoStack>
+#include <QtQuickTest/quicktest.h>
 
 #include <algorithm>
 #include <cmath>
@@ -190,11 +191,13 @@ private Q_SLOTS:
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("advancedButton"))));
         QVERIFY(view->implicitWidth() < folded + 10);  // (not at once)
         QTRY_VERIFY(view->property("reveal").toDouble() == 1.0);
+        QVERIFY(QQuickTest::qWaitForPolish(view->window()));  // (the knobs' Row placed after the slide's last step)
         QVERIFY(fitted());
         QCOMPARE(view->implicitWidth(), std::ceil(rightOf(view, shown.loop, kKnobs)) + 8);
         QVERIFY(view->implicitWidth() > folded + 4 * 52);
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(find(view, QStringLiteral("advancedButton"))));
         QTRY_VERIFY(view->property("reveal").toDouble() == 0.0);
+        QVERIFY(QQuickTest::qWaitForPolish(view->window()));
         QCOMPARE(view->implicitWidth(), folded);
         QVERIFY(!find(view, QStringLiteral("advancedSection"))->isVisible());
         QVERIFY(fitted());
