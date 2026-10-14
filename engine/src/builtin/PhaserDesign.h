@@ -19,7 +19,6 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
-#include <numbers>
 #include <string>
 #include <vector>
 
@@ -34,7 +33,7 @@ enum class Wave {
     Sine = 0, Triangle, TriangleAnalog, Triangle8, Triangle16, SawUp, SawDown, Rectangle, Random, RandomHold
 };
 
-constexpr double kPi = std::numbers::pi;
+using dsp::kPi;
 
 // The parameters' ranges (Live's), which the editor's drags hold to too.
 constexpr int kMaxNotches = 42;

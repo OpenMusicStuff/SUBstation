@@ -30,6 +30,7 @@
 
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
+#include "builtin/Dsp.h"
 #include "builtin/GigaTuneDesign.h"
 
 namespace sub {
@@ -51,12 +52,7 @@ public:
     int latencySamples() const override { return corrector_.latency(quality()); }
     int tailSamples() const override { return latencySamples(); }
 
-    bool idle() override {
-        const int latency = latencySamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     // Formant, to a hundredth of a semitone (the "st" unit shows whole ones).
     std::string paramText(int index, float value) const override {
@@ -70,7 +66,7 @@ public:
 
     void prepare(double sampleRate, int) override {
         corrector_.prepare(sampleRate);
-        reportedLatency_ = latencySamples();
+        latencyReport_.reported(latencySamples());
     }
 
     void reset() override {
@@ -128,7 +124,7 @@ private:
     }
 
     gigatune::Corrector corrector_;
-    int reportedLatency_ = 0;
+    dsp::LatencyReport latencyReport_;
     int displayPhase_ = 0;  // samples out since the last display value
 };
 

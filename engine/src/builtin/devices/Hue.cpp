@@ -918,10 +918,10 @@ private:
             const float from = oi == 0 ? kNoteKernel[i] : kColorKernel[oi - 1][i];
             m.noteKernel[i] = from + (kColorKernel[oi][i] - from) * of;
         }
-        const float lift = std::pow(10.f, colorDb(kColorLiftDb) / 20.f);
+        const float lift = dbToGain(colorDb(kColorLiftDb));
         for (float& g : m.v) g *= lift;
         m.floorGain = std::max(0.f, -0.016f + 0.0507f * static_cast<float>(12 - count)) *
-                      std::pow(10.f, colorDb(kColorFloorDb) / 20.f);
+                      dbToGain(colorDb(kColorFloorDb));
         m.post = key_.postCents / 1000.0;  // tenths of a cent -> semitones
         // The notes' comb reaches ten semitones past Start and End; beyond, the kept mask is flat (Low Latency, as
         // at a gain falling 1.89 dB per enabled note, +19.8 dB with one; the crossovers take most

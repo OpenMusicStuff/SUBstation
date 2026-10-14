@@ -416,7 +416,6 @@ public:
     // Runs `edit` as one change; the result (`out`) says what it did, and its id.
     ToolResult change(const QString& text, const QString& tool, QJsonObject out,
                       const std::function<void(ProjectEditor&)>& edit) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         std::optional<int> id;
         try {
             id = session_.agentChanges()->record(text, tool, edit);
@@ -472,7 +471,6 @@ public:
     }
 
     ToolResult setDeviceParameters(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const Located at = locate(arguments);
         if (!at.error.isEmpty()) return ToolResult::failure(at.error);
         const Track& track = *at.track;
@@ -551,7 +549,6 @@ public:
     // --- Edits of tracks and the project ---
 
     ToolResult setMixer(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString id = arguments.value(QStringLiteral("track_id")).toString();
         const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
         if (!track) {
@@ -608,7 +605,6 @@ public:
     }
 
     ToolResult renameTrack(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString id = arguments.value(QStringLiteral("track_id")).toString();
         const QString name = arguments.value(QStringLiteral("name")).toString().trimmed();
         const Track* track = id.isEmpty() || id == kMaster ? nullptr : project().findTrack(id);
@@ -623,7 +619,6 @@ public:
     }
 
     ToolResult setProject(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QJsonValue tempo = arguments.value(QStringLiteral("tempo"));
         const QJsonValue keyName = arguments.value(QStringLiteral("key"));
         if (tempo.isUndefined() && keyName.isUndefined()) {
@@ -768,7 +763,6 @@ public:
     }
 
     ToolResult writeMidiClip(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString id = arguments.value(QStringLiteral("track_id")).toString();
         const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
         if (!track) return ToolResult::failure(QStringLiteral("track_id is required: a MIDI track's id from list_tracks."));
@@ -827,7 +821,6 @@ public:
     }
 
     ToolResult duplicateTrack(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString id = arguments.value(QStringLiteral("track_id")).toString();
         const Track* track = id.isEmpty() || !project().hasTrack(id) ? nullptr : &project().track(id);
         if (!track) return ToolResult::failure(QStringLiteral("track_id is required: a track's id from list_tracks (not a return's or the master's)."));
@@ -906,7 +899,6 @@ public:
     }
 
     ToolResult restoreAgentChanges(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         AgentHistory& history = *session_.agentChanges();
         auto [ids, why] = changeIds(arguments);
         if (!ids) return ToolResult::failure(why);
@@ -940,7 +932,16 @@ private:
 
 void addSessionTools(Protocol& protocol, Session& session) {
     auto tools = std::make_shared<Tools>(session);
-    protocol.addTool({
+    // Every edit (a tool not read-only) fails while the user has edits off.
+    const auto addTool = [&protocol, tools](Tool tool) {
+        if (!tool.readOnly) {
+            tool.call = [tools, call = std::move(tool.call)](const QJsonObject& arguments) {
+                return tools->editsAllowed() ? call(arguments) : ToolResult::failure(kNoEdits);
+            };
+        }
+        protocol.addTool(std::move(tool));
+    };
+    addTool({
         QStringLiteral("get_project"),
         QStringLiteral("Get Project"),
         QStringLiteral("The project open in SUBstation: its name and file, tempo (BPM), time signature, key (the "
@@ -951,7 +952,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject&) { return tools->getProject(); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("list_tracks"),
         QStringLiteral("List Tracks"),
         QStringLiteral("Every track in the arrangement's order (top to bottom; groups before what they hold, "
@@ -964,7 +965,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject&) { return tools->listTracks(); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("get_track"),
         QStringLiteral("Get Track"),
         QStringLiteral("One track (or return, or the master: \"master\") in full: what list_tracks says, plus what "
@@ -977,7 +978,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject& arguments) { return tools->getTrack(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("find_tracks"),
         QStringLiteral("Find Tracks"),
         QStringLiteral("Tracks matching words, the best first, as SUBstation's find bar (Q) finds them: names "
@@ -989,7 +990,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject& arguments) { return tools->findTracks(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("get_harmony"),
         QStringLiteral("Get Harmony"),
         QStringLiteral("The song's chords and key, inferred from the notes its MIDI tracks play (those heard: not "
@@ -1005,7 +1006,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
     });
     const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks or find_tracks."));
     const QJsonObject deviceId = property(QStringLiteral("string"), QStringLiteral("The device's id, from get_track (racks' devices too)."));
-    protocol.addTool({
+    addTool({
         QStringLiteral("get_device_parameters"),
         QStringLiteral("Get Device Parameters"),
         QStringLiteral("A device's parameters (a plug-in's, a built-in device's, a rack's macros and chains) and what "
@@ -1023,7 +1024,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject& arguments) { return tools->getDeviceParameters(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("get_notes"),
         QStringLiteral("Get Notes"),
         QStringLiteral("The notes a MIDI track plays, on the song's timeline, and its clips there. As rows by "
@@ -1042,7 +1043,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject& arguments) { return tools->getNotes(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("get_selection_context"),
         QStringLiteral("Get Selection Context"),
         QStringLiteral("Everything for working on what the user selected in the arrangement, in one call: the time "
@@ -1072,7 +1073,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
                      {QStringLiteral("normalized"), property(QStringLiteral("number"), QStringLiteral("Instead of value: 0..1 over its range."))}}},
         {QStringLiteral("required"), QJsonArray{QStringLiteral("id")}},
         {QStringLiteral("additionalProperties"), false}};
-    protocol.addTool({
+    addTool({
         QStringLiteral("set_device_parameters"),
         QStringLiteral("Set Device Parameters"),
         QStringLiteral("Sets parameters of one device, as the user would turn its knobs: each by id, to a value (or "
@@ -1096,7 +1097,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
                      {QStringLiteral("level_db"), property(QStringLiteral("number"), QStringLiteral("The send's level, up to +6 dB (-70: silent)."))}}},
         {QStringLiteral("required"), QJsonArray{QStringLiteral("return_id"), QStringLiteral("level_db")}},
         {QStringLiteral("additionalProperties"), false}};
-    protocol.addTool({
+    addTool({
         QStringLiteral("set_mixer"),
         QStringLiteral("Set Mixer"),
         QStringLiteral("A track's (a return's, the master's) mixer: volume (dB, up to +6; -70 is silence), pan (-1 "
@@ -1112,7 +1113,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         [tools](const QJsonObject& arguments) { return tools->setMixer(arguments); },
         true,
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("rename_track"),
         QStringLiteral("Rename Track"),
         QStringLiteral("Names a track or a return. A # in the name is the track's number (\"# Keys\" shows as "
@@ -1124,7 +1125,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         [tools](const QJsonObject& arguments) { return tools->renameTrack(arguments); },
         true,
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("set_project"),
         QStringLiteral("Set Project"),
         QStringLiteral("The song's tempo (BPM; clips that aren't warped keep their length in seconds) and key (\"F#m\", "
@@ -1150,7 +1151,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         {QStringLiteral("minItems"), 3},
         {QStringLiteral("maxItems"), 4},
         {QStringLiteral("description"), QStringLiteral("[start_beat, length, pitch, velocity]: velocity may be left out (100).")}};
-    protocol.addTool({
+    addTool({
         QStringLiteral("write_midi_clip"),
         QStringLiteral("Write MIDI Clip"),
         QStringLiteral("Puts a new MIDI clip from start_beat to end_beat on a MIDI track, playing these notes (their "
@@ -1169,7 +1170,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         false,
         [tools](const QJsonObject& arguments) { return tools->writeMidiClip(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("duplicate_track"),
         QStringLiteral("Duplicate Track"),
         QStringLiteral("A copy of a track (a group with what is in it) right after it, as Ctrl+D makes one: the same "
@@ -1184,7 +1185,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
     const QJsonObject ids{{QStringLiteral("type"), QStringLiteral("array")},
                           {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
                           {QStringLiteral("description"), QStringLiteral("Changes' ids, from list_agent_changes.")}};
-    protocol.addTool({
+    addTool({
         QStringLiteral("list_agent_changes"),
         QStringLiteral("List Agent Changes"),
         QStringLiteral("What agents changed in this project since it opened, the first first: each change's id, what "
@@ -1194,7 +1195,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject&) { return tools->listAgentChanges(); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("rewind_agent_changes"),
         QStringLiteral("Rewind Agent Changes"),
         QStringLiteral("Takes back agents' changes (the last first), or all of them, leaving the user's own edits as "
@@ -1206,7 +1207,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         [tools](const QJsonObject& arguments) { return tools->rewindAgentChanges(arguments); },
         true,
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("restore_agent_changes"),
         QStringLiteral("Restore Agent Changes"),
         QStringLiteral("Puts rewound changes back (the first first), unless the user changed the same since."),

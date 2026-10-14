@@ -73,41 +73,31 @@ Item {
         return voices === 1 ? qsTr("1 voice a side") : qsTr("%1 voices a side").arg(voices)
     }
 
-    // The widest of `lines` as a Text lays them out in its font (as a caption, a readout or a button's text is
-    // as wide as its advance and whatever of its last glyph reaches past it): hidden, a line each.
-    component Widest: Text {
-        property var lines: []
-        visible: false
-        textFormat: Text.PlainText
-        text: lines.join("\n")
-    }
     // What the knobs' cells show at their widest: their captions, and each readout's widest form (Rate's
     // "##.## Hz", for 9.996 reads "10.00 Hz"; the percentages, up to Width's 200; Offset's degrees; Output's
     // "-##.# dB"), every figure the font's widest (figures may be proportional): no value is cut short, whatever
     // the font. In the captions' and readouts' font.
-    Widest {
+    EditorTextsWidth {
         id: cellTexts
-        font: Theme.uiFont(8)
-        lines: [rate, amountKnob, feedback, warmthKnob, widthKnob, offsetKnob, shapeKnob, outputKnob, mixKnob]
+        texts: [rate, amountKnob, feedback, warmthKnob, widthKnob, offsetKnob, shapeKnob, outputKnob, mixKnob]
             .map(knob => knob.title)
-            .concat(["##.## Hz", "### %", "###°", "-##.# dB"].map(pattern => figures.sample(pattern)))
+            .concat(["##.## Hz", "### %", "###°", "-##.# dB"])
     }
     // Time's choices and the Taps buttons' figures, in the buttons' font.
-    Widest {
+    EditorTextsWidth {
         id: timeTexts
         font: time.button.font
-        lines: time.names
+        texts: time.names
     }
-    Widest {
+    EditorTextsWidth {
         id: tapTexts
         font: time.button.font
-        lines: editor.tapLabels
+        texts: editor.tapLabels
     }
     // The strip's voices, outside Chorus mode.
-    Widest {
+    EditorTextsWidth {
         id: voicesTexts
-        font: Theme.uiFont(8)
-        lines: [1, 2].map(other => editor.voicesLabel(graph.sideVoices(other)))
+        texts: [1, 2].map(other => editor.voicesLabel(graph.sideVoices(other)))
     }
     // The captions' and readouts' figures (the value box's too).
     FontMetrics {
@@ -264,7 +254,7 @@ Item {
                 opacity: Math.max(0, 2 * editor.chorusShown - 1)
                 visible: opacity > 0
 
-                readonly property int tapWidth: Math.max(16, Math.ceil(tapTexts.implicitWidth) + 4)
+                readonly property int tapWidth: Math.max(16, tapTexts.needed + 4)
                 readonly property real tapsX: time.x - 4 - (2 * tapWidth + 2)  // the first Taps button
                 readonly property real needed: tapsCaption.implicitWidth + 4 + 2 * tapWidth + 2 + 4 + time.width
 
@@ -295,7 +285,7 @@ Item {
                     id: time
                     objectName: "time"
                     x: parent.width - width
-                    width: Math.ceil(timeTexts.implicitWidth) + button.leftPadding + button.rightPadding
+                    width: timeTexts.needed + button.leftPadding + button.rightPadding
                     anchors.verticalCenter: parent.verticalCenter
                     param: p.get("time")
                     tooltip: qsTr("Time: the delays' length. Auto follows the Amount (the classic chorus); "

@@ -65,7 +65,6 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <numbers>
 #include <string>
 #include <vector>
 
@@ -87,7 +86,7 @@ using reverb::kMaxTaps;
 using reverb::kMeterFloorDb;
 using reverb::kMeterSamples;
 
-constexpr double kPi = std::numbers::pi;
+using dsp::kPi;
 constexpr float kButterworthK = 1.41421356f;  // the input filter's damping (Q 0.707)
 constexpr double kSwitchSeconds = 0.02;       // Density: the crossfade from one network to the other
 constexpr double kGuardLevel = 8.0;           // +18 dBFS: the tail's output peak the guard holds it under

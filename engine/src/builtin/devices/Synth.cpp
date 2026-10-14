@@ -8,7 +8,6 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
-#include <numbers>
 #include <vector>
 
 #include "builtin/BuiltinProcessor.h"
@@ -91,7 +90,7 @@ private:
 };
 
 
-constexpr double kPi = std::numbers::pi;
+using dsp::kPi;
 constexpr float kVoiceGain = 0.25f;  // one voice's peak at full velocity
 
 // PolyBLEP: smooths an oscillator's step at phase 0 over one sample on each

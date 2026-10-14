@@ -302,12 +302,7 @@ public:
     int latencySamples() const override { return isOn(Hq) ? hqLatency_ : 0; }
 
     // Hi-Quality changed: the engine must realign the tracks.
-    bool idle() override {
-        const int latency = latencySamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     // What the curve leaves ringing in Color's filters (it doesn't cancel once
     // the curve bends) or the DC filter: 8 time constants of the slowest (69 dB
@@ -334,7 +329,7 @@ public:
         }
         color_[0].rate = sampleRate;
         color_[1].rate = sampleRate * (1 << kHqFactorLog2);
-        reportedLatency_ = latencySamples();
+        latencyReport_.reported(latencySamples());
         reset();
     }
 
@@ -719,7 +714,7 @@ private:
     GlideTable fast_, slow_;
     int fadeLength_ = 480;
     const int hqLatency_;
-    int reportedLatency_ = 0;
+    dsp::LatencyReport latencyReport_;
     int channels_ = kChannels;
 
     dsp::Glide drive_, output_, mix_, threshold_;
