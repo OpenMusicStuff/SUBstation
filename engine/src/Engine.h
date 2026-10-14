@@ -589,6 +589,9 @@ public:
     std::vector<PluginSandboxInfo> pluginSandboxes();
     // How long a sandbox that no plug-in uses any more stays before it quits (5 s).
     void setSandboxRetireDelay(int milliseconds);
+    // How long an offline render waits for a sandboxed plug-in's block before it goes on without
+    // (a minute; once: a plug-in that misses it is waited for no more until it catches up). Tests.
+    void setSandboxOfflineWait(int milliseconds);
     // Sandboxed editors: the keys (key, modifiers: SandboxEditorKey's) the application
     // takes from them, and those pressed since the last call. (Editors in this process
     // ask EditorHost.h's key filter, or are the application's own windows: Windows.)

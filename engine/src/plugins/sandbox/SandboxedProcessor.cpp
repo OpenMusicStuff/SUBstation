@@ -12,11 +12,10 @@ namespace sub::sandbox {
 
 namespace {
 
-constexpr int64_t kOfflineWaitUs = 60'000'000;  // a block of an offline render: as long as it takes, nearly
 constexpr int kTextWaitMs = 250;                // a value's text, from a sandbox that isn't loading
 constexpr int kStateWaitMs = 15000;             // a state, to save it
 constexpr int kSetStateWaitMs = 10000;          // a state set, to hear whether it was taken
-constexpr int kResetWaitMs = 10000;             // an offline reset, before a render
+constexpr std::chrono::seconds kResetWait{10};  // an offline reset, before a render
 constexpr size_t kMaxTexts = 4096;              // values' texts kept
 
 // VST3's plain values, as Vst3Processor has them: 0..1, or the step for stepped parameters.
@@ -41,6 +40,7 @@ SandboxedProcessor::SandboxedProcessor(PluginSandboxes& sandboxes, PluginOrigin 
       name_(origin_.name.empty() ? origin_.uid : origin_.name),
       lastState_(state) {
     link_.sandbox = sandboxes.sandboxFor(origin_);
+    offlineWaitUs_ = static_cast<int64_t>(sandboxes.offlineWaitMs()) * 1000;
     link_.instance = Sandbox::newInstance();
     const std::string memory = platform::uniqueIpcName("p");
     link_.memory = platform::SharedMemory::create(memory, sizeof(Block));
@@ -82,6 +82,15 @@ void SandboxedProcessor::ask(Kind kind, std::string body, Asked asked) const {
 // --- The reader thread's -------------------------------------------------------------------
 
 void SandboxedProcessor::received(Message message) {
+    if (message.kind == Kind::Reply && message.request != 0 &&
+        message.request == resetRequest_.load(std::memory_order_acquire)) {
+        {
+            std::lock_guard lock(resetMutex_);
+            resetAnswer_ = message.request;
+        }
+        resetAnswered_.notify_all();  // (an offline render waiting for it goes on)
+        return;
+    }
     std::lock_guard lock(inboxMutex_);
     inbox_.push_back(std::move(message));
 }
@@ -89,6 +98,8 @@ void SandboxedProcessor::received(Message message) {
 void SandboxedProcessor::sandboxEnded() {
     link_.ended.store(true, std::memory_order_release);
     link_.done->notify();  // (a rendering thread waiting on it goes on)
+    { std::lock_guard lock(resetMutex_); }  // (not between a waiter's look at ended() and its wait)
+    resetAnswered_.notify_all();
     std::lock_guard lock(inboxMutex_);
     endedSeen_ = true;
 }
@@ -108,7 +119,27 @@ void SandboxedProcessor::reset() { resetPending_.store(true, std::memory_order_r
 
 void SandboxedProcessor::resetOffline() {
     if (!loaded() || ended()) return;
-    link_.sandbox->call({Kind::ResetOffline, link_.instance}, kResetWaitMs);
+    // Asked for, not waited for: the sandbox's main thread may be loading another plug-in, or stuck in one.
+    const uint32_t request = Sandbox::newRequest();
+    const auto deadline = std::chrono::steady_clock::now() + kResetWait;
+    resetDeadline_.store(deadline.time_since_epoch().count(), std::memory_order_relaxed);
+    resetRequest_.store(request, std::memory_order_release);
+    link_.sandbox->send({Kind::ResetOffline, link_.instance, request});
+}
+
+// An offline render's first block comes after the reset asked for before it: the sandbox's main
+// thread does that, its audio thread the blocks. Waited for until the deadline set when it was asked
+// (all of a stuck sandbox's plug-ins were asked at once); past it the render goes on without.
+void SandboxedProcessor::waitForOfflineReset() {
+    uint32_t request = resetRequest_.load(std::memory_order_acquire);
+    if (request == 0) return;
+    using Clock = std::chrono::steady_clock;
+    const Clock::time_point deadline(Clock::duration(resetDeadline_.load(std::memory_order_relaxed)));
+    {
+        std::unique_lock lock(resetMutex_);
+        resetAnswered_.wait_until(lock, deadline, [&] { return resetAnswer_ == request || ended(); });
+    }
+    resetRequest_.compare_exchange_strong(request, 0, std::memory_order_acq_rel);
 }
 
 bool SandboxedProcessor::waitDone(uint32_t sent, int64_t timeoutMicroseconds) noexcept {
@@ -134,14 +165,18 @@ void SandboxedProcessor::process(const ProcessContext& ctx, float* const* channe
         numChannels < 1) {
         return;
     }
+    if (ctx.offline) waitForOfflineReset();
     Block& block = *link_.block;
     if (block.done.load(std::memory_order_acquire) != sent_) {
         // The sandbox still has an earlier block (it didn't make it in time): this one passes by.
-        if (!ctx.offline || !waitDone(sent_, kOfflineWaitUs)) {
+        // Offline it is waited for, once: a plug-in that hangs costs a render one wait, not one a block.
+        if (!ctx.offline || offlineLate_ || !waitDone(sent_, offlineWaitUs_)) {
+            if (ctx.offline) offlineLate_ = true;
             lateBlocks_.fetch_add(1, std::memory_order_relaxed);
             return;
         }
     }
+    offlineLate_ = false;  // (caught up)
 
     uint32_t flags = 0;
     if (resetPending_.exchange(false, std::memory_order_acq_rel)) flags |= kBlockReset;
@@ -171,8 +206,9 @@ void SandboxedProcessor::process(const ProcessContext& ctx, float* const* channe
     link_.request->notify();
     // Live, a little longer than the block lasts (a plug-in slower than that is late anyway).
     const int64_t lasts = static_cast<int64_t>(numFrames * 1e6 / std::max(ctx.sampleRate, 1.0));
-    const int64_t timeout = ctx.offline ? kOfflineWaitUs : std::clamp<int64_t>(lasts * 2, 3000, 50000);
+    const int64_t timeout = ctx.offline ? offlineWaitUs_ : std::clamp<int64_t>(lasts * 2, 3000, 50000);
     if (!waitDone(sent_, timeout)) {
+        if (ctx.offline) offlineLate_ = true;
         lateBlocks_.fetch_add(1, std::memory_order_relaxed);
         return;  // (it passes through unprocessed)
     }

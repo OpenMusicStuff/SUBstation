@@ -115,14 +115,20 @@ on its counters (`IpcSignal`: a futex on Linux, a named auto-reset event on Wind
 `SandboxedProcessor::process()`, on whichever thread renders the plug-in:
 
 1. If the plug-in hasn't loaded (or crashed), it returns: the audio passes by, as for a missing plug-in.
-2. If the host still has the previous block (it didn't make it in time), this one passes by too: a plug-in that hangs
-   costs the rendering thread one wait, not one a block. (Offline, it waits for it.)
-3. It fills the block: the context (`BlockContext`), the notes and MIDI, the automation for this call
+2. Offline, the first block waits for the reset asked for before the render. `resetOffline()` sends `ResetOffline`
+   without waiting for it (it runs on the main thread, under the engine's lock, and the sandbox's main thread may be
+   loading another plug-in, or stuck in one); the host's main thread does it, its audio thread the blocks. The wait
+   ends 10 s after the reset was asked for, and every plug-in was asked at once: a stuck sandbox costs a render 10 s,
+   not 10 s a plug-in.
+3. If the host still has the previous block (it didn't make it in time), this one passes by too: a plug-in that hangs
+   costs the rendering thread one wait, not one a block. Offline, it is waited for, once: after an offline block that
+   didn't make it, the next ones pass by until the host catches up.
+4. It fills the block: the context (`BlockContext`), the notes and MIDI, the automation for this call
    (`Processor::automation()`), the values the UI set since (a queue the main thread fills, VST3 ids and normalized
    values), the audio and the sidechain, and a reset if one was asked for; then moves `request` and wakes the host.
-4. It waits for `done` to match: a spin of a few microseconds, then on the wake-up, at most twice as long as the block
-   lasts (3 to 50 ms) live, a minute offline, and never past its sandbox ending. Done, it copies the audio back; not,
-   the audio passes through unprocessed (`lateBlocks()` counts those).
+5. It waits for `done` to match: a spin of a few microseconds, then on the wake-up, at most twice as long as the block
+   lasts (3 to 50 ms) live, a minute offline (`Engine::setSandboxOfflineWait()`), and never past its sandbox ending.
+   Done, it copies the audio back; not, the audio passes through unprocessed (`lateBlocks()` counts those).
 
 The host's audio thread applies what the block holds to the plug-in (`Processor::automate()`,
 `Vst3Processor::queueParamChange()`, `setSidechain()`) and calls `process()` in place. A round trip costs about

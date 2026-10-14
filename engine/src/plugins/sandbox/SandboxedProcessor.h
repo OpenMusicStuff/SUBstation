@@ -10,10 +10,14 @@
 // - Audio: process() hands each block to the sandbox in shared memory (the
 //   track's audio, its sidechain, notes, automation and the UI's parameter
 //   changes) and waits for it to come back processed, at most a little longer
-//   than the block lasts live (offline renders wait as long as it takes). A
-//   block that doesn't come back in time passes through unprocessed, and the
-//   next ones too until the sandbox has caught up: a plug-in that hangs never
-//   holds up the audio thread for more than one block.
+//   than the block lasts live (offline, a minute). A block that doesn't come
+//   back in time passes through unprocessed, and the next ones too until the
+//   sandbox has caught up: a plug-in that hangs never holds up the audio
+//   thread for more than one block, nor an offline render for more than one wait.
+// - Before an offline render (resetOffline()), the reset is asked for without
+//   waiting (the main thread, under the engine's lock, never waits on a sandbox
+//   busy loading, or stuck); the render's first block waits for it, until 10 s
+//   after it was asked: a sandbox's plug-ins wait 10 s in all, not each.
 // - Parameters, latency, preset name, editor: copies of the sandbox's, kept up
 //   to date from its reports, taken on the main thread in idle(); ProcessorEvents
 //   say what changed, as a plug-in in this process would. Setting a value
@@ -28,6 +32,8 @@
 // Main thread, as for any processor, but for process() and reset().
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -127,6 +133,7 @@ private:
     void send(Kind kind, std::string body = {}) const;
     void ask(Kind kind, std::string body, Asked asked) const;
     bool waitDone(uint32_t sent, int64_t timeoutMicroseconds) noexcept;
+    void waitForOfflineReset();
     bool loaded() const { return status_ == Status::Ready; }
     bool ended() const { return link_.ended.load(std::memory_order_acquire); }
 
@@ -137,9 +144,18 @@ private:
     Link link_;
     std::atomic<bool> ready_{false};  // process() may hand it blocks
     uint32_t sent_ = 0;               // the rendering thread's: the block it handed over last
+    bool offlineLate_ = false;        // the rendering thread's: an offline block missed its wait (no more waits)
+    int64_t offlineWaitUs_ = 0;       // how long an offline block is waited for (PluginSandboxes')
     std::atomic<bool> resetPending_{false};
     std::atomic<uint64_t> lateBlocks_{0};
     SpscQueue<BlockChange, 1024> changes_;  // the UI's values on their way to the plug-in's audio
+
+    // The offline reset asked for (resetOffline()), and its answer, from the reader thread.
+    std::atomic<uint32_t> resetRequest_{0};  // 0: none to wait for
+    std::atomic<std::chrono::steady_clock::rep> resetDeadline_{0};  // waited for until then (steady clock)
+    std::mutex resetMutex_;
+    std::condition_variable resetAnswered_;
+    uint32_t resetAnswer_ = 0;  // (resetMutex_) the request answered last
 
     // What the reader thread received, for idle().
     std::mutex inboxMutex_;

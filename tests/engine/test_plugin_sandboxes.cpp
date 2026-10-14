@@ -7,17 +7,22 @@
 // A plug-in in a sandbox plays, and reports, as one in the engine's own process
 // does; adding one never waits for it to load; a crash takes down its sandbox
 // and the plug-ins in it, which pass their input on, and nothing else; a hung
-// plug-in holds up the audio thread for one block; reloading brings one back as
-// it was, where the hosting mode now says. Renders are offline unless said.
+// plug-in holds up the audio thread for one block, and an offline render for one
+// wait; a render never waits on the main thread for a sandbox that is loading;
+// reloading brings one back as it was, where the hosting mode now says. Renders
+// are offline unless said.
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "Engine.h"
 #include "harness/Fixtures.h"
@@ -121,6 +126,42 @@ Samples renderScene(sub::Engine& engine, bool sandboxed) {
     engine.setTrackAutomation(clip, {{effect, std::to_string(FX_GAIN), {{0.0, 0.25f, 0.f}, {2.0, 0.5f, 0.f}}}});
     return engine.renderOffline(0.0, 3 * kBeat);
 }
+
+// SUB Test Crasher in a sandbox of its own, loaded; nullptr if it didn't load.
+std::shared_ptr<sub::sandbox::SandboxedProcessor> loadedCrasher(sub::sandbox::PluginSandboxes& sandboxes) {
+    sandboxes.setProgram(pluginHost());
+    sandboxes.setHosting(PluginHosting::Individually);
+    auto crasher = std::make_shared<sub::sandbox::SandboxedProcessor>(
+        sandboxes, sub::sandbox::PluginOrigin{testPluginsBundle(), testPluginUids().at("SUB Test Crasher"),
+                                              "SUB Test Crasher", "SUB Crash Works"},
+        std::vector<uint8_t>{}, kSampleRate, 1024);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (crasher->status() == sub::sandbox::SandboxedProcessor::Status::Loading &&
+           std::chrono::steady_clock::now() < deadline) {
+        crasher->idle();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return crasher->status() == sub::sandbox::SandboxedProcessor::Status::Ready ? crasher : nullptr;
+}
+
+// One block of 0.25 through `processor`, live or offline, with `events`: how long it took.
+struct BlockThrough {
+    static constexpr int kFrames = 256;  // live: 5.3 ms
+    std::vector<float> left = std::vector<float>(kFrames), right = std::vector<float>(kFrames);
+    std::chrono::steady_clock::duration operator()(sub::Processor& processor, bool offline,
+                                                   const std::vector<sub::ProcessEvent>& events = {}) {
+        std::fill(left.begin(), left.end(), 0.25f);
+        std::fill(right.begin(), right.end(), 0.25f);
+        float* channels[2] = {left.data(), right.data()};
+        sub::ProcessContext ctx;
+        ctx.sampleRate = kSampleRate;
+        ctx.offline = offline;
+        ctx.inEvents = {events.data(), events.size()};
+        const auto started = std::chrono::steady_clock::now();
+        processor.process(ctx, channels, 2, kFrames);
+        return std::chrono::steady_clock::now() - started;
+    }
+};
 
 }  // namespace
 
@@ -325,46 +366,67 @@ TEST_CASE("sandbox: together, a crash takes them all down; each loads again as i
 TEST_CASE("sandbox: a hung plug-in holds up the audio thread for one block at most") {
     requireTestPlugins();
     sub::sandbox::PluginSandboxes sandboxes;
-    sandboxes.setProgram(pluginHost());
-    sandboxes.setHosting(PluginHosting::Individually);
-    auto crasher = std::make_shared<sub::sandbox::SandboxedProcessor>(
-        sandboxes, sub::sandbox::PluginOrigin{testPluginsBundle(), testPluginUids().at("SUB Test Crasher"),
-                                              "SUB Test Crasher", "SUB Crash Works"},
-        std::vector<uint8_t>{}, kSampleRate, 1024);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (crasher->status() == sub::sandbox::SandboxedProcessor::Status::Loading &&
-           std::chrono::steady_clock::now() < deadline) {
-        crasher->idle();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
-    REQUIRE(crasher->status() == sub::sandbox::SandboxedProcessor::Status::Ready);
-
-    constexpr int kFrames = 256;  // live: 5.3 ms
-    std::vector<float> left(kFrames), right(kFrames);
-    float* channels[2] = {left.data(), right.data()};
-    const auto block = [&](const std::vector<sub::ProcessEvent>& events) {
-        std::fill(left.begin(), left.end(), 0.25f);
-        std::fill(right.begin(), right.end(), 0.25f);
-        sub::ProcessContext ctx;
-        ctx.sampleRate = kSampleRate;
-        ctx.inEvents = {events.data(), events.size()};
-        const auto started = std::chrono::steady_clock::now();
-        crasher->process(ctx, channels, 2, kFrames);
-        return std::chrono::steady_clock::now() - started;
-    };
-    block({});
-    CHECK_EQ(left[0], 0.5f);  // doubled
+    auto crasher = loadedCrasher(sandboxes);
+    REQUIRE(crasher);
+    BlockThrough block;
+    block(*crasher, false);
+    CHECK_EQ(block.left[0], 0.5f);  // doubled
     CHECK_EQ(crasher->lateBlocks(), uint64_t{0});
     // Note 1 hangs it: the block passes through after a little longer than it lasts...
-    const auto hung = block({sub::ProcessEvent::noteOn(0, 1, 100)});
+    const auto hung = block(*crasher, false, {sub::ProcessEvent::noteOn(0, 1, 100)});
     CHECK(hung < std::chrono::milliseconds(100));
-    CHECK_EQ(left[0], 0.25f);
+    CHECK_EQ(block.left[0], 0.25f);
     CHECK_EQ(crasher->lateBlocks(), uint64_t{1});
     // ...and the next ones at once, without waiting.
-    CHECK(block({}) < std::chrono::milliseconds(2));
-    CHECK_EQ(left[0], 0.25f);
+    CHECK(block(*crasher, false) < std::chrono::milliseconds(2));
+    CHECK_EQ(block.left[0], 0.25f);
     CHECK_EQ(crasher->lateBlocks(), uint64_t{2});
     crasher.reset();  // (its sandbox leaves it as it is, and is killed when it doesn't quit)
+}
+
+TEST_CASE("sandbox: a hung plug-in holds up an offline render for one wait, not one a block") {
+    requireTestPlugins();
+    sub::sandbox::PluginSandboxes sandboxes;
+    sandboxes.setOfflineWait(300);  // (a minute in the application)
+    auto crasher = loadedCrasher(sandboxes);
+    REQUIRE(crasher);
+    BlockThrough block;
+    block(*crasher, true);
+    CHECK_EQ(block.left[0], 0.5f);
+    // Hung: that block is waited for as long as offline blocks are...
+    const auto hung = block(*crasher, true, {sub::ProcessEvent::noteOn(0, 1, 100)});
+    CHECK(hung >= std::chrono::milliseconds(250));
+    CHECK(hung < std::chrono::seconds(2));
+    CHECK_EQ(block.left[0], 0.25f);
+    // ...and no other, until it catches up (it never does).
+    for (int i = 0; i < 3; ++i) {
+        CHECK(block(*crasher, true) < std::chrono::milliseconds(50));
+        CHECK_EQ(block.left[0], 0.25f);
+    }
+    CHECK_EQ(crasher->lateBlocks(), uint64_t{4});
+    crasher.reset();
+}
+
+TEST_CASE("sandbox: a render doesn't wait on the main thread for a sandbox loading another plug-in") {
+    const ScopedEnvironment slow("SUB_TEST_PLUGIN_SLOW_LOAD_MS", "1500");
+    SandboxEngine e;  // (together: one sandbox, whose main thread loads one plug-in at a time)
+    auto& engine = e.engine;
+    const uint32_t clip = clipTrack(engine, dcWav());
+    addPlugin(engine, engine.trackChain(clip), "SUB Test Crasher");
+    REQUIRE(engine.waitForPlugins(10000));
+    addPlugin(engine, engine.trackChain(engine.addTrack()), "SUB Test Crasher");  // loading for 1.5 s
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));  // (its load under way: the reset waits behind it)
+    const auto path = tempDir() / "while-loading.wav";
+    const auto started = std::chrono::steady_clock::now();
+    const auto job = engine.startExport(path.string(), 0.0, 1.0, 32);
+    // The first plug-in's reset before the render is asked for, not waited for; the render's first block waits.
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(500));
+    REQUIRE(job->finish());
+    const std::vector<double> samples = readWav(path).samples();
+    REQUIRE(samples.size() == static_cast<size_t>(2 * kBeat));
+    double worst = 0.0;
+    for (const double sample : samples) worst = std::max(worst, std::abs(sample - 1.0));
+    CHECK(worst < 1e-6);  // 0.5 doubled, throughout
 }
 
 TEST_CASE("sandbox: latency, sidechains and notes from other tracks, as in the engine's own process") {
@@ -421,6 +483,17 @@ TEST_CASE("sandbox: without its host program, a plug-in can't be added there") {
     engine.setPluginHostProgram(pluginHost() + ".missing");
     CHECK_THROWS_MATCHING(addPlugin(engine, engine.trackChain(engine.addTrack()), "SUB Test Effect"),
                           std::runtime_error, "Could not start");
+}
+
+TEST_CASE("sandbox: a garbled message's counts aren't taken on trust") {
+    sub::platform::ByteWriter out;
+    out.u32(0xFFFFFFFFu);  // four billion of them, and nothing after
+    for (const auto read : {+[](sub::platform::ByteReader& in) { return sub::sandbox::readParams(in).size(); },
+                            +[](sub::platform::ByteReader& in) { return sub::sandbox::readValues(in).size(); }}) {
+        sub::platform::ByteReader in(out.bytes);
+        CHECK_EQ(read(in), size_t{0});
+        CHECK(!in.ok());
+    }
 }
 
 TEST_CASE("sandbox: a plug-in that can't be loaded there says why") {

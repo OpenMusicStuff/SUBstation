@@ -57,6 +57,9 @@ public:
     void idle();
     // How long an unused sandbox stays (a plug-in deleted and its deletion undone doesn't start one again).
     void setRetireDelay(int milliseconds);
+    // How long an offline render waits for a plug-in's block (a minute; for plug-ins loaded from then on).
+    void setOfflineWait(int milliseconds);
+    int offlineWaitMs() const;
 
     std::vector<SandboxInfo> sandboxes() const;
 
@@ -87,6 +90,7 @@ private:
     bool idleHeld_ = false;
     uint64_t nextInstanceKey_ = 0;
     int retireDelayMs_ = 5000;
+    int offlineWaitMs_ = 60000;
 };
 
 }  // namespace sub::sandbox

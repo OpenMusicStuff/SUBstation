@@ -84,10 +84,12 @@ void writeParams(platform::ByteWriter& out, const std::vector<ParamInfo>& params
     }
 }
 
+// (Counts are read, not trusted: the vectors grow only while there is something to read.)
 std::vector<ParamInfo> readParams(platform::ByteReader& in) {
-    std::vector<ParamInfo> params(in.u32());
-    for (ParamInfo& p : params) {
-        if (!in.ok()) break;
+    std::vector<ParamInfo> params;
+    const uint32_t count = in.u32();
+    for (uint32_t i = 0; i < count && in.ok(); ++i) {
+        ParamInfo& p = params.emplace_back();
         p.id = in.str();
         p.name = in.str();
         p.unit = in.str();
@@ -114,8 +116,9 @@ void writeValues(platform::ByteWriter& out, const std::vector<float>& values) {
 }
 
 std::vector<float> readValues(platform::ByteReader& in) {
-    std::vector<float> values(in.u32());
-    for (float& v : values) v = in.f32();
+    std::vector<float> values;
+    const uint32_t count = in.u32();
+    for (uint32_t i = 0; i < count && in.ok(); ++i) values.push_back(in.f32());
     if (!in.ok()) values.clear();
     return values;
 }

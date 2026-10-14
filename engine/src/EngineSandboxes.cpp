@@ -154,6 +154,8 @@ std::vector<PluginSandboxInfo> Engine::pluginSandboxes() {
 
 void Engine::setSandboxRetireDelay(int milliseconds) { sandboxes_->setRetireDelay(milliseconds); }
 
+void Engine::setSandboxOfflineWait(int milliseconds) { sandboxes_->setOfflineWait(milliseconds); }
+
 void Engine::setSandboxEditorKeys(const std::vector<std::pair<uint32_t, int>>& keys) { sandboxes_->setEditorKeys(keys); }
 
 std::vector<SandboxEditorKey> Engine::takeSandboxEditorKeys() {

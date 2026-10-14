@@ -280,14 +280,17 @@ std::unique_ptr<SharedMemory> SharedMemory::create(const std::string& name, size
     HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, static_cast<DWORD>(big >> 32),
                                         static_cast<DWORD>(big & 0xFFFFFFFFu), objectName(name).c_str());
     if (!mapping) throw windowsError("CreateFileMapping " + name);
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {  // another process's (the size asked for doesn't apply to it)
+        CloseHandle(mapping);
+        throw std::runtime_error("Shared memory " + name + " exists already");
+    }
     void* data = mapView(mapping, size);
     if (!data) {
         const auto error = windowsError("MapViewOfFile " + name);
         CloseHandle(mapping);
         throw error;
     }
-    std::memset(data, 0, size);  // (a new mapping is zeroed already; one that existed may not be)
-    return std::make_unique<WinSharedMemory>(mapping, data, size);
+    return std::make_unique<WinSharedMemory>(mapping, data, size);  // (zeroed, as a new mapping is)
 }
 
 std::unique_ptr<SharedMemory> SharedMemory::open(const std::string& name, size_t size) {

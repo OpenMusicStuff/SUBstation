@@ -79,6 +79,16 @@ void PluginSandboxes::setRetireDelay(int milliseconds) {
     retireDelayMs_ = std::max(0, milliseconds);
 }
 
+void PluginSandboxes::setOfflineWait(int milliseconds) {
+    std::lock_guard lock(mutex_);
+    offlineWaitMs_ = std::max(1, milliseconds);
+}
+
+int PluginSandboxes::offlineWaitMs() const {
+    std::lock_guard lock(mutex_);
+    return offlineWaitMs_;
+}
+
 std::string PluginSandboxes::keyFor(const PluginOrigin& origin, std::string& label) {
     const std::string name = origin.name.empty() ? origin.uid : origin.name;
     switch (hosting_) {
