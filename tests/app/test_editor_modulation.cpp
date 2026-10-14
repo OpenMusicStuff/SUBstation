@@ -434,6 +434,12 @@ private Q_SLOTS:
         QCOMPARE(f.project.device(track, utility).params.value("width"), 50.0);
         f.stack.undo();
         QVERIFY(near(f.project.device(track, utility).params.value("gain"), info->fromNormalized(0.1), 1e-9));
+        // A value that leaves the normalized base where it was (past the top, say) is still part of the drag.
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0), "top");
+        const int atTop = f.stack.count();
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0) + 1.0, "top");
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0) + 2.0, "top");
+        QCOMPARE(f.stack.count(), atTop);
         // A parameter nothing modulates is as it was: no mapping to move.
         f.editor.setDeviceParam(track, utility, "pan", 0.5);
         QCOMPARE(f.stack.undoText(), QStringLiteral("Change Device Parameter"));

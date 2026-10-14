@@ -91,9 +91,6 @@ bool ProjectEditor::pushModulatedParams(const QString& trackId, const QMap<Devic
         change->newValues.insert(it.key(), it.value());
         change->oldValues.insert(it.key(), old.value(it.key(), it.value()));
     }
-    for (auto it = changes.begin(); it != changes.end();) {  // (one that doesn't move its mapping has nothing to add)
-        it = it->mappings == project_->device(trackId, it.key()).modulations ? changes.erase(it) : std::next(it);
-    }
     if (changes.isEmpty()) return false;
     // The parameters nothing moves go with the first modulator's command, so a drag of several still merges.
     for (auto it = nw.constBegin(); it != nw.constEnd(); ++it) {
