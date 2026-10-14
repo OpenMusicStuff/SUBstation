@@ -644,6 +644,8 @@ private Q_SLOTS:
         QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), kick);
         QVERIFY(near(f.project().clip(a, QStringLiteral("Ac")).durationSec, 0.5));
         QCOMPARE(f.stack().index(), steps);
+        QCOMPARE(f.stack().count(), steps);  // (its step gone: nothing to redo the cancelled sample with)
+        QVERIFY(!f.stack().canRedo());
         // Nothing tried: nothing to put back, nothing undone.
         QVERIFY(hot.startClip({a, QStringLiteral("Ac")}));
         hot.cancel();

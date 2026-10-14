@@ -300,7 +300,7 @@ Rectangle {
                         id: hotSwapHover
                     }
                     ToolTip.visible: hotSwapHover.hovered
-                    ToolTip.text: qsTr("Hot-Swap\nThe sample selected here plays in the place of %1 (%2): click through samples, or use the arrow keys, to hear them in the song. Double-click one (or press Enter) to keep it; Esc keeps what is swapped in.")
+                    ToolTip.text: qsTr("Hot-Swap\nThe sample selected here plays in the place of %1 (%2): click through samples, or use the arrow keys, to hear them in the song. Double-click one (or press Enter) to keep it; Esc puts back the sample it began with.")
                                   .arg(panel.hotSwap.name).arg(panel.hotSwap.usesText)
                     ToolTip.delay: 700
                 }

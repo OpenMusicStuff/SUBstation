@@ -394,6 +394,10 @@ public:
     // was refused).
     bool replaceFile(const FileUses& uses, const QString& path, double seconds, const QString& text,
                      const QString& mergeKey = {});
+    // The last step's file replacements of `mergeKey` (a hot swap's) put back
+    // as they were before it: merged into it, the step is gone (no redo
+    // either). False if the last step isn't one of them.
+    bool revertReplaceFiles(const QString& mergeKey);
     // Files found somewhere else (missing ones located): each old path -> its
     // new one, wherever a clip plays it (or was reversed from it) and a device
     // names it; on frozen tracks too, as it is the same audio. One undo step;

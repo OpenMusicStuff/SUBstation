@@ -98,7 +98,6 @@ private:
 
     Project* project_;
     ProjectEditor* editor_;
-    QUndoStack* undoStack_;
     EngineBridge* bridge_;
     QPointer<BrowserController> browser_;
     bool active_ = false;
