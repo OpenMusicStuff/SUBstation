@@ -83,10 +83,11 @@ QString updateAssetName(const UpdateVersion& version, const QString& platformSuf
     return QStringLiteral("SUBstation-") + version.toString() + platformSuffix;
 }
 
-QString updatePlatformSuffix() {
+QString updatePlatformSuffix(bool installer) {
 #ifdef _WIN32
-    return QStringLiteral("-windows-x64.zip");
+    return installer ? QStringLiteral("-windows-x64-setup.exe") : QStringLiteral("-windows-x64.zip");
 #else
+    (void)installer;
     return QStringLiteral("-linux-x64.zip");
 #endif
 }

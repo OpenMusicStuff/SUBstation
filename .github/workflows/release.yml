@@ -10,10 +10,12 @@
 #   newest 10 are kept. A newer push cancels the build of an older one.
 #
 # By hand (workflow_dispatch), any channel from the branch chosen (stable: from its tag).
-# The download is SUBstation-<version>-windows-x64.zip and its .sha256
-# (tools/release/package-windows.ps1). Built without the tests (the CI and Windows
-# nightly workflows run them) and without Steinberg's ASIO SDK, which isn't
-# redistributable: WASAPI only, unless the ASIO_SDK_URL secret gives a zip of it.
+# The downloads are SUBstation-<version>-windows-x64-setup.exe (the installer) and
+# SUBstation-<version>-windows-x64.zip (portable), each with its .sha256
+# (tools/release/package-windows.ps1, tools/release/substation.iss). Built with Steinberg's
+# ASIO SDK (downloaded, pinned, under its GPLv3 option), without the tests (the CI and
+# Windows nightly workflows run them), and signed with Azure Artifact Signing once its
+# secrets are set.
 name: Release
 
 on:
@@ -101,6 +103,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.release == 'true'
     runs-on: windows-2022
+    env:
+      # Signed with Azure Artifact Signing (Trusted Signing) once its secrets and variables are set
+      # (docs/releasing.md#code-signing); unsigned until then.
+      SIGN: ${{ secrets.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_PROFILE != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: jurplel/install-qt-action@v4
@@ -114,16 +120,18 @@ jobs:
           key: release-windows-msvc
           variant: sccache
           max-size: 2G
-      - name: ASIO SDK (if the ASIO_SDK_URL secret gives one)
+      # Steinberg's ASIO SDK 2.3.4, the first offered under GPLv3 as well as Steinberg's own licence: SUBstation
+      # takes it under GPLv3 (docs/licensing.md). Pinned by its SHA-256; unpacked outside the checkout.
+      - name: ASIO SDK
         shell: pwsh
-        env:
-          ASIO_SDK_URL: ${{ secrets.ASIO_SDK_URL }}
         run: |
-          if (-not $env:ASIO_SDK_URL) { Write-Output "No ASIO SDK: WASAPI only."; exit 0 }
-          Invoke-WebRequest -Uri $env:ASIO_SDK_URL -OutFile asiosdk.zip
-          Expand-Archive asiosdk.zip -DestinationPath asiosdk
-          $common = Get-ChildItem asiosdk -Recurse -Directory -Filter common | Select-Object -First 1
-          "SUBSTATION_ASIO_SDK=$($common.Parent.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $zip = Join-Path $env:RUNNER_TEMP 'asiosdk.zip'
+          Invoke-WebRequest -Uri 'https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip' -OutFile $zip
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($hash -ne 'd5ebf0c20dd2c5f43771fd0c1418f4b361bf52434ee670097cfa6b3a335e2eca') { throw "The ASIO SDK isn't the one pinned ($hash)." }
+          $dir = Join-Path $env:RUNNER_TEMP 'asiosdk'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          "SUBSTATION_ASIO_SDK=$(Join-Path $dir 'ASIOSDK')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       # (Quoted: PowerShell splits an unquoted -DNAME=a.b at the dot, so the suffix
       # canary.202610142032 reached CMake as "canary".)
       - name: Configure
@@ -136,15 +144,58 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
       - name: Build
         run: ninja -C build
-      - name: Package
+      - name: Stage
         shell: pwsh
-        run: tools/release/package-windows.ps1 -Build build -Version '${{ needs.plan.outputs.version }}' -Out dist
+        run: >
+          tools/release/package-windows.ps1 -Step Stage -Build build -Version '${{ needs.plan.outputs.version }}'
+          -Out dist -Repository '${{ github.repository }}' -Commit '${{ github.sha }}'
+      - name: Sign the programs
+        if: env.SIGN == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist\SUBstation
+          files-folder-filter: substation*.exe
+          description: SUBstation
+          description-url: https://github.com/${{ github.repository }}
+      - name: Archive and installer
+        shell: pwsh
+        run: |
+          tools/release/package-windows.ps1 -Step Archive -Version '${{ needs.plan.outputs.version }}' -Out dist
+          tools/release/package-windows.ps1 -Step Installer -Version '${{ needs.plan.outputs.version }}' -Out dist -Repository '${{ github.repository }}'
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82  # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: '*-setup.exe'
+          description: SUBstation Setup
+          description-url: https://github.com/${{ github.repository }}
+      - name: Checksums
+        shell: pwsh
+        run: |
+          tools/release/package-windows.ps1 -Step Checksums -Out dist
+          if ($env:SIGN -ne 'true') {
+            Write-Output "::warning::Unsigned: set up code signing (docs/releasing.md#code-signing) before a stable release."
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             dist/*.zip
-            dist/*.zip.sha256
+            dist/*-setup.exe
+            dist/*.sha256
           if-no-files-found: error
 
   publish:

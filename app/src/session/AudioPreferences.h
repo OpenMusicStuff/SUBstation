@@ -35,6 +35,9 @@ class EngineBridge;
 // ("3 (mono) · Out 3"). (label, channels).
 std::vector<std::pair<QString, std::vector<int>>> outputChoices(const QStringList& names);
 
+// Steinberg's ASIO usage guidelines: the attribution, wherever ASIO is set up (and in Help › About).
+inline const QString kAsioTrademark = QStringLiteral("ASIO is a registered trademark of Steinberg Media Technologies GmbH.");
+
 inline const QString kNoAsio = QStringLiteral(
     "This build has no ASIO support: unzip Steinberg's ASIO SDK into the project folder and build again (see the "
     "README).");
@@ -71,6 +74,8 @@ class AudioPreferences : public QObject {
     Q_PROPERTY(int threadIndex READ threadIndex NOTIFY changed)
     // What runs (rich text: lines joined with <br>, an error first in red).
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    // kAsioTrademark in a build with ASIO, else "".
+    Q_PROPERTY(QString trademarkNotice READ trademarkNotice CONSTANT)
 
 public:
     static constexpr int kDropoutsInterval = 1000;  // ms between looks at the dropouts while open
@@ -98,6 +103,13 @@ public:
     QVariantList threadChoices() const { return list(threads_); }
     int threadIndex() const { return threadIndex_; }
     QString status() const { return status_; }
+    static QString trademarkNotice() {
+#if SUBSTATION_HAS_ASIO
+        return kAsioTrademark;
+#else
+        return QString();
+#endif
+    }
 
     // The settings shown (as last opened, or asked for).
     const AudioSettings& settings() const { return settings_; }

@@ -8,8 +8,9 @@
 // A check reads the feed (GitHub's list of the repository's releases;
 // SUBSTATION_UPDATE_FEED, any URL, instead) and picks the newest release the
 // channel offers that is newer than this build (UpdateFeed.h). Download fetches
-// the release's zip for this platform beside the settings (AppLocalDataLocation/
-// updates), checking its SHA-256: one that doesn't match is thrown away. Then
+// the release's installer (an installed SUBstation) or zip (one unzipped by
+// hand) beside the settings (AppLocalDataLocation/updates), checking its
+// SHA-256: one that doesn't match is thrown away. Then
 // either it installs as SUBstation closes (Install updates automatically), or
 // installNow() asks the UI to close SUBstation (asking about unsaved changes as
 // Quit does) and it installs and starts again. applyOnQuit(), from main(), does
@@ -59,6 +60,8 @@ class Updater : public QObject {
     Q_PROPERTY(bool automaticChecks READ automaticChecks CONSTANT)
     // Whether updates install here (Windows), or are only offered.
     Q_PROPERTY(bool canInstall READ canInstall CONSTANT)
+    // Installed by the installer (updates run the next one), or unzipped by hand (updates copy the zip).
+    Q_PROPERTY(bool installed READ installed CONSTANT)
     // "idle", "checking", "upToDate", "available", "downloading", "ready" (downloaded, checked) or "error".
     Q_PROPERTY(QString state READ state NOTIFY stateChanged)
     // What it is doing, or found, in words.
@@ -82,11 +85,12 @@ public:
         QUrl feed;               // empty: SUBSTATION_UPDATE_FEED, else GitHub's releases of updateRepository()
         QString currentVersion;  // empty: version()
         QString buildChannel;    // empty: releaseChannel()
-        QString platformSuffix;  // empty: updatePlatformSuffix()
+        QString platformSuffix;  // empty: updatePlatformSuffix(installed)
         QString downloadFolder;  // empty: AppLocalDataLocation/updates
         QString appFolder;       // where the update goes; empty: the application's folder
         std::optional<bool> automatic;    // looks by itself; default: not a "dev" build
         std::optional<bool> installable;  // default: canInstallUpdates()
+        std::optional<bool> installed;    // by the installer (updated by the next); default: isInstalledCopy(appFolder)
         int firstCheckDelayMs = 15000;    // after starting
         // Starts the installer (default: detached, QProcess::startDetached); false if it couldn't.
         std::function<bool(const UpdateInstallCommand&)> launch;
@@ -113,6 +117,7 @@ public:
     QString buildChannel() const { return buildChannel_; }
     bool automaticChecks() const { return automatic_; }
     bool canInstall() const { return installable_; }
+    bool installed() const { return installed_; }
     QString state() const;
     QString status() const;
     double progress() const { return progress_; }
@@ -168,6 +173,7 @@ private:
     void finishAsset(QNetworkReply* reply);
     QNetworkReply* get(const QUrl& url, int timeoutMs, const QByteArray& accept);
     QString folder() const;
+    QString appFolder() const;
 
     QNetworkAccessManager* network_ = nullptr;
     QPointer<QNetworkReply> reply_;
@@ -178,6 +184,7 @@ private:
     bool automatic_ = false;
     bool installable_ = false;
     bool installRequested_ = false;
+    bool installed_ = false;
     QUrl feed_;
     UpdateVersion current_;
     QString currentText_;

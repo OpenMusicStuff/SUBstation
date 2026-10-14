@@ -2,8 +2,9 @@
 # with MinGW (Qt's own builds of each), once a night on master, and by hand. Not on pull
 # requests: a Windows run takes about 20 minutes, and Windows is tested locally before a
 # merge (see docs/testing.md). A night with no new commits on master is skipped (by hand,
-# it always runs). Without Steinberg's ASIO SDK, which isn't redistributable: the ASIO
-# tests skip. Compiles go through ccache (sccache for MSVC), its cache kept between runs.
+# it always runs). The MSVC build has Steinberg's ASIO SDK (downloaded, as the releases
+# are built), so its ASIO tests run; the MinGW build hasn't, and they skip there.
+# Compiles go through ccache (sccache for MSVC), its cache kept between runs.
 name: Windows nightly
 
 on:
@@ -63,6 +64,17 @@ jobs:
           key: windows-msvc
           variant: sccache
           max-size: 2G
+      # The ASIO SDK the releases are built with (release.yml), so the ASIO tests run too.
+      - name: ASIO SDK
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'asiosdk.zip'
+          Invoke-WebRequest -Uri 'https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip' -OutFile $zip
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          if ($hash -ne 'd5ebf0c20dd2c5f43771fd0c1418f4b361bf52434ee670097cfa6b3a335e2eca') { throw "The ASIO SDK isn't the one pinned ($hash)." }
+          $dir = Join-Path $env:RUNNER_TEMP 'asiosdk'
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          "SUBSTATION_ASIO_SDK=$(Join-Path $dir 'ASIOSDK')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Configure
         run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
       - name: Build
