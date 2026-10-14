@@ -5,6 +5,10 @@
 
 #include "Snapshot.h"
 
+#if defined(__AVX__)
+#include <immintrin.h>
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(push, 0)
 #endif
@@ -76,6 +80,128 @@ struct SincTable {
 
 // Built during static initialisation, never on the audio thread.
 const SincTable kSinc;
+
+// The same kernel laid out by phase, for rates up to 1 (the full cutoff). There
+// a frame's 2 * kHalfWidth taps lie whole source frames apart, so all of them
+// sit the same fraction between two table points. Row q holds the taps at
+// fraction q / kResolution past a source frame. A frame's weights are two
+// neighbouring rows mixed by what is left of the fraction: kSinc's values,
+// without a lookup per tap.
+struct SincPhases {
+    static constexpr int kTaps = 2 * kHalfWidth;  // source frames floor(pos) - kHalfWidth + 1 .. floor(pos) + kHalfWidth
+    std::array<std::array<float, kTaps>, kResolution + 1> rows{};
+    SincPhases() {
+        for (int q = 0; q <= kResolution; ++q) {
+            for (int m = 0; m < kTaps; ++m)  // tap m is (kHalfWidth - 1 - m) + q / kResolution frames from pos
+                rows[static_cast<size_t>(q)][static_cast<size_t>(m)] =
+                    kSinc.values[static_cast<size_t>(std::abs((kHalfWidth - 1 - m) * kResolution + q))];
+        }
+    }
+};
+
+const SincPhases kSincPhases;
+
+#if defined(__AVX__)
+// The sums of eight lanes each: lanes k and k + 4, then neighbours, then the
+// two pairs.
+inline void sumLanes(__m256 left, __m256 right, float& outL, float& outR) noexcept {
+    const __m128 l4 = _mm_add_ps(_mm256_castps256_ps128(left), _mm256_extractf128_ps(left, 1));
+    const __m128 r4 = _mm_add_ps(_mm256_castps256_ps128(right), _mm256_extractf128_ps(right, 1));
+    const __m128 both = _mm_hadd_ps(_mm_hadd_ps(l4, r4), _mm_setzero_ps());  // left in lane 0, right in lane 1
+    outL = _mm_cvtss_f32(both);
+    outR = _mm_cvtss_f32(_mm_shuffle_ps(both, both, 1));
+}
+#endif
+
+// One frame from the phase table: the taps from source frames `l` and `r` on,
+// weighted by rows `low` and `high` mixed by `frac`. With AVX, a vector of the
+// eight taps of each half; elsewhere the plain loop (compilers leave it scalar:
+// the frame's sum ends in one value). Both sum in the same order: the halves
+// lane by lane, then the lanes pairwise.
+inline void phasedFrame(const float* low, const float* high, float frac, const float* l, const float* r,
+                        float& outL, float& outR) noexcept {
+    constexpr int kLanes = SincPhases::kTaps / 2;
+    static_assert(kLanes == 8);
+#if defined(__AVX__)
+    const __m256 f = _mm256_set1_ps(frac);
+    const __m256 low0 = _mm256_loadu_ps(low), low1 = _mm256_loadu_ps(low + kLanes);
+    const __m256 w0 = _mm256_add_ps(low0, _mm256_mul_ps(f, _mm256_sub_ps(_mm256_loadu_ps(high), low0)));
+    const __m256 w1 = _mm256_add_ps(low1, _mm256_mul_ps(f, _mm256_sub_ps(_mm256_loadu_ps(high + kLanes), low1)));
+    sumLanes(_mm256_add_ps(_mm256_mul_ps(_mm256_loadu_ps(l), w0), _mm256_mul_ps(_mm256_loadu_ps(l + kLanes), w1)),
+             _mm256_add_ps(_mm256_mul_ps(_mm256_loadu_ps(r), w0), _mm256_mul_ps(_mm256_loadu_ps(r + kLanes), w1)),
+             outL, outR);
+#else
+    float sumL[kLanes], sumR[kLanes];
+    for (int lane = 0; lane < kLanes; ++lane) {
+        const float w0 = low[lane] + frac * (high[lane] - low[lane]);
+        const float w1 = low[lane + kLanes] + frac * (high[lane + kLanes] - low[lane + kLanes]);
+        sumL[lane] = l[lane] * w0 + l[lane + kLanes] * w1;
+        sumR[lane] = r[lane] * w0 + r[lane + kLanes] * w1;
+    }
+    float l4[4], r4[4];
+    for (int k = 0; k < 4; ++k) {
+        l4[k] = sumL[k] + sumL[k + 4];
+        r4[k] = sumR[k] + sumR[k + 4];
+    }
+    outL = (l4[0] + l4[1]) + (l4[2] + l4[3]);
+    outR = (r4[0] + r4[1]) + (r4[2] + r4[3]);
+#endif
+}
+
+// One frame at any rate: source frames first..last (at least one) around `pos`,
+// the kernel scaled by `cutoff`; the sums before the gain. With AVX2, eight taps
+// at a time. Each tap's position in the table is computed in float from its
+// whole frames and the fraction apart, within a thousandth of a table step of
+// kSinc's (a weight within about 1e-6). Its two table values are loaded as one
+// pair: no gather instructions, which some CPUs run very slowly. Elsewhere,
+// kSinc tap by tap.
+inline void kernelFrame(const float* srcL, const float* srcR, double pos, int64_t first, int64_t last, double cutoff,
+                        float& outL, float& outR) noexcept {
+#if defined(__AVX2__)
+    const auto taps = static_cast<int>(last - first + 1);
+    const double whole = std::floor(pos);
+    const __m256 n0 = _mm256_set1_ps(static_cast<float>(whole - static_cast<double>(first)));
+    const __m256 step = _mm256_set1_ps(static_cast<float>(cutoff * kResolution));
+    const __m256 fraction = _mm256_set1_ps(static_cast<float>((pos - whole) * cutoff * kResolution));
+    const __m256 sign = _mm256_set1_ps(-0.f);
+    const __m256i end = _mm256_set1_epi32(kHalfWidth * kResolution);  // the kernel is 0 from there on
+    const float* values = kSinc.values.data();
+    __m256 sumL = _mm256_setzero_ps(), sumR = _mm256_setzero_ps();
+    for (int j = 0; j < taps; j += 8) {
+        const __m256i jv = _mm256_add_epi32(_mm256_set1_epi32(j), _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+        const __m256 offset = _mm256_sub_ps(n0, _mm256_cvtepi32_ps(jv));  // whole frames from pos (exact)
+        const __m256 at = _mm256_andnot_ps(sign, _mm256_add_ps(_mm256_mul_ps(offset, step), fraction));
+        const __m256i index = _mm256_min_epi32(_mm256_cvttps_epi32(at), end);
+        const __m256 frac = _mm256_sub_ps(at, _mm256_cvtepi32_ps(index));
+        alignas(32) int32_t indices[8];
+        _mm256_store_si256(reinterpret_cast<__m256i*>(indices), index);
+        auto pairs = [&](int k0, int k1) {  // (values[i], values[i + 1]) of taps k0 and k1
+            const __m128d low = _mm_load_sd(reinterpret_cast<const double*>(values + indices[k0]));
+            return _mm_castpd_ps(_mm_loadh_pd(low, reinterpret_cast<const double*>(values + indices[k1])));
+        };
+        const __m256 pairs0 = _mm256_insertf128_ps(_mm256_castps128_ps256(pairs(0, 1)), pairs(4, 5), 1);
+        const __m256 pairs1 = _mm256_insertf128_ps(_mm256_castps128_ps256(pairs(2, 3)), pairs(6, 7), 1);
+        const __m256 a = _mm256_shuffle_ps(pairs0, pairs1, _MM_SHUFFLE(2, 0, 2, 0));
+        const __m256 b = _mm256_shuffle_ps(pairs0, pairs1, _MM_SHUFFLE(3, 1, 3, 1));
+        // Taps past `last` weigh nothing and aren't read.
+        const __m256i inside = _mm256_cmpgt_epi32(_mm256_set1_epi32(taps), jv);
+        const __m256 w = _mm256_and_ps(_mm256_add_ps(a, _mm256_mul_ps(frac, _mm256_sub_ps(b, a))),
+                                       _mm256_castsi256_ps(inside));
+        sumL = _mm256_add_ps(sumL, _mm256_mul_ps(_mm256_maskload_ps(srcL + first + j, inside), w));
+        sumR = _mm256_add_ps(sumR, _mm256_mul_ps(_mm256_maskload_ps(srcR + first + j, inside), w));
+    }
+    sumLanes(sumL, sumR, outL, outR);
+#else
+    float l = 0.f, r = 0.f;
+    for (int64_t k = first; k <= last; ++k) {
+        const float w = kSinc(std::abs(pos - static_cast<double>(k)) * cutoff);
+        l += srcL[k] * w;
+        r += srcR[k] * w;
+    }
+    outL = l;
+    outR = r;
+#endif
+}
 
 }  // namespace
 
@@ -165,17 +291,24 @@ void renderResampled(const ClipRender& clip, int64_t position, int frames, float
     const double cutoff = 1.0 / std::clamp(clip.rate, 1.0, kMaxRateFiltered);
     const double reach = kHalfWidth / cutoff;
     const auto gainScale = static_cast<float>(cutoff);
+    const bool phased = cutoff == 1.0;  // at most the source's speed: the phase table
 
     for (int i = 0; i < frames; ++i) {
         const double pos = clip.sourceAt(position + i);
+        const double whole = std::floor(pos);
+        const auto lowest = static_cast<int64_t>(whole) - (kHalfWidth - 1);  // the phase table's first tap
+        if (phased && lowest >= 0 && lowest + SincPhases::kTaps <= total) {
+            const double scaled = (pos - whole) * kResolution;
+            const auto q = static_cast<size_t>(scaled);  // below kResolution: the fraction is below 1
+            const auto frac = static_cast<float>(scaled - static_cast<double>(q));
+            phasedFrame(kSincPhases.rows[q].data(), kSincPhases.rows[q + 1].data(), frac, srcL + lowest,
+                        srcR + lowest, outL[i], outR[i]);
+            continue;
+        }
         const auto first = std::max<int64_t>(0, static_cast<int64_t>(std::floor(pos - reach)) + 1);
         const auto last = std::min<int64_t>(total - 1, static_cast<int64_t>(std::floor(pos + reach)));
         float l = 0.f, r = 0.f;
-        for (int64_t k = first; k <= last; ++k) {
-            const float w = kSinc(std::abs(pos - static_cast<double>(k)) * cutoff);
-            l += srcL[k] * w;
-            r += srcR[k] * w;
-        }
+        if (first <= last) kernelFrame(srcL, srcR, pos, first, last, cutoff, l, r);
         outL[i] = l * gainScale;
         outR[i] = r * gainScale;
     }

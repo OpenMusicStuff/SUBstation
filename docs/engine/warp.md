@@ -29,14 +29,15 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 - Offline renders and exports use fresh voices with a fixed random seed, so they are repeatable and don't disturb
   live playback.
 - Clips at their own tempo with no transposition skip the stretcher and play bit-exact. Re-Pitch uses windowed-sinc
-  resampling, with the cutoff lowered when speeding up.
+  resampling, with the cutoff lowered when speeding up; it is vectorised, and costs a fraction of what stretching does
+  (see [What it costs](#what-it-costs)).
 
 ## Files
 
 | File | What it holds |
 |---|---|
 | [AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | `AudioFileInfo`, `AudioSource::probe()`, `AudioSource::load()`, planar data, peak mipmaps |
-| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice`, `WarpVoiceSet`, `renderResampled()` |
+| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice`, `WarpVoiceSet`, `renderResampled()` (and, inside, its kernel: `SincTable`, `SincPhases`, `phasedFrame()`, `kernelFrame()`) |
 | [Snapshot.h](../../engine/src/Snapshot.h) | `ClipRender` (`Playback::Direct / Resample / Stretch`, `rate`, `sourceAt()`, `key`), `TrackBuffers::kMaxClipVoices` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | clips to `ClipRender`s, choosing the playback; `ensureWarpVoicesLocked()` |
 | [Engine.cpp](../../engine/src/Engine.cpp) | the source cache: `loadSource()`, `cachedSource()`, `releaseUnusedSources()`, `reloadSourcesLocked()`, `sourceKey()` |
@@ -212,6 +213,42 @@ Speeding up moves content above the output Nyquist, so the cutoff is lowered to 
 the same factor: the content is filtered out instead of aliasing. The rate used for this is clamped to 1..4
 (`kMaxRateFiltered`), a cost cap. The output is scaled by the cutoff to keep the gain.
 
+How a frame is computed (the same kernel and taps either way; the result is within float rounding of a tap-by-tap sum,
+about 3e-7 at most, more than 135 dB under the signal):
+
+- **Up to the source's speed** (rate at most 1, so the full cutoff), away from the file's ends: a frame's 16 taps lie
+  whole source frames apart, so all of them fall the same fraction between two table points. `SincPhases` holds the
+  table by phase (513 rows of the 16 taps' values, 33 KB, built from `SincTable` during static initialisation), and
+  `phasedFrame()` mixes the two rows around the frame's fraction: no lookup per tap. With AVX, a vector of eight taps
+  per half and channel.
+- **Faster** (or near the file's ends): `kernelFrame()`. With AVX2 it takes eight taps at a time. Their positions in the
+  table are computed in float, the whole frames and the fraction apart, which keeps them within a thousandth of a table
+  step of the double-precision lookup. Each tap's two neighbouring table values are loaded as one 64-bit pair and
+  shuffled apart, not with gather instructions: CPUs running Intel's Downfall (GDS) mitigation run those very slowly
+  (where they are fast, gathers measured about 1.5 times faster still). Taps past the kernel's last are masked: never
+  read, weighing nothing.
+- **Without AVX** (arm64): the phase table's plain loop (which compilers leave scalar: each frame's sum ends in one
+  value), and `SincTable` tap by tap otherwise.
+- The taps are summed in eight lanes per channel and the lanes added pairwise at the end (in the same order with or
+  without AVX), not one after the other. The order is fixed, so offline renders stay repeatable.
+
+Re-Pitch at rate 1 never comes here: the snapshot makes such a clip `Direct`.
+
+## What it costs
+
+Measured with [warp_bench](../../benchmarks/warp_bench.cpp) (a 30 s stereo clip at 48 kHz in blocks of 256; results
+and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.md#warping)), per output frame:
+
+- **Direct**: under 1 ns (it reads the source in place).
+- **Re-Pitch**: about 8 to 9 ns up to the source's speed, 35 to 45 ns faster (the kernel widens with the rate), on a
+  2.1 GHz Xeon; about 6 times and 1.5 to 2.3 times less than the tap-by-tap loop it replaced.
+- **Stretched** (any mode): 260 to 300 ns there (about 1.3 % of a core per clip), Formants about 30 % more. Most of it is
+  Signalsmith Stretch's own spectral processing: the phase-vocoder prediction per bin (complex products, a division
+  and a square root, about half), its FFTs and windowing (about a third), and feeding and reading it sample by sample
+  (under a tenth). The C library's maths isn't a part of it, MinGW's x87 functions included: Signalsmith calls `sin`
+  and `exp` only when configuring and twice per channel per block. Silent input is already cheap: once it has been silent
+  for two analysis blocks' length, the stretcher passes it through without spectral processing.
+
 ## Invariants and real-time rules
 
 - `AudioSource` is immutable after `load()`; snapshots hold `shared_ptr`s, and retired snapshots are freed on the UI
@@ -249,5 +286,6 @@ the same factor: the content is filtered out instead of aliasing. The rate used 
   own tempo, only warped clips rescale on a tempo change, are sample-aligned (also after a locate and when
   transposed), offline renders are repeatable, Re-Pitch changes speed and pitch together and filters rather than
   aliases, stereo and mono sources, clip pan, many warped clips in sequence, and exports include warped audio.
+- [benchmarks/warp_bench.cpp](../../benchmarks/warp_bench.cpp) (not a test): what each playback costs.
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,
   resampling to the engine rate, `probe`, clips waiting for their source.
