@@ -154,18 +154,7 @@ public:
         }
         if (!device.midiFrom.isEmpty()) out.insert(QStringLiteral("midiFrom"), device.midiFrom);
         // What it moves: a modulator's parameters, a rack's macros'.
-        if (!device.modulations.empty()) {
-            QJsonArray modulations;
-            for (const ModulationMapping& m : device.modulations) {
-                QJsonObject mapping{{QStringLiteral("deviceId"), m.deviceId},
-                                    {QStringLiteral("paramId"), m.paramId},
-                                    {QStringLiteral("low"), rounded(m.low)},
-                                    {QStringLiteral("high"), rounded(m.high)}};
-                if (m.invert) mapping.insert(QStringLiteral("invert"), true);
-                modulations.append(mapping);
-            }
-            out.insert(QStringLiteral("modulates"), modulations);
-        }
+        if (!device.modulations.empty()) out.insert(QStringLiteral("modulates"), modulationsJson(trackId, device));
         if (device.isRack()) {
             QJsonArray macros;
             for (const MacroMapping& m : device.macros) {

@@ -4,6 +4,7 @@
 #include "editor/AgentHistory.h"
 #include "mcp/McpServer.h"
 #include "model/Automation.h"
+#include "model/Device.h"
 #include "model/Errors.h"
 #include "model/Project.h"
 #include "session/Session.h"
@@ -234,6 +235,26 @@ std::pair<double, double> shownRange(const ParamSpec& spec) {
 }
 
 QString shownUnit(const ParamSpec& spec) { return spec.showsOtherwise() ? spec.shownUnit : spec.unit; }
+
+QJsonArray ToolContext::modulationsJson(const QString& trackId, const Device& modulator) const {
+    QJsonArray out;
+    for (const ModulationMapping& m : modulator.modulations) {
+        QJsonObject mapping{{QStringLiteral("deviceId"), m.deviceId}, {QStringLiteral("parameterId"), m.paramId}};
+        const QString key = m.paramId == automation::kDeviceOn ? automation::deviceOnKey(m.deviceId)
+                                                               : automation::deviceKey(m.deviceId, m.paramId);
+        if (const auto spec = session_.bridge() ? session_.bridge()->paramSpec(trackId, key) : std::nullopt) {
+            const double from = spec->fromNormalized(m.playedLow());
+            const double to = spec->fromNormalized(m.playedHigh());
+            mapping.insert(QStringLiteral("name"), spec->name);
+            mapping.insert(QStringLiteral("from"), shownValue(*spec, from));
+            mapping.insert(QStringLiteral("to"), shownValue(*spec, to));
+            mapping.insert(QStringLiteral("text"), spec->format(from) + QStringLiteral(" to ") + spec->format(to));
+        }
+        if (m.invert) mapping.insert(QStringLiteral("invert"), true);
+        out.append(mapping);
+    }
+    return out;
+}
 
 void addTool(Protocol& protocol, const std::shared_ptr<const ToolContext>& context, Tool tool) {
     if (!tool.readOnly) {

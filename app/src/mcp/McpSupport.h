@@ -100,6 +100,9 @@ public:
     // Plain; none and why not.
     static std::pair<std::optional<double>, QString> wanted(const Param& param, const QJsonObject& item);
 
+    // What a modulator moves: each parameter (deviceId, parameterId, name), from and to as it shows, invert.
+    QJsonArray modulationsJson(const QString& trackId, const Device& modulator) const;
+
     // Whether the user lets agents edit (addTool() checks it for every edit).
     bool editsAllowed() const;
     // Runs `edit` as one change in the agents' history (an EditError it throws:

@@ -1112,6 +1112,88 @@ private Q_SLOTS:
                  group);
     }
 
+    void modulationMovesParameters() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString growl = f.editor().addMidiTrack(-1, QStringLiteral("Growl"), QStringLiteral("vital"));
+        const QString vital = f.project().track(growl).devices.at(0).id;
+        const QString other = f.editor().addMidiTrack(-1, QStringLiteral("Other"), QStringLiteral("synth"));
+        const QString lfo = structured(call(protocol, QStringLiteral("add_device"),
+                                            {{QStringLiteral("track_id"), growl}, {QStringLiteral("device"), QStringLiteral("lfo")}}))
+                                .value(QStringLiteral("deviceId")).toString();
+        QVERIFY(!lfo.isEmpty());
+        const auto modulate = [&](const QJsonObject& arguments) {
+            QJsonObject all = arguments;
+            all.insert(QStringLiteral("track_id"), growl);
+            if (!all.contains(QStringLiteral("modulator_id"))) all.insert(QStringLiteral("modulator_id"), lfo);
+            return call(protocol, QStringLiteral("set_modulation"), all);
+        };
+        const auto mappings = [&] { return f.project().device(growl, lfo).modulations; };
+        const auto target = [](const QString& device, const QString& param, const QJsonValue& from, const QJsonValue& to) {
+            return QJsonObject{{QStringLiteral("device_id"), device}, {QStringLiteral("parameter_id"), param},
+                               {QStringLiteral("from"), from}, {QStringLiteral("to"), to}};
+        };
+
+        // A cutoff swept from 200 Hz to 2 kHz, and the formant's X, as they show; a sine; one change.
+        QJsonObject out = structured(modulate({{QStringLiteral("targets"), QJsonArray{target(vital, QStringLiteral("filter_1_cutoff"), 200, 2000),
+                                                                                       target(vital, QStringLiteral("filter_1_formant_x"), 0.05, 0.85)}},
+                                               {QStringLiteral("shape"), QStringLiteral("sine")}}));
+        QCOMPARE(history.count(), 2);  // (the LFO added, then this)
+        QCOMPARE(mappings().size(), size_t{2});
+        QCOMPARE(mappings()[0].paramId, QStringLiteral("filter_1_cutoff"));
+        const QJsonObject cutoff = out.value(QStringLiteral("modulates")).toArray()[0].toObject();
+        QVERIFY(std::abs(cutoff.value(QStringLiteral("from")).toDouble() - 200.0) < 1.0);
+        QVERIFY(std::abs(cutoff.value(QStringLiteral("to")).toDouble() - 2000.0) < 5.0);
+        QVERIFY(cutoff.value(QStringLiteral("text")).toString().startsWith(QStringLiteral("200 Hz to 2")));
+        // Its curve: the Sine (nine points), as the device view's shape list has it.
+        const Device& device = f.project().device(growl, lfo);
+        QCOMPARE(device.params.value(QStringLiteral("p9_used")), 1.0);
+        QCOMPARE(device.params.value(QStringLiteral("p10_used")), 0.0);
+        QCOMPARE(device.params.value(QStringLiteral("p3_y")), 1.0);
+        // get_track says the same.
+        const QJsonArray devices = structured(call(protocol, QStringLiteral("get_track"), {{QStringLiteral("track_id"), growl}}))
+                                       .value(QStringLiteral("devices")).toArray();
+        QCOMPARE(devices.last().toObject().value(QStringLiteral("modulates")).toArray().size(), 2);
+
+        // Drawn points; one stopped; inverted; all cleared.
+        modulate({{QStringLiteral("points"), QJsonArray{QJsonArray{0, 1, -0.5}, QJsonArray{1, 0}}}});
+        QCOMPARE(f.project().device(growl, lfo).params.value(QStringLiteral("p3_used")), 0.0);
+        QCOMPARE(f.project().device(growl, lfo).params.value(QStringLiteral("p1_curve")), -0.5);
+        modulate({{QStringLiteral("remove"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                    {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")}}}}});
+        QCOMPARE(mappings().size(), size_t{1});
+        QJsonObject inverted = target(vital, QStringLiteral("filter_1_formant_x"), 0.2, 0.6);
+        inverted.insert(QStringLiteral("invert"), true);
+        modulate({{QStringLiteral("targets"), QJsonArray{inverted}}});
+        QCOMPARE(mappings().size(), size_t{1});  // (mapped again: replaced)
+        QVERIFY(mappings()[0].invert);
+        modulate({{QStringLiteral("clear"), true}});
+        QVERIFY(mappings().empty());
+
+        // Wrong: not a modulator, a device on another track, no to, a shape it hasn't, a mapping it hasn't, nothing.
+        const int changes = history.count();
+        const QString otherSynth = f.project().track(other).devices.at(0).id;
+        for (const QJsonObject& wrong : {
+                 QJsonObject{{QStringLiteral("modulator_id"), vital}, {QStringLiteral("clear"), true}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{target(otherSynth, QStringLiteral("cutoff"), 200, 2000)}}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                                {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")},
+                                                                                {QStringLiteral("from"), 200}}}}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{target(vital, QStringLiteral("filter_1_cutoff"), 200, 999999)}}},
+                 QJsonObject{{QStringLiteral("shape"), QStringLiteral("Wobble")}},
+                 QJsonObject{{QStringLiteral("points"), QJsonArray{QJsonArray{0.5, 0}, QJsonArray{0.2, 1}}}},
+                 QJsonObject{{QStringLiteral("remove"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                               {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")}}}}},
+                 QJsonObject{}}) {
+            QVERIFY2(modulate(wrong).value(QStringLiteral("isError")).toBool(), qPrintable(QJsonDocument(wrong).toJson(QJsonDocument::Compact)));
+        }
+        QCOMPARE(history.count(), changes);
+        // All rewound: no LFO, nothing moved.
+        QVERIFY(history.rewindAll().isEmpty());
+        QCOMPARE(f.project().track(growl).devices.size(), size_t{1});
+    }
+
     // --- Edits of notes, automation, tracks and devices ----------------------------------------
 
     void editNotesWhereTheyAre() {
@@ -1622,7 +1704,7 @@ private Q_SLOTS:
             Client client(static_cast<quint16>(free));
             const auto response = client.send(post(request(QStringLiteral("tools/list")), {}, static_cast<quint16>(free)));
             QVERIFY(response);
-            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 26);
+            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 27);
         }
 
         // A session made now starts it as the settings say; a port taken says why.

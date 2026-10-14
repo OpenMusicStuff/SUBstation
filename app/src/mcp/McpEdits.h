@@ -14,7 +14,7 @@ class Protocol;
 
 // The tools: edit_notes, write_automation, add_track, delete_tracks,
 // move_tracks, group_tracks (and ungrouping), list_devices, add_device,
-// remove_devices, move_devices. `edits`: the sentence every edit's
+// remove_devices, move_devices, set_modulation. `edits`: the sentence every edit's
 // description ends with (the agents' history).
 void addEditTools(Protocol& protocol, Session& session, const QString& edits);
 

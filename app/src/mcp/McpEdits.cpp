@@ -6,6 +6,7 @@
 #include "mcp/McpEdits.h"
 
 #include "audio/EngineBridge.h"
+#include "audio/ModulatorShapes.h"
 #include "browser/PresetIndex.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/Humanizer.h"
@@ -940,6 +941,156 @@ public:
         });
     }
 
+    // --- Modulation: an LFO or an Envelope moving parameters ---
+
+    ToolResult setModulation(const QJsonObject& arguments) {
+        QString error;
+        const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
+        if (!track) return ToolResult::failure(error);
+        const QString modulatorId = arguments.value(QStringLiteral("modulator_id")).toString();
+        const Device* modulator = sub::app::findDevice(track->devices, modulatorId);
+        if (!modulator || !isModulator(modulator->kind)) {
+            return ToolResult::failure(QStringLiteral("modulator_id is an LFO or an Envelope on %1 (add_device \"lfo\" or "
+                                                      "\"envelope\" puts one there; get_track lists its devices).")
+                                           .arg(track->name));
+        }
+        const bool periodic = modulator->kind != u"envelope";
+        const QJsonArray targets = arguments.value(QStringLiteral("targets")).toArray();
+        const QJsonArray removes = arguments.value(QStringLiteral("remove")).toArray();
+        const bool clear = arguments.value(QStringLiteral("clear")).toBool(false);
+        const QJsonValue shapeValue = arguments.value(QStringLiteral("shape"));
+        const QJsonValue pointsValue = arguments.value(QStringLiteral("points"));
+        if (targets.isEmpty() && removes.isEmpty() && !clear && shapeValue.isUndefined() && pointsValue.isUndefined()) {
+            return ToolResult::failure(QStringLiteral("Give targets (what it moves), remove, clear, or its shape or points."));
+        }
+        if (!shapeValue.isUndefined() && !pointsValue.isUndefined()) {
+            return ToolResult::failure(QStringLiteral("Give shape or points, not both."));
+        }
+
+        // Its curve: a shape by name, or points.
+        std::optional<std::vector<ModulatorPoint>> curve;
+        QString curveName;
+        if (!shapeValue.isUndefined()) {
+            const QString name = shapeValue.toString().trimmed();
+            QStringList names;
+            for (const ModulatorShape& shape : modulatorShapes(periodic)) {
+                names << shape.name;
+                if (shape.name.compare(name, Qt::CaseInsensitive) == 0) {
+                    curve = shape.points;
+                    curveName = shape.name;
+                }
+            }
+            if (!curve) {
+                return ToolResult::failure(QStringLiteral("%1 has no shape \"%2\": it has %3; or give points.")
+                                               .arg(deviceName(*modulator), name, names.join(QStringLiteral(", "))));
+            }
+        } else if (!pointsValue.isUndefined()) {
+            const QJsonArray rows = pointsValue.toArray();
+            if (rows.size() < 2 || rows.size() > kModulatorPoints) {
+                return ToolResult::failure(QStringLiteral("points are 2 to %1 rows [x, y, curve].").arg(kModulatorPoints));
+            }
+            std::vector<ModulatorPoint> points;
+            for (const QJsonValue& value : rows) {
+                const QJsonArray row = value.toArray();
+                const double x = row.at(0).toDouble(-1.0);
+                const double y = row.at(1).toDouble(-1.0);
+                const double bend = row.size() > 2 ? row.at(2).toDouble(2.0) : 0.0;
+                if (row.size() < 2 || row.size() > 3 || x < 0.0 || x > 1.0 || y < 0.0 || y > 1.0 || std::abs(bend) > 1.0 ||
+                    (!points.empty() && x < points.back().x)) {
+                    return ToolResult::failure(QStringLiteral(
+                        "A point is [x, y, curve]: x 0..1 along the cycle (or the envelope), in order (two at one x make "
+                        "a step), y 0..1, curve -1..1 bending the segment after it (may be left out)."));
+                }
+                points.push_back({x, y, bend});
+            }
+            curve = points;
+            curveName = QStringLiteral("%1 points").arg(points.size());
+        }
+
+        // What it is to move: each parameter over its range, as it shows (from at the modulator's 0, to at its 1).
+        struct Target {
+            QString deviceId;
+            QString paramId;
+            QString name;
+            double low;
+            double high;
+            bool invert;
+        };
+        std::vector<Target> maps;
+        for (const QJsonValue& value : targets) {
+            const QJsonObject target = value.toObject();
+            const QString deviceId = target.value(QStringLiteral("device_id")).toString();
+            const QString paramId = target.value(QStringLiteral("parameter_id")).toString();
+            const Device* device = sub::app::findDevice(track->devices, deviceId);
+            if (!device || device->id == modulator->id) {
+                return ToolResult::failure(QStringLiteral("A target's device_id is another device on %1 (a modulator moves "
+                                                          "what is on its own track).").arg(track->name));
+            }
+            const std::vector<Param> all = params(track->id, *device);
+            const auto param = std::find_if(all.begin(), all.end(), [&](const Param& p) { return p.id == paramId; });
+            if (param == all.end() || !session_.editor()->canModulate(track->id, deviceId, paramId)) {
+                return ToolResult::failure(QStringLiteral("%1 has no parameter \"%2\" a modulator can move: "
+                                                          "get_device_parameters lists them.").arg(deviceName(*device), paramId));
+            }
+            const QJsonValue from = target.value(QStringLiteral("from"));
+            const QJsonValue to = target.value(QStringLiteral("to"));
+            if (from.isUndefined() || to.isUndefined()) {
+                return ToolResult::failure(QStringLiteral("A target's from and to are required: where %1 is at the "
+                                                          "modulator's bottom and top, as it shows (as get_device_parameters "
+                                                          "gives its value).").arg(param->spec.name));
+            }
+            const auto [low, lowWhy] = wanted(*param, {{QStringLiteral("value"), from}});
+            if (!low) return ToolResult::failure(lowWhy);
+            const auto [high, highWhy] = wanted(*param, {{QStringLiteral("value"), to}});
+            if (!high) return ToolResult::failure(highWhy);
+            maps.push_back({deviceId, paramId, param->spec.name, param->spec.toNormalized(*low), param->spec.toNormalized(*high),
+                            target.value(QStringLiteral("invert")).toBool(false)});
+        }
+        // What it is to stop moving.
+        std::vector<std::pair<QString, QString>> unmaps;
+        for (const QJsonValue& value : removes) {
+            const QJsonObject target = value.toObject();
+            const QString deviceId = target.value(QStringLiteral("device_id")).toString();
+            const QString paramId = target.value(QStringLiteral("parameter_id")).toString();
+            const bool moved = std::any_of(modulator->modulations.begin(), modulator->modulations.end(), [&](const ModulationMapping& m) {
+                return m.deviceId == deviceId && m.paramId == paramId;
+            });
+            if (!moved) {
+                return ToolResult::failure(QStringLiteral("%1 doesn't move %2's \"%3\": get_track lists what it moves "
+                                                          "(modulates).").arg(deviceName(*modulator), deviceId, paramId));
+            }
+            unmaps.emplace_back(deviceId, paramId);
+        }
+
+        QStringList what;
+        if (clear) what << QStringLiteral("clear what it moves");
+        if (!unmaps.empty()) what << QStringLiteral("stop moving %1 parameters").arg(unmaps.size());
+        QStringList names;
+        for (const Target& t : maps) names << t.name;
+        if (!names.isEmpty()) what << QStringLiteral("move %1").arg(names.join(QStringLiteral(", ")));
+        if (curve) what << QStringLiteral("shape %1").arg(curveName);
+        const QString trackId = track->id;
+        const QString text = QStringLiteral("%1 on %2: %3").arg(deviceName(*modulator), track->name, what.join(QStringLiteral(", ")));
+        ToolResult result = change(text, QStringLiteral("set_modulation"), {}, [&](ProjectEditor& editor) {
+            if (clear) editor.clearModulations(trackId, modulatorId);
+            for (const auto& [deviceId, paramId] : unmaps) editor.unmapModulation(trackId, deviceId, paramId);
+            for (const Target& t : maps) editor.mapModulation(trackId, modulatorId, t.deviceId, t.paramId, t.low, t.high, t.invert);
+            if (curve) {
+                OrderedMap<QString, double> values = modulatorPointValues(*curve);
+                values.insert(QStringLiteral("random"), 0.0);  // (a curve given: it plays it, not a random one)
+                editor.setDeviceParams(trackId, modulatorId, values, {}, text);
+            }
+        });
+        if (!result.error) {
+            QJsonObject out = result.structured.toObject();
+            if (const Device* now = sub::app::findDevice(project().track(trackId).devices, modulatorId)) {
+                out.insert(QStringLiteral("modulates"), modulationsJson(trackId, *now));
+            }
+            result.structured = out;
+        }
+        return result;
+    }
+
     static constexpr int kMaxPoints = 2000;
     static constexpr int kSinePoints = 16;
     static constexpr int kDefaultDevices = 100;
@@ -1163,6 +1314,50 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
                {QStringLiteral("track_id"), QStringLiteral("device_ids")}),
         false,
         [tools](const QJsonObject& arguments) { return tools->moveDevices(arguments); },
+    });
+    // Modulation.
+    const QJsonObject parameterRef{
+        {QStringLiteral("type"), QStringLiteral("object")},
+        {QStringLiteral("properties"),
+         QJsonObject{{QStringLiteral("device_id"), property(QStringLiteral("string"), QStringLiteral("The device's id, on the modulator's track."))},
+                     {QStringLiteral("parameter_id"), property(QStringLiteral("string"), QStringLiteral("Its parameter's id, from get_device_parameters."))}}},
+        {QStringLiteral("required"), QJsonArray{QStringLiteral("device_id"), QStringLiteral("parameter_id")}},
+        {QStringLiteral("additionalProperties"), false}};
+    QJsonObject target = parameterRef;
+    QJsonObject targetProperties = parameterRef.value(QStringLiteral("properties")).toObject();
+    targetProperties.insert(QStringLiteral("from"), anyValue);
+    targetProperties.insert(QStringLiteral("to"), anyValue);
+    targetProperties.insert(QStringLiteral("invert"),
+                            property(QStringLiteral("boolean"), QStringLiteral("Upside down: to at the modulator's bottom, from at its top.")));
+    target.insert(QStringLiteral("properties"), targetProperties);
+    target.insert(QStringLiteral("required"), QJsonArray{QStringLiteral("device_id"), QStringLiteral("parameter_id"),
+                                                         QStringLiteral("from"), QStringLiteral("to")});
+    addTool({
+        QStringLiteral("set_modulation"),
+        QStringLiteral("Set Modulation"),
+        QStringLiteral("Makes an LFO or an Envelope device (add_device \"lfo\" or \"envelope\") move parameters of the "
+                       "other devices on its track, as SUBstation's modulation does: each target from `from` (at the "
+                       "modulator's bottom) to `to` (at its top), as the parameter shows (get_device_parameters' "
+                       "value and unit). Use it rather than drawing automation for anything that repeats: a wobble, a "
+                       "tremolo, a filter sweep each note (an Envelope). Its rate, sync (\"synced\": \"1/8\"...), "
+                       "depth and retrigger are its parameters (set_device_parameters); shape picks its curve by name "
+                       "(LFO: Triangle, Sine, Saw Up, Saw Down, Square, Pulse, Steps, Hump, Swell; Envelope: Pluck, "
+                       "Attack-Decay, Swell, Ramp Down, Ramp Up, Gate, Duck, Stutter...) or points draws one. remove "
+                       "stops it moving some, clear all. A parameter follows one modulator: mapping it here takes it "
+                       "from another; while modulated its automation waits. Says what it moves now.") + edits,
+        schema({{QStringLiteral("track_id"), trackId},
+                {QStringLiteral("modulator_id"), property(QStringLiteral("string"), QStringLiteral("The LFO's or Envelope's device id, from get_track."))},
+                {QStringLiteral("targets"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}, {QStringLiteral("items"), target}}},
+                {QStringLiteral("remove"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}, {QStringLiteral("items"), parameterRef}}},
+                {QStringLiteral("clear"), property(QStringLiteral("boolean"), QStringLiteral("Stop it moving anything first."))},
+                {QStringLiteral("shape"), property(QStringLiteral("string"), QStringLiteral("Its curve by name (\"Sine\", \"Saw Down\", \"Pluck\"...)."))},
+                {QStringLiteral("points"),
+                 QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                             {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
+                             {QStringLiteral("description"), QStringLiteral("Instead of shape: rows [x, y, curve], x 0..1 along a cycle (in order; two at one x: a step), y 0..1, curve -1..1.")}}}},
+               {QStringLiteral("track_id"), QStringLiteral("modulator_id")}),
+        false,
+        [tools](const QJsonObject& arguments) { return tools->setModulation(arguments); },
     });
 }
 

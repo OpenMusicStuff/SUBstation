@@ -51,9 +51,7 @@ ModulatorGraph::ModulatorGraph(QQuickItem* parent) : DeviceCanvas(parent) {
     setCursor(Qt::CrossCursor);
 }
 
-QString ModulatorGraph::pointParam(int index, const QString& name) {
-    return QLatin1Char('p') + QString::number(index + 1) + QLatin1Char('_') + name;
-}
+QString ModulatorGraph::pointParam(int index, const QString& name) { return sub::app::modulatorPointParam(index, name); }
 
 double ModulatorGraph::curveValue(const std::vector<Point>& points, double x) {
     if (points.empty())
@@ -74,80 +72,13 @@ double ModulatorGraph::curveValue(const std::vector<Point>& points, double x) {
     return points.back().y;
 }
 
-Values ModulatorGraph::pointsValues(const std::vector<Point>& points) {
-    Values values;
-    for (int i = 0; i < kPoints; ++i) {
-        const bool used = i < int(points.size());
-        const Point p = used ? points[std::size_t(i)] : Point{1.0, 0.0, 0.0};
-        values.insert(pointParam(i, QStringLiteral("used")), used ? 1.0 : 0.0);
-        values.insert(pointParam(i, QStringLiteral("x")), p.x);
-        values.insert(pointParam(i, QStringLiteral("y")), p.y);
-        values.insert(pointParam(i, QStringLiteral("curve")), used ? p.curve : 0.0);
-    }
-    return values;
-}
+Values ModulatorGraph::pointsValues(const std::vector<Point>& points) { return sub::app::modulatorPointValues(points); }
 
-const std::vector<std::pair<QString, std::vector<ModulatorGraph::Point>>>& ModulatorGraph::shapeList(bool periodic) {
-    // The LFO's first is its device's default (ModulatorDesign.h's trianglePoints); its Sine is sinePoints (each
-    // bend fitted to the sine's eighth).
-    static const std::vector<std::pair<QString, std::vector<Point>>> lfo{
-        {QStringLiteral("Triangle"), {{0.0, 0.0, 0.0}, {0.5, 1.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Sine"),
-         {{0.0, 0.5, 0.055},
-          {0.125, 0.853553, 0.329},
-          {0.25, 1.0, 0.329},
-          {0.375, 0.853553, 0.055},
-          {0.5, 0.5, -0.055},
-          {0.625, 0.146447, -0.329},
-          {0.75, 0.0, -0.329},
-          {0.875, 0.146447, -0.055},
-          {1.0, 0.5, 0.0}}},
-        {QStringLiteral("Saw Up"), {{0.0, 0.0, 0.0}, {1.0, 1.0, 0.0}}},
-        {QStringLiteral("Saw Down"), {{0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Square"), {{0.0, 1.0, 0.0}, {0.5, 1.0, 0.0}, {0.5, 0.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Pulse"), {{0.0, 1.0, 0.0}, {0.25, 1.0, 0.0}, {0.25, 0.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Steps"),
-         {{0.0, 0.0, 0.0},
-          {0.25, 0.0, 0.0},
-          {0.25, 1.0 / 3.0, 0.0},
-          {0.5, 1.0 / 3.0, 0.0},
-          {0.5, 2.0 / 3.0, 0.0},
-          {0.75, 2.0 / 3.0, 0.0},
-          {0.75, 1.0, 0.0},
-          {1.0, 1.0, 0.0}}},
-        {QStringLiteral("Hump"), {{0.0, 0.0, 0.5}, {0.5, 1.0, 0.5}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Swell"), {{0.0, 0.0, -0.6}, {1.0, 1.0, 0.0}}},
-    };
-    // The Envelope's first is its device's default (ModulatorDesign.h's pluckPoints).
-    static const std::vector<std::pair<QString, std::vector<Point>>> envelope{
-        {QStringLiteral("Pluck"), {{0.0, 0.0, 0.0}, {0.02, 1.0, -0.55}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Attack-Decay"), {{0.0, 0.0, 0.35}, {0.3, 1.0, -0.45}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Swell"), {{0.0, 0.0, -0.6}, {1.0, 1.0, 0.0}}},
-        {QStringLiteral("Ramp Down"), {{0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Ramp Up"), {{0.0, 0.0, 0.0}, {1.0, 1.0, 0.0}}},
-        {QStringLiteral("Gate"), {{0.0, 1.0, 0.0}, {0.75, 1.0, 0.0}, {0.75, 0.0, 0.0}, {1.0, 0.0, 0.0}}},
-        {QStringLiteral("Duck"), {{0.0, 0.0, 0.0}, {0.1, 0.0, -0.45}, {1.0, 1.0, 0.0}}},
-        {QStringLiteral("Stutter"),
-         {{0.0, 1.0, 0.0},
-          {0.15, 1.0, 0.0},
-          {0.15, 0.0, 0.0},
-          {0.3, 0.0, 0.0},
-          {0.3, 1.0, 0.0},
-          {0.45, 1.0, 0.0},
-          {0.45, 0.0, 0.0},
-          {0.6, 0.0, 0.0},
-          {0.6, 1.0, 0.0},
-          {0.75, 1.0, 0.0},
-          {0.75, 0.0, 0.0},
-          {1.0, 0.0, 0.0}}},
-    };
-    return periodic ? lfo : envelope;
-}
 
 QStringList ModulatorGraph::shapes() const {
     QStringList names;
-    for (const auto& [name, points] : shapeList(periodic_))
-        names << name;
+    for (const sub::app::ModulatorShape& shape : sub::app::modulatorShapes(periodic_))
+        names << shape.name;
     return names;
 }
 
@@ -253,11 +184,11 @@ void ModulatorGraph::removePoint(int index) {
 }
 
 void ModulatorGraph::applyShape(int index) {
-    const auto& list = shapeList(periodic_);
+    const auto& list = sub::app::modulatorShapes(periodic_);
     if (index < 0 || index >= int(list.size()))
         return;
-    const auto& [name, points] = list[std::size_t(index)];
-    setPoints(points, QString(), undoName(QStringLiteral("Shape: ")) + name);
+    const sub::app::ModulatorShape& shape = list[std::size_t(index)];
+    setPoints(shape.points, QString(), undoName(QStringLiteral("Shape: ")) + shape.name);
 }
 
 void ModulatorGraph::flip() {
@@ -280,7 +211,7 @@ void ModulatorGraph::reverse() {
 }
 
 void ModulatorGraph::resetCurve() {
-    setPoints(shapeList(periodic_).front().second, QString(), undoName(QStringLiteral("Reset Curve")));
+    setPoints(sub::app::modulatorShapes(periodic_).front().points, QString(), undoName(QStringLiteral("Reset Curve")));
 }
 
 double ModulatorGraph::played(double y) const {
