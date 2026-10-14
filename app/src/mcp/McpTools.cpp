@@ -320,9 +320,17 @@ public:
         return {out, {}, false};
     }
 
-    ToolResult listTracks() const {
+    // Every track, or those `query` finds (the find bar's way: TrackSearch), the best first.
+    ToolResult listTracks(const QJsonObject& arguments) const {
+        const QString query = arguments.value(QStringLiteral("query")).toString().trimmed();
         QJsonArray tracks;
-        for (const Track* track : project().allTracks()) tracks.append(summary(*track));
+        if (query.isEmpty()) {
+            for (const Track* track : project().allTracks()) tracks.append(summary(*track));
+        } else {
+            for (const QString& id : TrackSearch::find(project(), *session_.trackLabels(), query)) {
+                tracks.append(summary(project().track(id)));
+            }
+        }
         return {QJsonObject{{QStringLiteral("tracks"), tracks}}, {}, false};
     }
 
@@ -332,22 +340,9 @@ public:
         const Track* track = project().findTrack(id);
         if (!track) {
             return ToolResult::failure(
-                QStringLiteral("No track has the id \"%1\": list_tracks or find_tracks give the ids.").arg(id));
+                QStringLiteral("No track has the id \"%1\": list_tracks gives the ids.").arg(id));
         }
         return {detail(*track), {}, false};
-    }
-
-    ToolResult findTracks(const QJsonObject& arguments) const {
-        const QString query = arguments.value(QStringLiteral("query")).toString();
-        if (query.trimmed().isEmpty()) return ToolResult::failure(QStringLiteral("query is required: words to look for."));
-        QJsonArray found;
-        for (const QString& id : TrackSearch::find(project(), *session_.trackLabels(), query)) {
-            const Track& track = project().track(id);
-            found.append(QJsonObject{{QStringLiteral("id"), id},
-                                     {QStringLiteral("name"), track.name},
-                                     {QStringLiteral("label"), orNull(session_.trackLabels()->label(id))}});
-        }
-        return {QJsonObject{{QStringLiteral("tracks"), found}}, {}, false};
     }
 
     // The key and the chords between two beats; with `withTracks`, the tracks
@@ -566,7 +561,7 @@ public:
         if (deviceId.isEmpty()) return {{}, {}, QStringLiteral("device_id is required: a device's id from get_track.")};
         const Track* track = project().findTrack(trackId);
         if (!track) {
-            return {{}, {}, QStringLiteral("No track has the id \"%1\": list_tracks or find_tracks give the ids.").arg(trackId)};
+            return {{}, {}, QStringLiteral("No track has the id \"%1\": list_tracks gives the ids.").arg(trackId)};
         }
         const Device* device = sub::app::findDevice(track->devices, deviceId);
         if (!device) {
@@ -728,7 +723,8 @@ public:
 
     // --- Edits of tracks and the project ---
 
-    ToolResult setMixer(const QJsonObject& arguments) {
+    // A track's name, color and mixer: what is given.
+    ToolResult setTrack(const QJsonObject& arguments) {
         if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString id = arguments.value(QStringLiteral("track_id")).toString();
         const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
@@ -740,8 +736,22 @@ public:
         const QJsonValue pan = arguments.value(QStringLiteral("pan"));
         const QJsonValue mute = arguments.value(QStringLiteral("mute"));
         const QJsonArray sends = arguments.value(QStringLiteral("sends")).toArray();
-        if (volume.isUndefined() && pan.isUndefined() && mute.isUndefined() && sends.isEmpty()) {
-            return ToolResult::failure(QStringLiteral("Give volume_db, pan, mute or sends: what to change."));
+        const QJsonValue nameValue = arguments.value(QStringLiteral("name"));
+        const QJsonValue colorValue = arguments.value(QStringLiteral("color"));
+        if (volume.isUndefined() && pan.isUndefined() && mute.isUndefined() && sends.isEmpty() && nameValue.isUndefined() &&
+            colorValue.isUndefined()) {
+            return ToolResult::failure(QStringLiteral("Give name, color, volume_db, pan, mute or sends: what to change."));
+        }
+        const QString name = nameValue.toString().trimmed();
+        if (!nameValue.isUndefined() && (name.isEmpty() || track->isMaster())) {
+            return ToolResult::failure(track->isMaster() ? QStringLiteral("The master's name is always Master.")
+                                                         : QStringLiteral("name is a track's new name (not empty)."));
+        }
+        const QString color = colorValue.toString().trimmed().toLower();
+        static const QRegularExpression hex(QStringLiteral("^#[0-9a-f]{6}$"));
+        if (!colorValue.isUndefined() && !hex.match(color).hasMatch()) {
+            return ToolResult::failure(QStringLiteral("color is \"#rrggbb\"; SUBstation's own are %1.")
+                                           .arg(kTrackColors.join(QStringLiteral(", "))));
         }
         if (!volume.isUndefined() && !(volume.isDouble() && volume.toDouble() <= automation::kMaxVolumeDb)) {
             return ToolResult::failure(QStringLiteral("volume_db is a number up to +%1 dB (%2 or lower is silence).")
@@ -767,6 +777,8 @@ public:
             levels.emplace_back(returnId, std::max(level.toDouble(), automation::kMinVolumeDb));
         }
         QStringList what;
+        if (!nameValue.isUndefined()) what << QStringLiteral("name to %1").arg(name);
+        if (!colorValue.isUndefined()) what << QStringLiteral("color to %1").arg(color);
         if (!volume.isUndefined()) what << QStringLiteral("volume to %1 dB").arg(number(volume.toDouble(), 1));
         if (!pan.isUndefined()) what << QStringLiteral("pan to %1").arg(number(pan.toDouble()));
         if (!mute.isUndefined()) what << (mute.toBool() ? QStringLiteral("mute") : QStringLiteral("unmute"));
@@ -775,7 +787,9 @@ public:
         }
         const QString trackId = track->id;
         const QString text = QStringLiteral("Set %1 of %2").arg(what.join(QStringLiteral(", ")), track->name);
-        return change(text, QStringLiteral("set_mixer"), {}, [&](ProjectEditor& editor) {
+        return change(text, QStringLiteral("set_track"), {}, [&](ProjectEditor& editor) {
+            if (!nameValue.isUndefined()) editor.renameTrack(trackId, name);
+            if (!colorValue.isUndefined()) editor.setTrackColor(trackId, color);
             if (!volume.isUndefined()) {
                 editor.setTrackParam(trackId, TrackField::VolumeDb, std::max(volume.toDouble(), automation::kMinVolumeDb));
             }
@@ -783,21 +797,6 @@ public:
             if (!mute.isUndefined()) editor.setTrackParam(trackId, TrackField::Mute, mute.toBool() ? 1.0 : 0.0);
             for (const auto& [returnId, level] : levels) editor.setSend(trackId, returnId, level);
         });
-    }
-
-    ToolResult renameTrack(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
-        const QString id = arguments.value(QStringLiteral("track_id")).toString();
-        const QString name = arguments.value(QStringLiteral("name")).toString().trimmed();
-        const Track* track = id.isEmpty() || id == kMaster ? nullptr : project().findTrack(id);
-        if (!track) {
-            return ToolResult::failure(
-                QStringLiteral("track_id is required: a track's or a return's id from list_tracks (not the master's)."));
-        }
-        if (name.isEmpty()) return ToolResult::failure(QStringLiteral("name is required."));
-        const QString trackId = track->id;
-        return change(QStringLiteral("Rename %1 to %2").arg(track->name, name), QStringLiteral("rename_track"), {},
-                      [&](ProjectEditor& editor) { editor.renameTrack(trackId, name); });
     }
 
     ToolResult setProject(const QJsonObject& arguments) {
@@ -1162,7 +1161,9 @@ public:
         return {ids, {}};
     }
 
+    // Rewinds changes (or, with restore, puts rewound ones back).
     ToolResult rewindAgentChanges(const QJsonObject& arguments) {
+        if (arguments.value(QStringLiteral("restore")).toBool(false)) return restoreAgentChanges(arguments);
         AgentHistory& history = *session_.agentChanges();
         const bool all = arguments.value(QStringLiteral("all")).toBool(false);
         auto [ids, why] = changeIds(arguments);
@@ -1194,6 +1195,9 @@ public:
         AgentHistory& history = *session_.agentChanges();
         auto [ids, why] = changeIds(arguments);
         if (!ids) return ToolResult::failure(why);
+        if (arguments.value(QStringLiteral("all")).toBool(false)) {
+            return ToolResult::failure(QStringLiteral("Restoring takes change_ids, not all: list_agent_changes lists the rewound ones."));
+        }
         if (ids->isEmpty()) return ToolResult::failure(QStringLiteral("change_ids is required: ids from list_agent_changes."));
         std::sort(ids->begin(), ids->end());  // (the first first: as they were made)
         QJsonArray done;
@@ -1269,10 +1273,15 @@ void addSessionTools(Protocol& protocol, Session& session) {
                        "is: its label (a few words, e.g. \"Washed Out Serum Pluck\", worked out from its name, "
                        "presets, files, notes and effects), family and role (\"brass\", \"trumpet\"), traits, and its "
                        "mixer, devices and clip count. What is as usual is left out: no pan is the middle, no mute, "
-                       "solo or frozen is false, no parent is in no group. Use get_track for one track in full."),
-        schema(),
+                       "solo or frozen is false, no parent is in no group. With query, only the tracks matching its "
+                       "words, the best first, as SUBstation's find bar (Q) finds them: names having the words at the "
+                       "start of their words, then labels, then names having them anywhere, then what the labels were "
+                       "made from (a preset's or a file's name); \"horn\" finds a track called Horn Stab, then an "
+                       "orchestra playing a horns preset. Use get_track for one track in full."),
+        schema({{QStringLiteral("query"),
+                 property(QStringLiteral("string"), QStringLiteral("Only the tracks matching these words (any case; every word must match)."))}}),
         true,
-        [tools](const QJsonObject&) { return tools->listTracks(); },
+        [tools](const QJsonObject& arguments) { return tools->listTracks(arguments); },
     });
     protocol.addTool({
         QStringLiteral("get_track"),
@@ -1283,22 +1292,10 @@ void addSessionTools(Protocol& protocol, Session& session) {
                        "and macros; sidechains; what modulators move), its clips (beats and bars; files and what they "
                        "sound like, gain, warp, fades; note counts; inactive ones too), its sends, where its output "
                        "goes, and what is automated (get_automation gives the points)."),
-        schema({{QStringLiteral("track_id"), property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks or find_tracks."))}},
+        schema({{QStringLiteral("track_id"), property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks."))}},
                {QStringLiteral("track_id")}),
         true,
         [tools](const QJsonObject& arguments) { return tools->getTrack(arguments); },
-    });
-    protocol.addTool({
-        QStringLiteral("find_tracks"),
-        QStringLiteral("Find Tracks"),
-        QStringLiteral("Tracks matching words, the best first, as SUBstation's find bar (Q) finds them: names "
-                       "having the words at the start of their words, then labels, then names having them anywhere, "
-                       "then what the labels were made from (a preset's or a file's name). \"horn\" finds a track "
-                       "called Horn Stab, then an orchestra playing a horns preset. Every word must match."),
-        schema({{QStringLiteral("query"), property(QStringLiteral("string"), QStringLiteral("Words to look for (any case)."))}},
-               {QStringLiteral("query")}),
-        true,
-        [tools](const QJsonObject& arguments) { return tools->findTracks(arguments); },
     });
     protocol.addTool({
         QStringLiteral("get_harmony"),
@@ -1316,7 +1313,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         true,
         [tools](const QJsonObject& arguments) { return tools->getHarmony(arguments); },
     });
-    const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks or find_tracks."));
+    const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks."));
     const QJsonObject deviceId = property(QStringLiteral("string"), QStringLiteral("The device's id, from get_track (racks' devices too)."));
     protocol.addTool({
         QStringLiteral("get_device_parameters"),
@@ -1435,31 +1432,22 @@ void addSessionTools(Protocol& protocol, Session& session) {
         {QStringLiteral("required"), QJsonArray{QStringLiteral("return_id"), QStringLiteral("level_db")}},
         {QStringLiteral("additionalProperties"), false}};
     protocol.addTool({
-        QStringLiteral("set_mixer"),
-        QStringLiteral("Set Mixer"),
-        QStringLiteral("A track's (a return's, the master's) mixer: volume (dB, up to +6; -70 is silence), pan (-1 "
-                       "left to 1 right), mute (its activator; not the master's), and its sends' levels. Give only "
-                       "what changes.") + edits,
+        QStringLiteral("set_track"),
+        QStringLiteral("Set Track"),
+        QStringLiteral("A track's (a return's, the master's) name, color and mixer: name (a # in it is the track's "
+                       "number: \"# Keys\" shows as \"8 Keys\"; not the master's), color (\"#rrggbb\"), volume (dB, up "
+                       "to +6; -70 is silence), pan (-1 left to 1 right), mute (its activator; not the master's), and "
+                       "its sends' levels. Give only what changes: all of it is one change.") + edits,
         schema({{QStringLiteral("track_id"), trackId},
+                {QStringLiteral("name"), property(QStringLiteral("string"), QStringLiteral("Its new name."))},
+                {QStringLiteral("color"), property(QStringLiteral("string"), QStringLiteral("\"#rrggbb\": to show what belongs together."))},
                 {QStringLiteral("volume_db"), property(QStringLiteral("number"), QStringLiteral("Its volume in dB."))},
                 {QStringLiteral("pan"), property(QStringLiteral("number"), QStringLiteral("-1 (left) to 1 (right)."))},
                 {QStringLiteral("mute"), property(QStringLiteral("boolean"), QStringLiteral("Muted (its activator off)."))},
                 {QStringLiteral("sends"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}, {QStringLiteral("items"), send}}}},
                {QStringLiteral("track_id")}),
         false,
-        [tools](const QJsonObject& arguments) { return tools->setMixer(arguments); },
-        true,
-    });
-    protocol.addTool({
-        QStringLiteral("rename_track"),
-        QStringLiteral("Rename Track"),
-        QStringLiteral("Names a track or a return. A # in the name is the track's number (\"# Keys\" shows as "
-                       "\"8 Keys\").") + edits,
-        schema({{QStringLiteral("track_id"), trackId},
-                {QStringLiteral("name"), property(QStringLiteral("string"), QStringLiteral("Its new name."))}},
-               {QStringLiteral("track_id"), QStringLiteral("name")}),
-        false,
-        [tools](const QJsonObject& arguments) { return tools->renameTrack(arguments); },
+        [tools](const QJsonObject& arguments) { return tools->setTrack(arguments); },
         true,
     });
     protocol.addTool({
@@ -1562,20 +1550,13 @@ void addSessionTools(Protocol& protocol, Session& session) {
         QStringLiteral("Rewind Agent Changes"),
         QStringLiteral("Takes back agents' changes (the last first), or all of them, leaving the user's own edits as "
                        "they are. One the user changed the same since can't be: `stopped` says which and why (the "
-                       "user's work comes first)."),
+                       "user's work comes first). With restore, puts rewound changes back instead (the first first), "
+                       "unless the user changed the same since."),
         schema({{QStringLiteral("change_ids"), ids},
-                {QStringLiteral("all"), property(QStringLiteral("boolean"), QStringLiteral("Every change in effect."))}}),
+                {QStringLiteral("all"), property(QStringLiteral("boolean"), QStringLiteral("Every change in effect (not with restore)."))},
+                {QStringLiteral("restore"), property(QStringLiteral("boolean"), QStringLiteral("Put these rewound changes back instead."))}}),
         false,
         [tools](const QJsonObject& arguments) { return tools->rewindAgentChanges(arguments); },
-        true,
-    });
-    protocol.addTool({
-        QStringLiteral("restore_agent_changes"),
-        QStringLiteral("Restore Agent Changes"),
-        QStringLiteral("Puts rewound changes back (the first first), unless the user changed the same since."),
-        schema({{QStringLiteral("change_ids"), ids}}, {QStringLiteral("change_ids")}),
-        false,
-        [tools](const QJsonObject& arguments) { return tools->restoreAgentChanges(arguments); },
         true,
     });
 
@@ -1644,7 +1625,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
                        "pan, sends and what it is, get_arrangement_map for what plays together, and get_track (and "
                        "get_device_parameters) for the effects on the tracks that matter. You can't hear it: reason "
                        "from what the tracks are, their levels, pans, effects and what overlaps. Suggest changes, "
-                       "each with why, and make them (set_mixer, set_device_parameters) only once I say which.")
+                       "each with why, and make them (set_track, set_device_parameters) only once I say which.")
                 .arg(focus.isEmpty() ? QString() : QStringLiteral(", above all %1").arg(focus));
         },
     });

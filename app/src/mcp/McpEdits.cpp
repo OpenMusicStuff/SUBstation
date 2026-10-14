@@ -20,7 +20,6 @@
 #include "session/Session.h"
 
 #include <QRandomGenerator>
-#include <QRegularExpression>
 
 #include <algorithm>
 #include <cmath>
@@ -82,7 +81,7 @@ public:
         const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
         if (!track) {
             error = id.isEmpty() ? QStringLiteral("%1 is required: a track's id from list_tracks.").arg(field)
-                                 : QStringLiteral("No track has the id \"%1\": list_tracks or find_tracks give the ids.").arg(id);
+                                 : QStringLiteral("No track has the id \"%1\": list_tracks gives the ids.").arg(id);
         }
         return track;
     }
@@ -678,9 +677,24 @@ public:
         });
     }
 
+    // A new group of track_ids (named), or the groups `ungroup` lists gone (what was in them in their place).
     ToolResult groupTracks(const QJsonObject& arguments) {
         if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
+        if (arguments.contains(QStringLiteral("ungroup"))) {
+            if (arguments.contains(QStringLiteral("track_ids")) || arguments.contains(QStringLiteral("name"))) {
+                return ToolResult::failure(QStringLiteral("Give track_ids to group, or ungroup: groups to take apart (not both)."));
+            }
+            const auto groups = trackIds(arguments, QStringLiteral("ungroup"), false, error);
+            if (!groups) return ToolResult::failure(error);
+            QStringList names;
+            for (const QString& id : *groups) {
+                if (!project().track(id).isGroup()) return ToolResult::failure(QStringLiteral("%1 isn't a group.").arg(project().track(id).name));
+                names << project().track(id).name;
+            }
+            return change(QStringLiteral("Ungroup %1").arg(names.join(QStringLiteral(", "))), QStringLiteral("group_tracks"), {},
+                          [&](ProjectEditor& editor) { editor.ungroup(*groups); });
+        }
         const auto ids = trackIds(arguments, QStringLiteral("track_ids"), false, error);
         if (!ids) return ToolResult::failure(error);
         const QString name = arguments.value(QStringLiteral("name")).toString().trimmed();
@@ -698,35 +712,6 @@ public:
             result.structured = out;
         }
         return result;
-    }
-
-    ToolResult ungroupTracks(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
-        QString error;
-        const auto ids = trackIds(arguments, QStringLiteral("group_ids"), false, error);
-        if (!ids) return ToolResult::failure(error);
-        for (const QString& id : *ids) {
-            if (!project().track(id).isGroup()) return ToolResult::failure(QStringLiteral("%1 isn't a group.").arg(project().track(id).name));
-        }
-        return change(QStringLiteral("Ungroup %1 groups").arg(ids->size()), QStringLiteral("ungroup_tracks"), {},
-                      [&](ProjectEditor& editor) { editor.ungroup(*ids); });
-    }
-
-    ToolResult setTrackColor(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
-        QString error;
-        const auto ids = trackIds(arguments, QStringLiteral("track_ids"), true, error);
-        if (!ids) return ToolResult::failure(error);
-        const QString color = arguments.value(QStringLiteral("color")).toString().trimmed().toLower();
-        static const QRegularExpression hex(QStringLiteral("^#[0-9a-f]{6}$"));
-        if (!hex.match(color).hasMatch()) {
-            return ToolResult::failure(QStringLiteral("color is \"#rrggbb\"; SUBstation's own are %1.")
-                                           .arg(kTrackColors.join(QStringLiteral(", "))));
-        }
-        return change(QStringLiteral("Color %1 tracks %2").arg(QString::number(ids->size()), color),
-                      QStringLiteral("set_track_color"), {}, [&](ProjectEditor& editor) {
-                          for (const QString& id : *ids) editor.setTrackColor(id, color);
-                      });
     }
 
     // --- Devices ---
@@ -974,7 +959,7 @@ public:
 
 void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     auto tools = std::make_shared<EditTools>(session);
-    const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks or find_tracks."));
+    const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks."));
     const QJsonObject trackIds{{QStringLiteral("type"), QStringLiteral("array")},
                                {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
                                {QStringLiteral("description"), QStringLiteral("Tracks' ids, from list_tracks.")}};
@@ -1108,31 +1093,16 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     protocol.addTool({
         QStringLiteral("group_tracks"),
         QStringLiteral("Group Tracks"),
-        QStringLiteral("A new group holding these tracks, where the first of them was, as Ctrl+G makes one. Its groupId.") + edits,
+        QStringLiteral("A new group holding track_ids, where the first of them was, as Ctrl+G makes one (named, if "
+                       "name is given); its groupId. Or, with ungroup instead, those groups go and what was in them "
+                       "takes their place, as Ctrl+Shift+G.") + edits,
         schema({{QStringLiteral("track_ids"), trackIds},
-                {QStringLiteral("name"), property(QStringLiteral("string"), QStringLiteral("The group's name (default \"# Group\")."))}},
-               {QStringLiteral("track_ids")}),
+                {QStringLiteral("name"), property(QStringLiteral("string"), QStringLiteral("The new group's name (default \"# Group\")."))},
+                {QStringLiteral("ungroup"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                                        {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
+                                                        {QStringLiteral("description"), QStringLiteral("Instead: groups' ids to take apart.")}}}}),
         false,
         [tools](const QJsonObject& arguments) { return tools->groupTracks(arguments); },
-    });
-    protocol.addTool({
-        QStringLiteral("ungroup_tracks"),
-        QStringLiteral("Ungroup Tracks"),
-        QStringLiteral("The groups go, and what was in them takes their place.") + edits,
-        schema({{QStringLiteral("group_ids"), trackIds}}, {QStringLiteral("group_ids")}),
-        false,
-        [tools](const QJsonObject& arguments) { return tools->ungroupTracks(arguments); },
-    });
-    protocol.addTool({
-        QStringLiteral("set_track_color"),
-        QStringLiteral("Set Track Color"),
-        QStringLiteral("Colors tracks (and their clips) \"#rrggbb\": to show what belongs together.") + edits,
-        schema({{QStringLiteral("track_ids"), trackIds},
-                {QStringLiteral("color"), property(QStringLiteral("string"), QStringLiteral("\"#rrggbb\"."))}},
-               {QStringLiteral("track_ids"), QStringLiteral("color")}),
-        false,
-        [tools](const QJsonObject& arguments) { return tools->setTrackColor(arguments); },
-        true,
     });
 
     // Devices.

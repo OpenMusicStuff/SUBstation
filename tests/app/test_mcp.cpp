@@ -369,13 +369,17 @@ private Q_SLOTS:
         QVERIFY(!call(protocol, QStringLiteral("get_track"), {{QStringLiteral("track_id"), kMaster}})
                      .value(QStringLiteral("isError")).toBool());
 
-        // Found as the find bar finds them.
-        const QJsonArray found = call(protocol, QStringLiteral("find_tracks"), {{QStringLiteral("query"), QStringLiteral("lead")}})
-                                     .value(QStringLiteral("structuredContent")).toObject()
+        // Found as the find bar finds them: list_tracks with a query.
+        const QJsonArray found = structured(call(protocol, QStringLiteral("list_tracks"), {{QStringLiteral("query"), QStringLiteral("lead")}}))
                                      .value(QStringLiteral("tracks")).toArray();
         QCOMPARE(found.size(), 1);
         QCOMPARE(found[0].toObject().value(QStringLiteral("id")).toString(), lead);
-        QVERIFY(call(protocol, QStringLiteral("find_tracks")).value(QStringLiteral("isError")).toBool());
+        QCOMPARE(found[0].toObject().value(QStringLiteral("label")).toString(), f.s().trackLabels()->label(lead));
+        QVERIFY(structured(call(protocol, QStringLiteral("list_tracks"), {{QStringLiteral("query"), QStringLiteral("trombone")}}))
+                    .value(QStringLiteral("tracks")).toArray().isEmpty());
+        QCOMPARE(structured(call(protocol, QStringLiteral("list_tracks"), {{QStringLiteral("query"), QStringLiteral(" ")}}))
+                     .value(QStringLiteral("tracks")).toArray().size(),
+                 3);  // (no words: every track)
 
         // The chords its notes play (C E G: C), and part of the song.
         out = call(protocol, QStringLiteral("get_harmony")).value(QStringLiteral("structuredContent")).toObject();
@@ -610,7 +614,7 @@ private Q_SLOTS:
         QCOMPARE(history.count(), 1);
 
         // The mixer, and a part written over a stretch, on a copy of the track.
-        out = structured(call(protocol, QStringLiteral("set_mixer"),
+        out = structured(call(protocol, QStringLiteral("set_track"),
                               {{QStringLiteral("track_id"), lead}, {QStringLiteral("volume_db"), -6}, {QStringLiteral("pan"), 0.25}}));
         QCOMPARE(out.value(QStringLiteral("changeId")).toInt(), 2);
         QCOMPARE(f.project().track(lead).volumeDb, -6.0);
@@ -719,13 +723,16 @@ private Q_SLOTS:
         const QJsonArray listed = structured(call(protocol, QStringLiteral("list_agent_changes")))
                                       .value(QStringLiteral("changes")).toArray();
         QCOMPARE(listed.size(), 7);
-        QCOMPARE(listed[1].toObject().value(QStringLiteral("tool")).toString(), QStringLiteral("set_mixer"));
+        QCOMPARE(listed[1].toObject().value(QStringLiteral("tool")).toString(), QStringLiteral("set_track"));
         out = structured(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}}));
         QCOMPARE(out.value(QStringLiteral("rewound")).toArray().size(), 1);
         QCOMPARE(f.project().device(lead, delay).params.value(id, was), was);
         QCOMPARE(f.project().track(lead).volumeDb, -6.0);  // (the later change stays)
         QVERIFY(!history.find(first)->applied);
-        out = structured(call(protocol, QStringLiteral("restore_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}}));
+        QVERIFY(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("all"), true}, {QStringLiteral("restore"), true}})
+                    .value(QStringLiteral("isError")).toBool());  // (restoring names the changes)
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"),
+                              {{QStringLiteral("change_ids"), QJsonArray{first}}, {QStringLiteral("restore"), true}}));
         QCOMPARE(out.value(QStringLiteral("restored")).toArray().size(), 1);
         QCOMPARE(f.project().device(lead, delay).params.value(id), target);
         // All of them, the last first: the copy goes, the mixer is back.
@@ -737,7 +744,7 @@ private Q_SLOTS:
 
         // Edits turned off: the agent only reads.
         f.s().mcp()->setEditsAllowed(false);
-        QVERIFY(call(protocol, QStringLiteral("set_mixer"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("pan"), 1}})
+        QVERIFY(call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("pan"), 1}})
                     .value(QStringLiteral("isError")).toBool());
         QCOMPARE(f.project().track(lead).pan, 0.0);
         f.s().mcp()->setEditsAllowed(true);
@@ -757,7 +764,7 @@ private Q_SLOTS:
         const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
         const QString bass = f.editor().addMidiTrack(-1, QStringLiteral("Bass"), QStringLiteral("synth"));
         const auto setPan = [&](const QString& track, double pan) {
-            return structured(call(protocol, QStringLiteral("set_mixer"),
+            return structured(call(protocol, QStringLiteral("set_track"),
                                    {{QStringLiteral("track_id"), track}, {QStringLiteral("pan"), pan}}))
                 .value(QStringLiteral("changeId")).toInt();
         };
@@ -1266,15 +1273,30 @@ private Q_SLOTS:
         QCOMPARE(ids(), (QStringList{group, drums, audio, bass, empty}));
         QVERIFY(call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{group}}, {QStringLiteral("group_id"), group}})
                     .value(QStringLiteral("isError")).toBool());  // (a group into itself)
-        call(protocol, QStringLiteral("ungroup_tracks"), {{QStringLiteral("group_ids"), QJsonArray{group}}});
+        QVERIFY(call(protocol, QStringLiteral("group_tracks"), {{QStringLiteral("ungroup"), QJsonArray{drums}}})
+                    .value(QStringLiteral("isError")).toBool());  // (not a group)
+        QVERIFY(call(protocol, QStringLiteral("group_tracks"), {{QStringLiteral("ungroup"), QJsonArray{group}}, {QStringLiteral("track_ids"), QJsonArray{bass}}})
+                    .value(QStringLiteral("isError")).toBool());  // (one or the other)
+        call(protocol, QStringLiteral("group_tracks"), {{QStringLiteral("ungroup"), QJsonArray{group}}});
         QVERIFY(!f.project().hasTrack(group));
         QVERIFY(!f.project().track(drums).parent);
 
-        // Colored; a color that isn't one.
-        call(protocol, QStringLiteral("set_track_color"), {{QStringLiteral("track_ids"), QJsonArray{drums, bass}}, {QStringLiteral("color"), QStringLiteral("#FF94A6")}});
+        // Named, colored and its mixer set in one change; a color that isn't one, the master's name: nothing changed.
+        const int before = history.count();
+        call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), bass}, {QStringLiteral("name"), QStringLiteral("Sub")},
+                                                    {QStringLiteral("color"), QStringLiteral("#FF94A6")}, {QStringLiteral("volume_db"), -3}});
+        QCOMPARE(history.count(), before + 1);
+        QCOMPARE(f.project().track(bass).name, QStringLiteral("Sub"));
         QCOMPARE(f.project().track(bass).color, QStringLiteral("#ff94a6"));
-        QVERIFY(call(protocol, QStringLiteral("set_track_color"), {{QStringLiteral("track_ids"), QJsonArray{drums}}, {QStringLiteral("color"), QStringLiteral("red")}})
+        QCOMPARE(f.project().track(bass).volumeDb, -3.0);
+        QVERIFY(history.changes().back().text.contains(QStringLiteral("name to Sub")));
+        QVERIFY(call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), drums}, {QStringLiteral("color"), QStringLiteral("red")}})
                     .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), kMaster}, {QStringLiteral("name"), QStringLiteral("Main")}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), drums}})
+                    .value(QStringLiteral("isError")).toBool());  // (nothing to change)
+        QCOMPARE(history.count(), before + 1);
 
         // Deleted (a return too); the master can't be.
         call(protocol, QStringLiteral("delete_tracks"), {{QStringLiteral("track_ids"), QJsonArray{empty, ret}}});
@@ -1500,7 +1522,7 @@ private Q_SLOTS:
             Client client(static_cast<quint16>(free));
             const auto response = client.send(post(request(QStringLiteral("tools/list")), {}, static_cast<quint16>(free)));
             QVERIFY(response);
-            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 31);
+            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 26);
         }
 
         // A session made now starts it as the settings say; a port taken says why.
