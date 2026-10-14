@@ -37,6 +37,7 @@
 #include "session/Renders.h"
 #include "session/Selection.h"
 #include "session/SessionSupport.h"
+#include "update/Updater.h"
 
 namespace sub::app {
 
@@ -84,6 +85,10 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     files_ = new FileManager(project_, editor_, selection_, bridge_, browser_, hotSwap_, this);
     audioPreferences_ = new AudioPreferences(bridge_, this);
     midiPreferences_ = new MidiPreferences(bridge_, this);
+    updates_ = new Updater(this);
+    connect(updates_, &Updater::updateAvailable, this, [this](const QString& version) {
+        Q_EMIT statusMessage(QStringLiteral("SUBstation %1 is available: Options › Preferences › Updates.").arg(version));
+    });
     mcp_ = new McpServer(*this, this);  // (last: its tools read the parts above)
     finishFreeze_ = [this](FreezeRender& render) { return bridge_->finishFreeze(render); };
     wire();

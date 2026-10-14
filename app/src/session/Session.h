@@ -33,7 +33,9 @@
 //   samplers (HotSwap; it takes the browser's double-click and Enter);
 // - audioPreferences, midiPreferences: Preferences › Audio and › MIDI
 //   (Preferences › Plug-ins is the plug-in index's: plugins; and where plug-ins
-//   run, in sandboxes or not: pluginHosting, PluginHostingPreferences).
+//   run, in sandboxes or not: pluginHosting, PluginHostingPreferences);
+// - updates: Preferences › Updates: the channel, checking for updates and
+//   installing them (Updater; an update found also says so on statusMessage).
 //
 // Files: before New, Open, Open Recent and Quit, the UI asks "Save changes to
 // the current project?" (confirmDiscardText) when the project isn't `clean`
@@ -94,6 +96,7 @@ class SoundSimilarity;
 class SoundSuggestions;
 class TrackLabels;
 class TrackSearch;
+class Updater;
 class McpServer;
 
 class Session : public QObject {
@@ -121,6 +124,8 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
     Q_PROPERTY(sub::app::MidiPreferences* midiPreferences READ midiPreferences CONSTANT)
     Q_PROPERTY(sub::app::PluginHostingPreferences* pluginHosting READ pluginHosting CONSTANT)
+    Q_PROPERTY(sub::app::Updater* updates READ updates CONSTANT)
+    Q_MOC_INCLUDE("update/Updater.h")
     // The MCP server agents read and edit the project through (Options › MCP Server).
     Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
     // What agents changed through it, apart from the undo stack: each change
@@ -219,6 +224,7 @@ public:
     AudioPreferences* audioPreferences() const { return audioPreferences_; }
     MidiPreferences* midiPreferences() const { return midiPreferences_; }
     PluginHostingPreferences* pluginHosting() const { return pluginHosting_; }
+    Updater* updates() const { return updates_; }
     PresetIndex* presets() const { return presets_; }
     McpServer* mcp() const { return mcp_; }
     AgentHistory* agentChanges() const { return agents_; }
@@ -517,6 +523,7 @@ private:
     AudioPreferences* audioPreferences_ = nullptr;
     MidiPreferences* midiPreferences_ = nullptr;
     PluginHostingPreferences* pluginHosting_ = nullptr;
+    Updater* updates_ = nullptr;
     QPointer<Render> rendering_;
     std::function<std::optional<Freeze>(FreezeRender&)> finishFreeze_;
     double playStart_ = 0.0;

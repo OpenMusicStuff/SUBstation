@@ -361,6 +361,15 @@ ApplicationWindow {
         }
     }
 
+    // Restart to Install: SUBstation closes as Quit closes it (unsaved changes asked about), then the update installs.
+    Connections {
+        target: Session.updates
+
+        function onQuitRequested() {
+            window.close()
+        }
+    }
+
     Connections {
         target: Session.arrangement
 
@@ -662,6 +671,16 @@ ApplicationWindow {
             }
             Menu {
                 title: qsTr("&Help")
+                Action {
+                    objectName: "checkForUpdates"
+                    text: qsTr("Check for &Updates…")
+                    shortcut: window.keyOf(objectName)
+                    onTriggered: {
+                        preferences.currentPage = 6  // (Updates)
+                        preferences.open()
+                        Session.updates.checkNow()
+                    }
+                }
                 Action { objectName: "about"; shortcut: window.keyOf(objectName); text: qsTr("&About SUBstation"); onTriggered: aboutDialog.open() }
             }
         }

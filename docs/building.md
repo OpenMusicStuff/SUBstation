@@ -95,6 +95,9 @@ Sources are globbed per library (`file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`): a 
 | `SUBSTATION_X11_EDITORS` | `ON` | Plug-in editors on Linux, as X11 windows, if pkg-config finds `xcb` (Debian, Ubuntu: `libxcb1-dev`). Without it plug-ins show no editor (`EditorWindowNone.cpp`). |
 | `SUBSTATION_ALSA` | `ON` | MIDI input through ALSA's sequencer on Linux, if pkg-config finds `alsa` (Debian, Ubuntu: `libasound2-dev`). Without it the engine lists no MIDI inputs (`MidiNone.cpp`). |
 | `SUBSTATION_BUILD_BENCHMARKS` | `OFF` | The benchmarks ([benchmarks/README.md](../benchmarks/README.md)). |
+| `SUBSTATION_RELEASE_CHANNEL` | `dev` | What the build is: `dev` (by hand: it never looks for updates by itself), `stable`, `nightly` or `canary`. Set by the release workflow ([releasing.md](releasing.md#versions)). |
+| `SUBSTATION_VERSION_SUFFIX` | (empty) | After the version: `nightly.<stamp>` or `canary.<stamp>` (required for those channels). |
+| `SUBSTATION_UPDATE_REPOSITORY` | `OpenMusicStuff/SUBstation` | The GitHub repository whose releases are the updates. |
 
 Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
 

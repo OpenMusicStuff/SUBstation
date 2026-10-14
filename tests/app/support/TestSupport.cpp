@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSettings>
+#include <QUrl>
 #include <QtEndian>
 
 #include <algorithm>
@@ -59,6 +60,9 @@ void prepareApplication() {
     qputenv("SUBSTATION_PLUGIN_CACHE",
             (runFolder(QStringLiteral("sub-plugin-cache")) + QStringLiteral("/vst3-cache.json")).toUtf8());
     qputenv("SUBSTATION_RECORDINGS", (runFolder(QStringLiteral("sub-recordings")) + QStringLiteral("/Recordings")).toUtf8());
+    // No test looks for updates on GitHub: a feed that isn't there, unless a test gives one.
+    qputenv("SUBSTATION_UPDATE_FEED", QUrl::fromLocalFile(runFolder(QStringLiteral("sub-updates")) +
+                                                         QStringLiteral("/no-feed.json")).toString().toUtf8());
     // Not the user's template: new projects start empty until a test saves one.
     qputenv("SUBSTATION_TEMPLATE", (runFolder(QStringLiteral("sub-template")) + QStringLiteral("/Template.gilproj")).toUtf8());
 }

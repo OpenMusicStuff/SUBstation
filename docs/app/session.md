@@ -37,7 +37,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the
 `Humanizer`, the `TrackLabels` (what each track is, in words), the `TrackSearch` (finding tracks by their names and labels), the `BrowserController` (which starts the plug-in
 scan, and points the sound similarity at its index), the `PresetIndex`, the `RenderProgress`, and the parts `ArrangementActions`, `DeviceSelection`,
-`ComputerKeyboard`, `ModulationLearn`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, and last the `McpServer` (its tools
+`ComputerKeyboard`, `ModulationLearn`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, the `Updater`, and last the `McpServer` (its tools
 read the parts above). They are its children, and QML
 reads them as constant properties:
 
@@ -59,6 +59,7 @@ reads them as constant properties:
 | `files`, `hotSwap` | `FileManager`, `HotSwap` | [below](#the-file-manager-and-hot-swaps-filemanager-hotswap) |
 | `audioPreferences`, `midiPreferences` | `AudioPreferences`, `MidiPreferences` | [below](#preferences) |
 | `pluginHosting` | `PluginHostingPreferences` | [below](#preferences) |
+| `updates` | `Updater` | Preferences › Updates: [updates.md](updates.md); an update found also goes out on `statusMessage` |
 
 `Session::Options` is for the tests: `scanner` (the plug-in scanner's program; empty: `substation-scan` beside the
 application), `scanPlugins` (scan at once), `browserIndex` (keep the browser's index and the sounds' fingerprints on
@@ -409,6 +410,7 @@ parts keep these QSettings keys:
 | `files/recent` | the recent projects, the latest first (at most 10) | `Session::kRecentKey` |
 | `files/last_dir` | where the file dialogs start (default `~/Music`) | `Session::kLastFolderKey` |
 | `transport/count_in_bars` | the count-in (0, 1, 2 or 4 bars) | `Session::kCountInKey` |
+| `updates/channel`, `updates/auto_check`, `updates/auto_install`, `updates/last_check` | Preferences › Updates, and when it last looked | `Updater` ([updates.md](updates.md#settings)) |
 | `presets/dir` | where *Load Preset…* last loaded a preset file from (default: the library) | `DeviceSelection::presetFolder` |
 | `vital/preset_dir` | where a Vital preset (`.vital`) was last loaded from or saved to (default: Vital's presets folder, `Documents/Vital` or `~/.local/share/vital`, if it exists) | `DeviceSelection::vitalPresetFolder` |
 | `plugins/preset_dir` | where a plug-in's own `.vstpreset` was last loaded from or saved to (default: `Documents/VST3 Presets/<vendor>/<plug-in>`, if it exists) | `DeviceSelection::vst3PresetFolder` |

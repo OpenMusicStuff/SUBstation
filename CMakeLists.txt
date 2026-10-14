@@ -40,6 +40,28 @@ option(SUBSTATION_PIPEWIRE "Build PipeWire support on Linux (needs libpipewire-0
 option(SUBSTATION_ALSA "Build ALSA sequencer MIDI input on Linux (needs libasound2-dev: see docs/building.md)" ON)
 option(SUBSTATION_X11_EDITORS "Build plug-in editors on Linux, as X11 windows (needs libxcb1-dev: see docs/building.md)" ON)
 
+# What this build is, for Help › About and the updater (docs/releasing.md). The project's
+# VERSION above is the next stable release's; the release workflow sets the rest. A build
+# by hand is "dev": it never checks for updates by itself.
+set(SUBSTATION_RELEASE_CHANNEL "dev" CACHE STRING "The update channel this build was released on: dev, stable, nightly or canary")
+set_property(CACHE SUBSTATION_RELEASE_CHANNEL PROPERTY STRINGS dev stable nightly canary)
+set(SUBSTATION_VERSION_SUFFIX "" CACHE STRING "After the version and a hyphen: nightly.<UTC yyyyMMddHHmm> or canary.<...>; empty for stable and dev")
+set(SUBSTATION_UPDATE_REPOSITORY "OpenMusicStuff/SUBstation" CACHE STRING "The GitHub repository (owner/name) whose releases are the updates")
+if (NOT SUBSTATION_RELEASE_CHANNEL MATCHES "^(dev|stable|nightly|canary)$")
+    message(FATAL_ERROR "SUBSTATION_RELEASE_CHANNEL is dev, stable, nightly or canary, not \"${SUBSTATION_RELEASE_CHANNEL}\"")
+endif()
+if (SUBSTATION_RELEASE_CHANNEL MATCHES "^(nightly|canary)$" AND
+    NOT SUBSTATION_VERSION_SUFFIX MATCHES "^${SUBSTATION_RELEASE_CHANNEL}\\.[0-9]+$")
+    message(FATAL_ERROR "A ${SUBSTATION_RELEASE_CHANNEL} build's SUBSTATION_VERSION_SUFFIX is ${SUBSTATION_RELEASE_CHANNEL}.<number>, "
+                        "not \"${SUBSTATION_VERSION_SUFFIX}\"")
+endif()
+if (SUBSTATION_VERSION_SUFFIX)
+    set(SUBSTATION_FULL_VERSION "${PROJECT_VERSION}-${SUBSTATION_VERSION_SUFFIX}")
+else()
+    set(SUBSTATION_FULL_VERSION "${PROJECT_VERSION}")
+endif()
+message(STATUS "SUBstation ${SUBSTATION_FULL_VERSION} (${SUBSTATION_RELEASE_CHANNEL})")
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 include(cmake/Warnings.cmake)
