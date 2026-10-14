@@ -72,6 +72,11 @@ ParamSpec ParamSpec::fromInfo(const sub::ParamInfo& info, const QString& key, co
     spec.steps = info.stepCount();
     for (const std::string& label : info.valueLabels) spec.labels.append(QString::fromStdString(label));
     spec.text = std::move(text);
+    if (const auto& display = info.display) {
+        spec.shown = [display = *display](double value) { return display.shown(value); };
+        spec.fromShown = [display = *display](double shown) { return display.value(shown); };
+        spec.shownUnit = QString::fromStdString(display->unit);
+    }
     return spec;
 }
 
@@ -115,7 +120,8 @@ QString ParamSpec::formatNormalized(double value) const { return format(fromNorm
 bool ParamSpec::operator==(const ParamSpec& other) const {
     return key == other.key && name == other.name && group == other.group && minimum == other.minimum &&
            maximum == other.maximum && defaultValue == other.defaultValue && unit == other.unit &&
-           scale == other.scale && steps == other.steps && labels == other.labels;
+           scale == other.scale && steps == other.steps && labels == other.labels &&
+           showsOtherwise() == other.showsOtherwise() && shownUnit == other.shownUnit;
 }
 
 namespace {

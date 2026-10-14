@@ -81,9 +81,14 @@ QJsonArray vibratoJson(const std::vector<Vibrato>& vibratos) {
     return out;
 }
 
-QJsonObject output(const Output& out) {
+// Where a track's output goes, as it plays: "group" (the model's "its group,
+// else the master") resolved to the one it is.
+QJsonObject output(const Track& track) {
+    const Output& out = track.output;
     switch (out.to) {
-    case Output::To::Group: return {{QStringLiteral("to"), QStringLiteral("group")}};  // (its group, else the master)
+    case Output::To::Group:
+        if (track.parent) return {{QStringLiteral("to"), QStringLiteral("group")}, {QStringLiteral("trackId"), *track.parent}};
+        return {{QStringLiteral("to"), QStringLiteral("master")}};
     case Output::To::Master: return {{QStringLiteral("to"), QStringLiteral("master")}};
     case Output::To::Track: return {{QStringLiteral("to"), QStringLiteral("track")}, {QStringLiteral("trackId"), out.id}};
     case Output::To::Sidechain:
@@ -249,7 +254,7 @@ public:
             sends.append(send);
         }
         out.insert(QStringLiteral("sends"), sends);
-        if (!track.isMaster()) out.insert(QStringLiteral("output"), output(track.output));
+        if (!track.isMaster()) out.insert(QStringLiteral("output"), output(track));
         // What is automated (get_automation gives the points).
         QJsonArray automated;
         for (const auto& [key, envelope] : project().automation(track.id)) {
@@ -512,9 +517,8 @@ public:
                     break;
                 }
                 ++total;
-                // In the target's units, as get_device_parameters gives values (normalized without its spec).
-                const double value = spec ? spec->fromNormalized(point.value) : point.value;
-                QJsonArray row{beat(point.beat), spec ? rounded(value) : beat(value)};
+                // As the target shows it, as get_device_parameters gives values (normalized without its spec).
+                QJsonArray row{beat(point.beat), spec ? shownValue(*spec, spec->fromNormalized(point.value)) : beat(point.value)};
                 if (point.curve != 0.0) row.append(rounded(point.curve));
                 points.append(row);
             }
@@ -522,9 +526,10 @@ public:
                           {QStringLiteral("target"), targetName(track->id, key)},
                           {QStringLiteral("points"), points}};
             if (spec) {
-                e.insert(QStringLiteral("min"), spec->minimum);
-                e.insert(QStringLiteral("max"), spec->maximum);
-                if (!spec->unit.isEmpty()) e.insert(QStringLiteral("unit"), spec->unit);
+                const auto [low, high] = shownRange(*spec);
+                e.insert(QStringLiteral("min"), significant(low));
+                e.insert(QStringLiteral("max"), significant(high));
+                if (const QString unit = shownUnit(*spec); !unit.isEmpty()) e.insert(QStringLiteral("unit"), unit);
                 // Where it is at the start of the stretch, as the device shows it.
                 if (const auto value = automation::valueAt(envelope, std::isfinite(at.from) ? at.from : 0.0)) {
                     e.insert(QStringLiteral("startText"), spec->format(spec->fromNormalized(*value)));
@@ -577,15 +582,17 @@ public:
         const ParamSpec& spec = param.spec;
         QJsonObject out{{QStringLiteral("id"), param.id}, {QStringLiteral("name"), spec.name}};
         const std::optional<double> value = session_.bridge()->ownValue(trackId, spec.key);
+        // (As it shows: Vital's level squared, its envelope's times to the fourth... and set so.)
         if (value) {
-            out.insert(QStringLiteral("value"), *value);
+            out.insert(QStringLiteral("value"), shownValue(spec, *value));
             out.insert(QStringLiteral("text"), spec.format(*value));
-            out.insert(QStringLiteral("normalized"), spec.toNormalized(*value));
+            out.insert(QStringLiteral("normalized"), significant(spec.toNormalized(*value)));
         }
-        out.insert(QStringLiteral("min"), spec.minimum);
-        out.insert(QStringLiteral("max"), spec.maximum);
-        out.insert(QStringLiteral("default"), spec.defaultValue);
-        if (!spec.unit.isEmpty()) out.insert(QStringLiteral("unit"), spec.unit);
+        const auto [low, high] = shownRange(spec);
+        out.insert(QStringLiteral("min"), significant(low));
+        out.insert(QStringLiteral("max"), significant(high));
+        out.insert(QStringLiteral("default"), shownValue(spec, spec.defaultValue));
+        if (const QString unit = shownUnit(spec); !unit.isEmpty()) out.insert(QStringLiteral("unit"), unit);
         if (spec.discrete()) out.insert(QStringLiteral("steps"), spec.steps);
         if (!spec.labels.isEmpty() && spec.labels.size() <= kMaxChoices) {
             out.insert(QStringLiteral("choices"), QJsonArray::fromStringList(spec.labels));
@@ -689,7 +696,7 @@ public:
         for (const Setting& s : settings) {
             QJsonObject p{{QStringLiteral("id"), s.param.id},
                           {QStringLiteral("name"), s.param.spec.name},
-                          {QStringLiteral("value"), s.value},
+                          {QStringLiteral("value"), shownValue(s.param.spec, s.value)},
                           {QStringLiteral("text"), s.param.spec.format(s.value)}};
             if (!project().envelope(track.id, s.param.spec.key).empty()) {
                 p.insert(QStringLiteral("note"), QStringLiteral("It is automated: this overrides its automation until "
@@ -1320,7 +1327,8 @@ void addSessionTools(Protocol& protocol, Session& session) {
         QStringLiteral("get_device_parameters"),
         QStringLiteral("Get Device Parameters"),
         QStringLiteral("A device's parameters (a plug-in's, a built-in device's, a rack's macros and chains) and what "
-                       "each is set to now: id, name, value (in its units: min to max, unit), text (as the device shows "
+                       "each is set to now: id, name, value (the number the device shows, in unit, from min to max: "
+                       "set_device_parameters and write_automation take values so), text (as the device shows "
                        "it, e.g. \"1.2 kHz\"), normalized (0..1), default, choices for a list, whether it is automated "
                        "and whether a rack's macro moves it. Plug-ins can have thousands: `query` keeps those whose "
                        "name has every word (\"filter cutoff\"), and a page is `limit` long (100 by default; "
@@ -1398,7 +1406,7 @@ void addSessionTools(Protocol& protocol, Session& session) {
         "SUBstation, as can rewind_agent_changes.");
     QJsonObject valueSchema{
         {QStringLiteral("description"),
-         QStringLiteral("In the parameter's units (min to max), a choice's name, or true/false for a switch.")}};
+         QStringLiteral("As the parameter shows it (its value and unit in get_device_parameters), a choice's name, or true/false for a switch.")}};
     valueSchema.insert(QStringLiteral("type"), QJsonArray{QStringLiteral("number"), QStringLiteral("string"), QStringLiteral("boolean")});
     const QJsonObject setting{
         {QStringLiteral("type"), QStringLiteral("object")},

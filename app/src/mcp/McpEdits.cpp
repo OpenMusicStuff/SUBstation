@@ -960,7 +960,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     const QJsonObject endBeat = property(QStringLiteral("number"), QStringLiteral("Up to this beat (default: the end)."));
     const QJsonObject startBar = property(QStringLiteral("number"), QStringLiteral("Instead of start_beat: from where this bar starts (from 1)."));
     const QJsonObject endBar = property(QStringLiteral("number"), QStringLiteral("Instead of end_beat: up to where this bar starts (bars 17 to 24: start_bar 17, end_bar 25)."));
-    QJsonObject anyValue{{QStringLiteral("description"), QStringLiteral("In the target's units (as get_device_parameters gives them), a choice's name, or true/false for a switch.")}};
+    QJsonObject anyValue{{QStringLiteral("description"), QStringLiteral("As the target shows it (its value and unit in get_device_parameters), a choice's name, or true/false for a switch.")}};
     anyValue.insert(QStringLiteral("type"), QJsonArray{QStringLiteral("number"), QStringLiteral("string"), QStringLiteral("boolean")});
     QJsonObject pitchList{{QStringLiteral("type"), QStringLiteral("array")},
                           {QStringLiteral("description"), QStringLiteral("Only notes of these pitches (numbers, or names: \"C1\" for a kick).")}};

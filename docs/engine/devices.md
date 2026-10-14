@@ -302,7 +302,12 @@ Vital's raw ones (what its knobs are linear in and its presets hold); no `logSca
 "1.000 secs", "50.00%", "-6.020dB"), a cutoff (8..136, a MIDI note) in hertz ("440 Hz", "3.52 kHz"), a list's
 names as far as Vital's list has them (a few ranges run past their names: the filters' styles, whose names depend on
 the model in Vital's window). Vital's name lists are found by their names among `synth_strings.h`'s, shortest first,
-since Vital's `ValueDetails` don't say how long theirs are. Hidden (the host's, or of Vital's window): `bypass`,
+since Vital's `ValueDetails` don't say how long theirs are. The same scale, offset, inversion, multiplier and units
+are the parameter's `display` (`ParamDisplay`, in Processor.h), as data, for what reads and sets values as they show
+(the MCP server): the parameters Vital shows as they are have none. An oscillator's distortion types name the other
+oscillators the FM and RM ones take, as Vital's editor does ("FM <- Osc 2", "FM <- Osc 3" for the first;
+`ProducersModule::getFirstModulationIndex` and `getSecondModulationIndex`): Vital's strings name neither, which made
+two choices alike. Hidden (the host's, or of Vital's window): `bypass`,
 `beats_per_minute` (the song's tempo is set every block), `mpe_enabled`, `view_spectrogram`, `osc_N_view_2d`. Not
 automatable: `oversampling` (it rebuilds the engine) and `effect_chain_order`.
 

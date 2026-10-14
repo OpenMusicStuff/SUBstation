@@ -19,6 +19,7 @@
 #include "load_save.h"
 #include "modulation_connection_processor.h"
 #include "synth_constants.h"
+#include "synth_oscillator.h"
 #include "synth_strings.h"
 
 namespace sub::vitalpatch {
@@ -89,6 +90,53 @@ std::vector<std::string> namesOf(const std::string* lookup) {
     return {};
 }
 
+// An oscillator's distortion types name the other oscillators they take ("FM <- Osc 2",
+// "FM <- Osc 3" for the first), as Vital's own editor shows them; its strings name neither.
+void otherOscillators(const std::string& id, std::vector<std::string>& names) {
+    if (id.size() != 21 || id.rfind("osc_", 0) != 0 || id.compare(5, std::string::npos, "_distortion_type") != 0 ||
+        id[4] < '1' || id[4] > '3') {
+        return;
+    }
+    const int index = id[4] - '1';
+    // (ProducersModule::getFirstModulationIndex and getSecondModulationIndex.)
+    const int first = index == 0 ? 1 : 0;
+    const int second = index == 1 ? 2 : first + 1;
+    using Type = vital::SynthOscillator::DistortionType;
+    for (const auto& [type, other] : {std::pair{Type::kFmOscillatorA, first}, std::pair{Type::kFmOscillatorB, second},
+                                      std::pair{Type::kRmOscillatorA, first}, std::pair{Type::kRmOscillatorB, second}}) {
+        if (static_cast<size_t>(type) < names.size()) names[static_cast<size_t>(type)] += " " + std::to_string(other + 1);
+    }
+}
+
+// How Vital shows a value (SynthSlider::getAdjustedValue), as data: a cutoff
+// (a MIDI note, 8..136) in hertz, as its text has it. None: as it is.
+std::optional<ParamDisplay> displayOf(const vital::ValueDetails& d) {
+    using Curve = ParamDisplay::Curve;
+    ParamDisplay display;
+    if (d.min == 8.f && d.max == 136.f) {
+        display.curve = Curve::NoteHz;
+        display.unit = "Hz";
+        return display;
+    }
+    switch (d.value_scale) {
+    case vital::ValueDetails::kQuadratic: display.curve = Curve::Square; break;
+    case vital::ValueDetails::kCubic: display.curve = Curve::Cube; break;
+    case vital::ValueDetails::kQuartic: display.curve = Curve::Fourth; break;
+    case vital::ValueDetails::kExponential: display.curve = Curve::Pow2; break;
+    case vital::ValueDetails::kSquareRoot: display.curve = Curve::SquareRoot; break;
+    default: break;
+    }
+    display.offset = d.post_offset;
+    display.multiply = d.display_multiply;
+    display.invert = d.display_invert;
+    std::string unit = d.display_units;
+    unit.erase(0, unit.find_first_not_of(' '));
+    display.unit = unit;
+    const bool plain = display.curve == Curve::Linear && display.offset == 0.0 && display.multiply == 1.0 && !display.invert;
+    if (plain) return std::nullopt;
+    return display;
+}
+
 const Table& table() {
     static const Table kTable = [] {
         Table t;
@@ -103,6 +151,8 @@ const Table& table() {
             info.defaultValue = details->default_value;
             info.ownText = true;
             std::vector<std::string> names = namesOf(details->string_lookup);
+            otherOscillators(info.id, names);
+            if (details->value_scale != vital::ValueDetails::kIndexed) info.display = displayOf(*details);
             if (details->value_scale == vital::ValueDetails::kIndexed) {
                 const int count = static_cast<int>(std::lround(details->max - details->min));
                 // A list: its names start at 0 (Vital names a value by itself, not by its step) and name every value.

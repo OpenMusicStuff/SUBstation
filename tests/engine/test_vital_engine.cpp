@@ -165,6 +165,52 @@ TEST_CASE("vital: values shown as Vital shows them") {
     CHECK(vital.processor().paramText(vp::paramIndex("polyphony"), 4.f) == "4 voices");
 }
 
+TEST_CASE("vital: how each value shows, as data that goes both ways") {
+    const auto info = [](const char* id) { return vp::params()[static_cast<size_t>(vp::paramIndex(id))]; };
+    // A time to the fourth, in seconds: 60 ms is 0.06^(1/4).
+    const sub::ParamInfo release = info("env_1_release");
+    REQUIRE(release.display.has_value());
+    CHECK(release.display->unit == "secs");
+    CHECK(std::abs(release.display->shown(0.5) - 0.0625) < 1e-9);
+    CHECK(std::abs(release.display->value(0.06) - std::pow(0.06, 0.25)) < 1e-9);
+    // A level squared; a glide's 2^value; a cutoff's note in hertz; an LFO's rate as a period (inverted).
+    CHECK(std::abs(info("osc_1_level").display->shown(0.75) - 0.5625) < 1e-9);
+    CHECK(info("portamento_time").display->unit == "secs");
+    CHECK(std::abs(info("portamento_time").display->shown(-5.0) - 0.03125) < 1e-9);
+    CHECK(info("filter_1_cutoff").display->unit == "Hz");
+    CHECK(std::abs(info("filter_1_cutoff").display->shown(69.0) - 440.0) < 1e-9);
+    CHECK(info("lfo_1_frequency").display->invert);
+    // Shown as it is: a list, a count, a plain value.
+    CHECK(!info("filter_1_model").display.has_value());
+    CHECK(!info("polyphony").display.has_value());
+    // Every parameter's value comes back from what it shows, across its range.
+    int checked = 0;
+    for (const sub::ParamInfo& p : vp::params()) {
+        if (!p.display) continue;
+        for (int i = 0; i <= 8; ++i) {
+            const double value = p.minValue + (p.maxValue - p.minValue) * i / 8.0;
+            const double shown = p.display->shown(value);
+            if (!std::isfinite(shown)) continue;  // (1/0: an inverted display at its end)
+            const double back = p.display->value(shown);
+            // (A curve even in its value, squared or to the fourth, shows a negative value as its positive one.)
+            const bool even = p.display->curve == sub::ParamDisplay::Curve::Square || p.display->curve == sub::ParamDisplay::Curve::Fourth;
+            INFO(p.id + " at " + std::to_string(value));
+            CHECK(std::abs(back - (even ? std::abs(value) : value)) < 1e-6 * std::max(1.0, std::abs(value)));
+            ++checked;
+        }
+    }
+    CHECK(checked > 100);
+    // An oscillator's FM and RM choices name the other oscillators, as Vital's editor shows them.
+    const auto names = [&](const char* id) { return info(id).valueLabels; };
+    CHECK(names("osc_1_distortion_type")[7] == "FM <- Osc 2");
+    CHECK(names("osc_1_distortion_type")[8] == "FM <- Osc 3");
+    CHECK(names("osc_2_distortion_type")[7] == "FM <- Osc 1");
+    CHECK(names("osc_2_distortion_type")[11] == "RM <- Osc 3");
+    CHECK(names("osc_3_distortion_type")[10] == "RM <- Osc 1");
+    CHECK(names("osc_3_distortion_type")[11] == "RM <- Osc 2");
+    CHECK(vp::paramText(vp::paramIndex("osc_1_distortion_type"), 8.f) == "FM <- Osc 3");
+}
+
 TEST_CASE("vital: silent until a note, which plays at its pitch") {
     Standalone vital("vital", kRate);
     const auto [quiet, quietRight] = play(vital, {}, 4800);

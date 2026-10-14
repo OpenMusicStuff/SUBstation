@@ -175,28 +175,65 @@ std::pair<std::optional<double>, QString> ToolContext::wanted(const Param& param
     }
     if (value.isString()) {
         const QString name = value.toString().trimmed();
+        QList<qsizetype> found;
         for (qsizetype i = 0; i < spec.labels.size(); ++i) {
-            if (spec.labels[i].compare(name, Qt::CaseInsensitive) != 0) continue;
-            const double n = spec.steps > 0 ? static_cast<double>(i) / spec.steps : 0.0;
+            if (spec.labels[i].compare(name, Qt::CaseInsensitive) == 0) found.append(i);
+        }
+        if (found.size() > 1) {
+            // (Two choices named alike: which one is meant can't be told. Its place can.)
+            QStringList places;
+            for (qsizetype i : found) places << QString::number(spec.minimum + static_cast<double>(i));
+            return {std::nullopt, QStringLiteral("%1 has %2 choices named \"%3\": give the value of the one meant "
+                                                 "(%4), or normalized.")
+                                      .arg(param.id, QString::number(found.size()), name, places.join(QStringLiteral(" or ")))};
+        }
+        if (found.size() == 1) {
+            const double n = spec.steps > 0 ? static_cast<double>(found.first()) / spec.steps : 0.0;
             return {spec.fromNormalized(spec.quantize(n)), {}};
         }
         if (spec.labels.isEmpty()) {
+            const auto [low, high] = shownRange(spec);
             return {std::nullopt, QStringLiteral("%1 takes a number from %2 to %3.")
-                                      .arg(param.id, number(spec.minimum), number(spec.maximum))};
+                                      .arg(param.id, number(significant(low), 6), number(significant(high), 6))};
         }
         return {std::nullopt, QStringLiteral("%1 has no choice \"%2\": it is one of %3.")
                                   .arg(param.id, name, spec.labels.join(QStringLiteral(", ")))};
     }
     if (!value.isDouble()) return {std::nullopt, QStringLiteral("%1: value is a number.").arg(param.id)};
-    const double plain = value.toDouble();
-    const double slack = (spec.maximum - spec.minimum) * 1e-9;
-    if (plain < spec.minimum - slack || plain > spec.maximum + slack) {
+    // A number as the parameter shows it (as its text reads), in its unit.
+    const double asked = value.toDouble();
+    const auto [low, high] = shownRange(spec);
+    const double slack = (high - low) * 1e-9;
+    if (asked < low - slack || asked > high + slack) {
+        const QString unit = shownUnit(spec);
         return {std::nullopt, QStringLiteral("%1 goes from %2 to %3%4 (asked for %5).")
-                                  .arg(param.id, number(spec.minimum), number(spec.maximum),
-                                       spec.unit.isEmpty() ? QString() : u' ' + spec.unit, number(plain))};
+                                  .arg(param.id, number(significant(low), 6), number(significant(high), 6),
+                                       unit.isEmpty() ? QString() : u' ' + unit, number(asked, 6))};
     }
+    const double plain = spec.showsOtherwise() ? spec.fromShown(std::clamp(asked, low, high)) : asked;
+    if (!std::isfinite(plain)) return {std::nullopt, QStringLiteral("%1 can't be %2.").arg(param.id, number(asked, 6))};
     return {spec.fromNormalized(spec.quantize(spec.toNormalized(plain))), {}};
 }
+
+double significant(double value, int digits) {
+    if (value == 0.0 || !std::isfinite(value)) return value;
+    const double scale = std::pow(10.0, digits - 1 - static_cast<int>(std::floor(std::log10(std::abs(value)))));
+    const double out = std::round(value * scale) / scale;
+    return out == 0.0 ? 0.0 : out;
+}
+
+double shownValue(const ParamSpec& spec, double plain) {
+    return significant(spec.showsOtherwise() ? spec.shown(plain) : plain);
+}
+
+std::pair<double, double> shownRange(const ParamSpec& spec) {
+    if (!spec.showsOtherwise()) return {spec.minimum, spec.maximum};
+    const double a = spec.shown(spec.minimum);
+    const double b = spec.shown(spec.maximum);
+    return {std::min(a, b), std::max(a, b)};  // (an inverted display shows them the other way round)
+}
+
+QString shownUnit(const ParamSpec& spec) { return spec.showsOtherwise() ? spec.shownUnit : spec.unit; }
 
 void addTool(Protocol& protocol, const std::shared_ptr<const ToolContext>& context, Tool tool) {
     if (!tool.readOnly) {
