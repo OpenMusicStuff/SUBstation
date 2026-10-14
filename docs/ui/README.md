@@ -487,7 +487,8 @@ application-layer object that holds the logic. What the preferences mean to the 
 [guide/audio-setup.md](../guide/audio-setup.md).
 
 - **Preferences** (`PreferencesDialog`: Options › Preferences…, Ctrl+, or a click on the device's name): a tab per
-  page and Close. Changes apply at once. Opening it calls `Session.audioPreferences.open()` and
+  page and Close. Changes apply at once. As wide as its widest page, its wrapped texts at most 520 px (a wrapping
+  label asks for its whole text on one line), and never wider than the window. Opening it calls `Session.audioPreferences.open()` and
   `Session.midiPreferences.open()`; closing it `audioPreferences.close()`.
   - **Audio** (`AudioPage` on [AudioPreferences](../../app/src/session/AudioPreferences.h)): a `ChoiceBox` per
     setting, bound to the controller's choices and index (`driverChoices`/`driverIndex`, `deviceChoices`,
