@@ -330,8 +330,10 @@ broken samples and files; comparing and the library's statistics; the store (ano
 index's threads, saving and checking stamps, the library's statistics kept and measured again, searches, cancelling
 (with an extractor of the tests' own, slow on purpose), an extractor that can't be made; harmony: the key, chords from notes (sevenths,
 inversions, melodies, arpeggios, rests), the parts written from chords; humanizing with the velocity model shipped
-(models/velocity.hbm): loading it, what it predicts depending only on the notes, the targets' level, the amount.
-See [intelligence.md](intelligence.md#tests).
+(models/velocity.hbm): loading it, what it predicts depending only on the notes, the targets' level, the amount;
+the sound tagger: the compiled-in model against PyTorch's outputs (TaggerReference.inc, written by
+tools/sound_tagger/train.py with the model), kinds and loops, attributes among a kind, the words searches are read by,
+labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 
 ### The model and the editor ([tests/app](../tests/app))
 

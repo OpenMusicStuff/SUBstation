@@ -111,7 +111,7 @@ private Q_SLOTS:
             BrowserController browser(nullptr, options());
             QCOMPARE(browser.places(), QStringList{path(QStringLiteral("home/Music"))});
             QCOMPARE(browser.scope(), QStringList{QStringLiteral("samples")});
-            QCOMPARE(browser.sort(), QStringLiteral("rank"));
+            QCOMPARE(browser.sort(), QStringLiteral("best"));  // (the default)
             QStringList expected{QStringLiteral("CATEGORIES"), QStringLiteral("All"), QStringLiteral("Samples"),
                                  QStringLiteral("Built-in")};
             expected << builtinCategoryNames();

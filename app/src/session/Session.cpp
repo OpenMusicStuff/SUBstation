@@ -17,6 +17,7 @@
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
 #include "intelligence/SoundSimilarity.h"
+#include "intelligence/SoundSuggestions.h"
 #include "intelligence/TrackLabels.h"
 #include "intelligence/TrackSearch.h"
 #include "io/Presets.h"
@@ -67,6 +68,8 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     BrowserController::Options browserOptions;
     browserOptions.scanPlugins = options_.scanPlugins;
     browserOptions.similarity = similarity_;  // (it analyses the browser's files)
+    suggestions_ = new SoundSuggestions(project_, harmony_, similarity_, this);
+    browserOptions.suggestions = suggestions_;  // (the Best sort: what fits the project)
     if (!options_.browserIndex) browserOptions.indexPath = QString();
     browser_ = new BrowserController(plugins_, browserOptions, this);
     presets_ = new PresetIndex(this);

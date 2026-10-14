@@ -119,7 +119,30 @@ struct Usage {
 
 // Rank: most used first, then the best matches. Name: by casefolded name.
 // Score: indexed files by Query::score, the highest first (similar sounds).
-enum class Sort : uint8_t { Rank, Name, Score };
+// Best: by a blend of how well an item matches (its name, and what it sounds
+// like), how much it was used lately, and how well it fits (Query::fit): what
+// the application suggests first.
+enum class Sort : uint8_t { Rank, Name, Score, Best };
+
+// The hash files are told by to the application's sound matching (64-bit FNV-1a
+// of the path as shown, Snapshot::join of its folder's path and its name;
+// never 0), made from the folder's part once and the name for each file.
+uint64_t folderHash(std::string_view folderPath);              // of the folder's path joined with ""
+uint64_t fileHash(uint64_t folderHash, std::string_view name);  // then the name
+
+// What files sound like, to a search: made by the application for a query's
+// terms (the sound tagger's words: "hard trap snare"), read on the search
+// thread, so it must only read what doesn't change.
+class SoundMatcher {
+public:
+    virtual ~SoundMatcher() = default;
+    // A file, by fileHash(): false to leave it out whatever its name (a
+    // sidebar's sound filter: only kicks). Otherwise `heard` has bit t set for
+    // each term t it sounds like (a term matches a file when it is in its name
+    // or folder, or heard in it), and `score` says how well it fits the terms
+    // it was heard as (0..1; orders files alike by name).
+    virtual bool hear(uint64_t fileHash, uint64_t& heard, float& score) const = 0;
+};
 
 // Groups: 0 is the index's audio files, others are external groups.
 inline constexpr int kAudioGroup = 0;
@@ -143,6 +166,13 @@ struct Query {
     // out. Called on the search thread, so it must only read what doesn't
     // change (a finished result of the application's).
     std::function<double(std::string_view path)> score;
+    // Files' sounds: made once per search for its terms (pySplit(pyLower(text)));
+    // null (or a null matcher) for none: only names and folders match.
+    std::function<std::shared_ptr<const SoundMatcher>(const std::vector<std::string>& terms)> sounds;
+    // Sort::Best: how well a file fits (0..1, by fileHash(); 0.5 for unknown):
+    // what the application knows of the project (its sounds, its key). Called
+    // on the search thread, so it must only read what doesn't change.
+    std::function<float(uint64_t fileHash)> fit;
 };
 
 struct Hit {

@@ -17,8 +17,8 @@
 // other loops. --tune searches the aspects' weights for the best mean
 // precision@10 over the one-shot kinds; --weights sets them, in the order of
 // FeatureSchema.h's aspects (timbre, timbreMotion, spectrum, envelope, pitch,
-// rhythm, timbreSpread, contrast, spectralShape, tonality, embedding), those
-// left out keeping the extractor's. --split halves the queries by their
+// rhythm, timbreSpread, contrast, spectralShape, tonality, embedding, tags:
+// never compared), those left out keeping the extractor's. --split halves the queries by their
 // folder (a hash of its path): --tune then tunes on one half, and both halves
 // are reported, so what the tuning gained is seen on sounds it didn't see.
 // --cache keeps the fingerprints between
@@ -490,7 +490,8 @@ int main(int argc, char** argv) {
     report("weights as they are", weights);
     // Each aspect alone, for the record.
     for (size_t a = 0; a < kAspects; ++a) {
-        if (std::none_of(schema.features.begin(), schema.features.end(),
+        if (static_cast<Aspect>(a) == Aspect::Tags ||
+            std::none_of(schema.features.begin(), schema.features.end(),
                          [a](const FeatureInfo& f) { return static_cast<size_t>(f.aspect) == a; }))
             continue;
         const Score s = evaluate(schema, sounds, matrix, rows, tuneQueries, AspectWeights::only(static_cast<Aspect>(a)));
@@ -504,6 +505,7 @@ int main(int argc, char** argv) {
         for (int pass = 0; pass < 3; ++pass) {
             bool improved = false;
             for (size_t a = 0; a < kAspects; ++a) {
+                if (static_cast<Aspect>(a) == Aspect::Tags) continue;  // (never compared)
                 for (const float v : steps) {
                     AspectWeights trial = best;
                     trial.weight[a] = v;

@@ -7,8 +7,9 @@
 // Features are grouped into *aspects*, which comparing weighs as wholes
 // (Similarity.h): an aspect counts by its weight however many features it has,
 // so an extractor can describe one aspect finely without it outweighing the
-// others. Embedding is for learned embeddings (a model's output, or a
-// projection of it) added later as an aspect of their own.
+// others. Embedding is a learned embedding's (the sound tagger's, a model's
+// output). Tags are what a fingerprint keeps that isn't compared at all (the
+// tagger's outputs: what the sound is, how it sounds): weighed 0, always.
 
 #pragma once
 
@@ -32,14 +33,15 @@ enum class Aspect : uint8_t {
     SpectralShape,
     Tonality,
     Embedding,
+    Tags,
 };
-inline constexpr size_t kAspects = 11;
+inline constexpr size_t kAspects = 12;
 
 const char* aspectName(Aspect aspect);
 
 // How much each aspect counts (relative to the others; 0 leaves it out).
 struct AspectWeights {
-    std::array<float, kAspects> weight{1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
+    std::array<float, kAspects> weight{1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 0.f};
 
     float& operator[](Aspect aspect) { return weight[static_cast<size_t>(aspect)]; }
     float operator[](Aspect aspect) const { return weight[static_cast<size_t>(aspect)]; }
@@ -60,6 +62,7 @@ struct FeatureSchema {
     std::string settings;   // its extraction settings, as text ("rate=44100 frame=1024 ...")
     std::vector<FeatureInfo> features;
     AspectWeights weights;  // tuned for these features (sound_similarity_bench --tune)
+    bool tagged = false;    // the sound tagger's layout (EssentiaExtractor.h): descriptors, embedding, outputs
 
     size_t dims() const { return features.size(); }
     // What saved fingerprints must match to be used (FNV-1a of the extractor,

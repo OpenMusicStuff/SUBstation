@@ -2,7 +2,9 @@
 // module's index) analysing the files the browser lists, and the browser's
 // list of the sounds most like one (BrowserController::findSimilar): its sort,
 // filtering it, ending it, a clip's part of a file, a file outside the
-// library, files found later, and a sound that can't be analysed.
+// library, files found later, and a sound that can't be analysed. And what the
+// sound tagger hears in the files: searches by how they sound, their rows'
+// labels, Samples › Kicks, and the project's sounds in the Best sort.
 
 #include <QDir>
 #include <QFile>
@@ -19,10 +21,14 @@
 #include <numbers>
 #include <vector>
 
+#include "Model.h"
 #include "browser/BrowserController.h"
 #include "browser/ItemListModel.h"
 #include "browser/PathKeys.h"
+#include "intelligence/Harmony.h"
 #include "intelligence/SoundSimilarity.h"
+#include "intelligence/SoundSuggestions.h"
+#include "model/Project.h"
 
 using namespace sub::app;
 
@@ -204,7 +210,7 @@ private Q_SLOTS:
         QVERIFY(settle());
         QCOMPARE(browser_->similarTo(), QString());
         QCOMPARE(browser_->sort(), QStringLiteral("name"));
-        QCOMPARE(browser_->sorts().size(), 2);
+        QCOMPARE(browser_->sorts().size(), 3);  // (Best, Rank, Name: no Similarity)
         QCOMPARE(names(*browser_->results()).first(), QStringLiteral("Hat 1.wav"));
         // A list that isn't files.
         browser_->findSimilar(from);
@@ -300,6 +306,71 @@ private Q_SLOTS:
         QCOMPARE(browser_->statusText(), QStringLiteral("Could not analyse junk.wav"));
         QCOMPARE(messages.count(), 1);
         QVERIFY(messages.at(0).at(0).toString().startsWith(QStringLiteral("Could not analyse junk.wav: ")));
+    }
+
+    // Samples are found by what they sound like, whatever their names: a kick
+    // named "Untitled" is found by "kick" (after those named so) and listed
+    // under Samples › Kicks; its row says what it is.
+    void samplesAreFoundByHowTheySound() {
+        write(QStringLiteral("Misc/Untitled 1.wav"), kick(160, 48, 0.28));
+        write(QStringLiteral("Misc/Untitled 2.wav"), hat(0.025, 40));
+        make();
+        QVERIFY(settle());
+        similarity_->takeTags();
+        QVERIFY(similarity_->tags() && similarity_->tags()->size() == 12);
+        QCOMPARE(browser_->sort(), kBestSort);
+        browser_->setSearchText(QStringLiteral("kick"));
+        QVERIFY(settle());
+        const QStringList found = names(*browser_->results());
+        QVERIFY2(found.contains(QStringLiteral("Untitled 1.wav")), qPrintable(found.join(QLatin1Char(','))));
+        QVERIFY(!found.contains(QStringLiteral("Untitled 2.wav")));
+        QVERIFY(!found.contains(QStringLiteral("Hat 1.wav")));
+        QVERIFY(found.indexOf(QStringLiteral("Kick 1.wav")) < found.indexOf(QStringLiteral("Untitled 1.wav")));  // (named so first)
+        // Its row says what it is.
+        const int row = static_cast<int>(found.indexOf(QStringLiteral("Untitled 1.wav")));
+        const QString label = browser_->results()->get(row).value(QStringLiteral("tags")).toString();
+        QVERIFY2(label.startsWith(QStringLiteral("Kick")), qPrintable(label));
+        QVERIFY(browser_->results()->get(row).value(QStringLiteral("toolTip")).toString().contains(QStringLiteral("Kick")));
+        // Samples › Kicks: every kick, named so or not, and nothing else.
+        QVERIFY(browser_->sidebar()->find(QStringList{QStringLiteral("sounds"), QStringLiteral("kick")}) >= 0);
+        browser_->setSearchText(QString());
+        browser_->setScope({QStringLiteral("sounds"), QStringLiteral("kick")});
+        QVERIFY(settle());
+        QStringList kicks = names(*browser_->results());
+        kicks.sort();
+        QCOMPARE(kicks, (QStringList{QStringLiteral("Kick 1.wav"), QStringLiteral("Kick 2.wav"), QStringLiteral("Kick 3.wav"),
+                                     QStringLiteral("Untitled 1.wav")}));
+        // Words the tagger doesn't know still match names (and only names).
+        browser_->setScope({QStringLiteral("samples")});
+        browser_->setSearchText(QStringLiteral("untitled"));
+        QVERIFY(settle());
+        QCOMPARE(names(*browser_->results()).size(), 2);
+    }
+
+    // The Best sort: with nothing typed, what fits the project comes first: the
+    // sounds most like the project's own.
+    void bestPutsWhatFitsTheProjectFirst() {
+        make();
+        Project project;
+        Harmony harmony(&project);
+        SoundSuggestions suggestions(&project, &harmony, similarity_.get());
+        QVERIFY(settle());
+        similarity_->takeTags();
+        suggestions.update();
+        QVERIFY(!suggestions.fit());  // (no sounds in the project, no key: nothing to fit)
+        project.insertTrack(test::makeTrack(QStringLiteral("t"), QStringLiteral("Drums")), 0);
+        project.setClips(QStringLiteral("t"), {Clip::audio(QStringLiteral("c"), lib_ + QStringLiteral("/Hats/Hat 1.wav"),
+                                                           QStringLiteral("Hat 1"), 0.0, 0.4)});
+        suggestions.update();
+        const auto fit = suggestions.fit();
+        QVERIFY(fit);
+        auto fitOf = [&](const QString& file) {
+            const std::string path = toBackendPath(lib_ + QLatin1Char('/') + file);
+            const size_t cut = path.find_last_of("/\\");
+            return fit(sub::browser::fileHash(sub::browser::folderHash(path.substr(0, cut)), path.substr(cut + 1)));
+        };
+        QVERIFY(fitOf(QStringLiteral("Hats/Hat 2.wav")) > fitOf(QStringLiteral("Kicks/Kick 2.wav")));
+        QCOMPARE(fitOf(QStringLiteral("Nowhere/None.wav")), 0.5f);
     }
 
     void audioFilesOfferFindSimilar() {

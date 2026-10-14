@@ -32,6 +32,7 @@ the licences, not legal advice: for a commercial release, have it checked.
 | Qt 6 | not vendored; linked dynamically | LGPL-3.0 (or GPL, or commercial) | the application and its UI | yes (LGPLv3 is compatible; keep Qt dynamically linked and replaceable, and ship its licence) |
 | [HUMANBRO](../intelligence/third_party/humanbro) runtime | intelligence/third_party/humanbro | the project's own (no licence file of its own) | Humanize › Velocity | yes, if it is under the MIT licence too: see [below](#to-decide) |
 | [velocity.hbm](../intelligence/models) | intelligence/models | none stated; trained on MAESTRO v3, which is CC BY-NC-SA 4.0 | the velocity model | see [below](#to-decide) |
+| [TaggerModel.inc](../intelligence/src/tagging/TaggerModel.inc) | intelligence/src/tagging | none stated (SUBstation's own, trained by [tools/sound_tagger](../tools/sound_tagger)); trained on NSynth, TinySOL, LibriSpeech and VocalSet (CC BY 4.0), Freesound sounds (CC0 and CC BY 3.0 only), and tidal-drum-machines (no licence stated) | the sound tagger's model: weights compiled in, no audio of the corpora | see [below](#to-decide) |
 | Steinberg's ASIO SDK | not in the repository; used if present at build time | proprietary *or* GPLv3 (Steinberg's dual licence, since October 2025) | ASIO on Windows | only under its **GPLv3** option: see [below](#to-decide) |
 | VST3 plug-ins | loaded at run time | their makers' | hosted | not part of SUBstation: they are separate programs loaded through the VST3 interface |
 
@@ -62,6 +63,14 @@ similarity module takes any `FeatureExtractor`: [intelligence.md](intelligence.m
 MIT.
 
 ## To decide
+
+- **The sound tagger's training data.** Its model is weights learned from sounds, none of which ship. The corpora
+  were chosen to be free to use: NSynth, TinySOL, LibriSpeech and VocalSet are CC BY 4.0 (credit them where the
+  model is shipped, as [tools/sound_tagger/README.md](../tools/sound_tagger/README.md) does), Freesound's sounds are
+  those under CC0 or CC BY 3.0 only (its CC BY-NC and Sampling+ sounds were left out). tidal-drum-machines states no
+  licence (drum machines' sounds, as collected for TidalCycles); whether a model trained on them may ship is the
+  question velocity.hbm's MAESTRO raises, milder. To be certain, train without it (`corpora.py` without `tdm`: the
+  Freesound drums then teach the kinds alone) and measure the difference.
 
 - **Vital's name.** Vital's source is GPLv3, but its name isn't licensed with it: Vital's README asks that "Vital",
   "Vital Audio", "Tytel" and "Matt Tytel" not be used to market or to name a distribution of binaries built from its

@@ -29,6 +29,8 @@ struct BrowserItem {
     QString detail;
     std::optional<PluginInfo> plugin;
     QString toolTip;
+    // An audio file: what the sound tagger hears in it ("Snare · Punchy · Bright"; SoundSearch.h), "" if nothing yet.
+    QString tags;
 
     bool operator==(const BrowserItem&) const = default;
 

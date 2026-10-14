@@ -228,7 +228,41 @@ uint32_t SoundIndex::addEntry(std::string path, std::string key) {
     byKey_.emplace(std::move(key), index);
     entries_.push_back(std::move(entry));
     fingerprints_.resize(entries_.size() * dims_, 0.f);
+    if (schema_.tagged) tags_.resize(entries_.size());
     return index;
+}
+
+void SoundIndex::store(uint32_t index, const float* fingerprint) {
+    std::copy(fingerprint, fingerprint + dims_, fingerprints_.begin() + static_cast<ptrdiff_t>(static_cast<size_t>(index) * dims_));
+    if (schema_.tagged) tags_[index] = tagging::describe(fingerprint);
+}
+
+std::optional<tagging::SoundTags> SoundIndex::tagsOf(const std::string& path) const {
+    const std::string key = platform::pathKey(path);
+    std::lock_guard lock(mutex_);
+    const auto found = byKey_.find(std::string_view(key));
+    if (!schema_.tagged || found == byKey_.end() || entries_[found->second].state != State::Analysed) return std::nullopt;
+    return tags_[found->second];
+}
+
+std::shared_ptr<const tagging::SoundTagTable> SoundIndex::tags() {
+    std::vector<std::pair<uint64_t, tagging::SoundTags>> sounds;
+    std::pair<uint64_t, uint64_t> at;
+    {
+        std::lock_guard lock(mutex_);
+        at = {counts_.version, libraryVersion_};
+        if (tagTable_ && tagTableFor_ == at) return tagTable_;
+        if (schema_.tagged) {
+            sounds.reserve(counts_.analysed);
+            for (uint32_t i = 0; i < entries_.size(); ++i)
+                if (entries_[i].inLibrary && entries_[i].state == State::Analysed) sounds.push_back({entries_[i].hash, tags_[i]});
+        }
+    }
+    auto table = std::make_shared<const tagging::SoundTagTable>(std::move(sounds), at.first);  // (without the lock)
+    std::lock_guard lock(mutex_);
+    tagTable_ = table;
+    tagTableFor_ = at;
+    return table;
 }
 
 int64_t SoundIndex::now() const {
@@ -263,6 +297,7 @@ void SoundIndex::applyLibrary(const Library& files, const std::vector<std::strin
     // next taken, while a library taken every second (the browser's first
     // scan) doesn't have every file checked every second.
     const auto recheck = Clock::now() - seconds(options_.recheckSeconds);
+    ++libraryVersion_;
     for (Entry& entry : entries_) entry.inLibrary = false;
     for (size_t i = 0; i < files.size(); ++i) {
         const std::string& path = files[i];
@@ -360,7 +395,7 @@ void SoundIndex::load() {
             entry.used = s.used;
             entry.seen = s.seen;
             used_ = std::max(used_, s.used);
-            if (s.analysed) std::copy(s.fingerprint.begin(), s.fingerprint.end(), fingerprints_.begin() + index * dims_);
+            if (s.analysed) store(index, s.fingerprint.data());
         }
     }
     counts_.loadMs = millisecondsSince(start);
@@ -550,7 +585,7 @@ void SoundIndex::workerLoop() {
         if (analysed) {
             const bool done = extraction == Extraction::Done;
             e.stamp = stamp.value_or(platform::FileStamp{});
-            if (done) std::copy(fingerprint.begin(), fingerprint.end(), fingerprints_.begin() + index * dims_);
+            if (done) store(index, fingerprint.data());
             setState(e, done ? State::Analysed : State::Failed);
             ++counts_.analysedThisRun;
             changed();
@@ -646,7 +681,7 @@ std::shared_ptr<SimilarityResult> SoundIndex::runSearch(uint64_t generation, con
             const auto found = byKey_.find(std::string_view(key));
             const uint32_t index = found == byKey_.end() ? addEntry(query.path, key) : found->second;
             Entry& e = entries_[index];
-            std::copy(reference.begin(), reference.end(), fingerprints_.begin() + static_cast<ptrdiff_t>(index * dims_));
+            store(index, reference.data());
             e.stamp = *stamp;
             e.checked = Clock::now();
             if (!e.inLibrary) {

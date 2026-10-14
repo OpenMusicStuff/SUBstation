@@ -9,7 +9,9 @@ the project. **Ctrl+Alt+B** (*View › Browser*) shows or hides it.
 The sidebar has two sections:
 
 - **Categories**: *All* (built-in devices, plug-ins, presets and samples at once),
-  *Samples* (the audio files under your places), *Built-in* (*Instruments*, *Audio
+  *Samples* (the audio files under your places, and under it what they sound like: *Kicks*,
+  *Snares*, *Claps*, *Hats*, *Cymbals*, *Toms*, *Percussion*, *Bass*, *Synths*, *Keys*,
+  *Guitars*, *Vocals*, *Loops*; [below](#what-sounds-are)), *Built-in* (*Instruments*, *Audio
   Effects*), *Plug-ins* (*Instruments*, *Audio Effects*; see [plugins.md](plugins.md))
   and *Presets* (by device; see [Presets](#presets)).
 - **Places**: folders of your own, which you browse as a folder tree. The browser starts
@@ -25,15 +27,24 @@ The files listed are WAV, FLAC and MP3 files.
   (*All*); **Enter** (or Down) in the search field selects the first result, and Enter
   again adds it.
 - An item matches when every word you type is in its name or its detail (folder,
-  vendor, category), ignoring case.
+  vendor, category), ignoring case, or, for a sample, when it *sounds like* the word:
+  "snare" finds the snares however they are named ([below](#describing-a-sound)).
 - Searching 200 000 files takes about 10 ms and never holds up the window or the audio;
   see [benchmarks/README.md](../../benchmarks/README.md).
 
 ## Sorting
 
-Lists sort by *Rank* or *Name*, chosen next to the search field (and by *Similarity*
-while the list shows similar sounds: [below](#find-similar-sounds)):
+Lists sort by *Best*, *Rank* or *Name*, chosen next to the search field (and by
+*Similarity* while the list shows similar sounds: [below](#find-similar-sounds)):
 
+- *Best* (the first time, the sort) weighs everything together: how well an item matches
+  what you typed (by its name, or by how it sounds), how much you used it lately, and how
+  well it fits your project. A project's own sounds (the samples its clips and samplers
+  play) say what it is, "Techno, Punchy", and its key (the project's, or the one its notes
+  are in) which notes fit: the sounds most like your project's, and those in its key,
+  come first. The footer says what the browser thinks your project is ("12 items, best
+  for Techno, Punchy · A Minor"). With nothing typed, *Best* lists what you use and what
+  fits first.
 - *Rank* puts what you add most, and most recently, first, then the best name matches.
   With nothing used yet, a search lists the names that start with what you typed first.
   An item counts as used when it is added to the project from the browser, by
@@ -42,6 +53,50 @@ while the list shows similar sounds: [below](#find-similar-sounds)):
   `~/.local/share/SUBstation/library.json`).
 - *Name* is alphabetical.
 
+## What sounds are
+
+Every sample in your places is listened to in the background (with Find Similar's
+analysis, at no extra cost) and told what it is: a kick, a snare, a clap, a closed or open
+hat, a crash, a ride, a tom, a rim, a cowbell, a shaker, a tambourine, other percussion,
+bass, a synth (a lead, a pad, a pluck, a stab), keys, organ, guitar, mallets, strings, brass,
+woodwinds or vocals; whether it is a
+loop or a one-shot; its note, if it has one; and how it sounds. A sample's row says it on
+the right, dimmed: "Snare · Punchy · Bright", "Bass · C2 · Synth", "Loop · Techno". Hover
+it for more: what else it might be, and everything it is heard as. A sample it isn't sure
+of says only how it sounds; what isn't analysed yet says nothing.
+
+*Samples › Kicks* (and the other sounds under *Samples*) lists every sample that sounds
+like one, named "Kick" or not.
+
+### Describing a sound
+
+Type what you want as you would say it: **hard trap snare**, **low chill kick**, **long
+crash**, **dubstep ride**, **acoustic kick**, **vocal chop**, **emo guitar**, **bright 808**,
+**c#2 bass**. Each word is read as one of:
+
+| Words | Find |
+|---|---|
+| a kind: kick, snare, clap, hat (hi-hat, hh), closed, open, crash, ride, cymbal, tom, rim, cowbell, shaker, tambourine, perc (conga, bongo, clave...), drums, bass, keys (piano, rhodes), organ, guitar, mallet (bell, marimba), strings (violin, cello), brass (trumpet, horn), woodwind (flute, sax), vocal (vox, voice), synths (lead, pad, pluck, stab, arp) | what sounds like it, plurals too |
+| loop, break, groove; one-shot, hit, chop | loops; single hits |
+| a note: c2, f#, a#1, eb3 | its pitch (a tonal sound's, a tuned kick's or tom's), the octave if you give one |
+| bright, dark, hard, punchy, snappy, soft, long, short, low, deep, high, fat, heavy, distorted, dirty, clean, wet, reverb, dry, acoustic, real, electric, synth, electronic, analog, pitched, noisy | how it sounds, **among its own kind**: a "bright kick" is one of the brighter kicks, a "long crash" one of the longer crashes |
+| vintage, lo-fi, metallic, wooden, glitch, industrial, processed | what people call sounds like it |
+| genres: house, techno, trance, dubstep, dnb (jungle), hip-hop, trap, edm, rock, 808, 909 | what people tag with the genre |
+| moods: chill, emo, sad, happy, cinematic, epic, ambient, dreamy, angry | the sounds most like the mood first; a mood never hides a sound |
+
+A sample matches when every word is in its name or folder, or heard in it. Names still
+count most: a file named "Trap Snare 3.wav" comes before an unnamed one that sounds just as
+trappy. Words it doesn't know (a pack's name, "Missme") match names and folders only, as
+before.
+
+How sounds are told apart was learned from open sample libraries: 70 drum machines, 9 500
+Freesound drum hits with the words their uploaders tagged them with, orchestral and
+synthesized notes, sung and spoken vocals, and synths, basses and drums synthesized as
+producers make them. The descriptions and genres are what people
+mean by them on average; moods were never labelled anywhere, so they are only read as how
+they usually sound (chill: soft, darker, clean). See [../intelligence.md](../intelligence.md#sound-tagging-what-a-sound-is-and-the-words-for-it)
+for how well it works.
+
 ## Find Similar Sounds
 
 - Right-click an audio file in the browser › *Find Similar Sounds*, or an audio clip in
@@ -49,7 +104,7 @@ while the list shows similar sounds: [below](#find-similar-sounds)):
   most like it, the most similar first (the *Similarity* sort). For a clip, it is the
   part of the file the clip plays that counts: a kick cut out of a drum loop finds kicks.
 - A bar over the list says like what (its full path under the mouse); its ✕, choosing
-  *Rank* or *Name*, or a list that isn't samples (*All*, *Built-in*, *Plug-ins*,
+  *Best*, *Rank* or *Name*, or a list that isn't samples (*All*, *Built-in*, *Plug-ins*,
   *Presets*) goes back to the list as it was.
 - Typing filters the similar sounds and keeps their order: "808" for the 808s most like
   your kick. Clicking a place lists only its similar sounds (not its folder tree).

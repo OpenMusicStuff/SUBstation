@@ -89,6 +89,7 @@ class Render;
 class RenderProgress;
 class Selection;
 class SoundSimilarity;
+class SoundSuggestions;
 class TrackLabels;
 class TrackSearch;
 class McpServer;
@@ -104,6 +105,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::PluginIndex* plugins READ plugins CONSTANT)
     Q_PROPERTY(sub::app::SoundSimilarity* similarity READ similarity CONSTANT)
     Q_PROPERTY(sub::app::Harmony* harmony READ harmony CONSTANT)
+    Q_PROPERTY(sub::app::SoundSuggestions* suggestions READ suggestions CONSTANT)
     Q_PROPERTY(sub::app::Humanizer* humanizer READ humanizer CONSTANT)
     Q_PROPERTY(sub::app::TrackLabels* trackLabels READ trackLabels CONSTANT)
     Q_PROPERTY(sub::app::TrackSearch* trackSearch READ trackSearch CONSTANT)
@@ -199,6 +201,7 @@ public:
     PluginIndex* plugins() const { return plugins_; }
     SoundSimilarity* similarity() const { return similarity_; }
     Harmony* harmony() const { return harmony_; }
+    SoundSuggestions* suggestions() const { return suggestions_; }
     Humanizer* humanizer() const { return humanizer_; }
     TrackLabels* trackLabels() const { return trackLabels_; }
     TrackSearch* trackSearch() const { return trackSearch_; }
@@ -491,6 +494,7 @@ private:
     PluginIndex* plugins_ = nullptr;
     SoundSimilarity* similarity_ = nullptr;
     Harmony* harmony_ = nullptr;
+    SoundSuggestions* suggestions_ = nullptr;
     Humanizer* humanizer_ = nullptr;
     TrackLabels* trackLabels_ = nullptr;
     TrackSearch* trackSearch_ = nullptr;

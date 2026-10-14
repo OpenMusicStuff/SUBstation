@@ -8,11 +8,14 @@
 namespace sub::app {
 
 QVariantList sortOrders() {
-    return {QVariantMap{{QStringLiteral("value"), QStringLiteral("rank")}, {QStringLiteral("label"), QStringLiteral("Rank")}},
+    return {QVariantMap{{QStringLiteral("value"), kBestSort}, {QStringLiteral("label"), QStringLiteral("Best")}},
+            QVariantMap{{QStringLiteral("value"), QStringLiteral("rank")}, {QStringLiteral("label"), QStringLiteral("Rank")}},
             QVariantMap{{QStringLiteral("value"), QStringLiteral("name")}, {QStringLiteral("label"), QStringLiteral("Name")}}};
 }
 
-bool isSortOrder(const QString& sort) { return sort == QStringLiteral("rank") || sort == QStringLiteral("name"); }
+bool isSortOrder(const QString& sort) {
+    return sort == kBestSort || sort == QStringLiteral("rank") || sort == QStringLiteral("name");
+}
 
 QStringList Scope::toList() const { return sub.isEmpty() && kind != QStringLiteral("place") ? QStringList{kind} : QStringList{kind, sub}; }
 
@@ -27,6 +30,7 @@ ScopeQuery scopeQuery(const Scope& scope) {
     if (scope.kind == QStringLiteral("plugins")) return {{kPluginsGroup}, scope.sub, {}};
     if (scope.kind == QStringLiteral("presets")) return {{kPresetsGroup}, scope.sub, {}};
     if (scope.kind == QStringLiteral("place")) return {{kAudioGroup}, {}, placePrefix(scope.sub)};
+    if (scope.kind == QStringLiteral("sounds")) return {{kAudioGroup}, {}, {}, scope.sub};
     return {{kAudioGroup}, {}, {}};
 }
 

@@ -15,6 +15,7 @@
 #include "Text.h"
 #include "browser/BrowserMime.h"
 #include "browser/PathKeys.h"
+#include "browser/SoundSearch.h"
 #include "io/Presets.h"
 #include "model/Errors.h"
 #include "model/Numbers.h"
@@ -86,6 +87,13 @@ BrowserController::BrowserController(PluginIndex* plugins, Options options, QObj
             refinedAt_ = similarity_->analysedFiles();
             similar_->generation = similarity_->find(similar_->path, similar_->start, similar_->length);
         });
+        connect(similarity_, &SoundSimilarity::tagsChanged, this, &BrowserController::soundsChanged);
+    }
+    suggestions_ = options.suggestions;
+    if (suggestions_) {
+        connect(suggestions_, &SoundSuggestions::changed, this, [this] {
+            if (sort_ == kBestSort) soundsChanged();
+        });
     }
 
     updatePluginsToolTip();
@@ -145,7 +153,15 @@ void BrowserController::setScope(const QStringList& list) {
 }
 
 bool BrowserController::showsAudioOnly() const {
-    return scope_.kind == QStringLiteral("samples") || scope_.kind == QStringLiteral("place");
+    return scope_.kind == QStringLiteral("samples") || scope_.kind == QStringLiteral("place") ||
+           scope_.kind == QStringLiteral("sounds");
+}
+
+void BrowserController::soundsChanged() {
+    // More files analysed, or the project's sounds changed: a list with
+    // samples is searched again, keeping its place (the rows' labels with it).
+    if (similar_ || treeWanted() || searching()) return;
+    if (showsAudioOnly() || scope_.kind == QStringLiteral("all")) refresh(true);
 }
 
 void BrowserController::setScopeValue(const Scope& scope) {
@@ -205,6 +221,9 @@ void BrowserController::buildSidebar(std::optional<Scope> select) {
     section(QStringLiteral("CATEGORIES"));
     entry(QStringLiteral("All"), {QStringLiteral("all"), {}}, QStringLiteral("search"));
     entry(QStringLiteral("Samples"), {QStringLiteral("samples"), {}}, QStringLiteral("waveform"));
+    if (similarity_)  // what they sound like: Samples › Kicks...
+        for (const auto& [title, word] : soundCategories())
+            entry(title, {QStringLiteral("sounds"), word}, QStringLiteral("waveform"), {}, 1);
     entry(QStringLiteral("Built-in"), {QStringLiteral("builtin"), {}}, plugin);
     for (const QString& name : builtinCategoryNames()) entry(name, {QStringLiteral("builtin"), name}, plugin, {}, 1);
     entry(QStringLiteral("Plug-ins"), {QStringLiteral("plugins"), {}}, plugin, pluginsToolTip_);
@@ -448,7 +467,7 @@ void BrowserController::leaveSimilar() {
     if (similarity_) similarity_->cancel();  // (a sound still being analysed for it needn't be)
     similar_.reset();
     refineTimer_.stop();
-    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : QStringLiteral("rank");
+    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : kBestSort;
     Q_EMIT sortChanged();
     Q_EMIT sortsChanged();
     Q_EMIT similarChanged();
@@ -500,8 +519,14 @@ void BrowserController::refresh(bool keep) {
     } else {
         keep_.reset();
     }
+    FileIndex::Sounds sounds;
+    if (similarity_) {
+        sounds.tags = similarity_->tags();
+        sounds.matching = soundMatching(sounds.tags, query.sounds);
+    }
+    if (suggestions_ && sort_ == kBestSort) sounds.fit = suggestions_->fit();
     index_->search(searchText_, sort_, library_->now(), query.groups, query.tag, query.placePrefix,
-                   similar_ ? similar_->result.scorer() : nullptr);
+                   similar_ ? similar_->result.scorer() : nullptr, std::move(sounds));
     setSearching(true);
 }
 
@@ -618,6 +643,9 @@ void BrowserController::updateStatus() {
         setStatusText(items + QStringLiteral(" (") + busy + QStringLiteral("…)"));
     } else if (kind != QStringLiteral("builtin") && index_->indexing()) {
         setStatusText(items + QStringLiteral(" (Indexing…)"));
+    } else if (sort_ == kBestSort && suggestions_ && !suggestions_->summary().isEmpty() && kind != QStringLiteral("builtin") &&
+               kind != QStringLiteral("plugins") && kind != QStringLiteral("presets")) {
+        setStatusText(items + QStringLiteral(", best for ") + suggestions_->summary());
     } else {
         setStatusText(items);
     }

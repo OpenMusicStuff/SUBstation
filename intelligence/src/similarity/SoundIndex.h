@@ -46,6 +46,12 @@
 // apart by platform::pathKey(), so on Windows a path spelt in another case (a
 // clip's) is the same file as the library's.
 //
+// With a tagged extractor (Essentia's: FeatureSchema::tagged), each analysed
+// file is also described by the sound tagger (what it is, how it sounds:
+// tagging/SoundTagger.h), from its fingerprint, when it is analysed or read
+// back: tags() hands the library's out as a table the browser looks files up
+// in, made again when asked after fingerprints or the library changed.
+//
 // Fingerprints of files that leave the library are kept (not searched) for
 // keepDays after they were last in it: a place on a drive that is unplugged
 // for a while, or removed and added again, isn't analysed again.
@@ -70,6 +76,7 @@
 #include "platform/Files.h"
 #include "similarity/FeatureExtractor.h"
 #include "similarity/Similarity.h"
+#include "tagging/SoundTagTable.h"
 
 namespace sub::intelligence {
 
@@ -181,6 +188,15 @@ public:
     // What the fingerprints hold (the extractor's schema).
     const FeatureSchema& schema() const { return schema_; }
 
+    // The library's analysed files' tags (a tagged extractor's; none
+    // otherwise), as they are now: the same table while nothing changed. From
+    // any thread; made under the index's lock (a few milliseconds for 100 000
+    // files), so ask when something changed (status().version), not per file.
+    std::shared_ptr<const tagging::SoundTagTable> tags();
+    // A file's tags, if it was analysed (a tagged extractor's), by its path
+    // however it is spelt (platform::pathKey): a project's clips' files.
+    std::optional<tagging::SoundTags> tagsOf(const std::string& path) const;
+
     struct Update {
         SoundIndexStatus status;
         std::shared_ptr<const SimilarityResult> result;  // the latest search's, if it finished since the last take()
@@ -232,6 +248,8 @@ private:
     std::vector<uint32_t> libraryRows() const;  // the library's analysed entries
     int64_t now() const;
     void setState(Entry& entry, State state);
+    // Stores a fingerprint for an entry (and its tags, if the schema has them).
+    void store(uint32_t index, const float* fingerprint);
     void changed();  // fingerprints changed: save soon, tell the application
     bool busyLocked() const;
     SoundIndexStatus statusLocked() const;
@@ -268,6 +286,10 @@ private:
     std::chrono::steady_clock::time_point saveAt_{}, nextRefresh_{};
     std::vector<Entry> entries_;
     std::vector<float> fingerprints_;  // dims_ per entry
+    std::vector<tagging::SoundTags> tags_;  // per entry, of a tagged schema's fingerprints
+    uint64_t libraryVersion_ = 0;           // counts takings of the library that changed it
+    std::shared_ptr<const tagging::SoundTagTable> tagTable_;
+    std::pair<uint64_t, uint64_t> tagTableFor_{~uint64_t{0}, ~uint64_t{0}};  // (version, libraryVersion_) it was made at
     FeatureStatistics statistics_;     // the library's (measured or saved)
     uint64_t statisticsVersion_ = 0;   // counts_.version they were measured at
     bool measuring_ = false;           // a thread measures them (without the lock)

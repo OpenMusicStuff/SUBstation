@@ -58,6 +58,13 @@
 // Essentia computes the frames' descriptors and the envelope's; the module
 // decodes, frames and sums up (Descriptors.h). Essentia's algorithms are made
 // once per extractor and kept: one extractor per thread.
+//
+// After the descriptors (kDims of them) the fingerprint keeps what the sound
+// tagger makes of them (tagging/SoundTagger.h, a few tens of microseconds): its
+// embedding, the Embedding aspect (where sounds of a kind lie together, learned
+// from labelled libraries), and its outputs (what the sound is, how it sounds),
+// the Tags aspect, which is never compared: kept so the browser can tell what
+// every sound is without running the model again.
 
 #pragma once
 
@@ -109,7 +116,7 @@ enum : uint32_t {
 };
 }  // namespace feature
 
-inline constexpr size_t kDims = feature::Count;
+inline constexpr size_t kDims = feature::Count;  // the descriptors (the tagger's embedding and outputs follow)
 inline constexpr int kMfccs = 12;
 inline constexpr int kParts = 3;  // attack, body, tail
 inline constexpr int kPartMfccs = 4;
@@ -122,9 +129,10 @@ inline constexpr uint32_t kAnalysisRate = 44100;
 // Bump when what EssentiaExtractor computes changes: fingerprints saved by an
 // earlier version are then made again. (Its settings and Essentia's version
 // are part of what saved fingerprints must match too: FeatureSchema::key.)
-inline constexpr uint32_t kFeatureVersion = 2;
+inline constexpr uint32_t kFeatureVersion = 3;
 
-// The fingerprint's features (kDims of them) and schema ("essentia").
+// The fingerprint's features (the descriptors, then the tagger's embedding and
+// outputs: essentiaSchema().dims()) and schema ("essentia"; tagged).
 const std::vector<FeatureInfo>& featureInfo();
 const FeatureSchema& essentiaSchema();
 

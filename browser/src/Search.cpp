@@ -53,6 +53,7 @@ public:
             if (!joined_.empty()) joined_ += ' ';
             joined_ += term;
         }
+        if (query.sounds) matcher_ = query.sounds(terms_);
     }
 
     std::shared_ptr<Result> run() {
@@ -63,6 +64,7 @@ public:
         if (!filter()) return nullptr;
         const bool sorted = query_.sort == Sort::Name    ? sortByName()
                             : query_.sort == Sort::Score ? sortByScore()
+                            : query_.sort == Sort::Best  ? sortByBest()
                                                          : sortByRank();
         if (!sorted) return nullptr;
         result_->searchMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -136,19 +138,39 @@ private:
         auto& hits = result_->hits;
         hits.reserve(hits.size() + (terms_.empty() ? snap->audio.size() : snap->audio.size() / 8));
         const auto count = static_cast<uint32_t>(snap->audio.size());
+        // What files sound like: each folder's part of their hashes made once.
+        std::vector<uint64_t> folderHashes;
+        if (matcher_) {
+            folderHashes.resize(folders);
+            for (size_t f = 0; f < folders; ++f)
+                if (folderOk[f]) folderHashes[f] = folderHash(snap->folders[f].path);
+            soundScore_.assign(count, -1.f);
+        }
         for (uint32_t i = 0; i < count; ++i) {
             if (i % kCheckEvery == 0 && cancelled()) return false;
             const AudioRef ref = snap->audio[i];
             if (!folderOk[ref.folder]) continue;
+            uint64_t heard = 0;
+            if (matcher_) {
+                float score = 0.f;
+                const uint64_t hash = fileHash(folderHashes[ref.folder], snap->folders[ref.folder].files->name(ref.file));
+                if (!matcher_->hear(hash, heard, score)) continue;
+                soundScore_[i] = score;
+            }
             bool ok = true;
             if (!terms_.empty()) {
                 const std::string_view lower = snap->folders[ref.folder].files->lower(ref.file);
                 for (size_t t = 0; t < terms_.size() && ok; ++t)
-                    ok = inDetail[t * folders + ref.folder] || contains(lower, terms_[t]);
+                    ok = inDetail[t * folders + ref.folder] || contains(lower, terms_[t]) || (t < 64 && (heard >> t) & 1u);
             }
             if (ok) hits.push_back({kAudioGroup, i});
         }
         return true;
+    }
+
+    // How well a file sounds like the terms (0..1); -1 when nothing was heard of it.
+    float soundScoreOf(const Hit& hit) const {
+        return hit.group == kAudioGroup && !soundScore_.empty() ? soundScore_[hit.index] : -1.f;
     }
 
     // Stable by casefolded name over the whole list (groups one after another).
@@ -251,25 +273,31 @@ private:
         }
     }
 
-    // Most used first, then (with a query) the best matches; stable.
+    // Each use record's rank now, and which record each file has.
+    void prepareRanks() {
+        const Usage* usage = inputs_.usage.get();
+        if (!usage) return;
+        recordRank_.reserve(usage->records.size());
+        for (const auto& record : usage->records) recordRank_.push_back(usage->rank(record, query_.now));
+        if (inputs_.snapshot) resolveAudioUsage();
+    }
+
+    double rankOf(const Hit& hit) const {
+        const Usage* usage = inputs_.usage.get();
+        if (!usage) return 0.0;
+        if (hit.group == kAudioGroup) {
+            const int32_t r = cache_.anyAudio ? cache_.recordOfAudio[hit.index] : -1;
+            return r < 0 ? 0.0 : recordRank_[static_cast<size_t>(r)];
+        }
+        const auto it = usage->byKey.find(external(hit).key);
+        return it == usage->byKey.end() ? 0.0 : recordRank_[it->second];
+    }
+
+    // Most used first, then (with a query) the best matches; stable. Files
+    // alike in both, by how well they sound like the terms.
     bool sortByRank() {
         auto& hits = result_->hits;
-        const Usage* usage = inputs_.usage.get();
-        std::vector<double> recordRank;
-        if (usage) {
-            recordRank.reserve(usage->records.size());
-            for (const auto& record : usage->records) recordRank.push_back(usage->rank(record, query_.now));
-            if (inputs_.snapshot) resolveAudioUsage();
-        }
-        auto rankOf = [&](const Hit& hit) -> double {
-            if (!usage) return 0.0;
-            if (hit.group == kAudioGroup) {
-                const int32_t r = cache_.anyAudio ? cache_.recordOfAudio[hit.index] : -1;
-                return r < 0 ? 0.0 : recordRank[static_cast<size_t>(r)];
-            }
-            const auto it = usage->byKey.find(external(hit).key);
-            return it == usage->byKey.end() ? 0.0 : recordRank[it->second];
-        };
+        prepareRanks();
 
         const bool scored = !terms_.empty();
         const int maxQuality = 8 + 3 * static_cast<int>(terms_.size());
@@ -316,8 +344,74 @@ private:
         out.resize(at);
         for (size_t i = 0; i < hits.size(); ++i)
             if (zero[i]) out[bucketStart[scored ? quality[i] : 0]++] = hits[i];
+        if (!soundScore_.empty()) {
+            // Within each quality, the files that sound most like the terms first (stable).
+            size_t begin = ranked.size();
+            for (int q = maxQuality; q >= 0; --q) {
+                const size_t end = begin + bucketSize[static_cast<size_t>(q)];
+                std::stable_sort(out.begin() + static_cast<ptrdiff_t>(begin), out.begin() + static_cast<ptrdiff_t>(end),
+                                 [this](const Hit& a, const Hit& b) { return soundScoreOf(a) > soundScoreOf(b); });
+                begin = end;
+            }
+        }
         for (const auto& s : unranked) out.push_back(s.hit);
         hits.swap(out);
+        return !cancelled();
+    }
+
+    // A blend, the highest first (stable): how well an item matches (by its
+    // name, 0.6 and up to 1 by its match quality, so an exact name beats a word
+    // start; and by how well it sounds like the terms: either, the more both),
+    // how much it was used lately (its rank, saturating: a use this week counts
+    // about half), and how well it fits (Query::fit; 0.5 when unknown). With no
+    // terms, use and fit, and how well a file sounds like a sound filter's word
+    // (Samples › Kicks: the most kick-like first). Items ranked below 0 come
+    // last, as in Rank.
+    bool sortByBest() {
+        auto& hits = result_->hits;
+        prepareRanks();
+        const bool scored = !terms_.empty();
+        const double full = 8.0 + 3.0 * static_cast<double>(terms_.size());  // (matchQuality's most)
+        std::vector<std::pair<double, Hit>> keyed, last;
+        keyed.reserve(hits.size());
+        std::vector<uint32_t> starts;
+        uint64_t folderOf = ~uint64_t{0}, hashOfFolder = 0;
+        for (size_t i = 0; i < hits.size(); ++i) {
+            if (i % kCheckEvery == 0 && cancelled()) return false;
+            const Hit hit = hits[i];
+            const double rank = rankOf(hit);
+            const double used = rank > 0.0 ? 1.0 - std::exp(-rank / 1.5) : 0.0;
+            double fit = 0.5;
+            if (hit.group == kAudioGroup && query_.fit) {
+                const AudioRef ref = inputs_.snapshot->audio[hit.index];
+                const SnapFolder& folder = inputs_.snapshot->folders[ref.folder];
+                if (ref.folder != folderOf) {
+                    folderOf = ref.folder;
+                    hashOfFolder = folderHash(folder.path);
+                }
+                fit = std::clamp(static_cast<double>(query_.fit(fileHash(hashOfFolder, folder.files->name(ref.file)))), 0.0, 1.0);
+            }
+            double score;
+            if (scored) {
+                const bool audio = hit.group == kAudioGroup || external(hit).kind == Kind::Audio;
+                const int quality = matchQuality(lowerOf(hit), audio, terms_, joined_, starts);
+                const double named = quality > 0 ? 0.6 + 0.4 * std::min(1.0, quality / full) : 0.0;
+                const double sounds = std::max(0.0, static_cast<double>(soundScoreOf(hit)));
+                const double relevance = 1.0 - (1.0 - named) * (1.0 - sounds);  // (named so and sounding so: most)
+                score = 0.5 * relevance + 0.3 * used + 0.2 * fit;
+            } else if (const double sounds = soundScoreOf(hit); sounds >= 0.0) {
+                score = 0.3 * sounds + 0.4 * used + 0.3 * fit;
+            } else {
+                score = 0.6 * used + 0.4 * fit;
+            }
+            (rank < 0.0 ? last : keyed).push_back({score, hit});
+        }
+        auto higher = [](const auto& a, const auto& b) { return a.first > b.first; };
+        std::stable_sort(keyed.begin(), keyed.end(), higher);
+        std::stable_sort(last.begin(), last.end(), higher);
+        hits.clear();
+        for (const auto& [score, hit] : keyed) hits.push_back(hit);
+        for (const auto& [score, hit] : last) hits.push_back(hit);
         return !cancelled();
     }
 
@@ -330,6 +424,9 @@ private:
     std::string joined_;
     std::shared_ptr<Result> result_;
     std::vector<Range> ranges_;
+    std::shared_ptr<const SoundMatcher> matcher_;
+    std::vector<float> soundScore_;  // by position in the snapshot's audio, when the search hears sounds
+    std::vector<double> recordRank_;
 };
 
 }  // namespace

@@ -26,7 +26,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
 | [Recording](guide/recording.md) | arming, inputs, monitoring, count-in, takes, resampling |
 | [Automation](guide/automation.md) | lanes, editing envelopes, locking, overrides |
-| [Browser](guide/browser.md) | places, search, preview, ranking, finding similar sounds |
+| [Browser](guide/browser.md) | places, search (by name, and by what sounds sound like), preview, the Best sort, finding similar sounds |
 | [Importing Ableton Live Sets](guide/ableton-import.md) | what of a Live Set comes across, and what doesn't |
 | [File Manager and hot swap](guide/file-manager.md) | the project's files, finding missing ones, replacing a file everywhere, hot-swapping samples |
 | [Audio setup](guide/audio-setup.md) | ASIO and WASAPI, sample rate, buffers, audio threads, MIDI inputs |
@@ -103,4 +103,4 @@ operating system.
 
 | Page | Covers |
 |---|---|
-| [Intelligence](intelligence.md) | sound similarity: the method and why, the fingerprint, comparing, the background index and its store, measurements; harmony: a song's chords and key from its MIDI, block chords and bass lines from them; humanizing: velocities from HUMANBRO's model (vendored, its model shipped); track labels: what each track is, in words, from its names, presets, files, notes, effects and mixer; finding tracks; later MIDI generation by machine learning, a timing model, chords from audio |
+| [Intelligence](intelligence.md) | sound similarity: the method and why, the fingerprint, comparing, the background index and its store, measurements; sound tagging: what each sound is and how it sounds, learned from open sample libraries, the words searches find sounds by, how sounds fit a project; harmony: a song's chords and key from its MIDI, block chords and bass lines from them; humanizing: velocities from HUMANBRO's model (vendored, its model shipped); track labels: what each track is, in words, from its names, presets, files, notes, effects and mixer; finding tracks; later MIDI generation by machine learning, a timing model, chords from audio |

@@ -52,7 +52,7 @@ Comparison::Comparison(const FeatureSchema& schema, const FeatureStatistics& sta
     for (const FeatureInfo& f : schema.features) ++features[static_cast<size_t>(f.aspect)];
     float total = 0.f;
     for (size_t a = 0; a < kAspects; ++a)
-        if (features[a]) total += std::max(0.f, weights.weight[a]);
+        if (features[a] && static_cast<Aspect>(a) != Aspect::Tags) total += std::max(0.f, weights.weight[a]);
     spread_.resize(dims);
     inverseSpread_.resize(dims);
     share_.resize(dims);
@@ -62,7 +62,9 @@ Comparison::Comparison(const FeatureSchema& schema, const FeatureStatistics& sta
         spread_[d] = std::max(measured ? statistics.spread[d] : 0.f, f.minSpread);  // (saved ones too)
         inverseSpread_[d] = 1.f / spread_[d];
         const auto a = static_cast<size_t>(f.aspect);
+        if (f.aspect == Aspect::Tags) continue;  // (never compared)
         share_[d] = total > 0.f ? std::max(0.f, weights.weight[a]) / (static_cast<float>(features[a]) * total) : 0.f;
+        if (share_[d] > 0.f) active_ = d + 1;
     }
 }
 
