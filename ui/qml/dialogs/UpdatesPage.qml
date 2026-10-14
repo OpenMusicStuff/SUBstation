@@ -112,6 +112,7 @@ ColumnLayout {
             Label {
                 objectName: "updatesSummary"
                 Layout.fillWidth: true
+                Layout.maximumWidth: 520
                 wrapMode: Text.Wrap
                 color: Theme.textDim
                 text: page.updates.summary
@@ -126,6 +127,7 @@ ColumnLayout {
     Label {
         objectName: "updatesStatus"
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         wrapMode: Text.Wrap
         color: page.updates.state === "error" ? "#ff6b5e" : Theme.text
         text: page.updates.status

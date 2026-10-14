@@ -184,12 +184,14 @@ ColumnLayout {
     Label {
         objectName: "keyMessage"
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         text: page.message
         visible: text !== ""
         wrapMode: Text.Wrap
     }
     Label {
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         text: qsTr("Keys without Ctrl or Alt don't act in a text field, nor while the computer MIDI keyboard plays them.")
         wrapMode: Text.Wrap
         color: Theme.textDim

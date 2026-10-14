@@ -128,6 +128,7 @@ ColumnLayout {
             id: scanStatus
             objectName: "scanStatus"
             Layout.fillWidth: true
+            Layout.maximumWidth: 520
             text: page.plugins.statusText
             wrapMode: Text.Wrap
             color: Theme.textDim
@@ -170,6 +171,7 @@ ColumnLayout {
     Label {
         objectName: "pluginHostingDescription"
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         wrapMode: Text.Wrap
         color: Theme.textDim
         text: (page.hostingIndex >= 0 ? page.hosting.modes[page.hostingIndex].toolTip + " " : "")

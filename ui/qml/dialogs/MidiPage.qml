@@ -83,6 +83,7 @@ ColumnLayout {
         Label {
             objectName: "midiStatus"
             Layout.fillWidth: true
+            Layout.maximumWidth: 520
             text: page.prefs.status
             wrapMode: Text.Wrap
             color: Theme.textDim

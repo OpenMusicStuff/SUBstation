@@ -87,9 +87,22 @@ class TestUiDialogs : public QObject {
     }
     QQuickItem* shown(const QString& name) { return shownItem(window_->contentItem(), name); }
     bool visible(const QString& dialog) { return object(dialog)->property("visible").toBool(); }
+    // Opened, and inside the window (a click on what lies outside it is lost).
     void open(const QString& dialog) {
         QMetaObject::invokeMethod(object(dialog), "open");
         QTRY_VERIFY(visible(dialog));
+        auto* popup = object(dialog);
+        const QRectF shown(popup->property("x").toReal(), popup->property("y").toReal(),
+                           popup->property("width").toReal(), popup->property("height").toReal());
+        QVERIFY2(QRectF(QPointF(), window_->size()).contains(shown),
+                 qPrintable(QStringLiteral("%1 is %2 x %3 at %4, %5 in a %6 x %7 window")
+                                .arg(dialog)
+                                .arg(shown.width())
+                                .arg(shown.height())
+                                .arg(shown.x())
+                                .arg(shown.y())
+                                .arg(window_->width())
+                                .arg(window_->height())));
     }
     void close(const QString& dialog) {
         QMetaObject::invokeMethod(object(dialog), "close");
@@ -455,9 +468,19 @@ private Q_SLOTS:
         QVERIFY(shown(QStringLiteral("rescanPlugins"))->isEnabled());
         test::screenshot(window_, QStringLiteral("preferences-plugins-found"));
 
-        test::click(window_, test::centerOf(shown(QStringLiteral("rescanPlugins"))));
-        QVERIFY(index.scanning());
-        QVERIFY(!shown(QStringLiteral("rescanPlugins"))->isEnabled());
+        // (Seen as it starts: a click runs the events that come after it, and a rescan of
+        // six plug-ins can have ended in them.)
+        QQuickItem* rescan = shown(QStringLiteral("rescanPlugins"));
+        bool started = false, disabledWhileScanning = false;
+        const auto watch = connect(&index, &sub::app::PluginIndex::updated, this, [&] {
+            if (!index.scanning() || started) return;
+            started = true;
+            disabledWhileScanning = !rescan->isEnabled();
+        });
+        test::click(window_, test::centerOf(rescan));
+        QVERIFY(started);
+        QVERIFY(disabledWhileScanning);
+        disconnect(watch);
         QTRY_VERIFY_WITH_TIMEOUT(!index.scanning(), 30000);
         QCOMPARE(index.pluginCount(), 6);
         test::click(window_, test::centerOf(shown(QStringLiteral("removePluginFolder"))));
