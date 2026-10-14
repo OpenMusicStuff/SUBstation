@@ -11,6 +11,8 @@ pages go into detail: how to use it, and how each part of the code works.
   third-party code.
 - [Testing](testing.md): the test suite, the fake ASIO driver and test plug-ins, CI,
   benchmarks.
+- [Releasing](releasing.md): the Stable, Nightly and Canary channels, versions, the release
+  workflow, making a stable release.
 
 ## User guide
 
@@ -32,6 +34,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Audio setup](guide/audio-setup.md) | ASIO and WASAPI, sample rate, buffers, audio threads, MIDI inputs |
 | [Look and Feel](guide/look-and-feel.md) | the themes: Default, Disableton (Ableton's), Flashbang (light), Gay (rainbow) |
 | [Keyboard shortcuts](guide/shortcuts.md) | every shortcut, and changing them |
+| [Updates](guide/updates.md) | the update channels (Stable, Nightly, Canary), checking for updates and installing them |
 | [Limitations](guide/limitations.md) | what isn't implemented yet |
 
 ## Code reference
@@ -68,6 +71,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Session](app/session.md) | `session/`, `files/`: the main window's logic: files, transport, Edit and Create commands, renders, preferences; the File Manager (missing files found, files replaced) and hot swaps |
 | [Plug-in scanner](app/plugin-scanner.md) | `plugins/`, `tools/scanner`: finding and reading VST3 plug-ins in child processes |
 | [Analysis](app/analysis.md) | `analysis/`: signal maths for the devices' editors (the Sidechain's fit, spectra) |
+| [Updates](app/updates.md) | `update/`: versions and channels, reading the releases' feed, downloading and checking an update, installing it as SUBstation quits |
 | [MCP server](app/mcp.md) | `mcp/`: agents reading and editing the project through the Model Context Protocol: the protocol (both eras), Streamable HTTP on localhost, the tools, the agents' history apart from undo |
 
 ### UI

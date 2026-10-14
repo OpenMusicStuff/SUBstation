@@ -15,6 +15,7 @@
 #include "Engine.h"
 #include "Ui.h"
 #include "session/Session.h"
+#include "update/Updater.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -60,5 +61,7 @@ int main(int argc, char* argv[]) {
     }
     const int result = app.exec();
     session.shutdown();
+    // An update downloaded installs now, if it is to (Preferences › Updates): once this process has ended.
+    session.updates()->applyOnQuit();
     return result;
 }

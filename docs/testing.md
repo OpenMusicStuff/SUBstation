@@ -185,6 +185,7 @@ doesn't link Qt Quick.
 | `SUB_TEST_EFFECT_SLOW_LOAD_MS` | SUB Test Effect takes that long to initialize | the sandboxes' tests (a state set while it loads) |
 | `SUBSTATION_PLUGIN_HOSTING` | the plug-in hosting mode without a saved one (`prepareApplication()` sets `within`) | the application's tests |
 | `SUBSTATION_PLUGIN_HOST` | the plug-in sandboxes' program (also a compile definition: its path in the build) | the sandboxes' tests |
+| `SUBSTATION_UPDATE_FEED` | the updates' list of releases (any URL, `file:` too) instead of GitHub's ([app/updates.md](app/updates.md)) | a file that isn't there (`prepareApplication`); `test_ui_dialogs` gives one of its own |
 | `SUB_FAKE_SCANNER`, `SUB_FAKE_SCANNER_LOG` | `test_plugin_index` started as a fake scanner (below), and the file it logs the files it reads to | `test_plugin_index` |
 
 ## The fake ASIO driver
@@ -397,6 +398,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 | [test_session_renders.cpp](../tests/app/test_session_renders.cpp) | Exporting and freezing in the background, their progress and Cancel, closing while one runs, freezing and flattening the selected tracks, a project's plug-ins loading after it opens. |
 | [test_session_engine.cpp](../tests/app/test_session_engine.cpp) | What the engine hears of the editor's edits: groups, returns and sends, inputs, sidechains, racks and macros, presets rendering as the devices they were saved from, frozen tracks, MIDI clips' notes. |
 | [test_builtin_effects.cpp](../tests/app/test_builtin_effects.cpp) | The eleven new audio effects with the rest of the application, a row per device: every parameter away from its default (one automated) saved and opened again, in the model and the engine, and sounding as it did; presets; in a rack's chain as on the track; latency lined up with a dry track, to the sample (after opening, and as it changes); undo and redo reaching the engine; sidechains keyed by another track; switched off and on again without a click or anything held before (off and on again within a sound, each switch no steeper than the device's sound or its input; on again in silence). |
+| [test_updates.cpp](../tests/app/test_updates.cpp) | Updates: versions, channels, the releases' feed and picking an update; the `Updater` on feeds and zips in files: settings, looking (by itself only when due), downloads checked by their SHA-256, installing as SUBstation quits ([app/updates.md](app/updates.md#tests)). |
 | [test_session_keyboard.cpp](../tests/app/test_session_keyboard.cpp) | The computer MIDI keyboard: the letter keys, octaves, keys kept from shortcuts and text inputs, notes released. |
 | [test_file_manager.cpp](../tests/app/test_file_manager.cpp) | The File Manager and hot swaps: the files a project plays (clips and samplers, in racks), a file replaced (whole files and stretches, trimmed at the next clip, frozen tracks refused, a hot swap's tries one undo step from where it began), missing files matched and moved along, the search in the background (the project's folder, a folder chosen, the browser's places), Locate, the list and its filter, hot swaps through the browser. |
 
@@ -462,6 +464,9 @@ tests (`test_ui_*`) open windows and take the focus, so run them when the deskto
 night (07:00 UTC) on `master`, with MSVC 2022 and with MinGW (Qt 6.8's own builds of each, `install-qt-action`),
 UI tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last
 nightly is skipped.
+
+[.github/workflows/release.yml](../.github/workflows/release.yml) builds and publishes the releases (stable, nightly
+and canary) without running the tests: [releasing.md](releasing.md).
 
 ## Writing tests
 

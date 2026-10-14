@@ -31,9 +31,9 @@ For what the user sees and does, read the [user guide](../guide/README.md); this
 | [ui/qml/files/](../../ui/qml/files) | The File Manager panel (`FileManagerPanel.qml`): [app/session.md](../app/session.md#the-file-manager-and-hot-swaps-filemanager-hotswap). |
 | [ui/qml/Main.qml](../../ui/qml/Main.qml), [ui/qml/TitleBar.qml](../../ui/qml/TitleBar.qml), [ui/qml/InfoView.qml](../../ui/qml/InfoView.qml), [ui/qml/Hints.qml](../../ui/qml/Hints.qml) | The main window, its title bar and its info view, which says the tooltips ([below](#the-main-window)). |
 | [ui/qml/transport/](../../ui/qml/transport) | `TransportBar.qml`. |
-| [ui/qml/dialogs/](../../ui/qml/dialogs) | Preferences (`PreferencesDialog`, `AudioPage`, `MidiPage`, `PluginsPage`, `LookAndFeelPage`, `AgentsPage`), `ExportDialog`, `RenderDialog`, `AboutDialog`, `UnsavedChangesDialog`, and what they share: `MessageBox`, `ChoiceBox`. |
+| [ui/qml/dialogs/](../../ui/qml/dialogs) | Preferences (`PreferencesDialog`, `AudioPage`, `MidiPage`, `PluginsPage`, `LookAndFeelPage`, `KeyboardPage`, `AgentsPage`, `UpdatesPage`), `ExportDialog`, `RenderDialog`, `AboutDialog`, `UnsavedChangesDialog`, and what they share: `MessageBox`, `ChoiceBox`. |
 | [ui/qml/](../../ui/qml) (top level) | The shared controls: `Knob`, `ValueBox`, `Oscilloscope`, `RoleButton`, `ToggleButton`, `IconButton`, `Icon`, `ButtonBackground`, `ButtonContent`; `Placeholder`. |
-| [ui/style/](../../ui/style) | The style: `ApplicationWindow`, `Button`, `CheckBox`, `ComboBox`, `Dialog`, `DialogButtonBox`, `Frame`, `GroupBox`, `ItemDelegate`, `Label`, `Menu`, `MenuBar`, `MenuBarItem`, `MenuItem`, `MenuSeparator`, `Pane`, `Popup`, `ProgressBar`, `ScrollBar`, `ScrollIndicator`, `SplitView`, `TabBar`, `TabButton`, `TextField`, `ToolButton`, `ToolTip`; the Basic style for the rest. |
+| [ui/style/](../../ui/style) | The style: `ApplicationWindow`, `Button`, `CheckBox`, `ComboBox`, `Dialog`, `DialogButtonBox`, `Frame`, `GroupBox`, `ItemDelegate`, `Label`, `Menu`, `MenuBar`, `MenuBarItem`, `MenuItem`, `MenuSeparator`, `Pane`, `Popup`, `ProgressBar`, `ScrollBar`, `ScrollIndicator`, `SplitView`, `RadioButton`, `TabBar`, `TabButton`, `TextField`, `ToolButton`, `ToolTip`; the Basic style for the rest. |
 
 Every QML file is part of the module `SUBstation`, so its type name is its file name, unique across folders. A QML
 file starting with `pragma Singleton` is registered as a singleton (`DeviceEditors`, `EqWindows`). C++ items are
@@ -174,7 +174,7 @@ id in [KeyMap](#keys-and-profiles-keymap)), and calls the session. The keys belo
 | Create | Insert Audio Track (Ctrl+T), Insert MIDI Track (Ctrl+Shift+T), Insert Return Track (Ctrl+Alt+T), Insert MIDI Clip (Ctrl+Shift+D, Ctrl+Shift+M: on the arrangement's grid when snapping), Group Tracks (Ctrl+G), Ungroup Tracks (Ctrl+Shift+G), Delete Selected Tracks |
 | View | Browser, Device View, Info View, Clip View (Shift+Tab), Find Track (Q: the find bar, over the arrangement or the clip view: [arrangement.md](arrangement.md#finding-tracks)), Automation (A: `editor.toggleAllAutomation()`), Chords and Key (C: `harmony.shown`, checkable), Close Plug-in Editor (Ctrl+W, where editors are windows of their own: Windows, Linux's X11), Zoom In (+, =), Zoom Out (-), Zoom to Arrangement (Z), Narrow Grid (Ctrl+1), Widen Grid (Ctrl+2), Snap to Grid (Ctrl+4) |
 | Options | Preferences… (Ctrl+,), Rescan Plug-ins, Computer MIDI Keyboard (M), MCP Server (`Session.mcp.enabled`, checkable: [app/mcp.md](../app/mcp.md)), Lock Envelopes |
-| Help | About SUBstation |
+| Help | Check for Updates… (Preferences › Updates, and `Session.updates.checkNow()`), About SUBstation |
 
 An `Action` has one shortcut, its command's first key (`shortcut: window.keyOf(objectName)`); the others
 (Ctrl+Shift+Z, Backspace, Ctrl+Shift+M, =, Ctrl++, Ctrl+-) are the keys of a `Shortcut` per command (an
@@ -513,6 +513,11 @@ application-layer object that holds the logic. What the preferences mean to the 
     item taking the focus, accepts every `ShortcutOverride` meanwhile, so the window's shortcuts and the dialog's
     Esc don't have it; the key pressed (`KeyMap.keyFor()`; a modifier alone is none) goes to `assign()`, and the
     line under the list says which command had it. Esc, or the focus going elsewhere, cancels.
+  - **Updates** (`UpdatesPage` on `Session.updates`, the [Updater](../app/updates.md)): a `RadioButton` per channel
+    (`channels`) with its description, the two check boxes (`autoCheck`, `autoInstall`: disabled where updates don't
+    install), the summary box (`summaryTitle`, `summary`), the status (red on an error) and the download's
+    `ProgressBar`; Check Now, Download and Install, Restart to Install (`installNow()`: its `quitRequested` closes the
+    window as Quit does, in `Main.qml`) and Release Notes (`releaseUrl`, in the browser); the version and the last look.
 - **Export Audio** (`ExportDialog`): the range (`Session.exportRangeChoices()`: the arrangement, or the loop region
   while the loop is on and has a length) and the bit depth (`exportBitDepthChoices`: 16-bit, 24-bit, 32-bit float;
   24 at first); OK emits `exportChosen(range, bitDepth)` and the window goes on ([above](#files-and-unsaved-changes)).

@@ -26,4 +26,8 @@ target_link_libraries(sub_app PRIVATE puff)
 # code's identifiers (the engine has `slots`): the app layer, and everything
 # built on it, writes Q_SIGNALS, Q_SLOTS and Q_EMIT.
 target_compile_definitions(sub_app PUBLIC QT_NO_KEYWORDS)
+# What this build is (the top-level CMakeLists.txt): only AppInfo.cpp needs it, so a
+# nightly's version doesn't rebuild the rest.
+set_source_files_properties(src/AppInfo.cpp PROPERTIES COMPILE_DEFINITIONS
+    "SUBSTATION_VERSION=\"${SUBSTATION_FULL_VERSION}\";SUBSTATION_RELEASE_CHANNEL=\"${SUBSTATION_RELEASE_CHANNEL}\";SUBSTATION_UPDATE_REPOSITORY=\"${SUBSTATION_UPDATE_REPOSITORY}\"")
 sub_project_warnings(sub_app)

@@ -113,6 +113,7 @@ const std::vector<KeyMap::Command>& KeyMap::allCommands() {
         {"computerMidiKeyboard", "Options", "Computer MIDI Keyboard"},
         {"mcpServer", "Options", "MCP Server"},
         {"lockEnvelopes", "Options", "Lock Envelopes"},
+        {"checkForUpdates", "Help", "Check for Updates…"},
         {"about", "Help", "About SUBstation"},
     };
     return commands;
