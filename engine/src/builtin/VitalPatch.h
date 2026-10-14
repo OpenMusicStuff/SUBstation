@@ -40,6 +40,7 @@ std::string macroKey(int index);
 inline constexpr int kNumMacros = 4;
 inline constexpr int kNumOscillators = 3;
 inline constexpr int kNumLfos = 8;
+inline constexpr int kNumEnvelopes = 6;
 inline constexpr int kMaxModulations = 64;  // slots, as Vital has them ("modulation_1_amount"...)
 
 // The device's parameters: every one of Vital's parameters that its engine has
@@ -121,5 +122,26 @@ std::string withLfo(const std::string& lfos, int index, const std::string& entry
 // The names of the value's wavetables (or LFO shapes), Vital's init ones' where it has none.
 std::vector<std::string> wavetableNames(const std::string& wavetables);
 std::vector<std::string> lfoNames(const std::string& lfos);
+
+// --- What an editor draws -----------------------------------------------------------------------
+
+// Oscillator `index`'s wavetable (of a kWavetables value: Vital's init one where
+// it has none), rendered as its engine renders it: its frames (as many as the
+// table has, up to 257: "wave_frame" plays frame min(floor(wave_frame),
+// frames - 1)), each `points` values from its 2048 samples (every 2048 /
+// points-th; -1..1 as Vital normalizes them), frame after frame. Empty if the
+// value can't be read.
+std::vector<float> wavetableFrames(const std::string& wavetables, int index, int points);
+
+// LFO `index`'s shape (of a kLfos value: Vital's triangle where it has none):
+// its value at `samples` phases from 0 to 1 (both ends; 0 at the bottom, 1 at
+// the top), and its points (x, then y, the same way up), as Vital plays and
+// draws it.
+struct LfoShape {
+    std::vector<float> values;
+    std::vector<float> points;
+    bool smooth = false;
+};
+LfoShape lfoShape(const std::string& lfos, int index, int samples);
 
 }  // namespace sub::vitalpatch

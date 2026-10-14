@@ -35,6 +35,11 @@ struct Engine {
     std::vector<vital::Value*> controls;  // by index in params(); null where the engine has none
     int sampleRate = 0;
     int oversampling = 0;  // the "oversampling" parameter it was built with (0..3: 1x..8x)
+    // What its editor shows moving: the newest voice's LFO phases (encoded with the voice, as Vital
+    // encodes them), its envelopes' phases (stage + position) and values. Cleared while no voice plays.
+    const vital::StatusOutput* lfoPhases[kNumLfos] = {};
+    const vital::StatusOutput* envelopePhases[kNumEnvelopes] = {};
+    const vital::StatusOutput* envelopeValues[kNumEnvelopes] = {};
 
     Engine() = default;
     Engine(const Engine&) = delete;

@@ -408,6 +408,14 @@ std::unique_ptr<Engine> buildEngine(const std::map<std::string, std::string>& st
     sound.setSampleRate(sampleRate);
     sound.checkOversampling();
     sound.updateAllModulationSwitches();
+    for (int i = 0; i < kNumLfos; ++i) {
+        engine->lfoPhases[i] = sound.getStatusOutput("lfo_" + std::to_string(i + 1) + "_phase");
+    }
+    for (int i = 0; i < kNumEnvelopes; ++i) {
+        const std::string prefix = "env_" + std::to_string(i + 1);
+        engine->envelopePhases[i] = sound.getStatusOutput(prefix + "_phase");
+        engine->envelopeValues[i] = sound.getStatusOutput(prefix);
+    }
     engine->sampleRate = sampleRate;
     const int oversampling = paramIndex("oversampling");
     engine->oversampling = oversampling >= 0 ? static_cast<int>(std::lround(values[static_cast<size_t>(oversampling)])) : 0;
@@ -676,5 +684,74 @@ std::vector<std::string> wavetableNames(const std::string& wavetables) {
 }
 
 std::vector<std::string> lfoNames(const std::string& lfos) { return namesIn(lfos, kNumLfos, "Triangle"); }
+
+namespace {
+
+// Entry `index` of a kWavetables or kLfos value, or null (none there, or not JSON).
+json entryOf(const std::string& value, int index) {
+    if (value.empty() || index < 0) return nullptr;
+    try {
+        json list = json::parse(value);
+        if (list.is_array() && static_cast<size_t>(index) < list.size() && list[static_cast<size_t>(index)].is_object())
+            return list[static_cast<size_t>(index)];
+    } catch (const std::exception&) {
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+std::vector<float> wavetableFrames(const std::string& wavetables, int index, int points) {
+    if (index < 0 || index >= kNumOscillators || points <= 0) return {};
+    static const std::string kInit = wavetableOfShape(Shape::Init);
+    json entry = entryOf(wavetables, index);
+    vital::Wavetable table(vital::kNumOscillatorWaveFrames);
+    WavetableCreator creator(&table);
+    try {
+        creator.jsonToState(entry.is_null() ? json::parse(kInit) : entry);
+        creator.render();
+    } catch (const std::exception&) {
+        return {};
+    }
+    constexpr int kSize = vital::WaveFrame::kWaveformSize;
+    points = std::min(points, kSize);
+    const int frames = std::clamp(table.numFrames(), 1, vital::kNumOscillatorWaveFrames);
+    std::vector<float> out(static_cast<size_t>(frames) * points);
+    for (int f = 0; f < frames; ++f) {
+        const float* wave = table.getBuffer(f);
+        for (int p = 0; p < points; ++p) {
+            const float v = wave[static_cast<size_t>(p) * kSize / points];
+            out[static_cast<size_t>(f) * points + p] = std::isfinite(v) ? std::clamp(v, -1.f, 1.f) : 0.f;
+        }
+    }
+    return out;
+}
+
+LfoShape lfoShape(const std::string& lfos, int index, int samples) {
+    LineGenerator line;
+    line.initTriangle();
+    if (json entry = entryOf(lfos, index); !entry.is_null() && LineGenerator::isValidJson(entry)) {
+        try {
+            line.jsonToState(entry);
+        } catch (const std::exception&) {
+            line.initTriangle();
+        }
+    }
+    line.render();
+    LfoShape shape;
+    shape.smooth = line.smooth();
+    samples = std::max(2, samples);
+    shape.values.resize(static_cast<size_t>(samples));
+    for (int i = 0; i < samples; ++i) {
+        shape.values[static_cast<size_t>(i)] =
+            std::clamp(line.valueAtPhase(static_cast<float>(i) / static_cast<float>(samples - 1)), 0.f, 1.f);
+    }
+    for (int i = 0; i < line.getNumPoints(); ++i) {
+        const auto [x, y] = line.getPoint(i);
+        shape.points.push_back(x);
+        shape.points.push_back(1.f - y);  // (Vital's y runs down)
+    }
+    return shape;
+}
 
 }  // namespace sub::vitalpatch

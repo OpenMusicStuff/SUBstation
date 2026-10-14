@@ -29,6 +29,7 @@ class VitalPatchInfo : public QObject {
     Q_PROPERTY(QVariantList modulations READ modulations NOTIFY changed)
     Q_PROPERTY(int freeSlots READ freeSlots NOTIFY changed)
     Q_PROPERTY(QString presetName READ presetName NOTIFY changed)
+    Q_PROPERTY(QString author READ author NOTIFY changed)  // the preset's
     Q_PROPERTY(QStringList macroNames READ macroNames NOTIFY changed)
     // The oscillators' wavetables' names, the LFOs' shapes' names; the basic shapes either can be set to.
     Q_PROPERTY(QStringList wavetableNames READ wavetableNames NOTIFY changed)
@@ -51,6 +52,7 @@ public:
     QVariantList modulations() const { return modulations_; }
     int freeSlots() const { return freeSlots_; }
     QString presetName() const { return presetName_; }
+    QString author() const { return author_; }
     QStringList macroNames() const { return macroNames_; }
     QStringList wavetableNames() const { return wavetableNames_; }
     QStringList lfoNames() const { return lfoNames_; }
@@ -85,6 +87,7 @@ private:
     QVariantList modulations_;
     int freeSlots_ = 0;
     QString presetName_;
+    QString author_;
     QStringList macroNames_;
     QStringList wavetableNames_;
     QStringList lfoNames_;
