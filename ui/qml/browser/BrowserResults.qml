@@ -134,7 +134,7 @@ SelectionList {
             objectName: "tagsLabel"
             anchors.right: parent.right
             anchors.rightMargin: 6
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.baseline: label.baseline  // (on the name's line: centred, the smaller text sat higher)
             // (At most half the row: the name comes first.)
             width: Math.min(implicitWidth, row.width / 2)
             visible: !row.renaming && row.tags !== ""
