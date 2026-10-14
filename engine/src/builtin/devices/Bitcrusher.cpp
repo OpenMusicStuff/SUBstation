@@ -81,7 +81,7 @@ protected:
                     held_[c] = std::clamp(std::round(x * steps) / steps, -1.f, 1.f);
                 }
                 float y = held_[c];
-                if (toneCoeff > 0.f) y = tone_[c].lowpass(y, toneCoeff);
+                y = tone_[c].lowpass(y, toneCoeff);  // (open, it passes y and follows it: no jump when it closes)
                 y *= output;
                 ch[c][i] = dry + mix * (y - dry);
             }
