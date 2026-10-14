@@ -26,22 +26,27 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 - A voice re-seeks when playback jumps (start, locate, loop, clip start). It uses the stretcher's `outputSeek` to
   pre-compute its latency, so the first frame is exactly aligned. A tempo change keeps the source position, so the
   clip carries on without a re-seek.
+- Live playback doesn't keep stretching: a background thread renders each stretched clip whole (the *warp cache*,
+  `WarpCache`), and once the render is ready the clip plays from it, at the cost of a clip played as it is. It takes
+  over where a voice would start again (start, locate, loop), never in the middle of a stretch under way.
 - Offline renders and exports use fresh voices with a fixed random seed, so they are repeatable and don't disturb
-  live playback.
+  live playback. They don't read the warp cache's renders.
 - Clips at their own tempo with no transposition skip the stretcher and play bit-exact. Re-Pitch uses windowed-sinc
-  resampling, with the cutoff lowered when speeding up.
+  resampling, with the cutoff lowered when speeding up; it is vectorised, and costs a fraction of what stretching does
+  (see [What it costs](#what-it-costs)).
 
 ## Files
 
 | File | What it holds |
 |---|---|
 | [AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | `AudioFileInfo`, `AudioSource::probe()`, `AudioSource::load()`, planar data, peak mipmaps |
-| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice`, `WarpVoiceSet`, `renderResampled()` |
-| [Snapshot.h](../../engine/src/Snapshot.h) | `ClipRender` (`Playback::Direct / Resample / Stretch`, `rate`, `sourceAt()`, `key`), `TrackBuffers::kMaxClipVoices` |
-| [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | clips to `ClipRender`s, choosing the playback; `ensureWarpVoicesLocked()` |
+| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice`, `WarpVoiceSet`, `renderResampled()` (and, inside, its kernel: `SincTable`, `SincPhases`, `phasedFrame()`, `kernelFrame()`) |
+| [WarpCache.h](../../engine/src/WarpCache.h) / [.cpp](../../engine/src/WarpCache.cpp) | `WarpRender` (a stretched clip rendered whole), `WarpCache` (its thread, `request()`, the budget) |
+| [Snapshot.h](../../engine/src/Snapshot.h) | `ClipRender` (`Playback::Direct / Resample / Stretch`, `rate`, `sourceAt()`, `key`, `rendered`), `TrackBuffers::kMaxClipVoices` |
+| [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | clips to `ClipRender`s, choosing the playback, asking the warp cache for renders; `ensureWarpVoicesLocked()` |
 | [Engine.cpp](../../engine/src/Engine.cpp) | the source cache: `loadSource()`, `cachedSource()`, `releaseUnusedSources()`, `reloadSourcesLocked()`, `sourceKey()` |
 | [EngineOffline.cpp](../../engine/src/EngineOffline.cpp) | fresh voices for offline renders (`prepareOfflineLocked`) |
-| [Renderer.cpp](../../engine/src/Renderer.cpp) | `assignVoices()`, `acquireVoice()`, `renderClips()` |
+| [Renderer.cpp](../../engine/src/Renderer.cpp) | `assignVoices()` (a render or a voice), `carriedOn()`, `acquireVoice()`, `renderClips()` |
 | [third_party/signalsmith-stretch](../../engine/third_party/signalsmith-stretch) | Signalsmith Stretch 1.3.2 (MIT), one header, unmodified |
 | [third_party/signalsmith-linear](../../engine/third_party/signalsmith-linear) | Signalsmith Linear 0.6.4 (MIT): only `stft.h` and `fft.h`, what Stretch needs without platform FFT backends |
 | [third_party/miniaudio](../../engine/third_party/miniaudio) | the decoders `AudioSource` uses (compiled once in [miniaudio_impl.c](../../engine/src/miniaudio_impl.c)) |
@@ -174,6 +179,30 @@ voice idle the longest; never one already used in this block. `continuing` is tr
 the previous block. If there are more simultaneous stretched clips than voices, the extra clip stays silent. A
 monitored track plays its input instead of its clips, so it gets no voices.
 
+Live, a slot gets the clip's render instead of a voice (`ClipVoice::rendered`) when the render is ready and the
+voice that played the clip in the block before doesn't carry it on (`carriedOn()`: that voice exists, was used in the
+block before, and `WarpVoice::carriesOn()` says its output lines up with where the clip is now, the test `render()`
+uses to decide whether to re-seek). So a stretch under way goes on to its end (the render and a voice that started
+mid-way differ a little, and switching would click), and the render takes over at the next start, locate or loop
+jump. A clip playing from its render needs no voice. `renderClips()` reads the render in place, frame `t - start`
+for timeline sample `t`, as it reads a source played as it is.
+
+The other way round happens when a clip playing from its render changes mid-way (a new tempo, or transpose): its new
+render isn't ready, so a voice takes over, and it must seek, which would click (the restarted stretch and the render
+don't line up in phase). Instead the voice crossfades from the render it leaves, over 10 ms
+(`WarpVoice::kFadeSeconds`):
+
+- The snapshot build gives the changed clip the render it had before (`ClipRender::fading`, found in the previous
+  snapshot by `key`), or, if that one wasn't ready yet, what it was fading from. Once the new render is ready, the next
+  build lets the old one go (at most one extra render per changed clip, for that long).
+- Playing from a render, the renderer notes on it the block and the source position it got to
+  (`WarpRender::notePlayed()`). A voice that takes over (not continuing) crossfades when the clip's `fading` render was
+  sounding in the block before, up to where the clip is now (`Renderer::soundedUpTo()`, the same tolerance as
+  `carriesOn()`: a tempo change keeps the source position). A locate or a loop's jump doesn't fade.
+- `WarpVoice::fadeFrom()` copies the next 10 ms of the old render, read along the clip's new mapping (between frames,
+  at its own rate) into a buffer the voice allocated when it was made, so nothing of the render is kept;
+  `render()` mixes the voice in linearly over it.
+
 ### `WarpVoice::render()`
 
 ```
@@ -200,7 +229,38 @@ The renderer then applies the clip's gain, fades and pan per sample (`renderClip
 
 `Engine::prepareOfflineLocked()` makes fresh voices, as many as live playback has, for the offline renderer
 (`setWarpVoices`). With the fixed seed (`kStretchSeed`, the stretcher randomises some phases), offline renders and
-exports come out the same every time, and live voices keep their state.
+exports come out the same every time, and live voices keep their state. They never read the warp cache's renders:
+what they produce doesn't depend on which renders happen to be ready.
+
+## The warp cache
+
+[WarpCache.h](../../engine/src/WarpCache.h): live playback reads stretched clips rendered whole in the background,
+so a stretched clip costs the audio thread what a clip played as it is costs (a fraction of a nanosecond a frame
+instead of a few hundred; see [What it costs](#what-it-costs)).
+
+- **A render** (`WarpRender`) is a clip's output over its whole length, stereo float: frame `n` is what a fresh voice
+  starting at the clip's first frame plays `n` frames later. The cache's thread makes it with a fresh `WarpVoice`
+  (the fixed seed) fed in blocks of 1024, so a render is the same every time. It depends only on what shapes the
+  output: the source, `sourceOffset`, `length`, `rate`, the stretch configuration, `transpose`, `preserveFormants`
+  and the sample rate. Where the clip sits on the timeline, its gain, pan and fades don't matter (the renderer
+  applies those as for any clip), so moving a clip, or changing its gain, keeps its render. A change of tempo
+  changes the rate of the warped clips, so they are rendered again.
+- **Asking.** Each snapshot build brackets its clips with `beginBuild()` and `endBuild()`, and asks for each
+  stretched clip's render (`request()`), which the `ClipRender` carries (`rendered`). A render asked for before is
+  shared; a new one is queued. `endBuild()` forgets the renders no clip asked for: an unfinished one stops (it
+  checks between blocks), and the memory goes with the last snapshot holding it, on the edit side, as retired
+  snapshots are freed (never on the audio thread).
+- **The thread** (one, at background priority: `platform::enterBackgroundMode()`) renders the longest-waiting
+  render whose clip has stayed the same for 250 ms (`kDefaultSettle`), so that a tempo dragged through many values
+  isn't rendered at each of them. It never takes the engine's mutex: a render has all it needs (it holds the source).
+  `ready()` turns true (release) once every frame is written; the audio thread reads it (acquire) and only then the
+  frames. Until a clip's render is ready, the clip stretches live as before.
+- **Changing mid-way**: a clip that changes while playing from its render goes on through a voice, which crossfades
+  from the render (see [Binding voices](#binding-voices-audio-thread)), and its new render takes over at the next
+  start, locate or loop jump.
+- **The budget**: at most 512 MiB of renders per snapshot (`kDefaultBudget`, about 23 minutes of stereo at
+  48 kHz). Clips past it, and a render that couldn't allocate, stretch live.
+- `Engine::waitForWarpRenders()` waits until every render the project needs is ready (tests and benchmarks).
 
 ## Re-Pitch resampling
 
@@ -212,12 +272,54 @@ Speeding up moves content above the output Nyquist, so the cutoff is lowered to 
 the same factor: the content is filtered out instead of aliasing. The rate used for this is clamped to 1..4
 (`kMaxRateFiltered`), a cost cap. The output is scaled by the cutoff to keep the gain.
 
+How a frame is computed (the same kernel and taps either way; the result is within float rounding of a tap-by-tap sum,
+about 3e-7 at most, more than 135 dB under the signal):
+
+- **Up to the source's speed** (rate at most 1, so the full cutoff), away from the file's ends: a frame's 16 taps lie
+  whole source frames apart, so all of them fall the same fraction between two table points. `SincPhases` holds the
+  table by phase (513 rows of the 16 taps' values, 33 KB, built from `SincTable` during static initialisation), and
+  `phasedFrame()` mixes the two rows around the frame's fraction: no lookup per tap. With AVX, a vector of eight taps
+  per half and channel.
+- **Faster** (or near the file's ends): `kernelFrame()`. With AVX2 it takes eight taps at a time. Their positions in the
+  table are computed in float, the whole frames and the fraction apart, which keeps them within a thousandth of a table
+  step of the double-precision lookup. Each tap's two neighbouring table values are loaded as one 64-bit pair and
+  shuffled apart, not with gather instructions: CPUs running Intel's Downfall (GDS) mitigation run those very slowly
+  (where they are fast, gathers measured about 1.5 times faster still). Taps past the kernel's last are masked: never
+  read, weighing nothing.
+- **Without AVX** (arm64): the phase table's plain loop (which compilers leave scalar: each frame's sum ends in one
+  value), and `SincTable` tap by tap otherwise.
+- The taps are summed in eight lanes per channel and the lanes added pairwise at the end (in the same order with or
+  without AVX), not one after the other. The order is fixed, so offline renders stay repeatable.
+
+Re-Pitch at rate 1 never comes here: the snapshot makes such a clip `Direct`.
+
+## What it costs
+
+Measured with [warp_bench](../../benchmarks/warp_bench.cpp) (a 30 s stereo clip at 48 kHz in blocks of 256; results
+and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.md#warping)), per output frame:
+
+- **Direct**: under 1 ns (it reads the source in place).
+- **Re-Pitch**: about 8 to 9 ns up to the source's speed, 35 to 45 ns faster (the kernel widens with the rate), on a
+  2.1 GHz Xeon; about 6 times and 1.5 to 2.3 times less than the tap-by-tap loop it replaced.
+- **Stretched** (any mode): 260 to 300 ns there (about 1.3 % of a core per clip), Formants about 30 % more. Most of it is
+  Signalsmith Stretch's own spectral processing: the phase-vocoder prediction per bin (complex products, a division
+  and a square root, about half), its FFTs and windowing (about a third), and feeding and reading it sample by sample
+  (under a tenth). The C library's maths isn't a part of it, MinGW's x87 functions included: Signalsmith calls `sin`
+  and `exp` only when configuring and twice per channel per block. Silent input is already cheap: once it has been silent
+  for two analysis blocks' length, the stretcher passes it through without spectral processing. That is what a
+  stretched clip costs offline, and live until its render is ready.
+- **Stretched, from its render** (live, once the warp cache has it): about 0.5 ns, as Direct. The render costs about
+  what playing the clip stretched once does (Standard 270 ns a frame, Formants 350), once, on the cache's thread:
+  under half a second for a 30 s clip there. A render takes 8 bytes a frame (23 MB a minute at 48 kHz).
+
 ## Invariants and real-time rules
 
 - `AudioSource` is immutable after `load()`; snapshots hold `shared_ptr`s, and retired snapshots are freed on the UI
   thread once the audio thread's epoch has moved past them.
-- `WarpVoice` construction and `configure()` allocate: only on the edit side. `render()`, `outputSeek()` and
-  `renderResampled()` don't allocate or lock.
+- `WarpVoice` construction and `configure()` allocate: only on the edit side (and on the warp cache's thread, for its
+  own voices). `render()`, `outputSeek()` and `renderResampled()` don't allocate or lock.
+- A `WarpRender` is written only by the warp cache's thread, and read by the audio thread only once `ready()`; it is
+  freed on the edit side or on the cache's thread, never on the audio thread.
 - A voice is used by one clip per block: `acquireVoice()` never hands out a voice stamped with the current block.
 - Clips on one track don't overlap (the model resolves overlaps), which is what bounds voices per track.
 
@@ -249,5 +351,12 @@ the same factor: the content is filtered out instead of aliasing. The rate used 
   own tempo, only warped clips rescale on a tempo change, are sample-aligned (also after a locate and when
   transposed), offline renders are repeatable, Re-Pitch changes speed and pitch together and filters rather than
   aliases, stereo and mono sources, clip pan, many warped clips in sequence, and exports include warped audio.
+- [tests/engine/test_warp_cache.cpp](../../tests/engine/test_warp_cache.cpp): a render is what a voice plays (bit for
+  bit), live playback plays a ready render (and offline renders don't), a stretch under way goes on and the render
+  takes over at a locate, a tempo change while a clip plays from its render crossfades into the stretcher (without the
+  fade it clicks), renders no snapshot asks for are forgotten and the budget holds, an engine's renders finish and
+  leave exports as they were.
+- [benchmarks/warp_bench.cpp](../../benchmarks/warp_bench.cpp) (not a test): what each playback costs, from a render
+  too (the `-cached` cases).
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,
   resampling to the engine rate, `probe`, clips waiting for their source.

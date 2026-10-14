@@ -487,7 +487,8 @@ nightly is skipped.
 threads, offline and live through the fake ASIO driver, checked bit-identical; `--heavy N --compare-ordering` measures
 starting heavy tracks first), `browser_backend_bench` (the backend on a large synthetic library, every query checked
 against `BrowserReference`), `builtin_devices_bench` (each built-in audio effect alone, as the audio thread runs it:
-what it costs a core, at its defaults or at settings given) and `sound_similarity_bench` (sound similarity on a real
+what it costs a core, at its defaults or at settings given), `warp_bench` (an audio clip's playback alone: Direct,
+Re-Pitch, each stretch configuration; nanoseconds a frame) and `sound_similarity_bench` (sound similarity on a real
 sample library: speed, and how often a one-shot's nearest sounds are of its kind). They are built with
 `-DSUBSTATION_BUILD_BENCHMARKS=ON`, into `build/bin`, and run by hand; CTest doesn't run them. How to run them, what
 they measure and the results are in [benchmarks/README.md](../benchmarks/README.md).

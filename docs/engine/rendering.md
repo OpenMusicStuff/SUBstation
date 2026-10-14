@@ -156,9 +156,13 @@ source's buffer by its destination (`edgeSignal()`).
 - `Direct`: source frames one to one (unwarped, or warped at its own tempo without
   transposing): bit-exact.
 - `Resample`: Re-Pitch, speed and pitch together (`renderResampled()`).
-- `Stretch`: through the stretch voice the prologue gave it (`assignVoices()`,
-  `acquireVoice()`): the voice that played the clip last if it is still free, else the one idle
-  longest. More stretched clips at once than voices: the extra ones stay silent.
+- `Stretch`: live, from its whole render (`ClipRender::rendered`, made in the background by the
+  `WarpCache`) once that is ready, read in place like `Direct`, except while the voice already
+  playing it carries on (a render takes over where the voice would start again: a start, a locate,
+  a loop's jump; a voice taking over from a render mid-way, after a tempo change, crossfades from it).
+  Otherwise, and in offline renders, through the stretch voice the prologue gave it
+  (`assignVoices()`, `acquireVoice()`): the voice that played the clip last if it is still free,
+  else the one idle longest. More stretched clips at once than voices: the extra ones stay silent.
 
 Then gain, the clip's fades (`ClipRender::fadeIn` / `fadeOut`, samples from each end, each
 shaped by its curve with `automationShape()`), and the clip's pan as balance gains. Details of
