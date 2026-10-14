@@ -78,6 +78,9 @@ void Renderer::setScheduler(Scheduler* scheduler) {
                 buffer->assign(kMaxBlock, 0.f);
             }
         }
+        for (auto& depth : scratch.midiNotes) {
+            for (auto& buffer : depth) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
+        }
         for (std::vector<float>& values : scratch.modulation) values.assign(kMaxBlock, 0.f);
         scratch.modulationSpare.assign(kMaxBlock, 0.f);
     }
@@ -1034,8 +1037,12 @@ void Renderer::modulateInsert(const ModulationRender& route, const Slice& slice,
 }
 
 void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
-                            const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
+                            const Slices& chunkSlices, ProcessEvent* chunkEvents, float* left, float* right, int frames,
                             bool monitored, int depth, WorkerScratch& scratch) noexcept {
+    // The notes its devices hear: as its MIDI effects play them, if it has any.
+    Slices slices = chunkSlices;
+    ProcessEvent* events = chunkEvents;
+    processMidiEffects(snap, chain, context, slices, events, left, right, frames, depth, scratch);
     // Each device over the whole chunk, then the next: a device sees the same
     // calls as if they went stretch by stretch through the chain, and a rack can
     // run its chains over the chunk.
@@ -1060,6 +1067,8 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             // Run before the chain (runModulators): the audio goes past it, as
             // late as its sidechain makes the strip (as the engine aligned it).
             if (insert.isEnabled()) waitForSidechain(snap, chain, i, left, right, frames, monitored);
+        } else if (insert.isMidiEffect()) {
+            // Run before the chain (processMidiEffects): the audio goes past it.
         } else if (insert.isEnabled()) {
             if (!rack) waitForSidechain(snap, chain, i, left, right, frames, monitored);
             // Switched by its automation: its gain over the chunk, and its input
@@ -1132,9 +1141,50 @@ void Renderer::waitForSidechain(const RenderSnapshot& snap, const StripRender& c
     if (DelayLine* wait = deviceDelayLine(edge, e)) wait->process(left, right, frames, monitored ? 0 : edge.deviceDelay);
 }
 
+void Renderer::processMidiEffects(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
+                                  Slices& slices, ProcessEvent*& events, float* left, float* right, int frames,
+                                  int depth, WorkerScratch& scratch) noexcept {
+    auto& buffers = scratch.midiNotes[static_cast<size_t>(std::clamp(depth, 0, kMaxRackDepth))];
+    size_t next = 0;  // the buffer the next one writes (the other may hold its input)
+    for (size_t i = 0; i < chain.inserts.size(); ++i) {
+        Processor& insert = *chain.inserts[i];
+        if (!insert.isMidiEffect()) continue;
+        std::vector<ProcessEvent>& buffer = buffers[next];
+        EventOutput out{buffer.data(), buffer.size(), 0};
+        Slices played = slices;
+        bool on = insert.isEnabled();
+        if (on) {  // its automation's switch, as it stands at the chunk's start
+            for (const SwitchRender& switched : chain.switches) {
+                if (switched.lane.insert != static_cast<int>(i)) continue;
+                float* gain = scratch.switches[static_cast<size_t>(std::clamp(depth, 0, kMaxRackDepth))].gain.data();
+                fillSwitch(snap, switched.lane, frames, gain, scratch);
+                on = frames > 0 && gain[0] >= 0.5f;
+                break;
+            }
+        }
+        if (on) {
+            processDevice(snap, chain, i, context, slices, events, left, right, frames, scratch, &out, &played);
+        } else {
+            insert.endMidiNotes(out);
+            if (out.count == 0) continue;  // the notes go on as they are
+            // The notes it ended, then the notes as they come.
+            for (int s = 0; s < slices.count; ++s) {
+                const Slice& from = slices.slice[static_cast<size_t>(s)];
+                const size_t first = s == 0 ? 0 : out.count;
+                for (int e = from.firstEvent; e < from.endEvent; ++e) out.add(events[e]);
+                played.slice[static_cast<size_t>(s)].firstEvent = static_cast<int>(first);
+                played.slice[static_cast<size_t>(s)].endEvent = static_cast<int>(out.count);
+            }
+        }
+        slices = played;
+        events = buffer.data();
+        next ^= 1;
+    }
+}
+
 void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
                              const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
-                             WorkerScratch& scratch) noexcept {
+                             WorkerScratch& scratch, EventOutput* out, Slices* outSlices) noexcept {
     Processor& insert = *chain.inserts[i];
     const double samplesPerBeat = snap.samplesPerBeat();
     static const std::vector<int> kNone;
@@ -1200,7 +1250,14 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
         for (const ModulationRender& route : chain.modulation) {
             if (route.insert == static_cast<int>(i)) modulateInsert(route, slice, scratch);
         }
+        const size_t written = out ? out->count : 0;
+        context.outEvents = out;
         insert.process(context, channels, 2, slice.length);
+        context.outEvents = nullptr;
+        if (out) {
+            outSlices->slice[static_cast<size_t>(s)].firstEvent = static_cast<int>(written);
+            outSlices->slice[static_cast<size_t>(s)].endEvent = static_cast<int>(out->count);
+        }
         insert.clearAutomation();
         insert.setSidechain(nullptr, nullptr);
     }

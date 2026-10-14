@@ -450,8 +450,10 @@ hangs.
   of `ProcessEvent` beside `NoteBend`, sent along the note's curve the same way (`bendNotes`).
 - **MPE for plug-ins without note expression**: notes spread over channels with channel pitch bend; it
   needs the plug-in's bend range.
-- **MIDI effects** would sit between `buildNoteEvents()` and the instrument; today events go straight to
-  the track's devices.
+- **More MIDI effects**: a built-in device of the `MidiEffect` category, as the Arpeggiator is: the
+  renderer runs a chain's MIDI effects on its notes before its devices hear them
+  ([devices.md](devices.md#midi-effects)). MIDI effect plug-ins would need an event output in
+  `Vst3Processor` and `isMidiEffect()` from the plug-in's category.
 - **MIDI overdub** (recording into existing clips) is a model-side change: the engine already returns
   the notes.
 

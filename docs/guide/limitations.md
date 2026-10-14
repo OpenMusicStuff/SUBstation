@@ -28,7 +28,8 @@ What SUBstation doesn't do yet, by area.
 ## MIDI editing
 
 - Looping MIDI clips.
-- MIDI effects.
+- MIDI effects besides the built-in Arpeggiator. A MIDI effect plays before its chain's
+  instrument wherever it sits in the chain (it can't be put before the instrument).
 - Note bends edit pitch only: MIDI 2.0's other per-note expressions (pressure,
   brightness, per-note controllers) can't be drawn.
 - Chords and the key are worked out from MIDI only, not from audio clips, and the

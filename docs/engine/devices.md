@@ -104,6 +104,7 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
 | `requestReset()` / `takeResetRequest()` | asks whichever renderer processes it next to `reset()` it first |
 | `automate()`, `clearAutomation()`, `automation()`, `numAutomation()` | automation for one `process()` call; see [automation.md](automation.md) |
 | `hasSidechain()`, `setSidechain()`, `setSidechainConnected()`, `sidechain(c)`, `sidechainConnected()` | the sidechain (aux) input; see below |
+| `isMidiEffect()`, `endMidiNotes(out)` | a MIDI effect: it plays its chain's notes, before the chain's other devices (see [MIDI effects](#midi-effects)); switched off, it ends the notes it was playing |
 | `acceptsMidi()` | it plays notes (an instrument, or an effect with a MIDI input, as a vocoder or a pitch corrector has): what can take another track's notes ([midi.md](midi.md#a-devices-midi-input-from-another-track)). Main thread; false by default |
 | `displays()`, `readDisplay()` | streams of values for a device's own editor |
 
@@ -120,7 +121,8 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
   from.
 - `ProcessContext`: sample rate, `samplePos` and `beatPos` of the block's first frame, tempo, time signature,
   the song's key (`keyTonic`, -1 when none is known, and `keyMinor`: `Engine::setSongKey`, which the application
-  sets from its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, and `inEvents`; `samplesPerBeat()` and
+  sets from its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, `inEvents`,
+  and `outEvents` (a MIDI effect's notes, an `EventOutput`; null for every other device); `samplesPerBeat()` and
   `beatsPerBar()` from them. The renderer splits blocks where the playhead jumps (a loop wrap), so a block is always
   one continuous stretch.
 
@@ -131,6 +133,25 @@ what goes into that input over the call's frames (two channels, `setSidechain(le
 source, or solo leaves it out); after the call, null again. `setSidechainConnected()` says whether a source was chosen
 at all, so a device can key from its own input without one, yet hear silence when solo leaves its source out. Routing
 and alignment of sidechains are in [routing.md](routing.md).
+
+### MIDI effects
+
+A MIDI effect (`isMidiEffect()`: the Arpeggiator) plays notes instead of audio. The renderer runs a chain's MIDI
+effects before the chain's other devices, in their order, wherever they sit in it (as it runs modulators before
+their strip: `Renderer::processMidiEffects`, from `processChain`, so a rack's chain runs its own): each gets the
+notes the one before it played (the first, the chunk's), slice by slice with its automation and modulation as any
+device's, in `ctx.inEvents`, and appends what it plays to `ctx.outEvents` (an `EventOutput`: offsets relative to
+its call, in time order; full, the rest is dropped). Those are the notes the chain's devices hear, kept in the
+worker's scratch (`midiNotes`, two buffers a depth). Raw MIDI it passes on itself. It never touches the audio, and
+in its place in the chain the audio goes past it.
+
+Switched off (or its automation switch off at the chunk's start) it isn't run and the notes go on as they come,
+after the note-offs of the notes it was still playing (`endMidiNotes()`, called each such chunk). One taken out
+of a chain, or moved to another, asks the chain's devices to reset (`Engine::resetChainLocked`), so an
+instrument doesn't hold the notes it was playing for ever.
+
+In the model it is an ordinary device after the instrument (the model keeps an instrument first in its chain);
+`BuiltinCategory::MidiEffect`, listed after the instruments.
 
 ### Displays
 
@@ -182,12 +203,14 @@ What every built-in device shares ([BuiltinProcessor.h](../../engine/src/builtin
 A device registers itself where it is defined: each `.cpp` in `builtin/devices/` ends with
 
 ```cpp
-SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument, or Modulator
+SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument, MidiEffect, or Modulator
 ```
 
 A `Modulator` (the LFO, the Envelope) processes no audio: it moves other devices' parameters
 (`Processor::isModulator()`; see [automation.md](automation.md#modulation)). The browser lists
-the categories as *Instruments*, *Audio Effects* and *Modulators*.
+the categories as *Instruments*, *MIDI Effects*, *Audio Effects* and *Modulators*. A `MidiEffect` plays its
+chain's notes (see [MIDI effects](#midi-effects)); its `render()` writes them with `emit(ctx, event)`, which puts
+the event's offset (relative to the stretch, as its input's are) back in the block's terms.
 
 The macro makes a static `BuiltinRegistrar` that adds a factory (`std::make_shared<MyProcessor>()`) and a
 `BuiltinCategory` to `BuiltinRegistry::instance()` (a function-local static, built on first use, since registrars run
@@ -195,7 +218,7 @@ in no fixed order).
 
 - `devices()` builds the list once (`std::call_once`): it makes one prototype of each device and records its id
   (its `typeId()` without the `builtin:` prefix), name, category and parameters as a `BuiltinInfo`; instruments come
-  first, then audio effects, then modulators, each by name.
+  first, then MIDI effects, audio effects, then modulators, each by name.
 - `create(id)` makes a new device of that id; `std::invalid_argument` for an unknown one.
 
 The engine creates devices by id (`Engine::addBuiltinProcessor(chainId, type, index)`: it sets the source loader,
@@ -521,6 +544,46 @@ The engine bridge restores a built-in device's state in the background (`EngineB
 of one thread, so states are set in the order they came and the last one wins), since it may load files, and waits
 for all of them before rendering offline (`waitForDeviceStates()`; `devicesReady()` says whether any are pending).
 See [app/engine-bridge.md](../app/engine-bridge.md).
+
+### Arpeggiator (`builtin:arpeggiator`, MidiEffect)
+
+Plays the notes held one after another (see [MIDI effects](#midi-effects) for how its notes reach its chain).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `style` | Style | | Up, Down, Up-Down, Down-Up, Converge, Diverge, Played, Random, Chord | Up |
+| `sync` | Sync | | Off, On | On |
+| `rate` | Rate | Hz | 0.5..40, log | 8 |
+| `synced` | Rate (Synced) | | 1/1, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32 | 1/16 |
+| `gate` | Gate | % | 5..200 | 50 |
+| `octaves` | Octaves | | 1..4 (whole) | 1 |
+| `swing` | Swing | % | 0..100 | 0 |
+| `velocity` | Velocity | | Played, Fixed | Played |
+| `fixed_velocity` | Fixed Velocity | | 1..127 (whole) | 100 |
+| `hold` | Hold | | Off, On | Off |
+
+- **Held notes** (up to 32, by key and channel, with their velocity and the order they
+  came): a note-on with none held down starts a new chord (with Hold, in place of the
+  held one) and the pattern from its start. A note-off lets its key go; without Hold it
+  leaves the set. Raw MIDI passes on at its offset; per-note bends are dropped.
+- **The clock**: synced while the song plays, the song's grid: step k at k note values
+  from the song's start (`beatPos / note beats`), so it locks to the beat wherever play
+  starts or loops (a jump realigns it). Otherwise (stopped, or free in Hz) a clock of its
+  own, from 0 at the chord's first note. Step k plays when the clock reaches
+  k + (k odd ? 0.5 × Swing / 100 : 0). A chord starting no more than a tenth of a step
+  after a step (`kLate`) plays that step at once; otherwise the next.
+- **A step**: the pattern is the held notes low to high (Played: in the order they
+  came), repeated an octave up for each octave (keys over 127 left out); `indexFor`
+  picks one by the style and the steps played since the chord started (Up-Down and
+  Down-Up don't repeat their ends; Converge: lowest, highest, second lowest…; Diverge:
+  the same from the middle out; Random: a hash of the step, so renders repeat). Chord
+  plays every held note an octave further each step. A note still sounding on the same
+  key and channel ends first; each note gets an id of its own (`noteId`) and lasts
+  Gate × a step (at the step's nominal length), at its key's velocity or Fixed's.
+- **Switched off**: `endMidiNotes()` ends what it plays and forgets the held notes (it
+  won't hear their note-offs). `reset()` forgets everything.
+- **Display**: `step`, one value per 64 samples: the step (since the chord started, 0..15
+  round and round) whose notes sound, or -1 while none does. Its editor lights that step.
 
 ### Utility (`builtin:utility`, AudioEffect)
 
@@ -1459,6 +1522,29 @@ clean delay of its latency.
   (0.12 % at Amount 0); about 0.26 % with all five controls gliding all the time (measured with
   `builtin_devices_bench` on a 2.1 GHz Xeon).
 
+### Bitcrusher (`builtin:bitcrusher`, AudioEffect)
+
+Fewer bits and a lower sample rate.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `bits` | Bits | | 1..16 | 8 |
+| `rate` | Rate | Hz | 200..48000, log | 11025 |
+| `drive` | Drive | dB | 0..24 | 0 |
+| `dither` | Dither | % | 0..100 | 0 |
+| `tone` | Tone | % | 0..100 | 100 |
+| `output` | Output | dB | -24..12 | 0 |
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+
+- **Per channel**: × Drive, clipped to ±1; then held: a clock adds Rate / sample rate
+  each sample, and each time it passes 1 the next value is taken (fractional, so any
+  rate; the aliasing is meant); that value + Dither × TPDF noise of up to a step,
+  rounded to 2^(bits − 1) steps either side of zero (fractional bits too), held to ±1.
+- **Tone**: a one-pole low-pass from 1 kHz (at 0) to 20 kHz (at 99 %), evenly in log;
+  off at 100 %. Then Output and Dry/Wet (ramped over 20 ms, snapped on `reset()`).
+- **Display**: `level`, one value per 256 samples: the input's peak over them (the louder channel). Its
+  editor works its preview out from the parameters, and runs it along while this comes.
+
 ### Delay (`builtin:delay`, AudioEffect)
 
 A stereo delay after Ableton's.
@@ -1479,16 +1565,29 @@ A stereo delay after Ableton's.
 | `mode` | Mode | | Repitch, Fade, Jump | Repitch |
 | `ping_pong` | Ping Pong | | Off, On | Off |
 | `mix` | Dry/Wet | % | 0..100 | 50 |
+| `swing` | Swing | % | 0..100 | 0 |
+| `drive` | Drive | % | 0..100 | 0 |
+| `duck` | Duck | % | 0..100 | 0 |
 
 - **Times**: synced, `division × (15 / tempo) × (1 + offset / 100)` seconds; free, the
   time in ms. Linked, the right side uses the left's four parameters. At most 10 s
   (`kMaxDelaySeconds`); each delay line is that long (rounded up to a power of two),
   allocated in `prepare()`. Read with 4-point Hermite interpolation.
-- **Per side**: the line is read (`echo`), filtered (`wet`: the output, and what feeds
-  back), and written with the input plus feedback × wet. Ping pong: the input summed to
-  mono goes into the left line, and each side's wet feeds the other's line. Frozen,
-  each line is written with its own unfiltered echo (an exact loop) and the input is
-  ignored; feedback is 1.
+- **Per side, two lines in a loop** (stages A and B, `stageOf(side, part)`): each is read
+  (`echo`), filtered and driven (`wet`); A is written with the input plus feedback × B's
+  wet, B with feedback × A's wet; the side's output is the sum of both wets. **Swing**
+  reads A at the time × (1 + s) and B at the time × (1 − s), s = 0.5 × Swing / 100
+  (`kMaxSwing`), so echoes come at T(1 + s), 2T, 3T(1 + s)…: without swing, exactly a
+  single line of time T (A longer than a line holds reads at the line's end). Ping
+  pong: the input summed to mono goes into the left's A, which feeds the right's B,
+  which feeds the left's A (the left's B and the right's A rest). Frozen, each line is
+  written with the other's unfiltered echo (an exact loop) and the input is ignored;
+  feedback is 1.
+- **Drive**: after the filter, in the loop, `tanh(g·y) / g` with g = 1 + 7 × Drive / 100
+  (`dsp::fastTanh`): unity for quiet echoes, loud ones rounded off; bypassed at 0.
+- **Duck**: the input's peak (the louder channel; 2 ms attack, 250 ms release:
+  `dsp::EnvelopeFollower`) dips the wet by 1 / (1 + 16 × Duck / 100 × peak)
+  (`kDuckDepth`); the loop itself is not ducked.
 - **Filter**: a TPT state-variable high-pass at `freq / 2^(width/2)` then low-pass at
   `freq × 2^(width/2)`, both Butterworth, limited to 0.49 of the sample rate.
 - **Modes**: Repitch glides the delay to its target with a one-pole (120 ms), so the
@@ -2297,6 +2396,8 @@ knobs for log parameters) unless it has an editor of its own: a QML file in
 ```js
 readonly property var editors: ({
     "amp": "AmpEditor.qml",
+    "arpeggiator": "ArpeggiatorEditor.qml",
+    "bitcrusher": "BitcrusherEditor.qml",
     "chorus": "ChorusEditor.qml",
     "compressor": "CompressorEditor.qml",
     "delay": "DelayEditor.qml",
@@ -2326,7 +2427,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are twenty-one. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+- Today there are twenty-five. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
   playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
   threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
   The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
@@ -2344,7 +2445,10 @@ readonly property var editors: ({
   its tubes glowing as hard as each stage is driven (`drive1`..`drive3`, `power`, `sag`), a pilot lamp and an output
   meter; Erosion its noise band (from `erosion::bandMagnitude`) on an X-Y field of Frequency and Amount over spectra
   of `input` and `output`, shimmering with `erosion`, and a scope of `mod_l` against `mod_r`; the Delay its filter
-  over a spectrum of `input`; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
+  over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
+  modulation; the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
+  `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
+  mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from
   `phaser::curve`) at the sweep the engine publishes (`sweep_l`, `sweep_r`, `q_l`, `q_r`), its notches marked, and
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
@@ -2600,7 +2704,12 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   zeros; NaN and infinity in the input as silence (bit for bit as a 0 there); one channel the left of two (and two
   again); the displays; the band the editor draws against the filter's impulse response.
 - [test_delay_engine.cpp](../../tests/engine/test_delay_engine.cpp): synced and free times, offset, link,
-  feedback, ping pong, freeze, the filter, the modes (with automation changing the time), and its display.
+  feedback, ping pong, freeze, the filter, the modes (with automation changing the time), and its display; swing
+  (alone and in ping pong), drive and duck.
+- [test_bitcrusher_engine.cpp](../../tests/engine/test_bitcrusher_engine.cpp): its listing, the bits' levels, the
+  rate's held samples, fully dry, and drive, dither and tone in range.
+- [test_arpeggiator_engine.cpp](../../tests/engine/test_arpeggiator_engine.cpp): a MIDI effect after the synth in
+  its chain playing it: the styles, octaves, gate, swing, a free rate, Hold, switched off, in a rack's chain.
 - [test_chorus_engine.cpp](../../tests/engine/test_chorus_engine.cpp): its listing and the design's figures (the
   warmth's curve, its antiderivative and its stage among them); passing the input bit for bit fully dry (with the
   high-pass on, the crossover's all-pass); each layout a plain delay of its centre at Amount 0 (the impulses after

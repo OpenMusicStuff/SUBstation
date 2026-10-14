@@ -8,12 +8,14 @@ their own page: [plugins.md](plugins.md).
 
 ## The device view
 
-- It shows the built-in Synth and Sampler instruments, the Utility device, Over The Top,
-  Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp,
-  Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall, Disperser, Transient
-  Shaper, EQ and Sidechain, the LFO and Envelope modulators, and plug-ins, all through the same
-  interface: they show alike.
-- On a MIDI track the instrument comes first; the master takes audio effects only.
+- It shows the built-in Synth and Sampler instruments, the Arpeggiator MIDI effect, the
+  Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
+  Compressor, Saturator, Amp, Erosion, Bitcrusher, Delay, Chorus-Ensemble, Phaser-Flanger,
+  Reverb, Vintage Hall, Disperser, Transient Shaper, EQ and Sidechain, the LFO and Envelope
+  modulators, and plug-ins, all through the same interface: they show alike.
+- On a MIDI track the instrument comes first; the master takes audio effects only. A MIDI
+  effect (the Arpeggiator) sits after the instrument but plays before it: it changes the
+  notes the chain's instrument hears, wherever it is in the chain.
 - **Ctrl+Alt+L** (*View › Device View*) shows or hides it, with the info view.
 - The **info view**, at the bottom left, says what the control under the mouse is: its
   tooltip shows there at once instead of popping up. *View › Info View* hides it; the
@@ -43,9 +45,10 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   values. Frequency and time knobs turn logarithmically.
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
-  Spectral Compressor, the Saturator, the Amp, Erosion, the Delay, the Chorus-Ensemble,
-  the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the Transient Shaper,
-  the EQ, the Sidechain, the LFO and the Envelope have editors of their own (below).
+  Spectral Compressor, the Saturator, the Amp, Erosion, the Bitcrusher, the Delay, the
+  Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
+  Transient Shaper, the EQ, the Sidechain, the Arpeggiator, the LFO and the Envelope have
+  editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
   *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)); and, on a
@@ -919,17 +922,45 @@ A stereo delay after Ableton's, with an editor laid out like it.
   tempo (the grid), lengthened or shortened by up to 33 % (the field under it, for a
   swing feel); with Sync off, a time knob (1 ms to 5 s). The **link** button between
   them makes the right side follow the left (its controls grey out).
+- **Feedback** (0 to 95 %, under the sides) and **Freeze** (∞): frozen, what is in the
+  delay goes round for ever and new input is ignored.
 - **Filter**: a band-pass on the echoes (and so on what feeds back), from a 12 dB/octave
   high-pass to a 12 dB/octave low-pass, **Width** octaves apart around its frequency.
   Drag the curve's dot across for the frequency, up and down for the width. Behind the
   curve is a spectrum of the delay's input.
+- **Character**, under the filter, where Ableton's has its modulation:
+  - **Swing** (0 to 100 %): every other echo comes late, by up to half the time (at
+    about 67 % the echoes fall in triplets, a shuffle); the others stay on time.
+  - **Drive** (0 to 100 %): tape-like saturation in the feedback loop: loud echoes are
+    rounded off, and each time round they get a little dirtier. Quiet echoes pass as
+    they are.
+  - **Duck** (0 to 100 %): the echoes dip while the input plays, and swell back in the
+    gaps, so a vocal or a lead stays clear of its own echoes.
 - **Mode**: how a change of time sounds. **Repitch** glides to it, pitching the echoes as
   a tape delay does; **Fade** crossfades to it; **Jump** switches at once.
 - **Ping Pong**: the input, in mono, goes left first, and the echoes bounce from side to
   side.
-- **Feedback** (0 to 95 %) and **Freeze** (∞): frozen, what is in the delay goes round
-  for ever and new input is ignored.
 - **Dry/Wet**: 0 to 100 %.
+
+### Bitcrusher
+
+Fewer bits and a lower sample rate: the sound of early samplers and game consoles.
+
+- **Bits** (1 to 16): how many levels the signal is rounded to (8 bits: 256). Fractions
+  move smoothly between the whole numbers' steps.
+- **Rate** (200 Hz to 48 kHz): the sample rate it holds the signal at. Between its
+  samples the signal stays put, and what is above half the rate folds back down
+  (aliasing), as it did in early samplers.
+- **Drive** (0 to 24 dB): louder into the crusher, so more of its levels are used, then
+  clipped at full scale.
+- **Dither** (0 to 100 %): noise of up to one level added before the rounding: a hiss in
+  place of the steps' buzz on quiet sounds.
+- **Tone** (0 to 100 %): smooths the steps' edges, a low-pass from 1 kHz up (open at 100 %).
+- **Output** (−24 to +12 dB) and **Dry/Wet**.
+
+Its editor draws one cycle of a sine as the Bitcrusher has it, as the parameters stand: the
+steps across are Rate's, the steps up and down Bits', its height Output's (whose box sits over
+it). While sound comes in the wave runs along, glowing with the input's level.
 
 ### Chorus-Ensemble
 
@@ -1310,6 +1341,36 @@ fitted to the kick.
   mix is delayed to match.
 - **Lows Only** ducks only what is below the **Crossover**, so the bass's upper
   harmonics carry on through the kick. The fit puts the crossover above the clash.
+
+## MIDI effects: Arpeggiator
+
+A MIDI effect changes the notes its track plays before the instrument hears them. It goes
+on a MIDI track like an audio effect does (after the instrument), but it plays first,
+wherever it sits: the instrument (and an instrument in a rack, or the instruments of a
+rack's chains when it is in one) hears its notes instead of the clips' or the keyboard's.
+Switched off, the notes go straight through again.
+
+### Arpeggiator
+
+Plays the notes held one after another, in a pattern, over one to four octaves.
+
+- **Style**: Up, Down, Up-Down, Down-Up, Converge (the lowest, the highest, the second
+  lowest…), Diverge (from the middle out), Played (in the order the keys went down),
+  Random, and Chord (all of them together, an octave further each step).
+- **Hold**: the notes play on after they are let go, until a new chord comes with no
+  keys down: that one takes over.
+- **Rate**: with **Sync** on, a note value (1/1 to 1/32, triplets too); while the song
+  plays the steps are on its grid, so the pattern locks to the beat. With Sync off, in
+  Hz. Stopped, or free, the pattern starts with the first key.
+- **Gate** (5 to 200 %): how long each note lasts, as a share of a step; past 100 % the
+  notes overlap (legato).
+- **Swing** (0 to 100 %): every other step comes late, by up to half a step.
+- **Octaves** (1 to 4): the pattern climbs this many octaves before it starts again.
+- **Velocity**: as each key was played, or **Fixed** at a value (1 to 127).
+
+Its editor draws the pattern: sixteen steps of a three-note chord, walked as the style
+walks it, over the octaves, each as long as the gate and the odd ones late by the swing. As it
+plays, the active step lights up. Octaves and Velocity sit under Rate, Gate and Swing.
 
 ## Modulators: LFO and Envelope
 

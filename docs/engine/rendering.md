@@ -201,7 +201,9 @@ passes it on to its devices). If no device is switched on, only the device taps 
 Otherwise it builds the slices and calls `processChain()`:
 
 ```
+MIDI effects of the chain, in order: each plays the notes the last one played (processMidiEffects)
 for each insert i of the chain:
+    MIDI effect or modulator?  run before (the audio goes past it)
     rack?    processRack(...)
     device?  sidechain edge into it?  -> setSidechainConnected; its own signal waits (deviceDelay)
              for each slice: automate its lanes, process(), clearAutomation()
@@ -219,8 +221,10 @@ latency.
 monitored: a chain skipping its waits would play early against chains lined up to it), its
 fader (muted, or left out when another chain of the rack is soloed; solo is read once per rack
 so its chains agree), then its line-up delay (`ChainRender::compensation`). The rack puts out the
-sum. An empty rack passes its input on. Every chain's devices get the strip's note events, which
-is what layers instruments in an Instrument Rack. Rack routing and latency are in
+sum. An empty rack passes its input on. Every chain's devices get the strip's note events (as the
+strip's MIDI effects played them; a chain's own MIDI effects then play them for that chain), which
+is what layers instruments in an Instrument Rack. MIDI effects are in
+[devices.md](devices.md#midi-effects). Rack routing and latency are in
 [routing.md](routing.md#racks).
 
 ## Faders
