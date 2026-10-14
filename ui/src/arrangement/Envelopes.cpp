@@ -88,12 +88,15 @@ std::optional<double> unautomatedValue(LanesHost& host, const EnvelopeArea& area
     return unautomatedValue(host, area.owner, area.key);
 }
 
-// A breakpoint's value (or where one would go), next to it.
-std::optional<Readout> pointReadout(LanesHost& host, const EnvelopeArea& area, const AutomationPoint& point) {
+// A breakpoint's value (or where one would go), next to it, or next to `near` (the mouse, over a
+// segment or the line out from an end: the breakpoint may be out of sight).
+std::optional<Readout> pointReadout(LanesHost& host, const EnvelopeArea& area, const AutomationPoint& point,
+                                    std::optional<QPointF> near = std::nullopt) {
     const auto spec = specOf(host, area);
     if (!spec) return std::nullopt;
     const double shown = spec->quantize(point.value);
-    return Readout{QPointF(viewOf(host).beatToX(point.beat), area.y(shown)), spec->formatNormalized(shown)};
+    return Readout{near.value_or(QPointF(viewOf(host).beatToX(point.beat), area.y(shown))),
+                   spec->formatNormalized(shown)};
 }
 
 // Of the segment starting at breakpoint `i`, the breakpoint lower down (the first where they're level).
@@ -245,6 +248,7 @@ public:
             active_ = true;
         }
         if (index_ < 0 || index_ >= static_cast<int>(original_.size())) return;
+        mouse_ = pos;
         app::Session& session = *host_.hostSession();
         const timeline::Timeline& view = viewOf(host_);
         const AutomationPoint& anchor = original_[static_cast<size_t>(index_)];
@@ -288,7 +292,9 @@ private:
         if (segment_ && partner_ >= 0 && partner_ < count &&
             points[static_cast<size_t>(partner_)].value < points[static_cast<size_t>(current_)].value)
             shown = partner_;  // a segment: the lower of its two
-        readout_ = pointReadout(host_, area_, points[static_cast<size_t>(shown)]);
+        // (A segment's beside the mouse: its breakpoints may be out of sight.)
+        readout_ = pointReadout(host_, area_, points[static_cast<size_t>(shown)],
+                                segment_ ? std::optional<QPointF>(mouse_) : std::nullopt);
     }
 
     LanesHost& host_;
@@ -303,6 +309,7 @@ private:
     QSet<int> indices_;
     int current_ = 0;  // where the pressed point is now
     int partner_ = 0;  // a segment: where its second point is now
+    QPointF mouse_;    // where the drag is
     bool active_ = false;
     std::optional<Readout> readout_;
 };
@@ -672,7 +679,9 @@ std::pair<std::optional<Hover>, QCursor> hover(LanesHost& host, const std::optio
                           std::optional<Readout> readout) {
         return Hover{area->owner, area->key, area->lane, kind, index, beat, value, std::move(readout)};
     };
-    const auto at = [&](int i) { return pointReadout(host, *area, points[static_cast<size_t>(i)]); };
+    const auto at = [&](int i, std::optional<QPointF> near = std::nullopt) {
+        return pointReadout(host, *area, points[static_cast<size_t>(i)], near);
+    };
     if (const auto index = pointAt(view, *area, points, pos))
         return {make(Hover::Kind::Point, index, 0.0, 0.0, at(*index)), QCursor(Qt::PointingHandCursor)};
     if (alt(modifiers) && app::automation::segmentIndex(points, view.xToBeat(pos.x())))
@@ -682,14 +691,14 @@ std::pair<std::optional<Hover>, QCursor> hover(LanesHost& host, const std::optio
         return {make(Hover::Kind::Range, std::nullopt, 0.0, 0.0, rangeReadout(host, *area)), QCursor(Qt::ArrowCursor)};
     const auto end = endAt(host, *area, points, pos);
     if (end && (!grab || !grab->add))
-        return {make(Hover::Kind::End, end, view.xToBeat(pos.x()), 0.0, at(*end)), QCursor(Qt::ArrowCursor)};
+        return {make(Hover::Kind::End, end, view.xToBeat(pos.x()), 0.0, at(*end, pos)), QCursor(Qt::ArrowCursor)};
     if (grab && grab->add) {
         const auto [beat, value] = grab->target;
         return {make(Hover::Kind::Add, std::nullopt, beat, value, pointReadout(host, *area, {beat, value})),
                 addCursor()};
     }
     if (grab)
-        return {make(Hover::Kind::Segment, grab->segment, 0.0, 0.0, at(lowerOf(points, grab->segment))),
+        return {make(Hover::Kind::Segment, grab->segment, 0.0, 0.0, at(lowerOf(points, grab->segment), pos)),
                 QCursor(Qt::ArrowCursor)};
     return {std::nullopt, QCursor(Qt::ArrowCursor)};
 }

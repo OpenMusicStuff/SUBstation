@@ -12,10 +12,13 @@
 #include <QCursor>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QThreadPool>
 #include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <mutex>
 
 namespace sub::ui {
 
@@ -249,41 +252,61 @@ void CurveGraph::setCharacter(int index) {
     analyze();  // (with Auto on, the curve follows once it is done)
 }
 
+struct CurveGraph::FitJob {
+    std::mutex mutex;
+    std::condition_variable finished;
+    bool done = false;
+    std::optional<sf::Fit> result;
+};
+
 void CurveGraph::analyze() {
     if (kicks_.empty())
         return;
-    if (fitJob_.valid()) {
+    if (fitJob_) {
         analyzeAgain_ = true;
         return;
     }
     const double rate = capture_.sampleRate();
     const int pre = int(sf::kPreSeconds * rate);
     const int character = int(std::nearbyint(value(QStringLiteral("character"))));
-    fitJob_ = std::async(std::launch::async, [kicks = kicks_, bass = bass_, rate, character, pre] {
-        return sf::analyze(kicks, bass, rate, character, pre);
+    auto job = std::make_shared<FitJob>();
+    fitJob_ = job;
+    // (The worker keeps the job, and its own copy of the kicks: the graph may go before it is done.)
+    QThreadPool::globalInstance()->start([job, kicks = kicks_, bass = bass_, rate, character, pre] {
+        std::optional<sf::Fit> fit = sf::analyze(kicks, bass, rate, character, pre);
+        const std::lock_guard lock(job->mutex);
+        job->result = std::move(fit);
+        job->done = true;
+        job->finished.notify_all();
     });
 }
 
 void CurveGraph::collectFit(bool wait) {
-    if (!fitJob_.valid())
+    if (!fitJob_)
         return;
-    if (!wait && fitJob_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-        return;
-    const std::optional<sf::Fit> fit = fitJob_.get();
+    std::optional<sf::Fit> fit;
+    {
+        std::unique_lock lock(fitJob_->mutex);
+        if (!fitJob_->done && !wait)
+            return;
+        fitJob_->finished.wait(lock, [this] { return fitJob_->done; });
+        fit = std::move(fitJob_->result);
+    }
+    fitJob_.reset();
     if (fit)
         fit_ = fit;
     update();
     Q_EMIT fitChanged();
-    if (value(QStringLiteral("autofit")) >= 0.5)
-        applyAuto();
-    if (analyzeAgain_) {
+    if (analyzeAgain_) {  // superseded (more kicks, or the character changed): Auto waits for the next
         analyzeAgain_ = false;
         analyze();
+    } else if (value(QStringLiteral("autofit")) >= 0.5) {
+        applyAuto();
     }
 }
 
 void CurveGraph::waitForFit() {
-    while (fitJob_.valid())
+    while (fitJob_)
         collectFit(true);
 }
 

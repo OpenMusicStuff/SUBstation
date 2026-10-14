@@ -33,7 +33,7 @@
 #include <QStringList>
 #include <QtQml/qqmlregistration.h>
 
-#include <future>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -175,7 +175,9 @@ private:
     std::vector<std::vector<double>> kicks_;
     std::vector<double> bass_;
     std::optional<sub::app::sidechainFit::Fit> fit_;
-    std::future<std::optional<sub::app::sidechainFit::Fit>> fitJob_;  // the analysis under way
+    // The analysis under way, shared with the worker running it: the graph going doesn't wait for it.
+    struct FitJob;
+    std::shared_ptr<FitJob> fitJob_;
     bool analyzeAgain_ = false;  // more kicks came while it ran
     int hitsSeen_ = 0;
     QString autoGesture_;

@@ -451,6 +451,7 @@ void TrackHeaderItem::connectAll() {
     connect(bridge, &app::EngineBridge::metersUpdated, this, &TrackHeaderItem::updateMeter);
     connect(bridge, &app::EngineBridge::deviceChanged, this, [this] {
         if (isMaster()) Q_EMIT changed();  // (its Main Out)
+        Q_EMIT nameToolTipChanged();       // (a new sample rate: the latencies in ms)
     });
     connect(session_->selection(), &app::Selection::changed, this, [this] {
         Q_EMIT selectedChanged();

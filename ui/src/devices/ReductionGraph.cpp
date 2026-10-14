@@ -127,6 +127,12 @@ bool ReductionGraph::readStreams(bool& restarted) {
         const qint64 end = first + qint64(values.size());
         if (ends_[std::size_t(s)] < 0) begin_ = std::max(begin_, first);  // (the history begins where all have values)
         std::vector<float>& ring = rings_[std::size_t(s)];
+        // Values skipped since the last read (dropped while no tick read them): nothing there, not what
+        // the ring held a capacity earlier.
+        if (ends_[std::size_t(s)] >= 0) {
+            for (qint64 i = std::max(ends_[std::size_t(s)], first - capacity_); i < first; ++i)
+                ring[std::size_t(i & mask)] = clearValue(s);
+        }
         for (qint64 i = std::max(first, end - capacity_); i < end; ++i)
             ring[std::size_t(i & mask)] = clean(s, values[std::size_t(i - first)]);
         ends_[std::size_t(s)] = end;
