@@ -1,16 +1,38 @@
 #pragma once
-// DSP the built-in devices share: a state-variable filter section, 4-point
-// interpolation, a peak follower, flushing tiny values, an S-curve, the
-// instruments' envelopes, and rendering a block between its note events. All
-// inline: they run per sample. More (delay lines, LFOs, biquads, crossovers,
+// DSP the built-in devices share: pi, the latency a device has told the
+// engine, a state-variable filter section, 4-point interpolation, a peak
+// follower, flushing tiny values, an S-curve, the instruments' envelopes, and
+// rendering a block between its note events. All inline: they run per sample. More (delay lines, LFOs, biquads, crossovers,
 // glides, oversampling) is in DspBlocks.h.
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include "Processor.h"
 
 namespace sub::dsp {
+
+inline constexpr double kPi = std::numbers::pi;
+inline constexpr double kTwoPi = 2.0 * kPi;
+
+// A latency told to the engine. A device whose latency follows its settings
+// keeps one: its idle() returns changed(latencySamples()), true once each time
+// the latency moves (the engine then realigns the tracks), and its prepare()
+// calls reported(latencySamples()) (the engine reads the latency after
+// preparing). Main thread.
+class LatencyReport {
+public:
+    bool changed(int latency) noexcept {
+        if (latency == reported_) return false;
+        reported_ = latency;
+        return true;
+    }
+    void reported(int latency) noexcept { reported_ = latency; }
+
+private:
+    int reported_ = 0;
+};
 
 // A recursive filter's state, zero once it is too small to hear, so silence
 // never runs into denormals.

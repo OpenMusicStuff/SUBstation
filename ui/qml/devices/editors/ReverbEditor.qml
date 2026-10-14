@@ -51,7 +51,7 @@ Item {
     // whole pixel). (ParamBox's own width, its text and 16 px, puts the text half a pixel into the dot.)
     readonly property real boxMargin: 9.5
     // A knob's column: as wide as the widest caption or readout a knob shows (the house's 52 px at least).
-    readonly property real cell: Math.max(52, Math.ceil(knobTexts.implicitWidth))
+    readonly property real cell: Math.max(52, knobTexts.needed)
     // Chorus's column: a knob's, or as wide as its switch (the Amount knob's title) needs; an even width, so the
     // dial (centred on a whole pixel) and the switch over it share their centre.
     readonly property real chorusWidth: 2 * Math.ceil(Math.max(cell, chorusButton.implicitWidth) / 2)
@@ -109,27 +109,17 @@ Item {
         font: Theme.uiFont(8)  // (ParamBox's, and the knobs' captions' and readouts')
     }
 
-    // The widest of `lines` as a Text lays them out in its font (a caption, a readout or a switch's text is as
-    // wide as its advance and whatever of its last glyph reaches past it): hidden, a line each.
-    component Widest: Text {
-        property var lines: []
-        visible: false
-        textFormat: Text.PlainText
-        text: lines.join("\n")
-    }
     // What the knobs show at their widest: their captions, and each readout's widest form, every figure the
     // font's widest (Predelay's "### ms" and "0.## ms", Size's "###.##", Stereo's degrees, Decay's "##.## s" and
     // "1000 ms" (999.6 rounded), the percentages, Rate's "#.## Hz", the levels' "-##.# dB"). In the captions' and
     // readouts' font.
-    Widest {
+    EditorTextsWidth {
         id: knobTexts
-        font: Theme.uiFont(8)
-        lines: [shapeKnob, predelayKnob, sizeKnob, stereoKnob, decayKnob, diffusionKnob, scaleKnob,
+        texts: [shapeKnob, predelayKnob, sizeKnob, stereoKnob, decayKnob, diffusionKnob, scaleKnob,
                 chorusAmountKnob, chorusRateKnob, reflectKnob, diffuseKnob, mixKnob]
             .map(knob => knob.title)
             .concat(["### ms", "#.# ms", "0.## ms", "1000 ms", "###.##", "###°", "##.## s", "100 %", "#.## Hz",
-                     "-##.# dB"]
-                        .map(pattern => editor.sample(pattern)))
+                     "-##.# dB"])
     }
 
     DeviceParamMap {

@@ -42,7 +42,6 @@
 #include <array>
 #include <cmath>
 #include <complex>
-#include <numbers>
 #include <string>
 #include <vector>
 
@@ -53,7 +52,7 @@ namespace sub::amp {
 inline constexpr int kModels = 7;
 inline constexpr int kOversamplingLog2 = 2;  // 4x
 inline constexpr int kOversampling = 1 << kOversamplingLog2;
-inline constexpr double kPi = std::numbers::pi;
+using dsp::kPi;
 inline constexpr double kDcBlockerHz = 10.0;  // after the oversampled section
 // The device's displays: audio per value, and the floor of those in dB (the editor takes the floor
 // through the application layer's AmpResponse.h).

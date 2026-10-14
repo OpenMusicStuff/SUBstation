@@ -65,6 +65,7 @@
 
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
+#include "builtin/Dsp.h"
 #include "builtin/SpectralDesign.h"
 #include "rt/FastMath.h"
 #include "rt/RtUtils.h"
@@ -166,11 +167,7 @@ public:
     int tailSamples() const override { return frame_; }
 
     // The latency changes only with the sample rate (in prepare(), with audio stopped).
-    bool idle() override {
-        if (latency_ == reportedLatency_) return false;
-        reportedLatency_ = latency_;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latency_); }
 
     void prepare(double sampleRate, int) override {
         sampleRate_ = sampleRate;
@@ -239,7 +236,7 @@ public:
         mix_.reset(sampleRate, 0.02);
         output_.reset(sampleRate, 0.02);
         delta_.reset(sampleRate, 0.02);
-        reportedLatency_ = latency_;
+        latencyReport_.reported(latency_);
         reset();
     }
 
@@ -871,7 +868,7 @@ private:
     int frame_ = 0, hop_ = 0, latency_ = 0, bins_ = 0;  // N, N/4, N + N/4, N/2 + 1 (0 until prepared)
     int ring_ = 0, ringMask_ = 0;                       // 2N, 2N - 1
     int parts_ = 1;                                     // the parts a loop over the bins is run in
-    int reportedLatency_ = 0;
+    dsp::LatencyReport latencyReport_;
     int channels_ = 0;
 
     signalsmith::linear::RealFFT<float, true> fft_;  // computed in steps

@@ -16,7 +16,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 |---|---|
 | [Processor.h](../../engine/src/Processor.h) | `ProcessEvent`, `EventList`, `ProcessContext`, `ParamInfo`, `DisplayInfo`, `ParamAutomation`, `ProcessorEvent`, `Processor` |
 | [builtin/BuiltinProcessor.h](../../engine/src/builtin/BuiltinProcessor.h) / [.cpp](../../engine/src/builtin/BuiltinProcessor.cpp) | parameters as atomics (`param`, `isOn`, `choice`, `choiceIndex`, `offOnLabels`), automation by splitting blocks, displays, state as named text values, `loadSource()` |
-| [builtin/Dsp.h](../../engine/src/builtin/Dsp.h) | DSP the devices share, all inline: the state-variable filter section (`dsp::Svf`, `dsp::SvfCoefficients`), `hermite`, `followPeak`, `flushTiny`, the instruments' envelopes (`riseStep`, `fallCoefficient`, `kSilent`, `kFadeTo`), `renderBetweenNotes`, `kBendGlideSeconds` |
+| [builtin/Dsp.h](../../engine/src/builtin/Dsp.h) | DSP the devices share, all inline: `dsp::kPi` and `kTwoPi`, the latency a device has told the engine (`LatencyReport`: its `idle()` returns `changed(latencySamples())`, its `prepare()` calls `reported(...)`), the state-variable filter section (`dsp::Svf`, `dsp::SvfCoefficients`), `hermite`, `followPeak`, `flushTiny`, the instruments' envelopes (`riseStep`, `fallCoefficient`, `kSilent`, `kFadeTo`), `renderBetweenNotes`, `kBendGlideSeconds` |
 | [builtin/DspBlocks.h](../../engine/src/builtin/DspBlocks.h) | Building blocks the effects share, beside Dsp.h's, all inline: one-pole and DC filters (`dsp::OnePole`, `onePoleCutoff`, `DcBlocker`), a delay line (`DelayLine`, read linearly or with Hermite interpolation), an envelope follower (`EnvelopeFollower`), white noise (`Noise`), `fastTanh`, an LFO with Ableton's shapes and synced rates (`Lfo`, `LfoShape`, `syncedDivisionLabels`, `syncedCycleBeats`), RBJ biquads (`BiquadCoefficients`, `Biquad`), a Linkwitz-Riley crossover and its all-pass (`Crossover`, `CrossoverAllpass`), a sliding maximum for lookahead (`SlidingMax`), linear-phase oversampling by 2, 4 or 8 (`Oversampler`) |
 | [builtin/BuiltinRegistry.h](../../engine/src/builtin/BuiltinRegistry.h) / [.cpp](../../engine/src/builtin/BuiltinRegistry.cpp) | `BuiltinRegistry`, `BuiltinInfo`, `BuiltinCategory`, `SUB_REGISTER_BUILTIN` |
 | [builtin/devices/Synth.cpp](../../engine/src/builtin/devices/Synth.cpp) | the Synth instrument |
@@ -2522,7 +2522,7 @@ See [ui/device-view.md](../ui/device-view.md#device-editors) for the editors and
    - An instrument writes its output (it is first on a MIDI track) and reads notes from `ctx.inEvents`; an effect
      processes in place.
    - A sidechain: override `hasSidechain()` and read `sidechain(c)` / `sidechainConnected()` in `render()`.
-   - Latency: override `latencySamples()`; tails: `tailSamples()`.
+   - Latency: override `latencySamples()` (one that follows the settings: keep a `dsp::LatencyReport`, Dsp.h); tails: `tailSamples()`.
    - Displays: pass `{{"id", samplesPerValue}, ...}` to the constructor and `publish()` from `render()`.
    - State besides parameters: override `stateValues()` / `setStateValues()`; load files with `loadSource()`; hand
      anything big to the rendering thread without locks (see the Sampler).

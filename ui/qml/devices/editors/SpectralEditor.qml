@@ -25,12 +25,12 @@ Item {
 
     // A knob's cell: as wide as the widest caption or readout a knob shows ("Stereo Link", "-6.0 dB/oct"), 64 px
     // at least.
-    readonly property int cellWidth: Math.max(64, Math.ceil(knobTexts.implicitWidth))
+    readonly property int cellWidth: Math.max(64, knobTexts.needed)
     // The Focus column: its value boxes wide enough for the widest value ("20.00 kHz", or "14.44 kHz" where the
     // 4 is the widest figure), centred with 11 px either side, 2 px clear of the automation dot (drawn at x
     // 3.5..8.5 in the box); and its captions.
     readonly property int focusWidth: Math.max(cellWidth, Math.ceil(figures.advance(focusSample)) + 2 * 11,
-                                               Math.ceil(focusCaptions.implicitWidth))
+                                               focusCaptions.needed)
     // The Focus boxes' widest text: of the forms their values take, "20 Hz" to "20.00 kHz" ("1000 Hz": 999.6).
     readonly property string focusSample: {
         const high = p.get("focus_hi")
@@ -95,32 +95,21 @@ Item {
         font: Theme.uiFont(8)
     }
 
-    // The widest of `lines` as a Text lays them out in its font (a caption or a readout is as wide as its
-    // advance and whatever of its last glyph reaches past it): hidden, a line each.
-    component Widest: Text {
-        property var lines: []
-        visible: false
-        textFormat: Text.PlainText
-        text: lines.join("\n")
-    }
     // What the knobs show at their widest: their captions, and each readout's widest form, every figure the
     // font's widest (the levels' "-##.# dB", the ratios' "##.#:1", Tilt's "-#.# dB/oct", the percentages, the
     // times' "#.## s", "### ms", "1000 ms" (999.6 rounded) and "#.# ms"). In the captions' and readouts' font.
-    Widest {
+    EditorTextsWidth {
         id: knobTexts
-        font: Theme.uiFont(8)
-        lines: [thresholdKnob, ratioKnob, belowKnob, upwardKnob, tiltKnob, kneeKnob, rangeKnob, smoothKnob, attackKnob,
+        texts: [thresholdKnob, ratioKnob, belowKnob, upwardKnob, tiltKnob, kneeKnob, rangeKnob, smoothKnob, attackKnob,
                 releaseKnob, linkKnob, mixKnob, outputKnob]
             .map(knob => knob.title)
-            .concat(["-##.# dB", "##.#:1", "-#.# dB/oct", "100 %", "#.## s", "### ms", "1000 ms", "#.# ms"]
-                        .map(pattern => figures.sample(pattern)))
+            .concat(["-##.# dB", "##.#:1", "-#.# dB/oct", "100 %", "#.## s", "### ms", "1000 ms", "#.# ms"])
     }
     // The Focus column's captions.
-    Widest {
+    EditorTextsWidth {
         id: focusCaptions
-        font: Theme.uiFont(8)
         renderType: Text.NativeRendering
-        lines: [focusLow.title, focusHigh.title]
+        texts: [focusLow.title, focusHigh.title]
     }
 
     // A Focus edge's cell: its name over a value box, level with the knobs beside it.

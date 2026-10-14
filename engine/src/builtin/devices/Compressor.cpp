@@ -58,12 +58,7 @@ public:
     int tailSamples() const override { return latencySamples(); }
 
     // The lookahead changed: the engine must realign the tracks.
-    bool idle() override {
-        const int latency = latencySamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     void prepare(double sampleRate, int) override {
         sampleRate_ = sampleRate;
@@ -74,7 +69,7 @@ public:
         mix_.reset(sampleRate, 0.02);
         makeup_.snapTo(makeupDb());
         mix_.snapTo(param(Mix) / 100.f);
-        reportedLatency_ = latencySamples();
+        latencyReport_.reported(latencySamples());
         reset();
     }
 
@@ -226,7 +221,7 @@ private:
     }
 
     double sampleRate_ = 48000.0;
-    int reportedLatency_ = 0;  // (main thread: idle())
+    dsp::LatencyReport latencyReport_;
     float envelope_ = 0.f;     // the key's level (linear)
     float meanSquare_ = 0.f;   // RMS: the key's square, averaged
     float rmsPole_ = 0.f;

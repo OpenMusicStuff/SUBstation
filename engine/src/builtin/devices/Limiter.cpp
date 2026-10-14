@@ -313,12 +313,7 @@ public:
     int tailSamples() const override { return latencySamples(); }
 
     // The lookahead changed: the engine must realign the tracks.
-    bool idle() override {
-        const int latency = latencySamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     void prepare(double sampleRate, int) override {
         sampleRate_ = sampleRate;
@@ -353,7 +348,7 @@ public:
         post_.reset(sampleRate, limiter::kRampSeconds);
         for (SmoothedValue* s : {&softness_, &routing_, &link_, &autoShare_})
             s->reset(sampleRate, limiter::kRampSeconds);
-        reportedLatency_ = latencySamples();
+        latencyReport_.reported(latencySamples());
         reset();
     }
 
@@ -696,7 +691,7 @@ private:
     }
 
     double sampleRate_ = 48000.0;
-    int reportedLatency_ = 0;
+    dsp::LatencyReport latencyReport_;
     int channels_ = 2;
 
     // The lookahead now (it changes through the dip) and the pipelines' shape for it.

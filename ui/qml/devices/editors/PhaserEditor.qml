@@ -90,66 +90,35 @@ Item {
         DeviceViews.setValue(deviceId, "expanded", open)
     }
 
-    // The widest of `lines` as a Text lays them out in its font (as a caption's, a readout's or a button's text
-    // is as wide as its advance and whatever of its last glyph reaches past it): hidden, a line each.
-    component Widest: Text {
-        property var lines: []
-        visible: false
-        textFormat: Text.PlainText
-        text: lines.join("\n")
-        font: Theme.uiFont(8)  // (EditorCaption's and EditorReadout's)
-    }
     // What the knobs' cells show at their widest: every caption (the swapped knobs' both), and each readout's
     // widest form, every figure the font's widest (figures may be proportional), so no value is cut short,
     // whatever the font: Center's "1#.## kHz" (and 999.6 Hz reads "1000 Hz", 9999.6 Hz "10.00 kHz"); the
     // LFOs' and Safe Bass's "##.## Hz" (9.996 Hz reads "10.00 Hz"); the synced rates' divisions; the
     // percentages, signed for Duty and Env; Blend's "#.##"; Phase's degrees; Output's "-##.# dB"; the envelope's
     // times ("#.## ms", "##.# ms", "### ms").
-    Widest {
+    EditorTextsWidth {
         id: cellTexts
-        lines: [notches, centerKnob, spreadKnob, blendKnob, duty, amountKnob, feedbackKnob, warmthKnob, outputKnob,
+        texts: [notches, centerKnob, spreadKnob, blendKnob, duty, amountKnob, feedbackKnob, warmthKnob, outputKnob,
                 mixKnob, lfo2MixKnob, safeBassKnob, attackKnob, releaseKnob].map(knob => knob.title)
             .concat([qsTr("Freq"), qsTr("Rate"), qsTr("Phase"), qsTr("Spin")])
             .concat(["#### Hz", "#.## kHz", "1#.## kHz", "##.## Hz", "### %", "-### %", "#.##", "###°", "-##.# dB",
-                     "#.## ms", "##.# ms", "### ms"].map(pattern => figures.sample(pattern)))
+                     "#.## ms", "##.# ms", "### ms"])
             .concat(p.get("lfo_rate") ? p.get("lfo_rate").labels : [])
     }
     // The synced rates' captions, after their ♪.
-    Widest {
+    EditorTextsWidth {
         id: syncedTexts
-        lines: [qsTr("Freq"), qsTr("Rate")]
+        texts: [qsTr("Freq"), qsTr("Rate")]
     }
     // The delay's Time (its caption and readouts: the Flanger's "#.## ms" to "##.# ms", the Doubler's
     // "### ms"), and the Flanger's first notch under it ("Notch 5.00 kHz" at 0.1 ms).
-    Widest {
+    EditorTextsWidth {
         id: timeTexts
-        lines: [time.title].concat(["#.## ms", "##.# ms", "### ms"].map(pattern => figures.sample(pattern)))
+        texts: [time.title].concat(["#.## ms", "##.# ms", "### ms"])
     }
-    Widest {
+    EditorTextsWidth {
         id: notchTexts
-        lines: ["#### Hz", "#.## kHz"].map(pattern => "Notch " + figures.sample(pattern))  // (the graph's notchText)
-    }
-    // The readouts' figures.
-    FontMetrics {
-        id: figures
-
-        // The widest figure (figures may be proportional; read in a binding, the font is followed).
-        readonly property string widest: {
-            void font
-            let widest = "0"
-            for (const digit of "123456789") {
-                if (advanceWidth(digit) > advanceWidth(widest))
-                    widest = digit
-            }
-            return widest
-        }
-
-        // `pattern` with each "#" the widest figure: at least as wide as any value of that form.
-        function sample(pattern) {
-            return pattern.replace(/#/g, widest)
-        }
-
-        font: Theme.uiFont(8)
+        texts: ["#### Hz", "#.## kHz"].map(pattern => "Notch " + pattern)  // (the graph's notchText)
     }
 
     DeviceParamMap {
