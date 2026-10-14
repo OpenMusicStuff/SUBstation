@@ -262,7 +262,8 @@ way:
   `DeviceParam::setModulationAmount(amount, knob value, key)` → `editor.setModulationAmount` (one step a drag,
   from the knob's value); Alt+Shift-clicked, `modulationPolarityToggled` → `toggleModulationPolarity` →
   `editor.setModulationBipolar`. ParamKnob and ParamCell (so plug-ins' parameters too) wire both; Knob.qml's
-  tooltip over the handle says the amount and how to switch it. While a modulator's Map waits (`Session.modulationLearn`), every knob it could take on the
+  tooltip over the handle says the amount and how to switch it. Turning the knob itself is `DeviceParam::set` →
+  `editor.setDeviceParam`, which moves the mapping with it (the amount kept: see [app/model.md](../app/model.md)). While a modulator's Map waits (`Session.modulationLearn`), every knob it could take on the
   track has a ring (`mappable`).
 
 ### Plug-ins

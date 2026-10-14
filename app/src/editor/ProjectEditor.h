@@ -545,7 +545,7 @@ public:
 
     // A modulator (an LFO, an Envelope: isModulator()) moves parameters of the
     // other devices on its track (Device::modulations). Map one to it, over its
-    // normalized `low`..`high`, upside down with `invert`; a parameter follows
+    // normalized `low`..`high` (tryMapModulation: unipolar, from the parameter's own value up to its maximum), upside down with `invert`; a parameter follows
     // one modulator at a time (another's mapping of it goes, in the same undo
     // step). EditError for a device that isn't a modulator, a target not on its
     // track (or the modulator itself), a rack, or a parameter that can't be
@@ -840,6 +840,12 @@ private:
                                                     const std::function<bool(const Clip&)>& chosen,
                                                     const std::function<Clip(const Clip&)>& change,
                                                     ClipRefs& changed) const;
+
+    // Parameters' own values set by hand (`nw`, with `old` to undo to): the mappings of those a modulator moves
+    // take their range along (amount kept, from the new value), in the same step (one per gesture, with a merge
+    // key; one command per modulator involved). False, nothing pushed, if none of them is modulated.
+    bool pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
+                             const QMap<DeviceParam, double>& old, const QString& text, const QString& mergeKey);
 
     // Devices.
     bool setDevices(const QString& trackId, const std::vector<Device>& before, std::vector<Device> after,

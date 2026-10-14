@@ -115,6 +115,7 @@ std::optional<QStringList> ownFootprint(const QUndoCommand& command, const Proje
         addParams(out, c->trackId(), c->oldValue().values.keys() + c->newValue().values.keys());
     } else if (const auto* c = dynamic_cast<const SetModulationsCommand*>(&command)) {
         out << deviceRegion(c->trackId(), c->modulatorId()) + QStringLiteral("/modulations");
+        addParams(out, c->trackId(), c->oldValue().values.keys() + c->newValue().values.keys());
     } else if (const auto* c = dynamic_cast<const SetDeviceStateCommand*>(&command)) {
         out << deviceRegion(c->trackId(), c->deviceId());  // (a plug-in's state holds all its parameters)
     } else if (const auto* c = dynamic_cast<const SetDeviceEnabledCommand*>(&command)) {
