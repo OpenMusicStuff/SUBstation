@@ -375,7 +375,12 @@ void Updater::finishAsset(QNetworkReply* reply) {
     }
     const QByteArray rest = reply->readAll();
     hash_->addData(rest);
-    partial_->write(rest);
+    if (partial_->write(rest) != rest.size() || !partial_->flush()) {
+        const QString error = partial_->errorString();
+        abort();
+        setState(State::Error, QStringLiteral("Couldn't save the update: %1.").arg(error));
+        return;
+    }
     partial_->close();
     const QByteArray sha256 = hash_->result().toHex();
     hash_.reset();
