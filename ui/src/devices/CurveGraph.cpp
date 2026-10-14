@@ -300,7 +300,7 @@ void CurveGraph::collectFit(bool wait) {
     if (analyzeAgain_) {  // superseded (more kicks, or the character changed): Auto waits for the next
         analyzeAgain_ = false;
         analyze();
-    } else if (value(QStringLiteral("autofit")) >= 0.5) {
+    } else if (fit && value(QStringLiteral("autofit")) >= 0.5) {  // (none: nothing new to fit the curve to)
         applyAuto();
     }
 }
