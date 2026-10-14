@@ -3,7 +3,7 @@ import QtQuick.Controls
 import SUBstation
 
 // The LFO's editor: its cycle to draw on (ModulatorGraph: the playhead riding
-// it, what it puts out at the right), then its controls (Sync, Retrig and Map
+// it, what it puts out at the right; Retrig in its right-click menu), then its controls (Sync, Random and Map
 // over its knobs: the rate in Hz or synced in notes, Depth, Offset, Phase,
 // Smooth, and the Targets button beside them), then, unfolded by that button
 // (view state, kept per device: DeviceViews), what it moves (ModulatorTargets: each target's
@@ -30,7 +30,7 @@ Item {
         id: params
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["rate", "sync", "synced", "depth", "offset", "phase", "retrigger", "smooth"]
+        ids: ["rate", "sync", "synced", "depth", "offset", "phase", "retrigger", "smooth", "random"]
     }
 
     Row {
@@ -68,12 +68,12 @@ Item {
                     tooltip: qsTr("The rate in notes, at the tempo (following the song while it plays)")
                 }
                 ParamButton {
-                    objectName: "retrigger"
+                    objectName: "random"
                     width: 52
                     height: 18
-                    param: params.get("retrigger")
-                    text: qsTr("Retrig")
-                    tooltip: qsTr("Each note starts the cycle again")
+                    param: params.get("random")
+                    text: qsTr("Random")
+                    tooltip: qsTr("Random: a new random shape every cycle, instead of the curve drawn")
                 }
                 ModulatorMapButton {
                     id: mapButton
@@ -170,7 +170,7 @@ Item {
         }
     }
 
-    // The curve's right-click menu: delete the point, shapes to start from, flip, reverse, reset.
+    // The curve's right-click menu: delete the point, shapes to start from, flip, reverse, reset; Retrig.
     DynamicMenu {
         id: curveMenu
 
@@ -189,6 +189,10 @@ Item {
             entry(qsTr("Reverse Curve"), () => graph.reverse())
             separator()
             entry(qsTr("Reset Curve"), () => graph.resetCurve())
+            separator()
+            const retrigger = params.get("retrigger")
+            entry(qsTr("Retrig (each note starts the cycle again)"),
+                  () => retrigger.set(retrigger.value >= 0.5 ? 0 : 1), retrigger.value >= 0.5)
         }
 
         function showAt(position, point) {

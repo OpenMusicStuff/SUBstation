@@ -1,6 +1,7 @@
 #include "devices/ModulatorGraph.h"
 
 #include "audio/EngineBridge.h"
+#include "audio/ModulatorRandom.h"
 #include "devices/CurveGraph.h"
 #include "devices/EditorPaint.h"
 #include "input/GestureKey.h"
@@ -179,9 +180,16 @@ void ModulatorGraph::sync() {
         std::stable_sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a.x < b.x; });
     }
     points_ = points;
+    random_ = alive() && value(QStringLiteral("random")) >= 0.5;
+    if (random_ && randomPoints_.empty())
+        showRandom(0, 0.5);  // (until one plays: a random curve to show what it does)
     depth_ = std::clamp(value(QStringLiteral("depth")) / 100.0, 0.0, 1.0);
     offset_ = periodic_ ? std::clamp(value(QStringLiteral("offset")) / 200.0, -0.5, 0.5) : 0.0;
     threshold_ = value(QStringLiteral("threshold"));
+    phaseShift_ = periodic_ ? std::clamp(value(QStringLiteral("phase")) / 360.0, 0.0, 1.0) : 0.0;
+    if (phaseShift_ >= 1.0)
+        phaseShift_ = 0.0;  // (360°: where it starts at 0°)
+    smoothMs_ = std::max(0.0, value(QStringLiteral("smooth")));
     // Its length: a cycle (the LFO's), or the curve's from a trigger (the Envelope's).
     const sub::app::Project* project = session() ? session()->project() : nullptr;
     const double tempo = project && project->tempo() > 0 ? project->tempo() : 120.0;
@@ -219,7 +227,18 @@ void ModulatorGraph::sync() {
 }
 
 void ModulatorGraph::setPoints(const std::vector<Point>& points, const QString& mergeKey, const QString& text) {
-    setParams(pointsValues(points), mergeKey, text);
+    sub::app::OrderedMap<QString, double> values = pointsValues(points);
+    if (random_)
+        values.insert(QStringLiteral("random"), 0.0);  // (a curve given: it plays it)
+    setParams(values, mergeKey, text);
+}
+
+void ModulatorGraph::showRandom(int seed, double start) {
+    randomSeed_ = seed;
+    randomStart_ = start;
+    randomPoints_.clear();
+    for (const sub::app::ModulatorPoint& p : sub::app::modulatorRandomPoints(seed, start))
+        randomPoints_.push_back({p.x, p.y, p.curve});
 }
 
 void ModulatorGraph::removePoint(int index) {
@@ -268,6 +287,29 @@ double ModulatorGraph::played(double y) const {
     return periodic_ ? std::clamp(0.5 + (y - 0.5) * depth_ + offset_, 0.0, 1.0) : std::clamp(y * depth_, 0.0, 1.0);
 }
 
+std::vector<double> ModulatorGraph::outputCurve(int count) const {
+    count = std::max(1, count);
+    const std::vector<Point>& points = shown();
+    std::vector<double> out(std::size_t(count) + 1);
+    for (int i = 0; i <= count; ++i) {  // (Phase: the cycle starts that far along the curve)
+        const double x = double(i) / count + phaseShift_;
+        out[std::size_t(i)] = played(curveValue(points, x > 1.0 ? x - 1.0 : x));
+    }
+    if (smoothMs_ <= 0.01 || lengthMs_ <= 0)
+        return out;
+    // The one-pole, a step at a time (y = x + c (y - x)); the LFO's runs a few cycles first, to where it settles.
+    const double c = std::exp(-(lengthMs_ / count) / smoothMs_);
+    double y = periodic_ ? out.back() : played(points.empty() ? 0.0 : points.back().y);
+    const std::vector<double> target = out;
+    for (int pass = periodic_ ? 4 : 1; pass > 0; --pass) {
+        for (int i = 0; i <= count; ++i) {
+            y = target[std::size_t(i)] + c * (y - target[std::size_t(i)]);
+            out[std::size_t(i)] = y;
+        }
+    }
+    return out;
+}
+
 // --- Displays ----------------------------------------------------------------------------------
 
 void ModulatorGraph::refreshDisplays() { advance(tickSeconds()); }
@@ -276,12 +318,14 @@ void ModulatorGraph::advance(double seconds) {
     const std::vector<float> values = readDisplay(QStringLiteral("value"));
     const std::vector<float> phases = readDisplay(QStringLiteral("phase"));
     const std::vector<float> keys = readDisplay(QStringLiteral("key"));
-    const std::size_t count = std::min({values.size(), phases.size(), keys.size()});
-    const std::size_t from = count > std::size_t(DisplayPlayback<3>::kCapacity) ? count - DisplayPlayback<3>::kCapacity : 0;
+    const std::vector<float> seeds = readDisplay(QStringLiteral("seed"));
+    const std::vector<float> starts = readDisplay(QStringLiteral("start"));
+    const std::size_t count = std::min({values.size(), phases.size(), keys.size(), seeds.size(), starts.size()});
+    const std::size_t from = count > std::size_t(DisplayPlayback<5>::kCapacity) ? count - DisplayPlayback<5>::kCapacity : 0;
     double keyPeak = 0.0;
     bool noted = false;
     for (std::size_t i = from; i < count; ++i) {
-        playback_.append({values[i], phases[i], keys[i]});
+        playback_.append({values[i], phases[i], keys[i], seeds[i], starts[i]});
         keyPeak = std::max(keyPeak, double(keys[i]));
         noted = noted || keys[i] >= 1.0f;
     }
@@ -303,8 +347,16 @@ void ModulatorGraph::advance(double seconds) {
         phase = a < 0 || b < 0 || b < a ? (t < 0.5 ? a : b) : a + (b - a) * t;
     }
     const bool triggered = phase >= 0 && (lastPhase_ < 0 || phase < lastPhase_ - 0.05);
+    // Random: the curve playing at the playhead (its frame's seed: never between two).
+    if (random_) {
+        const auto at = static_cast<qint64>(std::floor(playback_.head() + 0.5));
+        const auto seed = static_cast<int>(playback_.at(std::min(at, playback_.newest()), 3));
+        const double start = playback_.at(std::min(at, playback_.newest()), 4);
+        if (seed >= 0 && (seed != randomSeed_ || start != randomStart_))
+            showRandom(seed, start);
+    }
     if (phase >= 0) {
-        trail_.push_back(QPointF(phase, curveValue(points_, phase)));
+        trail_.push_back(QPointF(phase, curveValue(shown(), phase)));
         if (trail_.size() > std::size_t(kTrail))
             trail_.erase(trail_.begin(), trail_.end() - kTrail);
     } else if (!trail_.empty()) {
@@ -345,6 +397,8 @@ QPointF ModulatorGraph::fromScreen(const QPointF& pos) const {
 }
 
 std::pair<QString, int> ModulatorGraph::hit(const QPointF& pos) const {
+    if (random_)
+        return {QString(), -1};  // (nothing to edit)
     int best = -1;
     double bestDistance = kHitRadius;
     for (std::size_t i = 0; i < points_.size(); ++i) {
@@ -403,6 +457,8 @@ void ModulatorGraph::mousePressEvent(QMouseEvent* event) {
         Q_EMIT sidechainMenuRequested(plot().center());
         return;
     }
+    if (random_)
+        return;  // (Random's curve isn't to edit)
     std::vector<Point> points = points_;
     const auto found = hit(pos);
     const bool onPoint = found.first == QLatin1String("point");
@@ -493,7 +549,7 @@ void ModulatorGraph::mouseReleaseEvent(QMouseEvent*) { endDrag(); }
 void ModulatorGraph::mouseUngrabEvent() { endDrag(); }
 
 void ModulatorGraph::mouseDoubleClickEvent(QMouseEvent* event) {
-    if (event->button() != Qt::LeftButton)
+    if (event->button() != Qt::LeftButton || random_)
         return;
     const auto found = hit(event->position());
     if (found.first.isEmpty() || (found.first == QLatin1String("point") && found.second == added_ &&
@@ -573,7 +629,7 @@ bool ModulatorGraph::event(QEvent* event) {
 }
 
 void ModulatorGraph::keyPressEvent(QKeyEvent* event) {
-    if ((event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) && selected_ >= 0) {
+    if (!random_ && (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) && selected_ >= 0) {
         removePoint(selected_);
         return;
     }
@@ -618,13 +674,13 @@ void ModulatorGraph::paint(SgPainter& p) {
 
     // The curve: what it takes from the bottom up, a glow, the line.
     const int steps = std::max(2, int(r.width()));
+    const std::vector<double> outputs = outputCurve(steps);
     std::vector<QPointF> curve, output;
     curve.reserve(std::size_t(steps) + 1);
     for (int i = 0; i <= steps; ++i) {
         const double x = double(i) / steps;
-        const double y = curveValue(points_, x);
-        curve.push_back(toScreen(x, y));
-        output.push_back(toScreen(x, played(y)));
+        curve.push_back(toScreen(x, curveValue(shown(), x)));
+        output.push_back(toScreen(x, outputs[std::size_t(i)]));
     }
     QLinearGradient fill(r.topLeft(), r.bottomLeft());
     fill.setColorAt(0, withAlpha(mod, 80));
@@ -632,10 +688,10 @@ void ModulatorGraph::paint(SgPainter& p) {
     p.fillToBaseline(curve.data(), int(curve.size()), r.bottom(), fill);
     p.drawPolyline(curve.data(), int(curve.size()), withAlpha(mod, 45), 6, Qt::RoundCap);
     p.drawPolyline(curve.data(), int(curve.size()), mod, 1.8, Qt::RoundCap);
-    if (depth_ < 0.999 || std::abs(offset_) > 0.001)  // as it plays it, when that isn't the curve
+    if (depth_ < 0.999 || std::abs(offset_) > 0.001 || phaseShift_ > 0.0005 || smoothMs_ > 0.01)  // as it plays it, when that isn't the curve
         drawDashedPolyline(p, output, QColor(255, 255, 255, 120), 1.0);
-    const bool bending = drag_ && drag_->kind == QLatin1String("bend");
-    const bool hovering = !drag_ && hover_.first == QLatin1String("segment");
+    const bool bending = !random_ && drag_ && drag_->kind == QLatin1String("bend");
+    const bool hovering = !random_ && !drag_ && hover_.first == QLatin1String("segment");
     if (bending || hovering) {
         const int index = bending ? drag_->index : hover_.second;
         if (index >= 0 && index + 1 < int(points_.size())) {
@@ -664,8 +720,8 @@ void ModulatorGraph::paint(SgPainter& p) {
         p.fillEllipse(head, 3.2, 3.2, Qt::white);
     }
 
-    // The points.
-    for (std::size_t i = 0; i < points_.size(); ++i) {
+    // The points (Random's curve has none to drag).
+    for (std::size_t i = 0; i < (random_ ? 0 : points_.size()); ++i) {
         const QPointF at = toScreen(points_[i].x, points_[i].y);
         const bool hovered = (hover_.first == QLatin1String("point") && hover_.second == int(i)) ||
                              (drag_ && drag_->index == int(i) && drag_->kind == QLatin1String("point"));
@@ -694,7 +750,9 @@ void ModulatorGraph::paint(SgPainter& p) {
 
     // The labels: what it is, its length; the hint.
     p.drawText(QRectF(r.left() + 1, 1, 120, 13), Qt::AlignLeft | Qt::AlignVCenter,
-               periodic_ ? QStringLiteral("cycle") : QStringLiteral("from each trigger"), kLabelColor, small);
+               random_ ? (periodic_ ? QStringLiteral("random, each cycle") : QStringLiteral("random, each trigger"))
+                       : (periodic_ ? QStringLiteral("cycle") : QStringLiteral("from each trigger")),
+               kLabelColor, small);
     p.drawText(QRectF(r.right() - 170, 1, 168, 13), Qt::AlignRight | Qt::AlignVCenter, lengthText_, kLabelColor, small);
     if (!hint_.isEmpty()) {
         const QRectF box = hintRect();

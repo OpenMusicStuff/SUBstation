@@ -188,6 +188,32 @@ void KnobItem::setModulationValue(qreal fraction) {
     }
 }
 
+void KnobItem::setModulationAmount(qreal amount) {
+    if (changeLook(modulationAmount_, std::clamp<double>(amount, -1.0, 1.0))) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+void KnobItem::setModulationBipolar(bool bipolar) {
+    if (changeLook(modulationBipolar_, bipolar)) {
+        update();
+        Q_EMIT lookChanged();
+    }
+}
+
+// (Out at the corner, clear of the arc: a little past the item's edge, which still takes its clicks: contains().)
+QPointF KnobItem::modulationHandleCenter() const { return QPointF(2.0, 2.0); }
+
+bool KnobItem::contains(const QPointF& point) const {
+    return SgCanvas::contains(point) || isOnModulationHandle(point);
+}
+
+bool KnobItem::isOnModulationHandle(const QPointF& point) const {
+    const QPointF d = point - modulationHandleCenter();
+    return modulated_ && d.x() * d.x() + d.y() * d.y() <= kHandleHitRadius * kHandleHitRadius;
+}
+
 void KnobItem::setMappable(bool mappable) {
     if (changeLook(mappable_, mappable)) {
         update();
@@ -302,24 +328,35 @@ void KnobItem::paint(SgPainter& p) {
     };
     const double frac = fraction(value_);
     if (modulated_) {
-        // The range it moves over, and where it is now; its own value faint (it waits).
+        // The range it moves over, a dot riding it where the modulator has it now; the pointer is the knob's own
+        // value (where the user set it).
         const QColor mod = Theme::modulation();
         const double sweep = -(modulationTo_ - modulationFrom_) * kSpan;
         if (std::abs(sweep) > 0.5) {
             p.drawArc(rect, kStartAngle - modulationFrom_ * kSpan, sweep,
-                      QColor(mod.red(), mod.green(), mod.blue(), 110), 3, Qt::FlatCap);
+                      QColor(mod.red(), mod.green(), mod.blue(), 150), 3, Qt::FlatCap);
         }
-        QColor own = Theme::text();
-        own.setAlpha(60);
-        pointer(frac, own, 1.5);
+        pointer(frac, Theme::text(), 2);
         if (modulationValue_ >= 0.0) {
-            const double now = modulationValue_;
-            const double from = std::min(modulationFrom_, modulationTo_);
-            const double sweepNow = -(now - from) * kSpan;
-            if (std::abs(sweepNow) > 0.5) p.drawArc(rect, kStartAngle - from * kSpan, sweepNow, mod, 3, Qt::FlatCap);
-            const QPointF tip = pointer(now, mod, 2);
-            p.fillEllipse(tip, 2.2, 2.2, mod);
+            const double angle = (kStartAngle - modulationValue_ * kSpan) * kPi / 180.0;
+            const double onArc = side / 2;  // (the arc's line: the rect's edge)
+            const QPointF dot(center.x() + std::cos(angle) * onArc, center.y() - std::sin(angle) * onArc);
+            p.fillRadialGlow(dot, 4.5, QColor(mod.red(), mod.green(), mod.blue(), 120), 2);
+            p.fillEllipse(dot, 2.0, 2.0, QColor(255, 255, 255, 235));
         }
+        // The amount's handle: a dot with the amount round it, from the top (clockwise: up; bipolar both ways).
+        const QPointF at = modulationHandleCenter();
+        const QRectF ring(at.x() - kHandleRadius, at.y() - kHandleRadius, 2 * kHandleRadius, 2 * kHandleRadius);
+        p.fillEllipse(at, kHandleRadius, kHandleRadius, Theme::knobTrack());
+        const double degrees = modulationAmount_ * (modulationBipolar_ ? 180.0 : 360.0);
+        if (std::abs(degrees) > 0.5) {
+            if (modulationBipolar_)
+                p.drawArc(ring, 90.0 + std::abs(degrees), -2 * std::abs(degrees), mod, 1.5, Qt::FlatCap);
+            else
+                p.drawArc(ring, 90.0, -degrees, mod, 1.5, Qt::FlatCap);
+        }
+        p.fillEllipse(at, modulationBipolar_ ? 0.9 : 1.3, modulationBipolar_ ? 0.9 : 1.3,
+                      amountDrag_ ? Theme::text() : mod);
     } else {
         const double origin = bipolar_ ? 0.5 : 0.0;
         const double start = kStartAngle - origin * kSpan;
@@ -336,6 +373,19 @@ void KnobItem::mousePressEvent(QMouseEvent* event) {
         event->ignore();
         return;
     }
+    if (isOnModulationHandle(event->position())) {
+        const Qt::KeyboardModifiers both = Qt::AltModifier | Qt::ShiftModifier;
+        if ((event->modifiers() & both) == both) {
+            Q_EMIT modulationPolarityToggled();
+        } else {
+            amountDrag_ = AmountDrag{event->position().y(), modulationAmount_, newGestureKey()};
+            cursor_.press(event->globalPosition());
+            Q_EMIT draggingChanged();
+            update();
+        }
+        event->accept();
+        return;
+    }
     Q_EMIT touched();
     if (typeable())
         forceActiveFocus(Qt::MouseFocusReason);  // so typing a digit edits
@@ -348,6 +398,15 @@ void KnobItem::mousePressEvent(QMouseEvent* event) {
 }
 
 void KnobItem::mouseMoveEvent(QMouseEvent* event) {
+    if (amountDrag_ && cursor_.dragging()) {
+        const qreal y = event->position().y();
+        const double pixels = (event->modifiers() & Qt::ShiftModifier) ? kFineAmountDragPixels : kAmountDragPixels;
+        amountDrag_->amount = std::clamp(amountDrag_->amount + (amountDrag_->lastY - y) / pixels, -1.0, 1.0);
+        amountDrag_->lastY = cursor_.moved(this, event->position(), event->globalPosition());
+        // (The amount shown comes back from what it sets: held where the range ends.)
+        Q_EMIT modulationAmountMoved(amountDrag_->amount, amountDrag_->gesture);
+        return;
+    }
     if (!drag_ || !cursor_.dragging())
         return;
     // Moved on from where the mouse was last, so pressing or letting go of
@@ -362,6 +421,11 @@ void KnobItem::mouseMoveEvent(QMouseEvent* event) {
 
 void KnobItem::endDrag() {
     cursor_.release();
+    if (amountDrag_) {
+        amountDrag_.reset();
+        update();
+        Q_EMIT draggingChanged();
+    }
     if (drag_) {
         drag_.reset();
         Q_EMIT draggingChanged();
@@ -375,6 +439,10 @@ void KnobItem::mouseUngrabEvent() { endDrag(); }
 void KnobItem::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) {
         event->ignore();
+        return;
+    }
+    if (isOnModulationHandle(event->position())) {  // (a second click on the handle: as the first)
+        mousePressEvent(event);
         return;
     }
     Q_EMIT touched();

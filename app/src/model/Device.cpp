@@ -73,6 +73,16 @@ double ModulationMapping::target(double value) const {
     return std::max(0.0, std::min(1.0, low + v * (high - low)));
 }
 
+void ModulationMapping::setAmount(double base, double amount) {
+    base = std::max(0.0, std::min(1.0, base));
+    amount = std::max(-1.0, std::min(1.0, amount));
+    low = bipolar ? base - amount : base;
+    high = base + amount;
+}
+
+double ModulationMapping::playedLow() const { return std::max(0.0, std::min(1.0, low)); }
+double ModulationMapping::playedHigh() const { return std::max(0.0, std::min(1.0, high)); }
+
 bool Device::operator==(const Device& other) const {
     return id == other.id && kind == other.kind && enabled == other.enabled && params == other.params &&
            plugin == other.plugin && state == other.state && sidechain == other.sidechain &&

@@ -89,10 +89,17 @@ Item {
             modulationFrom: cell.menuParam ? cell.menuParam.modulationFrom : 0
             modulationTo: cell.menuParam ? cell.menuParam.modulationTo : 1
             modulationValue: cell.menuParam ? cell.menuParam.modulationValue : -1
+            modulationAmount: cell.menuParam ? cell.menuParam.modulationAmount : 0
+            modulationBipolar: cell.menuParam ? cell.menuParam.modulationBipolar : false
             mappable: cell.menuParam ? cell.menuParam.mappable : false
             formatter: cell.formatter
             onMoved: (v, key) => cell.moved(v, key)
             onTouched: cell.touched()
+            onModulationAmountMoved: (amount, key) => {
+                if (cell.menuParam)
+                    cell.menuParam.setModulationAmount(amount, knob.value, key)
+            }
+            onModulationPolarityToggled: if (cell.menuParam) cell.menuParam.toggleModulationPolarity(knob.value)
         }
 
         Text {
