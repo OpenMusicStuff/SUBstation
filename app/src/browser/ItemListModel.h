@@ -40,6 +40,7 @@ public:
         UsesRole,        // how often it was used
         InstrumentRole,  // a plug-in that is an instrument
         PluginRole,      // a plug-in's PluginRef fields (PluginInfo::toRef), else nothing
+        TagsRole,        // an audio file's: what the sound tagger hears in it ("Snare · Punchy"), else ""
     };
     Q_ENUM(Role)
 

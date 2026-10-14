@@ -6,7 +6,9 @@ import SUBstation
 // time): what the sidebar entry and the search text find. Its current row is
 // the controller's (selecting an audio file previews it); when the list is
 // searched again for a change elsewhere it keeps its current item and place
-// (positionRestored). A preset can be renamed in place (startRename()).
+// (positionRestored). A preset can be renamed in place (startRename()). An
+// audio file's row says what the sound tagger hears in it, dimmed, on the
+// right ("Snare · Punchy"), as much as there is room for after its name.
 SelectionList {
     id: results
 
@@ -92,6 +94,7 @@ SelectionList {
         required property string display
         required property string toolTip
         required property string icon
+        required property string tags
 
         readonly property bool selected: results.selectedRows.indexOf(index) >= 0
         // (A row going away has index -1: it isn't the one renamed.)
@@ -117,7 +120,7 @@ SelectionList {
             id: label
             anchors.left: icon.right
             anchors.leftMargin: 4
-            anchors.right: parent.right
+            anchors.right: tagsLabel.visible ? tagsLabel.left : parent.right
             anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             visible: !row.renaming
@@ -125,6 +128,21 @@ SelectionList {
             font: Theme.listFont
             elide: Text.ElideRight
             color: row.selected ? Theme.accentText : Theme.text
+        }
+        Text {
+            id: tagsLabel
+            objectName: "tagsLabel"
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            anchors.baseline: label.baseline  // (on the name's line: centred, the smaller text sat higher)
+            // (At most half the row: the name comes first.)
+            width: Math.min(implicitWidth, row.width / 2)
+            visible: !row.renaming && row.tags !== ""
+            text: row.tags
+            font: Theme.smallFont  // (smaller and fainter than the name: it says more about it, not what it is)
+            elide: Text.ElideRight
+            color: row.selected ? Theme.accentText : Theme.textDim
+            opacity: row.selected ? 0.7 : 0.75
         }
 
         SelectionRowArea {

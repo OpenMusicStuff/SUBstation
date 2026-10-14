@@ -2,7 +2,9 @@
 
 The intelligence module is what SUBstation works out about music and sound: for now **sound similarity** (Find
 Similar Sounds in the browser, on threads of its own; its descriptors made with
-[Essentia](../intelligence/third_party/essentia), vendored), **harmony** (a song's chords and key, inferred from its MIDI:
+[Essentia](../intelligence/third_party/essentia), vendored), **sound tagging** (what each sample is and how it sounds,
+"Snare · Punchy · Bright", by a model trained on open sample libraries, from the same descriptors; the browser's
+searches by description, "hard trap snare", and its Best sort, which suggests what fits the project), **harmony** (a song's chords and key, inferred from its MIDI:
 the piano roll's chord lane, its notes out of the key in red, and Generate's block chords and bass lines) and
 **humanizing** (the piano roll's Humanize › Velocity: velocities from HUMANBRO's XGBoost model, through its C++ library,
 vendored) and **track labels** (what each track is, in a few words: "Washed Out Serum Pluck", from its names, presets,
@@ -11,7 +13,8 @@ accompaniment), a timing model for Humanize › Timing, and chords from audio. T
 through ([app/mcp.md](app/mcp.md)) hands them the harmony and the track labels. It is a layer of its own, as
 the browser's backend is: the static library `sub_intelligence` ([intelligence/src](../intelligence/src), namespace
 `sub::intelligence`), with no Qt, and knowing nothing of the engine or the browser; its application side is
-[app/src/intelligence](../app/src/intelligence) (`SoundSimilarity`, `Session.similarity`; `Harmony`,
+[app/src/intelligence](../app/src/intelligence) (`SoundSimilarity`, `Session.similarity`, which hands out the tags
+too; `SoundSuggestions`, `Session.suggestions`; `Harmony`,
 `Session.harmony`; `Humanizer`, `Session.humanizer`; `TrackLabels`, `Session.trackLabels`). How Find Similar behaves
 for the user is in [guide/browser.md](guide/browser.md#find-similar-sounds), the chords, the key, Generate and
 Humanize in [guide/midi.md](guide/midi.md#chords-and-key), the track labels in
@@ -59,7 +62,9 @@ measurably find more sounds of a query's kind ([How well it works](#how-well-it-
 
 ### The fingerprint ([EssentiaExtractor.h](../intelligence/src/similarity/EssentiaExtractor.h))
 
-81 numbers in ten aspects. Every sound is analysed at 44.1 kHz (decoded, or resampled, to it: a 22, 48 or 96 kHz copy
+81 descriptors in ten aspects, then what the sound tagger makes of them: an embedding of 32 numbers (the eleventh
+aspect, Embedding) and the tagger's outputs (Tags: never compared; [below](#sound-tagging-what-a-sound-is-and-the-words-for-it)).
+Every sound is analysed at 44.1 kHz (decoded, or resampled, to it: a 22, 48 or 96 kHz copy
 of a sound is measured as the 44.1 kHz one is), from where it starts (leading silence skipped, the next 6 s; a 2 ms
 pre-roll always the same, so where frames fall doesn't depend on the silence before), its level made relative to its
 peak (MFCC 0, a frame's level, is left out): neither the level nor the rate changes a fingerprint.
@@ -75,6 +80,7 @@ peak (MFCC 0, a frame's level, is left out): neither the level nor the rate chan
 | Tonality | how many peaks within 60 dB of the loudest, 20 Hz–16 kHz (`SpectralPeaks`: the spectral complexity), how they beat (`Dissonance`, the lowest 100), how strongly the spectrum repeats 200 Hz–5 kHz apart (`PitchSalience`, every fourth frame) | metal (cymbals, cowbells), detuned stabs, harmonic against inharmonic |
 | Envelope | log attack time (`LogAttackTime`, 20%→90% of the peak amplitude), effective duration (`EffectiveDuration`, within 30 dB of the peak), temporal centroid (`Centroid` over time), the level in eight octave-wide windows after the peak (20 ms … 2.6 s) | closed vs open hats, tight vs boomy kicks, one-shots vs pads |
 | Pitch | how periodic (`PitchYin`, YIN, on 93 ms windows from the peak, down to 21.5 Hz), and that confidence times the pitch in octaves | tuned 808s and tonal one-shots near their pitch; noise near noise |
+| Embedding | the sound tagger's 32-number embedding: a learned layer where sounds of a kind lie together (trained on labelled libraries to tell 23 kinds apart, loops from one-shots, and what people call sounds) | what a sound *is*, across the descriptors: the best single aspect on held-out sounds ([below](#how-well-it-works)) |
 | Rhythm | onsets per second after the first (spectral flux of the mel bands that also raises the level 3 dB), the file's length | loops apart from one-shots, a 4-bar loop apart from a 1-bar one |
 
 Frames are 23 ms (1024 samples), a quarter hop; the amplitude envelope is in 2 ms blocks. Essentia computes each
@@ -118,8 +124,10 @@ finds that fingerprints changed for a tenth as many files as they describe, or t
 (on at most 20 000 of its fingerprints, without holding up the index's other threads).
 
 The weights: Timbre 0.5, TimbreMotion 1.5, Spectrum 2.5, Envelope 2, Pitch 0.5, Rhythm 0.5 (tuned on a 5 000-file
-Splice library for the module's own descriptors, rounded rather than taken at the optimum), and TimbreSpread,
-Contrast, SpectralShape, Tonality 1 each: untuned, round, and each measured to help on its own (below). They are the
+Splice library for the module's own descriptors, rounded rather than taken at the optimum), TimbreSpread, Contrast,
+SpectralShape, Tonality 1 each: untuned, round, and each measured to help on its own (below); Embedding 3 (measured on
+both halves of Dirt-Samples, which the tagger never trained on: more gained nothing more); Tags 0, always (the
+distance stops before them: they cost a search nothing). They are the
 extractor's (`FeatureSchema::weights`); a search could take others (`SoundIndexOptions::weights`).
 
 ### How well it works
@@ -161,6 +169,22 @@ stay. Alone, Contrast (0.390) beats every one of the module's own aspects (the b
 are mostly neighbours a listener would call close (claps and snares, open hats and crashes, sub basses and long 808
 kicks) or files whose names don't say what they are.
 
+**The tagger's embedding** (the Embedding aspect, [below](#sound-tagging-what-a-sound-is-and-the-words-for-it)),
+measured the same way on Dirt-Samples as it is in the repository's history now (2 038 files, without the 30 loops
+added above, so 583 one-shot and 10 loop queries), the queries halved by folder (`--split`), the tagger never having
+heard any of them:
+
+| P@10, one-shots | descriptors alone | **with the embedding (weight 3)** |
+|---|---|---|
+| mean over kinds, one half | 0.505 | **0.535** |
+| mean over kinds, the other | 0.407 | **0.439** |
+| all queries, the other half | 0.577 | **0.610** |
+| P@1, mean over kinds, one half | 0.640 | **0.704** |
+
+Alone, the embedding (0.495 on the first half) beats every descriptor aspect (Contrast 0.423): it was trained to say
+what a sound *is*, and puts sounds of a kind together; the descriptors still tell one kick from another. Weights 2 to 5
+all help on both halves, from 3 on no more.
+
 The module's own descriptors had 0.694 on the 5 091-file Splice library they were tuned on (kicks 0.84, snares 0.79,
 closed hats 0.53): that library's labels are cleaner than Dirt-Samples' file names, so the two sets' numbers don't
 compare with each other, only the extractors on one set.
@@ -176,12 +200,185 @@ Speed (a release build on a 4-core cloud machine, the index's own analysers at b
 
 ### What would make it better
 
-A learned embedding as an aspect of its own: an extractor ([FeatureExtractor.h](../intelligence/src/similarity/FeatureExtractor.h))
-whose schema has Essentia's descriptors and an `Embedding` aspect (a small model's output, or a projection of it), its
-weight set by the benchmark. Nothing else changes: the index, the store and the comparison follow the schema, and the
-fingerprints saved by the previous extractor are made again. An embedding small enough to run in the background (an
-EfficientAT or a distilled OpenL3, a few MB) would mostly help *across* kinds; the descriptors stay what tells one kick
-from another. Essentia's TensorFlow models would bring their runtime; ONNX Runtime with an exported model is lighter.
+The Embedding aspect is now the sound tagger's, learned from its descriptors ([below](#sound-tagging-what-a-sound-is-and-the-words-for-it)).
+An audio model's embedding (an EfficientAT or a distilled OpenL3, a few MB) would see what the descriptors don't (they
+are the tagger's only input), and would help most *across* kinds; it would bring a runtime (ONNX Runtime is the
+lightest) and decoding's cost again. The descriptors stay what tells one kick from another.
+
+## Sound tagging: what a sound is, and the words for it
+
+[tagging/](../intelligence/src/tagging) (namespace `sub::intelligence::tagging`) tells what every sound of the
+library is (a kick, a snare, a closed hat... bass, a synth, keys, vocals: 23 kinds), whether it is a loop, its note, how it
+sounds among its own kind (bright, hard, long, low, distorted, wet, acoustic, electric, synthesized, pitched) and what
+people would call it (punchy, dubstep, lo-fi, 808...); and reads what a search's words ask for ("hard trap snare",
+"low chill kick", "long crash", "vocal chop", "c#2 bass"). The browser searches and labels files with it, and its Best
+sort weighs how well each fits the project ([browser.md](browser.md)). It costs no analysis of its own: it reads the
+similarity's fingerprint, and runs as part of making it.
+
+### What was weighed
+
+| Approach | Quality | Cost | Verdict |
+|---|---|---|---|
+| A learned audio model (a CNN or transformer on spectrograms: PANNs, CLAP, EfficientAT; what commercial taggers use) | the most accurate at *what* a sound is, given millions of labelled clips | a runtime and a model of tens to hundreds of MB, 10–50 ms a file, and decoding again | not here: the overhead the similarity avoided ([above](#what-was-weighed)) |
+| Rules over the descriptors (a centroid under 200 Hz is a kick...) | brittle: a tom, an 808, a bass note are all low | none | no |
+| **A small learned model over the descriptors the similarity already has** | the descriptors were made to tell sounds apart; a model learns which combinations say "snare" | 22 µs a sound, 0.8 MB of weights compiled in | **chosen** |
+| Tags from file names only (as the browser's search was) | as good as the names: "SD_0003.wav", "Untitled 7.wav" say nothing | none | kept: names still match first |
+
+### The model ([SoundTagger.h](../intelligence/src/tagging/SoundTagger.h), [tools/sound_tagger](../tools/sound_tagger))
+
+Five small networks (an ensemble), each 80 inputs (the fingerprint's descriptors less the file's length, held to their
+training range and standardized) → 192 → 96 → 32 (ReLU) → five heads: the kinds (softmax, the members' logits
+averaged and temperature-scaled), loop or one-shot, acoustic / electric / synthesized, NSynth's ten qualities (two of
+which, distortion and reverb, are used), and 32 words people call sounds (each a sigmoid). The 32-number layer is the
+sound's **embedding**: where sounds of a kind lie together. Weights are compiled in
+([TaggerModel.inc](../intelligence/src/tagging/TaggerModel.inc), generated): no file to load or lose, nothing to
+download. Trained with AdamW and a one-cycle schedule for 40 epochs, inputs noised and features dropped at random,
+labels smoothed, each head's loss counted only where a corpus labels it, kinds balanced (a kind's sounds weigh
+1/√its count) and each word's positives as much as its negatives.
+
+What it learned from (all open; [tools/sound_tagger/README.md](../tools/sound_tagger/README.md) says where each comes
+from and how to make the model again):
+
+| Corpus | Sounds | Teaches |
+|---|---|---|
+| tidal-drum-machines: 70 drum machines | 2 599 | 13 kinds of drums, from machines the model never saw |
+| Freesound One-Shot Percussive Sounds (CC0 and CC BY only) | 9 535, 610 uploaders | real drums, acoustic and electronic; and the words: each sound's Freesound tags read into 32 words |
+| NSynth (validation and test splits) | 16 774 notes | 10 instrument families; acoustic, electric or synthesized; distortion, reverb |
+| TinySOL | 2 224 notes | strings, brass, woodwinds at 44.1 kHz |
+| Notes cut short (NSynth's, TinySOL's), 0.08–1.5 s | 7 000 | a tonal sound can be short: shortness isn't a drum's |
+| Vocal chops: LibriSpeech dev-clean, VocalSet | 4 777 (of 5 000 parts: the rest were silence) | spoken and sung vocals, a syllable to a phrase |
+| Loops made from the drum machines' hits and NSynth's notes, 70–180 BPM | 1 700 | loops against one-shots |
+| Sounds synthesized as producers make them: plucks, stabs, leads, pads, arps; sub, 808, reese, square and saw basses; sine-sweep kicks (with a click and without), tone-and-noise snares, noise and square-wave hats, burst claps, toms, rims, cowbells | 4 000 | the synth kind (NSynth's free splits have no synth leads), synth basses, and drums made of oscillators and noise rather than recorded |
+
+NSynth, Freesound's sounds and LibriSpeech are 16 kHz: nothing above 8 kHz. So every full-band corpus is trained on
+twice, once as it is and once band-limited to 8 kHz (resampled through 16 kHz): what tells a hat from a tom has to be
+in more than the top octave, and a library's 16 kHz samples are tagged as its 44.1 kHz ones are.
+
+### Reading it ([SoundTagger.h](../intelligence/src/tagging/SoundTagger.h))
+
+- **The kind** is said only when its probability is at least 0.70: where held-out predictions are right 90% of
+  the time. Below that the sound has no kind (its row says how it sounds), and searches still find it by its three
+  likeliest kinds together (at least 0.5).
+- **Attributes, among its own kind.** Each kind's 20th and 80th percentiles of a descriptor in the training corpora
+  are 0.1 and 0.9 (a logistic between): Bright by the spectral centroid, Hard by the log attack time (shorter: harder),
+  Long by the effective duration, Low by the sub-bass share (drums) or the note (tonal sounds). So a bright kick is one
+  of the brighter kicks, not a kick as bright as a hat. Distorted and Wet are NSynth's qualities, Acoustic, Electric
+  and Synthetic the source head, Pitched YIN's confidence.
+- **Words, among its own kind**: a sound is called a word when its score is above the word's 60th percentile among
+  the training sounds of its kind (the "hard" snares are the harder 40% of snares). A word is used only if, held out,
+  it told the sounds people tag with it from the others (AUC ≥ 0.7, `kWordLearned`); otherwise searches read it as
+  the attributes it stands for.
+- **The note**: the fingerprint's pitch (YIN's, `PitchConfidence` and `Pitch`), for tonal sounds and tuned kicks and
+  toms.
+
+### Words for sounds ([SoundWords.h](../intelligence/src/tagging/SoundWords.h))
+
+A search's words are read as kinds ("kicks", "hi-hat", "cymbal": crash or ride, "piano": keys, "vox": vocal, "pluck":
+a synth...), loops or one-shots ("break", "chop"), notes ("c2", "f#"), descriptions (a blend of attributes and learned
+words, each weighted: "punchy" is 0.6 the learned word and 0.4 a hard attack), genres (0.6 the learned word, 0.4 the
+attributes it stands for: "dubstep" is the learned word with distortion, synthesis and a hard attack; a word not
+learned well enough is left out of its blend, so "trap", which only 24 sounds were tagged with, is the learned hip-hop
+word with synthesis and a hard attack), and moods ("chill", "emo", "cinematic"...), which no corpus labels: they are blends of
+attributes too, but they only order sounds, never leave one out. A sound is heard as a word when its degree is 0.5 or
+more; a search's score for a sound is the geometric mean of its words' degrees. A sound's label is its kind, "Loop",
+its note, and its three clearest traits, each saying something different ("Snare · Punchy · Bright").
+
+### Fitting a project ([ProjectFit.h](../intelligence/src/tagging/ProjectFit.h))
+
+How well a sound fits a project, for the browser's Best sort: 0.35 × its genre and character (the learned words the
+project's sounds are clearly more than not, weighed by how much, against the sound's degrees of them) + 0.35 × its
+nearest neighbour among the project's sounds (how close its description, attributes and learned words, is to the
+closest of up to 12 of them) + 0.3 × its key (a pitched sound on the project key's tonic or fifth 1, in its scale
+0.85, out of it 0.1; unpitched 0.5). A project the tagger knows nothing of fits everything at 0.5. The project's
+sounds are the files its audio clips and samplers play; its key the project's, or the one its notes are in
+(`Session.harmony`).
+
+### How well it works
+
+Measured by [train.py](../tools/sound_tagger/train.py) in two ways. **Grouped cross-validation** over the training
+corpora, five folds, whole drum machines, instruments, Freesound uploaders, speakers and singers held out together
+(so a fold's sounds are of machines and people the model never heard):
+
+| Held out | Sounds | Accuracy | Macro F1 | Right where it names a kind | Names a kind for |
+|---|---|---|---|---|---|
+| Drums (13 kinds), whole drum machines | 2 599 | 78.5% | 0.750 | 89.9% | 68.9% |
+| NSynth's notes, whole instruments | 16 774 | 77.2% | 0.741 | 88.3% | 65.7% |
+| TinySOL's notes, whole instruments | 2 224 | 81.0% | 0.744 | 87.8% | 79.0% |
+| **All 23 kinds, every corpus** | 43 991 | **78.6%** | 0.742 | **90.0%** | 70.3% |
+
+By kind (recall): kicks 92%, claps 93%, shakers 89%, tambourines 88%, closed hats 84%, rides 84%, snares 81%, toms
+79%, crashes 79%, cowbells 71%, open hats 67%, other percussion 59%, rims 50%; strings 97%, organs 84%, mallets 83%,
+guitars 81%, woodwinds 81%, keys 80%, basses 73%, brass 54%, NSynth's vocals 27% (its "vocal" family is mostly
+synthesized voices, which now go with the synths; real speech and singing are found: Dirt-Samples, below). Loops
+against one-shots: 99.2% (AUC 0.9995). The note: 92% of notes have one, its pitch class right for 93.6% of them
+(to the semitone 83%, octave errors being YIN's). Acoustic against electronic drums (Freesound's): AUC 0.73.
+
+And **Dirt-Samples** (TidalCycles' 2 038 files, the similarity's benchmark library), never trained on, its
+134 near-duplicates among the drum machines' sounds (the same machines' samples) left out of training first.
+Labels are its folders' names (bd, sn, hh, cp... `DIRT_KINDS` in corpora.py: 779 of its files; its bassdm folder holds
+bass drums, kicks), its loops the breaks folders and
+files named loops:
+
+| Dirt-Samples | Sounds | Accuracy | Right where it names a kind | Names a kind for |
+|---|---|---|---|---|
+| Drums | 426 | 75.8% | **91.5%** | 66% |
+| Tonal sounds | 353 | 44.2% | 76.2% | 42% |
+| **All** | 779 | **61.5%** | **86.2%** | 55% |
+
+By kind (recall, then precision): kicks 91% / 66%, snares 89% / 84%, toms 100% / 53%, open hats 91% / 67%, crashes
+81% / 71%, claps 83% / 62%, closed hats 16% / 62%, other percussion (congas, tablas) 55% / 54%; vocals (speech, a
+speech synthesizer, spoken numbers) 65% / 75%, synths (stabs, plucks, arps, hoovers) 47% / 68%, basses 43% / 90%,
+woodwinds (saxophone notes) 18%, keys (a Casio's notes) 3%. Loops against one-shots: AUC 0.999 (96% right at 0.5).
+Of the sounds in Dirt-Samples' 150 folders that name no kind (birds, glitches, speech fragments, numbers...), 46% are
+said to be one of the kinds anyway: the kinds are what a sample browser lists, not every sound there is.
+
+What it gets wrong are mostly neighbours (claps and snares, closed and open hats, a sub bass and a long 808 kick, a
+tom and a low conga) and Dirt's oddities (its "vocals" are a talking calculator's numbers and a speech synthesizer's
+diphones). The words, held out by uploader (AUC: 0.5 is chance; "among its kind" is how well it orders the snares
+called hard among snares):
+
+| Word | Sounds tagged with it | AUC | AUC among its kind |
+|---|---|---|---|
+| dubstep | 179 | 0.91 | 0.88 |
+| techno | 226 | 0.85 | 0.83 |
+| punchy | 295 | 0.83 | 0.81 |
+| rock | 67 | 0.82 | 0.85 |
+| trance | 101 | 0.82 | 0.57 |
+| hard | 201 | 0.79 | 0.82 |
+| electronic | 1 071 | 0.79 | 0.71 |
+| distorted | 96 | 0.79 | 0.75 |
+| fat | 184 | 0.79 | 0.75 |
+| deep | 178 | 0.78 | 0.62 |
+| hip-hop | 90 | 0.78 | 0.43 |
+| lo-fi | 41 | 0.76 | 0.94 |
+| industrial | 59 | 0.76 | – |
+| glitch | 42 | 0.76 | 0.76 |
+| wooden | 295 | 0.76 | 0.74 |
+| dnb | 199 | 0.73 | 0.74 |
+| acoustic | 1 158 | 0.71 | 0.78 |
+| *not used* (under 0.7): 808 0.68, vintage 0.68, heavy 0.67, 909 0.66, edm 0.66, reverb 0.61, house 0.60, processed 0.57, high 0.52, trap 0.51 (24 sounds), metallic 0.49, tight 0.46, bright 0.45, dry 0.39, soft 0.34 | | | |
+
+The words not learned are mostly ones Freesound's uploaders use for what is measured better: bright, soft, tight,
+high, dry (the attributes do them, among the kind), or too few sounds were tagged with (trap: 24).
+
+Speed (a release build, one core of a 4-core cloud machine):
+
+| | |
+|---|---|
+| the model, a sound (the ensemble of five, on the analyser's thread) | 22 µs: 0.2% of the sound's analysis (about 10 ms) |
+| reading a fingerprint into tags (`describe()`) | 0.25 µs |
+| a library's tag table, 200 000 files | 45 ms, on a thread of its own, at most every 1.5 s while files are analysed |
+| a search hearing "hard trap snare" | 2.6 ms more per 10 000 files |
+| the Best sort's project fit | 0.8 µs a file the first time, then kept until the project or the tags change |
+
+### What would make it better
+
+- A larger, better labelled one-shot library (Freesound's tags are noisy: a sound not tagged "punchy" may well be):
+  the model, the corpora script and the measures are ready for it.
+- Moods from data: no open library labels sound by mood; listeners' ratings of a few thousand samples would let
+  "chill" and "emo" be learned as the genres are.
+- Keys from samples' names (the audio clips' parser) as the tagger's note for loops, which YIN can't give.
+- An audio model's embedding, if one small enough to run in the background appears: as another head's input.
 
 ## Harmony: chords and keys from MIDI
 
@@ -568,6 +765,11 @@ the arrangement.
 | [labels/Effects.h](../intelligence/src/labels/Effects.h) | `Effect`, `classify()`, `readDevice()` (`Trait`s and a summary), `findParam()`, `fraction()`, `readsParam()`, `paramsInState()` |
 | [labels/NoteProfile.h](../intelligence/src/labels/NoteProfile.h) | `NoteProfile`, `profile()`, `readNotes()`, `describe()`, `noteName()` |
 | [labels/TrackLabels.h](../intelligence/src/labels/TrackLabels.h) | `labelTracks()`: a project's tracks' labels |
+| [tagging/SoundTagger.h](../intelligence/src/tagging/SoundTagger.h) | `Kind`, `Attribute`, `infer()` (the model: the embedding and the outputs, `output::`), `SoundTags` and `describe()` (a fingerprint read: kinds, loop, attributes, words, note), `wordDegree()`, `kindThreshold()`, `modelId()`, `noteName()` |
+| [tagging/TaggerModel.inc](../intelligence/src/tagging/TaggerModel.inc) | The model's weights, scaling, thresholds, each kind's percentiles and each word's cuts (generated by [tools/sound_tagger/train.py](../tools/sound_tagger/train.py)) |
+| [tagging/SoundWords.h](../intelligence/src/tagging/SoundWords.h) | `Meaning` and `meaningOf()` (what a word asks of a sound), `WordQuery` (a search's words, heard in sounds), `labelWords()`, `label()`, `wordTitle()` |
+| [tagging/SoundTagTable.h](../intelligence/src/tagging/SoundTagTable.h) | `SoundTagTable`: a library's tags by the hash of each path (`pathHash()`, `extend()`) |
+| [tagging/ProjectFit.h](../intelligence/src/tagging/ProjectFit.h) | `ProjectFit`: how well a sound fits a project's sounds and key; `ProjectKey` |
 
 What the module needs of the operating system (file stamps, `readFile()`/`writeFileAtomically()`, background priority,
 path keys, WTF-8 to UTF-16) and the stores' fields and checksum (`ByteWriter`, `ByteReader`, `fnv1a()`) are the
@@ -581,6 +783,7 @@ platform layer's, which the browser and the engine share: [platform.md](platform
 | [Harmony.h](../app/src/intelligence/Harmony.h) | `Harmony` (`Session.harmony`): the song's notes (`songNotes()`), its chords and key inferred from them when asked after a change, the key (the project's, else inferred), `shown` (the setting C toggles) |
 | [Humanizer.h](../app/src/intelligence/Humanizer.h) | `Humanizer` (`Session.humanizer`): the velocity model loaded on first use (`velocityModelPath()`, `velocityAvailable`), `velocities(targets, amount)` with each track's notes as context, `statusMessage` |
 | [TrackLabels.h](../app/src/intelligence/TrackLabels.h) | `TrackLabels` (`Session.trackLabels`): the project's facts (`facts()`, `namedByUser()`), its labels made again when asked after a change, `label()`, `toolTip()`, `describe()`, `changed`, `revision` |
+| [SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h) | `SoundSuggestions` (`Session.suggestions`): the project's sounds and key as a `ProjectFit`, `fit()` for the browser's Best sort, `summary` ("Techno, Punchy · A Minor"), made again after the project, the key or the tags change |
 | [TrackSearch.h](../app/src/intelligence/TrackSearch.h) | `TrackSearch` (`Session.trackSearch`): the find bar's matches, names first, then labels (`find()`), `query`, `next()`, `previous()`; the clip view's area (`setArea()`, `clipInArea()`) |
 
 A plug-in's preset's name is the engine's to read ([engine/plugins.md](engine/plugins.md#preset-names)): the
@@ -606,6 +809,11 @@ the file stays to analyse next time, neither analysed nor failed. Searches are s
 
 Background priority is the browser indexer's: `THREAD_MODE_BACKGROUND_BEGIN` on Windows (CPU, I/O and memory
 priority), the lowest nice value and the idle I/O class on Linux. Playback and the UI never wait on it.
+
+The sound tagger runs inside the extractor, on whichever thread makes a fingerprint. Each analysed entry's tags
+(`tagging::SoundTags`, read from its fingerprint by `describe()`) are kept beside it, made when it is analysed or read
+back from the store; `tags()` copies the library's into a `SoundTagTable` (without the lock while it builds the
+table), the same table while nothing changed; `tagsOf(path)` gives one file's, by its key.
 
 Nothing of the module's ever calls into the application but the wake callback, which (as the browser's) is called
 once until the next `take()`, and only posts: `SoundSimilarity` takes on its own thread, then emits `found` (a
@@ -660,8 +868,9 @@ format, or with a bad checksum, is ignored and everything is analysed again: bum
 and it is analysed again; files of the library not in the store are analysed, and only they (incremental indexing). The
 library's statistics are saved after the files.
 
-Memory and disk: about 400 bytes a file (81 features, the path, the stamp): 0.8 MB for 2 000 files, 2 MB for 5 000,
-about 120 MB for 300 000.
+Memory and disk: about 830 bytes a file (181 features: the descriptors, the tagger's embedding and outputs; the path,
+the stamp; and its tags, about 100 bytes): 1.7 MB for 2 000 files, 4 MB for 5 000, about 250 MB for 300 000. (Before
+the tagger, 400 bytes.)
 
 ## The application side
 
@@ -673,6 +882,22 @@ searched from.
 
 A `SimilarSounds` keeps its result alive; `scorer()` is what the browser's search sorts by, `best(n)` what the sampler
 and the drum rack will step through to swap in similar sounds, and `similarity(path)` takes Qt's paths.
+
+`SoundSimilarity::tags()` is the library's tag table as last taken: at once when the saved fingerprints are read,
+then, while fingerprints or the library change, at most every 1.5 s (`kTagsMs`), made on a thread of its own and
+handed over with `tagsChanged`; the browser searches and labels with it ([browser.md](browser.md)). `tagsOf(path)`
+gives one file's tags however its path is spelt.
+
+### Sound suggestions: the application side
+
+`SoundSuggestions` ([SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h), `Session.suggestions`) lives
+on the application's thread. Its project's sounds are the files its tracks' audio clips play (the file a reversed
+clip was made from) and its samplers' samples, each once, as the sound similarity tags them (`tagsOf()`); its key
+`Session.harmony`'s (the project's, or inferred). A change to the tracks, clips, devices or their state, the key, or
+the tags makes them again 300 ms after the last of a burst (`kSettleMs`), then `changed`: the browser searches a list
+under Best again. `fit()` is what the Best sort weighs, each file's fit worked out the first time a search asks for
+it and kept until the next change; `summary` is what the browser's footer says the project is ("Techno, Punchy · A
+Minor").
 
 ### Harmony: the application side
 
@@ -710,11 +935,24 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   velocity (only the targets' mean, which levels it), and the same part always comes out the same. Only targets
   change. The vendored runtime (`intelligence/third_party/humanbro`, outside the boundary check's folders) includes
   nothing of Qt either.
+- Sound tags are pure functions of a fingerprint and the model compiled in: the same sound always has the same tags.
+  The model sees only the descriptors the similarity makes; it decodes nothing and starts no thread (it runs where the
+  fingerprint is made, on the index's threads). Dirt-Samples, the similarity's and the tagger's benchmark, is never
+  trained on.
 - Track labels are pure functions of the facts: the same project always gives the same labels, and every label says
   what it was made from (its details). Nothing is read from disk, kept between calls or run in the background; the
   application gathers the facts on its own thread, only when asked after a change.
 
 ## Extending it
+
+- **A kind of sound**: its name in `KINDS` (corpora.py, tools/sound_tagger) and labelled sounds of it in a corpus,
+  `Kind` and `kindName()` (SoundTagger.cpp, in the model's order), its words in `vocabulary()` (SoundWords.cpp), and a
+  sidebar entry in `soundCategories()` if it deserves one; then train ([tools/sound_tagger/README.md](../tools/sound_tagger/README.md)).
+- **A word people call sounds**: its tags in `WORDS` (corpora.py) and a blend in `vocabulary()`, then train; it is
+  used once it is learned (held out, AUC ≥ 0.7), and its blend's attributes stand in for it until then.
+- **A mood or a description** (no data): a line in `vocabulary()`: a `mood()` orders, a `blend()` filters.
+- **Retraining**: train.py writes TaggerModel.inc and the tests' TaggerReference.inc together; a new model's
+  `modelId()` changes the fingerprints' schema, so libraries are analysed again once.
 
 - **A word for the labels**: a line in `kEntries` (Words.cpp): its kind, family, rank, how it shows, and where it is
   read (a preset's category codes in presets only). Filler goes in `kNoise`.
@@ -772,6 +1010,15 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   result, its threads and its source, the statistics saved and searched with, kept until a library is taken and
   measured again as it changes, an extractor that can't be made, another extractor's fingerprints made again, closing
   in the middle of a file, a search replaced or cancelled).
+- [tests/intelligence/test_sound_tagging.cpp](../tests/intelligence/test_sound_tagging.cpp) (`intelligence_tests`): the
+  compiled-in model against what it gave in PyTorch (TaggerReference.inc, written with it); probabilities that sum to
+  one; drums told apart (synthesized kicks, hats, snares) and loops from one-shots; a tone's note, noise's none;
+  attributes graded among a sound's own kind (a centroid bright for a kick is dark for a hat); an unsure kind not
+  said; words read as kinds, plurals, notes, blends, moods (each blend's weights summing to one, only learned words in
+  it); a search's words heard in sounds, moods never leaving any out; labels; the tag table's hashes; how sounds fit
+  a project (its key, its sounds); the model's speed. [test_sound_index.cpp](../tests/intelligence/test_sound_index.cpp):
+  the index's tags of its library, the same table until something changes, read back from the store without
+  analysing.
 - [tests/intelligence/test_harmony.cpp](../tests/intelligence/test_harmony.cpp) (`intelligence_tests`): naming chords
   and keys, scales and their triads; the key (cadences in major and minor, the bass telling C → G from E minor, too
   little to tell); chords: triads and sevenths, inversions, a progression with its bass on another track, a melody's
@@ -813,7 +1060,9 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
 - [tests/app/test_sound_similarity.cpp](../tests/app/test_sound_similarity.cpp): the browser's files analysed; Find
   Similar's list, sort, status, filtering by text and places; ending it (another sort, another list, clearing, Ctrl+F);
   a clip's part of a loop; a sound outside the library and `SimilarSounds`; files found later; a sound that can't be
-  analysed; the result menu.
+  analysed; the result menu. Samples found by how they sound (a kick named "Untitled" found by "kick", after those
+  named so; its row's label; Samples › Kicks; words the tagger doesn't know matching names only); the Best sort's
+  project fit (`SoundSuggestions`: what is like the project's sounds first).
 - [tests/app/test_browser_native.cpp](../tests/app/test_browser_native.cpp): the backend's `Sort::Score` against the
   reference.
 - The UI: the similar bar ([test_ui_browser.cpp](../tests/app/test_ui_browser.cpp)), an audio clip's *Find Similar
@@ -831,6 +1080,16 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   than MFCCs or temporal descriptors alone.
 - Ableton Live 12's *Similarity Search* and *Similar Sample Swapping*; Sononym's aspects (overall, spectrum, timbre,
   pitch, amplitude); Freesound's similarity (Essentia descriptors, PCA, nearest neighbours).
+- Engel et al., "Neural Audio Synthesis of Musical Notes with WaveNet Autoencoders" (ICML 2017): NSynth. Cella et
+  al., "OrchideaSOL: a dataset of extended instrumental techniques for computer-aided orchestration" (ICMC 2020):
+  TinySOL. Ramires et al., "Neural Percussive Synthesis Parameterised by High-Level Timbral Features" (ICASSP 2020):
+  the Freesound One-Shot Percussive Sounds. Panayotov et al., "LibriSpeech: an ASR corpus based on public domain
+  audio books" (ICASSP 2015). Wilkins et al., "VocalSet: A Singing Voice Dataset" (ISMIR 2018).
+- Lakshminarayanan, Pritzel, Blundell, "Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles"
+  (NeurIPS 2017); Guo et al., "On Calibration of Modern Neural Networks" (ICML 2017): the tagger's ensemble and
+  its temperature scaling.
+- Font, Serrà, Serra, "Class-based tag recommendation and user-based evaluation in online audio clip sharing"
+  (Knowledge-Based Systems, 2014): Freesound's tags as labels for what sounds are called.
 - Krumhansl and Kessler, "Tracing the dynamic changes in perceived tonal organization in a spatial representation of
   musical keys" (1982): the key profiles; Krumhansl, *Cognitive Foundations of Musical Pitch* (1990).
 - Pardo and Birmingham, "Algorithms for chordal analysis" (Computer Music Journal, 2002): chord templates scored

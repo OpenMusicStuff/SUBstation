@@ -1,6 +1,7 @@
 #pragma once
 // The browser's sidebar as a flat list: section headings, entries and their
-// sub-entries (one level, always shown), each with the scope it lists.
+// sub-entries (one level; an entry's are left out while it is collapsed), each
+// with the scope it lists.
 //
 //   CATEGORIES
 //   All · Samples · Built-in (its categories) · Plug-ins (Instruments, Audio
@@ -30,6 +31,8 @@ public:
         QString icon;          // "search", "waveform", "plugin", "preset", "folder" or ''
         QString toolTip;
         bool dim = false;      // shown dimmed (headings, "Add Folder…")
+        bool expandable = false;  // it has sub-entries: shown with an arrow that collapses or expands it
+        bool expanded = false;    // its sub-entries are listed
     };
 
     enum Role {
@@ -41,6 +44,8 @@ public:
         ToolTipRole,
         DimRole,
         SelectableRole,
+        ExpandableRole,
+        ExpandedRole,
     };
     Q_ENUM(Role)
 

@@ -24,6 +24,7 @@
 #include <cmath>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <random>
 #include <string>
@@ -702,6 +703,87 @@ private Q_SLOTS:
     }
 
     // --- Keeping up to date ---
+
+    // What files sound like (the application's matcher, by the hash of their
+    // paths): a term matches a file whose name or folder has it, or that is
+    // heard as it; a sound filter leaves files out whatever their names; files
+    // alike by name are ordered by how well they sound like the terms. The Best
+    // sort blends matching, use and fit.
+    void soundsMatchAndBestBlends() {
+        const QString lib = tmp_->filePath(QStringLiteral("lib"));
+        for (const char* name : {"Drums/a.wav", "Drums/b.wav", "Drums/c.wav", "Drums/kick 1.wav", "Other/d.wav"})
+            touch(lib + QLatin1Char('/') + QString::fromLatin1(name));
+        Backend b({lib});
+        QVERIFY(b.wait());
+        const std::string root = toBackendPath(normalPath(lib));
+        auto hashOf = [&](const char* folder, const char* name) {
+            const std::string dir = backend::Snapshot::join(root, folder);
+            const uint64_t h = backend::fileHash(backend::folderHash(dir), name);
+            // (the same as a hash of the whole path, as the tag table makes it)
+            const uint64_t whole = sub::platform::fnv1a(backend::Snapshot::join(dir, name));
+            if (h != (whole ? whole : 1)) qFatal("fileHash differs from the path's hash");
+            return h;
+        };
+        struct Heard {
+            uint64_t bits;
+            float score;
+            bool keep;
+        };
+        class Matcher final : public backend::SoundMatcher {
+        public:
+            std::map<uint64_t, Heard> files;
+            bool hear(uint64_t hash, uint64_t& heard, float& score) const override {
+                const auto it = files.find(hash);
+                if (it == files.end()) return true;
+                heard = it->second.bits;
+                score = it->second.score;
+                return it->second.keep;
+            }
+        };
+        auto matcher = std::make_shared<Matcher>();
+        matcher->files[hashOf("Drums", "a.wav")] = {1, 0.6f, true};   // heard as the first term
+        matcher->files[hashOf("Drums", "c.wav")] = {1, 0.9f, true};   // the same, better
+        matcher->files[hashOf("Drums", "b.wav")] = {0, 0.1f, true};
+        matcher->files[hashOf("Other", "d.wav")] = {1, 1.0f, false};  // left out by a filter
+        // (`filter`: the matcher is there with no terms too, as a sidebar's sound's is.)
+        auto run = [&](const QString& text, backend::Sort sort, std::function<float(uint64_t)> fit = {}, bool filter = true) {
+            backend::Query query;
+            query.text = text.toStdString();
+            query.sort = sort;
+            query.groups = {kAudioGroup};
+            query.sounds = [matcher, filter](const std::vector<std::string>& terms) -> std::shared_ptr<const backend::SoundMatcher> {
+                if (terms.size() > 1 || (terms.size() == 1 && terms[0] != "kick")) qFatal("the terms aren't the query's");
+                return terms.empty() && !filter ? nullptr : matcher;
+            };
+            query.fit = std::move(fit);
+            const uint64_t generation = b.native.search(std::move(query));
+            if (!b.wait()) return QStringList();
+            const auto result = b.native.take().result;
+            if (!result || result->generation != generation) return QStringList();
+            QStringList names;
+            const SearchResult rows(result, {});
+            for (const BrowserItem& item : rows.items(0, rows.total())) names << item.name;
+            return names;
+        };
+        // "kick": the file named so first, then those heard as it, the best first; not b (neither), not d (left out).
+        QCOMPARE(run(QStringLiteral("kick"), backend::Sort::Rank),
+                 (QStringList{QStringLiteral("kick 1.wav"), QStringLiteral("c.wav"), QStringLiteral("a.wav")}));
+        // No terms: everything the filter keeps.
+        QCOMPARE(run({}, backend::Sort::Name),
+                 (QStringList{QStringLiteral("a.wav"), QStringLiteral("b.wav"), QStringLiteral("c.wav"), QStringLiteral("kick 1.wav")}));
+        // Best, no terms: by fit (nothing used); under a sound filter, how well each sounds like its word too.
+        auto fit = [&](uint64_t hash) { return hash == hashOf("Drums", "b.wav") ? 0.9f : hash == hashOf("Drums", "a.wav") ? 0.7f : 0.2f; };
+        QCOMPARE(run({}, backend::Sort::Best, fit, false).mid(0, 2), (QStringList{QStringLiteral("b.wav"), QStringLiteral("a.wav")}));
+        QCOMPARE(run({}, backend::Sort::Best, fit).mid(0, 3),
+                 (QStringList{QStringLiteral("a.wav"), QStringLiteral("c.wav"), QStringLiteral("b.wav")}));
+        // Best with terms: matching counts most (the named one, and c, heard best, before a).
+        const QStringList bestKick = run(QStringLiteral("kick"), backend::Sort::Best, fit);
+        QCOMPARE(bestKick.size(), 3);
+        QVERIFY(bestKick.indexOf(QStringLiteral("c.wav")) < bestKick.indexOf(QStringLiteral("a.wav")));
+        // Used lately counts too: a file used ranks over one that only fits.
+        b.native.setUsage({{audioKey(lib + QStringLiteral("/Drums/c.wav")).toStdString(), 3.0, 0.0}}, 30.0);
+        QCOMPARE(run({}, backend::Sort::Best, fit, false).first(), QStringLiteral("c.wav"));
+    }
 
     void savedIndexIsCheckedNotListedAgain() {
         Random rng(11);

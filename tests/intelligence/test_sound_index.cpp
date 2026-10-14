@@ -18,6 +18,7 @@
 #include "similarity/EssentiaExtractor.h"
 #include "similarity/SoundIndex.h"
 #include "similarity/SoundStore.h"
+#include "tagging/SoundTagTable.h"
 
 using namespace subtest;
 using namespace sub::intelligence;
@@ -164,6 +165,39 @@ TEST_CASE("a library is analysed in the background, and a search ranks it by sim
         CHECK_NEAR(result->similarity(result->best[0].path), result->best[0].similarity, 1e-6);
         CHECK(std::isnan(result->similarity("not/in/the/library.wav")));
     }
+}
+
+TEST_CASE("the index tells what each analysed file is: its tags, the same table until something changes") {
+    const Library library;
+    const std::string store = utf8(tempDir() / "tags-index.bin");
+    std::filesystem::remove(tempDir() / "tags-index.bin");
+    {
+        SoundIndex index(options(store));
+        index.setLibrary(library.paths);
+        REQUIRE(index.waitIdle(30.0));
+        const auto tags = index.tags();
+        REQUIRE(tags != nullptr);
+        CHECK_EQ(tags->size(), library.paths.size());
+        for (const std::string& path : library.paths) CHECK(tags->find(path) != nullptr);
+        CHECK(tags->find("not/in/the/library.wav") == nullptr);
+        CHECK_EQ(tags->find(library.first("kick"))->kinds[0].kind, tagging::Kind::Kick);
+        CHECK(index.tags() == tags);  // (nothing changed: the same table)
+        // The library loses a file: a new table without it.
+        std::vector<std::string> fewer(library.paths.begin() + 1, library.paths.end());
+        index.setLibrary(fewer);
+        REQUIRE(index.waitIdle(30.0));
+        const auto after = index.tags();
+        CHECK(after != tags);
+        CHECK_EQ(after->size(), fewer.size());
+        CHECK(after->find(library.paths.front()) == nullptr);
+        index.close();
+    }
+    // Read back from the store: described again, without analysing.
+    SoundIndex again(options(store));
+    again.setLibrary(library.paths);
+    REQUIRE(again.waitIdle(30.0));
+    CHECK_EQ(again.status().analysedThisRun, 0u);
+    CHECK_EQ(again.tags()->size(), library.paths.size());
 }
 
 TEST_CASE("fingerprints are saved, and only new or changed files are analysed again") {

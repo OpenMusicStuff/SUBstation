@@ -11,6 +11,7 @@
 #include "platform/Paths.h"
 #include "browser/BrowserSearch.h"
 #include "browser/PathKeys.h"
+#include "browser/SoundSearch.h"
 #include "io/Json.h"
 
 namespace sub::app {
@@ -23,8 +24,9 @@ QString fromUtf8(const std::string& s) { return QString::fromStdString(s); }
 
 // --- SearchResult ------------------------------------------------------------------------
 
-SearchResult::SearchResult(std::shared_ptr<const browser::Result> result, QMap<QString, BrowserItem> items)
-    : result_(std::move(result)), items_(std::move(items)) {}
+SearchResult::SearchResult(std::shared_ptr<const browser::Result> result, QMap<QString, BrowserItem> items,
+                           std::shared_ptr<const intelligence::tagging::SoundTagTable> tags)
+    : result_(std::move(result)), items_(std::move(items)), tags_(std::move(tags)) {}
 
 int SearchResult::total() const { return result_ ? static_cast<int>(result_->hits.size()) : 0; }
 
@@ -42,8 +44,14 @@ std::vector<BrowserItem> SearchResult::items(int start, int count) const {
             const browser::AudioRef ref = result_->snapshot->audio[hit.index];
             const browser::SnapFolder& folder = result_->snapshot->folders[ref.folder];
             const std::string name(folder.files->name(ref.file));
-            out.push_back({fromBackendPath(name), fromBackendPath(browser::Snapshot::join(folder.path, name)),
-                           ItemKind::Audio, fromBackendPath(folder.detail), std::nullopt, {}});
+            const std::string path = browser::Snapshot::join(folder.path, name);
+            BrowserItem item{fromBackendPath(name), fromBackendPath(path), ItemKind::Audio, fromBackendPath(folder.detail),
+                             std::nullopt, {}, {}};
+            if (tags_) {
+                item.tags = soundLabel(tags_.get(), path);
+                if (!item.tags.isEmpty()) item.toolTip = item.path + QLatin1Char('\n') + soundToolTip(tags_.get(), path);
+            }
+            out.push_back(std::move(item));
         } else {
             const browser::ExternalItem& item = result_->groups.at(static_cast<int>(hit.group))->items[hit.index];
             const auto known = items_.constFind(fromUtf8(item.key));
@@ -51,7 +59,7 @@ std::vector<BrowserItem> SearchResult::items(int start, int count) const {
                 out.push_back(*known);
             else
                 out.push_back({fromUtf8(item.name), fromUtf8(item.path), static_cast<ItemKind>(item.kind),
-                               fromUtf8(item.detail), std::nullopt, {}});
+                               fromUtf8(item.detail), std::nullopt, {}, {}});
         }
     }
     return out;
@@ -169,13 +177,17 @@ void FileIndex::setUsage(const Library& library) { backend_->setUsage(usageRecor
 
 uint64_t FileIndex::search(const QString& text, const QString& sort, double now, const std::vector<int>& groups,
                            const QString& tag, const std::string& placePrefix,
-                           std::function<double(std::string_view)> score) {
+                           std::function<double(std::string_view)> score, Sounds sounds) {
     browser::Query query;
     query.text = text.toStdString();
     query.sort = sort == QStringLiteral("name") ? browser::Sort::Name
                  : sort == kSimilarSort         ? browser::Sort::Score
+                 : sort == kBestSort            ? browser::Sort::Best
                                                 : browser::Sort::Rank;
     query.score = std::move(score);
+    query.sounds = std::move(sounds.matching);
+    query.fit = std::move(sounds.fit);
+    searchTags_ = std::move(sounds.tags);
     query.now = now;
     query.groups = groups;
     query.tag = tag.toStdString();
@@ -188,7 +200,7 @@ bool FileIndex::waitIdle(double seconds) { return backend_->waitIdle(seconds); }
 void FileIndex::take() {
     if (closed_) return;
     const browser::Browser::Update update = backend_->take();
-    if (update.result) Q_EMIT results(SearchResult(update.result, items_));
+    if (update.result) Q_EMIT results(SearchResult(update.result, items_, searchTags_));
     const std::pair<bool, uint64_t> state{update.status.busy, update.status.version};
     if (state != state_) {
         state_ = state;

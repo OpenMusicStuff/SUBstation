@@ -100,6 +100,7 @@ QVariant ItemListModel::data(const QModelIndex& index, int role) const {
         case UsesRole: return library_ ? library_->uses(it->key()) : 0;
         case InstrumentRole: return it->plugin && it->plugin->instrument;
         case PluginRole: return it->plugin ? QVariant(it->plugin->toRef()) : QVariant();
+        case TagsRole: return it->tags;
         default: return {};
     }
 }
@@ -108,7 +109,7 @@ QHash<int, QByteArray> ItemListModel::roleNames() const {
     return {{NameRole, "name"},       {PathRole, "path"},       {KindRole, "kind"},
             {DetailRole, "detail"},   {KeyRole, "key"},         {DisplayRole, "display"},
             {ToolTipRole, "toolTip"}, {IconRole, "icon"},       {UsesRole, "uses"},
-            {InstrumentRole, "instrument"}, {PluginRole, "plugin"}};
+            {InstrumentRole, "instrument"}, {PluginRole, "plugin"}, {TagsRole, "tags"}};
 }
 
 Qt::ItemFlags ItemListModel::flags(const QModelIndex& index) const {

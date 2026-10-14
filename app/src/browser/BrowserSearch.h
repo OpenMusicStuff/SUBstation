@@ -4,10 +4,15 @@
 // The backend does the searching (browser/src/Search.cpp), on its own thread;
 // scopeQuery() turns a sidebar entry into what it searches. An item matches
 // when every word of the query is in its name or detail (folder, vendor,
-// category), ignoring case. That is also where later filters (items hidden
-// from search) and orders (similar sounds) go.
+// category), ignoring case, or a sample sounds like it (SoundSearch.h). That
+// is also where later filters (items hidden from search) and orders (similar
+// sounds) go.
 //
 // Sort orders:
+//   "best"  the default: a blend of how well an item matches the search (its
+//           name, or what it sounds like: SoundSearch.h), how much it was used
+//           lately, and how well it fits the project (SoundSuggestions.h: the
+//           project's own sounds and key). With no search text, use and fit.
 //   "rank"  what you use most (and most recently) first, then the best name
 //           matches, then the list's own order. With nothing used yet, a search
 //           lists the names that start with what you typed first.
@@ -35,11 +40,12 @@ inline constexpr int kBuiltinGroup = 1;
 inline constexpr int kPluginsGroup = 2;
 inline constexpr int kPresetsGroup = 3;
 
-// The sort orders as (value, label): "rank" (Rank), "name" (Name).
+// The sort orders as (value, label): "best" (Best), "rank" (Rank), "name" (Name).
 QVariantList sortOrders();
-// Whether a user can choose it: "rank" or "name" ("similar" comes with Find Similar).
+// Whether a user can choose it: "best", "rank" or "name" ("similar" comes with Find Similar).
 bool isSortOrder(const QString& sort);
 inline const QString kSimilarSort = QStringLiteral("similar");
+inline const QString kBestSort = QStringLiteral("best");
 
 // A sidebar entry: what a list shows.
 //   ("all")                     everything: built-in devices, plug-ins, presets, samples
@@ -48,6 +54,7 @@ inline const QString kSimilarSort = QStringLiteral("similar");
 //   ("plugins"[, category])     plug-ins ("Instruments" or "Audio Effects")
 //   ("presets"[, device])       presets (for a device)
 //   ("place", path)             a place's files (or, with no search text, its folder tree)
+//   ("sounds", word)            the samples that sound like a word ("kick": Samples › Kicks; SoundSearch.h)
 //   ("add")                     the "Add Folder…" entry (not a list)
 struct Scope {
     QString kind = QStringLiteral("samples");
@@ -62,6 +69,7 @@ struct ScopeQuery {
     std::vector<int> groups;  // in order
     QString tag;              // external items with this tag only ('' for all)
     std::string placePrefix;  // files under this place only (the backend's form; '' for all)
+    QString sounds;           // files that sound like this word only ('' for all)
 };
 
 // What a sidebar entry lists.

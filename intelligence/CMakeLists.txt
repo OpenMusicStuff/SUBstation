@@ -16,6 +16,10 @@
 #   humanize/    a part's velocities from HUMANBRO's model (models/velocity.hbm)
 #   labels/      what each track is, in a few words ("Washed Out Serum Pluck"),
 #                from its names, presets, notes, effects and mixer
+#   tagging/     what each sound is and how it sounds ("Snare · Punchy · Bright"),
+#                from its fingerprint, by a model trained on labelled sample
+#                libraries (tools/sound_tagger; compiled in: TaggerModel.inc);
+#                the words searches find sounds by ("hard trap snare")
 add_library(sub_intelligence STATIC
     src/core/AudioReader.cpp
     src/harmony/Accompaniment.cpp
@@ -31,7 +35,11 @@ add_library(sub_intelligence STATIC
     src/similarity/FeatureSchema.cpp
     src/similarity/Similarity.cpp
     src/similarity/SoundIndex.cpp
-    src/similarity/SoundStore.cpp)
+    src/similarity/SoundStore.cpp
+    src/tagging/ProjectFit.cpp
+    src/tagging/SoundTagTable.cpp
+    src/tagging/SoundTagger.cpp
+    src/tagging/SoundWords.cpp)
 if (WIN32)
     # <windows.h> comes in through miniaudio's and Essentia's headers: without
     # NOMINMAX its min and max macros break std::min and std::max.

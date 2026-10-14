@@ -52,13 +52,16 @@ QVariant SidebarModel::data(const QModelIndex& index, int role) const {
         case ToolTipRole: return entry.toolTip;
         case DimRole: return entry.dim;
         case SelectableRole: return !entry.section;
+        case ExpandableRole: return entry.expandable;
+        case ExpandedRole: return entry.expanded;
         default: return {};
     }
 }
 
 QHash<int, QByteArray> SidebarModel::roleNames() const {
     return {{TitleRole, "title"}, {ScopeRole, "scope"},     {SectionRole, "section"}, {DepthRole, "depth"},
-            {IconRole, "icon"},   {ToolTipRole, "toolTip"}, {DimRole, "dim"},         {SelectableRole, "selectable"}};
+            {IconRole, "icon"},   {ToolTipRole, "toolTip"}, {DimRole, "dim"},         {SelectableRole, "selectable"},
+            {ExpandableRole, "expandable"}, {ExpandedRole, "expanded"}};
 }
 
 }  // namespace sub::app

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "Platform.h"
+#include "platform/Bytes.h"
 #include "Text.h"
 
 namespace sub::browser {
@@ -63,6 +64,17 @@ void Snapshot::join(std::string& path, std::string_view folder, std::string_view
     path.reserve(folder.size() + 1 + name.size());
     path.append(folder);
     platform::appendName(path, name);
+}
+
+uint64_t folderHash(std::string_view folderPath) {
+    std::string prefix;
+    Snapshot::join(prefix, folderPath, "");
+    return platform::fnv1a(prefix);
+}
+
+uint64_t fileHash(uint64_t folderHash, std::string_view name) {
+    const uint64_t h = platform::fnv1a(name, folderHash);
+    return h ? h : 1;
 }
 
 std::string placePrefix(std::string_view root) {

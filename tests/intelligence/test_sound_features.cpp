@@ -17,6 +17,7 @@
 #include "similarity/EssentiaExtractor.h"
 #include "similarity/Similarity.h"
 #include "similarity/SoundStore.h"
+#include "tagging/SoundTagger.h"
 
 using namespace subtest;
 using namespace sub::intelligence;
@@ -27,7 +28,7 @@ using Fingerprint = std::vector<float>;
 
 Fingerprint fingerprint(const Samples& s, int rate = kRate) {
     static EssentiaExtractor extractor;  // (the tests run on one thread)
-    Fingerprint fp(kDims);
+    Fingerprint fp(essentiaSchema().dims());
     const Extraction result = extractor.extract(SoundBuffer{s.data(), s.size(), static_cast<uint32_t>(rate)}, fp.data());
     REQUIRE(result == Extraction::Done);
     for (const float v : fp) REQUIRE(std::isfinite(v));
@@ -233,7 +234,7 @@ TEST_CASE("a sound's sample rate doesn't change its fingerprint") {
 
 TEST_CASE("silence has no fingerprint, and a file that isn't audio can't be analysed") {
     EssentiaExtractor extractor;
-    std::vector<float> fp(kDims);
+    std::vector<float> fp(essentiaSchema().dims());
     const Samples silence(frames(0.5), 0.f);
     CHECK(extractor.extract(SoundBuffer{silence.data(), silence.size(), kRate}, fp.data()) == Extraction::Silent);
     const Samples hiss(frames(0.5), 1e-7f);  // (-140 dB)
@@ -254,12 +255,12 @@ TEST_CASE("silence has no fingerprint, and a file that isn't audio can't be anal
         bytes.assign(std::istreambuf_iterator<char>(in), {});
     }
     std::ofstream(tempDir() / "cut.wav", std::ios::binary) << bytes.substr(0, bytes.size() / 3);
-    CHECK(extractor.extractFile(utf8(tempDir() / "cut.wav")).size() == kDims);
+    CHECK(extractor.extractFile(utf8(tempDir() / "cut.wav")).size() == essentiaSchema().dims());
 }
 
 TEST_CASE("very short sounds, odd rates and broken samples are analysed safely") {
     EssentiaExtractor extractor;
-    std::vector<float> fp(kDims);
+    std::vector<float> fp(essentiaSchema().dims());
     // A click of three samples, 5 ms of noise, one sample.
     for (const Samples& s : {Samples{0.5f, -0.5f, 0.25f}, noise(0.005), Samples{0.9f}}) {
         CHECK(extractor.extract(SoundBuffer{s.data(), s.size(), kRate}, fp.data()) == Extraction::Done);
@@ -291,7 +292,7 @@ TEST_CASE("a part of a file is as long as asked, or as what is left of the file"
     const std::string path = wav("part.wav", tone(330.0, 2.0, 10.0));
     // 10 s asked from 1 s into a 2 s file: the second that is there.
     const std::vector<float> asked = extractor.extractFile(path, 1.0, 10.0);
-    REQUIRE(asked.size() == kDims);
+    REQUIRE(asked.size() == essentiaSchema().dims());
     CHECK(asked == extractor.extractFile(path, 1.0, 1.0));
     CHECK_NEAR(asked[feature::Length], 0.0, 0.01);  // (log10 of 1 s)
     CHECK_NEAR(extractor.extractFile(path, 0.5, 0.25)[feature::Length], std::log10(0.25), 0.01);
@@ -431,7 +432,7 @@ TEST_CASE("level and length don't outweigh how a sound sounds") {
 
 TEST_CASE("extraction can be cancelled") {
     EssentiaExtractor extractor;
-    std::vector<float> fp(kDims);
+    std::vector<float> fp(essentiaSchema().dims());
     const Samples loop = sequence({kick(), hat(), snare(), hat()}, 0.25, 6.0);
     CancelFlag cancel{true};
     CHECK(extractor.extract(SoundBuffer{loop.data(), loop.size(), kRate}, fp.data(), &cancel) == Extraction::Cancelled);
@@ -488,14 +489,24 @@ TEST_CASE("the library's statistics: robust to a few wild files") {
 
 TEST_CASE("every feature has a name, an aspect and a spread; the schema says what made them") {
     std::map<std::string, int> names;
-    for (const FeatureInfo& f : featureInfo()) {
+    for (size_t d = 0; d < featureInfo().size(); ++d) {
+        const FeatureInfo& f = featureInfo()[d];
         CHECK(!f.name.empty());
         CHECK(f.minSpread > 0.f);
-        CHECK(f.aspect != Aspect::Embedding);
+        // The descriptors, then the tagger's embedding, then its outputs (never compared: last).
+        const Aspect expected = d < kDims ? f.aspect
+                                : d < kDims + static_cast<size_t>(tagging::embeddingDims()) ? Aspect::Embedding
+                                                                                             : Aspect::Tags;
+        CHECK(f.aspect == expected);
+        if (d < kDims) CHECK(f.aspect != Aspect::Embedding);
         ++names[f.name];
     }
-    CHECK_EQ(names.size(), kDims);  // all different
-    CHECK_EQ(schema().dims(), kDims);
+    const size_t dims = kDims + static_cast<size_t>(tagging::embeddingDims() + tagging::outputCount());
+    CHECK_EQ(names.size(), dims);  // all different
+    CHECK_EQ(schema().dims(), dims);
+    CHECK(schema().tagged);
+    CHECK_EQ(schema().weights[Aspect::Tags], 0.f);
+    CHECK(schema().settings.find(std::string("tagger=") + tagging::modelId()) != std::string::npos);
     CHECK_EQ(schema().extractor, std::string("essentia"));
     CHECK(schema().settings.find("essentia=2.1-beta5") != std::string::npos);
     // The key changes with anything that changes what fingerprints hold.
@@ -517,18 +528,18 @@ TEST_CASE("the store: saved and read back; another extractor's, or anything unex
     sounds[0].stamp = {12345, 678};
     sounds[0].seen = 1760000000;
     sounds[0].analysed = true;
-    sounds[0].fingerprint.resize(kDims);
-    for (size_t d = 0; d < kDims; ++d) sounds[0].fingerprint[d] = static_cast<float>(d) * 0.5f - 3.f;
+    sounds[0].fingerprint.resize(schema().dims());
+    for (size_t d = 0; d < schema().dims(); ++d) sounds[0].fingerprint[d] = static_cast<float>(d) * 0.5f - 3.f;
     sounds[1].path = "/samples/broken.wav";
     sounds[1].stamp = {1, 2};
     sounds[2].path = "C:\\Project\\Recorded \xe2\x99\xab.wav";
     sounds[2].analysed = true;
     sounds[2].reference = true;
     sounds[2].used = 99;
-    sounds[2].fingerprint.assign(kDims, 0.25f);
+    sounds[2].fingerprint.assign(schema().dims(), 0.25f);
     FeatureStatistics statistics;
     statistics.count = 2;
-    statistics.spread.assign(kDims, 2.f);
+    statistics.spread.assign(schema().dims(), 2.f);
     const std::string file = utf8(tempDir() / "sound-index.bin");
     StoreWriter writer(schema(), 3);
     for (const auto& s : sounds) writer.add(s);
@@ -590,7 +601,7 @@ TEST_CASE("the store: saved and read back; another extractor's, or anything unex
     // An analysed sound's fingerprint must be the schema's size.
     StoreWriter strict(schema(), 1);
     StoredSound wrong = sounds[0];
-    wrong.fingerprint.resize(kDims - 1);
+    wrong.fingerprint.resize(schema().dims() - 1);
     CHECK_THROWS_AS(strict.add(wrong), std::invalid_argument);
     wrong.fingerprint.clear();
     CHECK_THROWS_AS(strict.add(wrong), std::invalid_argument);
