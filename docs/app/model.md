@@ -188,7 +188,9 @@ no MIDI input closes a cycle, and a device on any track (a return, the master) m
   parameter of another device on its track (anywhere: in racks too) that it moves, over its normalized `low`..`high`
   (`low > high` the other way), upside down with `invert` (`target()`). Its *amount*, as a modulated knob's handle
   drags it (`amount()`, `setAmount(base, amount)`): unipolar, `high - low` up from `low`; `bipolar`, half of that
-  either side of the middle (only the handle reads `bipolar`: the engine plays `low`..`high` either way). A parameter follows one modulator at most; while it
+  either side of the middle (only the handle reads `bipolar`: the engine plays `low`..`high` either way). Set from
+  the handle, the ends may reach past 0..1 (to -1..2), so the amount survives a range cut off at the parameter's
+  ends; what plays is held to 0..1 (`target()`, `playedLow()`, `playedHigh()`). A parameter follows one modulator at most; while it
   does, its own value and its automation wait (the engine plays the modulation instead). The engine plays it: see
   [engine/automation.md](../engine/automation.md#modulation).
 

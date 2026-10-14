@@ -311,15 +311,24 @@ private Q_SLOTS:
         QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, handle - QPoint(0, 20));
         QCOMPARE(undo()->count(), steps + 1);
         QCOMPARE(knob->value(), own);  // (the knob itself didn't move)
+        // (Its top end past the parameter's: the amount, 60 %, is kept; it plays up to the top.)
         ModulationMapping mapping = project()->device(track, lfo).modulations.front();
-        QVERIFY(std::abs(mapping.low - 0.5) < 1e-6 && std::abs(mapping.high - 1.0) < 1e-6);
-        QVERIFY(std::abs(knob->modulationAmount() - 0.5) < 1e-6);
+        QVERIFY(std::abs(mapping.low - 0.5) < 1e-6 && std::abs(mapping.high - 1.1) < 1e-6);
+        QVERIFY(std::abs(knob->modulationAmount() - 0.6) < 1e-6);
+        QCOMPARE(knob->modulationTo(), 1.0);
+        // A small drag down from there moves it at once (no stretch that does nothing).
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, handle);
+        QTest::mouseMove(window, handle + QPoint(0, 2));
+        QTest::mouseMove(window, handle + QPoint(0, 4));  // -0.02
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, handle + QPoint(0, 4));
+        QVERIFY(std::abs(knob->modulationAmount() - 0.58) < 1e-6);
         // Alt+Shift-click: bipolar round the knob's value, the amount kept.
         QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier | Qt::ShiftModifier, handle);
         QTRY_VERIFY(knob->modulationBipolar());
         mapping = project()->device(track, lfo).modulations.front();
         QVERIFY(mapping.bipolar);
-        QVERIFY(std::abs(mapping.low - 0.0) < 1e-6 && std::abs(mapping.high - 1.0) < 1e-6);
+        QVERIFY(std::abs(mapping.low + 0.08) < 1e-6 && std::abs(mapping.high - 1.08) < 1e-6);
+        QVERIFY(std::abs(knob->modulationAmount() - 0.58) < 1e-6);
         QCOMPARE(knob->modulationFrom(), 0.0);
         QCOMPARE(knob->modulationTo(), 1.0);
         QTest::qWait(50);

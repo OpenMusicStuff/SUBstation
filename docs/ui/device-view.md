@@ -1440,8 +1440,8 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
   the random curve playing (`shown()`: the `seed` and `start` displays of the frame at the playhead through
   `modulatorRandomPoints`, the engine's own), without its points, and can't be edited; a shape, Flip, Reverse or
   Reset sets `random` off with the points.
-- **As it plays**, on each DisplayClock tick it reads `value`, `phase` and `key` together into a
-  `DisplayPlayback<3>` (played at the audio's pace, a 64-sample frame at a time) and draws a playhead riding the
+- **As it plays**, on each DisplayClock tick it reads `value`, `phase`, `key`, `seed` and `start` together into a
+  `DisplayPlayback<5>` (played at the audio's pace, a 64-sample frame at a time) and draws a playhead riding the
   curve (the LFO's phase the short way round; the Envelope's, resting at -1) with a short fading trail (not drawn across a
   wrap or a retrigger) and a soft glow at its head, and for an Envelope with a sidechain, the key's level against
   the threshold at the right. A trigger (the Envelope's playhead starting again; the LFO's `key`) briefly lights

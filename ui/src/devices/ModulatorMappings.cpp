@@ -76,11 +76,14 @@ void ModulatorMappings::refresh() {
                 {QStringLiteral("paramId"), m.paramId},
                 {QStringLiteral("device"), target ? sub::app::deviceName(*target) : QString()},
                 {QStringLiteral("param"), spec && !spec->name.isEmpty() ? spec->name : m.paramId},
-                {QStringLiteral("low"), m.low},
-                {QStringLiteral("high"), m.high},
+                // (The range it plays; its ends as set, maybe past 0..1 from a knob's handle, for where it is now.)
+                {QStringLiteral("low"), m.playedLow()},
+                {QStringLiteral("high"), m.playedHigh()},
+                {QStringLiteral("setLow"), m.low},
+                {QStringLiteral("setHigh"), m.high},
                 {QStringLiteral("invert"), m.invert},
-                {QStringLiteral("lowText"), spec ? spec->formatNormalized(m.low) : QString()},
-                {QStringLiteral("highText"), spec ? spec->formatNormalized(m.high) : QString()},
+                {QStringLiteral("lowText"), spec ? spec->formatNormalized(m.playedLow()) : QString()},
+                {QStringLiteral("highText"), spec ? spec->formatNormalized(m.playedHigh()) : QString()},
             });
         }
     }

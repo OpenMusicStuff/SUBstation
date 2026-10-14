@@ -449,9 +449,13 @@ QString DeviceParam::modulatorName() const {
     return device ? sub::app::deviceName(*device) : QString();
 }
 
-double DeviceParam::modulationFrom() const { return modulated() ? std::min(mapping_.low, mapping_.high) : 0.0; }
+double DeviceParam::modulationFrom() const {
+    return modulated() ? std::min(mapping_.playedLow(), mapping_.playedHigh()) : 0.0;
+}
 
-double DeviceParam::modulationTo() const { return modulated() ? std::max(mapping_.low, mapping_.high) : 1.0; }
+double DeviceParam::modulationTo() const {
+    return modulated() ? std::max(mapping_.playedLow(), mapping_.playedHigh()) : 1.0;
+}
 
 bool DeviceParam::canModulate() const {
     return session_ && session_->project()->findDevice(trackId_, deviceId_) &&

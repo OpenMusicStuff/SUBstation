@@ -109,15 +109,19 @@ private Q_SLOTS:
     }
 
     void theAmountAndPolarityFromTheKnobsHandle() {
-        // The maths: unipolar up from the base, bipolar either side of it, held to 0..1.
+        // The maths: unipolar up from the base, bipolar either side of it; its ends as set (past 0..1 too), what
+        // plays held to 0..1.
         ModulationMapping m{"d", "p"};
         m.setAmount(0.3, 0.4);
         QCOMPARE(m.low, 0.3);
         QVERIFY(near(m.high, 0.7, 1e-12));
         QVERIFY(near(m.amount(), 0.4, 1e-12));
-        m.setAmount(0.3, -0.5);  // the other way: down from it
+        m.setAmount(0.3, -0.5);  // the other way: down from it, past the bottom
         QCOMPARE(m.low, 0.3);
-        QCOMPARE(m.high, 0.0);
+        QVERIFY(near(m.high, -0.2, 1e-12));
+        QCOMPARE(m.playedHigh(), 0.0);
+        QVERIFY(near(m.amount(), -0.5, 1e-12));
+        QCOMPARE(m.target(1.0), 0.0);
         m.bipolar = true;
         m.setAmount(0.5, 0.2);
         QVERIFY(near(m.low, 0.3, 1e-12) && near(m.high, 0.7, 1e-12));
@@ -136,6 +140,21 @@ private Q_SLOTS:
         QCOMPARE(f.stack.count(), steps + 1);
         QCOMPARE(f.stack.undoText(), QStringLiteral("Change Modulation Amount"));
         QCOMPARE(modulationsOf(f, track, lfo).front().low, 0.4);
+        QVERIFY(near(modulationsOf(f, track, lfo).front().high, 0.65, 1e-12));
+        // The whole range from the middle, bipolar and back: the amount (and so the range) survives.
+        f.editor.setModulationAmount(track, lfo, utility, "gain", 1.0, 0.5, "full");
+        const ModulationMapping full = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(full.low, 0.5, 1e-12) && near(full.high, 1.5, 1e-12));
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", true, 0.5);
+        QVERIFY(near(modulationsOf(f, track, lfo).front().amount(), 1.0, 1e-12));
+        QCOMPARE(modulationsOf(f, track, lfo).front().playedLow(), 0.0);
+        QCOMPARE(modulationsOf(f, track, lfo).front().playedHigh(), 1.0);
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", false, 0.5);
+        QVERIFY(near(modulationsOf(f, track, lfo).front().low, full.low, 1e-12));
+        QVERIFY(near(modulationsOf(f, track, lfo).front().high, full.high, 1e-12));
+        f.stack.undo();
+        f.stack.undo();
+        f.stack.undo();
         QVERIFY(near(modulationsOf(f, track, lfo).front().high, 0.65, 1e-12));
         // Alt+Shift-click: bipolar round the knob's value, the amount kept; and back.
         f.editor.setModulationBipolar(track, lfo, utility, "gain", true, 0.5);

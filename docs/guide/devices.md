@@ -1429,7 +1429,7 @@ up from the bottom to the top at half the cycle, and down again).
 - **Phase** (0 to 360°) shifts where in the cycle it is; **Smooth** (0 to 250 ms) eases
   its steps and jumps (a square without clicks).
 - Shapes: Triangle, Sine, Saw Up, Saw Down, Square, Pulse, Steps, Hump, Swell.
-- **Rand** (Random): a new random shape every cycle instead of the curve drawn (1 to 6 points at random times
+- **Random**: a new random shape every cycle instead of the curve drawn (1 to 6 points at random times
   and levels, bent at random), each starting where the last ended, so one cycle flows smoothly into the next. The graph shows the shape
   playing; the drawn curve waits meanwhile, and choosing a shape (or flipping, reversing, resetting) turns Random
   off.

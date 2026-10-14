@@ -256,8 +256,8 @@ refusing the file:
 - Rack macro mappings to a device not in the rack, or to a macro the rack doesn't have, are dropped. A rack has 1 to
   16 macros (`macro_names` longer than 16 is cut there; an empty one gives the default 4), and a value for each.
 - Modulation mappings to a device not on the modulator's track, to the modulator itself, of a device that isn't a
-  modulator, or to a parameter mapped already (the first stays) are dropped (`pruneModulations`); ranges are held to
-  0..1.
+  modulator, or to a parameter mapped already (the first stays) are dropped (`pruneModulations`); ranges' ends are
+  held to -1..2 (a knob's handle sets them past 0..1 to keep its amount; what plays is held to 0..1).
 - Sends' and chains' levels are clamped to the faders' range (-70..+6 dB), pans to -1..1; a MIDI channel outside
   0..16 loads as 0 (every channel); an input of more than two channels loads as none; `monitor` must be a known mode.
 - `armed` is ignored on a group.
