@@ -105,7 +105,12 @@ void Renderer::syncTempo(const RenderSnapshot& snap) noexcept {
 
 void Renderer::drainCommands(SharedState& shared) noexcept {
     TransportCommand command;
-    while (shared.commands.pop(command)) applyCommand(command);
+    while (shared.commands.pop(command)) {
+        applyCommand(command);
+        if (command.type == TransportCommand::Type::Locate)
+            shared.locatesDrained.store(shared.locatesDrained.load(std::memory_order_relaxed) + 1,
+                                        std::memory_order_relaxed);
+    }
 }
 
 void Renderer::applyCommand(const TransportCommand& command) noexcept {
@@ -139,6 +144,7 @@ void Renderer::discardPreviewNotes(SharedState& shared) noexcept { shared.previe
 void Renderer::publishTransport(SharedState& shared) const noexcept {
     shared.positionSamples.store(position_, std::memory_order_relaxed);
     shared.positionBeats.store(samplesPerBeat_ > 0.0 ? position_ / samplesPerBeat_ : 0.0, std::memory_order_relaxed);
+    shared.locatesPublished.store(shared.locatesDrained.load(std::memory_order_relaxed), std::memory_order_release);
     shared.playing.store(playing_, std::memory_order_relaxed);
     shared.countingIn.store(playing_ && countIn_ > 0, std::memory_order_relaxed);
 }

@@ -322,12 +322,12 @@ Rectangle {
                         iconName: "hotswap"
                         iconColor: row.swapping ? Theme.accentText : (row.current ? Theme.accentText : undefined)
                         lit: row.swapping
-                        tooltip: row.swapping ? qsTr("Hot-Swap\nEnds the hot swap, keeping what is swapped in.")
+                        tooltip: row.swapping ? qsTr("Hot-Swap\nCancels the hot swap, putting back the sample it began with.")
                                               : qsTr("Hot-Swap\nThe sample selected in the browser plays in this file's place, everywhere it plays; the browser lists the sounds most like it. Click through samples to hear them in the song; double-click one (or press Enter) to keep it.")
                         onClicked: {
                             list.currentIndex = row.index
                             if (row.swapping)
-                                panel.hotSwap.stop()
+                                panel.hotSwap.cancel()
                             else
                                 panel.files.hotSwap(row.path)
                         }

@@ -23,7 +23,9 @@
 
 namespace sub::app {
 
-// Ableton-like clip/track colours.
+// Clip/track colours as a project keeps them (Ableton's; a Live set's first 13
+// are these). They name a place in the palette more than a colour: each theme
+// shows them as its own colours, place for place (the UI's Theme::trackColor).
 inline const QStringList kTrackColors{
     QStringLiteral("#ff94a6"), QStringLiteral("#ffa529"), QStringLiteral("#cc9927"), QStringLiteral("#f7f47c"),
     QStringLiteral("#bffb00"), QStringLiteral("#1aff2f"), QStringLiteral("#25ffa8"), QStringLiteral("#5cffe8"),

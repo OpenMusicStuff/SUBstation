@@ -1,10 +1,12 @@
 #include "theme/Theme.h"
 
 #include "input/Shortcuts.h"
+#include "model/Track.h"
 
 #include <QDir>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QHash>
 #include <QJSEngine>
 #include <QKeySequence>
 #include <QQuickItem>
@@ -12,6 +14,10 @@
 #include <QSettings>
 #include <QVariant>
 #include <QWindow>
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
 
 namespace sub::ui {
 
@@ -48,6 +54,49 @@ QFont monoFont(qreal pointSize) {
 namespace {
 
 const NamedPalette* current = nullptr;  // the theme (null: Default)
+
+// OKLab (Bjorn Ottosson's), from and to sRGB.
+struct Lab {
+    double l, a, b;
+};
+
+double linear(double c) { return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); }
+double gamma(double c) {
+    c = std::clamp(c, 0.0, 1.0);
+    return c <= 0.0031308 ? 12.92 * c : 1.055 * std::pow(c, 1.0 / 2.4) - 0.055;
+}
+
+Lab toLab(const QColor& color) {
+    const double r = linear(color.redF()), g = linear(color.greenF()), b = linear(color.blueF());
+    const double l = std::cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const double m = std::cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const double s = std::cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return {0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+            1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+            0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s};
+}
+
+QColor fromLab(const Lab& lab) {
+    const double l = std::pow(lab.l + 0.3963377774 * lab.a + 0.2158037573 * lab.b, 3);
+    const double m = std::pow(lab.l - 0.1055613458 * lab.a - 0.0638541728 * lab.b, 3);
+    const double s = std::pow(lab.l - 0.0894841775 * lab.a - 1.2914855480 * lab.b, 3);
+    return QColor::fromRgbF(static_cast<float>(gamma(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)),
+                            static_cast<float>(gamma(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)),
+                            static_cast<float>(gamma(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)));
+}
+
+// A colour's place in the track palette: app::kTrackColors' or any theme's.
+std::optional<int> trackPlace(QRgb rgb) {
+    rgb &= RGB_MASK;
+    for (int i = 0; i < sub::app::kTrackColors.size(); ++i)
+        if ((QColor::fromString(sub::app::kTrackColors[i]).rgb() & RGB_MASK) == rgb)
+            return i;
+    for (const NamedPalette& palette : palettes())
+        for (size_t i = 0; i < palette.colors.trackColors.size(); ++i)
+            if ((palette.colors.trackColors[i].rgb() & RGB_MASK) == rgb)
+                return static_cast<int>(i);
+    return std::nullopt;
+}
 
 const NamedPalette* find(const QString& name) {
     for (const NamedPalette& palette : palettes())
@@ -118,6 +167,36 @@ bool Theme::apply(const QString& name) {
 QString Theme::savedName() {
     const NamedPalette* palette = find(QSettings().value(QLatin1String(kSettingsKey)).toString());
     return palette ? palette->name : palettes().front().name;
+}
+
+QColor Theme::trackColor(const QString& stored) { return trackColor(QColor::fromString(stored)); }
+
+QColor Theme::trackColor(const QColor& stored) {
+    if (!stored.isValid())
+        return stored;
+    const Palette& theme = colors();
+    // (Looked up at every paint: the places found are kept, whatever the theme.)
+    static QHash<QRgb, int> places;
+    const QRgb rgb = stored.rgb() & RGB_MASK;
+    auto place = places.constFind(rgb);
+    if (place == places.constEnd())
+        place = places.insert(rgb, trackPlace(rgb).value_or(-1));
+    if (*place >= 0 && *place < static_cast<int>(theme.trackColors.size()))
+        return theme.trackColors[static_cast<size_t>(*place)];
+    if (theme.trackChroma <= 0.0)
+        return stored;
+    // Another colour: its lightness into the theme's range, its chroma no more than the theme's.
+    Lab lab = toLab(stored);
+    const double chroma = std::hypot(lab.a, lab.b);
+    const double scale = chroma > theme.trackChroma ? theme.trackChroma / chroma : 1.0;
+    lab.a *= scale;
+    lab.b *= scale;
+    lab.l = theme.trackLightMin + std::clamp(lab.l, 0.0, 1.0) * (theme.trackLightMax - theme.trackLightMin);
+    return fromLab(lab);
+}
+
+QColor Theme::trackSwatch(int index) {
+    return index >= 0 && index < sub::app::kTrackColors.size() ? trackColor(sub::app::kTrackColors[index]) : QColor();
 }
 
 QPalette Theme::qtPalette() {

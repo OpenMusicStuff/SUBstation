@@ -169,8 +169,17 @@ private Q_SLOTS:
     void changingAParameterShowsItsLane() {
         selection().selectTrack(a_);
         const QString utility = editor().addDevice(a_, QStringLiteral("utility"));
-        editor().setDeviceParam(a_, utility, QStringLiteral("gain"), -6.0);
         const QString key = automation::deviceKey(utility, QStringLiteral("gain"));
+        // Automation hidden: it stays hidden, the parameter only remembered for when it shows.
+        editor().hideAutomation(a_);
+        editor().setDeviceParam(a_, utility, QStringLiteral("gain"), -6.0);
+        QVERIFY(!project().track(a_).automationView.shown);
+        QCOMPARE(project().track(a_).automationView.key, std::optional<QString>(key));
+        editor().trySetTrackParam(a_, QStringLiteral("pan"), 0.1);  // (another, still hidden)
+        QVERIFY(!project().track(a_).automationView.shown);
+        editor().showAutomation(a_, kVolume);
+        // Shown: the lane takes what is changed.
+        editor().setDeviceParam(a_, utility, QStringLiteral("gain"), -5.0);
         QVERIFY(project().track(a_).automationView.shown);
         QCOMPARE(project().track(a_).automationView.key, std::optional<QString>(key));
         h_->settle();
@@ -181,12 +190,15 @@ private Q_SLOTS:
         drag(at, at - QPoint(0, 30));
         QCOMPARE(project().track(a_).automationView.key, std::optional<QString>(kPan));
         QVERIFY(project().track(a_).pan > 0.0);
+        editor().showAutomation(kMaster, kPan);
         editor().trySetTrackParam(kMaster, QStringLiteral("volume_db"), -3.0);
         QCOMPARE(project().master().automationView, (sub::app::AutomationView{true, kVolume, {}}));
     }
 
     void clickingAMixerControlShowsItsLane() {
-        // Pressing a control shows its automation (as in Ableton), and changes nothing.
+        // Pressing a control shows its automation in the lane (as in Ableton), and changes nothing.
+        editor().showAutomation(a_);
+        editor().showAutomation(b_);
         h_->settle();
         QQuickItem* volume = h_->control(h_->header(a_), QStringLiteral("volume"));
         const int steps = undo().count();

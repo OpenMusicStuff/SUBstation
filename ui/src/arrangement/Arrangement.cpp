@@ -132,7 +132,16 @@ void Arrangement::rebuild() {
         layout_ = TrackLayout();
     rows_->update(layout_.rows());
     Q_EMIT layoutChanged();
+    Q_EMIT automationModeChanged();  // (tracks added or gone)
     updateVBar();
+}
+
+bool Arrangement::automationMode() const {
+    const app::Project* p = project();
+    if (!p) return false;
+    const QStringList owners = p->owners();
+    return !owners.isEmpty() &&
+           std::all_of(owners.begin(), owners.end(), [p](const QString& o) { return p->automationView(o).shown; });
 }
 
 void Arrangement::onTrackChanged(const QString& trackId) {
@@ -140,7 +149,12 @@ void Arrangement::onTrackChanged(const QString& trackId) {
     app::Project* p = project();
     if (!p) return;
     if (p->hasReturn(trackId)) return;
-    if (trackId == app::kMaster) return;
+    if (trackId == app::kMaster) {
+        // Its height or folding: its rows, if they changed.
+        const AutomationRows rows = arrangement::masterRows(*p);
+        if (rows.mainHeight != masterRows_.mainHeight || rows.lanes != masterRows_.lanes) updateMasterRows();
+        return;
+    }
     const int oldHeight = layout_.totalHeight();
     const Row* old = layout_.rowFor(trackId);
     const std::optional<Row> oldRow = old ? std::optional<Row>(*old) : std::nullopt;
@@ -154,6 +168,7 @@ void Arrangement::onTrackChanged(const QString& trackId) {
 void Arrangement::onAutomationViewChanged(const QString& owner) {
     app::Project* p = project();
     if (!p) return;
+    Q_EMIT automationModeChanged();
     if (owner == app::kMaster)
         updateMasterRows();
     else if (p->hasReturn(owner))
@@ -396,6 +411,8 @@ bool Arrangement::revealTrack(const QString& trackId) {
     app::Project* p = project();
     app::Selection* s = selection();
     if (!p || !s || !(trackId == app::kMaster || p->hasTrack(trackId) || p->hasReturn(trackId))) return false;
+    // Folded itself (a thin row, or a group hiding its tracks): unfolded, its lanes shown.
+    if (const app::Track* track = p->findTrack(trackId); track && track->folded) editor()->setFolded(trackId, false);
     if (p->hasTrack(trackId)) {
         for (auto parent = p->track(trackId).parent; parent && p->hasTrack(*parent); parent = p->track(*parent).parent) {
             if (p->track(*parent).folded) editor()->setFolded(*parent, false);  // (the layout follows at once)
@@ -466,23 +483,46 @@ QString Arrangement::revealNearestClip(const QString& trackId) {
     return clipId;
 }
 
-void Arrangement::wheelResize(const QString& trackId, int delta) {
+bool Arrangement::onTitleBar(const QString& trackId, double y) const {
+    const app::Project* p = project();
+    if (!p || !resizable(trackId)) return false;
+    return y < (p->track(trackId).isGroup() ? kFoldedGroupHeight : kFoldedHeight);
+}
+
+bool Arrangement::resizable(const QString& trackId) const {
+    const app::Project* p = project();
+    return p && (p->hasTrack(trackId) || trackId == app::kMaster);
+}
+
+void Arrangement::wheelResize(const QString& trackId, double y, int delta) {
     app::Project* p = project();
     if (!p) return;
     const double now = clock_();
-    QString id = trackId;
-    if (lastWheel_ && now - lastWheel_->second < kWheelGesture && p->hasTrack(lastWheel_->first)) id = lastWheel_->first;
-    lastWheel_ = std::make_pair(id, now);
-    if (!delta || !p->hasTrack(id)) return;
-    const app::Track& track = p->track(id);
-    if (track.folded) {
-        if (delta > 0) editor()->setFolded(id, false);  // (at the height it had)
-    } else if (delta < 0 && track.height <= app::kMinTrackHeight) {
-        editor()->setFolded(id, true);
-    } else {
-        const int height = track.height + static_cast<int>(app::roundHalfEven(delta / 120.0 * kHeightStep));
-        editor()->setTrackHeight(id, std::clamp(height, app::kMinTrackHeight, app::kMaxTrackHeight));
+    const bool turning = lastWheel_ && now - lastWheel_->second < kWheelGesture;
+    if (!turning) {
+        wheelFolds_ = onTitleBar(trackId, y);
+        wheelSum_ = 0;
     }
+    if (wheelFolds_) {
+        // The track under the mouse, whichever it is now: a sweep folds (or unfolds) one after another.
+        lastWheel_ = std::make_pair(trackId, now);
+        if (!delta || !resizable(trackId)) return;
+        if ((wheelSum_ < 0) != (delta < 0)) wheelSum_ = 0;  // (turned back)
+        wheelSum_ += delta;
+        if (std::abs(wheelSum_) < 120) return;
+        const bool fold = wheelSum_ < 0;
+        wheelSum_ = 0;
+        editor()->setFolded(trackId, fold);  // (unfolded at the height it had)
+        return;
+    }
+    QString id = trackId;
+    if (turning && resizable(lastWheel_->first)) id = lastWheel_->first;
+    lastWheel_ = std::make_pair(id, now);
+    if (!delta || !resizable(id)) return;
+    const app::Track& track = p->track(id);
+    if (track.folded) return;  // (folded meanwhile: its title bar folds and unfolds it)
+    const int height = track.height + static_cast<int>(app::roundHalfEven(delta / 120.0 * kHeightStep));
+    editor()->setTrackHeight(id, std::clamp(height, app::kMinTrackHeight, app::kMaxTrackHeight));
 }
 
 std::optional<Arrangement::DropTarget> Arrangement::dropTarget(const QStringList& trackIds, double y) const {

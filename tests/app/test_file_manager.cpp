@@ -623,6 +623,41 @@ private Q_SLOTS:
         QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), kick);
     }
 
+    // Esc, the ✕, the button again (cancel) put back the sample it began with, taking its step away;
+    // what was kept by Enter stays.
+    void aCancelledHotSwapPutsBackTheSample() {
+        TempDir dir;  // (gone after the session, which may still be reading its files)
+        SessionFixture f;
+        const QString kick = wav(dir.path(QStringLiteral("Kick.wav")), 0.5);
+        const QString first = wav(dir.path(QStringLiteral("Kick 2.wav")), 0.25);
+        const QString second = wav(dir.path(QStringLiteral("Kick 3.wav")), 0.75);
+        const QString a = f.clipTrack(kick, 0.5, QStringLiteral("A"));
+        HotSwap& hot = *f.s().hotSwap();
+        BrowserController& browser = *f.s().browser();
+        const int steps = f.stack().count();
+        QVERIFY(hot.startClip({a, QStringLiteral("Ac")}));
+        browser.chooseFile(first);
+        browser.chooseFile(second);
+        QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), second);
+        hot.cancel();
+        QVERIFY(!hot.active());
+        QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), kick);
+        QVERIFY(near(f.project().clip(a, QStringLiteral("Ac")).durationSec, 0.5));
+        QCOMPARE(f.stack().index(), steps);
+        QCOMPARE(f.stack().count(), steps);  // (its step gone: nothing to redo the cancelled sample with)
+        QVERIFY(!f.stack().canRedo());
+        // Nothing tried: nothing to put back, nothing undone.
+        QVERIFY(hot.startClip({a, QStringLiteral("Ac")}));
+        hot.cancel();
+        QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), kick);
+        QCOMPARE(f.stack().index(), steps);
+        // Kept with Enter: a cancel afterwards (it is over) changes nothing.
+        QVERIFY(hot.startClip({a, QStringLiteral("Ac")}));
+        hot.commit(first);
+        hot.cancel();
+        QCOMPARE(clipPath(f.project(), a, QStringLiteral("Ac")), first);
+    }
+
     void frozenClipsAreNotHotSwapped() {
         TempDir dir;  // (gone after the session, which may still be reading its files)
         SessionFixture f;

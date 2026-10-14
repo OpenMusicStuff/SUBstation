@@ -4,10 +4,11 @@ import QtQuick.Layouts
 import SUBstation
 
 // The bar on top of the window, left to right: the tempo, the time signature,
-// the metronome, the project key and the computer MIDI keyboard | the position
-// (bar. beat. sixteenth), play, stop, record, the count-in, Re-Enable
-// Automation and Lock Envelopes, the oscilloscope | loop, follow, the CPU load
-// and the audio device (a click opens Preferences).
+// the metronome (its count-in a drop-down on its right), the project key and
+// the computer MIDI keyboard | the position (bar. beat. sixteenth), play, stop,
+// record, Re-Enable Automation, the oscilloscope | loop, follow, the CPU load
+// and the audio device (a click opens Preferences). (Lock Envelopes is in the
+// arrangement's corner, as Ableton's: GridInfo.)
 //
 // Its controls show the project, the bridge and the session, and call them:
 // Play's and Record's checked state follows the bridge, never the click; the
@@ -107,15 +108,46 @@ Rectangle {
             onMoved: value => Session.editor.setTimeSignature(transport.numerator, Math.round(value))
         }
         Separator {}
-        ToggleButton {
-            objectName: "metronome"
-            Layout.preferredHeight: Theme.controlHeight
-            role: "tool"
-            iconName: "metronome"
-            tooltip: qsTr("Metronome")
-            checkable: false
-            checked: Session.bridge.metronome
-            onClicked: Session.bridge.metronome = !Session.bridge.metronome
+        // The metronome, its count-in a drop-down on its right, as Live's.
+        RowLayout {
+            spacing: -1  // (one border between them)
+
+            ToggleButton {
+                objectName: "metronome"
+                Layout.preferredHeight: Theme.controlHeight
+                role: "tool"
+                iconName: "metronome"
+                tooltip: qsTr("Metronome")
+                checkable: false
+                checked: Session.bridge.metronome
+                onClicked: Session.bridge.metronome = !Session.bridge.metronome
+            }
+            ChoiceBox {
+                id: countIn
+                objectName: "countIn"
+                Layout.preferredHeight: Theme.controlHeight
+                Layout.preferredWidth: 16
+                leftPadding: 0
+                rightPadding: 0
+                contentItem: Item {}
+                indicator: Icon {
+                    anchors.centerIn: parent
+                    name: "fold"
+                    color: Session.countInBars > 0 ? Theme.accent : Theme.text
+                    size: 9
+                }
+                choices: Session.countInChoices
+                chosenIndex: {
+                    const choices = Session.countInChoices
+                    for (let i = 0; i < choices.length; ++i)
+                        if (choices[i].value === Session.countInBars)
+                            return i
+                    return 0
+                }
+                tooltip: qsTr("Count-in: the metronome counts in this long before recording starts (%1)")
+                             .arg(displayText)
+                onChosen: index => Session.countInBars = Session.countInChoices[index].value
+            }
         }
         // The project's key: audio added with a key in its file name is transposed to it;
         // the piano roll tints notes out of it.
@@ -189,21 +221,6 @@ Rectangle {
             checked: Session.bridge.recording
             onClicked: Session.toggleRecord()
         }
-        ChoiceBox {
-            id: countIn
-            objectName: "countIn"
-            Layout.preferredHeight: Theme.controlHeight
-            choices: Session.countInChoices
-            chosenIndex: {
-                const choices = Session.countInChoices
-                for (let i = 0; i < choices.length; ++i)
-                    if (choices[i].value === Session.countInBars)
-                        return i
-                return 0
-            }
-            tooltip: qsTr("Count-in: the metronome counts in this long before recording starts")
-            onChosen: index => Session.countInBars = Session.countInChoices[index].value
-        }
         // Lit while automation is overridden (a target changed by hand): a click brings it back.
         ToggleButton {
             objectName: "reEnable"
@@ -215,16 +232,6 @@ Rectangle {
             enabled: Session.automationOverridden
             checked: Session.automationOverridden
             onClicked: Session.bridge.reEnableAutomation()
-        }
-        ToggleButton {
-            objectName: "lockEnvelopes"
-            Layout.preferredHeight: Theme.controlHeight
-            role: "tool"
-            iconName: "lock_envelopes"
-            tooltip: qsTr("Lock Envelopes: automation stays in place when clips move (off: it moves with them)")
-            checkable: false
-            checked: Session.project.automationLocked
-            onClicked: Session.editor.setAutomationLocked(!Session.project.automationLocked)
         }
         Item {
             implicitWidth: 1

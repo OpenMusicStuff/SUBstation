@@ -102,6 +102,7 @@ std::optional<double> parseDb(const QString& text) {
 TrackHeaderItem::TrackHeaderItem(QQuickItem* parent) : SgCanvas(parent) {
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
+    connect(Theme::instance(), &Theme::changed, this, &TrackHeaderItem::changed);  // (its colour, as the theme shows it)
 }
 
 TrackHeaderItem::~TrackHeaderItem() = default;
@@ -185,7 +186,7 @@ bool TrackHeaderItem::midi() const { return track() && track()->isMidi(); }
 bool TrackHeaderItem::records() const { return track() && track()->hasClips(); }  // groups record nothing
 QString TrackHeaderItem::name() const { return track() ? track()->name : QString(); }
 QString TrackHeaderItem::nameTemplate() const { return track() ? track()->nameSource() : QString(); }
-QColor TrackHeaderItem::color() const { return track() ? QColor(track()->color) : QColor(); }
+QColor TrackHeaderItem::color() const { return track() ? Theme::trackColor(track()->color) : QColor(); }
 bool TrackHeaderItem::mute() const { return track() && mute_; }
 bool TrackHeaderItem::solo() const { return track() && track()->solo; }
 bool TrackHeaderItem::armed() const { return track() && track()->armed; }
@@ -313,17 +314,20 @@ QString TrackHeaderItem::outputChannelToolTip() const {
 }
 
 QColor TrackHeaderItem::barColor() const {
-    // Selected by a click on its name, with its automation hidden: all of the
-    // name column in the selection's colour, opaque (Ableton's light blue),
-    // whatever its own.
-    if (arrangement_ && arrangement_->headerSelected(isMaster() ? QString(app::kMaster) : trackId_) &&
-        !automationShown_) {
+    // Selected by a click on its name: its name bar in the selection's colour,
+    // opaque (Ableton's light blue), whatever its own. (All of the name column
+    // while its automation is hidden; while it shows, the bar over its choosers.)
+    if (arrangement_ && arrangement_->headerSelected(isMaster() ? QString(app::kMaster) : trackId_)) {
         QColor color = Theme::selection();
         color.setAlpha(255);
         return color;
     }
+    return ownColor();
+}
+
+QColor TrackHeaderItem::ownColor() const {
     if (isMaster()) return QColor(app::kMasterColor);
-    return track() ? QColor(track()->color) : QColor(Theme::surface());
+    return track() ? Theme::trackColor(track()->color) : QColor(Theme::surface());
 }
 
 QColor TrackHeaderItem::barText() const {
@@ -367,12 +371,12 @@ QVariantList TrackHeaderItem::lanes() const {
 }
 
 qreal TrackHeaderItem::nameLeft() const {
-    if (isReturn() || isMaster()) return 6;
+    if (isReturn()) return 6;
     return foldRect().right() + 3;
 }
 
 QRectF TrackHeaderItem::foldRect() const {
-    if (isReturn() || isMaster()) return {};
+    if (isReturn()) return {};  // (the master folds as a track does)
     return QRectF(indent() + 4, kNamePad, kFoldWidth, kNameButton);  // (as the buttons)
 }
 
@@ -383,7 +387,7 @@ bool TrackHeaderItem::mixerAutomated() const {
 bool TrackHeaderItem::inResizeZone(double y) const {
     // The bottom edge of the track's own lane (automation lanes below keep their
     // height). A folded track keeps the height it had: it can't be resized.
-    if (folded_ || isReturn() || isMaster()) return false;
+    if (folded_ || isReturn()) return false;
     return row_.mainHeight - kResizeGrab <= y && y < row_.mainHeight;
 }
 
@@ -487,7 +491,8 @@ void TrackHeaderItem::refreshRow() {
     bool folded = false, shown = false;
     if (isMaster()) {
         row = arrangement_->masterRows();
-        shown = project()->master().automationView.shown;
+        folded = project()->master().folded;
+        shown = !folded && project()->master().automationView.shown;
     } else if (const auto rows = arrangement_->returnRows(trackId_)) {
         row = *rows;
         shown = project()->automationView(trackId_).shown;
@@ -535,7 +540,7 @@ void TrackHeaderItem::refreshMixer() {
     if (activatorAutomation_ == u"on") {
         mute_ = bridge.currentValue(trackId_, automation::kMixerOn).value_or(mute_ ? 0.0 : 1.0) < 0.5;
     }
-    if (mute_ != wasMuted) update();  // (its name is dimmed while muted)
+    if (mute_ != wasMuted) update();
     Q_EMIT mixerChanged();
 }
 
@@ -713,8 +718,12 @@ void TrackHeaderItem::setMonitor(const QString& mode) {
 void TrackHeaderItem::toggleFold() {
     // Fold or unfold it; when it is one of several selected tracks, they all take its new state.
     const app::Track* t = track();
-    if (!t || isReturn() || isMaster()) return;
+    if (!t || isReturn()) return;
     const bool folded = !t->folded;
+    if (isMaster()) {
+        session_->editor()->setFolded(trackId_, folded);
+        return;
+    }
     for (const QString& id : draggedTracks()) session_->editor()->setFolded(id, folded);
 }
 
@@ -850,6 +859,8 @@ MenuEntries TrackHeaderItem::contextMenu() {
     const QString id = trackId_;
     if (isMaster()) {
         selection.selectTrack(app::kMaster, true);  // the device view shows its effects
+        menu.add(p->master().folded ? QStringLiteral("Unfold Track") : QStringLiteral("Fold Track"), [this] { toggleFold(); });
+        menu.addSeparator();
         addAutomationEntries(menu);
         return menu;
     }
@@ -863,7 +874,7 @@ MenuEntries TrackHeaderItem::contextMenu() {
     menu.add(QStringLiteral("Rename"), [this] { startRename(); });
     MenuEntry& colors = menu.addSubmenu(QStringLiteral("Color"));
     for (const QString& color : app::kTrackColors) {
-        MenuList(colors.children).add(color, [editor, id, color] { editor->setTrackColor(id, color); }).swatch = QColor(color);
+        MenuList(colors.children).add(color, [editor, id, color] { editor->setTrackColor(id, color); }).swatch = Theme::trackColor(color);
     }
     menu.addSeparator();
     if (isReturn()) {
@@ -1347,11 +1358,9 @@ MenuEntries TrackHeaderItem::paramMenu(int lane) {
 namespace {
 
 // The ground under a strip's name column below its name bar (its automation
-// choosers'): the header's, tinted with its colour, as Ableton shades it;
-// while the track is selected, the selection's teal instead, whatever its
-// colour (Ableton's: the selected device header's).
-QColor shade(const QColor& color, bool selected) {
-    if (selected) return Theme::deviceHeaderSelected();
+// choosers'): the header's, tinted with its colour, as Ableton shades it,
+// selected or not (only its name bar lights up).
+QColor shade(const QColor& color) {
     constexpr double kTint = 0.08;
     const QColor ground = Theme::panelAlt();
     return QColor::fromRgbF(ground.redF() + kTint * (color.redF() - ground.redF()),
@@ -1368,7 +1377,7 @@ void TrackHeaderItem::paint(SgPainter& p) {
     p.fillRect(QRectF(0, 0, w, h), isSelected ? Theme::laneSelected() : Theme::panelAlt());
     if (!t) return;
     const double main = row_.mainHeight;
-    const bool strip = isReturn() || isMaster();  // (no fold button, no bands)
+    const bool strip = isReturn() || isMaster();  // (no group bands; a return no fold button either)
     // The name column: from the group bands to the In/Out column (or the mixer's).
     const double left = strip ? 1.0 : indent();
     const double right = (ioLeft_ > 0 ? ioLeft_ : mixerLeft_ > 0 ? mixerLeft_ : w) - 1;
@@ -1380,20 +1389,20 @@ void TrackHeaderItem::paint(SgPainter& p) {
                        : t->isGroup()                                 ? double(kGroupBlock)
                                                                       : double(kNamePad + kNameButton + kNamePad);
     p.fillRect(QRectF(left, 0, right - left, bar), color);
-    if (bar < main - 1) p.fillRect(QRectF(left, bar, right - left, main - 1 - bar), shade(color, isSelected));
+    // Under the bar (its choosers), a dark shade of its own colour, selected by its name or not.
+    const QColor own = ownColor();
+    if (bar < main - 1) p.fillRect(QRectF(left, bar, right - left, main - 1 - bar), shade(own));
     // The lanes below it: a row each, with a line above.
     for (const LaneRow& lane : row_.lanes) {
         const double top = lane.top - rowTop_;
-        p.fillRect(QRectF(left, top, right - left, lane.height), shade(color, isSelected));
+        p.fillRect(QRectF(left, top, right - left, lane.height), shade(own));
         p.fillRect(QRectF(0, top, w, 1), Theme::gridBar());
     }
     // The columns' edges.
     p.fillRect(QRectF(right, 0, 1, h), Theme::border());
     if (ioLeft_ > 0 && mixerLeft_ > ioLeft_) p.fillRect(QRectF(mixerLeft_ - 1, 0, 1, h), Theme::border());
-    const QColor ink = barText();
-    const QColor dimInk = QColor::fromRgbF(0.5 * (ink.redF() + color.redF()), 0.5 * (ink.greenF() + color.greenF()),
-                                           0.5 * (ink.blueF() + color.blueF()));
-    if (!strip) {
+    const QColor ink = barText();  // (deactivated or not: its activator says so)
+    if (!isReturn()) {
         // The fold button, in a circle. A track's: a triangle, pointing right
         // while folded, down while open. A group's: three bars (its tracks),
         // folded or not, as Ableton's (folded, its height and its lane show it).
@@ -1426,7 +1435,7 @@ void TrackHeaderItem::paint(SgPainter& p) {
         const QRectF nameRect(nameX, kNamePad, nameRight_ - nameX, kNameButton);
         const QString name = isMaster() ? kMain : t->name;
         p.drawText(nameRect, Qt::AlignVCenter | Qt::AlignLeft, SgPainter::elidedText(name, font, nameRect.width()),
-                   mute() ? dimInk : ink, font);
+                   ink, font);
     }
     p.fillRect(QRectF(0, h - 1, w, 1), Theme::border());
     p.fillRect(QRectF(0, 0, 1, h), Theme::border());
@@ -1458,7 +1467,12 @@ void TrackHeaderItem::mousePressEvent(QMouseEvent* event) {
         if (onName && arrangement_) arrangement_->endHeaderClick();
     };
     if (isMaster()) {
-        headerClick([&] { selection.selectTrack(app::kMaster, true); });  // the device view shows its effects
+        if (inResizeZone(pos.y()))
+            resize_ = std::make_pair(event->scenePosition().y(), row_.mainHeight);  // as tall as it shows
+        else if (foldRect().contains(pos))
+            toggleFold();
+        else
+            headerClick([&] { selection.selectTrack(app::kMaster, true); });  // the device view shows its effects
         return;
     }
     if (isReturn()) {
@@ -1552,16 +1566,19 @@ void TrackHeaderItem::hoverMoveEvent(QHoverEvent* event) {
 }
 
 void TrackHeaderItem::wheelEvent(QWheelEvent* event) {
-    if (!arrangement_ || !track() || isMaster() || isReturn()) {
+    if (!arrangement_ || !track() || isReturn()) {
         event->ignore();
         return;
     }
     const Qt::KeyboardModifiers mods = event->modifiers();
     const QPoint delta = event->angleDelta();
     if ((mods & Qt::AltModifier) && !(mods & Qt::ControlModifier)) {
-        // Alt+wheel resizes this track, folding (or unfolding) it at its smallest
+        // Alt+wheel on its name row folds and unfolds tracks; below it, resizes this track
         // (over any of its controls too: theirs don't take the wheel).
-        arrangement_->wheelResize(trackId_, delta.y() ? delta.y() : delta.x());
+        arrangement_->wheelResize(trackId_, event->position().y(), delta.y() ? delta.y() : delta.x());
+    } else if (isMaster()) {
+        event->ignore();  // (pinned below the tracks: it doesn't scroll them)
+        return;
     } else {
         arrangement_->setScrollY(arrangement_->scrollY() - delta.y() / 120.0 * 48);  // the headers scroll with the lanes
     }

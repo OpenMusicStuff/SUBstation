@@ -11,6 +11,12 @@ QColor hex(const char* rgb, int alpha = 255) {
     return color;
 }
 
+std::vector<QColor> hexes(std::initializer_list<const char*> rgbs) {
+    std::vector<QColor> colors;
+    for (const char* rgb : rgbs) colors.push_back(hex(rgb));
+    return colors;
+}
+
 // SUBstation's own: dark, as the Python UI's theme was.
 Palette defaultPalette() {
     return {
@@ -75,6 +81,12 @@ Palette defaultPalette() {
         .automationOn = hex("#ff4a3d"),
         .automationOff = hex("#8c8c8c"),
         .modulation = hex("#3fd0ff"),
+        // Softened to one lightness and chroma: none glares on the greys, waveforms read on all.
+        .trackColors = hexes({"#e78d98", "#eda063", "#bf9752", "#dbcc75", "#a7cd77", "#76c382", "#70ccae",
+                         "#6ac9ce", "#77b6e1", "#738edc", "#9e9ce1", "#bd86cf", "#da7baa", "#ebad97"}),
+        .trackLightMin = 0.66,
+        .trackLightMax = 0.84,
+        .trackChroma = 0.13,
     };
 }
 
@@ -144,6 +156,12 @@ Palette disabletonPalette() {
         .automationOn = hex("#c14541"),
         .automationOff = hex("#8c8c8c"),
         .modulation = hex("#46b7d6"),
+        // Live's own, as they are.
+        .trackColors = hexes({"#ff94a6", "#ffa529", "#cc9927", "#f7f47c", "#bffb00", "#1aff2f", "#25ffa8",
+                         "#5cffe8", "#8bc5ff", "#5480e4", "#92a7ff", "#d86ce4", "#e553a0", "#ffb3a0"}),
+        .trackLightMin = 0.0,
+        .trackLightMax = 0.0,
+        .trackChroma = 0.0,
     };
 }
 
@@ -211,6 +229,12 @@ Palette flashbangPalette() {
         .automationOn = hex("#f0382b"),
         .automationOff = hex("#8c8c8c"),
         .modulation = hex("#0b86b8"),
+        // Deeper, to stand out on the light lanes.
+        .trackColors = hexes({"#e56c7f", "#e98a35", "#b28324", "#ccb93e", "#8dbd42", "#4bb160", "#3bb693",
+                         "#2bb3b9", "#48a1db", "#5a79d9", "#8b85de", "#b16cc6", "#d4599b", "#e69275"}),
+        .trackLightMin = 0.60,
+        .trackLightMax = 0.78,
+        .trackChroma = 0.15,
     };
 }
 
@@ -281,6 +305,12 @@ Palette gayPalette() {
         .automationOn = hex("#ff4d7a"),
         .automationOff = hex("#8c8c8c"),
         .modulation = hex("#7df2df"),
+        // Vivid, on the dark violet.
+        .trackColors = hexes({"#fb7188", "#ff9a3f", "#d9a02c", "#e8d34f", "#a2d94a", "#4ecf6b", "#43dab0",
+                         "#43d5dc", "#52b5f4", "#668af9", "#9c95fe", "#cc75e6", "#f86ab5", "#fcae93"}),
+        .trackLightMin = 0.66,
+        .trackLightMax = 0.86,
+        .trackChroma = 0.19,
     };
 }
 

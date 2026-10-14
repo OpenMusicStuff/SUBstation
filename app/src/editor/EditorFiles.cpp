@@ -59,6 +59,16 @@ bool ProjectEditor::replaceFile(const FileUses& uses, const QString& path, doubl
         std::make_unique<ReplaceFilesCommand>(project_, text, current, after, statesCurrent, statesAfter, mergeKey));
 }
 
+bool ProjectEditor::revertReplaceFiles(const QString& mergeKey) {
+    const int index = undoStack_->index();
+    const auto* last = index > 0 ? dynamic_cast<const ReplaceFilesCommand*>(undoStack_->command(index - 1)) : nullptr;
+    if (mergeKey.isEmpty() || last == nullptr || last->mergeKey() != mergeKey) return false;
+    // (Back where it began: the merge leaves the step obsolete, and the stack drops it.)
+    return push(std::make_unique<ReplaceFilesCommand>(project_, last->text(), last->after(), last->before(),
+                                                      last->statesAfter(), last->statesBefore(), mergeKey,
+                                                      last->relink()));
+}
+
 bool ProjectEditor::relinkFiles(const QMap<QString, QString>& moved, const QString& text) {
     const Project& p = *project_;
     if (moved.isEmpty()) return false;

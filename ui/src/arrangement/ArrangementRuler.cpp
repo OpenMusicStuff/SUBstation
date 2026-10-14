@@ -20,6 +20,15 @@
 
 namespace sub::ui {
 
+namespace {
+
+QColor mixed(const QColor& a, const QColor& b) {
+    return QColor::fromRgbF(0.5f * (a.redF() + b.redF()), 0.5f * (a.greenF() + b.greenF()),
+                            0.5f * (a.blueF() + b.blueF()));
+}
+
+}  // namespace
+
 ArrangementRuler::ArrangementRuler(QQuickItem* parent) : ArrangementItem(parent) {
     setAcceptedMouseButtons(Qt::LeftButton);
     setAcceptHoverEvents(true);
@@ -34,46 +43,82 @@ void ArrangementRuler::connectSession(app::Session* session) {
 }
 
 void ArrangementRuler::paint(SgPainter& p) {
+    // As Ableton's: the bar numbers on top; under them a band with the grid's
+    // lines, the loop brace along its top and the start marker at its foot.
     const QRectF rect = p.rect();
-    const double w = width(), h = height();
-    p.fillRect(rect, Theme::panel());
-    p.fillRect(QRectF(rect.left(), 0, rect.width(), kLoopStrip), Theme::panelAlt());
+    const double h = height();
+    const QColor ground = Theme::window();
+    p.fillRect(rect, ground);
+    p.fillRect(QRectF(rect.left(), 0, rect.width(), 1), ground.lighter(150));  // (its lit top edge)
+    p.fillRect(QRectF(rect.left(), h - kBase, rect.width(), kBase), Theme::border());
     if (!ready()) return;
     const app::Project& project = *session()->project();
     const timeline::Timeline& view = arrangement()->view();
+    const double bandTop = kNumbers, bandBottom = h - kBase;
 
-    // The loop brace.
-    const double lx0 = view.beatToX(project.loopStart()), lx1 = view.beatToX(project.loopEnd());
-    if (lx1 > 0 && lx0 < w) {
-        const QColor color = project.loopEnabled() ? Theme::loopOn() : Theme::loopOff();
-        p.fillRect(QRectF(lx0, 2, lx1 - lx0, kLoopStrip - 4), color);
-        p.fillRect(QRectF(lx0, 2, 2, kLoopStrip - 4), color.darker(140));
-        p.fillRect(QRectF(lx1 - 2, 2, 2, kLoopStrip - 4), color.darker(140));
-    }
-
-    // Ticks and labels.
-    const double scaleTop = kLoopStrip;
-    const double scaleHeight = h - kLoopStrip;
+    // The numbers: a bar's right of a tick down to the band; bars between them a short tick.
+    // The band: every line of the grid, darker than the ground, as the lanes' below.
     const double step = view.gridStep();
     const double every = timeline::labelStep(view, step);
     const QFont font = uiFont(8);
+    const QColor ink = mixed(Theme::text(), Theme::textDim());
     const app::TimeSignature ts = project.timeSignature();
     for (const timeline::GridLine& line : timeline::gridLines(view, rect.left() - 60, rect.right() + 1, step)) {
-        const double tick = line.kind == timeline::LineKind::Bar    ? scaleHeight
-                            : line.kind == timeline::LineKind::Beat ? scaleHeight * 0.45
-                                                                    : scaleHeight * 0.25;
         const double x = app::roundHalfEven(line.x);
-        p.fillRect(QRectF(x, h - tick, 1, tick), line.kind == timeline::LineKind::Bar ? Theme::textDim() : Theme::gridBar());
-        if (std::abs(line.beat / every - std::round(line.beat / every)) < 1e-6)
-            p.drawText(QPointF(x + 3, scaleTop + 12), app::formatBarLabel(line.beat, ts), Theme::text(), font);
+        p.fillRect(QRectF(x, bandTop, 1, bandBottom - bandTop), ground.darker(122));
+        if (line.kind != timeline::LineKind::Bar) continue;
+        if (std::abs(line.beat / every - std::round(line.beat / every)) < 1e-6) {
+            p.fillRect(QRectF(x, bandTop - 8, 1, 8), ink);
+            p.drawText(QPointF(x + 3, bandTop - 4), app::formatBarLabel(line.beat, ts), ink, font);
+        } else {
+            p.fillRect(QRectF(x, bandTop - 3, 1, 3), ink.darker(150));
+        }
     }
-    p.fillRect(QRectF(rect.left(), h - 1, rect.width(), 1), Theme::border());
 
-    // The start marker (insert position).
+    // The loop brace: lit edges (on down the band, and the lanes: ArrangementLanes),
+    // and a hollow triangle inside each end, pointing in.
+    const double lx0 = app::roundHalfEven(view.beatToX(project.loopStart()));
+    const double lx1 = app::roundHalfEven(view.beatToX(project.loopEnd()));
+    if (lx1 > rect.left() && lx0 < rect.right()) {
+        const QColor fill = loopColor(project.loopEnabled());
+        const QColor edge = loopEdgeColor(project.loopEnabled());
+        const double top = kLoopTop, bottom = kLoopTop + kLoopStrip;
+        p.fillRect(QRectF(lx0, top, lx1 - lx0, kLoopStrip), fill);
+        p.fillRect(QRectF(lx0, top, lx1 - lx0, 1), fill.lighter(125));
+        p.fillRect(QRectF(lx0, bottom - 1, lx1 - lx0, 1), edge);
+        // (Its edges run on down the band, and the lanes, while the loop is on.)
+        const double edgeBottom = project.loopEnabled() ? bandBottom : bottom;
+        p.fillRect(QRectF(lx0, top, 1, edgeBottom - top), edge);
+        p.fillRect(QRectF(lx1 - 1, top, 1, edgeBottom - top), edge);
+        if (lx1 - lx0 > 20) {
+            const double mid = top + kLoopStrip / 2.0, half = kLoopStrip / 2.0 - 2.0;
+            p.save();
+            p.setAntialiasing(true);
+            p.drawPolyline(QPolygonF({QPointF(lx0 + 2.5, mid - half), QPointF(lx0 + 3.5 + half, mid),
+                                      QPointF(lx0 + 2.5, mid + half)}),
+                           edge, 1.0);
+            p.drawPolyline(QPolygonF({QPointF(lx1 - 3.5, mid - half), QPointF(lx1 - 4.5 - half, mid),
+                                      QPointF(lx1 - 3.5, mid + half)}),
+                           edge, 1.0);
+            p.restore();
+        }
+    }
+
+    // The start marker (insert position): a triangle pointing down at the band's foot.
     const double sx = view.beatToX(session()->selection()->insertBeat());
-    p.fillPolygon(QPolygonF({QPointF(sx - 5, scaleTop + 1), QPointF(sx + 5, scaleTop + 1), QPointF(sx, scaleTop + 8)}),
+    p.save();
+    p.setAntialiasing(true);
+    p.fillPolygon(QPolygonF({QPointF(sx - 4.5, bandBottom - 5), QPointF(sx + 4.5, bandBottom - 5),
+                             QPointF(sx, bandBottom)}),
                   Theme::insertMarker());
+    p.restore();
 }
+
+QColor ArrangementRuler::loopColor(bool enabled) { return enabled ? Theme::loopOn() : Theme::loopOff(); }
+
+QColor ArrangementRuler::loopEdgeColor(bool enabled) { return loopColor(enabled).lighter(145); }
+
+bool ArrangementRuler::inLoopStrip(double y) { return kLoopTop <= y && y < kLoopTop + kLoopStrip; }
 
 ArrangementRuler::Zone ArrangementRuler::loopZone(double x) const {
     const app::Project& project = *session()->project();
@@ -93,7 +138,7 @@ void ArrangementRuler::mousePressEvent(QMouseEvent* event) {
     const app::Project& project = *session()->project();
     Drag drag;
     drag.beat = beat;
-    if (pos.y() < kLoopStrip) {
+    if (inLoopStrip(pos.y())) {
         switch (loopZone(pos.x())) {
             case Zone::Start: drag.mode = Mode::LoopStart; break;
             case Zone::End: drag.mode = Mode::LoopEnd; break;
@@ -169,7 +214,7 @@ void ArrangementRuler::mouseUngrabEvent() { drag_.reset(); }
 
 void ArrangementRuler::mouseDoubleClickEvent(QMouseEvent* event) {
     if (!ready() || event->button() != Qt::LeftButton) return;
-    if (event->position().y() < kLoopStrip && loopZone(event->position().x()) != Zone::None)
+    if (inLoopStrip(event->position().y()) && loopZone(event->position().x()) != Zone::None)
         session()->editor()->setLoopEnabled(!session()->project()->loopEnabled());
 }
 
@@ -178,7 +223,7 @@ void ArrangementRuler::hoverMoveEvent(QHoverEvent* event) { updateCursor(event->
 void ArrangementRuler::updateCursor(const QPointF& pos) {
     if (!ready()) return;
     Qt::CursorShape shape = Qt::ArrowCursor;
-    if (pos.y() < kLoopStrip) {
+    if (inLoopStrip(pos.y())) {
         switch (loopZone(pos.x())) {
             case Zone::Start:
             case Zone::End: shape = Qt::SizeHorCursor; break;

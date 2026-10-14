@@ -532,8 +532,8 @@ application ends, which stops the backend's threads (saving the index) and waits
 - **Renaming a preset** in place (Ctrl+R with the list focused, or its menu's Rename…): a text field over its row;
   Enter applies (`renamePreset`), Esc cancels. Deleting asks first ("Move the preset to the Recycle Bin?").
 - **The footer**: the headphones (`previewEnabled`) and the status.
-- **A file's label**: on the right of its row, dimmed (`tagsLabel`), at most half the row's width; the name is elided
-  first.
+- **A file's label**: on the right of its row, dimmed (`tagsLabel` in `tagsBox`), behind the name: the name has the
+  whole row (elided only at its end), and the label is cut off where the name ends, fading in over `fade` (28 px).
 - **Text**: the sidebar's entries, the results and the folder tree in `Theme.listFont` (10 pt, a point more than the
   rest of the UI: Qt Quick draws small text smaller than the widgets did), the sidebar's headings in
   `Theme.listHeadingFont` (8.5 pt bold); a row is its text's height and 4 px (at least 20 px, 22 in the sidebar).

@@ -57,7 +57,7 @@ void LiveTakes::paint(SgPainter& p) {
         const auto take = live.constFind(row.trackId);
         const app::Track* track = project.findTrack(row.trackId);
         if (take == live.constEnd() || !take->started || !track) continue;
-        drawTake(p, QColor(track->color), *take, row.top - scroll, row.mainHeight, row.bars, visible);
+        drawTake(p, Theme::trackColor(track->color), *take, row.top - scroll, row.mainHeight, row.bars, visible);
     }
 }
 

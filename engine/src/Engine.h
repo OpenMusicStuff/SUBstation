@@ -614,7 +614,9 @@ public:
     bool isCountingIn() const { return shared_.countingIn.load(std::memory_order_relaxed); }
     void stop();
     bool isPlaying() const { return requestedPlaying_.load(std::memory_order_relaxed); }
-    double positionBeats() const { return shared_.positionBeats.load(std::memory_order_relaxed); }
+    // Where the playhead is; after setPositionBeats(), its beat until the audio
+    // thread plays from there (not where it was a moment before: no flash back).
+    double positionBeats() const;
     void setPositionBeats(double beat);
     void setTempo(double bpm);
     double tempo();
@@ -833,7 +835,7 @@ private:
     ProcessorIds processorIdsLocked() const;
     std::vector<StripSlot> stripSlotsLocked(const TrackModel& track, const ProcessorIds& ids) const;
     void rebuildSnapshotLocked();
-    void pushCommandLocked(const TransportCommand& command);
+    bool pushCommandLocked(const TransportCommand& command);  // false: the queue was full
     void serviceTransportIfIdleLocked();
     void collectGarbageLocked();
     void openDeviceLocked(const DeviceConfig& config);
@@ -977,6 +979,8 @@ private:
     Renderer renderer_;
     RenderJob* job_ = nullptr;  // the render in the background, until finished (it holds itself)
     std::atomic<bool> requestedPlaying_{false};
+    std::atomic<uint64_t> locatesPushed_{0};  // Locate commands pushed (against shared_.locatesPublished)
+    std::atomic<double> locateBeat_{0.0};     // the last one's beat
 
     double sampleRate_ = 48000.0;
     double tempo_ = 120.0;

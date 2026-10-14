@@ -3,7 +3,7 @@ import QtQuick.Controls
 import SUBstation
 
 // The master's header, laid out as a track's (TrackHeader) and named Main, as
-// in Ableton 12: its name bar; in the In/Out column the audio device's outputs
+// in Ableton 12, folding and resizing as a track's: its fold button and name bar; in the In/Out column the audio device's outputs
 // it plays on (Main Out); its volume, pan and meter; and while its automation
 // shows, its automation choosers (and those of the lanes below it). Click it
 // to select the master: the device view shows its effects.
@@ -25,6 +25,10 @@ TrackHeaderItem {
 
     function rowY(r) {
         return pad + r * row
+    }
+    // A row shows where the header is tall enough for it (folded: its first), as a track's.
+    function fits(r) {
+        return rowY(r) + box <= mainHeight - 1 - pad
     }
 
     trackId: "master"
@@ -105,6 +109,7 @@ TrackHeaderItem {
     ValueBox {
         id: pan
         objectName: "pan"
+        visible: header.fits(1)
         x: header.mixerX + 60
         y: header.rowY(1)
         width: 52

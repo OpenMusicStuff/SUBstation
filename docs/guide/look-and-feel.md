@@ -12,7 +12,12 @@ for the next time SUBstation starts.
 | *Flashbang* | Light: white controls on light grey, dark text. |
 | *Gay* | Dark, purple-black, with the rainbow over what lights up: red record, orange track activators, a yellow playhead, green loop and play, cyan knobs and markers, blue solo, violet selections, a pink accent. |
 
-Track and clip colours are the project's, the same in every theme. The displays of the
-EQ, the Sidechain and the clash view stay dark in every theme, as a screen on a device.
+Track and clip colours follow the theme: each theme has its own 14 track colours, and a
+track keeps its place among them (the first colour stays the first). *Default* softens them
+to one brightness that sits with its greys; *Disableton* shows Live's own; *Flashbang*
+deepens them for its light lanes; *Gay* makes them vivid. Colours from outside the
+palette (a Live set's other colours) are brought to the theme's brightness, their hue
+kept. The project keeps the same colours whatever the theme. The displays of the EQ, the
+Sidechain and the clash view stay dark in every theme, as a screen on a device.
 
 For how themes work in the code, see [../ui/README.md](../ui/README.md#themes).

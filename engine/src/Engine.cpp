@@ -114,9 +114,10 @@ void Engine::reloadSourcesLocked() {
 // ---------------------------------------------------------------------------
 // Transport
 
-void Engine::pushCommandLocked(const TransportCommand& command) {
-    shared_.commands.push(command);  // 256 slots; a full queue only drops UI requests
+bool Engine::pushCommandLocked(const TransportCommand& command) {
+    const bool pushed = shared_.commands.push(command);  // 256 slots; a full queue only drops UI requests
     serviceTransportIfIdleLocked();
+    return pushed;
 }
 
 void Engine::serviceTransportIfIdleLocked() {
@@ -145,8 +146,17 @@ void Engine::stop() {
 void Engine::setPositionBeats(double beat) {
     std::lock_guard lock(mutex_);
     beat = std::max(0.0, beat);
-    shared_.positionBeats.store(beat);  // immediate feedback; the audio thread confirms it
-    pushCommandLocked({TransportCommand::Type::Locate, beat});
+    // Said at once (positionBeats()) until the audio thread confirms it: a block it is
+    // rendering from where it was publishes that position before it takes the locate.
+    locateBeat_.store(beat);
+    locatesPushed_.fetch_add(1);
+    if (!pushCommandLocked({TransportCommand::Type::Locate, beat})) locatesPushed_.fetch_sub(1);
+}
+
+double Engine::positionBeats() const {
+    if (shared_.locatesPublished.load(std::memory_order_acquire) < locatesPushed_.load(std::memory_order_acquire))
+        return locateBeat_.load();
+    return shared_.positionBeats.load(std::memory_order_relaxed);
 }
 
 void Engine::setTempo(double bpm) {

@@ -86,7 +86,7 @@ private Q_SLOTS:
     void layout() {
         QCOMPARE(bar_->height(), 40.0);
         for (const char* name : {"tempo", "numerator", "denominator", "metronome", "key", "computerKeys", "position",
-                                 "play", "stop", "record", "countIn", "reEnable", "lockEnvelopes", "scope", "loop",
+                                 "play", "stop", "record", "countIn", "reEnable", "scope", "loop",
                                  "follow"}) {
             QVERIFY2(item(name), name);
             QCOMPARE(item(name)->height(), 28.0);
@@ -94,8 +94,12 @@ private Q_SLOTS:
         auto left = [&](const char* name) { return item(name)->mapToScene(QPointF(0, 0)).x(); };
         QVERIFY(left("tempo") < left("numerator") && left("numerator") < left("metronome"));
         QVERIFY(left("computerKeys") < left("position") && left("position") < left("play"));
-        QVERIFY(left("play") < left("stop") && left("stop") < left("record") && left("record") < left("countIn"));
-        QVERIFY(left("lockEnvelopes") < left("scope") && left("scope") < left("loop"));
+        QVERIFY(left("play") < left("stop") && left("stop") < left("record") && left("record") < left("reEnable"));
+        // The count-in: a drop-down attached to the metronome's right, as Live's.
+        QVERIFY(left("metronome") < left("countIn") && left("countIn") < left("key"));
+        QVERIFY(std::abs(left("countIn") - (left("metronome") + item("metronome")->width())) <= 1.0);
+        QVERIFY(left("reEnable") < left("scope") && left("scope") < left("loop"));
+        QVERIFY(!item("lockEnvelopes"));  // (in the arrangement's corner, as Ableton's)
         QVERIFY(left("loop") < left("follow") && left("follow") < left("cpu") && left("cpu") < left("device"));
         QCOMPARE(text("position"), QStringLiteral("  1. 1. 1"));
         QCOMPARE(text("cpu"), QStringLiteral("CPU 0%"));
@@ -200,11 +204,6 @@ private Q_SLOTS:
         session().setCountInBars(0);
         QCOMPARE(item("countIn")->property("currentIndex").toInt(), 0);
 
-        click("lockEnvelopes");
-        QVERIFY(project().automationLocked() && checked("lockEnvelopes"));
-        editor().setAutomationLocked(false);
-        QVERIFY(!checked("lockEnvelopes"));
-
         click("loop");
         QVERIFY(project().loopEnabled() && checked("loop"));
         session().undoStack()->undo();
@@ -214,8 +213,8 @@ private Q_SLOTS:
         QVERIFY(!checked("reEnable"));
     }
 
-    // A project opened shows its own settings at once: its tempo, Lock Envelopes
-    // and the loop, not what the bar showed before (it kept 120 until moved).
+    // A project opened shows its own settings at once: its tempo and the loop,
+    // not what the bar showed before (it kept 120 until moved).
     void openingAProjectShowsItsSettings() {
         test::TempDir dir;
         editor().setTempo(160.0);
@@ -225,11 +224,11 @@ private Q_SLOTS:
         QVERIFY(session().saveProjectAs(path));
         session().newProject();
         QCOMPARE(item("tempo")->property("value").toDouble(), 120.0);
-        QVERIFY(!checked("lockEnvelopes") && !checked("loop"));
+        QVERIFY(!checked("loop"));
 
         QVERIFY(session().openProject(path));
         QCOMPARE(item("tempo")->property("value").toDouble(), 160.0);
-        QVERIFY(checked("lockEnvelopes") && checked("loop"));
+        QVERIFY(checked("loop"));
     }
 
     // Follow: the arrangement's.

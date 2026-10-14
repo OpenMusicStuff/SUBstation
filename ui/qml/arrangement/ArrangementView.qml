@@ -11,7 +11,7 @@ import SUBstation
 //
 //    col 0 (stretches)               col 1 (308)          col 2
 //   ┌──────────────────────────────┬────────────────────────────┐
-//   │ ArrangementRuler (40)        │ GridInfo        (spans 1-2)│
+//   │ ArrangementRuler (44)        │ GridInfo        (spans 1-2)│
 //   ├──────────────────────────────┼───────────────────┬────────┤
 //   │ ArrangementLanes             │ track headers     │ vbar   │
 //   ├──────────────────────────────┼───────────────────┤ (rows  │
@@ -47,10 +47,13 @@ FocusScope {
     property bool ioShown: true
     readonly property int headerWidth: ioShown ? 328 : 244
     readonly property int barWidth: Theme.scrollBarWidth
-    readonly property int rulerHeight: 40
+    readonly property int rulerHeight: 44  // (ArrangementRuler::kHeight)
     readonly property real lanesWidth: Math.max(0, width - headerWidth - barWidth)
-    readonly property real lanesHeight: Math.max(0, height - rulerHeight - arrangementState.returnsHeight
+    // Ableton's outline between the tracks and what is pinned below them (the returns, the master).
+    readonly property int outlineHeight: 1
+    readonly property real lanesHeight: Math.max(0, height - rulerHeight - outlineHeight - arrangementState.returnsHeight
                                                      - arrangementState.masterHeight)
+    readonly property real bottomTop: rulerHeight + lanesHeight + outlineHeight  // (where the returns start)
 
     signal statusMessage(string message)
     signal preferencesRequested(int page)
@@ -226,11 +229,22 @@ FocusScope {
         }
     }
 
+    // --- The outline over the returns and the master, across the view, as Ableton's: a dark line ---
+
+    Column {
+        objectName: "bottomOutline"
+        y: view.rulerHeight + view.lanesHeight
+        width: view.width
+        z: 1
+
+        Rectangle { width: parent.width; height: 1; color: Qt.darker(Theme.lane, 1.35) }
+    }
+
     // --- Row 2: the returns, a lane and a header each ---
 
     Column {
         id: returnLanes
-        y: view.rulerHeight + view.lanesHeight
+        y: view.bottomTop
         width: view.lanesWidth
 
         Repeater {
@@ -260,7 +274,7 @@ FocusScope {
     Column {
         id: returnHeaders
         x: view.lanesWidth
-        y: view.rulerHeight + view.lanesHeight
+        y: view.bottomTop
         width: view.headerWidth
 
         Repeater {
@@ -284,7 +298,7 @@ FocusScope {
     BusLane {
         id: masterLane
         objectName: "masterLane"
-        y: view.rulerHeight + view.lanesHeight + arrangementState.returnsHeight
+        y: view.bottomTop + arrangementState.returnsHeight
         width: view.lanesWidth
         height: arrangementState.masterHeight
         clip: true
@@ -320,7 +334,7 @@ FocusScope {
         x: view.lanesWidth + view.headerWidth
         y: view.rulerHeight
         width: view.barWidth
-        height: view.lanesHeight + arrangementState.returnsHeight + arrangementState.masterHeight
+        height: view.lanesHeight + view.outlineHeight + arrangementState.returnsHeight + arrangementState.masterHeight
         orientation: Qt.Vertical
         policy: ScrollBar.AlwaysOn
         focusPolicy: Qt.NoFocus

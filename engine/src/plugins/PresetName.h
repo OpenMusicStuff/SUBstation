@@ -25,7 +25,8 @@ std::string presetNameFromState(const uint8_t* data, size_t size);
 // .vstpreset are scanned as they are.
 std::string presetNameFromPreset(const uint8_t* data, size_t size);
 
-// A program name that says nothing: empty, or a slot number ("Prog 12", "preset 3").
+// A program name that says nothing: empty, or a slot number ("Prog 12", "preset 3",
+// Kontakt's "MIDI channel 0 program 0").
 bool isPlaceholderPresetName(const std::string& name);
 
 }  // namespace sub::vst3

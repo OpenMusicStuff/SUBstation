@@ -161,7 +161,7 @@ private Q_SLOTS:
     }
 
     // A row's button hot-swaps its file: the browser's bar shows, the similar sounds are listed;
-    // Esc in the browser, the bar's ✕ and the button again end it.
+    // Esc in the browser, the bar's ✕ and the button again cancel it.
     // A sample clicked in the browser's list (let go of where it was pressed) swaps in.
     void aClickInTheBrowserSwaps() {
         const QString a = clipTrack(kick(), QStringLiteral("A"));
@@ -210,16 +210,16 @@ private Q_SLOTS:
         session().browser()->chooseFile(place() + QStringLiteral("/Kick 2.wav"));
         QCOMPARE(session().project()->clip(a, QStringLiteral("Ac")).path, place() + QStringLiteral("/Kick 2.wav"));
         QTRY_COMPARE(text("hotSwapLabel"), QStringLiteral("Hot-Swap Kick 2  (1 clip)"));
-        // Esc in the browser's list ends it.
+        // Esc in the browser's list cancels it: the sample it began with is back.
         item("resultsList")->forceActiveFocus();
         QTest::keyClick(window_, Qt::Key_Escape);
         QVERIFY(!hotSwap().active());
+        QCOMPARE(session().project()->clip(a, QStringLiteral("Ac")).path, kick());
         QTRY_VERIFY(!bar->isVisible());
         button = shownItem(window_->contentItem(), QStringLiteral("hotSwapButton"));  // (the list was made again)
         QVERIFY(button && !button->property("lit").toBool());
 
         // The bar's ✕, and the row's button again.
-        session().undoStack()->undo();
         files().update();
         button = shownItem(window_->contentItem(), QStringLiteral("hotSwapButton"));
         test::click(window_, test::centerOf(button));

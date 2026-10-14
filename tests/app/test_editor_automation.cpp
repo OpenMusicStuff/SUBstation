@@ -204,6 +204,23 @@ private Q_SLOTS:
         QCOMPARE(f.track(track).pan, -0.25);
     }
 
+    // While every owner's automation shows (A), a new track, MIDI track, group or return shows its own too.
+    void newTracksShowAutomationAsTheRest() {
+        EditorFixture f;
+        const QString a = f.editor.addAudioTrack();
+        const QString hidden = f.editor.addAudioTrack();
+        QVERIFY(!f.project.automationView(hidden).shown);  // (not all of it shows: as by default)
+        QVERIFY(f.editor.toggleAllAutomation());
+        const QString audio = f.editor.addAudioTrack();
+        const QString midi = f.editor.addMidiTrack();
+        const QString ret = f.editor.addReturnTrack();
+        const QString group = f.editor.groupTracks({a});
+        for (const QString& id : {audio, midi, ret, group})
+            QVERIFY2((f.project.automationView(id) == AutomationView{true, autom::kMixerVolume, {}}), qPrintable(id));
+        QVERIFY(!f.editor.toggleAllAutomation());
+        QVERIFY(!f.project.automationView(f.editor.addAudioTrack()).shown);
+    }
+
     void automationView() {
         EditorFixture f;
         const QString a = f.editor.addAudioTrack();
