@@ -444,7 +444,9 @@ Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEd
   pressed while a taken key is held come to the window (its grab is active) and go to the window with the focus if
   the filter doesn't take them. A key held down is reported as a repeat (X repeats the press, with a release at the
   same time before it). While the main thread is busy, such keys wait for it, in every application. The keyboard
-  changing (`MappingNotify`) grabs them anew. The filter is called from inside the window's events, so what a key
+  changing (`MappingNotify`: another layout, or, typing through XTEST, the core keyboard taking the test device's
+  keys) moves Space's and S's grabs to where those keys are now; the others, of any key, stay. (Ungrabbing them all
+  and grabbing again left a gap, a round trip to read the keyboard wide, in which a key went to the plug-in.) The filter is called from inside the window's events, so what a key
   does (which may close that editor, or every one) is done after it returns: the UI queues it.
 - **Hidden** (`setVisible(false)`): unmapped (with ICCCM's synthetic `UnmapNotify`), keeping its place; shown again
   with `_NET_WM_USER_TIME` 0, so it doesn't take the focus.

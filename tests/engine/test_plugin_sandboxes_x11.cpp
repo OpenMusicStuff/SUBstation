@@ -161,6 +161,9 @@ TEST_CASE("sandbox x11: the foremost editor of all the sandboxes' closes") {
     REQUIRE(engine.openEditor(first, 0, "One"));
     const Editor one = findEditor(engine, x, "One");
     REQUIRE(one.frame);
+    // Open as the engine has it: its sandbox said so after it said the editor was raised (on the same channel),
+    // so One was raised before Two is. (Its window can show before that message has gone.)
+    CHECK(pumpUntil(engine, [&] { return engine.isEditorOpen(first); }));
     REQUIRE(engine.openEditor(second, 0, "Two"));
     REQUIRE(findEditor(engine, x, "Two").frame);
     CHECK(pumpUntil(engine, [&] { return engine.isEditorOpen(first) && engine.isEditorOpen(second); }));

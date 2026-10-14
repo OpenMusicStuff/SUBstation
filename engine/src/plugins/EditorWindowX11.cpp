@@ -124,6 +124,7 @@ struct EditorWindow::Native {
     xcb_keycode_t releasedKey = 0;
     xcb_timestamp_t releasedAt = 0;
     xcb_keycode_t heldKey = 0;
+    std::vector<xcb_keycode_t> plainGrabbed;  // Space's and S's keys, grabbed alone
 
     void flush() const { xcb_flush(c); }
 
@@ -228,23 +229,55 @@ struct EditorWindow::Native {
         return found;
     }
 
+    static constexpr uint16_t kNumLock = XCB_MOD_MASK_2;
+    static constexpr uint16_t kLocks[] = {0, XCB_MOD_MASK_LOCK, kNumLock, XCB_MOD_MASK_LOCK | kNumLock};
+
     // The keys a shortcut can be, held until the filter has said (keyboard mode synchronous).
     void grabKeys() {
         if (!readKeyboard()) return;
-        constexpr uint16_t kNumLock = XCB_MOD_MASK_2;
-        const uint16_t locks[] = {0, XCB_MOD_MASK_LOCK, kNumLock, XCB_MOD_MASK_LOCK | kNumLock};
         const uint16_t withCtrlOrAlt[] = {
             XCB_MOD_MASK_CONTROL, XCB_MOD_MASK_1, XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_1,
             XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_SHIFT, XCB_MOD_MASK_1 | XCB_MOD_MASK_SHIFT,
             XCB_MOD_MASK_CONTROL | XCB_MOD_MASK_1 | XCB_MOD_MASK_SHIFT};
-        for (const uint16_t lock : locks) {
+        for (const uint16_t lock : kLocks) {
             for (const uint16_t modifiers : withCtrlOrAlt) {
                 xcb_grab_key(c, 1, window, static_cast<uint16_t>(modifiers | lock), XCB_GRAB_ANY,
                              XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_SYNC);
             }
-            for (const uint32_t sym : {kXK_space, kXK_s}) {
-                for (const xcb_keycode_t keycode : keycodes(sym))
-                    xcb_grab_key(c, 1, window, lock, keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_SYNC);
+        }
+        plainGrabbed = plainKeycodes();
+        for (const xcb_keycode_t keycode : plainGrabbed) grabPlain(keycode, true);
+    }
+
+    // The keyboard changed (another layout; or, typing through XTEST, the core keyboard taking the
+    // test device's keys): Space's and S's grabs move to where those keys are now. The others are
+    // of any key, and stay: ungrabbing them all and grabbing again left a gap (a round trip wide,
+    // to read the keyboard) in which a key pressed went to the plug-in.
+    void keyboardChanged() {
+        if (!readKeyboard()) return;
+        const std::vector<xcb_keycode_t> now = plainKeycodes();
+        for (const xcb_keycode_t keycode : plainGrabbed)
+            if (std::find(now.begin(), now.end(), keycode) == now.end()) grabPlain(keycode, false);
+        for (const xcb_keycode_t keycode : now)
+            if (std::find(plainGrabbed.begin(), plainGrabbed.end(), keycode) == plainGrabbed.end()) grabPlain(keycode, true);
+        plainGrabbed = now;
+    }
+
+    // Space's and S's keys (shortcuts without Ctrl or Alt).
+    std::vector<xcb_keycode_t> plainKeycodes() const {
+        std::vector<xcb_keycode_t> found;
+        for (const uint32_t sym : {kXK_space, kXK_s})
+            for (const xcb_keycode_t keycode : keycodes(sym)) found.push_back(keycode);
+        return found;
+    }
+
+    // A key grabbed alone (with any of the locks), or no longer.
+    void grabPlain(xcb_keycode_t keycode, bool grab) const {
+        for (const uint16_t lock : kLocks) {
+            if (grab) {
+                xcb_grab_key(c, 1, window, lock, keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_SYNC);
+            } else {
+                xcb_ungrab_key(c, keycode, window, lock);
             }
         }
     }
@@ -494,10 +527,10 @@ void EditorWindow::Native::events(EditorWindow& w) {
             }
             case XCB_KEY_PRESS: n.keyPressed(*reinterpret_cast<const xcb_key_press_event_t*>(event)); break;
             case XCB_KEY_RELEASE: n.keyReleased(*reinterpret_cast<const xcb_key_release_event_t*>(event)); break;
-            case XCB_MAPPING_NOTIFY:  // the keyboard changed: its keys grabbed anew
+            case XCB_MAPPING_NOTIFY:  // the keyboard changed: its keys looked up again, Space's and S's grabbed there
+                if (reinterpret_cast<const xcb_mapping_notify_event_t*>(event)->request == XCB_MAPPING_POINTER) break;
                 if (editorKeyFilter()) {
-                    xcb_ungrab_key(n.c, XCB_GRAB_ANY, n.window, XCB_MOD_MASK_ANY);
-                    n.grabKeys();
+                    n.keyboardChanged();
                     n.flush();
                 }
                 break;
