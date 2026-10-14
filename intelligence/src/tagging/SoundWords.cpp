@@ -101,11 +101,11 @@ std::vector<Entry> vocabulary() {
         {"noisy unpitched atonal noise", blend({attr(Pitched, false)})},
         {"vintage retro old oldschool classic", blend({learned("vintage", 0.6f), attr(Bright, false, 0.2f), attr(Hard, false, 0.2f)})},
         {"lofi bitcrushed crushed dusty", blend({learned("lofi", 0.6f), attr(Bright, false, 0.2f), attr(Distorted, true, 0.2f)})},
-        {"metallic metal steel iron", blend({learned("metallic")})},
+        {"metallic metal steel iron", blend({learned("metallic", 0.6f), attr(Bright, true, 0.25f), attr(Long, true, 0.15f)})},
         {"wooden wood", blend({learned("wooden")})},
         {"glitch glitchy", blend({learned("glitch")})},
         {"industrial", blend({learned("industrial", 0.6f), attr(Distorted, true, 0.2f), attr(Hard, true, 0.2f)})},
-        {"processed layered", blend({learned("processed")})},
+        {"processed layered", blend({learned("processed", 0.6f), attr(Distorted, true, 0.2f), attr(Wet, true, 0.2f)})},
 
         // Genres: the learned word (where it was learned) and the attributes it stands for.
         {"house", blend({learned("house", 0.6f), attr(Synthetic, true, 0.25f), attr(Hard, true, 0.15f)})},

@@ -331,10 +331,16 @@ private Q_SLOTS:
         const QString label = browser_->results()->get(row).value(QStringLiteral("tags")).toString();
         QVERIFY2(label.startsWith(QStringLiteral("Kick")), qPrintable(label));
         QVERIFY(browser_->results()->get(row).value(QStringLiteral("toolTip")).toString().contains(QStringLiteral("Kick")));
-        // Samples › Kicks: every kick, named so or not, and nothing else.
-        QVERIFY(browser_->sidebar()->find(QStringList{QStringLiteral("sounds"), QStringLiteral("kick")}) >= 0);
+        // Samples › Kicks: every kick, named so or not, and nothing else. (Samples starts
+        // collapsed: showing one of its sounds expands it.)
+        const QStringList kicksScope{QStringLiteral("sounds"), QStringLiteral("kick")};
+        QVERIFY(!browser_->isExpanded(QStringLiteral("samples")));
+        QCOMPARE(browser_->sidebar()->find(kicksScope), -1);
         browser_->setSearchText(QString());
-        browser_->setScope({QStringLiteral("sounds"), QStringLiteral("kick")});
+        browser_->setScope(kicksScope);
+        QVERIFY(browser_->isExpanded(QStringLiteral("samples")));
+        QVERIFY(browser_->sidebar()->find(kicksScope) >= 0);
+        QCOMPARE(browser_->scope(), kicksScope);
         QVERIFY(settle());
         QStringList kicks = names(*browser_->results());
         kicks.sort();

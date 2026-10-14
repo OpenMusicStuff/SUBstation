@@ -13,7 +13,9 @@ The sidebar has two sections:
   *Snares*, *Claps*, *Hats*, *Cymbals*, *Toms*, *Percussion*, *Bass*, *Synths*, *Keys*,
   *Guitars*, *Vocals*, *Loops*; [below](#what-sounds-are)), *Built-in* (*Instruments*, *Audio
   Effects*), *Plug-ins* (*Instruments*, *Audio Effects*; see [plugins.md](plugins.md))
-  and *Presets* (by device; see [Presets](#presets)).
+  and *Presets* (by device; see [Presets](#presets)). The arrow at the right of an entry
+  collapses or expands what is under it; *Samples* starts collapsed, and the browser
+  remembers what you open or close.
 - **Places**: folders of your own, which you browse as a folder tree. The browser starts
   with your Music folder as a place. Add more with *Add Folder…* (at the end of the
   list, or in the right-click menu); right-click a place › *Remove from Places* to take
@@ -61,12 +63,12 @@ hat, a crash, a ride, a tom, a rim, a cowbell, a shaker, a tambourine, other per
 bass, a synth (a lead, a pad, a pluck, a stab), keys, organ, guitar, mallets, strings, brass,
 woodwinds or vocals; whether it is a
 loop or a one-shot; its note, if it has one; and how it sounds. A sample's row says it on
-the right, dimmed: "Snare · Punchy · Bright", "Bass · C2 · Synth", "Loop · Techno". Hover
+the right, small and dimmed: "Snare · Punchy · Bright", "Bass · C2 · Synth", "Loop · Techno". Hover
 it for more: what else it might be, and everything it is heard as. A sample it isn't sure
 of says only how it sounds; what isn't analysed yet says nothing.
 
-*Samples › Kicks* (and the other sounds under *Samples*) lists every sample that sounds
-like one, named "Kick" or not.
+*Samples › Kicks* (and the other sounds under *Samples*: open it with its arrow) lists
+every sample that sounds like one, named "Kick" or not.
 
 ### Describing a sound
 

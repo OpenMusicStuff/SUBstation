@@ -139,10 +139,10 @@ SelectionList {
             width: Math.min(implicitWidth, row.width / 2)
             visible: !row.renaming && row.tags !== ""
             text: row.tags
-            font: Theme.listFont
+            font: Theme.smallFont  // (smaller and fainter than the name: it says more about it, not what it is)
             elide: Text.ElideRight
             color: row.selected ? Theme.accentText : Theme.textDim
-            opacity: row.selected ? 0.8 : 1
+            opacity: row.selected ? 0.7 : 0.75
         }
 
         SelectionRowArea {

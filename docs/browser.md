@@ -79,7 +79,7 @@ See [building.md](building.md).
 | [BrowserSearch.h](../app/src/browser/BrowserSearch.h) | What to ask the search for: the sorts (`sortOrders()`), the group numbers, `Scope`, `scopeQuery()`, `placePrefix()`, `pluginTag()`. The sort orders are documented here. |
 | [BrowserItem.h](../app/src/browser/BrowserItem.h) | `BrowserItem` (and its `key()`), `ItemKind`, `builtinItems()`, `pluginItem()`. |
 | [ItemListModel.h](../app/src/browser/ItemListModel.h) | The list shown: paged, draggable. |
-| [SidebarModel.h](../app/src/browser/SidebarModel.h) | The sidebar as a flat list. |
+| [SidebarModel.h](../app/src/browser/SidebarModel.h) | The sidebar as a flat list: a collapsed entry's sub-entries are left out (`BrowserController::setExpanded`; Samples starts collapsed, the choice kept in the settings, `browser/collapsed`). |
 | [BrowserMime.h](../app/src/browser/BrowserMime.h) | The drag formats and their readers (`pluginRefs`, `deviceKinds`, `presetPaths`, `movedDevices`). |
 | [Library.h](../app/src/browser/Library.h) | `Library`: use counts kept in `library.json`, and `rank()`. |
 | [PresetIndex.h](../app/src/browser/PresetIndex.h) | `PresetIndex`: the presets in the user's library as items, listed again when they change. |

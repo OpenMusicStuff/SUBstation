@@ -246,6 +246,13 @@ public:
     // or unchanged name; or it couldn't be: a statusMessage says why).
     Q_INVOKABLE QString renamePreset(const QString& path, const QString& name);
 
+    // --- Sidebar ---
+    // Collapses or expands an entry with sub-entries ([kind]: Samples, Built-in,
+    // Plug-ins, Presets), remembered (Samples starts collapsed). Collapsing the
+    // entry whose sub-entry is shown shows the entry itself.
+    Q_INVOKABLE void setExpanded(const QStringList& scope, bool expanded);
+    bool isExpanded(const QString& kind) const { return !collapsed_.contains(kind); }
+
     // --- Context menus ---
     // A sidebar entry's actions, in order, as {action, label} ({} for a
     // separator): "removePlace" for a place; "rescanPlugins" for Plug-ins;
@@ -302,6 +309,8 @@ private:
 
     void refresh(bool keep);
     void buildSidebar(std::optional<Scope> select = std::nullopt);
+    std::vector<SidebarModel::Entry> sidebarEntries() const;
+    bool expandFor(const Scope& scope);  // expands the entry a sub-entry is under; true if it was collapsed
     void setScopeValue(const Scope& scope);
     bool treeWanted() const;
     void showResults(const SearchResult& result);
@@ -326,6 +335,7 @@ private:
     void soundsChanged();
 
     QStringList places_;
+    QStringList collapsed_;  // the kinds of the entries whose sub-entries aren't listed
     std::unique_ptr<Library> library_;
     FileIndex* index_ = nullptr;
     PluginIndex* plugins_ = nullptr;

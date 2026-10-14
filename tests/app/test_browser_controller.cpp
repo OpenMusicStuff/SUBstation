@@ -123,6 +123,38 @@ private Q_SLOTS:
 #endif
     }
 
+    void entriesCollapseAndExpand() {
+        const QStringList builtin{QStringLiteral("builtin")};
+        const QStringList effects{QStringLiteral("builtin"), builtinCategoryNames().constLast()};
+        {
+            auto browser = make();
+            QVERIFY(!browser->isExpanded(QStringLiteral("samples")));  // (Samples starts collapsed)
+            QVERIFY(browser->isExpanded(QStringLiteral("builtin")));
+            SidebarModel& sidebar = *browser->sidebar();
+            const int row = sidebar.find(builtin);
+            QVERIFY(sidebar.data(sidebar.index(row), SidebarModel::ExpandableRole).toBool());
+            QVERIFY(sidebar.data(sidebar.index(row), SidebarModel::ExpandedRole).toBool());
+            browser->setScope(effects);
+            QCOMPARE(browser->scope(), effects);
+            // Collapsed: its sub-entries go, and the one shown gives way to the entry itself.
+            browser->setExpanded(builtin, false);
+            QCOMPARE(sidebar.find(effects), -1);
+            QVERIFY(!sidebar.data(sidebar.index(sidebar.find(builtin)), SidebarModel::ExpandedRole).toBool());
+            QCOMPARE(browser->scope(), builtin);
+            QCOMPARE(sidebarTitles(sidebar).count(builtinCategoryNames().constLast()), 0);  // (Plug-ins has Instruments)
+        }
+        {
+            // Remembered; and showing a sub-entry expands its entry again.
+            auto browser = make();
+            QVERIFY(!browser->isExpanded(QStringLiteral("builtin")));
+            QCOMPARE(browser->sidebar()->find(effects), -1);
+            browser->setScope(effects);
+            QCOMPARE(browser->scope(), effects);
+            QVERIFY(browser->isExpanded(QStringLiteral("builtin")));
+            QVERIFY(browser->sidebar()->find(effects) >= 0);
+        }
+    }
+
     void samplesAreListedAndSearched() {
         auto browser = make();
         QVERIFY(settle(*browser));

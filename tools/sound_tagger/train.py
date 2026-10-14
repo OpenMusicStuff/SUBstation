@@ -89,7 +89,9 @@ class Data:
         self.corpus = np.array([l["corpus"] for l in lab])
         self.group = np.array([l["corpus"] + ":" + l["group"] for l in lab])
         self.kind = np.array([KINDS.index(l["kind"]) if l["kind"] in KINDS else -1 for l in lab])
-        self.loop = np.array([1.0 if l["loop"] else (0.0 if l["kind"] in KINDS else np.nan) for l in lab])
+        # (None: not known, as a long vocal phrase: left out of the loop head's loss)
+        self.loop = np.array([1.0 if l["loop"] else np.nan if l["loop"] is None else
+                              (0.0 if l["kind"] in KINDS else np.nan) for l in lab])
         self.source = np.array([SOURCES.index(l["source"]) if l["source"] in SOURCES else -1 for l in lab])
         self.quality = np.array([l["qualities"] if l["qualities"] else [np.nan] * len(QUALITIES) for l in lab],
                                 dtype=np.float32)
