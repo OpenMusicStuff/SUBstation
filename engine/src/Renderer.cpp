@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "Ump.h"
+#include "WarpCache.h"
 
 namespace sub {
 
@@ -286,7 +287,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
             const bool clipNotes = !buffers.recorded && !(hearsMidi && track.monitor == MonitorMode::In);
             buildNoteEvents(track, buffers, hearsMidi, clipNotes, take);
         }
-        assignVoices(track, voices, buffers);
+        assignVoices(track, voices, flags.live, buffers);
     }
     // Devices taking another track's notes get a copy of them, before the graph
     // (where that track's own devices rebase theirs to their stretches).
@@ -918,6 +919,23 @@ void Renderer::resetInsert(Processor& insert, const RackRender* rack) noexcept {
     }
 }
 
+void Renderer::meterOutput(Processor& insert, const float* left, const float* right, int frames) noexcept {
+    float peakL = 0.f, peakR = 0.f;
+    for (int s = 0; s < frames; ++s) {
+        peakL = std::max(peakL, std::abs(left[s]));
+        peakR = std::max(peakR, std::abs(right[s]));
+    }
+    atomicStoreMax(insert.outputPeak(0), peakL);
+    atomicStoreMax(insert.outputPeak(1), peakR);
+}
+
+void Renderer::meterSkipped(const StripRender& chain, const float* left, const float* right, int frames) noexcept {
+    if (!chunkFlags_.live) return;
+    for (const auto& insert : chain.inserts) {
+        if (!insert->isModulator()) meterOutput(*insert, left, right, frames);
+    }
+}
+
 void Renderer::tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack, const float* left,
                               const float* right, int frames) noexcept {
     for (const ChainRender& chain : rack.chains) {
@@ -933,6 +951,7 @@ void Renderer::processInserts(const RenderSnapshot& snap, const StripRender& str
                               bool monitored, WorkerScratch& scratch) noexcept {
     if (!takeResets(strip)) {  // nothing changes the signal along the chain
         for (const int e : strip.deviceTaps) tapInto(snap, e, left, right, frames);
+        meterSkipped(strip, left, right, frames);  // (its devices' meters show what goes past them)
         return;
     }
 
@@ -1092,6 +1111,8 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
                 }
             }
         }
+        // What it passes on, for its meter (off, what goes past it).
+        if (chunkFlags_.live && !insert.isModulator()) meterOutput(insert, left, right, frames);
         for (; tap < chain.deviceTaps.size(); ++tap) {
             const int e = chain.deviceTaps[tap];
             if (snap.edges[static_cast<size_t>(e)].tapDevice > static_cast<int>(i)) break;
@@ -1264,6 +1285,7 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
             processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1, scratch);
         } else {  // nothing changes the signal along it
             for (const int e : chain.deviceTaps) tapInto(snap, e, chainL, chainR, frames);
+            meterSkipped(chain, chainL, chainR, frames);
         }
         const bool audible = !chain.params->mute.load(std::memory_order_relaxed) &&
                              (!anySolo || chain.params->solo.load(std::memory_order_relaxed));
@@ -1458,21 +1480,55 @@ WarpVoice* Renderer::acquireVoice(const WarpVoiceSet& voices, const ClipRender& 
     return best;
 }
 
-void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices, TrackBuffers& buffers) noexcept {
+bool Renderer::carriedOn(const WarpVoiceSet& voices, const ClipRender& clip, int64_t position) const noexcept {
+    for (const auto& voice : voices[static_cast<size_t>(clip.stretchConfig)]) {
+        if (voice->key == clip.key && voice->lastUsed != 0)
+            return voice->lastUsed + 1 >= blockCounter_ && voice->carriesOn(clip, position);
+    }
+    return false;
+}
+
+bool Renderer::soundedUpTo(const WarpRender& render, const ClipRender& clip, int64_t position) const noexcept {
+    // Played in the block before, up to where the clip is now (to within what a
+    // tempo change moves it: as WarpVoice::carriesOn()).
+    const uint64_t played = render.playedBlock();
+    return played != 0 && played + 1 >= blockCounter_ &&
+           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rate;
+}
+
+void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live,
+                            TrackBuffers& buffers) noexcept {
     // In the order renderClips() plays the clips, one entry per stretched clip
-    // (without a voice if there are more than voices: it stays silent).
+    // (without a voice if there are more than voices: it stays silent). Live,
+    // a clip whose render is ready plays from it, except where its voice
+    // carries on: a stretch under way goes on (the two differ a little), and
+    // the render takes over where the voice would start again (a start, a
+    // locate, a loop's jump). The other way, a clip that was playing from a
+    // render now changed (a new tempo or transpose, its new render not ready)
+    // goes on through a voice, which crossfades from the render it leaves.
+    // Offline renders stretch, so that they come out the same whether renders
+    // are ready or not.
     buffers.numVoices = 0;
     if (buffers.monitored || buffers.recorded) return;
     for (int s = 0; s < numSegments_; ++s) {
         const Segment& segment = segments_[s];
         forEachClip(track, segment.position, segment.position + segment.length,
-                    [&](const ClipRender& clip, int64_t, int64_t) {
+                    [&](const ClipRender& clip, int64_t from, int64_t to) {
                         if (clip.playback != ClipRender::Playback::Stretch) return;
                         if (buffers.numVoices == TrackBuffers::kMaxClipVoices) return;
                         TrackBuffers::ClipVoice& slot = buffers.voices[static_cast<size_t>(buffers.numVoices++)];
                         slot.clip = &clip;
                         slot.continuing = false;
+                        slot.voice = nullptr;
+                        slot.rendered = nullptr;
+                        if (live && clip.rendered && clip.rendered->ready() && !carriedOn(voices, clip, from)) {
+                            slot.rendered = clip.rendered.get();
+                            slot.rendered->notePlayed(blockCounter_, clip.sourceAt(to));
+                            return;
+                        }
                         slot.voice = acquireVoice(voices, clip, slot.continuing);
+                        if (live && slot.voice && !slot.continuing && clip.fading && soundedUpTo(*clip.fading, clip, from))
+                            slot.voice->fadeFrom(*clip.fading, clip, from);
                     });
     }
 }
@@ -1486,29 +1542,39 @@ void Renderer::renderClips(const TrackRender& track, const Segment& segment, con
 
     forEachClip(track, segStart, segEnd, [&](const ClipRender& clip, int64_t from, int64_t to) {
         // Where this clip's unscaled audio for [from, to) comes from.
-        const float* srcL;
-        const float* srcR;
-        int64_t srcBase;  // index into srcL/srcR of timeline sample t is t - srcBase
-        if (clip.playback == ClipRender::Playback::Direct) {
-            const AudioSource& source = *clip.source;
-            srcL = source.stereoChannel(0);
-            srcR = source.stereoChannel(1);
-            srcBase = clip.start - clip.sourceOffset;
-        } else {
-            const int n = static_cast<int>(to - from);
-            if (clip.playback == ClipRender::Playback::Resample) {
-                renderResampled(clip, from, n, scratch.warpLeft.data(), scratch.warpRight.data());
-            } else {
+        const float* srcL = nullptr;
+        const float* srcR = nullptr;
+        int64_t srcBase = from;  // index into srcL/srcR of timeline sample t is t - srcBase
+        switch (clip.playback) {
+            case ClipRender::Playback::Direct:
+                srcL = clip.source->stereoChannel(0);
+                srcR = clip.source->stereoChannel(1);
+                srcBase = clip.start - clip.sourceOffset;
+                break;
+            case ClipRender::Playback::Resample:
+                renderResampled(clip, from, static_cast<int>(to - from), scratch.warpLeft.data(),
+                                scratch.warpRight.data());
+                srcL = scratch.warpLeft.data();
+                srcR = scratch.warpRight.data();
+                break;
+            case ClipRender::Playback::Stretch: {
                 if (nextVoice >= buffers.numVoices || buffers.voices[static_cast<size_t>(nextVoice)].clip != &clip) {
                     return;  // past what the prologue could hand out
                 }
                 const TrackBuffers::ClipVoice& slot = buffers.voices[static_cast<size_t>(nextVoice++)];
+                if (slot.rendered) {  // read in place, as a clip played as it is
+                    srcL = slot.rendered->left();
+                    srcR = slot.rendered->right();
+                    srcBase = clip.start;
+                    break;
+                }
                 if (!slot.voice) return;
-                slot.voice->render(clip, from, n, slot.continuing, scratch.warpLeft.data(), scratch.warpRight.data());
+                slot.voice->render(clip, from, static_cast<int>(to - from), slot.continuing, scratch.warpLeft.data(),
+                                   scratch.warpRight.data());
+                srcL = scratch.warpLeft.data();
+                srcR = scratch.warpRight.data();
+                break;
             }
-            srcL = scratch.warpLeft.data();
-            srcR = scratch.warpRight.data();
-            srcBase = from;
         }
 
         for (int64_t t = from; t < to; ++t) {

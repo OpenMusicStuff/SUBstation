@@ -6,6 +6,7 @@
 #include <QHash>
 
 #include <exception>
+#include <utility>
 
 namespace sub::app {
 
@@ -96,6 +97,17 @@ QStringList vitalShapeNames() {
     for (int i = 0; i < vitalpatch::kNumShapes; ++i)
         names.append(QString::fromStdString(vitalpatch::shapeName(static_cast<vitalpatch::Shape>(i))));
     return names;
+}
+
+std::vector<float> vitalWavetableFrames(const Device& device, int oscillator, int points) {
+    const QString value = deviceState::fromModel(device.state).value(QString::fromLatin1(vitalpatch::kWavetables));
+    return vitalpatch::wavetableFrames(value.toStdString(), oscillator, points);
+}
+
+VitalLfoShape vitalLfoShape(const Device& device, int lfo, int samples) {
+    const QString value = deviceState::fromModel(device.state).value(QString::fromLatin1(vitalpatch::kLfos));
+    vitalpatch::LfoShape shape = vitalpatch::lfoShape(value.toStdString(), lfo, samples);
+    return {std::move(shape.values), std::move(shape.points), shape.smooth};
 }
 
 QString vitalStateValue(const Device& device, const QString& key) {

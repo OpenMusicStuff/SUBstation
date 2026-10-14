@@ -129,19 +129,29 @@ oversampling up to 8×. Every one of Vital's parameters is a parameter here, sho
 shows it, and can be automated (all but Oversampling and the effects' order) and mapped to
 a rack's macros.
 
-Its editor has nine pages, named in its title bar:
+Its editor has nine pages, named in its title bar. On the left, on every page, a small
+screen with the preset's name and author over the sound as it plays, the page's choices
+(which oscillator, filter, envelope, LFO or random LFO), and the four macros, named as the
+preset names them. Beside it a panel draws what the page is about, with its switch (the dot:
+click it to switch the oscillator, filter or effect on or off), its name and lists; then the
+knobs. Knobs that do nothing with the settings as they are (the formant's without the
+Formant model, an LFO's rate while it follows the tempo) are dimmed, but you can still set
+them.
 
-| Page | What it has |
-|---|---|
-| Osc | Oscillator 1, 2 or 3 (chosen on the left): on, level, pan, transpose, tune, the wavetable's frame, frequency morph and warp with their amounts, where it goes (Filter 1, 2, both, the effects, straight out); unison voices, detune, blend, stereo, spreads, phase. On the left the oscillator's wavetable, and **Wavetable…**: load a wavetable (a `.wav` wavetable file, Serum's or Vital's own exported ones, or Vital's `.vitaltable`), any audio file vocoded or pitched into a wavetable as Vital does, or a basic shape (Init, Sine, Triangle, Saw Up, Saw Down, Square) |
-| Sample | The sample oscillator (its noise by default, or a preset's sample) |
-| Filter | Filter 1 or 2: model, style, cutoff, resonance, drive, blend, key track, mix; the comb and formant controls |
-| Env | Envelope 1 to 6 (Envelope 1 is the voices' amplitude): delay, attack, hold, decay, sustain, release and their curves |
-| LFO | LFO 1 to 8: free or synced (and how: trigger, sync, envelope, loop), rate, phase, stereo, delay, fade in, smoothing, key track. On the left its shape, and **Shape…** to set a basic one |
-| Random | Random LFO 1 to 4: style, rate (free or synced), stereo, key track |
-| FX | Each of the nine effects, on the left |
-| Matrix | The modulations: choose a source (an envelope, an LFO, a random LFO, a macro, velocity, the note, aftertouch, the wheels...) and a destination (any of its parameters) and **Add**; each row has its amount, Bipolar, Stereo, Bypass, and × to remove it |
-| Voice | Volume, voices, voice priority and stealing, legato, velocity, pitch bend range, tune and transpose, stereo routing, oversampling; glide; the macros (named as the preset names them); the wheels |
+| Page | The panel | The knobs |
+|---|---|---|
+| Osc | Oscillator 1, 2 or 3's wavetable, its frames stacked, the one playing lit and large in front: **drag up and down** to move through the frames (Shift for finer steps; double-click for the first). Above it the wavetable's name, **Wavetable…** (load a `.wav` wavetable, Serum's or Vital's own exported ones, or Vital's `.vitaltable`; any audio file vocoded or pitched into a wavetable as Vital does; or a basic shape: Init, Sine, Triangle, Saw Up, Saw Down, Square) and where it plays (Filter 1, 2, both, the effects, straight out); below it the frequency morph's, the warp's and the unison stack's types | Level, pan, transpose, tune, frame, phase and its randomness, unison voices, detune and blend; morph, warp and their spreads, the warp's phase, the detune's range and power, stereo, the frames' spread |
+| Sample | The sound as it plays; where the sample oscillator plays; Loop, Bounce, Key Track, Random Phase | Level, pan, transpose, tune |
+| Filter | Filter 1 or 2's response, over the sound's spectrum: **drag** its handle across for the cutoff and up and down for the resonance (double-click to reset); its model and style below | Cutoff, resonance, drive, blend, key track, mix; the comb's offset and the formant's controls |
+| Env | Envelope 1 to 6 (Envelope 1 is the voices' amplitude), drawn as it plays, with a dot moving through it as a note plays: **drag** the stages' ends across (the decay's up and down for the sustain) and the small dots on the curves up and down to bend them; double-click a handle to reset it | Delay, attack, hold, decay, sustain, release and their curves |
+| LFO | LFO 1 to 8's shape, with a dot riding it as a note plays; **Shape…** sets a basic one; below it its mode (trigger, sync, envelope, loop), its timing (seconds, the tempo, dotted, triplets, the key) and Smooth | Rate or tempo, phase, stereo, delay, fade in, smoothing time, key track |
+| Random | The sound as it plays; the random LFO's style, timing and Sync | Rate or tempo, stereo, key track |
+| FX | The nine effects as tiles, lit while on (the dot switches one); click one to show it | That effect's controls |
+| Matrix | The modulations: choose a source (an envelope, an LFO, a random LFO, a macro, velocity, the note, aftertouch, the wheels...) and a destination (any of its parameters) and **Add**; each row has its amount (the knob, and a bar from the middle), Bipolar, Stereo, Bypass, and × to remove it | |
+| Voice | The sound's spectrum, and how many voices play | Volume, voices, velocity, bend range, tune, transpose, glide and its slope, the wheels; voice priority and stealing, legato, glide always, octave scaling, stereo routing and mode, quality (oversampling), amplitude |
+
+The filter's drawing is the shape of its response (what Vital's own window draws), not its
+exact curve.
 
 **Vital's presets.** Right-click Vital › *Load Vital Preset…* loads a `.vital` file (Vital's
 own presets, and those made by others: older versions' are upgraded as Vital upgrades them);

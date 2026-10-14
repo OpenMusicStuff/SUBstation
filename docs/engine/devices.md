@@ -21,7 +21,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/BuiltinRegistry.h](../../engine/src/builtin/BuiltinRegistry.h) / [.cpp](../../engine/src/builtin/BuiltinRegistry.cpp) | `BuiltinRegistry`, `BuiltinInfo`, `BuiltinCategory`, `SUB_REGISTER_BUILTIN` |
 | [builtin/devices/Synth.cpp](../../engine/src/builtin/devices/Synth.cpp) | the Synth instrument |
 | [builtin/devices/Vital.cpp](../../engine/src/builtin/devices/Vital.cpp) | the Vital instrument: Vital's engine as a device (engines handed to the rendering thread, notes on their own channels, MIDI) |
-| [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`) |
+| [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`), and what the editor draws (`wavetableFrames()`, `lfoShape()`) |
 | [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
 | [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
@@ -322,6 +322,14 @@ MIDI message comes after its start: note-ons and note-offs go in at their sample
 -120 dBFS with no voice it sleeps (writes silence, skips the work) until a note comes; `reset()` is Vital's
 `allSoundsOff()`. `tailSamples()` is 10 seconds (its releases and effects' tails have no bound it can name).
 
+**Displays** (for its editor, [ui/device-view.md](../ui/device-view.md)): `output`, the output (left and right
+averaged) a value a sample; and every 256 samples `voices` (how many play), `lfo_1`..`lfo_8` (the newest voice's
+LFO phases, 0..1: Vital's status outputs `lfo_<n>_phase`, decoded from their phase-and-voice encoding),
+`env_1`..`env_6` (its envelopes' phases: Vital's stage, 1 delay, 2 attack, 3 hold, 4 decay (sustaining at its end),
+5 release, plus how far into it) and `env_1_value`..`env_6_value` (their levels, 0..1); an LFO's or envelope's is -1
+while no voice plays. The status outputs are found when the engine is built (`Engine::lfoPhases`, `envelopePhases`,
+`envelopeValues`), so the rendering thread only reads them. Asleep, it publishes nothing.
+
 **Notes and MIDI.** Each note gets a MIDI channel of its own, 1 to 15 in turn, as an MPE controller would give it (up
 to 256 notes held: a table of note id, key, channel and velocity; the oldest gives way). A `NoteBend` sets that
 channel's pitch wheel (`setPitchWheel`), which Vital applies to the voices on it as their "local" pitch bend,
@@ -340,7 +348,9 @@ parameter, the 64 modulation slots, the wavetables, the LFOs and the sample as t
 where the patch leaves them out), the tuning if it isn't the default, the names; Vital opens it. Wavetables come from
 audio files as Vital loads one dropped on its wavetable (`WavetableCreator::initFromAudioFile`: spliced into frames,
 blending as the file's `clm ` chunk says; vocoded; pitched), from `.vitaltable` files, or as basic shapes (a
-`LineGenerator`'s); LFO shapes are `LineGenerator`s. The application layer reads and writes presets and edits the
+`LineGenerator`'s); LFO shapes are `LineGenerator`s. What the editor draws comes from Vital's code too: `wavetableFrames()` renders an
+oscillator's wavetable as its engine does (`WavetableCreator::render()`: its frames, as many as it has, each sampled
+to as many points as asked) and `lfoShape()` an LFO's values across a cycle and its points. The application layer reads and writes presets and edits the
 patch through these ([app/model.md](../app/model.md#vital)).
 
 ### Sampler (`builtin:sampler`, Instrument)

@@ -124,3 +124,37 @@ TEST_CASE("attack holds across a low note's cycles") {
     CHECK(after50ms > 0.9 * steady);
     CHECK_NEAR(reduction.back(), steady, 0.1);
 }
+
+TEST_CASE("expand turns down what is below the threshold") {
+    CompressorEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = addClipTrack(engine, dcWav());
+    compressor(engine, track, {{"mode", 2.f}, {"threshold", 0.f}, {"ratio", 2.f}, {"knee", 0.f}, {"attack", 1.f}});
+    const Samples out = engine.renderOffline(0.0, kSampleRate / 2);
+    const double reduction = -kLevelDb * (2.0 - 1.0);  // each dB under, another dB down
+    CHECK_APPROX_REL(at(out, -1, 0), 0.5 * std::pow(10.0, -reduction / 20), 1e-3);
+}
+
+TEST_CASE("makeup adds back half of what a full scale signal loses") {
+    CompressorEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = addClipTrack(engine, dcWav());
+    compressor(engine, track,
+               {{"threshold", -18.f}, {"ratio", 4.f}, {"knee", 0.f}, {"attack", 1.f}, {"auto_makeup", 1.f}});
+    const Samples out = engine.renderOffline(0.0, kSampleRate / 2);
+    const double reduction = (kLevelDb + 18.0) * 0.75 - 0.5 * 18.0 * 0.75;
+    CHECK_APPROX_REL(at(out, -1, 0), 0.5 * std::pow(10.0, -reduction / 20), 1e-3);
+}
+
+TEST_CASE("lookahead is the compressor's latency") {
+    CompressorEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = addClipTrack(engine, dcWav());
+    const uint32_t device = compressor(engine, track, {{"threshold", 0.f}});
+    CHECK_EQ(engine.processorInfo(device).latency, 0);
+    setParam(engine, device, "lookahead", 2.f);  // 10 ms
+    engine.idle();                                // (realigned)
+    CHECK_EQ(engine.processorInfo(device).latency, kSampleRate / 100);
+    CHECK_EQ(engine.trackLatency(track), kSampleRate / 100);
+    CHECK_EQ(engine.outputLatency(), kSampleRate / 100);
+}

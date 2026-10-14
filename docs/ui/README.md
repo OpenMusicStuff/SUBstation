@@ -20,7 +20,7 @@ For what the user sees and does, read the [user guide](../guide/README.md); this
 | [ui/src/sg/](../../ui/src/sg) | The scene-graph toolkit: `SgCanvas`, `SgPainter`, `SgTextureCache` ([below](#the-scene-graph-toolkit)). |
 | [ui/src/theme/](../../ui/src/theme) | `Theme` (every colour, the fonts, the metrics, the buttons' looks), `Palettes` (the themes' colours) and `Icons` (vector icons, and the `image://icons` provider). |
 | [ui/src/controls/](../../ui/src/controls) | `KnobItem`, `ValueBoxItem`, `Meter`, `OscilloscopeItem`, `DragCursor`; `Automation` (`automationState()`: a control's automation as its dot shows it, `""`, `"on"` or `"off"`; `AutomationTarget`: a parameter menu's Show, Delete and Re-Enable Automation). |
-| [ui/src/input/](../../ui/src/input) | What every view reads from input alike: `Modifiers.h` (`isPanModifier()`: Ctrl+Alt drags scroll; `hasShortcutModifier()`: Ctrl, Alt or Meta, so a key isn't typing; `heldModifiers()`: the modifiers once a key event is through), `DoubleClicks` (a double-click's second press, [below](#gotchas)), `GestureKey.h` (`newGestureKey()`: one gesture's undo merge key, [below](#how-the-ui-talks-to-the-rest); `WheelGesture`: one key per burst of wheel notches less than 400 ms apart), `Shortcuts` (`keySequences()`: an `Action`'s or `Shortcut`'s shortcut as Qt Quick reads it, for the menus' shortcut text and `PluginEditorKeys`). Ctrl is the shortcut modifier: on macOS Qt reports Command as `Qt::ControlModifier`, so the same code means Command there. |
+| [ui/src/input/](../../ui/src/input) | What every view reads from input alike: `Modifiers.h` (`isPanModifier()`: Ctrl+Alt drags scroll; `hasShortcutModifier()`: Ctrl, Alt or Meta, so a key isn't typing; `heldModifiers()`: the modifiers once a key event is through), `DoubleClicks` (a double-click's second press, [below](#gotchas)), `GestureKey.h` (`newGestureKey()`: one gesture's undo merge key, [below](#how-the-ui-talks-to-the-rest); `WheelGesture`: one key per burst of wheel notches less than 400 ms apart), `Shortcuts` (`keySequences()`: an `Action`'s or `Shortcut`'s shortcut as Qt Quick reads it, for the menus' shortcut text and `PluginEditorKeys`), `KeyMap` (which keys trigger which command: the profiles and the user's keys, [below](#keys-and-profiles-keymap)). Ctrl is the shortcut modifier: on macOS Qt reports Command as `Qt::ControlModifier`, so the same code means Command there. |
 | [ui/src/timeline/](../../ui/src/timeline) | `timeline::Timeline` (zoom, scroll, the adaptive grid), `gridLines()`, `labelStep()`, `drawGrid()`, `drawLoopRegion()`, `drawPlayhead()`: the arrangement's and the piano roll's time axis. |
 | [ui/src/mainwindow/](../../ui/src/mainwindow) | `TransportState` (what the transport bar works out), `WindowState` (the window's place and splitters), `FileUrls` (paths and the file dialogs' URLs), `OutsidePresses`, `PagedRows`, `FolderTreeModel` (the browser panel's helpers). |
 | [ui/src/platform/](../../ui/src/platform) | `PluginEditorKeys`: the window's shortcuts while a plug-in's editor has the focus (Windows). `WindowFrame`: the main window's title bar instead of the system's caption (Windows). |
@@ -163,7 +163,9 @@ panel's `startChainRename(rackId, chainId)` and `focusDevices()`; the browser pa
 
 ### Menus and actions
 
-Every menu entry is an `Action` with an `objectName` (for the tests and `PluginEditorKeys`), and calls the session:
+Every menu entry is an `Action` with an `objectName` (for the tests and `PluginEditorKeys`; it is also its command's
+id in [KeyMap](#keys-and-profiles-keymap)), and calls the session. The keys below are the default profile's
+(Ableton Live's):
 
 | Menu | Entries (shortcut → what it calls) |
 |---|---|
@@ -174,12 +176,43 @@ Every menu entry is an `Action` with an `objectName` (for the tests and `PluginE
 | Options | Preferences… (Ctrl+,), Rescan Plug-ins, Computer MIDI Keyboard (M), MCP Server (`Session.mcp.enabled`, checkable: [app/mcp.md](../app/mcp.md)), Lock Envelopes |
 | Help | About SUBstation |
 
-An `Action` has one shortcut; the others (Ctrl+Shift+Z, Backspace, Ctrl+Shift+M, =, the platform's zoom keys) are
-`Shortcut`s that trigger the action. Checkable entries show the model's state: their `checked` is a binding to it
+An `Action` has one shortcut, its command's first key (`shortcut: window.keyOf(objectName)`); the others
+(Ctrl+Shift+Z, Backspace, Ctrl+Shift+M, =, Ctrl++, Ctrl+-) are the keys of a `Shortcut` per command (an
+`Instantiator` over `KeyMap.commands`; objectName the command's id + `Keys`) that triggers the action, enabled with it.
+Checkable entries show the model's state: their `checked` is a binding to it
 (`Session.project.loopEnabled`, `Session.computerKeyboard.enabled`, ...), and a click asks for the change and then
 binds `checked` again, so the menu shows what the model made of it.
 
-Context menus show the same shortcuts as hints only: the window's actions handle the keys.
+Context menus show the same shortcuts as hints only: the window's actions handle the keys. The hints are their
+commands' keys when the menu opens (`KeyMap::hint("cut")` in the arrangement's and the track headers' menus,
+`KeyMap.primary("cut")` in the device view's).
+
+### Keys and profiles (KeyMap)
+
+[KeyMap](../../ui/src/input/KeyMap.h) (a QML singleton, one for the process) says which keys trigger which command.
+The commands (`allCommands()`: id, menu, name) are the window's menu Actions, every one of them (Record
+Quantization's entries aside), so any can have a key. A key is QKeySequence's portable text (`normalized()`:
+"ctrl+s" is "Ctrl+S", "Delete" is "Del"); a key belongs to one command at most.
+
+- A **profile** is a JSON file in the resources, [ui/keymaps/](../../ui/keymaps) (`:/qt/qml/SUBstation/keymaps/`):
+  `{"name": "Ableton Live", "bindings": {"save": ["Ctrl+S"], ...}}`, a command's keys its menu's first. `ableton`
+  (the keys the menus had before there were profiles) is the default and comes first in `profileIds()`.
+  `profileBindings()` leaves out the commands it doesn't know (and says which). `profile` is the one in use.
+- The **user's keys** are kept apart from the profile's, command by command (`customizedCommands`): a command the
+  user changed has the user's list in place of the profile's, so a profile's later fixes still reach the others,
+  and a change of profile keeps them. `assign(id, key)` gives a command one more key, taking it from the command
+  that had it (which it returns); that one is the user's then too. `unassign()`, `reset(id)`, `resetAll()`. A list
+  equal to the profile's isn't the user's any more. Where a profile's key is a key the user gave another command,
+  the user's wins (`rebuild()`).
+- Kept in `QSettings`: `keys/profile` (the profile's id) and `keys/overrides` (the user's lists, as JSON
+  `{id: [keys]}`), read again by `reload()`; unknown commands, keys that aren't keys and unknown profiles are left
+  out.
+- QML reads `bindings` ({id: [keys]}, notified on every change), so the Actions and Shortcuts follow a change at
+  once. `keyFor(key, modifiers)` makes a key press a key, as Preferences › Keyboard records it: a modifier alone is
+  none, a shifted symbol is the symbol ("+", as shortcuts match it), Backtab is Shift+Tab.
+
+Only the menus' commands are in it: the keys the views handle themselves (the find bar's, the piano roll's arrows,
+F held for fades, Ctrl+Alt-drag...) and the mouse's modifiers aren't.
 
 ### What an action acts on
 
@@ -473,6 +506,13 @@ application-layer object that holds the logic. What the preferences mean to the 
     [app/plugin-scanner.md](../app/plugin-scanner.md).
   - **Look and Feel** (`LookAndFeelPage` on the `Theme` singleton): the theme, a `ChoiceBox` of `Theme.names`
     showing `Theme.name` and setting it ([Themes](#themes)).
+  - **Keyboard** (`KeyboardPage` on the `KeyMap` singleton, [above](#keys-and-profiles-keymap)): the profile (a
+    `ChoiceBox` of `KeyMap.profiles`), Reset All, a search field (a command's name, menu or keys), and every
+    command in a list: its menu, its name (bold while customized), a button per key (its × takes it back:
+    `unassign()`), + and Reset (`reset()`, while customized). + waits for a key (`recording`): `keyRecorder`, an
+    item taking the focus, accepts every `ShortcutOverride` meanwhile, so the window's shortcuts and the dialog's
+    Esc don't have it; the key pressed (`KeyMap.keyFor()`; a modifier alone is none) goes to `assign()`, and the
+    line under the list says which command had it. Esc, or the focus going elsewhere, cancels.
 - **Export Audio** (`ExportDialog`): the range (`Session.exportRangeChoices()`: the arrangement, or the loop region
   while the loop is on and has a length) and the bit depth (`exportBitDepthChoices`: 16-bit, 24-bit, 32-bit float;
   24 at first); OK emits `exportChosen(range, bitDepth)` and the window goes on ([above](#files-and-unsaved-changes)).
@@ -522,7 +562,8 @@ on the application there, sees each `WM_KEYDOWN` / `WM_SYSKEYDOWN`:
 1. Is the window (or its root ancestor) a plug-in editor? If not, Qt handles it as usual.
 2. `actionFor(virtualKey, modifiers, textField)` maps the virtual-key code to a Qt key (`qtKey`: letters, digits,
    F-keys and a few others), reads the modifiers with `GetKeyState`, and decides:
-   - Without Ctrl or Alt only Space and S are taken, and not with Shift, not while the focus is in a Windows text
+   - Without Ctrl or Alt only Play / Stop's and Solo Selected Tracks' keys ([KeyMap](#keys-and-profiles-keymap):
+     Space and S by default) are taken, and not with Shift, not while the focus is in a Windows text
      field (an `Edit` or `RichEdit` class), and not a key the computer MIDI keyboard plays while it is on.
    - Ctrl+A/C/V/X/Z/Y and Ctrl+Shift+Z always stay with the plug-in: it may be typing into a field of its own.
    - Otherwise the window's first enabled `Action` or `Shortcut` whose key sequence matches exactly (read from what
@@ -552,7 +593,8 @@ whose keys this process never sees (and which can't wait for it to decide). So `
 same rules, every key of the window's `Action`s and `Shortcut`s it takes (`sandboxKeys()`: single keys, as the
 system's key codes, `systemKey()` being `qtKey()`'s and `qtKeyForKeysym()`'s other way; none while a render's dialog
 is up) and hands the table to the sandboxes (`EngineBridge::setSandboxEditorKeys`), again when it may have changed: the
-computer MIDI keyboard switched, a render starting or ending, an editor opening. A sandbox keeps those keys from its
+computer MIDI keyboard switched, keys given to other commands (`KeyMap::changed`), a render starting or ending, an
+editor opening. A sandbox keeps those keys from its
 plug-ins and passes them on; `pluginEditorKey` triggers the action as for an editor of this process (an action
 switched off meanwhile triggers nothing). Ctrl+W is `closeForemostPluginEditor()`: on Windows the first visible editor
 window, top down, of this process or a sandbox's (`EngineBridge::sandboxProcessIds()`); on Linux this process's
@@ -593,12 +635,13 @@ offscreen platform renders Qt Quick in software, without the items' geometry); w
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | The layout and its look, every menu action calling the session, the shortcuts, checkable actions kept in step with the model, Open Recent, files with the unsaved-changes question, closing (a render running, unsaved changes), the title, the status line, warnings, Export Audio, the clip view covering the arrangement, Rename, `PluginEditorKeys`, the window state kept |
+| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | The layout and its look, every menu action calling the session, the shortcuts (every Action a KeyMap command, its keys followed at once), checkable actions kept in step with the model, Open Recent, files with the unsaved-changes question, closing (a render running, unsaved changes), the title, the status line, warnings, Export Audio, the clip view covering the arrangement, Rename, `PluginEditorKeys`, the window state kept |
 | [test_ui_transport.cpp](../../tests/app/test_ui_transport.cpp) | Each control of the transport bar and what it shows, whoever changed it; Play and Record following the bridge; nothing taking the keyboard |
-| [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp) | Preferences' pages on their controllers (Look and Feel's themes applied and kept, Agents' MCP server on and off and its port), Export Audio's choices, the render progress (modal, label, bar, Cancel) while exporting and freezing, the message boxes |
+| [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp) | Preferences' pages on their controllers (Look and Feel's themes applied and kept, Keyboard's keys recorded, removed and reset, Agents' MCP server on and off and its port), Export Audio's choices, the render progress (modal, label, bar, Cancel) while exporting and freezing, the message boxes |
 | [test_ui_controls.cpp](../../tests/app/test_ui_controls.cpp) | Knobs and value boxes dragged (one gesture key per drag), wheeled, double-clicked and typed into; the meter's fall and clip light; the oscilloscope's trigger and fade from a fake feed; buttons that never take the focus |
 | [test_ui_sg.cpp](../../tests/app/test_ui_sg.cpp) | `SgCanvas` and `SgPainter` rendered for real and checked pixel by pixel; the big-recording split; a benchmark of an arrangement's worth of rects |
 | [test_ui_theme.cpp](../../tests/app/test_ui_theme.cpp) | Every colour with its value, the themes (each complete, applied and kept), the button roles' looks, every icon (its colour, states, the disabled variant) and the image provider |
+| [test_ui_keymap.cpp](../../tests/app/test_ui_keymap.cpp) | `KeyMap`: the profiles (their commands known, no key twice), the Ableton profile's keys (as the menus had them), keys normalized, a key press as a key, the user's keys (taken from the command that had them, kept, reset), saved keys read back |
 | [test_ui_gallery.cpp](../../tests/app/test_ui_gallery.cpp) | The look end to end: a gallery of the shared controls and a sample of what the views draw |
 | [test_session_keyboard.cpp](../../tests/app/test_session_keyboard.cpp) | The computer MIDI keyboard: notes and octaves, shortcuts and text inputs keeping their keys, modifiers, releasing held notes |
 | [test_session_renders.cpp](../../tests/app/test_session_renders.cpp), [test_session_files.cpp](../../tests/app/test_session_files.cpp) | The session's side: renders in the background and Cancel, closing while one runs, plug-ins loading after a project opens; files, recent projects, the preferences |

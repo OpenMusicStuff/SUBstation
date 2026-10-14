@@ -247,6 +247,9 @@ private:
     std::vector<double> total_;
     std::vector<double> inputColumns_, outputColumns_;
     bool inputLive_ = false, outputLive_ = false;
+    // How much the analyzer's lines show (0..1): they fade out while no audio comes, back in as it does.
+    double inputFade_ = 0.0, outputFade_ = 0.0;
+    QElapsedTimer fadeClock_;  // since the last feed()
 };
 
 }  // namespace sub::ui

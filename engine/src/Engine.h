@@ -66,6 +66,7 @@
 #include "Scheduler.h"
 #include "Snapshot.h"
 #include "Transport.h"
+#include "WarpCache.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -169,6 +170,12 @@ struct MeterReading {
     float left = 0.f;
     float right = 0.f;
     uint32_t chainId = 0;  // a rack chain's fader (on track trackId); 0: the track's own
+};
+
+struct DeviceMeterReading {
+    uint32_t processorId = 0;
+    float left = 0.f;
+    float right = 0.f;
 };
 
 // Whether a plug-in has loaded. One in this process has (or it wouldn't be
@@ -360,6 +367,12 @@ public:
     void setMasterPan(float pan) { setTrackPan(kMaster, pan); }
     // Peak levels since the last call: the master, each track, then each rack chain (chainId set).
     std::vector<MeterReading> takeMeters();
+    // Each device's loudest output (left, right) since the last call: its meter.
+    std::vector<DeviceMeterReading> takeDeviceMeters();
+    // The latency a track's devices add (samples, compensated; kMaster: the master's), and the whole
+    // output's: the latest a track is aligned to plus the master's devices.
+    int trackLatency(uint32_t trackId);
+    int outputLatency();
 
     // --- Input and recording ------------------------------------------------------
     // A track's input: device channels (0-based, as DeviceStatus lists them): none,
@@ -605,6 +618,11 @@ public:
     // The short fade against clicks at a clip's edge that cuts into its file
     // (4 ms by default, 0 to 100): where the clip has no fade of its own there.
     void setClipFadeMs(double ms);
+    // Stretched clips are rendered whole in the background, and live playback
+    // reads the renders once they are ready (WarpCache). Waits until every
+    // render the project needs is ready (tests and benchmarks; not under the
+    // engine's mutex, which the renders don't need).
+    void waitForWarpRenders();
 
     // --- Browser preview ------------------------------------------------------
     void preview(const std::string& path);  // the source must already be loaded
@@ -973,6 +991,9 @@ private:
     // Stretchers for live playback, per configuration. They only grow (a voice
     // may still be in use by the audio thread) until the sample rate changes.
     WarpVoiceSet warpVoices_;
+    // Stretched clips rendered whole, for live playback (each snapshot build
+    // asks for its clips' renders).
+    WarpCache warpCache_;
 
     std::unordered_map<std::string, std::shared_ptr<AudioSource>> sources_;
     std::shared_ptr<const AudioSource> previewHold_;

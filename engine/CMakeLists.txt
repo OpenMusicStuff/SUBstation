@@ -285,6 +285,7 @@ add_library(sub_engine STATIC
     src/MidiInput.cpp
     src/EditorHost.cpp
     src/Warp.cpp
+    src/WarpCache.cpp
     src/builtin/BuiltinProcessor.cpp
     src/builtin/BuiltinRegistry.cpp
     src/builtin/GigaTuneDesign.cpp

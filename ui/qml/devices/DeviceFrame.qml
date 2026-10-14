@@ -136,10 +136,24 @@ Item {
         border.color: frame.headerColor
     }
 
-    // The grip in the gap after it (DeviceChainArea.kSpacing wide).
-    DeviceGrip {
-        x: frame.width + 2
-        height: frame.height
+    // In the gap after it (DeviceChainArea.kSpacing wide), as Ableton's: a meter of what it puts out
+    // (a rack: its chains summed; switched off: what goes past it).
+    Meter {
+        id: outputMeter
+        objectName: "deviceMeter"
+        // Two thin bars in the middle of the gap, half the device's height, centred on it.
+        x: frame.width
+        width: 8
+        height: Math.round(frame.height / 2)
+        y: Math.round((frame.height - height) / 2)
+        compact: true
+    }
+    Connections {
+        target: Session.bridge
+        function onMetersUpdated() {
+            const level = Session.bridge.deviceMeter(frame.deviceId)
+            outputMeter.setLevels(level.left, level.right)
+        }
     }
 
     // The on/off switch: a square one.
@@ -391,6 +405,13 @@ Item {
             width: parent.width - 4
             height: Math.max(16, parent.height - y - 4)
             clip: true
+
+            HoverHandler {
+                id: verticalTitleHover
+            }
+            ToolTip.visible: verticalTitleHover.hovered && deviceInfo.toolTip !== ""
+            ToolTip.text: deviceInfo.toolTip
+            ToolTip.delay: 700
 
             Text {
                 anchors.centerIn: parent

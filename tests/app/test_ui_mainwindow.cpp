@@ -42,6 +42,7 @@
 #include "model/Project.h"
 #include "mainwindow/WindowState.h"
 #include "pianoroll/PianoRoll.h"
+#include "input/KeyMap.h"
 #include "platform/PluginEditorKeys.h"
 #include "EditorHost.h"
 #include "platform/WindowFrame.h"
@@ -167,6 +168,7 @@ private Q_SLOTS:
     void init() {
         session().newProject();
         session().computerKeyboard()->setEnabled(false);
+        sub::ui::KeyMap::instance()->resetAll();
         window_->requestActivate();
         QVERIFY(QTest::qWaitForWindowActive(window_));
     }
@@ -1287,6 +1289,56 @@ private Q_SLOTS:
         key(Qt::Key_Escape);
     }
 
+    // The menus' keys are KeyMap's: every Action of the window is a command
+    // (its objectName the command's id) showing the command's first key, and
+    // its other keys are a Shortcut of the window. A key changed applies at once.
+    void keyMapDrivesTheWindow() {
+        sub::ui::KeyMap& keyMap = *sub::ui::KeyMap::instance();
+        QStringList actions;
+        for (QObject* object : window_->findChildren<QObject*>()) {
+            if (!object->inherits("QQuickAction") || object->objectName().isEmpty() ||
+                object->objectName().startsWith(QStringLiteral("quantize_")))
+                continue;
+            const QString id = object->objectName();
+            actions << id;
+            QVERIFY2(sub::ui::KeyMap::command(id), qPrintable(id));
+            QCOMPARE(object->property("shortcut").toString(), keyMap.primary(id));
+            QObject* more = window_->findChild<QObject*>(id + QStringLiteral("Keys"));
+            QVERIFY2(more && more->inherits("QQuickShortcut"), qPrintable(id));
+            QStringList others;
+            for (const QVariant& key : more->property("sequences").toList()) others << key.toString();
+            QCOMPARE(others, keyMap.keys(id).mid(1));
+        }
+        for (const sub::ui::KeyMap::Command& command : sub::ui::KeyMap::allCommands())
+            QVERIFY2(actions.contains(QLatin1String(command.id)), command.id);
+
+        // Loop on Ctrl+K instead of Ctrl+L; then Ctrl+Shift+K too (a Shortcut's).
+        QVERIFY(!project().loopEnabled());
+        keyMap.unassign(QStringLiteral("loop"), QStringLiteral("Ctrl+L"));
+        keyMap.assign(QStringLiteral("loop"), QStringLiteral("Ctrl+K"));
+        QCOMPARE(prop(QStringLiteral("loop"), "shortcut").toString(), QStringLiteral("Ctrl+K"));
+        key(Qt::Key_L, Qt::ControlModifier);
+        QVERIFY(!project().loopEnabled());
+        key(Qt::Key_K, Qt::ControlModifier);
+        QVERIFY(project().loopEnabled());
+        keyMap.assign(QStringLiteral("loop"), QStringLiteral("Ctrl+Shift+K"));
+        key(Qt::Key_K, Qt::ControlModifier | Qt::ShiftModifier);
+        QVERIFY(!project().loopEnabled());
+        // A key taken from another command: Ctrl+T inserts no track any more, it loops.
+        QCOMPARE(keyMap.assign(QStringLiteral("loop"), QStringLiteral("Ctrl+T")), QStringLiteral("insertAudioTrack"));
+        QCOMPARE(prop(QStringLiteral("insertAudioTrack"), "shortcut").toString(), QString());
+        key(Qt::Key_T, Qt::ControlModifier);
+        QVERIFY(project().loopEnabled());
+        QCOMPARE(project().tracks().size(), size_t(0));
+
+        keyMap.resetAll();
+        QCOMPARE(prop(QStringLiteral("loop"), "shortcut").toString(), QStringLiteral("Ctrl+L"));
+        key(Qt::Key_L, Qt::ControlModifier);
+        QVERIFY(!project().loopEnabled());
+        key(Qt::Key_K, Qt::ControlModifier);
+        QVERIFY(!project().loopEnabled());
+    }
+
     // The keys of plug-ins' editors (test_shortcuts_from_plugin_editor): what
     // the window takes, and what stays with the plug-in.
     void pluginEditorKeys() {
@@ -1329,6 +1381,14 @@ private Q_SLOTS:
         QVERIFY(!keys->keyPressed(vk('S'), 0));
         QVERIFY(keys->actionFor(kVkSpace, 0) != nullptr);
         session().computerKeyboard()->setEnabled(false);
+        // Without Ctrl or Alt, Play / Stop's and Solo's keys as KeyMap has them: P plays instead of Space.
+        sub::ui::KeyMap::instance()->unassign(QStringLiteral("playStop"), QStringLiteral("Space"));
+        sub::ui::KeyMap::instance()->assign(QStringLiteral("playStop"), QStringLiteral("P"));
+        QCOMPARE(keys->actionFor(kVkSpace, 0), nullptr);
+        QCOMPARE(keys->actionFor(vk('P'), 0), find(QStringLiteral("playStop")));
+        sub::ui::KeyMap::instance()->resetAll();
+        QCOMPARE(keys->actionFor(vk('P'), 0), nullptr);
+        QCOMPARE(keys->actionFor(kVkSpace, 0), find(QStringLiteral("playStop")));
         // An action's other shortcut (a Shortcut): Ctrl+Shift+Z is the plug-in's,
         // Ctrl+Shift+M inserts a MIDI clip.
         QVERIFY(keys->actionFor(vk('M'), ctrl | Qt::ShiftModifier) != nullptr);

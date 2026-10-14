@@ -382,6 +382,10 @@ private:
     static bool takeResets(const StripRender& chain) noexcept;
     // Resets a device now; a rack asks everything in it to reset as it runs next.
     static void resetInsert(Processor& insert, const RackRender* rack) noexcept;
+    // A device's meter: the loudest of what it passes on (live chunks only).
+    static void meterOutput(Processor& insert, const float* left, const float* right, int frames) noexcept;
+    // A chain skipped (none of its devices on): each one's meter takes what goes past it.
+    void meterSkipped(const StripRender& chain, const float* left, const float* right, int frames) noexcept;
     // A rack its switch passes by: the taps after the devices in it (in its
     // chains, and in racks in them) take what it passes on.
     static void tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack, const float* left,
@@ -403,7 +407,11 @@ private:
     void renderClips(const TrackRender& track, const Segment& segment, const TrackBuffers& buffers, int& nextVoice,
                      WorkerScratch& scratch, float* left, float* right) noexcept;
     // Prologue: the stretchers the track's clips play through in this chunk.
-    void assignVoices(const TrackRender& track, const WarpVoiceSet& voices, TrackBuffers& buffers) noexcept;
+    void assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live, TrackBuffers& buffers) noexcept;
+    // Whether the voice that played `clip` in the block before carries it on at `position`.
+    bool carriedOn(const WarpVoiceSet& voices, const ClipRender& clip, int64_t position) const noexcept;
+    // Whether `render` was sounding in the block before, up to where `clip` is at `position`.
+    bool soundedUpTo(const WarpRender& render, const ClipRender& clip, int64_t position) const noexcept;
     WarpVoice* acquireVoice(const WarpVoiceSet& voices, const ClipRender& clip, bool& continuing) noexcept;
     // The metronome's ticks on the time signature's beats in [position, position + length), before `end`,
     // the first of each bar accented, heard when the tracks' audio of their position is: `offset` into

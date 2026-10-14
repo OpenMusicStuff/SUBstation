@@ -1,28 +1,43 @@
-// Vital's editor (ui/qml/devices/editors/VitalEditor.qml, VitalPatchInfo):
-// loaded as the device view loads it, over a real engine; every page and each
-// of its choices showing Vital's parameters (each one the device has, in the
-// body's height), its knobs editing the model undoably, Vital's texts in the
-// readouts, the modulation matrix adding, showing and removing modulations
-// (one undo step each), and the preset's name. With SUBSTATION_UI_SCREENSHOTS
-// set to a folder, its pages are saved there as PNGs.
+// Vital's editor (ui/qml/devices/editors/VitalEditor.qml, VitalPatchInfo and
+// its panels, VitalWavetableGraph, VitalEnvelopeGraph, VitalLfoGraph,
+// VitalFilterGraph, VitalScope): loaded as the device view loads it, over a
+// real engine, as wide as it was; every page and each of its choices showing
+// Vital's parameters (each one the device has, in the body's height), its
+// knobs editing the model undoably, Vital's texts in the readouts, knobs that
+// do nothing dimmed, the modulation matrix adding, showing and removing
+// modulations (one undo step each), the preset's name; the panels drawing the
+// section chosen (the wavetable's frames, the envelope's stages, the LFO's
+// shape, the filter's response), their drags one undo step each, and what the
+// engine plays reaching them (the envelopes' and LFOs' positions, the output,
+// the voices). With SUBSTATION_UI_SCREENSHOTS set to a folder, its pages are
+// saved there as PNGs.
 
 #include <QQuickItem>
+#include <cmath>
 #include <QQuickWindow>
 #include <QTest>
 #include <QUndoStack>
 
 #include "EditorHarness.h"
 #include "devices/DeviceParam.h"
+#include "devices/VitalEnvelopeGraph.h"
+#include "devices/VitalFilterGraph.h"
+#include "devices/VitalLfoGraph.h"
+#include "devices/VitalScope.h"
+#include "devices/VitalWavetableGraph.h"
+#include "model/Clip.h"
 #include "editor/ProjectEditor.h"
 #include "model/Vital.h"
 
 using namespace sub::app;
 using namespace sub::ui;
+using sub::app::test::kSampleRate;
 
 class TestUiDeviceEditorsVital : public QObject, public sub::app::test::EditorHarness {
     Q_OBJECT
 
     QString track_, device_;
+    QString error_;  // the screenshot's wavetable's load
 
     QQuickItem* showVital() {
         track_ = editor()->addMidiTrack(-1, {}, QStringLiteral("vital"));
@@ -48,6 +63,26 @@ class TestUiDeviceEditorsVital : public QObject, public sub::app::test::EditorHa
 
     QObject* patch(QQuickItem* view) { return qvariant_cast<QObject*>(view->property("patch")); }
 
+    // A note held from the start for `beats` (at the project's tempo), on the Vital's track.
+    void holdNote(double beats) {
+        editor()->commitClips(QStringLiteral("Add"), {{track_, {Clip::midi(QStringLiteral("held"), QStringLiteral("held"),
+                                                                           0.0, beats, 0.0, {Note{60, 0.0, beats}})}}});
+    }
+    // Renders `seconds` of the arrangement, then ticks the displays' clock until the editor has read it all.
+    void play(double seconds) {
+        session_->bridge()->waitForDeviceStates();
+        engine_->renderOffline(0.0, static_cast<int64_t>(seconds * kSampleRate));
+        for (int i = 0; i < 8; ++i)
+            refreshDisplays();
+    }
+    // A drag on `item` from `from` by `by` (item coordinates), with `modifiers`.
+    void drag(QQuickItem* item, QPointF from, QPointF by, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
+        QTest::mousePress(window_, Qt::LeftButton, modifiers, scenePoint(item, from));
+        dragTo(window_, scenePoint(item, from + by / 2), modifiers);
+        dragTo(window_, scenePoint(item, from + by), modifiers);
+        QTest::mouseRelease(window_, Qt::LeftButton, modifiers, scenePoint(item, from + by));
+    }
+
 private Q_SLOTS:
     void initTestCase() {
         if (!haveDisplay())
@@ -71,6 +106,7 @@ private Q_SLOTS:
         QVERIFY(view);
         QCOMPARE(view->property("pages").toInt(), 9);
         QVERIFY(view->implicitHeight() <= bodyHeight());
+        QCOMPARE(view->implicitWidth(), 996.0);  // (as wide as it ever was)
         const QStringList all = [this] {
             QStringList ids;
             for (const auto& [id, value] : project()->device(track_, device_).params.asKeyValueRange()) ids << id;
@@ -93,6 +129,11 @@ private Q_SLOTS:
                     QVERIFY(cell);
                     auto* param = qvariant_cast<sub::ui::DeviceParam*>(cell->property("param"));
                     QVERIFY2(param && param->valid(), qPrintable(id));
+                    // Its caption and its readout whole.
+                    for (QQuickItem* text : cell->findChildren<QQuickItem*>()) {
+                        if (text->isVisible() && text->property("truncated").toBool())
+                            QFAIL(qPrintable(QStringLiteral("%1: \"%2\" cut short").arg(id, text->property("text").toString())));
+                    }
                     // Inside the editor.
                     const QPointF corner = cell->mapToItem(view, QPointF(cell->width(), cell->height()));
                     QVERIFY2(corner.x() <= view->width() + 0.5 && corner.y() <= view->height() + 0.5, qPrintable(id));
@@ -202,6 +243,142 @@ private Q_SLOTS:
         QVERIFY(side && side->y() + side->height() <= view->height());
     }
 
+    void knobsThatDoNothingAreDimmed() {
+        QQuickItem* view = showVital();
+        QVERIFY(view);
+        setPage(view, 2);  // Filter 1: Analog, so the formant's knobs and the comb's do nothing
+        auto* formant = find<QQuickItem>(view, QStringLiteral("param_filter_1_formant_x"));
+        auto* comb = find<QQuickItem>(view, QStringLiteral("param_filter_1_blend_transpose"));
+        auto* cutoff = find<QQuickItem>(view, QStringLiteral("param_filter_1_cutoff"));
+        QVERIFY(formant && comb && cutoff);
+        QTRY_VERIFY(formant->opacity() < 0.5);
+        QVERIFY(comb->opacity() < 0.5);
+        QCOMPARE(cutoff->opacity(), 1.0);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("filter_1_model"), 5.0);  // Formant
+        QTRY_COMPARE(formant->opacity(), 1.0);
+        QTRY_VERIFY(comb->opacity() < 0.5);
+        // An LFO's rate while it follows the tempo, its tempo while it doesn't.
+        setPage(view, 4);
+        auto* rate = find<QQuickItem>(view, QStringLiteral("param_lfo_1_frequency"));
+        auto* tempo = find<QQuickItem>(view, QStringLiteral("param_lfo_1_tempo"));
+        QVERIFY(rate && tempo);
+        const bool synced = param(track_, device_, QStringLiteral("lfo_1_sync")) != 0.0;
+        QTRY_COMPARE(rate->opacity() < 0.5, synced);
+        QTRY_COMPARE(tempo->opacity() < 0.5, !synced);
+        // The same for a random LFO, coming from an LFO's page (what decides it follows the page).
+        setPage(view, 5, 1);
+        auto* randomRate = find<QQuickItem>(view, QStringLiteral("param_random_2_frequency"));
+        auto* randomTempo = find<QQuickItem>(view, QStringLiteral("param_random_2_tempo"));
+        QVERIFY(randomRate && randomTempo);
+        const bool randomSynced = param(track_, device_, QStringLiteral("random_2_sync")) != 0.0;
+        QTRY_COMPARE(randomRate->opacity() < 0.5, randomSynced);
+        QTRY_COMPARE(randomTempo->opacity() < 0.5, !randomSynced);
+    }
+
+    void panelsDrawTheSectionChosen() {
+        QQuickItem* view = showVital();
+        QVERIFY(view);
+        // Oscillator 2: its wavetable's frames; a basic shape set, they are the shape's.
+        setPage(view, 0, 1);
+        auto* wavetable = find<VitalWavetableGraph>(view, QStringLiteral("wavetableGraph"));
+        QVERIFY(wavetable && wavetable->isVisible());
+        QCOMPARE(wavetable->prefix(), QStringLiteral("osc_2_"));
+        QCOMPARE(wavetable->index(), 1);
+        QVERIFY(wavetable->frames() >= 1);
+        bool set = false;
+        QMetaObject::invokeMethod(patch(view), "setWavetableShape", Q_RETURN_ARG(bool, set), Q_ARG(int, 1), Q_ARG(int, 5));
+        QVERIFY(set);  // a square
+        QTRY_COMPARE(wavetable->frames(), 1);
+        const std::vector<float> square = wavetable->frameValues(0);
+        QCOMPARE(int(square.size()), VitalWavetableGraph::kPoints);
+        QVERIFY(square[VitalWavetableGraph::kPoints / 4] > 0.5f);   // up for its first half,
+        QVERIFY(square[3 * VitalWavetableGraph::kPoints / 4] < -0.5f);  // down for its second
+        // Dragging up moves through the frames: one undo step.
+        const int steps = undo()->count();
+        drag(wavetable, QPointF(wavetable->width() / 2, wavetable->height() - 10), QPointF(0, -40));
+        QCOMPARE(undo()->count(), steps + 1);
+        QVERIFY(param(track_, device_, QStringLiteral("osc_2_wave_frame")) > 10.0);
+        QCOMPARE(param(track_, device_, QStringLiteral("osc_1_wave_frame")), 0.0);
+        // Switched off, it says so.
+        QVERIFY(wavetable->on() == (param(track_, device_, QStringLiteral("osc_2_on")) >= 0.5));
+
+        // Envelope 3: the attack's end dragged right, the decay's down (the sustain), each one undo step.
+        setPage(view, 3, 2);
+        auto* envelope = find<VitalEnvelopeGraph>(view, QStringLiteral("envelopeGraph"));
+        QVERIFY(envelope && envelope->isVisible());
+        QCOMPARE(envelope->prefix(), QStringLiteral("env_3_"));
+        const double attack = param(track_, device_, QStringLiteral("env_3_attack"));
+        drag(envelope, envelope->handlePosition(VitalEnvelopeGraph::Attack), QPointF(20, 0));
+        QVERIFY(param(track_, device_, QStringLiteral("env_3_attack")) > attack);
+        QCOMPARE(param(track_, device_, QStringLiteral("env_1_attack")), attack);  // (another envelope's: as it was)
+        const int before = undo()->count();
+        drag(envelope, envelope->handlePosition(VitalEnvelopeGraph::Decay), QPointF(0, 20));
+        QCOMPARE(undo()->count(), before + 1);
+        QVERIFY(param(track_, device_, QStringLiteral("env_3_sustain")) < 1.0);
+        // Its curve is Vital's: linear at power 0, bowed either way otherwise.
+        QCOMPARE(VitalEnvelopeGraph::attackValue(0.5, 0.0), 0.5);
+        QVERIFY(VitalEnvelopeGraph::attackValue(0.5, 4.0) > 0.5);
+        QVERIFY(VitalEnvelopeGraph::decayValue(0.5, 4.0, 0.0) > 0.5);
+        QVERIFY(VitalEnvelopeGraph::releaseValue(0.5, -4.0, 1.0) < 0.5);
+        // A double-click on a handle sets it back.
+        QTest::mouseDClick(window_, Qt::LeftButton, Qt::NoModifier,
+                           scenePoint(envelope, envelope->handlePosition(VitalEnvelopeGraph::Attack)));
+        QTRY_COMPARE(param(track_, device_, QStringLiteral("env_3_attack")), attack);
+
+        // LFO 1: its shape (Vital's triangle: three points, up then down).
+        setPage(view, 4, 0);
+        auto* lfo = find<VitalLfoGraph>(view, QStringLiteral("lfoGraph"));
+        QVERIFY(lfo && lfo->isVisible());
+        QCOMPARE(lfo->points().size(), size_t(6));
+        QVERIFY(std::abs(lfo->valueAt(0.0)) < 0.01 && std::abs(lfo->valueAt(0.5) - 1.0) < 0.01);
+        QMetaObject::invokeMethod(patch(view), "setLfoShape", Q_RETURN_ARG(bool, set), Q_ARG(int, 0), Q_ARG(int, 3));
+        QTRY_VERIFY(lfo->valueAt(0.25) < lfo->valueAt(0.75));  // a saw up
+
+        // Filter 1: Analog, 12 dB, low-pass; across, the cutoff, up and down the resonance: one step.
+        setPage(view, 2, 0);
+        auto* filter = find<VitalFilterGraph>(view, QStringLiteral("filterGraph"));
+        QVERIFY(filter && filter->isVisible());
+        const VitalFilterGraph::Settings s = filter->settings();
+        QVERIFY(VitalFilterGraph::response(s, s.cutoffHz / 10) > -1.0);
+        QVERIFY(VitalFilterGraph::response(s, s.cutoffHz * 10) < -30.0);
+        VitalFilterGraph::Settings high = s;
+        high.blend = 2.0;
+        QVERIFY(VitalFilterGraph::response(high, s.cutoffHz / 10) < -30.0);
+        QVERIFY(VitalFilterGraph::response(high, s.cutoffHz * 10) > -1.0);
+        const double cutoff = param(track_, device_, QStringLiteral("filter_1_cutoff"));
+        const int filterSteps = undo()->count();
+        drag(filter, filter->handlePosition(), QPointF(30, -10));
+        QCOMPARE(undo()->count(), filterSteps + 1);
+        QVERIFY(param(track_, device_, QStringLiteral("filter_1_cutoff")) > cutoff);
+    }
+
+    void whatPlaysReachesThePanels() {
+        QQuickItem* view = showVital();
+        QVERIFY(view);
+        holdNote(4.0);
+        setPage(view, 3, 0);  // Envelope 1: the amplitude's, always moving with a note
+        auto* envelope = find<VitalEnvelopeGraph>(view, QStringLiteral("envelopeGraph"));
+        QVERIFY(envelope);
+        play(0.5);
+        QTRY_VERIFY(envelope->playing());
+        setPage(view, 4, 0);
+        auto* lfo = find<VitalLfoGraph>(view, QStringLiteral("lfoGraph"));
+        QVERIFY(lfo);
+        play(0.5);
+        QTRY_VERIFY(lfo->playing());
+        QVERIFY(lfo->phase() >= 0.0 && lfo->phase() <= 1.0);
+        setPage(view, 8);
+        auto* scope = find<VitalScope>(view, QStringLiteral("scope"));
+        QVERIFY(scope && scope->isVisible());
+        play(0.5);
+        QTRY_VERIFY(scope->voices() >= 1);
+        // Silence: the dot goes.
+        editor()->setDeviceParam(track_, device_, QStringLiteral("volume"), 0.0);
+        setPage(view, 3, 0);
+        for (int i = 0; i < 60; ++i) refreshDisplays();
+        QTRY_VERIFY(!envelope->playing());
+    }
+
     void screenshot() {
         const QString folder = qEnvironmentVariable("SUBSTATION_UI_SCREENSHOTS");
         if (folder.isEmpty())
@@ -210,10 +387,29 @@ private Q_SLOTS:
         QVERIFY(view);
         editor()->addVitalModulation(track_, device_, QStringLiteral("lfo_1"), QStringLiteral("filter_1_cutoff"));
         editor()->addVitalModulation(track_, device_, QStringLiteral("env_2"), QStringLiteral("osc_1_wave_frame"));
+        // A wavetable of 16 frames, from a sine to a saw (spliced, 2048 samples a frame), at its sixth.
+        std::vector<float> frames;
+        for (int f = 0; f < 16; ++f) {
+            for (int i = 0; i < 2048; ++i) {
+                double v = 0.0;
+                for (int h = 1; h <= 1 + f * 2; ++h) v += std::sin(2 * M_PI * h * i / 2048.0) / h;
+                frames.push_back(float(0.55 * v));
+            }
+        }
+        QMetaObject::invokeMethod(patch(view), "loadWavetable", Q_RETURN_ARG(QString, error_), Q_ARG(int, 0),
+                                  Q_ARG(QString, sub::app::test::writeWav(dir_.path(QStringLiteral("table.wav")), frames)), Q_ARG(int, 0));
+        editor()->setDeviceParam(track_, device_, QStringLiteral("osc_1_wave_frame"), 90.0);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("filter_1_on"), 1.0);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("filter_1_resonance"), 0.7);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("env_1_decay_power"), -6.0);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("env_1_sustain"), 0.55);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("reverb_on"), 1.0);
+        holdNote(8.0);
         const QStringList names = view->property("pageNames").toStringList();
         for (int page = 0; page < names.size(); ++page) {
             setPage(view, page);
-            QTest::qWait(100);
+            play(0.35);
+            QTest::qWait(150);
             save(window_->grabWindow(), QStringLiteral("vital-%1.png").arg(names[page].toLower()));
         }
     }

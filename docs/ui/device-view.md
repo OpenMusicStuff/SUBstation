@@ -47,7 +47,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Transient Shaper: [TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml), [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h), [TransientGraph](../../ui/src/devices/TransientGraph.h), the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) | |
 | Sidechain: [SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml), [CurveGraph](../../ui/src/devices/CurveGraph.h), [ClashView](../../ui/src/devices/ClashView.h) | |
 | Sampler: [SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml), [SampleView](../../ui/src/devices/SampleView.h), the application layer's [SampleSlices.h](../../app/src/audio/SampleSlices.h) | |
-| Vital: [VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml), [VitalPatchInfo](../../ui/src/devices/VitalPatchInfo.h) (its patch besides its parameters: the modulations, the wavetables' and LFO shapes' names, the preset's and macros' names; the matrix's and the wavetables' edits, through the editor) | |
+| Vital: [VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml), [VitalPatchInfo](../../ui/src/devices/VitalPatchInfo.h) (its patch besides its parameters: the modulations, the wavetables' and LFO shapes' names, the preset's name, author and macros' names; the matrix's and the wavetables' edits, through the editor), its panels: [VitalGraph](../../ui/src/devices/VitalGraph.h) (their base), [VitalWavetableGraph](../../ui/src/devices/VitalWavetableGraph.h), [VitalEnvelopeGraph](../../ui/src/devices/VitalEnvelopeGraph.h), [VitalLfoGraph](../../ui/src/devices/VitalLfoGraph.h), [VitalFilterGraph](../../ui/src/devices/VitalFilterGraph.h), [VitalScope](../../ui/src/devices/VitalScope.h) | |
 | [PanelMenu.qml](../../ui/qml/devices/PanelMenu.qml), [DynamicMenu.qml](../../ui/qml/devices/DynamicMenu.qml), [ParamArea.qml](../../ui/qml/devices/ParamArea.qml), [ParamKnob.qml](../../ui/qml/devices/ParamKnob.qml), [ParamBox.qml](../../ui/qml/devices/ParamBox.qml), [ParamButton.qml](../../ui/qml/devices/ParamButton.qml), [ParamChoice.qml](../../ui/qml/devices/ParamChoice.qml), [DeviceHeaderButton.qml](../../ui/qml/devices/DeviceHeaderButton.qml) | Menus filled when they open; the editors' parameter-bound knobs, boxes, buttons and drop-downs; a title bar's buttons |
 | [editors/EditorBoxWidth.qml](../../ui/qml/devices/editors/EditorBoxWidth.qml) | How wide a value box (`ParamBox`) must be for every text it shows, with its automation dot clear of them, in its font (`needed`; `sample`, the widest of them) |
 
@@ -362,7 +362,7 @@ readonly property var editors: ({
   `implicitWidth` is the body's width (Compressor 658, Gate 568, or 837 with its sidechain section, Limiter 610,
   Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 532, Chorus-Ensemble
   534, Phaser-Flanger 732, or 906 with More open, Reverb 1023, Disperser 544, EQ 580, or 756 with its band controls,
-  Sidechain 720, Sampler 760, Transient Shaper 732, Vital 984); it may change. All but the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and
+  Sidechain 720, Sampler 760, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and
   Sampler's are their widths in the default font as the tests' host has it (Inter standing in for Segoe UI): their parts
   are as wide as their texts need, so they follow the font. It gets the body's whole height and grows its graphs into it
   (6 px from the top and the bottom), while its knobs stay at the top; `implicitHeight` is the least it needs.
@@ -1327,24 +1327,73 @@ The editors:
     the device's state ("sample"); loading one is `editor.setDeviceState(..., "Load Sample")`, undoable. The waveform
     is the bridge's (`waveform(path)`, requested if not decoded yet; quick, as the engine decoded it for the sampler).
 - **Vital** ([VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml)): nine pages named in the title bar
-  (`pageNames`: Osc, Sample, Filter, Env, LFO, Random, FX, Matrix, Voice), each but Matrix two rows of up to twelve
-  `DeviceParamKnob`s 66 px wide (`cellWidth`) with the editor's own short captions (`name`: "Cutoff", not "Filter 1
-  Cutoff"), from the editor's table (`rowsOf(page, choice)`: Vital's parameter ids); lists show as lists. A column on
-  the left (112 px) shows the preset's name (`presetName`, "Init" for none) and the page's choices: which oscillator,
-  filter, envelope, LFO, random LFO or effect (`choices`, `choose(index)`), small buttons three to a row. On Osc it
-  shows the oscillator's wavetable's name and *Wavetable…* (a `DynamicMenu`: Load Wavetable… (a `.wav` wavetable or a
-  `.vitaltable`), Load Audio, Vocoded…, Load Audio, Pitched…, and the basic shapes), on LFO the LFO's shape and
-  *Shape…*; a wavetable that doesn't load says why under it. Matrix: a source and a destination (`ComboBox`es of every
-  one Vital's engine has, by name; the destination's editable, to find one by typing) and Add, then a scrolled list of
-  the modulations in use, one a row (`modulation_<slot>`): source → destination, its amount (`ParamKnob`, 20 px, and
-  its text), Bipolar, Stereo and Bypass (`ParamButton`s), × to remove it. Knobs and buttons are bound to the slot's
-  parameters (`modulation_<slot + 1>_amount`...), so they automate and undo as any; adding, removing and the
-  wavetables go through `VitalPatchInfo` to the editor (`addVitalModulation`, `setVitalModulation`,
-  `setVitalWavetable`, `setVitalWavetableShape`, `setVitalLfoShape`), one undo step each. The page and each page's
-  choice are view state (`DeviceViews`: `vitalPage`, `vitalChoice<page>`). Its texts are Vital's own: its parameters
-  are `ownText`, so `DeviceParam::format()` asks the device (`EngineBridge::deviceParamText`) and the automation
-  lanes' `ParamSpec`s use the same text. The device's menu (DevicePanel's) has *Load Vital Preset…* and *Save Vital
-  Preset…* for it.
+  (`pageNames`: Osc, Sample, Filter, Env, LFO, Random, FX, Matrix, Voice), 996 px wide in three parts: a column on
+  the left (112 px), a drawn panel (254 px) and a grid of knobs (594 px).
+  - **The column** is the patch's: a small screen (`presetScreen`) with the preset's name (`presetName`, "Init" for
+    none) and author over the output drawn faint (a `VitalScope` in "badge" mode), the page's choices (which
+    oscillator, filter, envelope, LFO or random LFO: `choices`, `choose(index)`, small buttons four to a row), and at
+    its foot the four macros (`ParamKnob`s, 20 px, in the modulators' colour, two by two, named as the preset names
+    them; `param_macro_control_<n>`), on every page.
+  - **The panel** shows the section chosen (`prefix`: "osc_2_", "filter_fx_"...) under a header: its switch (a dot
+    lit in the accent, `Power`), its short title ("OSC 1"), and what it is and where it goes; under the drawing a
+    footer of its lists (`Choice`: the caption dim, the value's name elided, the parameter's names or, where it has
+    none, its whole values as the device shows them) and switches (`Toggle`, a `ParamButton`). The drawings are
+    `VitalGraph`s ([VitalGraph](../../ui/src/devices/VitalGraph.h), a `DeviceCanvas` over a section by its `prefix` and
+    `index`, on the house's dark well, dimmed over 120 ms while the section is off, a drag one undo step):
+    - Osc: [VitalWavetableGraph](../../ui/src/devices/VitalWavetableGraph.h), the wavetable's frames stacked back to
+      front (up to 36 of them, evenly through the table), the one `wave_frame` plays bright in the stack and large in
+      front, filled to its zero line, with its number; rendered by Vital's own code
+      (`sub::app::vitalWavetableFrames`) only when the wavetable changes. Dragging up and down moves through the
+      frames (Shift finely), a double-click goes back to the first. The header has the wavetable's name
+      (`shapeName`), *Wavetable…* (`shapeButton`, a `DynamicMenu`: Load Wavetable… (a `.wav` wavetable or a
+      `.vitaltable`), Load Audio, Vocoded…, Load Audio, Pitched…, and the basic shapes) and the output; the footer
+      the spectral morph's, the warp's and the unison stack's types. A wavetable that doesn't load says why over
+      the drawing.
+    - Filter: [VitalFilterGraph](../../ui/src/devices/VitalFilterGraph.h), the response over 20 Hz..20 kHz and
+      -42..+30 dB, sketched from the model, style, cutoff, resonance and blend (`response()`: the classic models a
+      state-variable filter blending low-pass, band-pass and high-pass, two in series for 24 dB; the notches, the
+      diode's low cut, the formant's three peaks, the comb's teeth, the phaser's notches: the shape, not Vital's
+      exact curve), over the output's spectrum. Its handle drags across for the cutoff and up and down for the
+      resonance; a press off it puts them there first; a double-click resets both. The footer has the model and the
+      style.
+    - Env: [VitalEnvelopeGraph](../../ui/src/devices/VitalEnvelopeGraph.h), the stages as Vital's envelope plays
+      them (its power curves: `attackValue`, `decayValue`, `releaseValue`), each as wide as its knob is turned
+      (Vital's own time scale), the sustain a fixed stretch, at least 1.5 units across. Handles at the delay's, the
+      attack's, the hold's and the release's ends (across), the decay's (across, and up and down for the sustain)
+      and one on each curve (up and down for its power); a drag keeps the scale it began with, so the handle
+      follows the mouse; a double-click resets the handle's parameters; hovering one grows it and names it.
+    - LFO: [VitalLfoGraph](../../ui/src/devices/VitalLfoGraph.h), the shape over a cycle (`sub::app::vitalLfoShape`,
+      read again only when it changes) with its points, the grid in eighths. The header has its shape's name and
+      *Shape…*; the footer its trigger mode (`sync_type`), its timing (`sync`) and Smooth.
+    - Sample, Random and Voice: [VitalScope](../../ui/src/devices/VitalScope.h), the output as an oscilloscope (the
+      latest 1024 samples from a rising zero crossing) or, on Voice, a spectrum, with how many voices play; it eases
+      flat once the sound stops. The footers have the sample's switches, the random LFO's style, timing and Sync.
+    - FX: Vital's nine effects as tiles three by three (`effect_<key>`), each with its switch and lit while on, the
+      one shown outlined; a click shows it in the grid.
+
+    The envelope's and the LFO's drawings show the newest voice moving through them (a glowing dot with a short
+    trail, fading once no voice plays: `playing`), from the device's displays (see
+    [engine/devices.md](../engine/devices.md#vital)).
+  - **The grid**: two rows of `DeviceParamKnob`s with the editor's own short captions (`name`: "Cutoff", not "Filter
+    1 Cutoff"), from its table (`rowsOf(page, choice)`: Vital's parameter ids, each with how many cells it takes: a
+    list two, its names whole, unless the parameter isn't a list); the cells as wide as the page's widest row lets
+    them be (`pageCellWidth`: 54 px for ten across, 84 at most). Readouts are Vital's texts with its units shortened
+    ("0.500 s", "2 st", `compact()`). A knob that does nothing with the section's settings as they are is dimmed (to
+    0.4, over 120 ms) but still settable (`active(id)`): the formant's without the Formant model, the comb's offset
+    without Comb, a rate while the timing follows the tempo and a tempo while it doesn't, the keytrack's otherwise.
+  - **Matrix** takes the panel's and the grid's place: a source and a destination (`ComboBox`es of every one Vital's
+    engine has, by name; the destination's editable, to find one by typing) and Add, then on a dark well a scrolled
+    list of the modulations in use, one a row (`modulation_<slot>`): the source as a chip in the modulators' colour
+    → the destination, its amount (`ParamKnob`, 20 px, a bar from the middle and its text), Bipolar, Stereo and
+    Bypass (`ParamButton`s; a bypassed row dimmed), × to remove it. Knobs and buttons are bound to the slot's
+    parameters (`modulation_<slot + 1>_amount`...), so they automate and undo as any.
+
+  Adding and removing modulations and the wavetables and LFO shapes go through `VitalPatchInfo` to the editor
+  (`addVitalModulation`, `setVitalModulation`, `setVitalWavetable`, `setVitalWavetableShape`, `setVitalLfoShape`),
+  one undo step each. The page and each page's choice are view state (`DeviceViews`: `vitalPage`,
+  `vitalChoice<page>`). Its texts are Vital's own: its parameters are `ownText`, so `DeviceParam::format()` asks the
+  device (`EngineBridge::deviceParamText`) and the automation lanes' `ParamSpec`s use the same text. The device's
+  menu (DevicePanel's) has *Load Vital Preset…* and *Save Vital Preset…* for it.
 
 ### Modulators
 
@@ -1467,7 +1516,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_editors_reverb.cpp](../../tests/app/test_ui_device_editors_reverb.cpp) | The Reverb's editor: fitting the view and its own least height with nothing overlapping, its boxes as wide as the widest text their parameters take (over the whole range) with a clear pixel between the automation dot and every value (in the drawn image too, every box automated at its widest), its lists as their longest names and the arrow (and their captions), its switches as their text, its knobs the house's 34 px, every caption and readout whole at its widest, each column no wider than its texts need, the pads and the graph spanning their boxes (or the switches over them, or their captions); the spin pad's and the decay graph's captions whole and apart at their widest (the tail's onset at the parameters' ends, each readout at its values' widest), with room for them in their implicit widths; every control bound to its parameter (with a tooltip) and undoable, Size read as a bare number and Stereo in whole degrees, the boxes' log drags, dimming (to 0.55, still editable); the filter pad's, spin pad's and decay graph's drags (one undo step each, Shift finely, the engine having the values), the pads' handles clear of their captions, the decay graph's handles inside the plot and picked when the shelves cross, its double-click (whose second press, dragged, drags nothing), the Low-pass's and a switched-off shelf's handles moving across only; the curves being the engine's maths (frozen too); the displays reaching them (input level and spectrum, tail meter and spectrum, Spin's phase), held through a tick without values and falling back, and after a backlog lit by what is now, not its loudest; the spin pad's trails kept through a sync; the transitions easing (Freeze into the top edge) and everything resting in silence |
 | [test_ui_device_editors_hue.cpp](../../tests/app/test_ui_device_editors_hue.cpp) | Hue's editor: fitting the body folded (the spectrum alone, as wide as the Vintage Hall's, the key, HQ and the arrow over its top edge) and opened (sliding open and shut), every caption and readout whole; the spectrum's far left and right (Low Cut and High Cut by the pixel, Shift finely, one undo step each and named, Low Cut kept under High Cut, a double-click resetting) and Color dragged up and down in the band (1.2 % a pixel, one undo step, a double-click resetting); a key setting the twelve notes in one undo step and read back (a new root keeping the scale, Custom notes moving with it, No Notes); the wheel switching a note, one undo step each, the moves shown; the displays reaching the spectrum and the wheel (a growl's A# in, moved onto A out) and their coming to rest |
 | [test_ui_device_editors_vintage_hall.cpp](../../tests/app/test_ui_device_editors_vintage_hall.cpp) | The Vintage Hall's editor: fitting the body folded and with Advanced open (the loop first, the knobs beside it, the editor as wide as they are and its margin; every caption and every text a readout takes whole; Advanced sliding open and shut, not at once), the defaults, the log knobs log, a knob's drag one undo step; the loop being the engine's (its lap for Size, the taps' weights for Attack, easing to a new Size); dragging it (up for Decay, across for Size, Shift finely, one undo step, named; a double-click resetting both); the displays reaching it (the taps' levels, the output, comets at a recent onset, few for a backlog's) and its coming to rest |
-| [test_ui_device_editors_vital.cpp](../../tests/app/test_ui_device_editors_vital.cpp) | Vital's editor: every page and each of its choices showing Vital's parameters (each one the device has, inside the body; every section's somewhere), a knob editing the model undoably with Vital's text ("262 Hz") and the editor's caption, the matrix adding a modulation (its row, its amount and switches the slot's parameters, an LFO's bipolar), removing it and undoing, every source and destination to choose; the preset's name; the wavetables' and LFO shapes' names and buttons on their pages, following the patch; with `SUBSTATION_UI_SCREENSHOTS`, each page saved |
+| [test_ui_device_editors_vital.cpp](../../tests/app/test_ui_device_editors_vital.cpp) | Vital's editor: as wide as it was (996 px); every page and each of its choices showing Vital's parameters (each one the device has, inside the body; every section's somewhere; no caption or readout cut short), a knob editing the model undoably with Vital's text ("262 Hz") and the editor's caption, knobs that do nothing dimmed (the formant's, a rate or a tempo by the timing, following the page), the matrix adding a modulation (its row, its amount and switches the slot's parameters, an LFO's bipolar), removing it and undoing, every source and destination to choose; the preset's name; the wavetables' and LFO shapes' names and buttons on their pages, following the patch; the panels: the oscillator's frames (a square's), dragged through (one step), the envelope's handles dragged (one step each) and reset, its curves Vital's, the LFO's shape following the patch, the filter's response (low-pass, high-pass) and its handle dragged; what the engine plays reaching them (the envelope's and the LFO's dots, the voices) and the dot going once silent; with `SUBSTATION_UI_SCREENSHOTS`, each page saved, a note playing |
 | [test_ui_device_editors_transient.cpp](../../tests/app/test_ui_device_editors_transient.cpp) | The Transient Shaper's editor: fitting the body (its parts inside it side by side, the editor as wide as they are and its margin; every caption and every text a readout takes whole), the defaults, only Attack, Sustain and Output bipolar, the times log, Attack and Sustain signed; Clip undoable, the lookahead reaching the engine's latency; the shape's handles (up and down for the amount, across for the time, never both; Shift; one undo step each, named; the curve following a drag at once; double-click resetting a handle's two; presses off them the frame's; the right button the amount's menu); the curve being the engine's hit (exactly, once settled), morphing to a new shape, the handles at the peak and on the tail; the displays reaching both graphs (the history, the gain's parts, sparks, rings and a playhead at a recent transient, none for a backlog's), and both coming to rest |
 | [test_session_devices.cpp](../../tests/app/test_session_devices.cpp) | `DeviceSelection` through the session: selecting, the focus, the clipboard, folding, racks, drops, presets |
 | [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) | The Sidechain's fit |

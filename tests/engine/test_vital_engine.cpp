@@ -560,3 +560,89 @@ TEST_CASE("vital: an LFO's shape set, and heard") {
     CHECK(vp::lfoNames("")[0] == "Triangle");
     CHECK(vp::shapeName(vp::Shape::SawDown) == "Saw Down");
 }
+
+namespace {
+
+// Display `id`'s values since the start.
+std::vector<float> displayOf(sub::Processor& processor, const std::string& id) {
+    const std::vector<sub::DisplayInfo> displays = processor.displays();
+    for (size_t i = 0; i < displays.size(); ++i) {
+        if (displays[i].id == id) {
+            std::vector<float> values;
+            processor.readDisplay(static_cast<int>(i), 0, values);
+            return values;
+        }
+    }
+    INFO(id);
+    REQUIRE(false);
+    return {};
+}
+
+}  // namespace
+
+TEST_CASE("vital: what its editor draws: the wavetables' frames, the LFOs' shapes") {
+    // Vital's init wavetable: a frame or more, each a cycle within -1..1, not silent.
+    const std::vector<float> init = vp::wavetableFrames("", 0, 128);
+    REQUIRE(!init.empty());
+    CHECK(init.size() % 128 == 0);
+    double loudest = 0.0;
+    for (float v : init) {
+        CHECK(std::fabs(v) <= 1.f);
+        loudest = std::max(loudest, static_cast<double>(std::fabs(v)));
+    }
+    CHECK(loudest > 0.5);
+    // A square, set on oscillator 2: one frame, high then low.
+    const std::string squares = vp::withWavetable("", 1, vp::wavetableOfShape(vp::Shape::Square));
+    const std::vector<float> square = vp::wavetableFrames(squares, 1, 64);
+    REQUIRE(square.size() == 64);
+    CHECK(square[16] > 0.5f);
+    CHECK(square[48] < -0.5f);
+    CHECK(vp::wavetableFrames(squares, 0, 64) != square);  // (oscillator 1's is still the init one)
+    CHECK(vp::wavetableFrames("", 3, 64).empty());         // (there are three)
+
+    // The LFOs: Vital's triangle where none is set (three points, up then down), a saw set.
+    const vp::LfoShape triangle = vp::lfoShape("", 0, 101);
+    REQUIRE(triangle.values.size() == 101);
+    CHECK(triangle.values[0] < 0.01f);
+    CHECK(triangle.values[50] > 0.99f);
+    CHECK(triangle.values[100] < 0.01f);
+    CHECK(triangle.points.size() == 6);
+    CHECK(triangle.points[3] == 1.f);  // (the middle point at the top: y runs up)
+    const vp::LfoShape saw = vp::lfoShape(vp::withLfo("", 2, vp::lfoOfShape(vp::Shape::SawUp)), 2, 11);
+    CHECK(saw.values[2] < saw.values[8]);
+}
+
+TEST_CASE("vital: its displays: the output, the voices, the LFOs' and envelopes' positions") {
+    Standalone vital("vital", kRate);
+    sub::Processor& processor = vital.processor();
+    // Nothing playing: no voice, the positions -1.
+    play(vital, {}, 4800);
+    const std::vector<float> idle = displayOf(processor, "env_1");
+    REQUIRE(!idle.empty());
+    CHECK(idle.back() == -1.f);
+    CHECK(displayOf(processor, "voices").back() == 0.f);
+
+    Standalone held("vital", kRate);
+    Timeline t;
+    t.note(0, -1, 69);
+    const auto [left, right] = play(held, t, 4800);
+    sub::Processor& p = held.processor();
+    const std::vector<float> output = displayOf(p, "output");
+    CHECK(output.size() == 4800);  // a value a sample
+    CHECK(std::fabs(output[3000] - 0.5f * (left[3000] + right[3000])) < 1e-6f);
+    const std::vector<float> voices = displayOf(p, "voices");
+    CHECK(voices.size() == 4800 / 256);
+    CHECK(voices.back() == 1.f);
+    // The amplitude envelope past its attack (the init patch's is short), sustaining: its stage, 4 (decay), and
+    // its level.
+    const float phase = displayOf(p, "env_1").back();
+    CHECK(phase >= 4.f);
+    CHECK(phase < 5.f);
+    const float level = displayOf(p, "env_1_value").back();
+    CHECK(level > 0.f);
+    CHECK(level <= 1.f);
+    // LFO 1 runs whether or not anything is modulated by it: a phase within its cycle.
+    const float lfo = displayOf(p, "lfo_1").back();
+    CHECK(lfo >= 0.f);
+    CHECK(lfo <= 1.f);
+}

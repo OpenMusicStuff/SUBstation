@@ -138,6 +138,9 @@ struct EngineBridge::Private {
 
     QMap<QString, MeterLevel> meters;  // track id or kMaster -> its meter
     QMap<QString, MeterLevel> chainMeters;  // rack chain id -> its meter
+    QHash<QString, MeterLevel> deviceMeters;  // device id -> the meter after it
+    QMap<QString, int> trackLatencies;  // track id or kMaster -> its devices' latency, as last told
+    int outputLatency = 0;
     double lastPosition = -1.0;
     bool lastPlaying = false;
     bool lastCountingIn = false;

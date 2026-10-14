@@ -6,6 +6,7 @@
 #include "controls/Automation.h"
 #include "controls/Meter.h"
 #include "editor/ProjectEditor.h"
+#include "input/KeyMap.h"
 #include "intelligence/TrackLabels.h"
 #include "model/Automation.h"
 #include "model/Devices.h"
@@ -335,7 +336,23 @@ QColor TrackHeaderItem::barText() const {
 }
 
 QString TrackHeaderItem::nameToolTip() const {
-    return session_ && session_->trackLabels() ? session_->trackLabels()->toolTip(trackId_) : QString();
+    if (!session_) return {};
+    QStringList lines;
+    if (session_->trackLabels()) lines << session_->trackLabels()->toolTip(trackId_);
+    // Its devices' latency (compensated); the master's, the whole output's too.
+    const app::EngineBridge* bridge = session_->bridge();
+    const double rate = std::max(1.0, bridge->sampleRate());
+    const auto samples = [rate](int latency) {
+        return QStringLiteral("%1 samples (%2 ms)").arg(latency).arg(1000.0 * latency / rate, 0, 'f', 1);
+    };
+    if (isMaster()) {
+        lines << QStringLiteral("Total latency: ") + samples(bridge->outputLatency())
+              << QStringLiteral("Master devices: ") + samples(bridge->trackLatency(trackId_));
+    } else {
+        lines << QStringLiteral("Latency: ") + samples(bridge->trackLatency(trackId_));
+    }
+    lines.removeAll(QString());
+    return lines.join(u'\n');
 }
 
 QVariantList TrackHeaderItem::lanes() const {
@@ -434,6 +451,7 @@ void TrackHeaderItem::connectAll() {
     connect(bridge, &app::EngineBridge::metersUpdated, this, &TrackHeaderItem::updateMeter);
     connect(bridge, &app::EngineBridge::deviceChanged, this, [this] {
         if (isMaster()) Q_EMIT changed();  // (its Main Out)
+        Q_EMIT nameToolTipChanged();       // (a new sample rate: the latencies in ms)
     });
     connect(session_->selection(), &app::Selection::changed, this, [this] {
         Q_EMIT selectedChanged();
@@ -446,6 +464,7 @@ void TrackHeaderItem::connectAll() {
         if (id == trackId_) startRename();
     });
     connect(session_->trackLabels(), &app::TrackLabels::changed, this, &TrackHeaderItem::nameToolTipChanged);
+    connect(bridge, &app::EngineBridge::latenciesChanged, this, &TrackHeaderItem::nameToolTipChanged);
     refresh();
     Q_EMIT nameToolTipChanged();
 }
@@ -791,7 +810,7 @@ void TrackHeaderItem::addFreezeEntries(MenuEntries& menu, const QStringList& tra
         freeze->enabled = actions.value(QStringLiteral("freezeEnabled")).toBool();
         freeze->toolTip = actions.value(QStringLiteral("freezeToolTip")).toString();
     }
-    freeze->shortcut = QStringLiteral("Ctrl+Shift+F");
+    freeze->shortcut = KeyMap::hint("freeze");
     MenuEntry& flatten =
         menu.add(actions.value(QStringLiteral("flattenText")).toString(), [s, trackIds] { s->flattenTracks(trackIds); });
     flatten.enabled = actions.value(QStringLiteral("flattenEnabled")).toBool();
@@ -850,7 +869,7 @@ MenuEntries TrackHeaderItem::contextMenu() {
     if (isReturn()) {
         const int index = p->returnIndex(id);
         menu.add(QStringLiteral("Insert Return Track"), [editor, index] { editor->addReturnTrack(index + 1); }).shortcut =
-            QStringLiteral("Ctrl+Alt+T");
+            KeyMap::hint("insertReturnTrack");
         menu.add(selected.size() == 1 ? QStringLiteral("Delete Return Track") : QStringLiteral("Delete Tracks"),
                  [editor, selected] { editor->deleteTracks(selected); });
         menu.addSeparator();
@@ -864,19 +883,19 @@ MenuEntries TrackHeaderItem::contextMenu() {
     menu.add(QStringLiteral("Insert MIDI Track"), [actions, id] { actions->insertTrackAfter(id, true); });
     menu.add(QStringLiteral("Insert Return Track"), [editor] { editor->addReturnTrack(); });
     // The window's Cut, Copy and Paste: on the selected tracks.
-    menu.add(QStringLiteral("Cut"), [s] { s->cut(); }).shortcut = QStringLiteral("Ctrl+X");
-    menu.add(QStringLiteral("Copy"), [s] { s->copy(); }).shortcut = QStringLiteral("Ctrl+C");
-    menu.add(QStringLiteral("Paste"), [s] { s->paste(); }).shortcut = QStringLiteral("Ctrl+V");
+    menu.add(QStringLiteral("Cut"), [s] { s->cut(); }).shortcut = KeyMap::hint("cut");
+    menu.add(QStringLiteral("Copy"), [s] { s->copy(); }).shortcut = KeyMap::hint("copy");
+    menu.add(QStringLiteral("Paste"), [s] { s->paste(); }).shortcut = KeyMap::hint("paste");
     menu.add(selected.size() == 1 ? QStringLiteral("Duplicate Track") : QStringLiteral("Duplicate Tracks"),
              [actions, selected] { actions->duplicateTracks(selected); })
-        .shortcut = QStringLiteral("Ctrl+D");
+        .shortcut = KeyMap::hint("duplicate");
     menu.add(selected.size() == 1 ? QStringLiteral("Delete Track") : QStringLiteral("Delete Tracks"),
              [editor, selected] { editor->deleteTracks(selected); });
     menu.addSeparator();
     menu.add(QStringLiteral("Group Tracks"), [editor, s, selected] {
             const QString group = editor->groupTracks(selected);
             if (!group.isEmpty()) s->selection()->selectTrack(group, true);
-        }).shortcut = QStringLiteral("Ctrl+G");
+        }).shortcut = KeyMap::hint("groupTracks");
     QStringList groups;
     for (const QString& sel : selected) {
         const app::Track* other = p->findTrack(sel);
@@ -884,7 +903,7 @@ MenuEntries TrackHeaderItem::contextMenu() {
     }
     if (!groups.isEmpty())
         menu.add(QStringLiteral("Ungroup Tracks"), [editor, groups] { editor->ungroup(groups); }).shortcut =
-            QStringLiteral("Ctrl+Shift+G");
+            KeyMap::hint("ungroupTracks");
     const QStringList folding = draggedTracks();
     QString what;
     if (folding.size() > 1) {
@@ -1299,14 +1318,24 @@ MenuEntries TrackHeaderItem::paramMenu(int lane) {
     const QString key = laneKey(lane);
     const QString current = groupOf(key);
     const auto& automated = project()->automation(trackId_);
+    // A device with many parameters (a plug-in's hundreds): under a search field, as the sidechain menu's tracks.
+    constexpr std::size_t kSearchFrom = 12;
     for (const app::ParamGroup& group : session_->bridge()->paramGroups(trackId_)) {
         if (group.id != current) continue;
-        for (const app::ParamSpec& spec : group.specs) {
-            const QString chosen = spec.key;
-            MenuEntry& entry = menu.add(spec.name, [this, lane, chosen] { chooseLane(lane, chosen); });
-            entry.checkable = true;
-            entry.checked = spec.key == key;
-            if (automated.contains(spec.key)) entry.dot = Theme::automationOn();
+        const auto addParams = [&](auto& list) {
+            for (const app::ParamSpec& spec : group.specs) {
+                const QString chosen = spec.key;
+                MenuEntry& entry = list.add(spec.name, [this, lane, chosen] { chooseLane(lane, chosen); });
+                entry.checkable = true;
+                entry.checked = spec.key == key;
+                if (automated.contains(spec.key)) entry.dot = Theme::automationOn();
+            }
+        };
+        if (group.specs.size() > kSearchFrom) {
+            MenuList params(menu.addSearch().children);
+            addParams(params);
+        } else {
+            addParams(menu);
         }
     }
     if (menu.isEmpty()) menu.add(QStringLiteral("No parameters")).enabled = false;

@@ -28,7 +28,12 @@
 //   Dragging inside the selected range (off its breakpoints and line) moves the
 //   automation in it, on all its lanes, up, down, left and right, over what is
 //   where it lands: breakpoints at the range's edges keep the envelope outside
-//   it as it was.
+//   it as it was. A lane without an envelope moves too: it gets one, stepping
+//   at the range's edges. Over the range (and while it moves), its value at
+//   the range's end shows there.
+// - A value shows next to what is under the mouse, and while it is dragged: a
+//   breakpoint's, a segment's (the lower of its two breakpoints), and where a
+//   click would add one.
 //
 // Envelopes are drawn red while they play, grey when overridden (the target was
 // changed by hand: Re-Enable Automation brings them back); a target without an
@@ -107,7 +112,8 @@ struct EnvelopeArea {
 // the line where a click adds one (Add, `beat`, `value`), a segment to drag
 // (Segment, `index`: its first breakpoint), the flat line out from the first
 // or last breakpoint (End, `index`, `beat`: under the mouse), or the selected
-// range (Range).
+// range (Range). `readout`: the value to show (Point, End: the breakpoint's;
+// Segment: the lower breakpoint's; Add: the new one's; Range: the lane's at its end).
 struct Hover {
     enum class Kind { Point, Add, Segment, End, Range };
     QString owner;
@@ -117,6 +123,7 @@ struct Hover {
     std::optional<int> index;
     double beat = 0.0;
     double value = 0.0;
+    std::optional<Readout> readout;
 
     bool on(const EnvelopeArea& area) const { return owner == area.owner && key == area.key && lane == area.lane; }
     friend bool operator==(const Hover&, const Hover&) = default;
@@ -202,6 +209,8 @@ void drawArea(SgPainter& painter, const timeline::Timeline& view, const app::Sel
 // The selected time range, over the automation lanes it covers.
 void drawRange(SgPainter& painter, const timeline::Timeline& view, const app::Selection& selection,
                const std::vector<EnvelopeArea>& areas, const QColor& tint);
+// The readout to draw: the gesture's while there is one, else the hover's.
+std::optional<Readout> readoutOf(const Gesture* gesture, const std::optional<Hover>& hover);
 // What a breakpoint being dragged is set to, next to it.
 void drawReadout(SgPainter& painter, double width, const std::optional<Readout>& readout);
 
