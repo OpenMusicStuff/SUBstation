@@ -371,7 +371,9 @@ QJsonObject masterToJson(const Track& master) {
             {QStringLiteral("pan"), master.pan},
             {QStringLiteral("devices"), devicesToJson(master.devices)},
             {QStringLiteral("automation"), automationToJson(master.automation)},
-            {QStringLiteral("automation_view"), viewToJson(master.automationView)}};
+            {QStringLiteral("automation_view"), viewToJson(master.automationView)},
+            {QStringLiteral("height"), master.height},
+            {QStringLiteral("folded"), master.folded}};
 }
 
 // Where a track's output goes, unless into its group (the default: none).
@@ -695,6 +697,9 @@ Track masterFromJson(const QJsonObject& data) {
     master.devices = devicesFromJson(data);  // none before version 5
     master.automation = automationFromJson(data.value(QStringLiteral("automation")));
     master.automationView = viewFromJson(data.value(QStringLiteral("automation_view")));
+    if (data.contains(QStringLiteral("height")))
+        master.height = std::clamp(toSmallInt(data.value(QStringLiteral("height"))), kMinTrackHeight, kMaxTrackHeight);
+    master.folded = truthy(data.value(QStringLiteral("folded")));
     return master;
 }
 

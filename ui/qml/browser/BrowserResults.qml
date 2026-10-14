@@ -8,7 +8,8 @@ import SUBstation
 // searched again for a change elsewhere it keeps its current item and place
 // (positionRestored). A preset can be renamed in place (startRename()). An
 // audio file's row says what the sound tagger hears in it, dimmed, on the
-// right ("Snare · Punchy"), as much as there is room for after its name.
+// right ("Snare · Punchy"), behind its name: the name has the whole row, and
+// the tags fade out where it reaches them.
 SelectionList {
     id: results
 
@@ -97,6 +98,11 @@ SelectionList {
         required property string tags
 
         readonly property bool selected: results.selectedRows.indexOf(index) >= 0
+        // What the scroll bar covers of its right end, while it shows: the text keeps clear of it.
+        readonly property real gutter: results.ScrollBar.vertical && results.ScrollBar.vertical.visible
+                                       ? results.ScrollBar.vertical.width : 0
+        // What the row is drawn on (the tags fade into it).
+        readonly property color background: selected ? Theme.accent : (area.containsMouse ? Theme.panelAlt : Theme.panel)
         // (A row going away has index -1: it isn't the one renamed.)
         readonly property bool renaming: results.renamingRow >= 0 && results.renamingRow === index
 
@@ -105,7 +111,7 @@ SelectionList {
 
         Rectangle {
             anchors.fill: parent
-            color: row.selected ? Theme.accent : (area.containsMouse ? Theme.panelAlt : "transparent")
+            color: row.selected || area.containsMouse ? row.background : "transparent"
         }
 
         Icon {
@@ -120,8 +126,8 @@ SelectionList {
             id: label
             anchors.left: icon.right
             anchors.leftMargin: 4
-            anchors.right: tagsLabel.visible ? tagsLabel.left : parent.right
-            anchors.rightMargin: 4
+            anchors.right: parent.right
+            anchors.rightMargin: 4 + row.gutter
             anchors.verticalCenter: parent.verticalCenter
             visible: !row.renaming
             text: row.display
@@ -129,20 +135,39 @@ SelectionList {
             elide: Text.ElideRight
             color: row.selected ? Theme.accentText : Theme.text
         }
-        Text {
-            id: tagsLabel
-            objectName: "tagsLabel"
-            anchors.right: parent.right
-            anchors.rightMargin: 6
-            anchors.baseline: label.baseline  // (on the name's line: centred, the smaller text sat higher)
-            // (At most half the row: the name comes first.)
-            width: Math.min(implicitWidth, row.width / 2)
-            visible: !row.renaming && row.tags !== ""
-            text: row.tags
-            font: Theme.smallFont  // (smaller and fainter than the name: it says more about it, not what it is)
-            elide: Text.ElideRight
-            color: row.selected ? Theme.accentText : Theme.textDim
-            opacity: row.selected ? 0.7 : 0.75
+        // The tags, right-aligned in what the name leaves of the row: cut off on
+        // the left where the name ends, and faded in from there.
+        Item {
+            id: tagsBox
+            objectName: "tagsBox"
+            readonly property real fade: 28
+            x: label.x + Math.min(label.contentWidth, label.width) + 4
+            width: Math.max(0, row.width - 6 - row.gutter - x)
+            height: parent.height
+            clip: true
+            visible: !row.renaming && row.tags !== "" && results.browser.tagsShown && width > fade / 2
+
+            Text {
+                id: tagsLabel
+                objectName: "tagsLabel"
+                anchors.right: parent.right
+                y: label.y + label.baselineOffset - baselineOffset  // (on the name's baseline: centred, it sat higher)
+                text: row.tags
+                font: Theme.smallFont  // (smaller and fainter than the name: it says more about it, not what it is)
+                color: row.selected ? Theme.accentText : Theme.textDim
+                opacity: row.selected ? 0.7 : 0.75
+            }
+            // (Only while the name cuts into them: tags that fit whole show whole.)
+            Rectangle {
+                visible: tagsLabel.implicitWidth > tagsBox.width
+                width: Math.min(tagsBox.fade, tagsBox.width)
+                height: parent.height
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: row.background }
+                    GradientStop { position: 1.0; color: Qt.rgba(row.background.r, row.background.g, row.background.b, 0) }
+                }
+            }
         }
 
         SelectionRowArea {

@@ -8,6 +8,7 @@
 #include "audio/EngineBridge.h"
 #include "browser/BrowserController.h"
 #include "editor/ProjectEditor.h"
+#include "model/Commands.h"
 #include "model/Edits.h"
 #include "model/Paths.h"
 #include "model/Project.h"
@@ -16,7 +17,7 @@ namespace sub::app {
 
 HotSwap::HotSwap(Project* project, ProjectEditor* editor, QUndoStack* undoStack, EngineBridge* bridge,
                  BrowserController* browser, QObject* parent)
-    : QObject(parent), project_(project), editor_(editor), bridge_(bridge), browser_(browser) {
+    : QObject(parent), project_(project), editor_(editor), undoStack_(undoStack), bridge_(bridge), browser_(browser) {
     connect(project_, &Project::reset, this, &HotSwap::stop);
     // Any other edit, an undo or a redo: the user is doing something else.
     connect(undoStack, &QUndoStack::indexChanged, this, [this] {
@@ -106,6 +107,20 @@ bool HotSwap::swap(const QString& path) {
 void HotSwap::commit(const QString& path) {
     if (!active_) return;
     swap(path);
+    stop();
+}
+
+void HotSwap::cancel() {
+    if (!active_) return;
+    // Its one step, if it is still the last: undone, the file it began with is back.
+    const int index = undoStack_->index();
+    const auto* last = index > 0 ? dynamic_cast<const ReplaceFilesCommand*>(undoStack_->command(index - 1)) : nullptr;
+    if (last != nullptr && !mergeKey_.isEmpty() && last->mergeKey() == mergeKey_) {
+        swapping_ = true;
+        undoStack_->undo();
+        swapping_ = false;
+    }
+    path_ = origin_;
     stop();
 }
 

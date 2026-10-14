@@ -57,7 +57,7 @@ void GroupBands::paint(SgPainter& p) {
         const double right = row.depth * arrangement::kGroupIndent + arrangement::kGroupBand;
         // Lit up with its header's name column (TrackHeaderItem::barColor): in
         // the selection's colour, opaque, while a click on its name selects it.
-        QColor color(group->color);
+        QColor color = Theme::trackColor(group->color);
         if (arrangement()->headerSelected(group->id) && !row.automation) {
             color = Theme::selection();
             color.setAlpha(255);

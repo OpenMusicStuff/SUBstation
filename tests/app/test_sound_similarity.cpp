@@ -387,7 +387,15 @@ private Q_SLOTS:
             for (const QVariant& a : browser_->resultActions(row)) ids << a.toMap().value(QStringLiteral("action")).toString();
             return ids;
         };
-        QCOMPARE(actions(0), QStringList({QStringLiteral("findSimilar"), QString(), QStringLiteral("showInFolder")}));
+        QCOMPARE(actions(0), QStringList({QStringLiteral("findSimilar"), QString(), QStringLiteral("showInFolder"), QString(),
+                                          QStringLiteral("toggleTags")}));
+        // Hide Tags: kept in the settings, the entry then Show Tags.
+        QVERIFY(browser_->tagsShown());
+        QCOMPARE(browser_->resultActions(0).last().toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Hide Tags"));
+        browser_->setTagsShown(false);
+        QCOMPARE(QSettings().value(QStringLiteral("browser/tags_shown")).toBool(), false);
+        QCOMPARE(browser_->resultActions(0).last().toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Show Tags"));
+        browser_->setTagsShown(true);
         // Without a sound similarity, not offered.
         browser_.reset();
         QSettings().setValue(QStringLiteral("browser/places"), QStringList{lib_});
@@ -397,7 +405,7 @@ private Q_SLOTS:
         browser_ = std::make_unique<BrowserController>(nullptr, options);
         QVERIFY(settle());
         QVERIFY(!browser_->canFindSimilar());
-        QCOMPARE(actions(0), QStringList{QStringLiteral("showInFolder")});
+        QCOMPARE(actions(0), QStringList({QStringLiteral("showInFolder"), QString(), QStringLiteral("toggleTags")}));
         browser_->findSimilar(lib_ + QStringLiteral("/Kicks/Kick 1.wav"));
         QCOMPARE(browser_->similarTo(), QString());
     }

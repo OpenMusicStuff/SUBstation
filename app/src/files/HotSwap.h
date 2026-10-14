@@ -9,10 +9,11 @@
 // let go of without a drag, the arrow keys, in any list or a place's folder
 // tree: BrowserController::fileChosen) plays in their place at once, so it is
 // heard in the song while it plays. A double-click or Enter keeps the file and
-// ends the hot swap; Esc, the browser bar's ✕ or the button again end it,
-// keeping what was swapped in last. However many files were tried, a hot swap
-// is one undo step (ProjectEditor::replaceFile with a merge key of its own),
-// and trying the file it began with again takes the step away.
+// ends the hot swap; Esc, the browser bar's ✕, the button again or a drag out
+// of the browser cancel it, putting back the file it began with (cancel()).
+// However many files were tried, a hot swap is one undo step
+// (ProjectEditor::replaceFile with a merge key of its own), and trying the file
+// it began with again takes the step away.
 //
 // It never outlives what the user is doing with it: any other edit, an undo
 // or redo (the undo stack moving but for its own swaps) ends it, and the UI
@@ -82,6 +83,10 @@ public:
     Q_INVOKABLE bool swap(const QString& path);
     // A double-click or Enter in the browser: swapped in, and the hot swap ends.
     Q_INVOKABLE void commit(const QString& path);
+    // Esc, the ✕, the button again: the file it began with is put back (its
+    // step undone), and the hot swap ends.
+    Q_INVOKABLE void cancel();
+    // Ends it, keeping what is swapped in (another edit, an undo).
     Q_INVOKABLE void stop();
 
 Q_SIGNALS:
@@ -93,6 +98,7 @@ private:
 
     Project* project_;
     ProjectEditor* editor_;
+    QUndoStack* undoStack_;
     EngineBridge* bridge_;
     QPointer<BrowserController> browser_;
     bool active_ = false;

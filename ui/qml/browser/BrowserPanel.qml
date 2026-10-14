@@ -24,11 +24,11 @@ import SUBstation
 // While a hot swap runs (Session.hotSwap: an audio clip's menu, the File
 // Manager), a bar over the list says what the user's choice plays in: a file
 // clicked (let go of without a drag) or reached with the arrow keys swaps in at
-// once, a double-click or Enter keeps it and ends the hot swap, as Esc or the
-// bar's ✕ do. Its Similar lists the sounds most like what is swapped in. The
-// list takes the keyboard when a hot swap starts. A press elsewhere in the
-// window leaves it running; a drag starting here ends it: what is dragged out
-// is added, not swapped.
+// once, a double-click or Enter keeps it and ends the hot swap; Esc or the
+// bar's ✕ cancel it, putting back the sample it began with. Its Similar lists
+// the sounds most like what is swapped in. The list takes the keyboard when a
+// hot swap starts. A press elsewhere in the window leaves it running; a drag
+// starting here cancels it: what is dragged out is added, not swapped.
 Rectangle {
     id: panel
 
@@ -63,7 +63,7 @@ Rectangle {
     function startDrag(rows, fromTree) {
         if (rows.length === 0)
             return
-        hotSwap.stop()  // (what is dragged out is added: the hot swap is over)
+        hotSwap.cancel()  // (what is dragged out is added: the hot swap is over, the sample put back)
         dragSource.rows = rows
         dragSource.paths = fromTree ? tree.folders.paths(rows) : []
         dragSource.fromTree = fromTree
@@ -120,6 +120,9 @@ Rectangle {
         case "findSimilar":
             browser.findSimilar(item.path)
             break
+        case "toggleTags":
+            browser.tagsShown = !browser.tagsShown
+            break
         }
     }
 
@@ -127,10 +130,10 @@ Rectangle {
     color: Theme.window
     implicitWidth: 300
 
-    // Esc (the list or the tree having the keyboard) ends a hot swap.
+    // Esc (the list or the tree having the keyboard) cancels a hot swap: the sample it began with is back.
     Keys.onEscapePressed: event => {
         if (panel.hotSwap.active)
-            panel.hotSwap.stop()
+            panel.hotSwap.cancel()
         else
             event.accepted = false
     }
@@ -313,8 +316,8 @@ Rectangle {
                     objectName: "stopHotSwap"
                     role: "small"
                     text: "✕"
-                    tooltip: qsTr("End the hot swap, keeping what is swapped in (Esc)")
-                    onClicked: panel.hotSwap.stop()
+                    tooltip: qsTr("Cancel the hot swap, putting back the sample it began with (Esc)\nDouble-click a sample or press Enter to keep it.")
+                    onClicked: panel.hotSwap.cancel()
                 }
             }
         }

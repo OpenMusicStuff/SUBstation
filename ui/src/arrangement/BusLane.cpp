@@ -1,7 +1,9 @@
 #include "arrangement/BusLane.h"
+#include "arrangement/ArrangementRuler.h"
 
 #include "audio/EngineBridge.h"
 #include "editor/ProjectEditor.h"
+#include "model/Numbers.h"
 #include "model/Project.h"
 #include "session/Selection.h"
 #include "sg/SgPainter.h"
@@ -12,6 +14,7 @@
 #include <QHoverEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QWheelEvent>
 
 namespace sub::ui {
 
@@ -60,7 +63,7 @@ std::vector<EnvelopeArea> BusLane::envelopeAreas() const {
     std::vector<EnvelopeArea> areas;
     if (!ready() || !session()->project()->hasOwner(owner_)) return areas;
     const app::AutomationView& view = session()->project()->automationView(owner_);
-    if (!view.shown) return areas;
+    if (!view.shown || session()->project()->track(owner_).folded) return areas;  // (the master folded: none)
     const AutomationRows r = rows();
     const double w = width();
     if (view.key && !view.key->isEmpty()) areas.push_back({owner_, *view.key, -1, QRectF(0, 2, w, r.mainHeight - 3)});
@@ -89,10 +92,18 @@ void BusLane::paint(SgPainter& p) {
     timeline::drawGridBands(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawGrid(p, view, visible.left(), visible.right(), 1, height());
     timeline::drawLoopRegion(p, view, visible.left(), visible.right(), 1, height());
-    p.fillRect(QRectF(visible.left(), 0, visible.width(), 1), Theme::border());
+    const app::Project& project = *session()->project();
+    // The loop brace's edges, on down from the tracks' lanes (as ArrangementLanes draws them, while the loop is on).
+    if (project.loopEnabled()) {
+        const QColor edge = ArrangementRuler::loopEdgeColor(true);
+        for (const double beat : {project.loopStart(), project.loopEnd()}) {
+            const double x = app::roundHalfEven(view.beatToX(beat)) - (beat == project.loopEnd() ? 1 : 0);
+            if (visible.left() - 1 <= x && x <= visible.right()) p.fillRect(QRectF(x, 0, 1, height()), edge);
+        }
+    }
+    p.fillRect(QRectF(visible.left(), 0, visible.width(), 1), Theme::lane().darker(135));  // (as the outline above: soft)
     for (const LaneRow& lane : rows_.lanes)
         p.fillRect(QRectF(visible.left(), lane.top - 1, visible.width(), 1), Theme::gridBar());
-    const app::Project& project = *session()->project();
     for (size_t i = 0; i < areas_.size() && i < looks_.size(); ++i) {
         const EnvelopeArea& area = areas_[i];
         envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
@@ -207,6 +218,18 @@ MenuEntries BusLane::contextMenu(const QPointF& pos) {
 void BusLane::triggerMenu(int id) {
     const MenuEntries menu = menu_;
     menu.trigger(id);
+}
+
+void BusLane::wheelEvent(QWheelEvent* event) {
+    const Qt::KeyboardModifiers mods = event->modifiers();
+    Arrangement* a = arrangement();
+    if (!a || owner_ != app::kMaster || !(mods & Qt::AltModifier) || (mods & Qt::ControlModifier)) {
+        event->ignore();
+        return;
+    }
+    const QPoint delta = event->angleDelta();
+    a->wheelResize(owner_, event->position().y(), delta.y() ? delta.y() : delta.x());
+    event->accept();
 }
 
 }  // namespace sub::ui

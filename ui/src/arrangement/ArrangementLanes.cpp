@@ -1,5 +1,6 @@
 #include "arrangement/ArrangementLanes.h"
 
+#include "arrangement/ArrangementRuler.h"
 #include "arrangement/ClipGestures.h"
 #include "arrangement/Cursors.h"
 #include "audio/AudioFiles.h"
@@ -448,7 +449,7 @@ void ArrangementLanes::paint(SgPainter& p) {
         const double y = row.top - scroll;
         const bool bars = row.bars;
         if (track->isGroup()) drawGroupSummary(p, track->id, y, row.mainHeight, track->folded, visible);
-        const QColor trackColor(track->color);
+        const QColor trackColor = Theme::trackColor(track->color);
         for (const app::Clip& clip : track->clips) {
             if (hidden.contains(clip.id)) continue;
             const QRectF rect = clipRect(clip, y, row.mainHeight);
@@ -529,6 +530,15 @@ void ArrangementLanes::paint(SgPainter& p) {
             envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
                                 hoverPoint_, gesture != nullptr);
             p.restore();
+        }
+    }
+
+    // The loop brace's edges, on down from the ruler, as Ableton's (while the loop is on).
+    if (project.loopEnabled()) {
+        const QColor edge = ArrangementRuler::loopEdgeColor(project.loopEnabled());
+        for (const double beat : {project.loopStart(), project.loopEnd()}) {
+            const double x = app::roundHalfEven(view.beatToX(beat)) - (beat == project.loopEnd() ? 1 : 0);
+            if (visible.left() - 1 <= x && x <= visible.right()) p.fillRect(QRectF(x, visible.top(), 1, visible.height()), edge);
         }
     }
 
@@ -715,7 +725,7 @@ void ArrangementLanes::drawGroupSummary(SgPainter& p, const QString& groupId, do
         const double top = area.top() + std::floor(static_cast<double>(i) * share);
         const double bottom = area.top() + std::floor(static_cast<double>(i + 1) * share) - gap;
         if (bottom <= top) continue;
-        const QColor trackColor(tracks[i]->color);
+        const QColor trackColor = Theme::trackColor(tracks[i]->color);
         for (const app::Clip& clip : tracks[i]->clips) {
             const double x0 = view.beatToX(clip.startBeat), x1 = view.beatToX(clip.endBeat(tempo));
             if (x1 < visible.left()) continue;
@@ -1117,10 +1127,12 @@ void ArrangementLanes::wheelEvent(QWheelEvent* event) {
     const QPoint delta = event->angleDelta();
     const Qt::KeyboardModifiers mods = event->modifiers();
     if ((mods & Qt::AltModifier) && !(mods & Qt::ControlModifier)) {
-        // Alt+wheel resizes the track under the mouse, folding (or unfolding) it at its smallest.
+        // Alt+wheel on a track's title bar folds and unfolds tracks; below it, resizes the track under the mouse.
         // (Qt may report Alt+wheel as horizontal scrolling, so either axis counts.)
-        if (const auto index = rowIndexAt(event->position().y()))
-            a.wheelResize(a.layout().rows()[static_cast<size_t>(*index)].trackId, delta.y() ? delta.y() : delta.x());
+        if (const auto index = rowIndexAt(event->position().y())) {
+            const Row& row = a.layout().rows()[static_cast<size_t>(*index)];
+            a.wheelResize(row.trackId, event->position().y() + a.scrollY() - row.top, delta.y() ? delta.y() : delta.x());
+        }
     } else if (mods & Qt::ControlModifier) {
         a.zoomAt(event->position().x(), std::pow(1.2, delta.y() / 120.0));
     } else if ((mods & Qt::ShiftModifier) || delta.x()) {

@@ -125,6 +125,7 @@ Track newMaster() {
     master.name = QStringLiteral("Master");
     master.color = kMasterColor;
     master.kind = kMasterKind;
+    master.height = kMinTrackHeight;  // (one row of controls: its volume, its Main Out; taller as a track is)
     return master;
 }
 

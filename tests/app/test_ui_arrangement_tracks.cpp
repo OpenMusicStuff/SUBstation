@@ -548,7 +548,7 @@ private Q_SLOTS:
             const QPointF p = column->mapToScene(QPointF(x, y - scroll));
             return image.pixelColor(int(p.x() * dpr), int(p.y() * dpr));
         };
-        auto color = [&](const QString& id) { return QColor(project().track(id).color); };
+        auto color = [&](const QString& id) { return sub::ui::Theme::trackColor(project().track(id).color); };  // (as the theme shows it)
         auto band = [](int depth) { return depth * arr::kGroupIndent + arr::kGroupBand / 2.0; };  // a band's middle
 
         // The outer group's band: from its header's top to C's lane's bottom, across every line in between.
@@ -595,7 +595,8 @@ private Q_SLOTS:
             const qreal dpr = window()->effectiveDevicePixelRatio();
             return window()->grabWindow().pixelColor(int(p.x() * dpr), int(p.y() * dpr));
         };
-        auto red = [](const QColor& c) { return c.red() > 150 && c.green() < 100 && c.blue() < 100; };
+        // (Red as the theme shows it: softened by some, still far redder than the grey lane.)
+        auto red = [](const QColor& c) { return c.red() > 150 && c.red() - c.green() > 60 && c.red() - c.blue() > 60; };
         QVERIFY(!red(colorAt(1.5)));  // open: A's clip (beats 0-4) isn't in the group's lane
         editor().setFolded(group, true);
         h_->settle();
@@ -634,7 +635,7 @@ private Q_SLOTS:
         const double x = std::round(arrangement()->view().beatToX(1.5)) + 0.5;
         auto red = [&](double offset) {
             const QColor c = pixel(h_->at(QPointF(x, row.top - arrangement()->scrollY() + offset)));
-            return c.red() > 150 && c.green() < 100 && c.blue() < 100;
+            return c.red() > 150 && c.red() - c.green() > 60 && c.red() - c.blue() > 60;
         };
         // The lane's rows: a fifth each of what is from 2 px under its top to 3 px over its bottom.
         const double share = (arr::kFoldedGroupHeight - 5) / double(arr::kGroupSummaryRows);

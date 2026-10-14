@@ -22,8 +22,10 @@ envelopes, Lock Envelopes, and overriding automation by hand.
   *Hide Automation* or *Show Automation in New Lane*.
 - Clicking a parameter (a knob, list or name in the device view, or a control in a
   plug-in's own editor) or changing one by hand (also a track's volume or pan, or the
-  master's, and switching a track's activator or a device's on/off switch) shows its
-  track's automation with that parameter.
+  master's, and switching a track's activator or a device's on/off switch) puts that
+  parameter in its track's automation lane, if the track's automation shows. If it is
+  hidden it stays hidden: the parameter is just the one it shows next time (**A**, or
+  *Show Automation*).
 - Right-click a send knob, a rack chain or a macro to show its automation; right-click
   a track's activator or a device's on/off switch for its (*Show Automation*, *Delete
   Automation*, *Re-Enable Automation*).
@@ -136,7 +138,8 @@ re-enable it.
 
 ## Lock Envelopes
 
-**Lock Envelopes** (the padlock next to Record, or *Options › Lock Envelopes*; saved
+**Lock Envelopes** (the padlock in the arrangement's top right corner, as in Ableton, or
+*Options › Lock Envelopes*; saved
 with the project):
 
 - Unlocked, as by default, automation moves with clips. Moving a clip (or a time

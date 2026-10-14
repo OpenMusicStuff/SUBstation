@@ -9,6 +9,7 @@
 #include "model/Timebase.h"
 #include "session/Selection.h"
 #include "session/Session.h"
+#include "theme/Theme.h"
 
 #include <QCursor>
 
@@ -41,7 +42,7 @@ MoveRangeGesture::MoveRangeGesture(LanesHost& host, const QPointF& press, std::f
         if (!track || !project.hasTrack(id)) continue;
         const int row = project.trackIndex(id);
         if (project.isFrozen(id) && track->hasClips()) {
-            frozen_.push_back({row, QColor(track->color), track->clips});
+            frozen_.push_back({row, Theme::trackColor(track->color), track->clips});
             for (const app::Clip& c : track->clips) frozenIds_.insert(c.id);
         }
         std::vector<app::Clip> inside;
@@ -50,7 +51,7 @@ MoveRangeGesture::MoveRangeGesture(LanesHost& host, const QPointF& press, std::f
         }
         for (const app::Clip& c : inside) touched_.insert(c.id);
         for (const app::Clip& c : app::edits::removeRange(inside, start_, end_, tempo))
-            remnants_.push_back({row, QColor(track->color), c});
+            remnants_.push_back({row, Theme::trackColor(track->color), c});
         for (const app::Clip& c : app::edits::sliceRange(inside, start_, end_, tempo)) pieces_.emplace_back(row, c);
     }
 }
@@ -106,7 +107,7 @@ std::vector<GestureClip> MoveRangeGesture::ghosts() const {
         if (to < 0 || to >= static_cast<int>(tracks.size())) continue;
         app::Clip moved = clip;
         moved.startBeat = clip.startBeat + delta_;
-        ghosts.push_back({to, QColor(tracks[static_cast<size_t>(to)].color), moved});
+        ghosts.push_back({to, Theme::trackColor(tracks[static_cast<size_t>(to)].color), moved});
     }
     return ghosts;
 }
@@ -179,7 +180,7 @@ ClipEditGesture::ClipEditGesture(LanesHost& host, const QString& trackId, const 
     : host_(host), trackId_(trackId), clip_(clip), text_(std::move(text)) {
     const app::Project& project = *host.hostSession()->project();
     row_ = project.trackIndex(trackId);
-    color_ = QColor(project.track(trackId).color);
+    color_ = Theme::trackColor(project.track(trackId).color);
 }
 
 const app::Track* ClipEditGesture::track() const { return host_.hostSession()->project()->findTrack(trackId_); }

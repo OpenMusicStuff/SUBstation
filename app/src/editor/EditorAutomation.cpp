@@ -214,6 +214,10 @@ void ProjectEditor::showAutomation(const QString& owner, const QString& key) {
     });
 }
 
+void ProjectEditor::chooseAutomation(const QString& owner, const QString& key) {
+    if (project_->hasOwner(owner) && !key.isEmpty()) updateView(owner, [&](AutomationView& v) { v.key = key; });
+}
+
 void ProjectEditor::hideAutomation(const QString& owner) {
     if (project_->hasOwner(owner)) updateView(owner, [](AutomationView& v) { v.shown = false; });
 }

@@ -77,6 +77,14 @@ QString ProjectEditor::insertTrack(Track track, int index, const TrackParent& pa
     return p.hasTrack(id) ? id : QString();
 }
 
+void ProjectEditor::showAutomationAsTheRest(Track& track) const {
+    const QStringList owners = project_->owners();
+    if (!std::all_of(owners.begin(), owners.end(), [this](const QString& o) { return project_->automationView(o).shown; }))
+        return;
+    track.automationView.shown = true;
+    if (!track.automationView.key || track.automationView.key->isEmpty()) track.automationView.key = automation::kMixerVolume;
+}
+
 InsertionPoint ProjectEditor::insertionPoint(const QString& trackId) const {
     if (trackId.isEmpty() || !project_->hasTrack(trackId)) return {};
     const int index = project_->trackIndex(trackId);
@@ -91,6 +99,7 @@ QString ProjectEditor::addAudioTrack(int index, const QString& name, const Track
     track.id = newId();
     track.nameTemplate = name.isEmpty() ? contentsName(track) : name;  // ("# Audio": its clips name it)
     track.color = p.nextColor();
+    showAutomationAsTheRest(track);
     return insertTrack(std::move(track), index, parent, QStringLiteral("Insert Audio Track"), true);
 }
 
@@ -103,6 +112,7 @@ QString ProjectEditor::addMidiTrack(int index, const QString& name, const QStrin
     track.id = newId();
     track.color = p.nextColor();
     track.kind = kMidiKind;
+    showAutomationAsTheRest(track);
     if (plugin) {
         track.devices.push_back(newDeviceOf(kPluginKind, plugin));
     } else if (!instrument.isEmpty()) {
@@ -201,6 +211,7 @@ QString ProjectEditor::addReturnTrack(int index, const QString& name) {
     track.name = name.isEmpty() ? p.uniqueTrackName(QStringLiteral("%1 Return").arg(returnLetter(index))) : name;
     track.color = p.nextColor();
     track.kind = kReturnKind;
+    showAutomationAsTheRest(track);
     const QString id = track.id;
     push(std::make_unique<InsertReturnCommand>(project_, std::move(track), index));
     return id;
@@ -412,6 +423,7 @@ QString ProjectEditor::groupTracks(const QStringList& trackIds) {
     group.kind = kGroupKind;
     group.height = kDefaultGroupHeight;
     group.parent = first.parent;
+    showAutomationAsTheRest(group);
     const QString id = group.id;
     const QString text = QStringLiteral("Group Tracks");
     Macro macro(undoStack_, text);

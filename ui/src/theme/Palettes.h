@@ -52,6 +52,12 @@ struct Palette {
     QColor automationOn;   // the dot of an automated control
     QColor automationOff;  // the dot of a control whose automation is overridden
     QColor modulation;     // what a modulator does: a knob's range and where it is now, the modulators' curves
+    // Tracks (and their clips): a project keeps app::kTrackColors, shown as these,
+    // place for place (Theme::trackColor). Any other colour (a Live set's) is
+    // brought to the theme: its OKLCH lightness mapped into [trackLightMin,
+    // trackLightMax], its chroma at most trackChroma (0: shown as it is).
+    std::vector<QColor> trackColors;
+    double trackLightMin = 0.0, trackLightMax = 0.0, trackChroma = 0.0;
 };
 
 struct NamedPalette {

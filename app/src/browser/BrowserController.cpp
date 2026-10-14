@@ -27,6 +27,7 @@ namespace {
 constexpr const char* kPlacesKey = "browser/places";
 constexpr const char* kSortKey = "browser/sort";
 constexpr const char* kCollapsedKey = "browser/collapsed";
+constexpr const char* kTagsShownKey = "browser/tags_shown";
 
 // The entry a sub-entry is listed under (its kind), or "" for one at the top.
 QString parentKind(const Scope& scope) {
@@ -56,6 +57,7 @@ BrowserController::BrowserController(PluginIndex* plugins, Options options, QObj
         if (!place.isEmpty()) places_ << normalPath(place);
     if (places_.isEmpty()) places_ = defaultPlaces();
     collapsed_ = settings.value(QString::fromLatin1(kCollapsedKey), QStringList{QStringLiteral("samples")}).toStringList();
+    tagsShown_ = settings.value(QString::fromLatin1(kTagsShownKey), true).toBool();
     library_ = std::make_unique<Library>(options.libraryPath, options.clock);
 
     index_ = new FileIndex(this, options.indexPath, options.maxFiles, options.maxDepth);
@@ -202,6 +204,13 @@ QModelIndex BrowserController::treeRootIndex() const {
     if (!showingTree_) return {};
     folderModel();
     return folderModel_->index(treeRoot_);
+}
+
+void BrowserController::setTagsShown(bool shown) {
+    if (shown == tagsShown_) return;
+    tagsShown_ = shown;
+    QSettings().setValue(QString::fromLatin1(kTagsShownKey), shown);
+    Q_EMIT tagsShownChanged();
 }
 
 void BrowserController::setPreviewEnabled(bool enabled) {
@@ -468,7 +477,8 @@ QVariantList BrowserController::resultActions(int row) const {
     if (item && item->kind == ItemKind::Audio) {
         QVariantList actions;
         if (similarity_) actions << action("findSimilar", QStringLiteral("Find Similar Sounds")) << QVariantMap();
-        actions << action("showInFolder", QStringLiteral("Show in Folder"));
+        actions << action("showInFolder", QStringLiteral("Show in Folder")) << QVariantMap()
+                << action("toggleTags", tagsShown_ ? QStringLiteral("Hide Tags") : QStringLiteral("Show Tags"));
         return actions;
     }
     if (!item || item->kind != ItemKind::Preset) return {};

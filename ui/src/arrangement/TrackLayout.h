@@ -52,7 +52,7 @@ inline constexpr int kGroupSummaryRows = 5;
 inline constexpr int kMinAutomationRow = 80;
 inline constexpr int kMinGroupAutomationRow = 98;
 inline constexpr int kDropZone = 120;  // empty space below the last track for dropping files
-inline constexpr int kMasterHeight = 40;
+inline constexpr int kMasterHeight = 40;  // the master's at least (its height, as a track's, folded: kFoldedHeight)
 // A return track's row: its name, Audio To, activator and solo; volume and pan; its sends.
 inline constexpr int kReturnHeight = 57;
 

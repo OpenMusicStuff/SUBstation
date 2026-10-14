@@ -36,7 +36,10 @@ AutomationRows returnRows(const app::Project& project, const QString& returnId) 
 }
 
 AutomationRows masterRows(const app::Project& project) {
-    return automationRows(project.master().automationView, 0, kMasterHeight);
+    // As a track's: its own height, a thin row folded (no automation).
+    const app::Track& master = project.master();
+    if (master.folded) return {kFoldedHeight, {}};
+    return automationRows(master.automationView, 0, std::max(master.height, kMasterHeight));
 }
 
 void TrackLayout::rebuild(const app::Project& project) {
