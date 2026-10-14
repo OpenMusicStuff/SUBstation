@@ -143,7 +143,10 @@ converted to samples at the current tempo and sample rate. In order:
    MIDI route. A track left out (frozen, or in a frozen group) keeps its notes while a
    device elsewhere takes them.
 6. Stretch voices: enough for the clips that need stretching, at most 64 per configuration
-   (`ensureWarpVoicesLocked()`); they only grow until the sample rate changes.
+   (`ensureWarpVoicesLocked()`); they only grow until the sample rate changes. Each stretched clip
+   also asks the warp cache for its whole render (`WarpCache::request()`, in step 5), which the
+   cache's thread makes in the background; renders no clip asks for any more are forgotten
+   ([warp.md](warp.md#the-warp-cache)).
 
 Steps 2 to 5 are described in [routing.md](routing.md) and [rendering.md](rendering.md).
 

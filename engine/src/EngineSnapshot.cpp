@@ -538,6 +538,7 @@ void Engine::rebuildSnapshotLocked() {
     const auto rate = static_cast<uint32_t>(sampleRate_);
     const int64_t clipFade = std::llround(clipFadeMs_ * 0.001 * sampleRate_);  // against clicks where clips cut
     std::array<size_t, kNumStretchConfigs> voicesNeeded{};
+    warpCache_.beginBuild();
     std::unordered_set<uint32_t> fedTracks;  // tracks whose notes a device takes
     for (const auto& [id, entry] : processors_) {
         if (entry.midiSource != 0) fedTracks.insert(entry.midiSource);
@@ -646,6 +647,7 @@ void Engine::rebuildSnapshotLocked() {
                 cr.stretchConfig = stretchConfigFor(clip.warpMode);
                 cr.transpose = static_cast<float>(clip.transpose);
                 cr.preserveFormants = clip.warpMode == WarpMode::Formants;
+                cr.rendered = warpCache_.request(cr, sampleRate_);
                 ++stretching[static_cast<size_t>(cr.stretchConfig)];
             }
             const uint64_t identity = clip.id.empty() ? std::hash<size_t>{}(i) : std::hash<std::string>{}(clip.id);
@@ -668,6 +670,7 @@ void Engine::rebuildSnapshotLocked() {
         if (enabledDevice || warping) ++snap->parallelWork;
         snap->tracks.push_back(std::move(render));
     }
+    warpCache_.endBuild();
     ensureWarpVoicesLocked(voicesNeeded);
     snap->warpVoices = warpVoices_;
     // The devices taking other tracks' notes: from which snapshot track (they were listed by track id).

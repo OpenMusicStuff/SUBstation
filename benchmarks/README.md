@@ -456,7 +456,10 @@ load on one core (best of `--repeat`). The cases: `direct` (the source read in
 place), `repitch-R` (Re-Pitch at rate R), `transients-`, `standard-` and
 `smooth-R` (each stretch configuration at rate R), `transpose+7` and `formants+7`
 (seven semitones up at the clip's own tempo, Standard, without and with
-Formants).
+Formants), and `standard-0.9-cached` and `formants+7-cached` (the same played
+from their [warp cache](../docs/engine/warp.md#the-warp-cache) render, as live
+playback does once it is ready; the time the render took on the cache's thread
+is printed beside them).
 
 ## Results
 
@@ -486,6 +489,17 @@ With silent input (`--input silence`, Linux), a stretched clip costs about 8 ns 
 frame (`standard-0.9` 8.2, `formants+7` 8.8): the stretcher passes silence through
 once it has lasted two analysis blocks. Re-Pitch costs the same either way.
 
+With the warp cache (Linux, the same machine; `warp_cache_linux` in
+`results/warp.json`), live playback reads a stretched clip's render once it is
+ready:
+
+| case | ns/frame | load | its render (once, in the background) |
+|---|---|---|---|
+| standard-0.9 (stretched live) | 254.6 | 1.222 % | |
+| standard-0.9-cached | **0.48** | 0.002 % | 386 ms for 30 s (268 ns/frame) |
+| formants+7 (stretched live) | 341.1 | 1.637 % | |
+| formants+7-cached | **0.49** | 0.002 % | 508 ms for 30 s (353 ns/frame) |
+
 ## Where the time goes
 
 Profiled with `perf` (Linux; the MinGW build under Wine too, its samples matched
@@ -500,8 +514,9 @@ to the executable's symbols with `nm`, not `addr2line`):
   (Signalsmith calls them when configuring and twice per channel per block). MinGW
   and Linux cost the same, and compiler flags on the stretcher alone
   (`-fno-trapping-math`, `-freciprocal-math`, `-O2`) changed nothing beyond the
-  noise. So the stretcher is unchanged: making it cheaper would mean changing
-  Signalsmith's algorithm or its FFT.
+  noise. So the stretcher itself is unchanged (making it cheaper would mean
+  changing Signalsmith's algorithm or its FFT); instead live playback reads each
+  stretched clip's render from the warp cache, made once in the background.
 - **Re-Pitch**: its own loop, three quarters of the time (the rest was the
   benchmark's setup): per tap a double-precision table lookup, then one serial sum
   per channel. GCC doesn't vectorise it (the tap's table position differs per tap,

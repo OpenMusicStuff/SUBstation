@@ -234,6 +234,15 @@ WarpVoice::WarpVoice(StretchConfig config, double sampleRate)
 
 WarpVoice::~WarpVoice() = default;
 
+bool WarpVoice::carriesOn(const ClipRender& clip, int64_t position) const noexcept {
+    const State& st = *state_;
+    const double playing = static_cast<double>(st.inputPos) - st.lead;  // where the output is now
+    // A tempo change rescales timeline positions but keeps the source position
+    // (to within a frame or two), so it carries on without a re-seek.
+    const double tolerance = 2.0 + 2.0 * clip.rate;
+    return st.primed && std::abs(clip.sourceAt(position) - playing) <= tolerance;
+}
+
 void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL,
                        float* outR) noexcept {
     State& st = *state_;
@@ -250,15 +259,10 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
     // source frames, plus outputLatency() timeline frames' worth at this rate.
     const double rate = clip.rate;
     const double lead = stretch.inputLatency() + rate * stretch.outputLatency();
-    const double wanted = clip.sourceAt(position);
-    const double playing = static_cast<double>(st.inputPos) - st.lead;  // where the output is now
-    // A tempo change rescales timeline positions but keeps the source position
-    // (to within a frame or two), so it carries on without a re-seek.
-    const double tolerance = 2.0 + 2.0 * rate;
-    if (!continuing || !st.primed || std::abs(wanted - playing) > tolerance) {
+    if (!continuing || !carriesOn(clip, position)) {
         // outputSeek() pre-computes the pre-roll so the very next output frame is
         // source frame `from`: sample-accurate starts, locates and loop jumps.
-        const auto from = static_cast<int64_t>(std::floor(wanted));
+        const auto from = static_cast<int64_t>(std::floor(clip.sourceAt(position)));
         const int seekLength = stretch.outputSeekLength(static_cast<float>(rate));
         SourceInput seekInput{clip.source.get(), from};
         stretch.outputSeek(seekInput, seekLength);

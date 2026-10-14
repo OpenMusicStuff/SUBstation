@@ -8,6 +8,8 @@
 //    MIT), which keeps speed and pitch independent. Stretchers carry state from
 //    block to block, so they live in WarpVoices: allocated on the edit side and
 //    handed to the audio thread through the snapshot, like everything else.
+//    Live playback reads a stretched clip's whole render instead once the
+//    background has made it (WarpCache.h).
 
 #include <array>
 #include <cstdint>
@@ -75,6 +77,11 @@ public:
     // first frame is exactly aligned.
     void render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL,
                 float* outR) noexcept;
+
+    // Whether render() would carry on (not re-seek) playing `clip` from
+    // timeline sample `position`, were it continuing: the source position its
+    // output has reached lines up.
+    bool carriesOn(const ClipRender& clip, int64_t position) const noexcept;
 
     // Bookkeeping for the renderer's voice allocation.
     uint64_t key = 0;       // ClipRender::key of the clip it last played

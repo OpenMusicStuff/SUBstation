@@ -170,6 +170,7 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 | The bridge's decoding pool (`QThreadPool`, 2 threads) | decoding audio files into engine sources (`Engine::loadSource`); results come back to the GUI thread | touch the model |
 | The bridge's state pool (`QThreadPool`, 1 thread) | restoring built-in devices' states (a sampler's sample), one at a time, in the order they were set | touch the model |
 | Recorder's disk writer | empties the recording rings into WAV files | — |
+| Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)) | take the engine's mutex |
 | Render jobs ([RenderJob](engine/README.md#in-the-background)) | an export or a freeze's render, on the snapshot it began with (live output is silent meanwhile) | take the engine's mutex |
 | Reverse jobs (`ReverseJob`) | a reversed copy of a decoded file written as a WAV file, then decoded | touch the model |
 | MIDI driver threads | stamp incoming messages against the audio clock and queue them for the audio thread | take the engine's mutex |

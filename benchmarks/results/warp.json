@@ -69,5 +69,82 @@
   "repitch-1.5": 37.861,
   "standard-0.9": 8.188,
   "formants+7": 8.781
+ },
+ "warp_cache_linux": {
+  "note": "after the warp cache: live playback from a ready render (-cached cases); render_ns_per_frame is the background render's cost",
+  "results": [
+   {
+    "case": "direct",
+    "ns_per_frame": 0.506,
+    "load_percent": 0.0024
+   },
+   {
+    "case": "repitch-0.5",
+    "ns_per_frame": 8.472,
+    "load_percent": 0.0407
+   },
+   {
+    "case": "repitch-0.9",
+    "ns_per_frame": 8.665,
+    "load_percent": 0.0416
+   },
+   {
+    "case": "repitch-1.05",
+    "ns_per_frame": 37.016,
+    "load_percent": 0.1777
+   },
+   {
+    "case": "repitch-1.5",
+    "ns_per_frame": 37.459,
+    "load_percent": 0.1798
+   },
+   {
+    "case": "repitch-2",
+    "ns_per_frame": 44.002,
+    "load_percent": 0.2112
+   },
+   {
+    "case": "transients-0.9",
+    "ns_per_frame": 265.095,
+    "load_percent": 1.2725
+   },
+   {
+    "case": "standard-0.9",
+    "ns_per_frame": 254.547,
+    "load_percent": 1.2218
+   },
+   {
+    "case": "smooth-0.9",
+    "ns_per_frame": 270.938,
+    "load_percent": 1.3005
+   },
+   {
+    "case": "standard-1.25",
+    "ns_per_frame": 275.905,
+    "load_percent": 1.3243
+   },
+   {
+    "case": "transpose+7",
+    "ns_per_frame": 313.205,
+    "load_percent": 1.5034
+   },
+   {
+    "case": "formants+7",
+    "ns_per_frame": 341.116,
+    "load_percent": 1.6374
+   },
+   {
+    "case": "standard-0.9-cached",
+    "ns_per_frame": 0.481,
+    "load_percent": 0.0023,
+    "render_ns_per_frame": 268.168
+   },
+   {
+    "case": "formants+7-cached",
+    "ns_per_frame": 0.495,
+    "load_percent": 0.0024,
+    "render_ns_per_frame": 352.725
+   }
+  ]
  }
 }

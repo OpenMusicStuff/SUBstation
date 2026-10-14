@@ -22,6 +22,8 @@
 
 namespace sub {
 
+class WarpRender;  // WarpCache.h
+
 // Per-track state that changes continuously and therefore lives outside the
 // snapshot. Shared between all snapshots that contain the track. The master
 // has one too (it never mutes or solos).
@@ -92,6 +94,7 @@ struct ClipRender {
     StretchConfig stretchConfig = StretchConfig::Standard;
     float transpose = 0.f;      // semitones (Stretch only)
     bool preserveFormants = false;
+    std::shared_ptr<const WarpRender> rendered;  // Stretch: the whole clip rendered, once ready (live playback)
     uint64_t key = 0;           // identifies the clip across snapshots (stretch voice continuity)
     // Its fades, in timeline samples from each end (together at most `length`),
     // and their curves (automationShape()).
@@ -401,6 +404,7 @@ struct TrackBuffers {
     struct ClipVoice {                           // the stretcher a clip plays through in this chunk
         const ClipRender* clip = nullptr;
         WarpVoice* voice = nullptr;
+        const WarpRender* rendered = nullptr;    // or its render, instead of a voice
         bool continuing = false;                 // it played this clip in the block before
     };
 
