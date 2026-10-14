@@ -95,6 +95,10 @@ struct ClipRender {
     float transpose = 0.f;      // semitones (Stretch only)
     bool preserveFormants = false;
     std::shared_ptr<const WarpRender> rendered;  // Stretch: the whole clip rendered, once ready (live playback)
+    // Stretch: the render the clip played from before it changed (a new tempo
+    // or transpose), while its own isn't ready: a voice taking over mid-way
+    // crossfades from it (Renderer::assignVoices()).
+    std::shared_ptr<const WarpRender> fading;
     uint64_t key = 0;           // identifies the clip across snapshots (stretch voice continuity)
     // Its fades, in timeline samples from each end (together at most `length`),
     // and their curves (automationShape()).

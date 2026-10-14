@@ -45,7 +45,10 @@ std::shared_ptr<const WarpRender> WarpCache::request(const ClipRender& clip, dou
     std::lock_guard lock(mutex_);
     for (Entry& entry : entries_) {
         if (!entry.matches(clip, sampleRate)) continue;
-        if (!entry.askedThisBuild) buildBytes_ += entry.bytes();
+        if (!entry.askedThisBuild) {
+            if (buildBytes_ + entry.bytes() > budget_) return nullptr;  // past the budget: forgotten, stretched live
+            buildBytes_ += entry.bytes();
+        }
         entry.askedThisBuild = true;
         return entry.render;
     }
@@ -60,6 +63,9 @@ std::shared_ptr<const WarpRender> WarpCache::request(const ClipRender& clip, dou
     entry.sampleRate = sampleRate;
     if (clip.length <= 0 || buildBytes_ + entry.bytes() > budget_) return nullptr;
     entry.render = std::make_shared<WarpRender>();
+    entry.render->length_ = entry.length;
+    entry.render->sourceOffset_ = entry.sourceOffset;
+    entry.render->rate_ = entry.rate;
     entry.asked = Clock::now();
     entry.askedThisBuild = true;
     buildBytes_ += entry.bytes();

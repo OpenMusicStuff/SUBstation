@@ -1467,6 +1467,14 @@ bool Renderer::carriedOn(const WarpVoiceSet& voices, const ClipRender& clip, int
     return false;
 }
 
+bool Renderer::soundedUpTo(const WarpRender& render, const ClipRender& clip, int64_t position) const noexcept {
+    // Played in the block before, up to where the clip is now (to within what a
+    // tempo change moves it: as WarpVoice::carriesOn()).
+    const uint64_t played = render.playedBlock();
+    return played != 0 && played + 1 >= blockCounter_ &&
+           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rate;
+}
+
 void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live,
                             TrackBuffers& buffers) noexcept {
     // In the order renderClips() plays the clips, one entry per stretched clip
@@ -1474,14 +1482,17 @@ void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices
     // a clip whose render is ready plays from it, except where its voice
     // carries on: a stretch under way goes on (the two differ a little), and
     // the render takes over where the voice would start again (a start, a
-    // locate, a loop's jump). Offline renders stretch, so that they come out
-    // the same whether renders are ready or not.
+    // locate, a loop's jump). The other way, a clip that was playing from a
+    // render now changed (a new tempo or transpose, its new render not ready)
+    // goes on through a voice, which crossfades from the render it leaves.
+    // Offline renders stretch, so that they come out the same whether renders
+    // are ready or not.
     buffers.numVoices = 0;
     if (buffers.monitored || buffers.recorded) return;
     for (int s = 0; s < numSegments_; ++s) {
         const Segment& segment = segments_[s];
         forEachClip(track, segment.position, segment.position + segment.length,
-                    [&](const ClipRender& clip, int64_t from, int64_t) {
+                    [&](const ClipRender& clip, int64_t from, int64_t to) {
                         if (clip.playback != ClipRender::Playback::Stretch) return;
                         if (buffers.numVoices == TrackBuffers::kMaxClipVoices) return;
                         TrackBuffers::ClipVoice& slot = buffers.voices[static_cast<size_t>(buffers.numVoices++)];
@@ -1491,9 +1502,12 @@ void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices
                         slot.rendered = nullptr;
                         if (live && clip.rendered && clip.rendered->ready() && !carriedOn(voices, clip, from)) {
                             slot.rendered = clip.rendered.get();
+                            slot.rendered->notePlayed(blockCounter_, clip.sourceAt(to));
                             return;
                         }
                         slot.voice = acquireVoice(voices, clip, slot.continuing);
+                        if (live && slot.voice && !slot.continuing && clip.fading && soundedUpTo(*clip.fading, clip, from))
+                            slot.voice->fadeFrom(*clip.fading, clip, from);
                     });
     }
 }

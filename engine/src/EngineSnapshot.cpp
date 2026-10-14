@@ -539,6 +539,16 @@ void Engine::rebuildSnapshotLocked() {
     const int64_t clipFade = std::llround(clipFadeMs_ * 0.001 * sampleRate_);  // against clicks where clips cut
     std::array<size_t, kNumStretchConfigs> voicesNeeded{};
     warpCache_.beginBuild();
+    // The stretched clips of the snapshot before, by key: a clip whose render
+    // changed fades from the one it may be playing (ClipRender::fading).
+    std::unordered_map<uint64_t, const ClipRender*> stretchedBefore;
+    if (snapshotHold_) {
+        for (const TrackRender& before : snapshotHold_->tracks) {
+            for (const ClipRender& clip : before.clips) {
+                if (clip.playback == ClipRender::Playback::Stretch) stretchedBefore.emplace(clip.key, &clip);
+            }
+        }
+    }
     std::unordered_set<uint32_t> fedTracks;  // tracks whose notes a device takes
     for (const auto& [id, entry] : processors_) {
         if (entry.midiSource != 0) fedTracks.insert(entry.midiSource);
@@ -652,6 +662,19 @@ void Engine::rebuildSnapshotLocked() {
             }
             const uint64_t identity = clip.id.empty() ? std::hash<size_t>{}(i) : std::hash<std::string>{}(clip.id);
             cr.key = identity ^ (static_cast<uint64_t>(track.id) * 0x9E3779B97F4A7C15ull);
+            if (cr.playback == ClipRender::Playback::Stretch) {
+                // Its render changed: the one before (if ready, it may be playing),
+                // or, while that one was still on its way, what it was fading from.
+                const auto before = stretchedBefore.find(cr.key);
+                if (before != stretchedBefore.end() && before->second->rendered != cr.rendered) {
+                    const ClipRender& was = *before->second;
+                    if (was.rendered && was.rendered->ready()) {
+                        cr.fading = was.rendered;
+                    } else if (was.fading != cr.rendered) {
+                        cr.fading = was.fading;
+                    }
+                }
+            }
 
             render.maxClipLength = std::max(render.maxClipLength, cr.length);
             render.clips.push_back(std::move(cr));

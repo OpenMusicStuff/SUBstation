@@ -19,6 +19,7 @@
 namespace sub {
 
 struct ClipRender;
+class WarpRender;
 
 // Warp modes; the order matches the app layer's list (kWarpModes in
 // app/src/model/Clip.h).
@@ -82,6 +83,14 @@ public:
     // timeline sample `position`, were it continuing: the source position its
     // output has reached lines up.
     bool carriesOn(const ClipRender& clip, int64_t position) const noexcept;
+
+    // The voice takes over from `render` (which was playing `clip` up to
+    // `position`) with a crossfade of kFadeSeconds: the render read along the
+    // clip's mapping from `position` on, fading out as the voice fades in.
+    // Real-time safe: it copies what it needs (nothing of the render is kept).
+    // Call before the render() that plays `position`, which mixes it in.
+    void fadeFrom(const WarpRender& render, const ClipRender& clip, int64_t position) noexcept;
+    static constexpr double kFadeSeconds = 0.01;
 
     // Bookkeeping for the renderer's voice allocation.
     uint64_t key = 0;       // ClipRender::key of the clip it last played

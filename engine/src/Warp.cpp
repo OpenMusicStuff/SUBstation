@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Snapshot.h"
+#include "WarpCache.h"
 
 #if defined(__AVX__)
 #include <immintrin.h>
@@ -225,11 +226,20 @@ struct WarpVoice::State {
     float transpose = 0.f;
     bool formants = false;
     bool primed = false;
+    // A crossfade from a render (fadeFrom()): what it plays, and how far into
+    // it the output is (its length: none under way).
+    std::vector<float> fadeLeft, fadeRight;
+    size_t fadeAt = 0;
+    bool fadeFresh = false;  // set for the render() that starts it; any other re-seek drops what is left
 };
 
 WarpVoice::WarpVoice(StretchConfig config, double sampleRate)
     : config_(config), state_(std::make_unique<State>()) {
     configureStretcher(state_->stretch, config, sampleRate);
+    const auto fade = static_cast<size_t>(std::max<int64_t>(1, std::llround(kFadeSeconds * sampleRate)));
+    state_->fadeLeft.resize(fade);
+    state_->fadeRight.resize(fade);
+    state_->fadeAt = fade;
 }
 
 WarpVoice::~WarpVoice() = default;
@@ -241,6 +251,27 @@ bool WarpVoice::carriesOn(const ClipRender& clip, int64_t position) const noexce
     // (to within a frame or two), so it carries on without a re-seek.
     const double tolerance = 2.0 + 2.0 * clip.rate;
     return st.primed && std::abs(clip.sourceAt(position) - playing) <= tolerance;
+}
+
+void WarpVoice::fadeFrom(const WarpRender& render, const ClipRender& clip, int64_t position) noexcept {
+    State& st = *state_;
+    const int64_t last = render.length() - 1;
+    for (size_t i = 0; i < st.fadeLeft.size(); ++i) {
+        // The render's frame for this source position (at its own rate), between two frames.
+        const double at = (clip.sourceAt(position + static_cast<int64_t>(i)) - static_cast<double>(render.sourceOffset())) /
+                          render.rate();
+        const auto k = static_cast<int64_t>(std::floor(at));
+        if (k < 0 || k >= last) {  // past its ends
+            st.fadeLeft[i] = st.fadeRight[i] = 0.f;
+            continue;
+        }
+        const auto frac = static_cast<float>(at - static_cast<double>(k));
+        const auto u = static_cast<size_t>(k);
+        st.fadeLeft[i] = render.left()[u] + frac * (render.left()[u + 1] - render.left()[u]);
+        st.fadeRight[i] = render.right()[u] + frac * (render.right()[u + 1] - render.right()[u]);
+    }
+    st.fadeAt = 0;
+    st.fadeFresh = true;
 }
 
 void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL,
@@ -268,7 +299,9 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
         stretch.outputSeek(seekInput, seekLength);
         st.inputPos = from + seekLength;
         st.primed = true;
+        if (!st.fadeFresh) st.fadeAt = st.fadeLeft.size();  // a fade left from before belongs elsewhere
     }
+    st.fadeFresh = false;
     st.lead = lead;
 
     // Feed exactly enough input to reach the source position the block should
@@ -279,6 +312,14 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
     float* outputs[2] = {outL, outR};
     stretch.process(input, count, outputs, frames);
     st.inputPos += count;
+
+    // A crossfade from a render under way: the voice's share rises linearly.
+    const size_t fade = st.fadeLeft.size();
+    for (int i = 0; i < frames && st.fadeAt < fade; ++i, ++st.fadeAt) {
+        const float voice = static_cast<float>(st.fadeAt + 1) / static_cast<float>(fade + 1);
+        outL[i] = outL[i] * voice + st.fadeLeft[st.fadeAt] * (1.f - voice);
+        outR[i] = outR[i] * voice + st.fadeRight[st.fadeAt] * (1.f - voice);
+    }
 }
 
 // ---------------------------------------------------------------------------

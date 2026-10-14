@@ -159,7 +159,8 @@ source's buffer by its destination (`edgeSignal()`).
 - `Stretch`: live, from its whole render (`ClipRender::rendered`, made in the background by the
   `WarpCache`) once that is ready, read in place like `Direct`, except while the voice already
   playing it carries on (a render takes over where the voice would start again: a start, a locate,
-  a loop's jump). Otherwise, and in offline renders, through the stretch voice the prologue gave it
+  a loop's jump; a voice taking over from a render mid-way, after a tempo change, crossfades from it).
+  Otherwise, and in offline renders, through the stretch voice the prologue gave it
   (`assignVoices()`, `acquireVoice()`): the voice that played the clip last if it is still free,
   else the one idle longest. More stretched clips at once than voices: the extra ones stay silent.
 

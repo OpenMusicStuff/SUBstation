@@ -406,6 +406,8 @@ private:
     void assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live, TrackBuffers& buffers) noexcept;
     // Whether the voice that played `clip` in the block before carries it on at `position`.
     bool carriedOn(const WarpVoiceSet& voices, const ClipRender& clip, int64_t position) const noexcept;
+    // Whether `render` was sounding in the block before, up to where `clip` is at `position`.
+    bool soundedUpTo(const WarpRender& render, const ClipRender& clip, int64_t position) const noexcept;
     WarpVoice* acquireVoice(const WarpVoiceSet& voices, const ClipRender& clip, bool& continuing) noexcept;
     // The metronome's ticks on the time signature's beats in [position, position + length), before `end`,
     // the first of each bar accented, heard when the tracks' audio of their position is: `offset` into

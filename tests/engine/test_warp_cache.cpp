@@ -194,6 +194,12 @@ TEST_CASE("the warp cache forgets what no snapshot asks for, and keeps to its bu
         CHECK(cache.request(other, kSampleRate) == nullptr);  // over budget: stretched live
         cache.endBuild();
         cache.waitIdle();
+        // Asked for in the other order, the render made before doesn't fit either.
+        cache.beginBuild();
+        CHECK(cache.request(other, kSampleRate) != nullptr);
+        CHECK(cache.request(clip, kSampleRate) == nullptr);
+        cache.endBuild();
+        cache.waitIdle();
     }
 }
 
@@ -216,4 +222,52 @@ TEST_CASE("an engine renders its stretched clips in the background") {
     const Samples after = engine.renderOffline(0.0, 4 * kBeat);
     REQUIRE(before.size() == after.size());
     CHECK_EQ(maxDifference(before, after.data(), after.size()), 0.0);
+}
+
+TEST_CASE("a tempo change while a clip plays from its render crossfades into the stretcher") {
+    sub::WarpCache cache(sub::WarpCache::kDefaultBudget, std::chrono::milliseconds(0));
+    // At 120 BPM the clip plays at 0.8 from its render; at 135 BPM at 0.9, its
+    // new render not ready: a voice takes over where the render had got to.
+    sub::ClipRender before = stretched(sineSource(), 0.8, kSampleRate);
+    before.rendered = renderOf(cache, before);
+    sub::ClipRender after = stretched(before.source, 0.9, std::llround(kSampleRate * 120.0 / 135.0));
+    const int switchBlock = 20;
+
+    // Plays `switchBlock` blocks of `before`, then of `after` (fading from the
+    // render or not): the left channel, and where the switch fell in it.
+    const auto play = [&](bool fade, size_t& switchedAt) {
+        sub::ClipRender changed = after;
+        if (fade) changed.fading = before.rendered;
+        auto voice = std::make_shared<sub::WarpVoice>(before.stretchConfig, kSampleRate);
+        const auto first = snapshotOf(before, voice);
+        const auto second = snapshotOf(changed, voice);
+        second->tempo = 135.0;
+        sub::Renderer renderer;
+        sub::SharedState shared;
+        playFrom(renderer, 0);
+        std::vector<float> out = playLive(renderer, shared, *first, switchBlock);
+        switchedAt = out.size();
+        const std::vector<float> rest = playLive(renderer, shared, *second, 10);
+        out.insert(out.end(), rest.begin(), rest.end());
+        return out;
+    };
+    size_t at = 0;
+    const std::vector<float> faded = play(true, at);
+    const std::vector<float> cut = play(false, at);
+
+    // Smooth across the switch: no step much bigger than the sine's own (0.5 at
+    // 440 Hz: 0.029). Cut over, the restarted stretcher clicks (about 0.15).
+    const auto biggestStep = [&](const std::vector<float>& out) {
+        double step = 0.0;
+        for (size_t i = at - 8; i < at + 64; ++i) step = std::max(step, std::abs(static_cast<double>(out[i + 1]) - out[i]));
+        return step;
+    };
+    CHECK(biggestStep(faded) < 0.04);
+    CHECK(biggestStep(cut) > 0.08);
+    // The fade mixes in the render for 10 ms; after it, the voice alone, as without it.
+    const auto fadeFrames = static_cast<size_t>(std::llround(sub::WarpVoice::kFadeSeconds * kSampleRate));
+    CHECK(maxDifference(std::vector<float>(faded.begin() + at, faded.begin() + at + 64), cut.data() + at, 64) > 1e-3);
+    const size_t end = at + fadeFrames;
+    CHECK_EQ(maxDifference(std::vector<float>(faded.begin() + end, faded.end()), cut.data() + end, faded.size() - end),
+             0.0);
 }

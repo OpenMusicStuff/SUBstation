@@ -81,7 +81,8 @@ Options parse(int argc, char** argv) {
         if (arg == "--case") {
             o.cases = split(next(), ',');
         } else if (arg == "--seconds") {
-            o.seconds = std::max(1.0, std::stod(next()));
+            o.seconds = std::stod(next());
+            if (!(o.seconds >= 1.0 && o.seconds <= 3600.0)) throw std::runtime_error("--seconds takes 1 to 3600");
         } else if (arg == "--block") {
             o.block = std::clamp(std::stoi(next()), 1, 4096);
         } else if (arg == "--rate") {

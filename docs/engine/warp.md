@@ -187,6 +187,22 @@ mid-way differ a little, and switching would click), and the render takes over a
 jump. A clip playing from its render needs no voice. `renderClips()` reads the render in place, frame `t - start`
 for timeline sample `t`, as it reads a source played as it is.
 
+The other way round happens when a clip playing from its render changes mid-way (a new tempo, or transpose): its new
+render isn't ready, so a voice takes over, and it must seek, which would click (the restarted stretch and the render
+don't line up in phase). Instead the voice crossfades from the render it leaves, over 10 ms
+(`WarpVoice::kFadeSeconds`):
+
+- The snapshot build gives the changed clip the render it had before (`ClipRender::fading`, found in the previous
+  snapshot by `key`), or, if that one wasn't ready yet, what it was fading from. Once the new render is ready, the next
+  build lets the old one go (at most one extra render per changed clip, for that long).
+- Playing from a render, the renderer notes on it the block and the source position it got to
+  (`WarpRender::notePlayed()`). A voice that takes over (not continuing) crossfades when the clip's `fading` render was
+  sounding in the block before, up to where the clip is now (`Renderer::soundedUpTo()`, the same tolerance as
+  `carriesOn()`: a tempo change keeps the source position). A locate or a loop's jump doesn't fade.
+- `WarpVoice::fadeFrom()` copies the next 10 ms of the old render, read along the clip's new mapping (between frames,
+  at its own rate) into a buffer the voice allocated when it was made, so nothing of the render is kept;
+  `render()` mixes the voice in linearly over it.
+
 ### `WarpVoice::render()`
 
 ```
@@ -239,6 +255,9 @@ instead of a few hundred; see [What it costs](#what-it-costs)).
   isn't rendered at each of them. It never takes the engine's mutex: a render has all it needs (it holds the source).
   `ready()` turns true (release) once every frame is written; the audio thread reads it (acquire) and only then the
   frames. Until a clip's render is ready, the clip stretches live as before.
+- **Changing mid-way**: a clip that changes while playing from its render goes on through a voice, which crossfades
+  from the render (see [Binding voices](#binding-voices-audio-thread)), and its new render takes over at the next
+  start, locate or loop jump.
 - **The budget**: at most 512 MiB of renders per snapshot (`kDefaultBudget`, about 23 minutes of stereo at
   48 kHz). Clips past it, and a render that couldn't allocate, stretch live.
 - `Engine::waitForWarpRenders()` waits until every render the project needs is ready (tests and benchmarks).
@@ -334,8 +353,9 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
   aliases, stereo and mono sources, clip pan, many warped clips in sequence, and exports include warped audio.
 - [tests/engine/test_warp_cache.cpp](../../tests/engine/test_warp_cache.cpp): a render is what a voice plays (bit for
   bit), live playback plays a ready render (and offline renders don't), a stretch under way goes on and the render
-  takes over at a locate, renders no snapshot asks for are forgotten and the budget holds, an engine's renders finish
-  and leave exports as they were.
+  takes over at a locate, a tempo change while a clip plays from its render crossfades into the stretcher (without the
+  fade it clicks), renders no snapshot asks for are forgotten and the budget holds, an engine's renders finish and
+  leave exports as they were.
 - [benchmarks/warp_bench.cpp](../../benchmarks/warp_bench.cpp) (not a test): what each playback costs, from a render
   too (the `-cached` cases).
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,
