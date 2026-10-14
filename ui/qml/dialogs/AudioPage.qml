@@ -132,7 +132,12 @@ ColumnLayout {
         Label { text: qsTr("Constrain Latency Over") }
         ChoiceBox {
             objectName: "constrainThreshold"
-            readonly property var values: [0, 1, 2, 3, 5, 10, 20, 50]
+            // The usual thresholds, and the one saved if it is another (set by hand).
+            readonly property var values: {
+                const usual = [0, 1, 2, 3, 5, 10, 20, 50]
+                const saved = Session.bridge.constrainThresholdMs
+                return usual.includes(saved) ? usual : usual.concat([saved]).sort((a, b) => a - b)
+            }
             Layout.fillWidth: true
             tooltip: qsTr("Constrain Delay Compensation (the stopwatch in the transport bar) bypasses the devices "
                           + "with more latency than this on the way out of a monitored track.")

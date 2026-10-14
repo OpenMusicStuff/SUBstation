@@ -119,10 +119,12 @@ ColumnLayout {
             interval: 1000
             running: page.visible
             repeat: true
+            // (Kept once the notes stop, so it can be read: it says it is about the notes last played.)
             onTriggered: {
                 const text = page.prefs.takeDeliveryText()
                 if (text !== "")
-                    delivery.text = qsTr("Handed over after the driver took them in (last second):\n") + text
+                    delivery.text = qsTr("Handed over after the driver took them in (the notes last played):\n")
+                                    + text
             }
         }
     }

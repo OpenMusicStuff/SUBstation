@@ -65,8 +65,11 @@ void EngineBridge::pushInput(const QString& trackId) {
         }
     }
     d_->inputs.insert(trackId, state);
+    const bool monitoring = !old || old->monitor != state.monitor || old->armed != state.armed;
     if (!old || old->monitor != state.monitor) engine_.setTrackMonitor(*engineId, monitorMode(state.monitor));
     if (!old || old->armed != state.armed) engine_.setTrackArmed(*engineId, state.armed);
+    // What is monitored decides which devices Constrain Delay Compensation bypasses.
+    if (monitoring && engine_.constrainLatency()) Q_EMIT constrainLatencyChanged();
     if (!old || old->midi != state.midi) {
         if (!state.midi) {
             engine_.setTrackMidiInput(*engineId, false, {}, 0);

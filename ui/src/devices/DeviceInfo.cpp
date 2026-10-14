@@ -130,6 +130,7 @@ void DeviceInfo::connectSession() {
     connections_ << connect(bridge, &EngineBridge::pluginsPendingChanged, this, refreshAll);
     connections_ << connect(bridge, &EngineBridge::deviceChanged, this, refreshAll);  // (new latencies)
     connections_ << connect(bridge, &EngineBridge::latenciesChanged, this, refreshAll);
+    connections_ << connect(bridge, &EngineBridge::constrainLatencyChanged, this, refreshAll);  // (bypassed or not)
     // Its switch's automation: playing, overridden, or gone; and the switch following it.
     connections_ << connect(bridge, &EngineBridge::automationStateChanged, this, [this](const QString& owner) {
         if (owner == trackId_ || owner.isEmpty())

@@ -580,6 +580,8 @@ Q_SIGNALS:
     void transportChanged(bool playing);
     void countingInChanged(bool countingIn);
     void metronomeChanged(bool enabled);
+    // Constrain Delay Compensation went on or off, its threshold changed, or (while it is on)
+    // a track was armed or monitored: which devices it bypasses may have changed.
     void constrainLatencyChanged();
     void midiImmediateChanged();
     void metersUpdated();  // meters() and chainMeters() were refreshed
