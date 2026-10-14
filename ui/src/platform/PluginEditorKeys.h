@@ -18,8 +18,9 @@
 // its X keysym (keysymPressed()).
 //
 // The rules:
-// - Without Ctrl or Alt, only the DAW's keys are taken: Space (play / stop)
-//   and S (solo); not with Shift, not while the focus is in a text field
+// - Without Ctrl or Alt, only the DAW's keys are taken: Play / Stop's and
+//   Solo Selected Tracks' (KeyMap: Space and S by default; on Linux the
+//   editor windows grab Space and S alone); not with Shift, not while the focus is in a text field
 //   Windows knows (an Edit or RichEdit control: most plug-ins draw their own,
 //   which can't be told apart), and not a key the computer MIDI keyboard plays
 //   while it is on, as in the main window. Other keys without Ctrl or Alt

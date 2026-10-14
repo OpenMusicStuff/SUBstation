@@ -7,6 +7,7 @@
 #include <QVariantList>
 
 #include "audio/EditorKeys.h"
+#include "input/KeyMap.h"
 #include "input/Shortcuts.h"
 #include "session/ComputerKeyboard.h"
 #include "session/RenderProgress.h"
@@ -42,8 +43,14 @@ const QList<QKeySequence>& keptForPlugin() {
     return kept;
 }
 
-// Keys without Ctrl or Alt that are the main window's in a plug-in's editor too.
-bool dawKey(int key) { return key == Qt::Key_Space || key == Qt::Key_S; }
+// Keys without Ctrl or Alt that are the main window's in a plug-in's editor too:
+// Play / Stop's and Solo Selected Tracks' (KeyMap: Space and S by default).
+bool dawKey(int key) {
+    const QString pressed = QKeySequence(key).toString(QKeySequence::PortableText);
+    const KeyMap* keys = KeyMap::instance();
+    return keys->keys(QStringLiteral("playStop")).contains(pressed) ||
+           keys->keys(QStringLiteral("soloSelectedTracks")).contains(pressed);
+}
 
 bool matches(const QKeySequence& pressed, const QList<QKeySequence>& sequences) {
     for (const QKeySequence& sequence : sequences)

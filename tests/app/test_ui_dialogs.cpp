@@ -25,6 +25,7 @@
 #include "audio/AudioSettings.h"
 #include "audio/EngineBridge.h"
 #include "editor/ProjectEditor.h"
+#include "input/KeyMap.h"
 #include "mcp/McpServer.h"
 #include "model/Project.h"
 #include "plugins/PluginIndex.h"
@@ -197,6 +198,88 @@ private Q_SLOTS:
         close(QStringLiteral("preferencesDialog"));
     }
 
+    // Preferences › Keyboard (KeyMap): the profile, every command with its
+    // keys, found by a search. + then a key pressed gives the command that key,
+    // taken from the command that had it (the page says so); a modifier alone
+    // is no key; Esc cancels, the dialog stays; while it waits, keys are never
+    // the window's shortcuts. A key's × takes it back; Reset, Reset All.
+    void keyboardPage() {
+        sub::ui::KeyMap& keyMap = *sub::ui::KeyMap::instance();
+        keyMap.resetAll();
+        open(QStringLiteral("preferencesDialog"));
+        object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 4);
+        auto* page = object(QStringLiteral("preferencesDialog"))->property("keyboardPage").value<QQuickItem*>();
+        QVERIFY(page);
+        QQuickItem* list = nullptr;
+        QTRY_VERIFY((list = shown(QStringLiteral("keyCommands"))) != nullptr);
+        QCOMPARE(list->property("count").toInt(), int(sub::ui::KeyMap::allCommands().size()));
+        QCOMPARE(comboText(QStringLiteral("keyProfile")), QStringLiteral("Ableton Live"));
+        test::screenshot(window_, QStringLiteral("preferences-keyboard"));
+
+        QQuickItem* search = shown(QStringLiteral("keySearch"));
+        QVERIFY(search);
+        search->setProperty("text", QStringLiteral("split"));
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        search->setProperty("text", QStringLiteral("ctrl+shift+t"));  // (by its key)
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        search->setProperty("text", QStringLiteral("split"));
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+
+        const int spaces = window_->property("spaces").toInt();
+        auto record = [&] {
+            QQuickItem* add = nullptr;
+            QTRY_VERIFY((add = shown(QStringLiteral("addKey_split"))) != nullptr);
+            test::click(window_, test::centerOf(add));
+            QTRY_COMPARE(page->property("recording").toString(), QStringLiteral("split"));
+            QTRY_VERIFY(shown(QStringLiteral("keyRecorder"))->hasActiveFocus());
+        };
+        record();
+        QTest::keyClick(window_, Qt::Key_Control, Qt::ControlModifier);  // a modifier alone: still waiting
+        QCOMPARE(page->property("recording").toString(), QStringLiteral("split"));
+        QTest::keyClick(window_, Qt::Key_D, Qt::ControlModifier);
+        QCOMPARE(page->property("recording").toString(), QString());
+        QCOMPARE(keyMap.keys(QStringLiteral("split")), (QStringList{"Ctrl+E", "Ctrl+D"}));
+        QCOMPARE(keyMap.keys(QStringLiteral("duplicate")), QStringList());
+        QQuickItem* message = nullptr;
+        QTRY_VERIFY((message = shown(QStringLiteral("keyMessage"))) != nullptr);
+        QVERIFY(message->property("text").toString().contains(QStringLiteral("Duplicate")));
+        QTRY_VERIFY(shown(QStringLiteral("resetKeys_split")) != nullptr);
+
+        // Esc: never mind (the dialog stays).
+        record();
+        QTest::keyClick(window_, Qt::Key_Escape);
+        QCOMPARE(page->property("recording").toString(), QString());
+        QVERIFY(visible(QStringLiteral("preferencesDialog")));
+        QCOMPARE(keyMap.keys(QStringLiteral("split")), (QStringList{"Ctrl+E", "Ctrl+D"}));
+
+        // Space while waiting: the command's key, not the window's play / stop.
+        record();
+        QTest::keyClick(window_, Qt::Key_Space);
+        QCOMPARE(keyMap.keys(QStringLiteral("split")), (QStringList{"Ctrl+E", "Ctrl+D", "Space"}));
+        QCOMPARE(keyMap.keys(QStringLiteral("playStop")), QStringList());
+        QCOMPARE(window_->property("spaces").toInt(), spaces);
+
+        // A key's ×: taken back.
+        QQuickItem* remove = nullptr;
+        QTRY_VERIFY((remove = shown(QStringLiteral("key_split_Ctrl+D"))) != nullptr);
+        test::click(window_, test::centerOf(remove));
+        QTRY_COMPARE(keyMap.keys(QStringLiteral("split")), (QStringList{"Ctrl+E", "Space"}));
+
+        // Reset: the profile's keys for Split; Reset All, for every command.
+        QQuickItem* reset = shown(QStringLiteral("resetKeys_split"));
+        QVERIFY(reset);
+        test::click(window_, test::centerOf(reset));
+        QTRY_COMPARE(keyMap.keys(QStringLiteral("split")), QStringList{"Ctrl+E"});
+        QVERIFY(!keyMap.customizedCommands().isEmpty());  // (Duplicate's and Play / Stop's)
+        test::click(window_, test::centerOf(shown(QStringLiteral("resetAllKeys"))));
+        QTRY_VERIFY(keyMap.customizedCommands().isEmpty());
+        QCOMPARE(keyMap.keys(QStringLiteral("playStop")), QStringList{"Space"});
+        QCOMPARE(keyMap.keys(QStringLiteral("duplicate")), QStringList{"Ctrl+D"});
+
+        search->setProperty("text", QString());
+        close(QStringLiteral("preferencesDialog"));
+    }
+
     // Preferences › Agents: the MCP server on and off, its port (applied at once,
     // kept), its address and the command adding it to Claude Code; its state.
     void agentsPage() {
@@ -209,7 +292,7 @@ private Q_SLOTS:
         QVERIFY(first > 0);
         mcp.setPort(first);
         open(QStringLiteral("preferencesDialog"));
-        object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 4);
+        object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 5);
         QQuickItem* enabled = nullptr;
         QTRY_VERIFY((enabled = shown(QStringLiteral("mcpEnabled"))) != nullptr);
         QVERIFY(!enabled->property("checked").toBool());

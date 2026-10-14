@@ -51,6 +51,12 @@ ApplicationWindow {
         messageTimer.restart()
     }
 
+    // A command's key as its Action shows it (KeyMap: the first of its keys; "": none).
+    function keyOf(id) {
+        const keys = KeyMap.bindings[id]
+        return keys && keys.length > 0 ? keys[0] : ""
+    }
+
     // --- The views' interfaces (guarded: a placeholder has none) ---------------------------
 
     function focusLanes() {
@@ -390,8 +396,8 @@ ApplicationWindow {
 
             Menu {
                 title: qsTr("&File")
-                Action { objectName: "newProject"; text: qsTr("&New Project"); shortcut: StandardKey.New; onTriggered: window.newProject() }
-                Action { objectName: "openProject"; text: qsTr("&Open…"); shortcut: StandardKey.Open; onTriggered: window.openProject() }
+                Action { objectName: "newProject"; text: qsTr("&New Project"); shortcut: window.keyOf(objectName); onTriggered: window.newProject() }
+                Action { objectName: "openProject"; text: qsTr("&Open…"); shortcut: window.keyOf(objectName); onTriggered: window.openProject() }
                 Menu {
                     id: recentMenu
                     objectName: "recentMenu"
@@ -399,16 +405,16 @@ ApplicationWindow {
                     onAboutToShow: window.fillRecentMenu()
                     MenuItem { text: qsTr("No Recent Projects"); enabled: false }
                 }
-                Action { objectName: "importLiveSet"; text: qsTr("&Import Ableton Live Set…"); onTriggered: window.importLiveSet() }
+                Action { objectName: "importLiveSet"; shortcut: window.keyOf(objectName); text: qsTr("&Import Ableton Live Set…"); onTriggered: window.importLiveSet() }
                 MenuSeparator {}
-                Action { objectName: "save"; text: qsTr("&Save"); shortcut: StandardKey.Save; onTriggered: window.save() }
-                Action { objectName: "saveAs"; text: qsTr("Save &As…"); shortcut: "Ctrl+Shift+S"; onTriggered: window.saveAs() }
-                Action { objectName: "saveAsTemplate"; text: qsTr("Save as &Template"); onTriggered: Session.saveAsTemplate() }
-                Action { objectName: "clearTemplate"; text: qsTr("C&lear Template"); enabled: Session.hasTemplate; onTriggered: Session.clearTemplate() }
+                Action { objectName: "save"; text: qsTr("&Save"); shortcut: window.keyOf(objectName); onTriggered: window.save() }
+                Action { objectName: "saveAs"; text: qsTr("Save &As…"); shortcut: window.keyOf(objectName); onTriggered: window.saveAs() }
+                Action { objectName: "saveAsTemplate"; shortcut: window.keyOf(objectName); text: qsTr("Save as &Template"); onTriggered: Session.saveAsTemplate() }
+                Action { objectName: "clearTemplate"; shortcut: window.keyOf(objectName); text: qsTr("C&lear Template"); enabled: Session.hasTemplate; onTriggered: Session.clearTemplate() }
                 MenuSeparator {}
-                Action { objectName: "exportAudio"; text: qsTr("&Export Audio…"); shortcut: "Ctrl+Shift+R"; onTriggered: exportDialog.open() }
+                Action { objectName: "exportAudio"; text: qsTr("&Export Audio…"); shortcut: window.keyOf(objectName); onTriggered: exportDialog.open() }
                 MenuSeparator {}
-                Action { objectName: "quit"; text: qsTr("&Quit"); shortcut: "Ctrl+Q"; onTriggered: window.close() }
+                Action { objectName: "quit"; text: qsTr("&Quit"); shortcut: window.keyOf(objectName); onTriggered: window.close() }
             }
             Menu {
                 title: qsTr("&Edit")
@@ -417,7 +423,7 @@ ApplicationWindow {
                     objectName: "undo"
                     text: Session.undoStack.undoText !== "" ? qsTr("&Undo %1").arg(Session.undoStack.undoText) : qsTr("&Undo")
                     enabled: Session.undoStack.canUndo
-                    shortcut: StandardKey.Undo
+                    shortcut: window.keyOf(objectName)
                     onTriggered: Session.undo()  // (refused while an agent changed the same since)
                 }
                 Action {
@@ -425,36 +431,37 @@ ApplicationWindow {
                     objectName: "redo"
                     text: Session.undoStack.redoText !== "" ? qsTr("&Redo %1").arg(Session.undoStack.redoText) : qsTr("&Redo")
                     enabled: Session.undoStack.canRedo
-                    shortcut: "Ctrl+Y"
+                    shortcut: window.keyOf(objectName)
                     onTriggered: Session.redo()
                 }
                 MenuSeparator {}
-                Action { objectName: "cut"; text: qsTr("Cu&t"); shortcut: StandardKey.Cut; onTriggered: Session.cut() }
-                Action { objectName: "copy"; text: qsTr("&Copy"); shortcut: StandardKey.Copy; onTriggered: Session.copy() }
-                Action { objectName: "paste"; text: qsTr("&Paste"); shortcut: StandardKey.Paste; onTriggered: Session.paste() }
-                Action { objectName: "duplicate"; text: qsTr("D&uplicate"); shortcut: "Ctrl+D"; onTriggered: Session.duplicate() }
-                Action { objectName: "rename"; text: qsTr("&Rename"); shortcut: "Ctrl+R"; onTriggered: window.rename() }
-                Action { objectName: "split"; text: qsTr("&Split"); shortcut: "Ctrl+E"; onTriggered: Session.split() }
-                Action { objectName: "consolidate"; text: qsTr("C&onsolidate"); shortcut: "Ctrl+J"; onTriggered: Session.consolidate() }
-                Action { objectName: "reverseClips"; text: qsTr("Re&verse Clips"); shortcut: "R"; onTriggered: Session.reverseClips() }
-                Action { objectName: "toggleClipActivation"; text: qsTr("Deact&ivate / Activate Clips"); shortcut: "0"; onTriggered: Session.toggleClipActivation() }
+                Action { objectName: "cut"; text: qsTr("Cu&t"); shortcut: window.keyOf(objectName); onTriggered: Session.cut() }
+                Action { objectName: "copy"; text: qsTr("&Copy"); shortcut: window.keyOf(objectName); onTriggered: Session.copy() }
+                Action { objectName: "paste"; text: qsTr("&Paste"); shortcut: window.keyOf(objectName); onTriggered: Session.paste() }
+                Action { objectName: "duplicate"; text: qsTr("D&uplicate"); shortcut: window.keyOf(objectName); onTriggered: Session.duplicate() }
+                Action { objectName: "rename"; text: qsTr("&Rename"); shortcut: window.keyOf(objectName); onTriggered: window.rename() }
+                Action { objectName: "split"; text: qsTr("&Split"); shortcut: window.keyOf(objectName); onTriggered: Session.split() }
+                Action { objectName: "consolidate"; text: qsTr("C&onsolidate"); shortcut: window.keyOf(objectName); onTriggered: Session.consolidate() }
+                Action { objectName: "reverseClips"; text: qsTr("Re&verse Clips"); shortcut: window.keyOf(objectName); onTriggered: Session.reverseClips() }
+                Action { objectName: "toggleClipActivation"; text: qsTr("Deact&ivate / Activate Clips"); shortcut: window.keyOf(objectName); onTriggered: Session.toggleClipActivation() }
                 MenuSeparator {}
-                Action { objectName: "freeze"; text: qsTr("&Freeze / Unfreeze Track"); shortcut: "Ctrl+Shift+F"; onTriggered: Session.toggleFreeze() }
-                Action { objectName: "flatten"; text: qsTr("Flatten Track"); onTriggered: Session.flattenSelectedTracks() }
-                Action { id: deleteAction; objectName: "delete"; text: qsTr("&Delete"); shortcut: StandardKey.Delete; onTriggered: Session.deleteSelection() }
-                Action { objectName: "selectAll"; text: qsTr("Select &All"); shortcut: StandardKey.SelectAll; onTriggered: Session.selectAll() }
+                Action { objectName: "freeze"; text: qsTr("&Freeze / Unfreeze Track"); shortcut: window.keyOf(objectName); onTriggered: Session.toggleFreeze() }
+                Action { objectName: "flatten"; shortcut: window.keyOf(objectName); text: qsTr("Flatten Track"); onTriggered: Session.flattenSelectedTracks() }
+                Action { id: deleteAction; objectName: "delete"; text: qsTr("&Delete"); shortcut: window.keyOf(objectName); onTriggered: Session.deleteSelection() }
+                Action { objectName: "selectAll"; text: qsTr("Select &All"); shortcut: window.keyOf(objectName); onTriggered: Session.selectAll() }
                 MenuSeparator {}
                 // Enabled while automation is overridden somewhere.
                 Action {
                     objectName: "reEnableAutomation"
+                    shortcut: window.keyOf(objectName)
                     text: qsTr("Re-Enable Automation")
                     enabled: Session.automationOverridden
                     onTriggered: Session.bridge.reEnableAutomation()
                 }
-                Action { objectName: "soloSelectedTracks"; text: qsTr("Solo Selected Tracks"); shortcut: "S"; onTriggered: Session.soloSelectedTracks() }
+                Action { objectName: "soloSelectedTracks"; text: qsTr("Solo Selected Tracks"); shortcut: window.keyOf(objectName); onTriggered: Session.soloSelectedTracks() }
                 MenuSeparator {}
-                Action { objectName: "playStop"; text: qsTr("Play / Stop"); shortcut: "Space"; onTriggered: Session.togglePlay() }
-                Action { objectName: "record"; text: qsTr("Record"); shortcut: "F9"; onTriggered: Session.toggleRecord() }
+                Action { objectName: "playStop"; text: qsTr("Play / Stop"); shortcut: window.keyOf(objectName); onTriggered: Session.togglePlay() }
+                Action { objectName: "record"; text: qsTr("Record"); shortcut: window.keyOf(objectName); onTriggered: Session.toggleRecord() }
                 Menu {
                     id: quantizeMenu
                     objectName: "recordQuantization"
@@ -491,12 +498,12 @@ ApplicationWindow {
                         onObjectRemoved: (index, object) => quantizeMenu.removeAction(object)
                     }
                 }
-                Action { objectName: "goToStart"; text: qsTr("Go to Start"); shortcut: "Home"; onTriggered: Session.locate(0) }
+                Action { objectName: "goToStart"; text: qsTr("Go to Start"); shortcut: window.keyOf(objectName); onTriggered: Session.locate(0) }
                 Action {
                     id: loopAction
                     objectName: "loop"
                     text: qsTr("Loop")
-                    shortcut: "Ctrl+L"
+                    shortcut: window.keyOf(objectName)
                     checkable: true
                     checked: Session.project.loopEnabled
                     onTriggered: {
@@ -504,45 +511,45 @@ ApplicationWindow {
                         checked = Qt.binding(() => Session.project.loopEnabled)
                     }
                 }
-                Action { objectName: "findInBrowser"; text: qsTr("Find in Browser"); shortcut: "Ctrl+F"; onTriggered: window.findInBrowser() }
+                Action { objectName: "findInBrowser"; text: qsTr("Find in Browser"); shortcut: window.keyOf(objectName); onTriggered: window.findInBrowser() }
             }
             Menu {
                 title: qsTr("&Create")
-                Action { objectName: "insertAudioTrack"; text: qsTr("Insert Audio &Track"); shortcut: "Ctrl+T"; onTriggered: Session.insertAudioTrack() }
-                Action { objectName: "insertMidiTrack"; text: qsTr("Insert &MIDI Track"); shortcut: "Ctrl+Shift+T"; onTriggered: Session.insertMidiTrack() }
-                Action { objectName: "insertReturnTrack"; text: qsTr("Insert &Return Track"); shortcut: "Ctrl+Alt+T"; onTriggered: Session.insertReturnTrack() }
+                Action { objectName: "insertAudioTrack"; text: qsTr("Insert Audio &Track"); shortcut: window.keyOf(objectName); onTriggered: Session.insertAudioTrack() }
+                Action { objectName: "insertMidiTrack"; text: qsTr("Insert &MIDI Track"); shortcut: window.keyOf(objectName); onTriggered: Session.insertMidiTrack() }
+                Action { objectName: "insertReturnTrack"; text: qsTr("Insert &Return Track"); shortcut: window.keyOf(objectName); onTriggered: Session.insertReturnTrack() }
                 Action {
                     id: insertMidiClipAction
                     objectName: "insertMidiClip"
                     text: qsTr("Insert MIDI &Clip")
-                    shortcut: "Ctrl+Shift+D"
+                    shortcut: window.keyOf(objectName)
                     onTriggered: Session.insertMidiClip(window.insertGridStep())
                 }
                 MenuSeparator {}
                 // (In the device view: its selected devices.)
-                Action { objectName: "groupTracks"; text: qsTr("&Group Tracks"); shortcut: "Ctrl+G"; onTriggered: Session.groupSelected() }
-                Action { objectName: "ungroupTracks"; text: qsTr("&Ungroup Tracks"); shortcut: "Ctrl+Shift+G"; onTriggered: Session.ungroupSelected() }
+                Action { objectName: "groupTracks"; text: qsTr("&Group Tracks"); shortcut: window.keyOf(objectName); onTriggered: Session.groupSelected() }
+                Action { objectName: "ungroupTracks"; text: qsTr("&Ungroup Tracks"); shortcut: window.keyOf(objectName); onTriggered: Session.ungroupSelected() }
                 MenuSeparator {}
-                Action { objectName: "deleteSelectedTracks"; text: qsTr("Delete Selected Tracks"); onTriggered: Session.deleteSelectedTracks() }
+                Action { objectName: "deleteSelectedTracks"; shortcut: window.keyOf(objectName); text: qsTr("Delete Selected Tracks"); onTriggered: Session.deleteSelectedTracks() }
             }
             Menu {
                 title: qsTr("&View")
-                Action { id: browserAction; objectName: "browser"; text: qsTr("&Browser"); shortcut: "Ctrl+Alt+B"; checkable: true; checked: true }
+                Action { id: browserAction; objectName: "browser"; text: qsTr("&Browser"); shortcut: window.keyOf(objectName); checkable: true; checked: true }
                 // The files the project plays, on the right (as Ableton's): missing ones found, any replaced, hot-swapped.
-                Action { id: fileManagerAction; objectName: "fileManager"; text: qsTr("&File Manager"); shortcut: "Ctrl+Alt+F"; checkable: true; checked: false }
+                Action { id: fileManagerAction; objectName: "fileManager"; text: qsTr("&File Manager"); shortcut: window.keyOf(objectName); checkable: true; checked: false }
                 // What agents changed through the MCP server, apart from Undo: each to rewind on its own.
-                Action { id: agentChangesAction; objectName: "agentChangesView"; text: qsTr("A&gent Changes"); shortcut: "Ctrl+Alt+A"; checkable: true; checked: false }
-                Action { id: deviceViewAction; objectName: "deviceView"; text: qsTr("&Device View"); shortcut: "Ctrl+Alt+L"; checkable: true; checked: true }
+                Action { id: agentChangesAction; objectName: "agentChangesView"; text: qsTr("A&gent Changes"); shortcut: window.keyOf(objectName); checkable: true; checked: false }
+                Action { id: deviceViewAction; objectName: "deviceView"; text: qsTr("&Device View"); shortcut: window.keyOf(objectName); checkable: true; checked: true }
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
-                Action { id: infoViewAction; objectName: "infoView"; text: qsTr("&Info View"); checkable: true; checked: true }
-                Action { objectName: "clipView"; text: qsTr("&Clip View"); shortcut: "Shift+Tab"; onTriggered: window.toggleClipView() }
-                Action { objectName: "findTrack"; text: qsTr("Find &Track"); shortcut: "Q"; onTriggered: window.findTrack() }
-                Action { objectName: "automation"; text: qsTr("&Automation"); shortcut: "A"; onTriggered: Session.editor.toggleAllAutomation() }
+                Action { id: infoViewAction; objectName: "infoView"; shortcut: window.keyOf(objectName); text: qsTr("&Info View"); checkable: true; checked: true }
+                Action { objectName: "clipView"; text: qsTr("&Clip View"); shortcut: window.keyOf(objectName); onTriggered: window.toggleClipView() }
+                Action { objectName: "findTrack"; text: qsTr("Find &Track"); shortcut: window.keyOf(objectName); onTriggered: window.findTrack() }
+                Action { objectName: "automation"; text: qsTr("&Automation"); shortcut: window.keyOf(objectName); onTriggered: Session.editor.toggleAllAutomation() }
                 // The track headers' In/Out column (Audio From and To, monitoring), as Ableton's.
                 Action {
                     objectName: "inOut"
                     text: qsTr("&In/Out")
-                    shortcut: "Ctrl+Alt+I"
+                    shortcut: window.keyOf(objectName)
                     checkable: true
                     checked: arrangement.ioShown
                     onTriggered: {
@@ -554,7 +561,7 @@ ApplicationWindow {
                 Action {
                     objectName: "showHarmony"
                     text: qsTr("C&hords and Key")
-                    shortcut: "C"
+                    shortcut: window.keyOf(objectName)
                     checkable: true
                     checked: Session.harmony.shown
                     onTriggered: {
@@ -569,7 +576,7 @@ ApplicationWindow {
                     action: Action {
                         objectName: "closePluginEditor"
                         text: qsTr("Close Plug-in &Editor")
-                        shortcut: "Ctrl+W"
+                        shortcut: window.keyOf(objectName)
                         enabled: pluginKeys.supported
                         onTriggered: pluginKeys.closeForemostEditor()
                     }
@@ -582,28 +589,28 @@ ApplicationWindow {
                     action: Action {
                         objectName: "reopenPluginEditor"
                         text: qsTr("&Reopen Closed Plug-in Editor")
-                        shortcut: "Ctrl+Shift+W"
+                        shortcut: window.keyOf(objectName)
                         enabled: pluginKeys.supported
                         onTriggered: Session.bridge.reopenClosedPluginEditor(Session.selection.trackId)
                     }
                 }
                 MenuSeparator {}
-                Action { id: zoomInAction; objectName: "zoomIn"; text: qsTr("Zoom &In"); shortcut: "+"; onTriggered: window.zoom(1.4) }
-                Action { id: zoomOutAction; objectName: "zoomOut"; text: qsTr("Zoom &Out"); shortcut: "-"; onTriggered: window.zoom(1 / 1.4) }
+                Action { id: zoomInAction; objectName: "zoomIn"; text: qsTr("Zoom &In"); shortcut: window.keyOf(objectName); onTriggered: window.zoom(1.4) }
+                Action { id: zoomOutAction; objectName: "zoomOut"; text: qsTr("Zoom &Out"); shortcut: window.keyOf(objectName); onTriggered: window.zoom(1 / 1.4) }
                 Action {
                     objectName: "zoomToArrangement"
                     text: qsTr("Zoom to &Arrangement")
-                    shortcut: "Z"
+                    shortcut: window.keyOf(objectName)
                     onTriggered: if (arrangement.zoomToArrangement) arrangement.zoomToArrangement()
                 }
                 MenuSeparator {}
-                Action { objectName: "narrowGrid"; text: qsTr("Narrow Grid"); shortcut: "Ctrl+1"; onTriggered: if (arrangement.narrowGrid) arrangement.narrowGrid() }
-                Action { objectName: "widenGrid"; text: qsTr("Widen Grid"); shortcut: "Ctrl+2"; onTriggered: if (arrangement.widenGrid) arrangement.widenGrid() }
+                Action { objectName: "narrowGrid"; text: qsTr("Narrow Grid"); shortcut: window.keyOf(objectName); onTriggered: if (arrangement.narrowGrid) arrangement.narrowGrid() }
+                Action { objectName: "widenGrid"; text: qsTr("Widen Grid"); shortcut: window.keyOf(objectName); onTriggered: if (arrangement.widenGrid) arrangement.widenGrid() }
                 Action {
                     id: snapAction
                     objectName: "snapToGrid"
                     text: qsTr("Snap to Grid")
-                    shortcut: "Ctrl+4"
+                    shortcut: window.keyOf(objectName)
                     checkable: true
                     checked: arrangement.snap !== false
                     onTriggered: {
@@ -615,12 +622,12 @@ ApplicationWindow {
             }
             Menu {
                 title: qsTr("&Options")
-                Action { objectName: "preferences"; text: qsTr("&Preferences…"); shortcut: "Ctrl+,"; onTriggered: preferences.open() }
-                Action { objectName: "rescanPlugins"; text: qsTr("&Rescan Plug-ins"); onTriggered: Session.browser.rescanPlugins() }
+                Action { objectName: "preferences"; text: qsTr("&Preferences…"); shortcut: window.keyOf(objectName); onTriggered: preferences.open() }
+                Action { objectName: "rescanPlugins"; shortcut: window.keyOf(objectName); text: qsTr("&Rescan Plug-ins"); onTriggered: Session.browser.rescanPlugins() }
                 Action {
                     objectName: "computerMidiKeyboard"
                     text: qsTr("Computer &MIDI Keyboard")
-                    shortcut: "M"
+                    shortcut: window.keyOf(objectName)
                     checkable: true
                     checked: Session.computerKeyboard.enabled
                     onTriggered: {
@@ -631,6 +638,7 @@ ApplicationWindow {
                 // Agents read the project through it (Preferences › Agents: its port, its address).
                 Action {
                     objectName: "mcpServer"
+                    shortcut: window.keyOf(objectName)
                     text: qsTr("M&CP Server")
                     checkable: true
                     checked: Session.mcp.enabled
@@ -642,6 +650,7 @@ ApplicationWindow {
                 MenuSeparator {}
                 Action {
                     objectName: "lockEnvelopes"
+                    shortcut: window.keyOf(objectName)
                     text: qsTr("&Lock Envelopes")
                     checkable: true
                     checked: Session.project.automationLocked
@@ -653,17 +662,29 @@ ApplicationWindow {
             }
             Menu {
                 title: qsTr("&Help")
-                Action { objectName: "about"; text: qsTr("&About SUBstation"); onTriggered: aboutDialog.open() }
+                Action { objectName: "about"; shortcut: window.keyOf(objectName); text: qsTr("&About SUBstation"); onTriggered: aboutDialog.open() }
             }
         }
     }
 
-    // The actions' other shortcuts (an Action has one).
-    Shortcut { sequences: ["Ctrl+Shift+Z"]; enabled: redoAction.enabled; onActivated: redoAction.trigger() }
-    Shortcut { sequences: ["Backspace"]; onActivated: deleteAction.trigger() }
-    Shortcut { sequences: ["Ctrl+Shift+M"]; onActivated: insertMidiClipAction.trigger() }
-    Shortcut { sequences: ["=", StandardKey.ZoomIn]; onActivated: zoomInAction.trigger() }
-    Shortcut { sequences: [StandardKey.ZoomOut]; onActivated: zoomOutAction.trigger() }
+    // The actions' other keys (an Action has one): a Shortcut for each command
+    // (its objectName the command's, + "Keys"), triggering its Action.
+    Instantiator {
+        model: KeyMap.commands
+        delegate: Shortcut {
+            required property var modelData
+            property QtObject action: null
+
+            objectName: modelData.id + "Keys"
+            sequences: {
+                const keys = KeyMap.bindings[modelData.id]
+                return keys ? keys.slice(1) : []
+            }
+            enabled: action !== null && action.enabled && sequences.length > 0
+            onActivated: action.trigger()
+            Component.onCompleted: action = KeyMap.findAction(window, modelData.id)
+        }
+    }
 
     header: TransportBar {
         id: transportBar

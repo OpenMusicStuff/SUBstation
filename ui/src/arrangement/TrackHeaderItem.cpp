@@ -6,6 +6,7 @@
 #include "controls/Automation.h"
 #include "controls/Meter.h"
 #include "editor/ProjectEditor.h"
+#include "input/KeyMap.h"
 #include "intelligence/TrackLabels.h"
 #include "model/Automation.h"
 #include "model/Devices.h"
@@ -791,7 +792,7 @@ void TrackHeaderItem::addFreezeEntries(MenuEntries& menu, const QStringList& tra
         freeze->enabled = actions.value(QStringLiteral("freezeEnabled")).toBool();
         freeze->toolTip = actions.value(QStringLiteral("freezeToolTip")).toString();
     }
-    freeze->shortcut = QStringLiteral("Ctrl+Shift+F");
+    freeze->shortcut = KeyMap::hint("freeze");
     MenuEntry& flatten =
         menu.add(actions.value(QStringLiteral("flattenText")).toString(), [s, trackIds] { s->flattenTracks(trackIds); });
     flatten.enabled = actions.value(QStringLiteral("flattenEnabled")).toBool();
@@ -850,7 +851,7 @@ MenuEntries TrackHeaderItem::contextMenu() {
     if (isReturn()) {
         const int index = p->returnIndex(id);
         menu.add(QStringLiteral("Insert Return Track"), [editor, index] { editor->addReturnTrack(index + 1); }).shortcut =
-            QStringLiteral("Ctrl+Alt+T");
+            KeyMap::hint("insertReturnTrack");
         menu.add(selected.size() == 1 ? QStringLiteral("Delete Return Track") : QStringLiteral("Delete Tracks"),
                  [editor, selected] { editor->deleteTracks(selected); });
         menu.addSeparator();
@@ -864,19 +865,19 @@ MenuEntries TrackHeaderItem::contextMenu() {
     menu.add(QStringLiteral("Insert MIDI Track"), [actions, id] { actions->insertTrackAfter(id, true); });
     menu.add(QStringLiteral("Insert Return Track"), [editor] { editor->addReturnTrack(); });
     // The window's Cut, Copy and Paste: on the selected tracks.
-    menu.add(QStringLiteral("Cut"), [s] { s->cut(); }).shortcut = QStringLiteral("Ctrl+X");
-    menu.add(QStringLiteral("Copy"), [s] { s->copy(); }).shortcut = QStringLiteral("Ctrl+C");
-    menu.add(QStringLiteral("Paste"), [s] { s->paste(); }).shortcut = QStringLiteral("Ctrl+V");
+    menu.add(QStringLiteral("Cut"), [s] { s->cut(); }).shortcut = KeyMap::hint("cut");
+    menu.add(QStringLiteral("Copy"), [s] { s->copy(); }).shortcut = KeyMap::hint("copy");
+    menu.add(QStringLiteral("Paste"), [s] { s->paste(); }).shortcut = KeyMap::hint("paste");
     menu.add(selected.size() == 1 ? QStringLiteral("Duplicate Track") : QStringLiteral("Duplicate Tracks"),
              [actions, selected] { actions->duplicateTracks(selected); })
-        .shortcut = QStringLiteral("Ctrl+D");
+        .shortcut = KeyMap::hint("duplicate");
     menu.add(selected.size() == 1 ? QStringLiteral("Delete Track") : QStringLiteral("Delete Tracks"),
              [editor, selected] { editor->deleteTracks(selected); });
     menu.addSeparator();
     menu.add(QStringLiteral("Group Tracks"), [editor, s, selected] {
             const QString group = editor->groupTracks(selected);
             if (!group.isEmpty()) s->selection()->selectTrack(group, true);
-        }).shortcut = QStringLiteral("Ctrl+G");
+        }).shortcut = KeyMap::hint("groupTracks");
     QStringList groups;
     for (const QString& sel : selected) {
         const app::Track* other = p->findTrack(sel);
@@ -884,7 +885,7 @@ MenuEntries TrackHeaderItem::contextMenu() {
     }
     if (!groups.isEmpty())
         menu.add(QStringLiteral("Ungroup Tracks"), [editor, groups] { editor->ungroup(groups); }).shortcut =
-            QStringLiteral("Ctrl+Shift+G");
+            KeyMap::hint("ungroupTracks");
     const QStringList folding = draggedTracks();
     QString what;
     if (folding.size() > 1) {
