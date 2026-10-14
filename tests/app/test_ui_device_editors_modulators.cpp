@@ -125,9 +125,10 @@ private Q_SLOTS:
         QCOMPARE(mappings->count(), 1);
         auto* unfold = find<QQuickItem>(view, QStringLiteral("targetsButton"));
         QVERIFY(unfold);
-        QCOMPARE(unfold->property("text").toString(), QStringLiteral("‹"));
+        QCOMPARE(unfold->property("text").toString(), QStringLiteral("›"));  // (the list unfolds to the right)
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(unfold));
         QTRY_VERIFY(targets->isVisible());
+        QCOMPARE(unfold->property("text").toString(), QStringLiteral("‹"));
         QVERIFY(view->implicitWidth() > narrow);
         fitted();
         QCOMPARE(mappings->rows().front().toMap().value("param").toString(), QStringLiteral("Gain"));
