@@ -127,6 +127,8 @@ Claude Code can read and edit your song while you watch.
   settings, Live's EQ Eight, Compressor, Delay, Utility and Simpler, Drum Racks (one track
   per pad), and automation.
 - WAV and MP3 export of the arrangement, the loop or a time selection.
+- **Updates** from inside the program: Stable, Nightly or Canary builds, checked for daily
+  and installed on closing if you like ([releasing](docs/releasing.md)).
 
 See the [user guide](docs/guide/README.md) for how each of these behaves, the
 [keyboard shortcuts](docs/guide/shortcuts.md), and

@@ -35,6 +35,7 @@
 #include "session/RenderProgress.h"
 #include "session/Selection.h"
 #include "theme/Theme.h"
+#include "update/Updater.h"
 
 namespace test = sub::app::test;
 
@@ -123,6 +124,13 @@ private Q_SLOTS:
         qputenv("SUBSTATION_VST3_PATH", vst3().toUtf8());  // the standard folder, here
         QDir().mkpath(dir_->path(QStringLiteral("place")));
         QSettings().setValue(QStringLiteral("browser/places"), QStringList{dir_->path(QStringLiteral("place"))});
+        // The updates' feed: a release newer than any build.
+        QFile releases(dir_->path(QStringLiteral("releases.json")));
+        QVERIFY(releases.open(QIODevice::WriteOnly));
+        releases.write("[{\"tag_name\": \"v99.0.0\", \"name\": \"SUBstation 99.0.0\", \"draft\": false, "
+                       "\"html_url\": \"https://example.invalid/releases/v99.0.0\", \"assets\": []}]");
+        releases.close();
+        qputenv("SUBSTATION_UPDATE_FEED", QUrl::fromLocalFile(releases.fileName()).toString().toUtf8());
         sub::ui::setUpApplication();
         ui_ = std::make_unique<test::UiSession>();
         connect(&ui_->qml(), &QQmlEngine::warnings, this, [this](const QList<QQmlError>& list) { warnings_ += list; });
@@ -324,6 +332,52 @@ private Q_SLOTS:
         QTest::mouseClick(window_, Qt::LeftButton, {}, enabled->mapToScene(QPointF(10, enabled->height() / 2)).toPoint());
         QTRY_VERIFY(!mcp.running());
         QVERIFY(!mcp.enabled());
+        close(QStringLiteral("preferencesDialog"));
+    }
+
+    // Preferences › Updates: the channel's radio buttons, the two check boxes
+    // (kept), what they add up to, Check Now finding a release and its page.
+    void updatesPage() {
+        sub::app::Updater& updates = *session().updates();
+        updates.setChannel(QStringLiteral("stable"));
+        updates.setAutoCheck(true);
+        open(QStringLiteral("preferencesDialog"));
+        object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 6);
+        QQuickItem* nightly = nullptr;
+        QTRY_VERIFY((nightly = shown(QStringLiteral("updateChannel_nightly"))) != nullptr);
+        QVERIFY(shown(QStringLiteral("updateChannel_stable"))->property("checked").toBool());
+        QVERIFY(!nightly->property("checked").toBool());
+        QCOMPARE(shown(QStringLiteral("updatesSummaryTitle"))->property("text").toString(),
+                 QStringLiteral("ⓘ  Selected: Stable"));
+
+        QTest::mouseClick(window_, Qt::LeftButton, {}, nightly->mapToScene(QPointF(7, nightly->height() / 2)).toPoint());
+        QTRY_COMPARE(updates.channel(), QStringLiteral("nightly"));
+        QVERIFY(!shown(QStringLiteral("updateChannel_stable"))->property("checked").toBool());
+        QCOMPARE(QSettings().value(sub::app::Updater::kChannelKey).toString(), QStringLiteral("nightly"));
+        QCOMPARE(shown(QStringLiteral("updatesSummaryTitle"))->property("text").toString(),
+                 QStringLiteral("ⓘ  Selected: Nightly"));
+        QCOMPARE(shown(QStringLiteral("updatesSummary"))->property("text").toString(), updates.summary());
+
+        QQuickItem* autoCheck = shown(QStringLiteral("updatesAutoCheck"));
+        QVERIFY(autoCheck->property("checked").toBool());
+        QTest::mouseClick(window_, Qt::LeftButton, {}, autoCheck->mapToScene(QPointF(7, autoCheck->height() / 2)).toPoint());
+        QTRY_VERIFY(!updates.autoCheck());
+        QVERIFY(!QSettings().value(sub::app::Updater::kAutoCheckKey).toBool());
+        // (Installed by hand here, but on Windows.)
+        QCOMPARE(shown(QStringLiteral("updatesAutoInstall"))->property("enabled").toBool(), updates.canInstall());
+
+        QVERIFY(!shown(QStringLiteral("updatesReleasePage")));
+        QQuickItem* check = shown(QStringLiteral("updatesCheckNow"));
+        QTest::mouseClick(window_, Qt::LeftButton, {}, check->mapToScene(QPointF(check->width() / 2, check->height() / 2)).toPoint());
+        QTRY_COMPARE(updates.state(), QStringLiteral("available"));
+        QCOMPARE(updates.availableVersion(), QStringLiteral("99.0.0"));
+        QCOMPARE(shown(QStringLiteral("updatesStatus"))->property("text").toString(), updates.status());
+        QTRY_VERIFY(shown(QStringLiteral("updatesReleasePage")) != nullptr);
+        QVERIFY(shown(QStringLiteral("updatesVersion"))->property("text").toString().contains(updates.currentVersion()));
+        test::screenshot(window_, QStringLiteral("preferences-updates"));
+
+        updates.setChannel(QStringLiteral("stable"));
+        updates.setAutoCheck(true);
         close(QStringLiteral("preferencesDialog"));
     }
 

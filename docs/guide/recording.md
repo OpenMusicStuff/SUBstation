@@ -58,7 +58,7 @@ its take replaces them. With monitoring *Off* it is silent until recording stops
 
 - **Record** (the button next to Stop, or **F9**) records every armed track that has an
   input:
-  - from the insert marker, after the **count-in** chosen next to it (none, 1, 2 or 4
+  - from the insert marker, after the **count-in** chosen in the metronome's drop-down ▾ (none, 1, 2 or 4
     bars: the metronome counts in even if it is off) if stopped;
   - or from the playhead while playing (punch in).
 - Record again to stop recording and keep playing; Stop or Space stop both.

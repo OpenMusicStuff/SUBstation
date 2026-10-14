@@ -83,12 +83,7 @@ public:
     int tailSamples() const override { return latencySamples(); }
 
     // The lookahead changed: the engine must realign the tracks.
-    bool idle() override {
-        const int latency = latencySamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     void prepare(double sampleRate, int) override {
         sampleRate_ = sampleRate;
@@ -112,7 +107,7 @@ public:
         scMix_.reset(sampleRate, kKeySeconds);
         eqMix_.reset(sampleRate, kSwitchSeconds);
         eqGlide_ = onePoleCoefficient(kEqGlideSeconds, sampleRate, gate::kEqChunk);
-        reportedLatency_ = latencySamples();
+        latencyReport_.reported(latencySamples());
         reset();
     }
 
@@ -154,8 +149,8 @@ protected:
         }
 
         const float thresholdDb = param(Threshold);
-        const float openLevel = std::pow(10.f, thresholdDb / 20.f);                                 // opens at or above
-        const float closeLevel = std::pow(10.f, gate::closeDb(thresholdDb, param(Return)) / 20.f);  // closes below
+        const float openLevel = dbToGain(thresholdDb);                                 // opens at or above
+        const float closeLevel = dbToGain(gate::closeDb(thresholdDb, param(Return)));  // closes below
         const double attackStep = 1.0 / std::max(1.0, param(Attack) * 0.001 * sampleRate_);
         const double releaseStep = 1.0 / std::max(1.0, param(Release) * 0.001 * sampleRate_);
         const int holdSamples = static_cast<int>(std::lround(param(Hold) * 0.001 * sampleRate_));
@@ -464,7 +459,7 @@ private:
     }
 
     double sampleRate_ = 48000.0;
-    int reportedLatency_ = 0;  // (main thread: idle())
+    dsp::LatencyReport latencyReport_;
     bool fresh_ = true;        // reset() since the last render(): snap, don't ramp
     int channels_ = kChannels;
 

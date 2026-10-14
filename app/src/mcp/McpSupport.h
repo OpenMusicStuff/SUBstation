@@ -15,6 +15,7 @@
 
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -89,7 +90,7 @@ public:
     // true or false for a switch), or `normalized` (0..1). Plain; none and why not.
     static std::pair<std::optional<double>, QString> wanted(const Param& param, const QJsonObject& item);
 
-    // Whether the user lets agents edit.
+    // Whether the user lets agents edit (addTool() checks it for every edit).
     bool editsAllowed() const;
     // Runs `edit` as one change in the agents' history (an EditError it throws:
     // nothing changed, the tool fails saying why); the result (`out`) says
@@ -100,5 +101,9 @@ public:
 protected:
     Session& session_;
 };
+
+// Adds a tool: an edit (a tool not read-only) fails, saying so, while the
+// user has edits off, so no edit handler checks for itself.
+void addTool(Protocol& protocol, const std::shared_ptr<const ToolContext>& context, Tool tool);
 
 }  // namespace sub::app::mcp

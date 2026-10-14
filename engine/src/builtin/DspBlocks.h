@@ -20,9 +20,6 @@
 
 namespace sub::dsp {
 
-inline constexpr double kPi = 3.14159265358979323846;
-inline constexpr double kTwoPi = 2.0 * kPi;
-
 // --- One-pole filters ----------------------------------------------------------------------
 
 // A one-pole low-pass (a smoother) and the high-pass it leaves. `coeff` is what

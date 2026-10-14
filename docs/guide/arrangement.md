@@ -19,11 +19,18 @@ folding, the master, the title bar and the transport bar, and projects.
 
 ### The ruler
 
-- Its top strip holds the **loop brace**: drag its body to move it, its edges to resize
-  it, or drag in an empty part of the strip to draw a new loop. Double-click it to turn
-  the loop on or off (or **Ctrl+L**, or the loop button).
-- Its lower part works like Ableton's scrub area: click to set the playhead, drag
-  vertically to zoom and horizontally to scroll.
+- It is laid out as Ableton's: the bar numbers on top, then a band with the grid's lines
+  holding the **loop brace** (while the loop is on, its edges carry on down through the
+  tracks) and, at its
+  foot, the start marker.
+- Drag the brace's body to move it, its edges to resize it, or drag in an empty part of
+  its strip to draw a new loop. Double-click it to turn the loop on or off (or
+  **Ctrl+L**, or the loop button).
+- Above and below the brace, the ruler works like Ableton's scrub area: click to set the
+  playhead, drag vertically to zoom and horizontally to scroll.
+- The corner above the track headers holds **Automation** (as **A**: every track's
+  automation shown, or none; lit while it all shows) and **Lock Envelopes**, with the
+  grid's size under them (click it to toggle snapping).
 
 ## Clips
 
@@ -292,9 +299,13 @@ in its right-click menu).
   it is back as it was.
 - With several tracks or groups selected, folding one of them folds (or unfolds) them
   all.
-- **Alt+wheel** over a track or group (its header or its lane) resizes it: wheel down
-  shrinks it and, once it is as small as it gets, folds it; wheel up unfolds a folded
-  one, then makes it taller. One turn of the wheel acts on the track it started on.
+- **Alt+wheel** on a track's or group's title bar (its name row, in its header or its
+  lane) folds it (wheel down) or unfolds it back to the height it had (wheel up). Keep
+  turning while moving the mouse down the tracks and each one under the mouse folds or
+  unfolds in turn, so a sweep opens (or closes) many at once.
+- **Alt+wheel** below the title bar (an unfolded track's lane or its automation lanes)
+  makes that track taller (up) or shorter (down). One turn of the wheel stays with the
+  track it started on.
 - Folding is saved with the project, not an undo step.
 
 ## Return tracks and the master
@@ -303,7 +314,10 @@ Return tracks show apart, in compact rows above the master; see
 [mixing.md](mixing.md).
 
 The **master track** has volume, pan and audio effects: click its header to show its
-chain in the device view. Its automation shows in its own lane, like a track's.
+chain in the device view. Its automation shows in its own lane, like a track's. It also
+folds and resizes like a track: its fold button (or its menu's *Fold Track*) shrinks it
+to a thin row and hides its automation, its bottom edge drags to resize it, and
+**Alt+wheel** over it folds or resizes it as over a track. Both are saved with the project.
 
 ## The title bar
 
@@ -320,11 +334,11 @@ The bar under the title bar holds, from left to right:
 
 - **Tempo** (drag it, Shift for fine steps, double-click to type) and the **time
   signature**;
-- the **metronome**, the **project key** (see [audio-clips.md](audio-clips.md)) and the
-  **computer MIDI keyboard** button ⌨ (see [midi.md](midi.md));
-- the position (bars, beats, sixteenths), **Play**, **Stop**, **Record** and the
-  **count-in** (see [recording.md](recording.md)), **Re-Enable Automation** and **Lock
-  Envelopes** (see [automation.md](automation.md));
+- the **metronome** with its **count-in** drop-down ▾ on its right, as in Live (see
+  [recording.md](recording.md)), the **project key** (see [audio-clips.md](audio-clips.md))
+  and the **computer MIDI keyboard** button ⌨ (see [midi.md](midi.md));
+- the position (bars, beats, sixteenths), **Play**, **Stop**, **Record** and **Re-Enable
+  Automation** (see [automation.md](automation.md));
 - an **oscilloscope** of the master output as it plays (as in FL Studio). It starts each
   picture at a rising zero crossing, so steady tones stand still;
 - **loop**, **follow** (the view follows the playhead), the **CPU meter**, and the audio

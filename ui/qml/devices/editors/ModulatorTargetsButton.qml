@@ -40,7 +40,7 @@ Column {
             topPadding: 0
             bottomPadding: 0
             font.pointSize: 13
-            text: cell.shown ? "›" : "‹"
+            text: cell.shown ? "‹" : "›"
             tooltip: cell.shown ? qsTr("Hide what it moves") : qsTr("Show what it moves")
             onClicked: DeviceViews.setValue(cell.deviceId, "targets", !cell.shown)
         }

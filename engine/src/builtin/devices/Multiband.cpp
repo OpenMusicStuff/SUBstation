@@ -297,7 +297,7 @@ private:
 
     float smoothing(double ms) const noexcept {
         const double seconds = ms * 0.001;
-        return seconds < 1e-6 ? 0.f : static_cast<float>(std::exp(-1.0 / (seconds * sampleRate_)));
+        return seconds < 1e-6 ? 0.f : static_cast<float>(onePoleCoefficient(seconds, sampleRate_));
     }
 
     // A crossover's g = tan(pi f / sr) for log2(f), f kept to 1 Hz .. 0.49 of the rate.
@@ -340,7 +340,7 @@ private:
             BandState& band = bands_[static_cast<size_t>(b)];
             const double seconds = mb::windowSeconds(b, low, high, lowMerged);
             band.window = std::max(1, static_cast<int>(std::lround(seconds * sampleRate_)));
-            band.rms = static_cast<float>(std::exp(-1.0 / (std::max(seconds, mb::kMinRmsSeconds) * sampleRate_)));
+            band.rms = static_cast<float>(onePoleCoefficient(std::max(seconds, mb::kMinRmsSeconds), sampleRate_));
         }
     }
 

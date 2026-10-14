@@ -6,6 +6,7 @@
 #include "model/Project.h"
 #include "model/Timebase.h"
 #include "pianoroll/PianoRoll.h"
+#include "theme/Theme.h"
 
 #include <QJSValue>
 
@@ -78,7 +79,10 @@ double round2(double value) { return app::formatFixed(value, 2).toDouble(); }
 
 }  // namespace
 
-ClipViewController::ClipViewController(QObject* parent) : QObject(parent) { refresh(); }
+ClipViewController::ClipViewController(QObject* parent) : QObject(parent) {
+    refresh();
+    connect(Theme::instance(), &Theme::changed, this, &ClipViewController::refresh);  // (the clips' colours)
+}
 
 ClipViewController::~ClipViewController() = default;
 
@@ -290,7 +294,7 @@ void ClipViewController::refresh() {
     } else {
         const app::Project* p = project();
         const app::Clip& lead = *clips.front();
-        color_ = QColor(p->track(items.front().trackId).color);
+        color_ = Theme::trackColor(p->track(items.front().trackId).color);
         if (midi_ && clips.size() > 1) {
             QStringList tracks;
             size_t count = 0;
@@ -338,7 +342,7 @@ void ClipViewController::refresh() {
                                [](const app::Clip* c) { return c->isWarped() && c->warpMode == kRePitch; });
         if (!midi_) {
             for (const Shown& shown : items)
-                audioClips_.emplace_back(*shown.clip, QColor(p->track(shown.trackId).color));
+                audioClips_.emplace_back(*shown.clip, Theme::trackColor(p->track(shown.trackId).color));
         }
     }
     knobs_.clear();

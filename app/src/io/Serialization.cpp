@@ -371,7 +371,9 @@ QJsonObject masterToJson(const Track& master) {
             {QStringLiteral("pan"), master.pan},
             {QStringLiteral("devices"), devicesToJson(master.devices)},
             {QStringLiteral("automation"), automationToJson(master.automation)},
-            {QStringLiteral("automation_view"), viewToJson(master.automationView)}};
+            {QStringLiteral("automation_view"), viewToJson(master.automationView)},
+            {QStringLiteral("height"), master.height},
+            {QStringLiteral("folded"), master.folded}};
 }
 
 // Where a track's output goes, unless into its group (the default: none).
@@ -695,6 +697,9 @@ Track masterFromJson(const QJsonObject& data) {
     master.devices = devicesFromJson(data);  // none before version 5
     master.automation = automationFromJson(data.value(QStringLiteral("automation")));
     master.automationView = viewFromJson(data.value(QStringLiteral("automation_view")));
+    if (data.contains(QStringLiteral("height")))
+        master.height = std::clamp(toSmallInt(data.value(QStringLiteral("height"))), kMinTrackHeight, kMaxTrackHeight);
+    master.folded = truthy(data.value(QStringLiteral("folded")));
     return master;
 }
 
@@ -779,11 +784,13 @@ QJsonObject deviceToJson(const Device& device) {
     if (!device.modulations.empty()) {
         QJsonArray modulations;
         for (const ModulationMapping& m : device.modulations) {
-            modulations.append(QJsonObject{{QStringLiteral("device"), m.deviceId},
-                                           {QStringLiteral("param"), m.paramId},
-                                           {QStringLiteral("low"), m.low},
-                                           {QStringLiteral("high"), m.high},
-                                           {QStringLiteral("invert"), m.invert}});
+            QJsonObject mapping{{QStringLiteral("device"), m.deviceId},
+                                {QStringLiteral("param"), m.paramId},
+                                {QStringLiteral("low"), m.low},
+                                {QStringLiteral("high"), m.high},
+                                {QStringLiteral("invert"), m.invert}};
+            if (m.bipolar) mapping[QStringLiteral("bipolar")] = true;
+            modulations.append(mapping);
         }
         data[QStringLiteral("modulations")] = modulations;
     }
@@ -842,9 +849,14 @@ Device deviceFromJson(const QJsonValue& value) {
         ModulationMapping modulation;
         modulation.deviceId = toStr(need(mapping, QStringLiteral("device")));
         modulation.paramId = toStr(need(mapping, QStringLiteral("param")));
-        modulation.low = clamped(floatOr(mapping, QStringLiteral("low"), 0.0), 0.0, 1.0);
-        modulation.high = clamped(floatOr(mapping, QStringLiteral("high"), 1.0), 0.0, 1.0);
+        // (Set from a knob's handle, a range's ends may reach past the parameter's: -1..2.)
+        const double low = floatOr(mapping, QStringLiteral("low"), 0.0);
+        const double high = floatOr(mapping, QStringLiteral("high"), 1.0);
+        if (!std::isfinite(low) || !std::isfinite(high)) damaged(QStringLiteral("a modulation's range isn't finite"));
+        modulation.low = clamped(low, -1.0, 2.0);
+        modulation.high = clamped(high, -1.0, 2.0);
         modulation.invert = truthy(mapping.value(QStringLiteral("invert")));
+        modulation.bipolar = truthy(mapping.value(QStringLiteral("bipolar")));
         device.modulations.push_back(std::move(modulation));
     }
     if (device.isRack()) {

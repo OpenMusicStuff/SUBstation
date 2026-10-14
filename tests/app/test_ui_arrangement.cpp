@@ -258,12 +258,26 @@ private Q_SLOTS:
         QCOMPARE(arrangement()->view().snapBeat(1.3), 1.3);
         h_->view()->setProperty("snap", true);
         QCOMPARE(arrangement()->view().snapBeat(1.3), 1.0);
+        // Its Automation and Lock Envelopes, as Ableton's corner: lit as the project has them.
+        QQuickItem* automation = h_->find<QQuickItem*>(QStringLiteral("automationMode"));
+        QQuickItem* lock = h_->find<QQuickItem*>(QStringLiteral("lockEnvelopes"));
+        QVERIFY(automation && lock);
+        test::click(window(), test::centerOf(lock));
+        QVERIFY(project().automationLocked() && lock->property("checked").toBool());
+        QVERIFY(h_->view()->property("snap").toBool());  // (the buttons take their clicks)
+        editor().setAutomationLocked(false);
+        QVERIFY(!lock->property("checked").toBool());
+        QVERIFY(!automation->property("checked").toBool());
+        test::click(window(), test::centerOf(automation));
+        QVERIFY(arrangement()->automationMode() && automation->property("checked").toBool());
+        test::click(window(), test::centerOf(automation));
+        QVERIFY(!arrangement()->automationMode() && !automation->property("checked").toBool());
     }
 
     void rulerLoopBraceAndScrubZoom() {
         sub::ui::ArrangementRuler* ruler = h_->ruler();
         const auto at = [&](double beat, double y) { return test::at(ruler, QPointF(h_->x(beat), y)); };
-        const double y = 6;  // the loop strip
+        const double y = sub::ui::ArrangementRuler::kLoopTop + sub::ui::ArrangementRuler::kLoopStrip / 2.0;  // the loop strip
         QCOMPARE(project().loopStart(), 0.0);  // the default brace
         QCOMPARE(project().loopEnd(), 16.0);
         // Dragging outside the brace draws a new loop and enables it.
@@ -394,7 +408,7 @@ private Q_SLOTS:
         arrangement()->setClock([&clock] { return clock * 1.0; });  // (each wheel a turn of its own)
         const auto& rows = arrangement()->layout().rows();
         clock += 1;
-        test::wheel(window(), h_->at(QPointF(200, rows[1].top - arrangement()->scrollY() + 10)), 2, Qt::AltModifier);
+        test::wheel(window(), h_->at(QPointF(200, rows[1].top - arrangement()->scrollY() + 40)), 2, Qt::AltModifier);
         QCOMPARE(project().track(track).height, before + 24);
         QCOMPARE(arrangement()->layout().rows()[2].top, arrangement()->layout().rows()[1].top + before + 24);
         h_->settle();
@@ -405,21 +419,60 @@ private Q_SLOTS:
         QCOMPARE(project().track(track).height, before + 12);
         QCOMPARE(project().track(track).pan, 0.0);
         clock += 1;
-        test::wheel(window(), test::at(header, QPointF(20, 5)), -100, Qt::AltModifier);
+        test::wheel(window(), test::at(header, QPointF(20, 30)), -100, Qt::AltModifier);
         QCOMPARE(project().track(track).height, sub::app::kMinTrackHeight);
-        QVERIFY(!project().track(track).folded);  // (it got there in this turn)
+        QVERIFY(!project().track(track).folded);  // (below its title bar it only resizes)
         arrangement()->setClock({});
         arrangement()->setClock([] { return 0.0; });
     }
 
-    void altWheelFoldsATrackAtItsSmallestAndUnfoldsIt() {
+    // The master folds and resizes as a track does: its fold button (a thin row, its
+    // automation hidden), its bottom edge, Alt+wheel over its lane.
+    void theMasterFoldsAndResizesAsATrack() {
+        sub::ui::TrackHeaderItem* header = h_->masterHeader();
+        QVERIFY(header);
+        const double open = h_->masterLane()->height();
+        QCOMPARE(open, double(arr::kMasterHeight));
+        editor().showAutomation(sub::app::kMaster);
+        h_->settle();
+        QVERIFY(h_->masterLane()->height() > open);
+        test::click(window(), test::at(header, header->foldRect().center()));
+        h_->settle();
+        QVERIFY(project().master().folded);
+        QCOMPARE(h_->masterLane()->height(), double(arr::kFoldedHeight));
+        QVERIFY(h_->masterLane()->envelopeAreas().empty());  // (its automation hidden while folded)
+        test::click(window(), test::at(header, header->foldRect().center()));
+        h_->settle();
+        QVERIFY(!project().master().folded);
+        editor().hideAutomation(sub::app::kMaster);
+        h_->settle();
+        QCOMPARE(h_->masterLane()->height(), open);
+        // Alt+wheel below its title bar makes it taller; on its title bar, folds it.
+        int clock = 0;
+        arrangement()->setClock([&clock] { return clock * 1.0; });
+        clock += 1;
+        test::wheel(window(), test::at(h_->masterLane(), QPointF(200, 30)), 2, Qt::AltModifier);
+        h_->settle();
+        QCOMPARE(project().master().height, sub::app::kMinTrackHeight + 24);
+        QCOMPARE(h_->masterLane()->height(), double(sub::app::kMinTrackHeight + 24));
+        clock += 1;
+        test::wheel(window(), test::at(h_->masterLane(), QPointF(200, 5)), -1, Qt::AltModifier);
+        h_->settle();
+        QVERIFY(project().master().folded);
+        editor().setFolded(sub::app::kMaster, false);
+        editor().setTrackHeight(sub::app::kMaster, sub::app::kMinTrackHeight);
+        arrangement()->setClock([] { return 0.0; });
+        h_->settle();
+    }
+
+    void altWheelOnTitleBarsFoldsAndUnfoldsTracks() {
         threeTracks();
         double clock = 100.0;
         arrangement()->setClock([&clock] { return clock; });
         const QString second = trackId(1), third = trackId(2);
-        const auto overLane = [&](const QString& id) {
+        const auto over = [&](const QString& id, double y) {
             const auto& r = h_->rowOf(id);
-            return h_->at(QPointF(200, r.top - arrangement()->scrollY() + 5));
+            return h_->at(QPointF(200, r.top - arrangement()->scrollY() + y));
         };
         const auto turn = [&](QPoint pos, int notches) {
             clock += 0.1;  // one turn of the wheel, a notch at a time
@@ -427,26 +480,30 @@ private Q_SLOTS:
             h_->settle();
         };
         const int height = project().track(second).height;
-        const int notches = (height - sub::app::kMinTrackHeight + 11) / 12;
-        for (int i = 0; i < notches; ++i) {  // down: it shrinks...
-            QVERIFY(!project().track(second).folded);
-            turn(overLane(second), -1);
-        }
+        // Below its title bar: it shrinks, down to its smallest, and never folds.
+        const int notches = (height - sub::app::kMinTrackHeight + 11) / 12 + 2;
+        for (int i = 0; i < notches; ++i) turn(over(second, 30), -1);
         QCOMPARE(project().track(second).height, sub::app::kMinTrackHeight);
         QVERIFY(!project().track(second).folded);
-        turn(overLane(second), -1);  // ...and at its smallest, folds
-        QVERIFY(project().track(second).folded);
-        // The same turn goes on with that track, though the next is under the mouse now.
-        turn(overLane(third), -1);
+        // On its title bar: a notch down folds it; the same turn swept down folds the next too.
+        clock += 1.0;
+        turn(over(second, 5), -1);
         QVERIFY(project().track(second).folded);
         QVERIFY(!project().track(third).folded);
-        QCOMPARE(project().track(third).height, height);
-        clock += 1.0;  // a turn of its own, over a control of its header
+        turn(over(third, 5), -1);
+        QVERIFY(project().track(third).folded);
+        // Up, over a control of its header: unfolded as it was; swept on, the next one too.
+        clock += 1.0;
         sub::ui::TrackHeaderItem* header = h_->header(second);
-        turn(test::at(header, QPointF(header->width() - 30, 8)), 1);  // up: unfolds it...
+        turn(test::at(header, QPointF(header->width() - 30, 8)), 1);
         QVERIFY(!project().track(second).folded);
         QCOMPARE(project().track(second).height, sub::app::kMinTrackHeight);
-        turn(test::at(header, QPointF(20, 5)), 1);  // ...then makes it taller
+        turn(over(third, 5), 1);
+        QVERIFY(!project().track(third).folded);
+        QCOMPARE(project().track(third).height, height);
+        // A turn starting below the title bar makes it taller (and stays with it).
+        clock += 1.0;
+        turn(over(second, 30), 1);
         QCOMPARE(project().track(second).height, sub::app::kMinTrackHeight + 12);
         arrangement()->setClock([] { return 0.0; });
     }

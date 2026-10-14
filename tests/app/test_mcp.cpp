@@ -742,11 +742,25 @@ private Q_SLOTS:
         QCOMPARE(f.project().track(lead).volumeDb, 0.0);
         QCOMPARE(history.appliedCount(), 0);
 
-        // Edits turned off: the agent only reads.
+        // Edits turned off: the agent only reads, every edit refused (the new ones too)...
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"),
+                              {{QStringLiteral("change_ids"), QJsonArray{first}}, {QStringLiteral("restore"), true}}));
+        QCOMPARE(out.value(QStringLiteral("restored")).toArray().size(), 1);
         f.s().mcp()->setEditsAllowed(false);
         QVERIFY(call(protocol, QStringLiteral("set_track"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("pan"), 1}})
                     .value(QStringLiteral("isError")).toBool());
         QCOMPARE(f.project().track(lead).pan, 0.0);
+        const QJsonObject refused = call(protocol, QStringLiteral("add_track"), {{QStringLiteral("kind"), QStringLiteral("audio")}});
+        QVERIFY(refused.value(QStringLiteral("isError")).toBool());
+        QVERIFY(refused.value(QStringLiteral("content")).toArray()[0].toObject().value(QStringLiteral("text")).toString()
+                    .contains(QStringLiteral("turned edits off")));
+        QCOMPARE(f.project().tracks().size(), size_t{1});
+        // ...but it can still take its changes back, not put them back.
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}}));
+        QCOMPARE(out.value(QStringLiteral("rewound")).toArray().size(), 1);
+        QVERIFY(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("change_ids"), QJsonArray{first}}, {QStringLiteral("restore"), true}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(!history.find(first)->applied);
         f.s().mcp()->setEditsAllowed(true);
         QSettings().remove(McpServer::kEditsKey);
 

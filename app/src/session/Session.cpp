@@ -37,6 +37,7 @@
 #include "session/Renders.h"
 #include "session/Selection.h"
 #include "session/SessionSupport.h"
+#include "update/Updater.h"
 
 namespace sub::app {
 
@@ -84,6 +85,10 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     files_ = new FileManager(project_, editor_, selection_, bridge_, browser_, hotSwap_, this);
     audioPreferences_ = new AudioPreferences(bridge_, this);
     midiPreferences_ = new MidiPreferences(bridge_, this);
+    updates_ = new Updater(this);
+    connect(updates_, &Updater::updateAvailable, this, [this](const QString& version) {
+        Q_EMIT statusMessage(QStringLiteral("SUBstation %1 is available: Options › Preferences › Updates.").arg(version));
+    });
     mcp_ = new McpServer(*this, this);  // (last: its tools read the parts above)
     finishFreeze_ = [this](FreezeRender& render) { return bridge_->finishFreeze(render); };
     wire();
@@ -163,12 +168,17 @@ void Session::wire() {
     }
     connect(project_, &Project::clipsChanged, this, [this](const QString&) { pruneSelection(); });
     connect(project_, &Project::automationChanged, this, [this](const QString&, const QString&) { pruneSelection(); });
-    // A parameter changed by hand: its automation shows (as the lane's parameter).
+    // A parameter changed (or pressed) by hand: the lane's parameter, where its
+    // owner's automation shows. Hidden, it stays hidden: the parameter is only
+    // remembered, for when it shows (A, Show Automation).
     connect(editor_, &ProjectEditor::parameterTouched, this, [this](const QString& owner, const QString& key) {
         if (!project_->hasOwner(owner)) return;
         const AutomationView& view = project_->automationView(owner);
-        if (view.shown && view.key == key) return;
-        if (bridge_->canAutomate(owner, key)) editor_->showAutomation(owner, key);
+        if (view.key == key || !bridge_->canAutomate(owner, key)) return;
+        if (view.shown)
+            editor_->showAutomation(owner, key);
+        else
+            editor_->chooseAutomation(owner, key);
     });
 
     // A plug-in the user added shows its editor: after the add is done (the

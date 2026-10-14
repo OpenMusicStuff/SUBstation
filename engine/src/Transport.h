@@ -48,6 +48,11 @@ struct SharedState {
     std::atomic<bool> countingIn{false};  // playing, but the count-in comes first
     std::atomic<int64_t> positionSamples{0};
     std::atomic<double> positionBeats{0.0};
+    // Locate commands taken off `commands` (the consumer's count), and how many of
+    // them positionBeats reflects (stored after it at each publish): until it catches
+    // up with the locates pushed, positionBeats may still be where the audio thread was.
+    std::atomic<uint64_t> locatesDrained{0};
+    std::atomic<uint64_t> locatesPublished{0};
     std::atomic<bool> previewActive{false};
     std::atomic<float> cpuLoad{0.f};
     AudioClock clock;  // the device's sample clock against the host clock (MIDI input timing)

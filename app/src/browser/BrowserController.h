@@ -110,6 +110,8 @@ class BrowserController : public QObject {
     Q_PROPERTY(int fileCount READ fileCount NOTIFY indexChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)  // the footer
     Q_PROPERTY(bool previewEnabled READ previewEnabled WRITE setPreviewEnabled NOTIFY previewEnabledChanged)
+    // Audio files' rows show their tags (what the sound tagger hears); a file's menu hides them. Kept in the settings.
+    Q_PROPERTY(bool tagsShown READ tagsShown WRITE setTagsShown NOTIFY tagsShownChanged)
     Q_PROPERTY(bool previewing READ previewing NOTIFY previewingChanged)  // started and not stopped since
     Q_PROPERTY(QString pluginsToolTip READ pluginsToolTip NOTIFY pluginsToolTipChanged)
     // The list's current row (the UI binds its view's current index to it).
@@ -164,6 +166,8 @@ public:
     QString statusText() const { return statusText_; }
     bool previewEnabled() const { return previewEnabled_; }
     void setPreviewEnabled(bool enabled);
+    bool tagsShown() const { return tagsShown_; }
+    void setTagsShown(bool shown);
     bool previewing() const { return previewing_; }
     QString pluginsToolTip() const { return pluginsToolTip_; }
     int currentRow() const { return currentRow_; }
@@ -281,6 +285,7 @@ Q_SIGNALS:
     void indexChanged();
     void statusTextChanged();
     void previewEnabledChanged();
+    void tagsShownChanged();
     void previewingChanged();
     void pluginsToolTipChanged();
     void currentRowChanged();
@@ -357,6 +362,7 @@ private:
     int currentRow_ = -1;
     int topRow_ = 0;
     bool previewEnabled_ = true;
+    bool tagsShown_ = true;
     bool previewing_ = false;
     QString statusText_;
     QString scanText_;  // the plug-in scan's progress

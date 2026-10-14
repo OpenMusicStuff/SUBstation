@@ -50,7 +50,7 @@ Item {
             return
         }
         for (let i = 0; i < now.length; ++i) {
-            for (const role of ["device", "param", "low", "high", "invert", "lowText", "highText"]) {
+            for (const role of ["device", "param", "low", "high", "setLow", "setHigh", "invert", "lowText", "highText"]) {
                 if (rows.get(i)[role] !== now[i][role])
                     rows.setProperty(i, role, now[i][role])
             }
@@ -109,6 +109,8 @@ Item {
             required property string param
             required property real low
             required property real high
+            required property real setLow   // (the ends as set: past 0..1, a knob's handle's amount held)
+            required property real setHigh
             required property bool invert
 
             width: ListView.view.width
@@ -216,7 +218,9 @@ Item {
                         if (targets.output < 0)
                             return -1
                         const v = row.invert ? 1 - targets.output : targets.output
-                        return range.low + v * (range.high - range.low)
+                        if (range.dragging !== "")
+                            return range.low + v * (range.high - range.low)
+                        return Math.max(0, Math.min(1, row.setLow + v * (row.setHigh - row.setLow)))
                     }
                     visible: now >= 0
                     anchors.verticalCenter: parent.verticalCenter

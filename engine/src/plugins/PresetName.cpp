@@ -121,17 +121,26 @@ std::string presetNameFromPreset(const uint8_t* data, size_t size) {
 }
 
 bool isPlaceholderPresetName(const std::string& name) {
+    // Only slot words and numbers ("Prog 12", Kontakt's "MIDI channel 0 program 0"), one of them a program's.
     const std::string s = trimmed(name);
     if (s.empty()) return true;
-    size_t i = 0;
-    while (i < s.size() && std::isalpha(static_cast<unsigned char>(s[i]))) ++i;
-    std::string word;
-    for (size_t k = 0; k < i; ++k) word += lower(s[k]);
-    if (word != "prog" && word != "program" && word != "preset" && word != "patch" && word != "slot") return false;
-    while (i < s.size() && (s[i] == ' ' || s[i] == '_' || s[i] == '-' || s[i] == '#')) ++i;
-    if (i == s.size()) return true;  // just the word
-    return std::all_of(s.begin() + static_cast<std::ptrdiff_t>(i), s.end(),
-                       [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+    bool program = false;
+    for (size_t i = 0; i < s.size();) {
+        const auto c = static_cast<unsigned char>(s[i]);
+        if (c == ' ' || c == '_' || c == '-' || c == '#' || std::isdigit(c)) {
+            ++i;
+            continue;
+        }
+        if (!std::isalpha(c)) return false;
+        std::string word;
+        while (i < s.size() && std::isalpha(static_cast<unsigned char>(s[i]))) word += lower(s[i++]);
+        if (word == "prog" || word == "program" || word == "preset" || word == "patch" || word == "slot") {
+            program = true;
+        } else if (word != "midi" && word != "channel" && word != "ch" && word != "bank") {
+            return false;
+        }
+    }
+    return program;
 }
 
 }  // namespace sub::vst3

@@ -109,6 +109,16 @@ void HotSwap::commit(const QString& path) {
     stop();
 }
 
+void HotSwap::cancel() {
+    if (!active_) return;
+    // Its one step, if it is still the last: put back as it began, the step taken away (nothing to redo).
+    swapping_ = true;
+    editor_->revertReplaceFiles(mergeKey_);
+    swapping_ = false;
+    path_ = origin_;
+    stop();
+}
+
 void HotSwap::stop() {
     if (!active_) return;
     active_ = false;

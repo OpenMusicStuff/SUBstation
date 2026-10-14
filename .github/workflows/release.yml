@@ -1,0 +1,188 @@
+# Releases (docs/releasing.md): builds SUBstation for Windows and publishes it as a
+# GitHub release, which the updater in SUBstation offers (Preferences › Updates). Three
+# channels:
+#
+# - stable: a tag v<MAJOR.MINOR.PATCH> pushed (it must be CMakeLists.txt's VERSION): a
+#   release, the repository's latest;
+# - nightly: once a night, if master moved since the last nightly: a pre-release tagged
+#   v<VERSION>-nightly.<UTC yyyyMMddHHmm>; the newest 7 are kept;
+# - canary: each push to master: a pre-release tagged v<VERSION>-canary.<stamp>; the
+#   newest 10 are kept. A newer push cancels the build of an older one.
+#
+# By hand (workflow_dispatch), any channel from the branch chosen (stable: from its tag).
+# The download is SUBstation-<version>-windows-x64.zip and its .sha256
+# (tools/release/package-windows.ps1). Built without the tests (the CI and Windows
+# nightly workflows run them) and without Steinberg's ASIO SDK, which isn't
+# redistributable: WASAPI only, unless the ASIO_SDK_URL secret gives a zip of it.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    branches: [master]
+  schedule:
+    - cron: '30 7 * * *'  # 07:30 UTC (after the Windows nightly's tests)
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: The channel to release on
+        type: choice
+        options: [canary, nightly, stable]
+        default: canary
+
+# Creating releases and their tags; reading this workflow's past runs.
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+
+jobs:
+  # What to release: the channel, the version, the tag; whether there's anything new.
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      suffix: ${{ steps.plan.outputs.suffix }}
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          base=$(sed -nE 's/^project\(SUBstation VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          [ -n "$base" ] || { echo "No VERSION in CMakeLists.txt"; exit 1; }
+          if [ "$EVENT" = workflow_dispatch ]; then channel=$INPUT_CHANNEL
+          elif [ "$EVENT" = schedule ]; then channel=nightly
+          elif [ "$REF_TYPE" = tag ]; then channel=stable
+          else channel=canary; fi
+          release=true
+          stamp=$(date -u +%Y%m%d%H%M)
+          if [ "$channel" = stable ]; then
+            suffix=""
+            version=$base
+            tag="v$version"
+            if [ "$REF_TYPE" != tag ] || [ "$REF_NAME" != "$tag" ]; then
+              echo "A stable release is made from its tag ($tag, CMakeLists.txt's VERSION), not from $REF_NAME."; exit 1
+            fi
+          else
+            suffix="$channel.$stamp"
+            version="$base-$suffix"
+            tag="v$version"
+          fi
+          if [ "$channel" = nightly ] && [ "$EVENT" = schedule ]; then
+            # Nothing new since the last nightly: no release.
+            last=$(git tag --list "v*-nightly.*" | sort -t. -k4,4nr | head -n1)
+            if [ -n "$last" ] && [ "$(git rev-parse "$last^{commit}")" = "$(git rev-parse HEAD)" ]; then
+              echo "master is still at $last: nothing new"; release=false
+            fi
+          fi
+          echo "$channel $version ($tag), release: $release"
+          {
+            echo "channel=$channel"; echo "version=$version"; echo "suffix=$suffix"
+            echo "tag=$tag"; echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Build (Windows, MSVC)
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          cache: true
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
+        with:
+          key: release-windows-msvc
+          variant: sccache
+          max-size: 2G
+      - name: ASIO SDK (if the ASIO_SDK_URL secret gives one)
+        shell: pwsh
+        env:
+          ASIO_SDK_URL: ${{ secrets.ASIO_SDK_URL }}
+        run: |
+          if (-not $env:ASIO_SDK_URL) { Write-Output "No ASIO SDK: WASAPI only."; exit 0 }
+          Invoke-WebRequest -Uri $env:ASIO_SDK_URL -OutFile asiosdk.zip
+          Expand-Archive asiosdk.zip -DestinationPath asiosdk
+          $common = Get-ChildItem asiosdk -Recurse -Directory -Filter common | Select-Object -First 1
+          "SUBSTATION_ASIO_SDK=$($common.Parent.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Configure
+        run: >
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          -DSUBSTATION_BUILD_TESTS=OFF -DSUBSTATION_TEST_PLUGINS=OFF
+          -DSUBSTATION_RELEASE_CHANNEL=${{ needs.plan.outputs.channel }}
+          -DSUBSTATION_VERSION_SUFFIX=${{ needs.plan.outputs.suffix }}
+          -DSUBSTATION_UPDATE_REPOSITORY=${{ github.repository }}
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+      - name: Build
+        run: ninja -C build
+      - name: Package
+        shell: pwsh
+        run: tools/release/package-windows.ps1 -Build build -Version ${{ needs.plan.outputs.version }} -Out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [plan, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = stable ]; then
+            gh release create "$TAG" dist/* --repo "$REPO" --verify-tag --title "SUBstation $VERSION" \
+              --generate-notes --latest
+          else
+            label=$([ "$CHANNEL" = nightly ] && echo Nightly || echo Canary)
+            gh release create "$TAG" dist/* --repo "$REPO" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "SUBstation $VERSION ($label)" \
+              --notes "$label build of $GITHUB_SHA. Not tested as a stable release is: Preferences › Updates › Stable for those."
+          fi
+      - name: Prune old pre-releases
+        if: needs.plan.outputs.channel != 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          set -euo pipefail
+          keep=$([ "$CHANNEL" = nightly ] && echo 7 || echo 10)
+          gh release list --repo "$REPO" --limit 200 --json tagName --jq '.[].tagName' \
+            | grep -E -- "-$CHANNEL\.[0-9]+$" | sort -t. -k4,4nr | tail -n +$((keep + 1)) \
+            | while read -r tag; do
+                echo "Deleting $tag"; gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag
+              done

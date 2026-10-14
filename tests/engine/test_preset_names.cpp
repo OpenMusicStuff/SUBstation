@@ -131,11 +131,13 @@ TEST_CASE("preset names in a .vstpreset") {
 }
 
 TEST_CASE("placeholder program names") {
-    for (const char* name : {"", "  ", "Prog 12", "prog 3", "Program 7", "preset", "Patch_2", "slot #4", "PROG12"}) {
+    for (const char* name : {"", "  ", "Prog 12", "prog 3", "Program 7", "preset", "Patch_2", "slot #4", "PROG12",
+                             "MIDI channel 0 program 0", "MIDI Channel 15 Program 127", "Bank 2 Prog 5"}) {
         INFO(name);
         CHECK(isPlaceholderPresetName(name));
     }
-    for (const char* name : {"Init", "Grand Piano", "Program Change Lead", "Preset 1 Bass", "Prog Rock Lead"}) {
+    for (const char* name : {"Init", "Grand Piano", "Program Change Lead", "Preset 1 Bass", "Prog Rock Lead", "Bank 1",
+                             "MIDI Channel 3", "Koto"}) {
         INFO(name);
         CHECK(!isPlaceholderPresetName(name));
     }

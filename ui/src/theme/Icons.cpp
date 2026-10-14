@@ -85,6 +85,16 @@ const std::map<QString, Icon>& icons() {
                 for (const QPointF& point : {QPointF(8, 50), QPointF(24, 26), QPointF(38, 40), QPointF(56, 14)})
                     p.drawEllipse(point, 6, 6);
             }};
+        // Ableton's Automation Mode: a line between two breakpoints.
+        t[QStringLiteral("automation_mode")] = {
+            text, [](QPainter& p, const QColor& c, bool) {
+                p.setPen(pen(c, 5, Qt::RoundCap));
+                p.drawLine(QPointF(17, 47), QPointF(47, 17));
+                p.setBrush(c);
+                p.setPen(Qt::NoPen);
+                p.drawEllipse(QPointF(14, 50), 7, 7);
+                p.drawEllipse(QPointF(50, 14), 7, 7);
+            }};
         // A padlock: closed when on (automation stays put), open when off.
         t[QStringLiteral("lock_envelopes")] = {
             text, [](QPainter& p, const QColor& c, bool closed) {

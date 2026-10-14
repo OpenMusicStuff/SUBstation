@@ -116,7 +116,6 @@ public:
     };
 
     ToolResult editNotes(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
         if (!track) return ToolResult::failure(error);
@@ -354,7 +353,6 @@ public:
     }
 
     ToolResult writeAutomation(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
         if (!track) return ToolResult::failure(error);
@@ -568,7 +566,6 @@ public:
     }
 
     ToolResult addTrack(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         const QString kind = arguments.value(QStringLiteral("kind")).toString();
         const QString name = arguments.value(QStringLiteral("name")).toString().trimmed();
         const QString instrument = arguments.value(QStringLiteral("instrument")).toString();
@@ -626,7 +623,6 @@ public:
     }
 
     ToolResult deleteTracks(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const auto ids = trackIds(arguments, QStringLiteral("track_ids"), true, error);
         if (!ids) return ToolResult::failure(error);
@@ -643,7 +639,6 @@ public:
     }
 
     ToolResult moveTracks(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const auto ids = trackIds(arguments, QStringLiteral("track_ids"), false, error);
         if (!ids) return ToolResult::failure(error);
@@ -679,7 +674,6 @@ public:
 
     // A new group of track_ids (named), or the groups `ungroup` lists gone (what was in them in their place).
     ToolResult groupTracks(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         if (arguments.contains(QStringLiteral("ungroup"))) {
             if (arguments.contains(QStringLiteral("track_ids")) || arguments.contains(QStringLiteral("name"))) {
@@ -829,7 +823,6 @@ public:
     }
 
     ToolResult addDevice(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
         if (!track) return ToolResult::failure(error);
@@ -900,7 +893,6 @@ public:
     }
 
     ToolResult removeDevices(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
         if (!track) return ToolResult::failure(error);
@@ -915,7 +907,6 @@ public:
     }
 
     ToolResult moveDevices(const QJsonObject& arguments) {
-        if (!editsAllowed()) return ToolResult::failure(kNoEdits);
         QString error;
         const Track* track = trackOf(arguments, QStringLiteral("track_id"), error);
         if (!track) return ToolResult::failure(error);
@@ -959,6 +950,8 @@ public:
 
 void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     auto tools = std::make_shared<EditTools>(session);
+    // Every edit (a tool not read-only) fails while the user has edits off.
+    const auto addTool = [&protocol, tools](Tool tool) { mcp::addTool(protocol, tools, std::move(tool)); };
     const QJsonObject trackId = property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks."));
     const QJsonObject trackIds{{QStringLiteral("type"), QStringLiteral("array")},
                                {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
@@ -973,7 +966,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
                           {QStringLiteral("description"), QStringLiteral("Only notes of these pitches (numbers, or names: \"C1\" for a kick).")}};
     pitchList.insert(QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QJsonArray{QStringLiteral("integer"), QStringLiteral("string")}}});
 
-    protocol.addTool({
+    addTool({
         QStringLiteral("edit_notes"),
         QStringLiteral("Edit Notes"),
         QStringLiteral("Changes the notes a MIDI track already plays, where they are, as the piano roll's tools do: "
@@ -1003,7 +996,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
         false,
         [tools](const QJsonObject& arguments) { return tools->editNotes(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("write_automation"),
         QStringLiteral("Write Automation"),
         QStringLiteral("Draws automation on a track (a return, the master): of a device's parameter (device_id and "
@@ -1050,7 +1043,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     });
 
     // Tracks.
-    protocol.addTool({
+    addTool({
         QStringLiteral("add_track"),
         QStringLiteral("Add Track"),
         QStringLiteral("A new track: \"midi\" (with an instrument from list_devices: a built-in one, a plug-in or a "
@@ -1067,7 +1060,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
         false,
         [tools](const QJsonObject& arguments) { return tools->addTrack(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("delete_tracks"),
         QStringLiteral("Delete Tracks"),
         QStringLiteral("Deletes tracks (returns too, with the sends into them; a group with what is in it), with their "
@@ -1076,7 +1069,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
         false,
         [tools](const QJsonObject& arguments) { return tools->deleteTracks(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("move_tracks"),
         QStringLiteral("Move Tracks"),
         QStringLiteral("Moves tracks (a group with what is in it), together in their order: before before_track_id or "
@@ -1090,7 +1083,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
         false,
         [tools](const QJsonObject& arguments) { return tools->moveTracks(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("group_tracks"),
         QStringLiteral("Group Tracks"),
         QStringLiteral("A new group holding track_ids, where the first of them was, as Ctrl+G makes one (named, if "
@@ -1106,7 +1099,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     });
 
     // Devices.
-    protocol.addTool({
+    addTool({
         QStringLiteral("list_devices"),
         QStringLiteral("List Devices"),
         QStringLiteral("The devices that can go on a track: SUBstation's built-in ones (id: its kind, \"compressor\"; "
@@ -1126,7 +1119,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     });
     const QJsonObject before = property(QStringLiteral("string"), QStringLiteral("Before this device (in its chain; default: last)."));
     const QJsonObject chain = property(QStringLiteral("string"), QStringLiteral("Into this rack chain (get_track lists racks' chains), last."));
-    protocol.addTool({
+    addTool({
         QStringLiteral("add_device"),
         QStringLiteral("Add Device"),
         QStringLiteral("Puts a device from list_devices on a track (a return, the master), as the user would drop it "
@@ -1145,7 +1138,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
     const QJsonObject deviceIds{{QStringLiteral("type"), QStringLiteral("array")},
                                 {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}},
                                 {QStringLiteral("description"), QStringLiteral("Devices' ids, from get_track (racks' devices too).")}};
-    protocol.addTool({
+    addTool({
         QStringLiteral("remove_devices"),
         QStringLiteral("Remove Devices"),
         QStringLiteral("Takes devices off a track (a rack with what is in it), with their automation and the macros "
@@ -1155,7 +1148,7 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
         false,
         [tools](const QJsonObject& arguments) { return tools->removeDevices(arguments); },
     });
-    protocol.addTool({
+    addTool({
         QStringLiteral("move_devices"),
         QStringLiteral("Move Devices"),
         QStringLiteral("Moves devices together, in their order: before before_device_id, last in chain_id (a rack's "

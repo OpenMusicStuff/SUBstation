@@ -162,6 +162,20 @@ TEST_CASE("a tempo change keeps the playhead on its beat") {
     CHECK_NEAR(engine.positionBeats(), 8.0, 1e-4);
 }
 
+// The audio thread renders a block from where it was while a locate waits in the
+// queue: what it publishes then isn't where the playhead is (it flashed back there).
+TEST_CASE("a locate counts as published only once the audio thread took it") {
+    sub::SharedState shared;
+    sub::Renderer renderer;
+    REQUIRE(shared.commands.push({sub::TransportCommand::Type::Locate, 16.0}));
+    renderer.publishTransport(shared);  // (the block under way)
+    CHECK_EQ(shared.locatesPublished.load(), 0u);
+    renderer.drainCommands(shared);
+    CHECK_EQ(shared.locatesPublished.load(), 0u);
+    renderer.publishTransport(shared);  // (the next block, from the locate)
+    CHECK_EQ(shared.locatesPublished.load(), 1u);
+}
+
 TEST_CASE("transport state without a device") {
     RenderEngine e;
     auto& engine = e.engine;

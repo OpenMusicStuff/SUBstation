@@ -221,6 +221,15 @@ public:
     static QColor automationOff() { return colors().automationOff; }
     static QColor modulation() { return colors().modulation; }
 
+    // A track's (or clip's) colour as the project keeps it, as this theme shows
+    // it: one of app::kTrackColors (or of a theme's track colours) as this
+    // theme's colour in its place; any other brought to its lightness and
+    // chroma (Palette::trackColors). The project's colours never change.
+    static QColor trackColor(const QString& stored);
+    static QColor trackColor(const QColor& stored);
+    // What the Color menu offers: app::kTrackColors, each with how it shows.
+    static QColor trackSwatch(int index);
+
     QFont font() const;
     QFont smallFont() const;
     QFont listFont() const;

@@ -32,6 +32,7 @@
 #include "session/RenderProgress.h"
 #include "session/Selection.h"
 #include "session/Session.h"
+#include "update/Updater.h"
 
 namespace sub::ui {
 
@@ -78,6 +79,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<AudioPreferences>("AudioPreferences");
     registerUncreatable<MidiPreferences>("MidiPreferences");
     registerUncreatable<PluginHostingPreferences>("PluginHostingPreferences");
+    registerUncreatable<Updater>("Updater");
     qmlRegisterUncreatableType<QUndoStack>(kUri, 1, 0, "UndoStack", kMadeByTheSession);
     qmlRegisterSingletonInstance(kUri, 1, 0, "Session", session);
 }

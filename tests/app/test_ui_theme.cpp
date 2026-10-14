@@ -22,10 +22,13 @@
 #include "TestSupport.h"
 #include "Ui.h"
 #include "theme/Icons.h"
+#include "model/Track.h"
 #include "theme/Theme.h"
 
 using sub::ui::IconProvider;
 using sub::ui::Icons;
+using sub::ui::NamedPalette;
+using sub::ui::palettes;
 using sub::ui::Theme;
 
 namespace {
@@ -125,7 +128,9 @@ private Q_SLOTS:
             QVERIFY(!property.isConstant());
             QCOMPARE(property.notifySignal().name(), QByteArray("changed"));
         }
-        QCOMPARE(colors, int(sizeof(sub::ui::Palette) / sizeof(QColor)));  // the palette, all of it
+        // The palette, all of it (but its track colours: Theme::trackColor).
+        const size_t tracks = sizeof(std::vector<QColor>) + 3 * sizeof(double);
+        QCOMPARE(colors, int((sizeof(sub::ui::Palette) - tracks) / sizeof(QColor)));
     }
 
     // Look and Feel's themes: each has every colour; one applied changes them
@@ -200,6 +205,31 @@ private Q_SLOTS:
         QCOMPARE(Theme::name(), QStringLiteral("Default"));
         QCOMPARE(QSettings().value(QLatin1String(Theme::kSettingsKey)).toString(), QStringLiteral("Default"));
         QSettings().remove(QLatin1String(Theme::kSettingsKey));
+    }
+
+    // A project's track colours are places in the palette: each theme shows them
+    // as its own (Disableton as they are), and brings any other colour to its look.
+    void trackColorsFollowTheTheme() {
+        const QString rose = sub::app::kTrackColors.front();
+        const QColor live("#1a2f96");  // (a Live set's, not in the palette)
+        for (const QString& name : Theme::names()) {
+            Theme::apply(name);
+            QCOMPARE(Theme::colors().trackColors.size(), static_cast<size_t>(sub::app::kTrackColors.size()));
+            QCOMPARE(Theme::trackColor(rose), Theme::colors().trackColors.front());
+            QCOMPARE(Theme::trackSwatch(3), Theme::colors().trackColors[3]);
+            // Another theme's colour (a project saved with it) is its place too.
+            for (const NamedPalette& other : palettes())
+                QCOMPARE(Theme::trackColor(other.colors.trackColors[5]), Theme::colors().trackColors[5]);
+            QVERIFY(Theme::trackColor(live).isValid());
+            QVERIFY(!Theme::trackColor(QString()).isValid());
+        }
+        Theme::apply(QStringLiteral("Disableton"));
+        QCOMPARE(Theme::trackColor(rose), QColor(rose));
+        QCOMPARE(Theme::trackColor(live), live);
+        Theme::apply(QStringLiteral("Default"));
+        QVERIFY(Theme::trackColor(rose) != QColor(rose));
+        QVERIFY(Theme::trackColor(live) != live);  // (softened, its hue kept)
+        QVERIFY(std::abs(Theme::trackColor(live).hslHue() - live.hslHue()) < 25);
     }
 
     // A track header's In, Auto and Off: small, the one chosen in the accent.
@@ -297,7 +327,8 @@ private Q_SLOTS:
             QStringLiteral("filter_bandpass"), QStringLiteral("filter_notch"),    QStringLiteral("wave_sine"),
             QStringLiteral("wave_triangle"),   QStringLiteral("wave_saw_up"),     QStringLiteral("wave_saw_down"),
             QStringLiteral("wave_square"),     QStringLiteral("wave_random"),     QStringLiteral("note"),
-            QStringLiteral("bend"),            QStringLiteral("vibrato"),         QStringLiteral("glide")};
+            QStringLiteral("bend"),            QStringLiteral("vibrato"),         QStringLiteral("glide"),
+            QStringLiteral("automation_mode")};
         QCOMPARE(names.size(), fromPython.size() + added.size());
         for (const QString& name : fromPython + added) {
             QVERIFY2(names.contains(name), qPrintable(name));

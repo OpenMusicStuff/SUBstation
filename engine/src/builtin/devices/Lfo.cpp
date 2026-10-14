@@ -14,11 +14,16 @@
 // half the range): value = 0.5 + (y - 0.5) * depth + offset / 2, held to 0..1.
 // Smooth eases it (a one-pole: a stepped curve without clicks).
 //
-// Displays (ModulatorDesign.h): "value", "phase", and "key" (1 where a note
-// restarted it).
+// Random plays a new random curve each cycle instead of the drawn one
+// (ModulatorDesign.h's randomPoints), from where the last one ended. A cycle
+// starts where the curve wraps round (after Phase), or where a note restarts it.
+//
+// Displays (ModulatorDesign.h): "value", "phase", "key" (1 where a note
+// restarted it), "seed" and "start".
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -34,11 +39,13 @@ namespace md = modulator;
 class LfoProcessor final : public BuiltinProcessor {
 public:
     enum Param { Rate = 0, Sync, Synced, Depth, Offset, PhaseShift, Retrigger, Smooth, kFirstPoint };
-    enum Display { ValueDisplay = 0, PhaseDisplay, KeyDisplay };
+    static constexpr int Random = kFirstPoint + md::kPoints * md::kPointParams;  // (after the points: added later)
+    enum Display { ValueDisplay = 0, PhaseDisplay, KeyDisplay, SeedDisplay, StartDisplay };
 
     LfoProcessor()
         : BuiltinProcessor(infos(), {{"value", md::kDisplaySamples}, {"phase", md::kDisplaySamples},
-                                     {"key", md::kDisplaySamples}}) {}
+                                     {"key", md::kDisplaySamples}, {"seed", md::kDisplaySamples},
+                                     {"start", md::kDisplaySamples}}) {}
 
     std::string typeId() const override { return "builtin:lfo"; }
     std::string name() const override { return "LFO"; }
@@ -55,12 +62,20 @@ public:
         value_ = -1.f;
         displayCount_ = 0;
         noted_ = false;
+        randoms_.reset();
+        seed_ = -1;
+        lastX_ = -1.0;
+        y_ = 0.5f;
     }
 
 protected:
     void render(const ProcessContext& ctx, float* const* ch, int numChannels, int numFrames) override {
         if (numChannels <= 0) return;
-        curve_.load([this](int index) { return param(index); }, kFirstPoint);
+        const bool random = isOn(Random);
+        if (!random) {
+            curve_.load([this](int index) { return param(index); }, kFirstPoint);
+            seed_ = -1;
+        }
         const double samplesPerBeat = ctx.samplesPerBeat();
         const bool synced = isOn(Sync) && samplesPerBeat > 0.0;
         const double cycleBeats = md::syncedBeats(choiceIndex(Synced));
@@ -75,10 +90,12 @@ protected:
 
         size_t event = 0;
         for (int i = 0; i < numFrames; ++i) {
+            bool restarted = false;
             for (; event < ctx.inEvents.count && ctx.inEvents.events[event].sampleOffset <= i; ++event) {
                 if (retrigger && ctx.inEvents.events[event].startsNote()) {
                     phase_ = 0.0;
                     noted_ = true;
+                    restarted = true;
                 }
             }
             if (followsSong) {
@@ -87,7 +104,14 @@ protected:
             }
             double x = phase_ + shift;
             x -= std::floor(x);
+            // Random: a new curve from where the last left off, each time a cycle starts.
+            if (random && (seed_ < 0 || restarted || x < lastX_)) {
+                start_ = y_;
+                seed_ = static_cast<int32_t>(randoms_.next(curve_, y_));
+            }
+            lastX_ = x;
             const float y = curve_.at(x);
+            y_ = y;
             const float target = std::clamp(0.5f + (y - 0.5f) * depth + offset, 0.f, 1.f);
             value_ = value_ < 0.f ? target : target + smoothing * (value_ - target);
             for (int c = 0; c < std::min(numChannels, 2); ++c) ch[c][i] = value_;
@@ -98,6 +122,8 @@ protected:
                 publish(ValueDisplay, value_);
                 publish(PhaseDisplay, static_cast<float>(x));
                 publish(KeyDisplay, noted_ ? 1.f : 0.f);
+                publish(SeedDisplay, static_cast<float>(seed_));
+                publish(StartDisplay, start_);
                 noted_ = false;
             }
         }
@@ -119,6 +145,7 @@ private:
                 {"smooth", "Smooth", "ms", 0.f, 250.f, 0.f},
             };
             md::appendPointParams(list, md::trianglePoints());
+            list.push_back({"random", "Random", "", 0.f, 1.f, 0.f, false, kOnOff});
             return list;
         }();
         return kInfos;
@@ -130,6 +157,11 @@ private:
     float value_ = -1.f;  // its value, smoothed (-1: none yet)
     int displayCount_ = 0;
     bool noted_ = false;  // a note restarted it since the last display value
+    md::RandomCurves randoms_;
+    int32_t seed_ = -1;    // Random's curve now (-1: none)
+    float start_ = 0.f;    // ... its first level
+    double lastX_ = -1.0;  // where on the curve it was a sample ago
+    float y_ = 0.5f;       // the curve's value a sample ago
 };
 
 }  // namespace

@@ -73,6 +73,9 @@ class Arrangement : public QObject {
     Q_PROPERTY(QAbstractItemModel* returns READ returns CONSTANT)
     Q_PROPERTY(int totalHeight READ totalHeight NOTIFY layoutChanged)
     Q_PROPERTY(bool hasTracks READ hasTracks NOTIFY layoutChanged)
+    // Every track's (the returns' and the master's too) automation shows: what A
+    // (ProjectEditor::toggleAllAutomation) turns on, the corner's Automation button lit.
+    Q_PROPERTY(bool automationMode READ automationMode NOTIFY automationModeChanged)
     Q_PROPERTY(int masterMainHeight READ masterMainHeight NOTIFY masterRowsChanged)
     Q_PROPERTY(int masterHeight READ masterHeight NOTIFY masterRowsChanged)
     // The returns' rows, all together (above the master).
@@ -93,7 +96,7 @@ class Arrangement : public QObject {
 
 public:
     static constexpr int kHeightStep = 12;  // pixels per wheel notch when Alt+wheel resizes a track
-    static constexpr double kWheelGesture = 0.4;  // s: wheel events closer than this resize (or fold) the same track
+    static constexpr double kWheelGesture = 0.4;  // s: wheel events closer than this are one turn of the wheel
     static constexpr double kFollowMargin = 0.04;  // of the width: following keeps the playhead between 4 % and 96 %
 
     explicit Arrangement(QObject* parent = nullptr);
@@ -154,6 +157,7 @@ public:
     QAbstractItemModel* returns() const { return returns_; }
     int totalHeight() const { return layout_.totalHeight(); }
     bool hasTracks() const { return !layout_.rows().empty(); }
+    bool automationMode() const;
     const arrangement::AutomationRows& masterRows() const { return masterRows_; }
     int masterMainHeight() const { return masterRows_.mainHeight; }
     int masterHeight() const { return masterRows_.height(); }
@@ -191,8 +195,8 @@ public:
     // it can't be: the master, or a track folded away in its group).
     Q_INVOKABLE bool renameTrack(const QString& trackId);
     // The find bar's match (Q): a track (a return, the master) selected as a
-    // click on its name selects it (lit up, its devices shown), the groups it is
-    // folded away in unfolded, and scrolled to the middle of the lanes if it
+    // click on its name selects it (lit up, its devices shown), unfolded (and
+    // the groups it is folded away in), and scrolled to the middle of the lanes if it
     // doesn't show whole. False if there is no such track.
     Q_INVOKABLE bool revealTrack(const QString& trackId);
     // A triple-click on a track's automation lane: everything on the track (and
@@ -207,12 +211,19 @@ public:
     // whole (centred, or its start near the left if it is wider than the lanes).
     // Its id; "" if the track has no clips (nothing changes).
     Q_INVOKABLE QString revealNearestClip(const QString& trackId);
-    // Alt+wheel over a track (its header or its lane), as one gesture: down
-    // shrinks it, and once it is as small as it gets, folds it (a group: hides
-    // its tracks too); up unfolds a folded track, then makes it taller. A turn
-    // of the wheel acts on the track it started on: the tracks below move up
-    // under the mouse as it shrinks or folds.
-    void wheelResize(const QString& trackId, int delta);
+    // Alt+wheel over a track (its header or its lane), `y` down its row. A turn
+    // of the wheel that starts on a track's title bar (its name row: what shows
+    // of it folded) folds (down) or unfolds (up) the track under the mouse, a
+    // notch each, back at the height it had: sweeping the mouse down the tracks
+    // as it turns folds or unfolds them all. One that starts below it (its lane,
+    // its automation lanes) makes that track taller (up) or shorter (down), down
+    // to its smallest, however the mouse moves as it turns.
+    void wheelResize(const QString& trackId, double y, int delta);
+    // Whether `y` down a track's row is on its title bar (its name row; a
+    // group's, its colour's two rows).
+    bool onTitleBar(const QString& trackId, double y) const;
+    // A track of the arrangement or the master: it folds and resizes (not a return).
+    bool resizable(const QString& trackId) const;
     // The clock wheelResize goes by (seconds; the tests' own).
     void setClock(std::function<double()> clock) { clock_ = std::move(clock); }
 
@@ -254,6 +265,7 @@ Q_SIGNALS:
     void followChanged();
     void lanesSizeChanged();
     void layoutChanged();   // the tracks' rows (heights, folding, automation lanes)
+    void automationModeChanged();
     void masterRowsChanged();
     void returnRowsChanged();
     void scrollBarsChanged();
@@ -304,6 +316,8 @@ private:
     std::optional<double> playhead_;
     std::optional<Marker> marker_;
     std::optional<std::pair<QString, double>> lastWheel_;  // the track turned last, and when
+    bool wheelFolds_ = false;  // the turn started on a title bar: it folds and unfolds
+    int wheelSum_ = 0;         // what it turned toward its next fold (a touchpad's small steps)
     std::function<double()> clock_;
     QElapsedTimer elapsed_;
     mutable app::RoutingGraph graph_;

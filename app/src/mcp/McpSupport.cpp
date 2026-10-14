@@ -146,7 +146,6 @@ bool ToolContext::editsAllowed() const { return !session_.mcp() || session_.mcp(
 
 ToolResult ToolContext::change(const QString& text, const QString& tool, QJsonObject out,
                                const std::function<void(ProjectEditor&)>& edit) {
-    if (!editsAllowed()) return ToolResult::failure(kNoEdits);
     std::optional<int> id;
     try {
         id = session_.agentChanges()->record(text, tool, edit);
@@ -197,6 +196,15 @@ std::pair<std::optional<double>, QString> ToolContext::wanted(const Param& param
                                        spec.unit.isEmpty() ? QString() : u' ' + spec.unit, number(plain))};
     }
     return {spec.fromNormalized(spec.quantize(spec.toNormalized(plain))), {}};
+}
+
+void addTool(Protocol& protocol, const std::shared_ptr<const ToolContext>& context, Tool tool) {
+    if (!tool.readOnly) {
+        tool.call = [context, call = std::move(tool.call)](const QJsonObject& arguments) {
+            return context->editsAllowed() ? call(arguments) : ToolResult::failure(kNoEdits);
+        };
+    }
+    protocol.addTool(std::move(tool));
 }
 
 }  // namespace sub::app::mcp

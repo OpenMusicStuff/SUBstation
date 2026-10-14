@@ -1,19 +1,23 @@
 #pragma once
 
-// The beat-time ruler with the loop brace.
+// The beat-time ruler with the loop brace, laid out as Ableton's: the bar
+// numbers on top (kNumbers), then a band with the grid's lines, the loop brace
+// along its top (kLoopTop, kLoopStrip high: its edges run on down the band and
+// the lanes, a hollow triangle inside each end) and the start marker (a
+// triangle pointing down) at its foot, over a dark base (kBase).
 //
-// Top strip (kLoopStrip): drag the loop brace (its body moves it, its edges
+// The brace's strip: drag the loop brace (its body moves it, its edges
 // resize it: an edge can't come within a quarter beat of the other; dragging
 // in empty space draws a new loop and turns it on); double-click toggles it.
-// One undo step per drag. Lower area, like Ableton's scrub area: a click (no
+// One undo step per drag. Above and below it, like Ableton's scrub area: a click (no
 // movement past 3 px) plays from the snapped beat (Session::locate); a drag
 // decides once, on its first 3 px, whether it pans (mostly horizontal: scroll)
 // or zooms (mostly vertical: 1.012 per pixel, around where it was pressed).
-// It draws the insert marker (a triangle); the playhead is an
-// ArrangementPlayhead over it.
+// The playhead is an ArrangementPlayhead over it.
 
 #include "arrangement/ArrangementItem.h"
 
+#include <QColor>
 #include <QPointF>
 #include <QString>
 #include <QtQml/qqmlregistration.h>
@@ -27,11 +31,19 @@ class ArrangementRuler : public ArrangementItem {
     QML_ELEMENT
 
 public:
-    static constexpr int kLoopStrip = 14;
-    static constexpr int kHeight = 40;
+    static constexpr int kHeight = 44;
+    static constexpr int kNumbers = 21;  // the numbers' row (its top edge lit)
+    static constexpr int kLoopTop = kNumbers;
+    static constexpr int kLoopStrip = 11;
+    static constexpr int kBase = 2;
     static constexpr double kEdgeGrab = 6;
 
     explicit ArrangementRuler(QQuickItem* parent = nullptr);
+
+    // The brace's colour, and its edges' (which the lanes draw on down).
+    static QColor loopColor(bool enabled);
+    static QColor loopEdgeColor(bool enabled);
+    static bool inLoopStrip(double y);
 
 protected:
     void paint(SgPainter& painter) override;

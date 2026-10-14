@@ -213,6 +213,7 @@ public:
     // The name bar's colour (the track's), and the colour of what is written on it.
     QString mainOutText() const;
     QColor barColor() const;
+    QColor ownColor() const;  // its own (the theme's), whatever the selection: under the bar
     Q_INVOKABLE QColor barText() const;
     QString nameToolTip() const;
     double volume() const { return volume_; }

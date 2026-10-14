@@ -131,8 +131,9 @@ TEST_CASE("the LFO and the Envelope are listed as modulators") {
         CHECK(device->isModulator());
         CHECK(device->acceptsMidi());
         const std::vector<std::string> ids = paramIds(info.params);
-        REQUIRE(ids.size() == (std::string(kind) == "lfo" ? 8u : 7u) + 32 * 4);
-        CHECK_EQ(ids.back(), std::string("p32_curve"));
+        REQUIRE(ids.size() == (std::string(kind) == "lfo" ? 8u : 7u) + 32 * 4 + 1);
+        CHECK_EQ(ids[ids.size() - 2], std::string("p32_curve"));
+        CHECK_EQ(ids.back(), std::string("random"));
         for (const sub::ParamInfo& p : info.params) {
             if (p.id[0] != 'p' || p.id == "phase") continue;
             INFO(p.id);
@@ -175,6 +176,80 @@ TEST_CASE("the LFO's triangle, as it starts, and its sine") {
         worst = std::max(worst, std::abs(out[static_cast<size_t>(n)] - expected));
     }
     CHECK(worst < 0.006);
+}
+
+TEST_CASE("a random curve is its seed's, from where the last one ended") {
+    Point a[sub::modulator::kRandomPoints], b[sub::modulator::kRandomPoints];
+    for (uint32_t seed : {0u, 1u, 77u, 123456u, sub::modulator::kRandomSeeds - 1}) {
+        INFO(std::to_string(seed));
+        const int count = sub::modulator::randomPoints(seed, 0.3f, a);
+        REQUIRE(count >= 3);
+        REQUIRE(count <= sub::modulator::kRandomPoints);
+        CHECK_EQ(sub::modulator::randomPoints(seed, 0.3f, b), count);
+        CHECK(std::equal(a, a + count, b, [](const Point& p, const Point& q) {
+            return p.x == q.x && p.y == q.y && p.curve == q.curve;
+        }));
+        CHECK_EQ(a[0].x, 0.f);
+        CHECK_EQ(a[0].y, 0.3f);
+        CHECK_EQ(a[count - 1].x, 1.f);
+        for (int i = 0; i < count; ++i) {
+            CHECK(a[i].y >= 0.f);
+            CHECK(a[i].y <= 1.f);
+            CHECK(std::abs(a[i].curve) <= 0.8f);
+            if (i > 0) CHECK(a[i].x >= a[i - 1].x);
+            if (i > 0 && i < count - 1) CHECK(a[i].x > a[i - 1].x);  // (no steps: it never jumps)
+        }
+    }
+    // Seeds make different curves.
+    const int one = sub::modulator::randomPoints(1, 0.5f, a), two = sub::modulator::randomPoints(2, 0.5f, b);
+    CHECK((one != two || !std::equal(a, a + one, b, [](const Point& p, const Point& q) { return p.y == q.y; })));
+}
+
+TEST_CASE("the LFO's Random plays a new curve each cycle, the one its seed says") {
+    Standalone lfo("lfo", kSampleRate, lfoValues({{"random", 1.f}, {"rate", 10.f}}));
+    const Samples out = modulatorOutput(lfo, kSampleRate / 2, {}, 64);  // five cycles
+    const std::vector<float> seeds = lfo.display("seed"), starts = lfo.display("start"),
+                             phases = lfo.display("phase");
+    REQUIRE(seeds.size() == static_cast<size_t>(kSampleRate / 2 / kStep));
+    std::vector<float> distinct;
+    for (size_t i = 0; i < seeds.size(); ++i) {
+        REQUIRE(seeds[i] >= 0.f);
+        if (distinct.empty() || distinct.back() != seeds[i]) distinct.push_back(seeds[i]);
+        // The value at each display frame's last sample is the curve of its seed there.
+        sub::modulator::Curve curve;
+        Point points[sub::modulator::kRandomPoints];
+        curve.set(points, sub::modulator::randomPoints(static_cast<uint32_t>(seeds[i]), starts[i], points));
+        CHECK_NEAR(out[(i + 1) * kStep - 1], curve.at(phases[i]), 1e-4);
+    }
+    CHECK(distinct.size() >= 5);  // a curve a cycle
+    // One flows into the next: no jumps anywhere, at the seams either (at 10 Hz, a sample moves it little).
+    double worst = 0.0;
+    for (size_t n = 1; n < out.size(); ++n) worst = std::max(worst, std::abs(double(out[n]) - double(out[n - 1])));
+    CHECK(worst < 0.05);
+
+    // Off, it plays the drawn curve again, and says so.
+    Standalone drawn("lfo", kSampleRate, lfoValues());
+    modulatorOutput(drawn, kSampleRate / 10);
+    for (const float seed : drawn.display("seed")) CHECK_EQ(seed, -1.f);
+}
+
+TEST_CASE("the Envelope's Random plays a new curve from each trigger and holds its end") {
+    Standalone envelope("envelope", kSampleRate, envelopeValues({{"random", 1.f}}));
+    Notes notes{{{4800, 127}, {24000, 127}}};
+    const Samples out = modulatorOutput(envelope, kSampleRate, notes.feeding(envelope), 64);
+    const std::vector<float> seeds = envelope.display("seed"), starts = envelope.display("start");
+    REQUIRE(seeds.size() == static_cast<size_t>(kSampleRate / kStep));
+    const float atRest = seeds[0], first = seeds[4800 / kStep + 1], second = seeds[24000 / kStep + 1];
+    CHECK(atRest >= 0.f);
+    CHECK(first != atRest);
+    CHECK(second != first);
+    // After the first trigger, its curve over 100 ms, from where the one at rest held.
+    sub::modulator::Curve curve;
+    Point points[sub::modulator::kRandomPoints];
+    curve.set(points, sub::modulator::randomPoints(static_cast<uint32_t>(first), starts[4800 / kStep + 1], points));
+    CHECK_NEAR(out[4800 + 2400], curve.at(0.5), 1e-4);
+    CHECK_NEAR(out[4800 + 4800 + 100], curve.last(), 1e-6);  // then it holds its end
+    CHECK_NEAR(out[20000], curve.last(), 1e-6);
 }
 
 TEST_CASE("the LFO's depth, offset and phase") {

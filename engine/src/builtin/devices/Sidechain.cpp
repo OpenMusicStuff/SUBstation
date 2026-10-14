@@ -86,18 +86,13 @@ public:
     int latencySamples() const override { return lookaheadSamples(); }
 
     // The lookahead changed: the engine must realign the tracks.
-    bool idle() override {
-        const int latency = lookaheadSamples();
-        if (latency == reportedLatency_) return false;
-        reportedLatency_ = latency;
-        return true;
-    }
+    bool idle() override { return latencyReport_.changed(latencySamples()); }
 
     void prepare(double sampleRate, int) override {
         sampleRate_ = sampleRate;
         const auto capacity = static_cast<size_t>(std::ceil(kMaxLookaheadMs * 0.001 * sampleRate)) + 1;
         for (auto& delay : delay_) delay.assign(capacity, 0.f);
-        reportedLatency_ = lookaheadSamples();
+        latencyReport_.reported(latencySamples());
         reset();
     }
 
@@ -123,7 +118,7 @@ protected:
         loadCurve();
         const double lengthSamples = std::max(1.0, curveLength(ctx) * 0.001 * sampleRate_);
         const float depth = std::clamp(param(Depth) / 100.f, 0.f, 1.f);
-        const float threshold = std::pow(10.f, param(Threshold) / 20.f);
+        const float threshold = dbToGain(param(Threshold));
         const float smoothMs = param(Smooth);
         const float smoothing = smoothMs <= 0.01f ? 0.f : static_cast<float>(onePoleCoefficient(smoothMs * 0.001, sampleRate_));
         const float keyRelease = static_cast<float>(onePoleCoefficient(0.01, sampleRate_));
@@ -341,7 +336,7 @@ private:
     }
 
     double sampleRate_ = 48000.0;
-    int reportedLatency_ = 0;
+    dsp::LatencyReport latencyReport_;
     std::array<Point, kPoints> points_{};
     int numPoints_ = 0;
     std::vector<float> delay_[2];

@@ -449,9 +449,13 @@ QString DeviceParam::modulatorName() const {
     return device ? sub::app::deviceName(*device) : QString();
 }
 
-double DeviceParam::modulationFrom() const { return modulated() ? std::min(mapping_.low, mapping_.high) : 0.0; }
+double DeviceParam::modulationFrom() const {
+    return modulated() ? std::min(mapping_.playedLow(), mapping_.playedHigh()) : 0.0;
+}
 
-double DeviceParam::modulationTo() const { return modulated() ? std::max(mapping_.low, mapping_.high) : 1.0; }
+double DeviceParam::modulationTo() const {
+    return modulated() ? std::max(mapping_.playedLow(), mapping_.playedHigh()) : 1.0;
+}
 
 bool DeviceParam::canModulate() const {
     return session_ && session_->project()->findDevice(trackId_, deviceId_) &&
@@ -485,6 +489,20 @@ void DeviceParam::unmodulate() {
 void DeviceParam::setModulationInverted(bool inverted) {
     if (session_ && modulated())
         session_->editor()->setModulationInverted(trackId_, modulator_, deviceId_, paramId_, inverted);
+}
+
+void DeviceParam::setModulationAmount(double amount, double base, const QString& mergeKey) {
+    if (session_ && modulated() && spec_) {
+        session_->editor()->setModulationAmount(trackId_, modulator_, deviceId_, paramId_, amount,
+                                                spec_->toNormalized(base), mergeKey);
+    }
+}
+
+void DeviceParam::toggleModulationPolarity(double base) {
+    if (session_ && modulated() && spec_) {
+        session_->editor()->setModulationBipolar(trackId_, modulator_, deviceId_, paramId_, !mapping_.bipolar,
+                                                 spec_->toNormalized(base));
+    }
 }
 
 void DeviceParam::unmapFromMacro() {

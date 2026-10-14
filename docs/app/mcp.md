@@ -225,7 +225,10 @@ project clears them (`clear()`).
   search) rather than working it out again, and take places as the others do (`span()`: beats or bars). A tool that
   changes the project checks its arguments, then edits through `change()` (the agents' editor: one change; an
   `EditError` thrown in it takes the change back and is the failure the model sees), sets `readOnly` false (and
-  `idempotent` if it is), and ends its description with the sentence about the history the other edits have.
+  `idempotent` if it is), and ends its description with the sentence about the history the other edits have. Both
+  register through `addTool()` (McpSupport.h), which makes every tool that isn't read-only fail while edits are off,
+  so no handler checks for itself; `rewind_agent_changes` alone is added straight to the protocol, since rewinding
+  works with edits off (its `restore` checks for itself).
 - **A new kind of undo command** (model/Commands.h): its regions in `ownFootprint()` (AgentHistory.cpp); without
   them it touches everything, and refuses every step of the other history across it.
 - **A prompt or a resource**: a `protocol.addPrompt({...})` (its name, title, description, arguments, and the

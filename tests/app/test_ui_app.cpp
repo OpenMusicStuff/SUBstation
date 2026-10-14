@@ -222,12 +222,12 @@ private Q_SLOTS:
         for (const QString& name : Theme::names()) {
             Theme::apply(name);
             QTRY_COMPARE(mostCommon(bar), Theme::panel());
-            QTRY_COMPARE(mostCommon(ruler), Theme::panel());
+            QTRY_COMPARE(mostCommon(ruler), Theme::window());  // (as Ableton's: the window's ground)
             QCOMPARE(play->property("look").toMap().value(QStringLiteral("background")).value<QColor>(), Theme::surface());
             test::screenshot(window_, QStringLiteral("app-theme-") + name.toLower());
         }
         Theme::apply(Theme::names().front());
-        QTRY_COMPARE(mostCommon(ruler), Theme::panel());
+        QTRY_COMPARE(mostCommon(ruler), Theme::window());
     }
 };
 

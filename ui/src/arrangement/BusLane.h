@@ -60,6 +60,8 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    // Alt+wheel over the master's lane folds or resizes it, as over a track's (Arrangement::wheelResize).
+    void wheelEvent(QWheelEvent* event) override;
     void mouseUngrabEvent() override;
     void hoverEnterEvent(QHoverEvent* event) override { hoverMoveEvent(event); }
     void hoverMoveEvent(QHoverEvent* event) override;

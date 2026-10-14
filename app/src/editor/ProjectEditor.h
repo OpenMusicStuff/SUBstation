@@ -394,6 +394,10 @@ public:
     // was refused).
     bool replaceFile(const FileUses& uses, const QString& path, double seconds, const QString& text,
                      const QString& mergeKey = {});
+    // The last step's file replacements of `mergeKey` (a hot swap's) put back
+    // as they were before it: merged into it, the step is gone (no redo
+    // either). False if the last step isn't one of them.
+    bool revertReplaceFiles(const QString& mergeKey);
     // Files found somewhere else (missing ones located): each old path -> its
     // new one, wherever a clip plays it (or was reversed from it) and a device
     // names it; on frozen tracks too, as it is the same audio. One undo step;
@@ -556,6 +560,14 @@ public:
                                         const QString& paramId, double low, double high, const QString& mergeKey = {});
     Q_INVOKABLE void setModulationInverted(const QString& trackId, const QString& modulatorId,
                                            const QString& deviceId, const QString& paramId, bool invert);
+    // A mapping's amount (ModulationMapping::amount, -1..1) from `base` (normalized: the parameter's own value),
+    // as a modulated knob's handle drags it: one undo step per gesture (a merge key).
+    Q_INVOKABLE void setModulationAmount(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                         const QString& paramId, double amount, double base,
+                                         const QString& mergeKey = {});
+    // A mapping unipolar or bipolar, its amount kept, from `base` (normalized): one undo step.
+    Q_INVOKABLE void setModulationBipolar(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                          const QString& paramId, bool bipolar, double base);
     // A parameter no longer modulated (by whichever modulator moves it); its own value counts again.
     Q_INVOKABLE void unmapModulation(const QString& trackId, const QString& deviceId, const QString& paramId);
     // Everything a modulator moves, unmapped. One undo step.
@@ -567,7 +579,7 @@ public:
 
     // --- A device's settings (EditorDeviceSettings.cpp) ---
 
-    // Change a parameter. The automation lane shows it (parameterTouched).
+    // Change a parameter. The automation lane takes it (parameterTouched: Session).
     Q_INVOKABLE void setDeviceParam(const QString& trackId, const QString& deviceId, const QString& paramId,
                                     double value, const QString& mergeKey = {});
     // The same with `old`, its value before, if the model doesn't know it (a
@@ -584,7 +596,7 @@ public:
                                      const QList<double>& values, const QString& mergeKey = {},
                                      const QString& text = QStringLiteral("Change Device Parameters"));
     // A parameter taken hold of (clicked) without changing it: as Ableton does,
-    // the arrangement shows its automation (parameterTouched).
+    // its automation lane takes it, if its automation shows (parameterTouched: Session).
     Q_INVOKABLE void touchParameter(const QString& owner, const QString& key);
     // Replace a device's state (base64): a plug-in's, e.g. with a preset, or a
     // built-in device's besides its parameters. `old` is its state before, to go
@@ -689,6 +701,8 @@ public:
     Q_INVOKABLE QString defaultAutomationKey(const QString& owner) const;
     // Show an owner's automation, with `key` (if given) in its main lane.
     Q_INVOKABLE void showAutomation(const QString& owner, const QString& key = {});
+    // `key` in an owner's main lane, shown or not (hidden, it stays hidden).
+    void chooseAutomation(const QString& owner, const QString& key);
     Q_INVOKABLE void hideAutomation(const QString& owner);
     // Show every track's (and the master's) automation, or hide it all if all of
     // it shows. Whether it shows now.
@@ -780,6 +794,9 @@ private:
     // group it lands in, if any.
     QString insertTrack(Track track, int index, const TrackParent& parent, const QString& text,
                         bool groupColor = false);
+    // A new track, group or return while every owner's automation shows (A,
+    // toggleAllAutomation): its automation shows too (its volume), as the rest.
+    void showAutomationAsTheRest(Track& track) const;
     Device newDeviceOf(const QString& kind, const std::optional<PluginRef>& plugin = std::nullopt) const;
     QStringList roots(const QStringList& trackIds) const;
     TrackTree arranged(const QStringList& roots, int at, const std::optional<QString>& parent) const;

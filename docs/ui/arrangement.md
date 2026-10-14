@@ -31,7 +31,7 @@ What the user does with it: [guide/arrangement.md](../guide/arrangement.md),
 | [GroupBands](../../ui/src/arrangement/GroupBands.h) | The groups' colour bands down the headers' column, over the headers |
 | [TrackHeader.qml](../../ui/qml/arrangement/TrackHeader.qml), [ReturnHeader.qml](../../ui/qml/arrangement/ReturnHeader.qml), [MasterHeader.qml](../../ui/qml/arrangement/MasterHeader.qml) | The headers' controls laid out over a `TrackHeaderItem` |
 | [SendKnobs.qml](../../ui/qml/arrangement/SendKnobs.qml), [AutomationChoosers.qml](../../ui/qml/arrangement/AutomationChoosers.qml), [AutomationChooser.qml](../../ui/qml/arrangement/AutomationChooser.qml) | A header's send knobs and automation choosers |
-| [GridInfo.qml](../../ui/qml/arrangement/GridInfo.qml) | The corner showing the grid's size; a click toggles snapping |
+| [GridInfo.qml](../../ui/qml/arrangement/GridInfo.qml) | The corner above the headers, as Ableton's: Automation (`Arrangement.automationMode`, `toggleAllAutomation`) and Lock Envelopes, the grid's size under them; a click elsewhere in it toggles snapping |
 | [TrackSearchBar.qml](../../ui/qml/arrangement/TrackSearchBar.qml) | The find bar (Q, over the arrangement and the clip view, in Main.qml): finding tracks by their names and labels ([below](#finding-tracks)) |
 | [MenuEntries](../../ui/src/arrangement/MenuEntries.h), [ArrangementMenu.qml](../../ui/qml/arrangement/ArrangementMenu.qml), [ArrangementMenuItem.qml](../../ui/qml/arrangement/ArrangementMenuItem.qml) | Menus worked out in C++ and shown by QML |
 | [WaveformCache](../../ui/src/arrangement/WaveformCache.h) | Waveform tiles: columns per pixel, an LRU of them |
@@ -42,7 +42,7 @@ What the user does with it: [guide/arrangement.md](../guide/arrangement.md),
 ```
  col 0 (stretches)               col 1 (328 px)       col 2
 ┌──────────────────────────────┬────────────────────────────┐
-│ ArrangementRuler (40)        │ GridInfo        (spans 1-2)│
+│ ArrangementRuler (44)        │ GridInfo        (spans 1-2)│
 ├──────────────────────────────┼───────────────────┬────────┤
 │ ArrangementLanes             │ track headers     │ vbar   │
 │  (+ LiveTakes, playhead)     │  (+ GroupBands)   │ (rows  │
@@ -128,7 +128,11 @@ Rows stay one per track, in order, hidden or not, so a row's index is the track'
 `rowIndexAt(contentY)` bisects the rows' tops; a hidden row has the same top as the row after it, so the bisect lands
 on the shown one, never the hidden one. `visibleRows(top, bottom)` skips hidden rows; `lastShownIndex()` is where a
 drag below the tracks clamps to. A return's rows are `kReturnHeight` (52) high (80 while its automation shows), the
-master's `kMasterHeight` (40) (76 while its automation shows), each with its lanes below.
+master's its own `height`, as a track's (at least `kMasterHeight`, 40, its default; at least `kMinAutomationRow`
+while its automation shows; `kFoldedHeight` and no automation while `folded`), each with its lanes below. The
+master folds and resizes as a track does: its header's fold button and bottom edge, Alt+wheel over its header or
+its lane (`Arrangement::resizable()`: the tracks and the master, not the returns). A touched parameter only
+becomes its lane's parameter while its owner's automation shows (`Session`, `ProjectEditor::chooseAutomation`).
 
 `TrackRowModel` (roles `trackId`, `top`, `mainHeight`, `rowHeight`, `hidden`, `folded`, `depth`, `number`) follows
 the layout: a change that keeps the same tracks in the same order changes the rows' data; a track coming or going
@@ -139,10 +143,13 @@ Folding is view state: `editor.setFolded()` (and the track's height) change the 
 `trackChanged` makes `Arrangement::onTrackChanged()` rebuild the layout if the track's row changed. `setFolded` keeps
 the height a track had, so unfolding brings it back.
 
-`Arrangement::wheelResize(trackId, delta)` is Alt+wheel over a track's lane or header: wheel events less than
-`kWheelGesture` (0.4 s) apart act on the track the gesture started on, because the tracks below move up under the
-mouse as it shrinks. Down shrinks by `kHeightStep` (12 px) a notch and, at the smallest height, folds it; up
-unfolds a folded track, then grows it. Qt may report Alt+wheel as horizontal scrolling, so either axis counts.
+`Arrangement::wheelResize(trackId, y, delta)` is Alt+wheel over a track's lane or header, `y` down its row. Wheel
+events less than `kWheelGesture` (0.4 s) apart are one turn, and where the turn starts decides what it does. On the
+title bar (`onTitleBar()`: the top `kFoldedHeight` px, a group's `kFoldedGroupHeight`: what shows of it folded) it
+folds (down) or unfolds (up) the track under the mouse, a notch (120, summed for touchpads) each, whichever track
+that is now, so sweeping the mouse down the tracks folds or unfolds them all. Below it, it resizes the track it
+started on by `kHeightStep` (12 px) a notch, clamped to `kMinTrackHeight`, never folding it (the tracks below move up
+under the mouse as it shrinks). Qt may report Alt+wheel as horizontal scrolling, so either axis counts.
 
 ## Selection
 
@@ -212,17 +219,21 @@ so the grid shows through a clip body of any colour. `labelStep()` picks how oft
 or a coarser musical unit, at least 44 px apart. `drawLoopRegion()` tints the loop while it is on. `drawPlayhead()`
 draws the playhead (a line, or a triangle on a ruler) for `ArrangementPlayhead` and `RollPlayhead` alike.
 
-[ArrangementRuler](../../ui/src/arrangement/ArrangementRuler.h), 40 px high:
+[ArrangementRuler](../../ui/src/arrangement/ArrangementRuler.h), 44 px high (`kHeight`), laid out as Ableton's: on
+`Theme.window` (a lit top edge, a `kBase` 2 px dark base), the bar numbers on top (`kNumbers` 21 px: a labelled bar
+right of a tick down to the band, the others a short tick), then a band with the grid's lines (darker than the
+ground) holding the loop brace and the start marker (a triangle pointing down at its foot). The brace is
+`loopColor()`, its edges `loopEdgeColor()`, with a hollow triangle inside each end, pointing in; the edges run on
+down the band, and `ArrangementLanes` draws them on down the lanes.
 
-- The top 14 px (`kLoopStrip`) is the loop brace. `loopZone(x)` says start edge, end edge (`kEdgeGrab` 6 px) or
+- The brace's strip (`kLoopTop`, `kLoopStrip` 11 px: `inLoopStrip(y)`). `loopZone(x)` says start edge, end edge (`kEdgeGrab` 6 px) or
   body. Dragging edits the loop through `editor.setLoop(enabled, start, end, key)` with one key per drag (one undo
   step); an edge can't come within a quarter beat of the other; the body moves it; dragging in empty space draws a
   new loop (and turns it on). Double-click on the brace toggles it.
-- Below, the scrub area: a click (no movement past 3 px) calls `Session.locate()` with the snapped beat; a drag
+- Above and below it, the scrub area: a click (no movement past 3 px) calls `Session.locate()` with the snapped beat; a drag
   decides once, on its first 3 px, whether it pans (mostly horizontal: `scrollByHand`) or zooms (mostly vertical:
   `zoomAt` by 1.012 per pixel, around where it was pressed).
-- It draws the insert marker (a triangle); the playhead is an `ArrangementPlayhead` over it (`ruler: true`: a
-  triangle at its foot).
+- The playhead is an `ArrangementPlayhead` over it (`ruler: true`: a triangle at its foot).
 
 ## The lanes
 

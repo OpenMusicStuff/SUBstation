@@ -47,7 +47,6 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -84,7 +83,7 @@ constexpr double kKillSeconds = 0.004;         // a voice cut short fades out ov
 constexpr double kCutoffGlideSeconds = 0.005;  // the cutoff follows its knob (and the LFO) this fast
 constexpr double kLfoFilterOctaves = 4.0;      // how far the LFO moves the cutoff either way at 100 %
 constexpr double kMaxResonanceQ = 10.0;
-constexpr double kPi = std::numbers::pi;
+using dsp::kPi;
 
 enum class Mode : uint8_t { Classic, OneShot, Slice };
 enum class Playback : uint8_t { Mono, Poly, Thru };

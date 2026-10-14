@@ -52,7 +52,7 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Freeze the selected tracks (or unfreeze them, if they all are frozen) | Ctrl+Shift+F |
 | Solo the selected tracks (or unsolo every track) | S |
 | Find a track by its name or what it is (its label, its preset...); next / previous match; close (in the clip view: its clip in the same beats, if it has one) | Q, then type; Enter (or Down) / Shift+Enter (or Up); Esc |
-| Resize the track under the mouse; at its smallest, fold it (wheel down) or unfold it (wheel up) (piano roll: the keys' rows) | Alt+wheel |
+| On a track's title bar: fold it (wheel down) or unfold it (wheel up), sweeping on to the tracks below; below it: resize the track (piano roll: the keys' rows) | Alt+wheel |
 
 ## Clips
 

@@ -86,6 +86,8 @@ ProjectContents makeContents(const QString& audioPath) {
     master.volumeDb = -3.0;
     master.devices = {test::makeDevice("m1", "utility", {{"gain", -1.0}, {"pan", 0.0}, {"width", 100.0}})};
     master.automation.insert(automation::deviceKey("m1", "gain"), {{0.0, 0.5}});
+    master.height = 72;  // (it folds and resizes as a track does)
+    master.folded = true;
     p.master = master;
     Track drums = test::makeTrack("t1", "Drums");
     drums.volumeDb = -6.0;
@@ -371,6 +373,7 @@ private Q_SLOTS:
         QVERIFY(master.devices[0].id == "m1" && master.devices[0].kind == "utility" &&
                 master.devices[0].params.value("gain") == -1.0);
         QCOMPARE(master.volumeDb, -3.0);
+        QVERIFY(master.height == 72 && master.folded);
         QVERIFY((master.automation == EnvelopeMap{{automation::deviceKey("m1", "gain"), {{0.0, 0.5}}}}));
     }
 
@@ -398,13 +401,15 @@ private Q_SLOTS:
         QVERIFY(master.volumeDb == -4.5 && master.pan == 0.25 && master.devices.empty());
         QVERIFY((master.automation == EnvelopeMap{{automation::kMixerVolume, {{1.0, 0.75}}}}));
         QVERIFY((master.automationView == AutomationView{true, automation::kMixerVolume, {}}));
+        QVERIFY(master.height == kMinTrackHeight && !master.folded);  // (saved before it folded: compact, open)
         QCOMPARE(project.tracks().size(), size_t(1));
         QCOMPARE(project.tracks()[0].id, QStringLiteral("t1"));
         QCOMPARE(project.tempo(), 128.0);
         // Saved again, it says the same, and that the master has no devices.
         const QJsonObject saved = projectToJson(project);
         QCOMPARE(saved["version"].toInt(), kProjectVersion);
-        QCOMPARE(saved["master"].toObject(), with(masterData, "devices", QJsonArray{}));
+        QCOMPARE(saved["master"].toObject(),
+                 with(with(with(masterData, "devices", QJsonArray{}), "height", kMinTrackHeight), "folded", false));
         // Tracks from before version 6 have no input, Auto monitoring and aren't armed; before 8, no group;
         // before 9, no sends (nor returns).
         QJsonObject expected = trackData;
@@ -618,6 +623,8 @@ private Q_SLOTS:
         saved["chain_lists_shown"] = QJsonArray{};
         saved["rack_devices_hidden"] = QJsonArray{};
         saved = setIn(saved, {"tracks", 2, "clips", 0, "name"}, "");  // (MIDI clips have no name: dropped on load)
+        saved = setIn(saved, {"master", "height"}, kMinTrackHeight);  // (the master folds and resizes as a track)
+        saved = setIn(saved, {"master", "folded"}, false);
         QCOMPARE(projectToJson(project, projectFile), saved);
     }
 

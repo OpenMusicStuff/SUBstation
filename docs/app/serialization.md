@@ -165,7 +165,7 @@ values, or a sixth value that isn't an object, makes the file damaged.
 | `state` | base64: a plug-in's whole state (a `.vstpreset`), or a built-in device's non-parameter values; omitted when a built-in device has none |
 | `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}` |
 | `midi_from` | only when set: the id of the MIDI track whose notes it plays instead of its own track's (version 22) |
-| `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23) |
+| `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23), and `"bipolar": true` for a bipolar one (its knob's handle drags it either side of the knob's value; older versions read it as unipolar) |
 | `name` | racks only, when set: the preset it was saved as or loaded from |
 | `chains` | racks only: `[{"id", "name", "volume_db", "pan", "mute", "solo", "devices": [...]}]` |
 | `macros` | racks only: `[{"macro": 0..15, "device", "param", "low", "high"}]` (`low` > `high`: the other way round) |
@@ -256,8 +256,8 @@ refusing the file:
 - Rack macro mappings to a device not in the rack, or to a macro the rack doesn't have, are dropped. A rack has 1 to
   16 macros (`macro_names` longer than 16 is cut there; an empty one gives the default 4), and a value for each.
 - Modulation mappings to a device not on the modulator's track, to the modulator itself, of a device that isn't a
-  modulator, or to a parameter mapped already (the first stays) are dropped (`pruneModulations`); ranges are held to
-  0..1.
+  modulator, or to a parameter mapped already (the first stays) are dropped (`pruneModulations`); ranges' ends are
+  held to -1..2 (a knob's handle sets them past 0..1 to keep its amount; what plays is held to 0..1).
 - Sends' and chains' levels are clamped to the faders' range (-70..+6 dB), pans to -1..1; a MIDI channel outside
   0..16 loads as 0 (every channel); an input of more than two channels loads as none; `monitor` must be a known mode.
 - `armed` is ignored on a group.
