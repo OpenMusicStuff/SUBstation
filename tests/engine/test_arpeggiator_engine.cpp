@@ -158,3 +158,19 @@ TEST_CASE("an arpeggiator in a rack's chain plays that chain's instrument") {
     engine.addBuiltinProcessor(chain, "arpeggiator", -1);
     checkKeys(a.render(), {60, 64, 67, 60});
 }
+
+TEST_CASE("the step display says which step sounds") {
+    Arp a(chord());
+    const auto displays = a.engine.processorDisplays(a.arp);
+    REQUIRE(displays.size() == 1);
+    CHECK_EQ(displays[0].id, std::string("step"));
+    a.render(1.0);
+    std::vector<float> values;
+    a.engine.readProcessorDisplay(a.arp, 0, 0, values);
+    REQUIRE(values.size() >= static_cast<size_t>(2 * kBeat / 64));
+    const auto at = [&](int64_t sample) { return values[static_cast<size_t>(sample / 64)]; };
+    CHECK_EQ(at(1000), 0.f);                    // the first step's note
+    CHECK_EQ(at(kSixteenth + 1000), 1.f);       // the second's
+    CHECK_EQ(at(kSixteenth - 1000), -1.f);      // between them (half a step's gate): none
+    CHECK_EQ(at(kBeat + 4000), -1.f);           // the chord let go
+}

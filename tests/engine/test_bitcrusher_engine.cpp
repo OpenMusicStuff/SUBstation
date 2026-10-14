@@ -65,3 +65,22 @@ TEST_CASE("drive, dither and tone stay in range") {
     CHECK(maxAbs(out) <= 1.0 + 1e-6);
     CHECK(rms(out) > 0.3);  // driven into the clip: nearly a square
 }
+
+TEST_CASE("the level display is the input's peak") {
+    sub::Engine engine;
+    engine.setClipFadeMs(0);
+    const std::string path = makeWav(stereo(sine(440.0, 1.0, 0.5)), 2);
+    engine.loadSource(path);
+    const uint32_t track = engine.addTrack();
+    engine.setTrackClips(track, {clip(path, 0.0, 1.0, 0.0, 1.f)});
+    const uint32_t device = engine.addBuiltinProcessor(engine.trackChain(track), "bitcrusher", -1);
+    const auto displays = engine.processorDisplays(device);
+    REQUIRE(displays.size() == 1);
+    CHECK_EQ(displays[0].id, std::string("level"));
+    CHECK_EQ(displays[0].samplesPerValue, 256);
+    engine.renderOffline(0.0, kSampleRate / 2);
+    std::vector<float> values;
+    engine.readProcessorDisplay(device, 0, 0, values);
+    REQUIRE(values.size() > 10);
+    CHECK_NEAR(values[5], 0.5, 0.01);
+}

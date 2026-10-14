@@ -18,6 +18,10 @@
 //
 // Hold keeps the notes after they are let go, until a note comes with none
 // held: then those notes replace them.
+//
+// Its editor lights the step playing: the display "step", one value per 64
+// samples: the pattern's step (from the chord's start, 0..15 round and round)
+// whose notes sound, or -1 while none does.
 
 #include <algorithm>
 #include <array>
@@ -38,7 +42,10 @@ public:
     enum StyleKind { Up = 0, Down, UpDown, DownUp, Converge, Diverge, Played, Random, Chord };
     enum Velocity { AsPlayed = 0, Fixed };
 
-    ArpeggiatorProcessor() : BuiltinProcessor(infos()) {}
+    enum Display { StepDisplay = 0 };
+    static constexpr int kDisplaySamples = 64;
+
+    ArpeggiatorProcessor() : BuiltinProcessor(infos(), {{"step", kDisplaySamples}}) {}
 
     std::string typeId() const override { return "builtin:arpeggiator"; }
     std::string name() const override { return "Arpeggiator"; }
@@ -60,6 +67,8 @@ public:
         running_ = false;
         nextStep_ = 0;
         patternStep_ = 0;
+        lastStep_ = 0;
+        displayCount_ = 0;
     }
 
     void endMidiNotes(EventOutput& out) noexcept override {
@@ -121,6 +130,10 @@ protected:
             }
             if (!grid) freeSteps_ += 1.0 / stepSamples;
             ++clock_;
+            if (++displayCount_ >= kDisplaySamples) {
+                displayCount_ = 0;
+                publish(StepDisplay, numSounding_ > 0 ? static_cast<float>(lastStep_ % 16) : -1.f);
+            }
         }
         // Anything left (an offset past the stretch) passes on at its end.
         for (; event < ctx.inEvents.count; ++event) {
@@ -322,7 +335,7 @@ private:
         } else {
             play(notes[static_cast<size_t>(indexFor(style, patternStep_, count))]);
         }
-        ++patternStep_;
+        lastStep_ = patternStep_++;
     }
 
     static const std::vector<ParamInfo>& infos() {
@@ -358,6 +371,8 @@ private:
     bool running_ = false;    // a pattern is going (notes held since it started)
     int64_t nextStep_ = 0;    // the step to play next, on the clock it is on
     int64_t patternStep_ = 0; // steps played since the pattern started
+    int64_t lastStep_ = 0;    // the one played last (for the display)
+    int displayCount_ = 0;    // samples since the display's last value
 };
 
 }  // namespace

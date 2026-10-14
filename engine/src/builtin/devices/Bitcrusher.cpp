@@ -9,6 +9,9 @@
 // first (TPDF: a hiss in place of the steps' distortion on quiet sounds). Tone
 // smooths what comes out (a one-pole low-pass, open at 100%), then Output and
 // Dry/Wet.
+//
+// Its editor's wave moves with what comes in: the display "level", one value
+// per 256 samples, the input's peak over them (the louder channel).
 
 #include <algorithm>
 #include <cmath>
@@ -25,7 +28,10 @@ namespace {
 class BitcrusherProcessor final : public BuiltinProcessor {
 public:
     enum Param { Bits = 0, Rate, Drive, Dither, Tone, Output, Mix, NumParams };
-    BitcrusherProcessor() : BuiltinProcessor(infos()) {}
+    enum Display { LevelDisplay = 0 };
+    static constexpr int kDisplaySamples = 256;
+
+    BitcrusherProcessor() : BuiltinProcessor(infos(), {{"level", kDisplaySamples}}) {}
 
     std::string typeId() const override { return "builtin:bitcrusher"; }
     std::string name() const override { return "Bitcrusher"; }
@@ -45,6 +51,8 @@ public:
             tone_[c].reset();
         }
         noise_.seed(0x2545F491U);
+        displayCount_ = 0;
+        peak_ = 0.f;
         drive_.snapTo(dbToGain(param(Drive)));
         output_.snapTo(dbToGain(param(Output)));
         mix_.snapTo(param(Mix) / 100.f);
@@ -75,6 +83,7 @@ protected:
             if (tick) phase_ -= std::floor(phase_);
             for (int c = 0; c < n; ++c) {
                 const float dry = ch[c][i];
+                peak_ = std::max(peak_, std::abs(dry));
                 if (tick) {
                     float x = std::clamp(drive * dry, -1.f, 1.f);
                     if (dither > 0.f) x += dither * (noise_.next() + noise_.next()) * 0.5f / steps;
@@ -84,6 +93,11 @@ protected:
                 y = tone_[c].lowpass(y, toneCoeff);  // (open, it passes y and follows it: no jump when it closes)
                 y *= output;
                 ch[c][i] = dry + mix * (y - dry);
+            }
+            if (++displayCount_ >= kDisplaySamples) {
+                publish(LevelDisplay, peak_);
+                displayCount_ = 0;
+                peak_ = 0.f;
             }
         }
     }
@@ -105,6 +119,8 @@ private:
     }
 
     double sampleRate_ = 48000.0;
+    int displayCount_ = 0;  // samples since the display's last value
+    float peak_ = 0.f;      // the input's peak over them
     double phase_ = 1.0;  // the rate's clock: a new sample is held each time it passes 1
     float held_[kChannels] = {};
     dsp::OnePole tone_[kChannels];

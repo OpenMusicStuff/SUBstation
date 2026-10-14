@@ -958,8 +958,9 @@ Fewer bits and a lower sample rate: the sound of early samplers and game console
 - **Tone** (0 to 100 %): smooths the steps' edges, a low-pass from 1 kHz up (open at 100 %).
 - **Output** (−24 to +12 dB) and **Dry/Wet**.
 
-Its editor draws a sine as the Bitcrusher has it, as the parameters stand: the steps
-across are Rate's, the steps up and down Bits'.
+Its editor draws one cycle of a sine as the Bitcrusher has it, as the parameters stand: the
+steps across are Rate's, the steps up and down Bits', its height Output's (whose box sits over
+it). While sound comes in the wave runs along, glowing with the input's level.
 
 ### Chorus-Ensemble
 
@@ -1368,7 +1369,8 @@ Plays the notes held one after another, in a pattern, over one to four octaves.
 - **Velocity**: as each key was played, or **Fixed** at a value (1 to 127).
 
 Its editor draws the pattern: sixteen steps of a three-note chord, walked as the style
-walks it, over the octaves, each as long as the gate and the odd ones late by the swing.
+walks it, over the octaves, each as long as the gate and the odd ones late by the swing. As it
+plays, the step sounding lights up. Octaves and Velocity sit under Rate, Gate and Swing.
 
 ## Modulators: LFO and Envelope
 

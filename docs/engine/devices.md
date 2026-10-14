@@ -582,6 +582,8 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
   Gate × a step (at the step's nominal length), at its key's velocity or Fixed's.
 - **Switched off**: `endMidiNotes()` ends what it plays and forgets the held notes (it
   won't hear their note-offs). `reset()` forgets everything.
+- **Display**: `step`, one value per 64 samples: the step (since the chord started, 0..15
+  round and round) whose notes sound, or -1 while none does. Its editor lights that step.
 
 ### Utility (`builtin:utility`, AudioEffect)
 
@@ -1540,7 +1542,8 @@ Fewer bits and a lower sample rate.
   rounded to 2^(bits − 1) steps either side of zero (fractional bits too), held to ±1.
 - **Tone**: a one-pole low-pass from 1 kHz (at 0) to 20 kHz (at 99 %), evenly in log;
   off at 100 %. Then Output and Dry/Wet (ramped over 20 ms, snapped on `reset()`).
-- No displays: its editor works its preview out from the parameters.
+- **Display**: `level`, one value per 256 samples: the input's peak over them (the louder channel). Its
+  editor works its preview out from the parameters, and runs it along while this comes.
 
 ### Delay (`builtin:delay`, AudioEffect)
 
@@ -2443,8 +2446,9 @@ readonly property var editors: ({
   meter; Erosion its noise band (from `erosion::bandMagnitude`) on an X-Y field of Frequency and Amount over spectra
   of `input` and `output`, shimmering with `erosion`, and a scope of `mod_l` against `mod_r`; the Delay its filter
   over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
-  modulation; the Bitcrusher a sine crushed as its parameters say (worked out in the QML, no displays); the
-  Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`, mirrored in the QML); the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
+  modulation; the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
+  `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
+  mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from
   `phaser::curve`) at the sweep the engine publishes (`sweep_l`, `sweep_r`, `q_l`, `q_r`), its notches marked, and
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
