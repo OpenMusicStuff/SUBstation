@@ -160,6 +160,17 @@ compensation  = heard(point) - arrival(edge)                  per edge
   latency (found in `idle()`), rebuilds the snapshot.
 - A monitored track's edges aren't delayed (`Renderer::compensationFor()`), so a player hears
   themselves with only the latency of the track's own devices.
+- **Constraining** (`Engine::setConstrainLatency()`, Cubase's Constrain Delay Compensation):
+  while a track is monitored (In, or Auto and armed), `constrainLatencyLocked()` bypasses every
+  device slower than the threshold on the strips it is heard through (its own, and every strip
+  its summed edges reach, the master last): `Processor::setConstrained()`. A bypassed device is
+  still switched on (`isEnabled()`), but renders and delay compensation go by `isActive()`, so it
+  isn't processed and adds no latency. `ProcessorEntry::alignedLatency` keeps the latency it
+  would have (`ownLatency()`), so `idle()` still sees it change. With the snapshot's
+  `constrained`, a track hearing its MIDI input (In, or Auto and armed; playing back too, its
+  own clips' notes then early) is `TrackBuffers::uncompensated` like a monitored one. Offline renders hold it off
+  (`constrainHeld_`, from `suspendLiveLocked()` to `endOfflineLocked()`), so exports and
+  freezing hear every device.
 
 Traversal is bottom-up in topological order: a source's latencies are known before the arrivals
 of its edges are needed. `GraphLatencies` holds the results: `inputLatency` per node,

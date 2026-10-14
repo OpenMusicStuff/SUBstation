@@ -279,6 +279,16 @@ public:
         enabled_.store(enabled, std::memory_order_relaxed);
     }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_relaxed); }
+    // Bypassed by the engine while it constrains delay compensation
+    // (Engine::setConstrainLatency()): switched on, but not processed, and it
+    // adds no latency. It is reset as it goes, like a device switched off.
+    void setConstrained(bool constrained) noexcept {
+        if (constrained && !isConstrained()) requestReset();
+        constrained_.store(constrained, std::memory_order_relaxed);
+    }
+    bool isConstrained() const noexcept { return constrained_.load(std::memory_order_relaxed); }
+    // What renders and delay compensation go by: switched on and not bypassed.
+    bool isActive() const noexcept { return isEnabled() && !isConstrained(); }
 
     // Thread-safe: asks whichever renderer processes this next to reset() it
     // first (the engine does this around offline renders).
@@ -387,6 +397,7 @@ private:
     bool sidechainConnected_ = false;
     float heldModulation_ = 0.f;
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> constrained_{false};
     std::atomic<bool> resetRequested_{false};
     std::atomic<float> outputPeak_[2]{};
     bool switchedOff_ = false;

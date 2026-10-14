@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include <algorithm>
+#include <atomic>
 #include <stdexcept>
 
 #include "platform/Unicode.h"
@@ -31,6 +33,7 @@ public:
             throw std::runtime_error("The MIDI input \"" + name + "\" could not be opened: " + errorText(result) +
                                      (result == MMSYSERR_ALLOCATED ? " (another application may be using it)" : ""));
         }
+        started_ = hostTimeNs();  // (the driver's time stamps count from here)
         result = midiInStart(handle_);
         if (result != MMSYSERR_NOERROR) {
             midiInClose(handle_);
@@ -48,11 +51,27 @@ public:
     WinMMInput(const WinMMInput&) = delete;
     WinMMInput& operator=(const WinMMInput&) = delete;
 
+    MidiInputDelivery takeDelivery() override {
+        MidiInputDelivery delivery;
+        delivery.messages = static_cast<int>(messages_.exchange(0));
+        const int64_t sum = lateSum_.exchange(0);
+        delivery.maxMs = static_cast<double>(lateMax_.exchange(0)) * 1e-6;
+        if (delivery.messages > 0) delivery.averageMs = static_cast<double>(sum) * 1e-6 / delivery.messages;
+        return delivery;
+    }
+
 private:
-    static void CALLBACK callback(HMIDIIN, UINT message, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR) {
+    static void CALLBACK callback(HMIDIIN, UINT message, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR param2) {
         if (message != MIM_DATA) return;  // MIM_LONGDATA (no buffers are given), MIM_ERROR, open/close
         const int64_t now = hostTimeNs();
-        const auto* input = reinterpret_cast<const WinMMInput*>(instance);
+        auto* input = reinterpret_cast<WinMMInput*>(instance);
+        // How late it comes: `param2` is when the driver took it, in ms since midiInStart().
+        const int64_t late = std::max<int64_t>(0, now - input->started_ - static_cast<int64_t>(param2) * 1'000'000);
+        input->messages_.fetch_add(1, std::memory_order_relaxed);
+        input->lateSum_.fetch_add(late, std::memory_order_relaxed);
+        for (int64_t max = input->lateMax_.load(std::memory_order_relaxed);
+             late > max && !input->lateMax_.compare_exchange_weak(max, late, std::memory_order_relaxed);) {
+        }
         const auto packed = static_cast<uint32_t>(param1);
         const uint8_t bytes[3] = {static_cast<uint8_t>(packed & 0xFF), static_cast<uint8_t>((packed >> 8) & 0xFF),
                                   static_cast<uint8_t>((packed >> 16) & 0xFF)};
@@ -61,6 +80,10 @@ private:
     }
 
     HMIDIIN handle_ = nullptr;
+    int64_t started_ = 0;  // hostTimeNs() as it started
+    std::atomic<int64_t> messages_{0};
+    std::atomic<int64_t> lateSum_{0};  // ns
+    std::atomic<int64_t> lateMax_{0};
     const uint16_t port_;
     const MidiInputDevices::Handler& handler_;
 };

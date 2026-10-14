@@ -23,6 +23,7 @@ Change it here.
 | *Buffer Size* | The buffer sizes the device offers, in samples |
 | *Exclusive mode* | WASAPI only: lower latency; other apps are silenced |
 | *Audio Threads* | How many threads render tracks at once |
+| *Constrain Latency Over* | The latency over which Constrain Delay Compensation bypasses a device ([below](#playing-live-in-a-project-full-of-latency)) |
 
 Changes there apply at once, because what a driver offers is only known while it runs.
 The line below the settings shows the device running, its sample rate, buffer size and
@@ -53,6 +54,27 @@ for the `audio` group:
 ```
 
 and log in again.
+
+### Playing live in a project full of latency
+
+What you hear when you play is the driver's buffer (the smaller the sooner: try 64 or 128
+on ASIO, or WASAPI in exclusive mode), plus the latency of the devices your sound goes
+through. Plug-ins with lookahead or linear-phase processing can add tens of milliseconds,
+and delay compensation holds every track back to line up with the slowest one.
+
+The stopwatch in the transport bar turns on **Constrain Delay Compensation** (as in
+Cubase). While a track is monitored (armed, or Monitor set to In), every device with
+more latency than *Constrain Latency Over* (3 ms by default) on its way to the speakers
+is bypassed: on the track itself, on the groups and returns it goes into, and on the
+master. Those devices stay switched on; their titles are dimmed and their tooltips say
+why, and they play again once nothing is monitored or the stopwatch is off. The armed
+track, and the groups it goes through, also stop waiting for the other tracks' delay
+compensation, whether the song plays or not (what plays back on them then comes that much
+early). Exports and freezing always hear every device.
+
+A MIDI track's name tooltip shows what a note you play on it is heard after, and why:
+*Played live: 9.3 ms = MIDI input 1.3 + devices 2.0 + delay compensation 0.0 + output 6.0*.
+The output part is what the driver reports (the buffer and the converters).
 
 ## ASIO
 
@@ -101,6 +123,15 @@ that could not be opened shows in red, with the reason in its tooltip. See
 [midi.md](midi.md#midi-input). On Linux the inputs are ALSA's sequencer ports (hardware,
 and software such as a virtual keyboard; PipeWire bridges them): an input unplugged and
 plugged in again plays again by itself.
+
+MIDI input plays one audio buffer after it arrives, so every note is delayed alike.
+*Play MIDI input at once* plays each note as the next buffer starts instead: up to a
+buffer sooner (half of one on average), but its timing jitters by up to a buffer.
+Recorded notes are placed half a buffer earlier to make up.
+
+While the MIDI page shows, it measures how late the system hands each input's notes over
+after its driver took them in. A few milliseconds is normal. Much more points at the
+device's driver or a hub, not at SUBstation.
 
 ## Plug-ins
 

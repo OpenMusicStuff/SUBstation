@@ -87,6 +87,29 @@ int audioThreads() {
 
 void setAudioThreads(int threads) { QSettings().setValue(kAudioThreadsKey, std::max(0, threads)); }
 
+bool midiImmediate() { return QSettings().value(kMidiImmediateKey, false).toBool(); }
+
+void setMidiImmediate(bool immediate) {
+    QSettings().setValue(kMidiImmediateKey, immediate ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+bool constrainLatency() { return QSettings().value(kConstrainLatencyKey, false).toBool(); }
+
+void setConstrainLatency(bool on) {
+    QSettings().setValue(kConstrainLatencyKey, on ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+double constrainThresholdMs() {
+    bool ok = false;
+    const double value = QSettings().value(kConstrainThresholdKey, kDefaultConstrainThresholdMs).toDouble(&ok);
+    return ok && std::isfinite(value) ? std::clamp(value, 0.0, kMaxConstrainThresholdMs) : kDefaultConstrainThresholdMs;
+}
+
+void setConstrainThresholdMs(double ms) {
+    QSettings().setValue(kConstrainThresholdKey, std::isfinite(ms) ? std::clamp(ms, 0.0, kMaxConstrainThresholdMs)
+                                                                    : kDefaultConstrainThresholdMs);
+}
+
 QSet<QString> disabledMidiInputs() {
     const QVariant value = QSettings().value(kMidiDisabledKey);
     QSet<QString> names;

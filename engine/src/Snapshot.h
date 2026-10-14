@@ -418,6 +418,9 @@ struct TrackBuffers {
     std::array<ClipVoice, kMaxClipVoices> voices{};  // in the order its clips play
     int numVoices = 0;
     bool monitored = false;  // plays its live input instead of its clips
+    // Heard as it is played, without delay compensation: monitored, or live
+    // while compensation is constrained (TrackRender::live).
+    bool uncompensated = false;
     bool recorded = false;   // being recorded: its clips are silent (the take replaces them)
     bool audible = true;     // not muted, and solo lets one of its edges through
     // Solo, per chunk: it is soloed; it is soloed or fed by something soloed
@@ -463,6 +466,9 @@ struct TrackRender : StripRender {
     // Other tracks' outputs come into it as its input (Track In edges): it can
     // be monitored without an input of its own.
     bool trackIn = false;
+    // Constrained: a monitored track (In, or Auto and armed), or a strip one is
+    // heard through. Its edges aren't delay-compensated, playing back or not.
+    bool live = false;
     std::vector<ClipRender> clips;  // sorted by start
     int64_t maxClipLength = 0;      // bounds the binary search window
     std::vector<NoteRender> notes;  // sorted by start
@@ -479,6 +485,8 @@ struct RenderSnapshot {
     int64_t loopStart = 0;
     int64_t loopEnd = 0;
     int maxLatency = 0;  // the tracks reach the master this late (delay-compensated alike)
+    // Delay compensation is constrained (Engine::setConstrainLatency()).
+    bool constrained = false;
     std::vector<TrackRender> tracks;  // in routing order: every track after those that feed it
     std::vector<EdgeRender> edges;    // the routing graph's edges, by source in snapshot order
     std::vector<int> masterInputs;    // the edges the master sums, in snapshot order (not sidechains into its devices)

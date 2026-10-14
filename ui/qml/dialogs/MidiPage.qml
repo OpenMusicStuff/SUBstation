@@ -6,7 +6,9 @@ import SUBstation
 // Preferences › MIDI (Session.midiPreferences, the old MidiPage): the MIDI
 // inputs connected, each on (tracks can hear and record it) or off; one that
 // could not be opened in red, why in its tooltip. Refresh looks for inputs
-// plugged in or taken out since.
+// plugged in or taken out since. Below, how late each input's driver hands
+// its messages over (measured while the page shows), and whether MIDI input
+// plays at once.
 ColumnLayout {
     id: page
 
@@ -86,6 +88,44 @@ ColumnLayout {
             text: page.prefs.status
             wrapMode: Text.Wrap
             color: Theme.textDim
+        }
+    }
+
+    CheckBox {
+        objectName: "midiImmediate"
+        focusPolicy: Qt.NoFocus
+        text: qsTr("Play MIDI input at once (sooner, but its timing jitters by up to a buffer)")
+        checked: Session.bridge.midiImmediate
+        onToggled: {
+            Session.bridge.midiImmediate = checked
+            checked = Qt.binding(() => Session.bridge.midiImmediate)
+        }
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("MIDI input normally plays one audio buffer after it arrives, so every note is "
+                           + "delayed alike.\nAt once, a note plays as the next buffer starts: up to a buffer "
+                           + "sooner, but as early as the buffer falls.")
+        ToolTip.delay: 700
+    }
+
+    Label {
+        id: delivery
+        objectName: "midiDelivery"
+        Layout.fillWidth: true
+        text: qsTr("Play a few notes: how late the system hands them over shows here.")
+        wrapMode: Text.Wrap
+        color: Theme.textDim
+
+        Timer {
+            interval: 1000
+            running: page.visible
+            repeat: true
+            // (Kept once the notes stop, so it can be read: it says it is about the notes last played.)
+            onTriggered: {
+                const text = page.prefs.takeDeliveryText()
+                if (text !== "")
+                    delivery.text = qsTr("Handed over after the driver took them in (the notes last played):\n")
+                                    + text
+            }
         }
     }
 }

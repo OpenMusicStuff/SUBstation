@@ -54,8 +54,9 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
 
         renderer_.prepare(sampleRate_);
         for (auto& [id, entry] : processors_) entry.processor->prepare(sampleRate_, Renderer::kMaxBlock);
-        // MIDI input plays a device buffer after it arrives (MidiInput.h).
-        shared_.midiInputDelay.store(state.bufferFrames > 0 ? static_cast<int>(state.bufferFrames) : 512);
+        // MIDI input plays a device buffer after it arrives (MidiInput.h), or at once.
+        midiBufferFrames_ = state.bufferFrames > 0 ? static_cast<int>(state.bufferFrames) : 512;
+        shared_.midiInputDelay.store(midiImmediate_ ? 0 : midiBufferFrames_);
         shared_.midiSampleRate.store(sampleRate_);
         rebuildSnapshotLocked();
         serviceTransportIfIdleLocked();

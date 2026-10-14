@@ -289,6 +289,9 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         buffers.monitored = isMonitored(track, flags);
         buffers.recorded = flags.live && isRecorded(track.id);
         const bool hearsMidi = hearsMidiInput(track, flags);
+        // Constrained, a track played live (and what it is heard through) is
+        // heard as soon as it can be, like monitored audio, playing back or not.
+        buffers.uncompensated = buffers.monitored || track.live;
         MidiRecordingTake* take = recording_ ? midiTake(track.id) : nullptr;
         buffers.numEvents = 0;
         if (!track.notes.empty() || numActiveNotes_ > 0 || numPreviewNotes_ > 0 || numInputEvents_ > 0 ||
@@ -405,7 +408,7 @@ void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scr
     }
     ProcessContext context = chunkContext_;  // its own: the inserts move it along the chunk's stretches
     processInserts(snap, track, context, buffers.events.data(), buffers.numEvents, left, right, frames,
-                   buffers.monitored, scratch);
+                   buffers.uncompensated, scratch);
     if (t == captureTrack_) {  // what freezing it keeps
         std::copy_n(left, frames, captureLeft_.data());
         std::copy_n(right, frames, captureRight_.data());
@@ -443,7 +446,7 @@ void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scr
             std::copy_n(right, frames, edgeR);
         }
         if (DelayLine* delay = edgeDelayLine(edge, e)) {
-            delay->process(edgeL, edgeR, frames, compensationFor(edge, buffers.monitored));
+            delay->process(edgeL, edgeR, frames, compensationFor(edge, buffers.uncompensated));
         }
     }
 
@@ -471,7 +474,8 @@ int Renderer::compensationFor(const EdgeRender& edge, bool monitored) noexcept {
     // (edge.compensation, worked out with the snapshot). The exception: a
     // monitored track plays its live input as soon as it can, so a player hears
     // themselves with only the latency of the track's own devices (monitoring
-    // latency), not every other track's.
+    // latency), not every other track's; constrained, so does every strip on
+    // the way out of a track played live (TrackRender::live).
     return monitored ? 0 : edge.compensation;
 }
 
@@ -911,7 +915,7 @@ bool Renderer::takeResets(const StripRender& chain) noexcept {
     bool any = false;
     for (size_t i = 0; i < chain.inserts.size(); ++i) {
         Processor& insert = *chain.inserts[i];
-        if (!insert.isEnabled()) continue;
+        if (!insert.isActive()) continue;
         any = true;
         if (!insert.takeResetRequest()) continue;
         resetInsert(insert, i < chain.racks.size() ? chain.racks[i].get() : nullptr);
@@ -1000,7 +1004,7 @@ void Renderer::runModulators(const RenderSnapshot& snap, const StripRender& stri
         const ModulatorRender& modulator = strip.modulators[k];
         Processor& processor = *modulator.processor;
         float* values = scratch.modulation[k].data();
-        if (processor.isEnabled()) {
+        if (processor.isActive()) {
             const StripRender& chain =
                 modulator.rack ? modulator.rack->chains[static_cast<size_t>(modulator.chain)] : strip;
             // (One in a rack: before its rack's chain takes its devices' requests, after this.)
@@ -1072,10 +1076,10 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
         if (insert.isModulator()) {
             // Run before the chain (runModulators): the audio goes past it, as
             // late as its sidechain makes the strip (as the engine aligned it).
-            if (insert.isEnabled()) waitForSidechain(snap, chain, i, left, right, frames, monitored);
+            if (insert.isActive()) waitForSidechain(snap, chain, i, left, right, frames, monitored);
         } else if (insert.isMidiEffect()) {
             // Run before the chain (processMidiEffects): the audio goes past it.
-        } else if (insert.isEnabled()) {
+        } else if (insert.isActive()) {
             if (!rack) waitForSidechain(snap, chain, i, left, right, frames, monitored);
             // Switched by its automation: its gain over the chunk, and its input
             // as late as it would come out of it.
@@ -1158,7 +1162,7 @@ void Renderer::processMidiEffects(const RenderSnapshot& snap, const StripRender&
         std::vector<ProcessEvent>& buffer = buffers[next];
         EventOutput out{buffer.data(), buffer.size(), 0};
         Slices played = slices;
-        bool on = insert.isEnabled();
+        bool on = insert.isActive();
         if (on) {  // its automation's switch, as it stands at the chunk's start
             for (const SwitchRender& switched : chain.switches) {
                 if (switched.lane.insert != static_cast<int>(i)) continue;

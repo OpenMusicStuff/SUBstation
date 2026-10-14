@@ -111,11 +111,17 @@ ma_format exportFormat(int bitDepth) {
 
 void Engine::suspendLiveLocked() {
     finishRecordingLocked();  // its input would have a hole
-    if (!deviceRunning_) return;
-    liveSuspended_.store(true, std::memory_order_seq_cst);
-    // Once the epoch advances, any callback that started before the flag was
-    // visible has finished; later callbacks output silence.
-    waitForCallbackLocked();
+    if (deviceRunning_) {
+        liveSuspended_.store(true, std::memory_order_seq_cst);
+        // Once the epoch advances, any callback that started before the flag was
+        // visible has finished; later callbacks output silence.
+        waitForCallbackLocked();
+    }
+    // Offline renders hear every device, bypassed live or not (setConstrainLatency()).
+    if (!constrainHeld_) {
+        constrainHeld_ = true;
+        if (constrainLatency_) rebuildSnapshotLocked();
+    }
 }
 
 void Engine::resumeLiveLocked() { liveSuspended_.store(false, std::memory_order_seq_cst); }
@@ -201,14 +207,14 @@ void Engine::renderTrackLocked(uint32_t trackId, double startBeat, int64_t frame
                                const std::function<void(const float*, int64_t)>& sink) {
     checkNotRenderingLocked();
     arrangementTrackLocked(trackId);  // (throws for an unknown track)
+    ScopedNoDenormals noDenormals;
+    suspendLiveLocked();  // (before the snapshot is taken: it may make a new one)
+    resetProcessorsLocked();
+    ScopeExit resume([this] { endOfflineLocked(); });
     const RenderSnapshot& snap = *snapshotHold_;
     const TrackRender* found = snap.findTrack(trackId);
     if (!found) throw std::invalid_argument("Unknown track id " + std::to_string(trackId));
     const int track = static_cast<int>(found - snap.tracks.data());
-    ScopedNoDenormals noDenormals;
-    suspendLiveLocked();
-    resetProcessorsLocked();
-    ScopeExit resume([this] { endOfflineLocked(); });
     Renderer offline;
     OfflineLines lines;
     prepareOfflineLocked(snap, offline, lines, startBeat);
@@ -260,6 +266,10 @@ std::shared_ptr<Engine::OfflineRender> Engine::beginOfflineLocked(double startBe
 
 void Engine::endOfflineLocked() {
     resetProcessorsLocked();
+    if (constrainHeld_) {
+        constrainHeld_ = false;
+        if (constrainLatency_) rebuildSnapshotLocked();
+    }
     resumeLiveLocked();
 }
 

@@ -252,7 +252,7 @@ int Engine::sidechainTapLocked(SidechainTap where, uint32_t tapProcessor, const 
     int slot = static_cast<int>(place - slots.begin());
     // A rack switched off passes its input on, without running its chains: after the outermost such rack.
     for (int rack = slots[static_cast<size_t>(slot)].rack; rack >= 0; rack = slots[static_cast<size_t>(rack)].rack) {
-        if (!slots[static_cast<size_t>(rack)].processor->isEnabled()) slot = rack;
+        if (!slots[static_cast<size_t>(rack)].processor->isActive()) slot = rack;
     }
     tap = EdgeRender::Tap::AfterDevice;
     return slot;
@@ -405,6 +405,29 @@ int Engine::trackLatency(uint32_t trackId) {
     if (trackId == kMaster) return snapshotHold_->master.latency;
     const TrackRender* track = snapshotHold_->findTrack(trackId);
     return track ? track->latency : 0;
+}
+
+LiveLatency Engine::liveLatency(uint32_t trackId) {
+    std::lock_guard lock(mutex_);
+    LiveLatency out;
+    out.midiDelay = shared_.midiInputDelay.load();
+    out.output = static_cast<int>(device_.state().outputLatency);
+    if (!snapshotHold_) return out;
+    const RenderSnapshot& snap = *snapshotHold_;
+    const TrackRender* track = snap.findTrack(trackId);
+    if (!track) return out;
+    out.live = track->live;
+    // Along its output, through its groups, to the master.
+    for (int hops = 0; track && hops <= static_cast<int>(snap.tracks.size()); ++hops) {
+        out.devices += track->latency;
+        if (track->outgoing.empty()) return out;  // (no output: it isn't heard)
+        const EdgeRender& edge = snap.edges[static_cast<size_t>(track->outgoing.front())];
+        if (edge.kind != EdgeRender::Kind::Output) return out;
+        if (!track->live) out.compensation += edge.compensation;
+        track = edge.to >= 0 ? &snap.tracks[static_cast<size_t>(edge.to)] : nullptr;
+    }
+    out.devices += snap.master.latency;
+    return out;
 }
 
 int Engine::outputLatency() {

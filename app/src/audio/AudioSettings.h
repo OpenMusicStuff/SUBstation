@@ -14,7 +14,10 @@
 //   audio/output_channels  "2,3": the pair the master plays on; "": the first two
 //   audio/input_channels   ASIO inputs to open; none until something records
 //   audio/threads          render threads; 0: the engine's default   audioThreads()
+//   audio/constrain_latency   Constrain Delay Compensation ("true" / "false")   constrainLatency()
+//   audio/constrain_threshold_ms   the latency it bypasses devices over; default 3   constrainThresholdMs()
 //   midi/disabled_inputs   MIDI inputs turned off                     disabledMidiInputs()
+//   midi/immediate         MIDI input played at once ("true" / "false")   midiImmediate()
 //   record/quantize        record quantization grid in beats; 0: as played
 
 #include <QSet>
@@ -60,11 +63,27 @@ struct AudioSettings {
 inline const QString kAudioThreadsKey = QStringLiteral("audio/threads");
 inline const QString kMidiDisabledKey = QStringLiteral("midi/disabled_inputs");
 inline const QString kRecordQuantizeKey = QStringLiteral("record/quantize");
+inline const QString kMidiImmediateKey = QStringLiteral("midi/immediate");
+inline const QString kConstrainLatencyKey = QStringLiteral("audio/constrain_latency");
+inline const QString kConstrainThresholdKey = QStringLiteral("audio/constrain_threshold_ms");
+inline constexpr double kDefaultConstrainThresholdMs = 3.0;
+inline constexpr double kMaxConstrainThresholdMs = 100.0;
 
 // The threads chosen to render audio (the audio thread and its workers); 0:
 // the engine's default (one per core but one).
 int audioThreads();
 void setAudioThreads(int threads);
+
+// Constrain Delay Compensation (sub::Engine::setConstrainLatency()): whether
+// it is on, and the latency (ms, 0-100) over which it bypasses a device.
+bool constrainLatency();
+void setConstrainLatency(bool on);
+double constrainThresholdMs();
+void setConstrainThresholdMs(double ms);
+
+// MIDI input played at once (sub::Engine::setMidiImmediate()): sooner, less steady.
+bool midiImmediate();
+void setMidiImmediate(bool immediate);
 
 // MIDI inputs the user turned off. Every other input is used, so a device
 // plugged in for the first time just plays.

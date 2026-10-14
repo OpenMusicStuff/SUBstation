@@ -132,6 +132,16 @@ struct RecordingProgress {
     std::vector<RecordedNote> notes;  // a MIDI take's notes so far (held ones end at -1)
 };
 
+// What a track played live is heard after (Engine::liveLatency()), in frames.
+struct LiveLatency {
+    bool live = false;       // monitored and constrained: no delay compensation on its way out
+    int midiDelay = 0;       // MIDI input's (a device buffer, or none: Engine::setMidiImmediate())
+    int devices = 0;         // its devices', its groups' and the master's
+    int compensation = 0;    // delay compensation on its way to the master
+    int output = 0;          // the device's output latency (as its driver reports it)
+    int total() const { return midiDelay + devices + compensation + output; }
+};
+
 // The audio device's sample clock as MIDI input sees it (MidiInput.h).
 struct AudioClockStatus {
     bool running = false;
@@ -196,6 +206,7 @@ struct ProcessorInfo {
     bool hasEditor = false;
     bool hasSidechain = false;  // it has a sidechain (aux) input: setProcessorSidechain()
     bool acceptsMidi = false;   // it plays notes (an instrument, an effect with a MIDI input): setProcessorMidiInput()
+    bool constrained = false;  // bypassed while delay compensation is constrained (Engine::setConstrainLatency())
     PluginStatus status = PluginStatus::Ready;
     // Failed, Crashed: why; Ready: what last went wrong (ProcessorEvent::Problem: its state wasn't taken).
     std::string problem;
@@ -400,6 +411,26 @@ public:
     void setTrackMonitor(uint32_t trackId, MonitorMode mode);
     // Armed tracks are what Auto monitoring listens to; what records is up to startRecording().
     void setTrackArmed(uint32_t trackId, bool armed);
+    // Constraining delay compensation (Cubase's), so a player hears what they
+    // play sooner: while any track is monitored (In, or Auto and armed), the
+    // devices whose latency is over `thresholdMs` on its way out are bypassed,
+    // latency and all: its own, those of the groups and returns it goes into, and
+    // the master's. They stay switched on (ProcessorInfo::constrained tells which
+    // are bypassed) and play again once nothing is monitored or this is off.
+    // The monitored tracks and the strips they are heard through then skip
+    // delay compensation too (their live MIDI with them), as monitored audio
+    // always does, playing back or not: what plays back on them comes that much
+    // early. Offline renders (exports, freezing) hear every device.
+    void setConstrainLatency(bool on, double thresholdMs = 3.0);
+    bool constrainLatency();
+    double constrainThresholdMs();
+    // What a track played live through MIDI input is heard after, in frames:
+    // the MIDI input's delay, its devices' and those of the groups its output
+    // goes through and the master's, the delay compensation on that way (none
+    // while it is live), and the device's output latency as the driver reports it.
+    LiveLatency liveLatency(uint32_t trackId);
+    // How late each open MIDI input's driver handed messages over since the last call.
+    std::vector<MidiInputDelivery> takeMidiInputDelivery();
     // Records the targets' inputs from the next block the playhead moves in, and
     // starts playing (after `countInBeats` of count-in) if stopped. Throws
     // std::runtime_error (for the user) if no device runs, a target's input isn't
@@ -440,6 +471,12 @@ public:
     // packets of other kinds, are ignored.
     void sendUmp(const std::string& device, const std::vector<uint32_t>& words, int64_t hostTimeNs = 0);
     AudioClockStatus audioClock() const;
+    // MIDI input played at once: in the next block, at its start, instead of a
+    // device buffer after it came (MidiInput.h). Up to a buffer sooner, half a
+    // buffer on average, but as early as the block falls: its timing jitters by
+    // up to a buffer. Recorded notes land half a buffer earlier than met to make up.
+    void setMidiImmediate(bool immediate);
+    bool midiImmediate();
 
     // --- Automation -------------------------------------------------------------
     // Replaces the automation of a track (trackId 0: the master): an envelope per
@@ -782,7 +819,7 @@ private:
         // and its copy of them each chunk, kept across snapshots.
         uint32_t midiSource = 0;
         std::shared_ptr<MidiFeed> midiFeed;
-        // Its latency (insertLatency) when the snapshot was last aligned: idle()
+        // Its latency (ownLatency) when the snapshot was last aligned: idle()
         // realigns when it differs, whatever the processor's own idle() says.
         int alignedLatency = 0;
         // A plug-in: which (reloadProcessor() loads it again), and what last went
@@ -948,7 +985,11 @@ private:
     // Throws std::invalid_argument if an edge from `from` into `to` would close a cycle.
     void checkRouteLocked(uint32_t from, uint32_t to, const char* what) const;
     int trackIndexLocked(uint32_t trackId) const;  // -1: the master (or none)
-    static int insertLatency(const Processor& insert);  // its latency (0 when switched off)
+    static int insertLatency(const Processor& insert);  // its latency (0 when switched off or bypassed)
+    static int ownLatency(const Processor& insert);     // its latency (0 when switched off), bypassed or not
+    // Bypasses the devices delay compensation is constrained by (setConstrainLatency()), and
+    // lets the others play: `edges` and `silent` (by tracks_ index) as the snapshot has them.
+    void constrainLatencyLocked(const std::vector<RouteEdge>& edges, const std::vector<char>& silent);
     static std::string sourceKey(const std::string& path);
 
     mutable std::recursive_mutex mutex_;
@@ -992,6 +1033,12 @@ private:
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 16.0;
     double clipFadeMs_ = 4.0;
+    bool constrainLatency_ = false;    // setConstrainLatency()
+    double constrainThresholdMs_ = 3.0;
+    bool constrainHeld_ = false;       // an offline render: every device plays
+    bool midiImmediate_ = false;       // setMidiImmediate()
+    std::vector<char> liveStrips_;     // by tracks_ index, the master last: TrackRender::live
+    int midiBufferFrames_ = 512;       // the device's buffer: MIDI input's delay unless immediate
 
     std::vector<TrackModel> tracks_;
     uint32_t nextTrackId_ = 1;

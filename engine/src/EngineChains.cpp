@@ -92,7 +92,7 @@ std::vector<Engine::StripSlot> Engine::stripSlotsLocked(const TrackModel& track,
             slot.index = static_cast<int>(i);
             slot.rack = rack;
             slot.chain = chain;
-            slot.enabled = enabled && inserts[i]->isEnabled();
+            slot.enabled = enabled && inserts[i]->isActive();
             const auto entry = processors_.find(slot.processorId);
             slot.isRack = entry != processors_.end() && entry->second.rack;
             const int at = static_cast<int>(slots.size());
@@ -399,6 +399,7 @@ ProcessorInfo Engine::processorInfo(uint32_t processorId) {
     ProcessorInfo info{p->typeId(),    p->name(),         p->latencySamples(), p->tailSamples(),
                        p->hasEditor(), p->hasSidechain(), p->acceptsMidi()};
     info.problem = problem;
+    info.constrained = p->isConstrained();
     if (const auto* sandboxed = dynamic_cast<const sandbox::SandboxedProcessor*>(p.get())) {
         using Status = sandbox::SandboxedProcessor::Status;
         switch (sandboxed->status()) {

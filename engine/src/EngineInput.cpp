@@ -60,6 +60,25 @@ void Engine::setTrackArmed(uint32_t trackId, bool armed) {
     rebuildSnapshotLocked();
 }
 
+void Engine::setConstrainLatency(bool on, double thresholdMs) {
+    if (!std::isfinite(thresholdMs) || thresholdMs < 0.0) throw std::invalid_argument("The threshold must be >= 0 ms");
+    std::lock_guard lock(mutex_);
+    if (constrainLatency_ == on && constrainThresholdMs_ == thresholdMs) return;
+    constrainLatency_ = on;
+    constrainThresholdMs_ = thresholdMs;
+    rebuildSnapshotLocked();
+}
+
+bool Engine::constrainLatency() {
+    std::lock_guard lock(mutex_);
+    return constrainLatency_;
+}
+
+double Engine::constrainThresholdMs() {
+    std::lock_guard lock(mutex_);
+    return constrainThresholdMs_;
+}
+
 std::optional<uint32_t> Engine::trackInputTrack(uint32_t trackId) {
     std::lock_guard lock(mutex_);
     return arrangementTrackLocked(trackId).inputTrack;
@@ -92,13 +111,15 @@ void Engine::startRecording(const std::vector<RecordTarget>& targets, double cou
     // A sample taken in a block came back through the input after leaving the
     // output, where the timeline was heard this much earlier than the renderer was.
     // A MIDI message was played in response to what was heard when it arrived:
-    // the renderer meets it one MIDI delay later, a block ahead of the output.
+    // the renderer meets it one MIDI delay later, a block ahead of the output
+    // (played at once, anywhere up to a buffer later: half of one on average).
     // A track's output leaves it as late as its devices and what feeds it make
     // it (its edges' arrival); the master's, as late as the output's lag.
     const DeviceState state = device_.state();
     const auto lag = static_cast<int64_t>(snapshotHold_->outputLatency());
     const int64_t devicePlacement = lag + state.inputLatency + state.outputLatency;
-    const int64_t midiPlacement = lag + state.outputLatency + shared_.midiInputDelay.load();
+    const int64_t midiPlacement =
+        lag + state.outputLatency + (midiImmediate_ ? midiBufferFrames_ / 2 : shared_.midiInputDelay.load());
     const auto arrival = [this](uint32_t trackId) -> int64_t {  // (the track recording: where its input edge leaves its source)
         const TrackRender* render = snapshotHold_->findTrack(trackId);
         return render ? render->input.arrival : 0;
@@ -218,6 +239,8 @@ void Engine::closeMidiInput(const std::string& name) { midiDevices_.close(name);
 
 std::vector<std::string> Engine::openMidiInputs() { return midiDevices_.openNames(); }
 
+std::vector<MidiInputDelivery> Engine::takeMidiInputDelivery() { return midiDevices_.takeDelivery(); }
+
 uint16_t Engine::midiPortLocked(const std::string& name) {
     const auto it = std::find(midiPorts_.begin(), midiPorts_.end(), name);
     if (it != midiPorts_.end()) return static_cast<uint16_t>(it - midiPorts_.begin());
@@ -294,6 +317,17 @@ void Engine::queueMidiInput(uint16_t port, MidiInputEvent event, int64_t hostTim
 
 void Engine::discardMidiInputLocked() {
     shared_.midiInput.clear();  // only while no callback runs (it is the queue's consumer otherwise)
+}
+
+void Engine::setMidiImmediate(bool immediate) {
+    std::lock_guard lock(mutex_);
+    midiImmediate_ = immediate;
+    shared_.midiInputDelay.store(immediate ? 0 : midiBufferFrames_);
+}
+
+bool Engine::midiImmediate() {
+    std::lock_guard lock(mutex_);
+    return midiImmediate_;
 }
 
 AudioClockStatus Engine::audioClock() const {
