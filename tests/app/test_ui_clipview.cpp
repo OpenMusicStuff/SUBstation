@@ -25,6 +25,7 @@
 #include "pianoroll/ClipWaveform.h"
 #include "pianoroll/NoteGrid.h"
 #include "session/Selection.h"
+#include "theme/Theme.h"
 
 using sub::app::Clip;
 using sub::app::ClipRef;
@@ -134,7 +135,7 @@ class TestUiClipView : public QObject {
     int drawnRows(const Clip& shown, int x) {
         auto* waveform = item("clipWaveform");
         const QImage image = window_->grabWindow();
-        const QColor color(project().track(clips_.front().trackId).color);
+        const QColor color = sub::ui::Theme::trackColor(project().track(clips_.front().trackId).color);  // (as shown)
         int rows = 0;
         const QPoint top = test::at(waveform, QPointF(x, sub::ui::ClipWaveform::kRulerHeight));
         for (int y = top.y(); y < top.y() + int(waveform->height()) - sub::ui::ClipWaveform::kRulerHeight; ++y) {
@@ -182,7 +183,7 @@ private Q_SLOTS:
         QCOMPARE(controller()->info(), QStringLiteral("2.00 s  ·  4.00 beats"));
         QCOMPARE(controller()->audioClips().size(), size_t(1));
         QCOMPARE(controller()->audioClips().front().first, clip(0));
-        QCOMPARE(controller()->audioClips().front().second, QColor(project().track(tracks_[0]).color));
+        QCOMPARE(controller()->audioClips().front().second, sub::ui::Theme::trackColor(project().track(tracks_[0]).color));
         QVERIFY(!window_->grabWindow().isNull());
         test::screenshot(window_, QStringLiteral("clip-view-audio"));
         // Esc (or ×) goes back to the devices.
