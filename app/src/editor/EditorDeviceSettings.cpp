@@ -30,6 +30,13 @@ void ProjectEditor::setDeviceParam(const QString& trackId, const QString& device
         if (params.contains(paramId)) old = params.value(paramId);
     }
     if (!old || *old != value) {
+        // (a modulated parameter takes its mapping's range along: the knob is the base the modulator moves it from)
+        const DeviceParam key{deviceId, paramId};
+        if (pushModulatedParams(trackId, {{key, value}}, {{key, old ? *old : ownParamValue(trackId, deviceId, paramId, value)}},
+                                QStringLiteral("Change Device Parameter"), mergeKey)) {
+            Q_EMIT parameterTouched(trackId, automation::deviceKey(deviceId, paramId));
+            return;
+        }
         push(std::make_unique<SetDeviceParamCommand>(project_, trackId, deviceId, paramId, old ? *old : value, value,
                                                      mergeKey));
     }
@@ -52,7 +59,9 @@ void ProjectEditor::setDeviceParams(const QString& trackId, const QString& devic
         }
         old.insert({deviceId, paramId}, own);
     }
-    if (old != nw) push(std::make_unique<SetDeviceParamsCommand>(project_, trackId, old, nw, text, mergeKey));
+    if (old != nw && !pushModulatedParams(trackId, nw, old, text, mergeKey)) {
+        push(std::make_unique<SetDeviceParamsCommand>(project_, trackId, old, nw, text, mergeKey));
+    }
     if (!values.isEmpty()) Q_EMIT parameterTouched(trackId, automation::deviceKey(deviceId, values.begin()->first));
 }
 

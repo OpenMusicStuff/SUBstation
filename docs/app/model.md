@@ -603,7 +603,12 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   [Q] (the amount from a base, the parameter's own value: a knob's handle, merging per gesture),
   `setModulationBipolar` [Q] (unipolar or bipolar from a base, the amount kept), `unmapModulation` [Q]
   (from whichever modulator moves it), `clearModulations` [Q], `modulatorOf` [Q], `modulators` [Q] (a track's, in
-  chain order, racks' depth first).
+  chain order, racks' depth first). `tryMapModulation` (the menu, Map) maps unipolar, from the parameter's own value
+  (the base) up to 1; `mapModulation`'s range is as given (0..1 by default). A parameter set by hand
+  (`setDeviceParam`, `setDeviceParams`: a knob, a graph's handle, a plug-in's own editor) takes its mapping along
+  (`pushModulatedParams`): the amount is kept from the new value (`ModulationMapping::setAmount`), in one
+  `SetModulationsCommand`, which carries the parameters' values besides the mappings (as `SetMacrosCommand` does) so
+  a drag is one undo step.
 - **Envelopes**: `setEnvelope`, `addAutomationPoint` [Q], `moveAutomationPoints`, `deleteAutomationPoints` [Q],
   `setAutomationCurve`, `clearEnvelope` [Q], `deleteAutomationRange`, `moveAutomationRange`,
   `duplicateAutomationRange`, `copyAutomationRange`, `cutAutomationRange`, `pasteAutomation`,

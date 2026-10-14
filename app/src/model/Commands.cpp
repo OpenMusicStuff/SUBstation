@@ -229,12 +229,19 @@ void SetMacrosCommand::undo() { apply(old_); }
 
 SetModulationsCommand::SetModulationsCommand(Project* project, const QString& trackId, const QString& modulatorId,
                                              std::vector<ModulationMapping> old, std::vector<ModulationMapping> nw,
-                                             const QString& text, QString mergeKey)
-    : MergeableCommand(project, text, {trackId, modulatorId}, std::move(old), std::move(nw), std::move(mergeKey)) {}
+                                             const QString& text, QString mergeKey,
+                                             QMap<DeviceParam, double> oldValues, QMap<DeviceParam, double> newValues)
+    : MergeableCommand(project, text, {trackId, modulatorId}, {std::move(old), std::move(oldValues)},
+                       {std::move(nw), std::move(newValues)}, std::move(mergeKey)) {}
 
-void SetModulationsCommand::redo() { project_->setDeviceModulations(trackId(), modulatorId(), new_); }
+void SetModulationsCommand::apply(const ModulationMappings& state) {
+    project_->setDeviceModulations(trackId(), modulatorId(), state.mappings);
+    if (!state.values.isEmpty()) project_->setDeviceParams(trackId(), state.values);
+}
 
-void SetModulationsCommand::undo() { project_->setDeviceModulations(trackId(), modulatorId(), old_); }
+void SetModulationsCommand::redo() { apply(new_); }
+
+void SetModulationsCommand::undo() { apply(old_); }
 
 SetDeviceStateCommand::SetDeviceStateCommand(Project* project, const QString& trackId, const QString& deviceId,
                                              std::optional<QString> old, std::optional<QString> nw,

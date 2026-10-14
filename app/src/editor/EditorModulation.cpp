@@ -8,6 +8,8 @@
 #include "model/Devices.h"
 #include "model/Errors.h"
 
+#include "editor/EditorSupport.h"
+
 #include <algorithm>
 
 namespace sub::app {
@@ -55,7 +57,57 @@ void ProjectEditor::mapModulation(const QString& trackId, const QString& modulat
 bool ProjectEditor::tryMapModulation(const QString& trackId, const QString& modulatorId, const QString& deviceId,
                                      const QString& paramId) {
     if (!project_->hasDevice(trackId, modulatorId) || !project_->hasDevice(trackId, deviceId)) return false;
-    return reportRefusal([&] { mapModulation(trackId, modulatorId, deviceId, paramId); });
+    // Unipolar from wherever the parameter is now to its maximum (the knob's own value stays the base).
+    double base = 0.0;
+    if (const auto info = paramInfo(trackId, deviceId, paramId)) {
+        base = std::clamp(info->toNormalized(ownParamValue(trackId, deviceId, paramId, info->defaultValue)), 0.0, 1.0);
+    }
+    return reportRefusal([&] { mapModulation(trackId, modulatorId, deviceId, paramId, base, 1.0); });
+}
+
+bool ProjectEditor::pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
+                                        const QMap<DeviceParam, double>& old, const QString& text,
+                                        const QString& mergeKey) {
+    struct Change {
+        std::vector<ModulationMapping> mappings;
+        QMap<DeviceParam, double> oldValues, newValues;
+    };
+    QMap<QString, Change> changes;  // by modulator
+    QMap<DeviceParam, double> unmoved;
+    for (auto it = nw.constBegin(); it != nw.constEnd(); ++it) {
+        const auto& [deviceId, paramId] = it.key();
+        const QString modulatorId = modulatorOf(trackId, deviceId, paramId);
+        const auto info = modulatorId.isEmpty() ? std::nullopt : paramInfo(trackId, deviceId, paramId);
+        if (!info) {
+            unmoved.insert(it.key(), it.value());
+            continue;
+        }
+        auto change = changes.find(modulatorId);
+        if (change == changes.end()) {
+            change = changes.insert(modulatorId, {project_->device(trackId, modulatorId).modulations, {}, {}});
+        }
+        const auto mapping = mappingOf(change->mappings, deviceId, paramId);
+        mapping->setAmount(info->toNormalized(it.value()), mapping->amount());
+        change->newValues.insert(it.key(), it.value());
+        change->oldValues.insert(it.key(), old.value(it.key(), it.value()));
+    }
+    if (changes.isEmpty()) return false;
+    // The parameters nothing moves go with the first modulator's command, so a drag of several still merges.
+    for (auto it = nw.constBegin(); it != nw.constEnd(); ++it) {
+        bool claimed = false;
+        for (const Change& change : std::as_const(changes)) claimed = claimed || change.newValues.contains(it.key());
+        if (claimed) continue;
+        changes.begin()->newValues.insert(it.key(), it.value());
+        changes.begin()->oldValues.insert(it.key(), old.value(it.key(), it.value()));
+    }
+    std::optional<editing::Macro> macro;
+    if (changes.size() > 1) macro.emplace(undoStack_, text);
+    for (auto it = changes.begin(); it != changes.end(); ++it) {
+        push(std::make_unique<SetModulationsCommand>(project_, trackId, it.key(),
+                                                     project_->device(trackId, it.key()).modulations, it->mappings,
+                                                     text, mergeKey, it->oldValues, it->newValues));
+    }
+    return true;
 }
 
 bool ProjectEditor::canModulate(const QString& trackId, const QString& deviceId, const QString& paramId) const {
