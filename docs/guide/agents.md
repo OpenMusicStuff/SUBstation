@@ -40,16 +40,32 @@ and ask: write a better piano part here". Other agents that speak MCP over HTTP 
 
 | | |
 |---|---|
-| The project | its name, tempo, time signature, key, loop, length, the tracks you have selected, and your time selection (its beats, its tracks and the clips in it) |
+| The project | its name, tempo, time signature, key, its style as its sounds suggest, loop, length, the tracks you have selected, your time selection (its bars, its tracks and the clips in it), and what you did last (your last few steps in **Edit › Undo**, so "undo that" or "like I just did" makes sense to it) |
+| The arrangement | where each track plays, bar by bar, at a glance, and the song's sections guessed from it: where tracks come in and drop out, and which parts come back ("A B A C"). The project has no markers, so this is how an agent finds "the chorus" or "the drop" |
 | The tracks | every track, return and the master: its name, [what it is](arrangement.md#what-a-track-is) (its label, as the tooltip over its name says), its mixer, devices and clips |
-| One track | its instrument and preset, its effects and their amounts, its clips (where they play, their files, how many notes), its sends and where its output goes |
+| One track | its instrument and preset, its effects and their amounts, what a rack's macros and a modulator move, a sidechain's source, its clips (where they play; an audio clip's file and what it sounds like, its gain, warp and fades; how many notes), its sends, where its output goes, and what is automated |
+| Automation | each envelope's points, in the parameter's own units (dB, Hz, %) |
 | A device's parameters | each one's name, its value (as the device shows it: "1.2 kHz", "Saw"), its range, whether it is automated or moved by a rack's macro. A plug-in's are there once it has loaded |
-| The notes | what a MIDI track plays, where, how loud |
+| The notes | what a MIDI track plays, where, how loud, which notes are deactivated and their pitch bends and vibrato |
 | What you selected | in one go: the stretch you selected, each track in it with its notes there, and the chords there, so a request about "this part" needs no looking around |
 | Finding tracks | by name or by what they are, as [Q](arrangement.md#finding-a-track) finds them |
 | The harmony | the song's key and chords, as the piano roll shows them |
 
-They see the project as it is now, your unsaved changes too.
+They see the project as it is now, your unsaved changes too. Places in the song are in bars as well as beats, so
+"bars 17 to 24" means the same to you and to the agent.
+
+## Ready-made requests
+
+SUBstation offers agents a few requests you can pick instead of typing them out. In Claude Code they are slash
+commands:
+
+| | |
+|---|---|
+| `/mcp__substation__write_part` | write something over the bars you selected ("a funkier bass line"), on a copy of the track |
+| `/mcp__substation__describe_song` | the song's sections, what plays in each, its key and chords, what stands out, changing nothing |
+| `/mcp__substation__mix_review` | suggestions for the mix (optionally about one thing: "the low end"), made only once you say which |
+
+The arrangement at a glance can also go into a request as `@substation:substation://arrangement`.
 
 ## What agents can change
 
@@ -59,7 +75,7 @@ They see the project as it is now, your unsaved changes too.
 | A track's mixer | volume, pan, its activator (mute) and its sends |
 | A track's name | |
 | The song | its tempo and key |
-| Notes | a new MIDI clip over a stretch of a MIDI track, playing the notes the agent writes. It replaces what was there on that track, as a clip you place does |
+| Notes | a new MIDI clip over a stretch of a MIDI track, playing the notes the agent writes (deactivated notes, pitch bends and vibrato too). It replaces what was there on that track, as a clip you place does; if what it replaced had bends it doesn't keep, it is told so |
 | A copy of a track | as Ctrl+D makes one: agents can write a new part on a copy and leave yours as it is, for you to compare |
 
 The status line says each change as it happens (`Agent: Set Cutoff of Serum 2 on 4 Bass to 1.2 kHz`).

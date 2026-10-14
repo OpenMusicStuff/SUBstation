@@ -50,6 +50,8 @@ Protocol::Protocol(QString name, QString version, QString instructions)
     : name_(std::move(name)), version_(std::move(version)), instructions_(std::move(instructions)) {}
 
 void Protocol::addTool(Tool tool) { tools_.push_back(std::move(tool)); }
+void Protocol::addPrompt(Prompt prompt) { prompts_.push_back(std::move(prompt)); }
+void Protocol::addResource(Resource resource) { resources_.push_back(std::move(resource)); }
 
 QString Protocol::decodeHeaderValue(const QString& value) {
     static const QString prefix = QStringLiteral("=?base64?");
@@ -70,7 +72,13 @@ QJsonObject Protocol::serverInfo() const {
 }
 
 QJsonObject Protocol::capabilities() const {
-    return {{QStringLiteral("tools"), QJsonObject{{QStringLiteral("listChanged"), false}}}};
+    QJsonObject out{{QStringLiteral("tools"), QJsonObject{{QStringLiteral("listChanged"), false}}}};
+    if (!prompts_.empty()) out.insert(QStringLiteral("prompts"), QJsonObject{{QStringLiteral("listChanged"), false}});
+    if (!resources_.empty()) {
+        out.insert(QStringLiteral("resources"),
+                   QJsonObject{{QStringLiteral("subscribe"), false}, {QStringLiteral("listChanged"), false}});
+    }
+    return out;
 }
 
 QJsonObject Protocol::result(const QJsonObject& fields, bool modern) const {
@@ -118,10 +126,11 @@ Reply Protocol::callTool(const QJsonValue& id, const QJsonObject& params, bool m
     }
     const ToolResult called = tool->call(arguments.toObject());
     QString text = called.text;
+    // (Compact: indenting costs the model a third more tokens and tells it nothing.)
     if (text.isEmpty() && !called.structured.isUndefined() && !called.structured.isNull()) {
         text = QString::fromUtf8(called.structured.isArray()
-                                     ? QJsonDocument(called.structured.toArray()).toJson(QJsonDocument::Indented)
-                                     : QJsonDocument(called.structured.toObject()).toJson(QJsonDocument::Indented));
+                                     ? QJsonDocument(called.structured.toArray()).toJson(QJsonDocument::Compact)
+                                     : QJsonDocument(called.structured.toObject()).toJson(QJsonDocument::Compact));
     }
     QJsonObject fields{
         {QStringLiteral("content"),
@@ -135,6 +144,83 @@ Reply Protocol::callTool(const QJsonValue& id, const QJsonObject& params, bool m
     }
     if (called.error) fields.insert(QStringLiteral("isError"), true);
     return {200, response(id, result(fields, modern))};
+}
+
+QJsonObject Protocol::listPrompts(bool modern) const {
+    QJsonArray prompts;
+    for (const Prompt& prompt : prompts_) {
+        QJsonArray arguments;
+        for (const PromptArgument& argument : prompt.arguments) {
+            arguments.append(QJsonObject{{QStringLiteral("name"), argument.name},
+                                         {QStringLiteral("description"), argument.description},
+                                         {QStringLiteral("required"), argument.required}});
+        }
+        prompts.append(QJsonObject{{QStringLiteral("name"), prompt.name},
+                                   {QStringLiteral("title"), prompt.title},
+                                   {QStringLiteral("description"), prompt.description},
+                                   {QStringLiteral("arguments"), arguments}});
+    }
+    QJsonObject fields{{QStringLiteral("prompts"), prompts}};
+    if (modern) {
+        fields.insert(QStringLiteral("ttlMs"), kListTtlMs);
+        fields.insert(QStringLiteral("cacheScope"), QStringLiteral("private"));
+    }
+    return result(fields, modern);
+}
+
+Reply Protocol::getPrompt(const QJsonValue& id, const QJsonObject& params, bool modern) const {
+    const QString name = params.value(QStringLiteral("name")).toString();
+    const auto prompt = std::find_if(prompts_.begin(), prompts_.end(), [&](const Prompt& p) { return p.name == name; });
+    if (prompt == prompts_.end()) return error(200, id, code::kInvalidParams, QStringLiteral("Unknown prompt: %1").arg(name));
+    const QJsonValue value = params.value(QStringLiteral("arguments"));
+    if (!value.isUndefined() && !value.isNull() && !value.isObject()) {
+        return error(200, id, code::kInvalidParams, QStringLiteral("A prompt's arguments are an object."));
+    }
+    const QJsonObject arguments = value.toObject();
+    for (const PromptArgument& argument : prompt->arguments) {
+        if (argument.required && arguments.value(argument.name).toString().trimmed().isEmpty()) {
+            return error(200, id, code::kInvalidParams,
+                         QStringLiteral("The prompt %1 needs its argument %2.").arg(name, argument.name));
+        }
+    }
+    const QJsonObject message{
+        {QStringLiteral("role"), QStringLiteral("user")},
+        {QStringLiteral("content"),
+         QJsonObject{{QStringLiteral("type"), QStringLiteral("text")}, {QStringLiteral("text"), prompt->text(arguments)}}}};
+    return {200, response(id, result({{QStringLiteral("description"), prompt->description},
+                                      {QStringLiteral("messages"), QJsonArray{message}}},
+                                     modern))};
+}
+
+QJsonObject Protocol::listResources(bool modern) const {
+    QJsonArray resources;
+    for (const Resource& resource : resources_) {
+        resources.append(QJsonObject{{QStringLiteral("uri"), resource.uri},
+                                     {QStringLiteral("name"), resource.name},
+                                     {QStringLiteral("title"), resource.title},
+                                     {QStringLiteral("description"), resource.description},
+                                     {QStringLiteral("mimeType"), resource.mimeType}});
+    }
+    QJsonObject fields{{QStringLiteral("resources"), resources}};
+    if (modern) {
+        fields.insert(QStringLiteral("ttlMs"), kListTtlMs);
+        fields.insert(QStringLiteral("cacheScope"), QStringLiteral("private"));
+    }
+    return result(fields, modern);
+}
+
+Reply Protocol::readResource(const QJsonValue& id, const QJsonObject& params, bool modern) const {
+    const QString uri = params.value(QStringLiteral("uri")).toString();
+    const auto resource = std::find_if(resources_.begin(), resources_.end(), [&](const Resource& r) { return r.uri == uri; });
+    if (resource == resources_.end()) {
+        return error(200, id, code::kResourceNotFound, QStringLiteral("Resource not found: %1").arg(uri),
+                     QJsonObject{{QStringLiteral("uri"), uri}});
+    }
+    // (Not cacheable: the project changes as the user works.)
+    const QJsonObject content{{QStringLiteral("uri"), uri},
+                              {QStringLiteral("mimeType"), resource->mimeType},
+                              {QStringLiteral("text"), resource->read()}};
+    return {200, response(id, result({{QStringLiteral("contents"), QJsonArray{content}}}, modern))};
 }
 
 Reply Protocol::handle(const QJsonObject& message, const Headers& headers) {
@@ -221,6 +307,17 @@ Reply Protocol::handle(const QJsonObject& message, const Headers& headers) {
     if (method == QStringLiteral("ping") && !modern) return {200, response(id, QJsonObject())};
     if (method == QStringLiteral("tools/list")) return {200, response(id, listTools(modern))};
     if (method == QStringLiteral("tools/call")) return callTool(id, params, modern);
+    if (!prompts_.empty()) {
+        if (method == QStringLiteral("prompts/list")) return {200, response(id, listPrompts(modern))};
+        if (method == QStringLiteral("prompts/get")) return getPrompt(id, params, modern);
+    }
+    if (!resources_.empty()) {
+        if (method == QStringLiteral("resources/list")) return {200, response(id, listResources(modern))};
+        if (method == QStringLiteral("resources/read")) return readResource(id, params, modern);
+        if (method == QStringLiteral("resources/templates/list")) {
+            return {200, response(id, result({{QStringLiteral("resourceTemplates"), QJsonArray()}}, modern))};
+        }
+    }
     // (Modern: 404, as the transport says. Legacy clients took a 404 for a session that had gone: 200 there.)
     return error(modern ? 404 : 200, id, code::kMethodNotFound, QStringLiteral("Method not found: %1").arg(method));
 }

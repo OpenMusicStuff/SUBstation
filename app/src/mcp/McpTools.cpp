@@ -4,8 +4,11 @@
 #include "editor/AgentHistory.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/Harmony.h"
+#include "intelligence/SoundSimilarity.h"
+#include "intelligence/SoundSuggestions.h"
 #include "intelligence/TrackLabels.h"
 #include "intelligence/TrackSearch.h"
+#include "mcp/McpArrangement.h"
 #include "mcp/McpProtocol.h"
 #include "mcp/McpServer.h"
 #include "model/Automation.h"
@@ -19,10 +22,14 @@
 #include "model/Project.h"
 #include "session/Selection.h"
 #include "session/Session.h"
+#include "tagging/SoundWords.h"
 
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
+#include <QUndoStack>
 
 #include <algorithm>
 #include <cmath>
@@ -76,9 +83,68 @@ bool matches(const QString& text, const QStringList& words) {
 // A beat as the model reads it: to a ten-thousandth (a 1/2560th note), not 579.7826893194218.
 double beat(double value) { return std::round(value * 1e4) / 1e4; }
 
+// A level, a pan, a value as the model reads it: to a hundredth.
+double rounded(double value) {
+    const double out = std::round(value * 100.0) / 100.0;
+    return out == 0.0 ? 0.0 : out;  // (not -0)
+}
+
 // What each row of notes holds (get_notes, get_selection_context; write_midi_clip takes them so too).
 const QJsonArray kNoteFields{QStringLiteral("startBeat"), QStringLiteral("length"), QStringLiteral("pitch"),
                              QStringLiteral("velocity")};
+
+// How notes are given: rows with MIDI numbers, rows with names ("C3"), or objects (with bends).
+enum class NoteFormat { Rows, Names, Objects };
+
+std::optional<NoteFormat> noteFormat(const QJsonValue& value) {
+    const QString text = value.toString(QStringLiteral("rows"));
+    if (text == u"rows") return NoteFormat::Rows;
+    if (text == u"names") return NoteFormat::Names;
+    if (text == u"objects") return NoteFormat::Objects;
+    return std::nullopt;
+}
+
+// A pitch as given: a MIDI note number, or a name as notes::noteName() writes
+// them ("C3" is 60; "F#2", "Bb4", "C-1"). None: neither, or out of 0..127.
+std::optional<int> pitchOf(const QJsonValue& value) {
+    int pitch = -1;
+    if (value.isDouble()) {
+        const double number = value.toDouble();
+        if (number != std::floor(number)) return std::nullopt;
+        pitch = static_cast<int>(number);
+    } else if (value.isString()) {
+        static const QRegularExpression name(QStringLiteral("^\\s*([A-Ga-g])([#b]?)(-?\\d+)\\s*$"));
+        const QRegularExpressionMatch match = name.match(value.toString());
+        if (!match.hasMatch()) return std::nullopt;
+        static constexpr int kSteps[] = {9, 11, 0, 2, 4, 5, 7};  // A B C D E F G
+        const int step = kSteps[match.captured(1).toUpper().at(0).unicode() - u'A'];
+        const int accidental = match.captured(2) == u"#" ? 1 : match.captured(2) == u"b" ? -1 : 0;
+        pitch = (match.captured(3).toInt() + 2) * 12 + step + accidental;
+    } else {
+        return std::nullopt;
+    }
+    if (pitch < 0 || pitch > 127) return std::nullopt;
+    return pitch;
+}
+
+// A note's bend as the model reads it: [time, semitones, curve] rows, times in beats from the note's start.
+QJsonArray bendJson(const std::vector<BendPoint>& points) {
+    QJsonArray out;
+    for (const BendPoint& p : points) out.append(QJsonArray{beat(p.time), rounded(p.semitones), rounded(p.curve)});
+    return out;
+}
+
+QJsonArray vibratoJson(const std::vector<Vibrato>& vibratos) {
+    QJsonArray out;
+    for (const Vibrato& v : vibratos) {
+        out.append(QJsonObject{{QStringLiteral("start"), beat(v.start)},
+                               {QStringLiteral("length"), beat(v.length)},
+                               {QStringLiteral("depth"), rounded(v.depth)},
+                               {QStringLiteral("rate"), rounded(v.rate)},
+                               {QStringLiteral("fade"), rounded(v.fade)}});
+    }
+    return out;
+}
 
 const QString kNoEdits = QStringLiteral(
     "Agents may not edit this project: the user turned edits off (Preferences › Agents). Tell them what you would "
@@ -102,7 +168,22 @@ public:
 
     const Project& project() const { return *session_.project(); }
 
-    // What every track says of itself, in a list or alone.
+    double beatsPerBar() const { return project().timeSignature().beatsPerBar(); }
+    // A beat as a bar: 1 + beats / beats a bar, so bar 17 is 17 and halfway through it 17.5.
+    double bar(double beatValue) const { return beat(1.0 + beatValue / beatsPerBar()); }
+    // A stretch as the user reads it: "bars 17 to 24" (whole bars), "bar 5", else "beats 3.5 to 6".
+    QString stretch(double from, double to) const {
+        const double first = from / beatsPerBar();
+        const double last = to / beatsPerBar();
+        const auto whole = [](double v) { return std::abs(v - std::round(v)) < 1e-6; };
+        if (!whole(first) || !whole(last)) return QStringLiteral("beats %1 to %2").arg(number(from, 3), number(to, 3));
+        const int a = static_cast<int>(std::round(first)) + 1;
+        const int b = static_cast<int>(std::round(last));
+        return a == b ? QStringLiteral("bar %1").arg(a) : QStringLiteral("bars %1 to %2").arg(a).arg(b);
+    }
+
+    // What every track says of itself, in a list or alone. What is as it
+    // usually is (not muted, not soloed, in the middle, in no group) is left out.
     QJsonObject summary(const Track& track) const {
         const labels::TrackLabel* label = session_.trackLabels()->find(track.id);
         QJsonArray devices;
@@ -111,18 +192,20 @@ public:
             {QStringLiteral("id"), track.id},
             {QStringLiteral("name"), track.name},
             {QStringLiteral("kind"), track.kind},
-            {QStringLiteral("parent"), track.parent ? QJsonValue(*track.parent) : QJsonValue(QJsonValue::Null)},
-            {QStringLiteral("label"), label ? orNull(QString::fromStdString(label->label)) : QJsonValue(QJsonValue::Null)},
-            {QStringLiteral("family"), label ? orNull(QString::fromStdString(label->family)) : QJsonValue(QJsonValue::Null)},
-            {QStringLiteral("role"), label ? orNull(QString::fromStdString(label->role)) : QJsonValue(QJsonValue::Null)},
-            {QStringLiteral("traits"), label ? strings(label->traits) : QJsonArray()},
-            {QStringLiteral("volumeDb"), track.volumeDb},
-            {QStringLiteral("pan"), track.pan},
-            {QStringLiteral("mute"), track.mute},
-            {QStringLiteral("solo"), track.solo},
-            {QStringLiteral("frozen"), track.frozen.has_value()},
+            {QStringLiteral("volumeDb"), rounded(track.volumeDb)},
             {QStringLiteral("devices"), devices},
         };
+        if (track.parent) out.insert(QStringLiteral("parent"), *track.parent);
+        if (label) {
+            if (!label->label.empty()) out.insert(QStringLiteral("label"), QString::fromStdString(label->label));
+            if (!label->family.empty()) out.insert(QStringLiteral("family"), QString::fromStdString(label->family));
+            if (!label->role.empty()) out.insert(QStringLiteral("role"), QString::fromStdString(label->role));
+            if (!label->traits.empty()) out.insert(QStringLiteral("traits"), strings(label->traits));
+        }
+        if (rounded(track.pan) != 0.0) out.insert(QStringLiteral("pan"), rounded(track.pan));
+        if (track.mute) out.insert(QStringLiteral("mute"), true);
+        if (track.solo) out.insert(QStringLiteral("solo"), true);
+        if (track.frozen) out.insert(QStringLiteral("frozen"), true);
         if (track.hasClips()) out.insert(QStringLiteral("clipCount"), static_cast<int>(track.clips.size()));
         return out;
     }
@@ -130,8 +213,8 @@ public:
     QJsonObject device(const QString& trackId, const Device& device) const {
         QJsonObject out{{QStringLiteral("id"), device.id},
                         {QStringLiteral("kind"), device.kind},
-                        {QStringLiteral("name"), deviceName(device)},
-                        {QStringLiteral("enabled"), device.enabled}};
+                        {QStringLiteral("name"), deviceName(device)}};
+        if (!device.enabled) out.insert(QStringLiteral("enabled"), false);
         if (device.isPlugin() && device.plugin) {
             out.insert(QStringLiteral("plugin"), QJsonObject{{QStringLiteral("name"), device.plugin->name},
                                                              {QStringLiteral("vendor"), device.plugin->vendor},
@@ -141,7 +224,39 @@ public:
             out.insert(QStringLiteral("loaded"), preset.has_value());
             if (preset && !preset->isEmpty()) out.insert(QStringLiteral("preset"), *preset);
         }
+        // What it hears or plays from elsewhere.
+        if (device.sidechain) {
+            const Track* source = project().findTrack(device.sidechain->trackId);
+            out.insert(QStringLiteral("sidechain"),
+                       QJsonObject{{QStringLiteral("trackId"), device.sidechain->trackId},
+                                   {QStringLiteral("trackName"), source ? source->name : QString()},
+                                   {QStringLiteral("tap"), device.sidechain->tap}});
+        }
+        if (!device.midiFrom.isEmpty()) out.insert(QStringLiteral("midiFrom"), device.midiFrom);
+        // What it moves: a modulator's parameters, a rack's macros'.
+        if (!device.modulations.empty()) {
+            QJsonArray modulations;
+            for (const ModulationMapping& m : device.modulations) {
+                QJsonObject mapping{{QStringLiteral("deviceId"), m.deviceId},
+                                    {QStringLiteral("paramId"), m.paramId},
+                                    {QStringLiteral("low"), rounded(m.low)},
+                                    {QStringLiteral("high"), rounded(m.high)}};
+                if (m.invert) mapping.insert(QStringLiteral("invert"), true);
+                modulations.append(mapping);
+            }
+            out.insert(QStringLiteral("modulates"), modulations);
+        }
         if (device.isRack()) {
+            QJsonArray macros;
+            for (const MacroMapping& m : device.macros) {
+                macros.append(QJsonObject{{QStringLiteral("macro"), macroParam(m.macro)},
+                                          {QStringLiteral("name"), macroName(device, m.macro)},
+                                          {QStringLiteral("deviceId"), m.deviceId},
+                                          {QStringLiteral("paramId"), m.paramId},
+                                          {QStringLiteral("low"), rounded(m.low)},
+                                          {QStringLiteral("high"), rounded(m.high)}});
+            }
+            if (!macros.isEmpty()) out.insert(QStringLiteral("macros"), macros);
             QJsonArray chains;
             for (const Chain& chain : device.chains) {
                 QJsonArray devices;
@@ -155,6 +270,48 @@ public:
         return out;
     }
 
+    // An automation target as the model reads it: "Volume", "Delay: Feedback".
+    QString targetName(const QString& owner, const QString& key) const {
+        const std::optional<ParamSpec> spec = session_.bridge() ? session_.bridge()->paramSpec(owner, key) : std::nullopt;
+        if (!spec) return key;
+        return spec->group.isEmpty() || spec->group == u"Mixer" ? spec->name : spec->group + QStringLiteral(": ") + spec->name;
+    }
+
+    // A clip as get_track gives it: where it plays, and what is set on it that isn't as it was placed.
+    QJsonObject clipJson(const Clip& clip) const {
+        const double tempo = project().tempo();
+        QJsonObject c{{QStringLiteral("id"), clip.id},
+                      {QStringLiteral("kind"), clip.isMidi() ? QStringLiteral("midi") : QStringLiteral("audio")},
+                      {QStringLiteral("startBeat"), beat(clip.startBeat)},
+                      {QStringLiteral("endBeat"), beat(clip.endBeat(tempo))},
+                      {QStringLiteral("startBar"), bar(clip.startBeat)},
+                      {QStringLiteral("endBar"), bar(clip.endBeat(tempo))}};
+        if (!clip.plays()) c.insert(QStringLiteral("active"), false);
+        if (!clip.name.isEmpty()) c.insert(QStringLiteral("name"), clip.name);
+        if (clip.isMidi()) {
+            c.insert(QStringLiteral("noteCount"), static_cast<int>(clip.notes.size()));
+            return c;
+        }
+        c.insert(QStringLiteral("file"), clip.path);
+        if (session_.similarity()) {
+            // What the file sounds like, as the browser tags it ("Punchy Kick"), once it is analysed.
+            const QString source = clip.reversedFrom.isEmpty() ? clip.path : clip.reversedFrom;
+            if (const auto tags = session_.similarity()->tagsOf(source)) {
+                const std::string sound = intelligence::tagging::label(*tags);
+                if (!sound.empty()) c.insert(QStringLiteral("sound"), QString::fromStdString(sound));
+            }
+        }
+        if (rounded(clip.gainDb) != 0.0) c.insert(QStringLiteral("gainDb"), rounded(clip.gainDb));
+        if (rounded(clip.pan) != 0.0) c.insert(QStringLiteral("pan"), rounded(clip.pan));
+        if (clip.transpose != 0) c.insert(QStringLiteral("transpose"), clip.transpose);
+        if (rounded(clip.detune) != 0.0) c.insert(QStringLiteral("detuneCents"), rounded(clip.detune));
+        if (clip.warp) c.insert(QStringLiteral("warp"), clip.warpMode);
+        if (!clip.reversedFrom.isEmpty()) c.insert(QStringLiteral("reversed"), true);
+        if (clip.fadeInSec > 0.0) c.insert(QStringLiteral("fadeInSec"), rounded(clip.fadeInSec));
+        if (clip.fadeOutSec > 0.0) c.insert(QStringLiteral("fadeOutSec"), rounded(clip.fadeOutSec));
+        return c;
+    }
+
     QJsonObject detail(const Track& track) const {
         QJsonObject out = summary(track);
         const labels::TrackLabel* label = session_.trackLabels()->find(track.id);
@@ -163,31 +320,30 @@ public:
         for (const Device& d : track.devices) devices.append(device(track.id, d));
         out.insert(QStringLiteral("devices"), devices);
         if (track.hasClips()) {
-            const double tempo = project().tempo();
             QJsonArray clips;
-            for (const Clip& clip : track.clips) {
-                QJsonObject c{{QStringLiteral("id"), clip.id},
-                              {QStringLiteral("kind"), clip.isMidi() ? QStringLiteral("midi") : QStringLiteral("audio")},
-                              {QStringLiteral("startBeat"), clip.startBeat},
-                              {QStringLiteral("endBeat"), clip.endBeat(tempo)},
-                              {QStringLiteral("active"), clip.plays()}};
-                if (!clip.name.isEmpty()) c.insert(QStringLiteral("name"), clip.name);
-                if (clip.isAudio()) c.insert(QStringLiteral("file"), clip.path);
-                if (clip.isMidi()) c.insert(QStringLiteral("noteCount"), static_cast<int>(clip.notes.size()));
-                clips.append(c);
-            }
+            for (const Clip& clip : track.clips) clips.append(clipJson(clip));
             out.insert(QStringLiteral("clips"), clips);
         }
         QJsonArray sends;
         for (auto it = track.sends.constBegin(); it != track.sends.constEnd(); ++it) {
             const Track* ret = project().findTrack(it.key());
-            sends.append(QJsonObject{{QStringLiteral("returnId"), it.key()},
-                                     {QStringLiteral("returnName"), ret ? ret->name : QString()},
-                                     {QStringLiteral("levelDb"), it->levelDb},
-                                     {QStringLiteral("preFader"), it->preFader}});
+            QJsonObject send{{QStringLiteral("returnId"), it.key()},
+                             {QStringLiteral("returnName"), ret ? ret->name : QString()},
+                             {QStringLiteral("levelDb"), rounded(it->levelDb)}};
+            if (it->preFader) send.insert(QStringLiteral("preFader"), true);
+            sends.append(send);
         }
         out.insert(QStringLiteral("sends"), sends);
         if (!track.isMaster()) out.insert(QStringLiteral("output"), output(track.output));
+        // What is automated (get_automation gives the points).
+        QJsonArray automated;
+        for (const auto& [key, envelope] : project().automation(track.id)) {
+            if (envelope.empty()) continue;
+            automated.append(QJsonObject{{QStringLiteral("key"), key},
+                                         {QStringLiteral("target"), targetName(track.id, key)},
+                                         {QStringLiteral("points"), static_cast<int>(envelope.size())}});
+        }
+        if (!automated.isEmpty()) out.insert(QStringLiteral("automation"), automated);
         return out;
     }
 
@@ -199,20 +355,29 @@ public:
         QJsonObject out{
             {QStringLiteral("name"), p.path().isEmpty() ? QStringLiteral("Untitled") : QFileInfo(p.path()).completeBaseName()},
             {QStringLiteral("path"), orNull(p.path())},
-            {QStringLiteral("tempo"), p.tempo()},
+            {QStringLiteral("tempo"), rounded(p.tempo())},
             {QStringLiteral("timeSignature"), p.timeSignatureText()},
+            {QStringLiteral("beatsPerBar"), beatsPerBar()},
             {QStringLiteral("key"), key ? QJsonValue(key->label()) : QJsonValue(QJsonValue::Null)},
             {QStringLiteral("keyInferred"), key.has_value() && harmony.keyInferred()},
             {QStringLiteral("loop"), QJsonObject{{QStringLiteral("enabled"), p.loopEnabled()},
-                                                {QStringLiteral("startBeat"), p.loopStart()},
-                                                {QStringLiteral("endBeat"), p.loopEnd()}}},
-            {QStringLiteral("endBeat"), p.endBeat()},
+                                                {QStringLiteral("startBeat"), beat(p.loopStart())},
+                                                {QStringLiteral("endBeat"), beat(p.loopEnd())},
+                                                {QStringLiteral("startBar"), bar(p.loopStart())},
+                                                {QStringLiteral("endBar"), bar(p.loopEnd())}}},
+            {QStringLiteral("endBeat"), beat(p.endBeat())},
+            {QStringLiteral("endBar"), bar(p.endBeat())},
             {QStringLiteral("trackCount"), static_cast<int>(p.tracks().size())},
             {QStringLiteral("returnCount"), static_cast<int>(p.returns().size())},
             {QStringLiteral("selectedTrackId"), orNull(selection.trackId())},
             {QStringLiteral("selectedTrackIds"), QJsonArray::fromStringList(selection.trackIds())},
-            {QStringLiteral("insertBeat"), selection.insertBeat()},
+            {QStringLiteral("insertBeat"), beat(selection.insertBeat())},
+            {QStringLiteral("insertBar"), bar(selection.insertBeat())},
         };
+        // What it sounds like, as the browser's Best sort weighs it ("Techno, Punchy · A Minor").
+        if (session_.suggestions() && !session_.suggestions()->summary().isEmpty()) {
+            out.insert(QStringLiteral("style"), session_.suggestions()->summary());
+        }
         // The time selection (a stretch of beats over tracks the user selected), and the clips in it.
         if (const auto& range = selection.timeRange()) {
             QJsonArray clips;
@@ -220,13 +385,23 @@ public:
                 clips.append(QJsonObject{{QStringLiteral("trackId"), ref.trackId}, {QStringLiteral("clipId"), ref.clipId}});
             }
             out.insert(QStringLiteral("timeSelection"),
-                       QJsonObject{{QStringLiteral("startBeat"), range->start},
-                                   {QStringLiteral("endBeat"), range->end},
+                       QJsonObject{{QStringLiteral("startBeat"), beat(range->start)},
+                                   {QStringLiteral("endBeat"), beat(range->end)},
+                                   {QStringLiteral("startBar"), bar(range->start)},
+                                   {QStringLiteral("endBar"), bar(range->end)},
                                    {QStringLiteral("trackIds"), QJsonArray::fromStringList(selection.rangeTrackIds())},
                                    {QStringLiteral("clips"), clips}});
         } else {
             out.insert(QStringLiteral("timeSelection"), QJsonValue(QJsonValue::Null));
         }
+        // What the user did last (their undo stack, the latest first): what "that" and "this" are.
+        QJsonArray recent;
+        if (const QUndoStack* stack = session_.undoStack()) {
+            for (int i = stack->index() - 1; i >= 0 && recent.size() < kRecentEdits; --i) {
+                recent.append(stack->text(i));
+            }
+        }
+        out.insert(QStringLiteral("recentEdits"), recent);
         return {out, {}, false};
     }
 
@@ -260,6 +435,45 @@ public:
         return {QJsonObject{{QStringLiteral("tracks"), found}}, {}, false};
     }
 
+    // A stretch of the song the arguments name: start_beat or start_bar (default:
+    // the start), end_beat or end_bar (default: the end). Bars are places, as the
+    // tools give them: bars 17 to 24 are start_bar 17, end_bar 25.
+    // `required`: both ends must be given. None and why not.
+    struct Span {
+        double from = 0.0;
+        double to = std::numeric_limits<double>::infinity();
+        QString error;
+    };
+
+    Span span(const QJsonObject& arguments, bool required = false) const {
+        Span out;
+        const QJsonValue startBeat = arguments.value(QStringLiteral("start_beat"));
+        const QJsonValue startBar = arguments.value(QStringLiteral("start_bar"));
+        const QJsonValue endBeat = arguments.value(QStringLiteral("end_beat"));
+        const QJsonValue endBar = arguments.value(QStringLiteral("end_bar"));
+        if (!startBeat.isUndefined() && !startBar.isUndefined()) {
+            out.error = QStringLiteral("Give start_beat or start_bar, not both.");
+        } else if (!endBeat.isUndefined() && !endBar.isUndefined()) {
+            out.error = QStringLiteral("Give end_beat or end_bar, not both.");
+        } else if (required && ((startBeat.isUndefined() && startBar.isUndefined()) ||
+                                (endBeat.isUndefined() && endBar.isUndefined()))) {
+            out.error = QStringLiteral("Where it starts and ends is required: start_beat and end_beat, or start_bar and "
+                                       "end_bar (bars 17 to 24: start_bar 17, end_bar 25, where bar 25 starts).");
+        } else if ((!startBeat.isUndefined() && !startBeat.isDouble()) || (!startBar.isUndefined() && !startBar.isDouble()) ||
+                   (!endBeat.isUndefined() && !endBeat.isDouble()) || (!endBar.isUndefined() && !endBar.isDouble())) {
+            out.error = QStringLiteral("Beats and bars are numbers.");
+        } else if ((startBar.isDouble() && startBar.toDouble() < 1.0) || (endBar.isDouble() && endBar.toDouble() < 1.0)) {
+            out.error = QStringLiteral("Bars count from 1.");
+        }
+        if (!out.error.isEmpty()) return out;
+        if (startBeat.isDouble()) out.from = startBeat.toDouble();
+        if (startBar.isDouble()) out.from = (startBar.toDouble() - 1.0) * beatsPerBar();
+        if (endBeat.isDouble()) out.to = endBeat.toDouble();
+        if (endBar.isDouble()) out.to = (endBar.toDouble() - 1.0) * beatsPerBar();
+        if (out.to <= out.from) out.error = QStringLiteral("The end must come after the start.");
+        return out;
+    }
+
     // The key and the chords between two beats; with `withTracks`, the tracks
     // they were heard from (id and name: what an agent rarely needs, so asked for).
     QJsonObject harmonyJson(double from, double to, bool withTracks) const {
@@ -269,6 +483,7 @@ public:
             if (span.end <= from || span.start >= to) continue;
             chords.append(QJsonObject{{QStringLiteral("startBeat"), beat(span.start)},
                                       {QStringLiteral("endBeat"), beat(span.end)},
+                                      {QStringLiteral("startBar"), bar(span.start)},
                                       {QStringLiteral("chord"), QString::fromStdString(span.chord.name())}});
         }
         const std::optional<Key> key = harmony.key();
@@ -288,10 +503,175 @@ public:
     }
 
     ToolResult getHarmony(const QJsonObject& arguments) const {
-        const double from = arguments.value(QStringLiteral("start_beat")).toDouble(0.0);
-        const double to = arguments.value(QStringLiteral("end_beat")).toDouble(std::numeric_limits<double>::infinity());
-        if (to <= from) return ToolResult::failure(QStringLiteral("end_beat must come after start_beat."));
-        return {harmonyJson(from, to, arguments.value(QStringLiteral("include_tracks")).toBool(false)), {}, false};
+        const Span at = span(arguments);
+        if (!at.error.isEmpty()) return ToolResult::failure(at.error);
+        return {harmonyJson(at.from, at.to, arguments.value(QStringLiteral("include_tracks")).toBool(false)), {}, false};
+    }
+
+    // --- The arrangement at a glance ---
+
+    // The map as the model reads it: a grid, a line a track, then the sections.
+    QString arrangementText(const ArrangementMap& map) const {
+        if (map.rows.empty()) return QStringLiteral("The arrangement is empty: no track has clips there.");
+        QString out = QStringLiteral("Bars %1 to %2 (%3, %4 beats a bar), %5: %6 plays, %7 a clip that is silent "
+                                     "there, %8 nothing. A group's line is what its tracks play.\n")
+                          .arg(map.firstBar)
+                          .arg(map.lastBar)
+                          .arg(project().timeSignatureText(), number(map.beatsPerBar),
+                               map.barsPerCell == 1 ? QStringLiteral("a character a bar")
+                                                    : QStringLiteral("a character every %1 bars").arg(map.barsPerCell))
+                          .arg(kCellPlays)
+                          .arg(kCellSilent)
+                          .arg(kCellEmpty);
+        constexpr int kNameWidth = 24;
+        const auto padded = [](QString text, int width) {
+            if (text.size() > width) text = text.left(width - 1) + u'~';
+            return text.leftJustified(width);
+        };
+        // A ruler: the bar each eighth cell starts.
+        QString ruler(map.cellCount(), u' ');
+        for (int cell = 0; cell < map.cellCount(); cell += 8) {
+            const QString number = QString::number(map.cellBar(cell));
+            for (qsizetype i = 0; i < number.size() && cell + i < ruler.size(); ++i) ruler[cell + i] = number[i];
+        }
+        out += QString(kNameWidth + 1, u' ') + ruler.trimmed() + u'\n';
+        for (const ArrangementMap::Row& row : map.rows) {
+            const QString name = QString(row.depth * 2, u' ') + row.name;
+            QString line = padded(name, kNameWidth) + u' ' + row.cells + QStringLiteral("  ") + row.id;
+            if (row.kind == kGroupKind) line += QStringLiteral(" group");
+            if (row.muted) line += QStringLiteral(" muted");
+            out += line + u'\n';
+        }
+        if (map.emptyTracks > 0) {
+            out += map.emptyTracks == 1 ? QStringLiteral("(1 more track has nothing there.)\n")
+                                        : QStringLiteral("(%1 more tracks have nothing there.)\n").arg(map.emptyTracks);
+        }
+        out += QStringLiteral("\nSections, guessed from which tracks play (a letter again: much the same tracks again):\n");
+        for (const ArrangementMap::Section& section : map.sections) {
+            QStringList names;
+            for (const QString& id : section.trackIds) {
+                if (names.size() == kSectionNames) {
+                    names << QStringLiteral("+%1 more").arg(section.trackIds.size() - kSectionNames);
+                    break;
+                }
+                names << project().track(id).name;
+            }
+            out += QStringLiteral("%1 bars %2-%3: %4\n")
+                       .arg(padded(section.name, 6))
+                       .arg(section.firstBar)
+                       .arg(section.lastBar)
+                       .arg(names.isEmpty() ? QStringLiteral("(nothing)") : names.join(QStringLiteral(", ")));
+        }
+        return out;
+    }
+
+    QJsonObject arrangementJson(const ArrangementMap& map) const {
+        QJsonArray rows;
+        for (const ArrangementMap::Row& row : map.rows) {
+            QJsonObject r{{QStringLiteral("id"), row.id},
+                          {QStringLiteral("name"), row.name},
+                          {QStringLiteral("kind"), row.kind},
+                          {QStringLiteral("cells"), row.cells}};
+            if (row.muted) r.insert(QStringLiteral("muted"), true);
+            rows.append(r);
+        }
+        QJsonArray sections;
+        for (const ArrangementMap::Section& section : map.sections) {
+            sections.append(QJsonObject{{QStringLiteral("name"), section.name},
+                                        {QStringLiteral("firstBar"), section.firstBar},
+                                        {QStringLiteral("lastBar"), section.lastBar},
+                                        {QStringLiteral("trackIds"), QJsonArray::fromStringList(section.trackIds)}});
+        }
+        return {{QStringLiteral("firstBar"), map.firstBar},
+                {QStringLiteral("lastBar"), map.lastBar},
+                {QStringLiteral("barsPerCell"), map.barsPerCell},
+                {QStringLiteral("beatsPerBar"), map.beatsPerBar},
+                {QStringLiteral("tracks"), rows},
+                {QStringLiteral("emptyTracks"), map.emptyTracks},
+                {QStringLiteral("sections"), sections}};
+    }
+
+    ToolResult getArrangementMap(const QJsonObject& arguments) const {
+        const QJsonValue start = arguments.value(QStringLiteral("first_bar"));
+        const QJsonValue end = arguments.value(QStringLiteral("last_bar"));
+        const QJsonValue perCell = arguments.value(QStringLiteral("bars_per_cell"));
+        for (const QJsonValue& value : {start, end, perCell}) {
+            if (!value.isUndefined() && !(value.isDouble() && value.toDouble() >= 1.0)) {
+                return ToolResult::failure(QStringLiteral("first_bar, last_bar and bars_per_cell are whole numbers from 1."));
+            }
+        }
+        if (start.isDouble() && end.isDouble() && end.toInt() < start.toInt()) {
+            return ToolResult::failure(QStringLiteral("last_bar must not come before first_bar."));
+        }
+        const ArrangementMap map = arrangementMap(project(), start.toInt(1), end.toInt(0), perCell.toInt(0));
+        return {arrangementJson(map), arrangementText(map), false};
+    }
+
+    // --- Automation ---
+
+    ToolResult getAutomation(const QJsonObject& arguments) const {
+        const QString id = arguments.value(QStringLiteral("track_id")).toString();
+        const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
+        if (!track) {
+            return ToolResult::failure(
+                QStringLiteral("track_id is required: a track's id from list_tracks (\"master\" for the master)."));
+        }
+        const Span at = span(arguments);
+        if (!at.error.isEmpty()) return ToolResult::failure(at.error);
+        const QString wanted = arguments.value(QStringLiteral("key")).toString();
+        if (!wanted.isEmpty() && project().envelope(track->id, wanted).empty()) {
+            return ToolResult::failure(QStringLiteral("%1 has no automation \"%2\": get_track lists what is automated "
+                                                      "(automation).").arg(track->name, wanted));
+        }
+        QJsonArray envelopes;
+        int total = 0;
+        bool truncated = false;
+        for (const auto& [key, envelope] : project().automation(track->id)) {
+            if (envelope.empty() || (!wanted.isEmpty() && key != wanted)) continue;
+            const std::optional<ParamSpec> spec =
+                session_.bridge() ? session_.bridge()->paramSpec(track->id, key) : std::nullopt;
+            QJsonArray points;
+            for (const AutomationPoint& point : envelope) {
+                if (point.beat < at.from || point.beat > at.to) continue;
+                if (total >= kMaxAutomationPoints) {
+                    truncated = true;
+                    break;
+                }
+                ++total;
+                // In the target's units, as get_device_parameters gives values (normalized without its spec).
+                const double value = spec ? spec->fromNormalized(point.value) : point.value;
+                QJsonArray row{beat(point.beat), spec ? rounded(value) : beat(value)};
+                if (point.curve != 0.0) row.append(rounded(point.curve));
+                points.append(row);
+            }
+            QJsonObject e{{QStringLiteral("key"), key},
+                          {QStringLiteral("target"), targetName(track->id, key)},
+                          {QStringLiteral("points"), points}};
+            if (spec) {
+                e.insert(QStringLiteral("min"), spec->minimum);
+                e.insert(QStringLiteral("max"), spec->maximum);
+                if (!spec->unit.isEmpty()) e.insert(QStringLiteral("unit"), spec->unit);
+                // Where it is at the start of the stretch, as the device shows it.
+                if (const auto value = automation::valueAt(envelope, std::isfinite(at.from) ? at.from : 0.0)) {
+                    e.insert(QStringLiteral("startText"), spec->format(spec->fromNormalized(*value)));
+                }
+            } else {
+                e.insert(QStringLiteral("normalized"), true);
+            }
+            if (session_.bridge() && session_.bridge()->isOverridden(track->id, key)) {
+                e.insert(QStringLiteral("overridden"), true);  // (a change by hand plays over it until re-enabled)
+            }
+            envelopes.append(e);
+        }
+        QJsonObject out{{QStringLiteral("trackId"), track->id},
+                        {QStringLiteral("fields"), QJsonArray{QStringLiteral("beat"), QStringLiteral("value"),
+                                                              QStringLiteral("curve")}},
+                        {QStringLiteral("envelopes"), envelopes}};
+        if (truncated) {
+            out.insert(QStringLiteral("truncated"),
+                       QStringLiteral("Only the first %1 points: ask for one key, or a shorter stretch.").arg(kMaxAutomationPoints));
+        }
+        return {out, {}, false};
     }
 
     // --- Device parameters ---
@@ -656,20 +1036,25 @@ public:
     // --- Notes ---
 
     // A MIDI track's notes as played between two beats, and its clips there.
-    // As rows (`rows`: [startBeat, length, pitch, velocity] each, "fields"
-    // naming them, "muted" listing the rows of muted ones: a fifth of the size), or
-    // as objects with each note's name.
-    QJsonObject notesJson(const Track& track, double from, double to, bool rows) const {
+    // As rows ([startBeat, length, pitch, velocity] each, "fields" naming
+    // them, "muted" listing the rows of muted ones, "bent" those with a pitch
+    // bend or vibrato: a fifth of the size), with names for pitches ("C3"), or
+    // as objects with each note's name, and its bend and vibrato.
+    QJsonObject notesJson(const Track& track, double from, double to, NoteFormat format) const {
         QJsonArray notes;
         QJsonArray clips;
         QJsonArray muted;
+        QJsonArray bent;
         bool truncated = false;
         for (const Clip& clip : track.clips) {
             if (!clip.isMidi() || clip.endBeat(0.0) <= from || clip.startBeat >= to) continue;
-            clips.append(QJsonObject{{QStringLiteral("id"), clip.id},
-                                     {QStringLiteral("startBeat"), beat(clip.startBeat)},
-                                     {QStringLiteral("endBeat"), beat(clip.endBeat(0.0))},
-                                     {QStringLiteral("active"), clip.plays()}});
+            QJsonObject c{{QStringLiteral("id"), clip.id},
+                          {QStringLiteral("startBeat"), beat(clip.startBeat)},
+                          {QStringLiteral("endBeat"), beat(clip.endBeat(0.0))},
+                          {QStringLiteral("startBar"), bar(clip.startBeat)},
+                          {QStringLiteral("endBar"), bar(clip.endBeat(0.0))}};
+            if (!clip.plays()) c.insert(QStringLiteral("active"), false);
+            clips.append(c);
             for (const PlayedNote& played : clip.playedNotes()) {
                 if (played.end <= from || played.start >= to) continue;
                 if (notes.size() >= kMaxNotes) {
@@ -677,10 +1062,12 @@ public:
                     break;
                 }
                 const bool silent = played.note.muted || !clip.plays();
-                if (rows) {
+                if (format != NoteFormat::Objects) {
                     if (silent) muted.append(static_cast<int>(notes.size()));
-                    notes.append(QJsonArray{beat(played.start), beat(played.end - played.start), played.note.pitch,
-                                            played.note.velocity});
+                    if (played.note.bent()) bent.append(static_cast<int>(notes.size()));
+                    const QJsonValue pitch = format == NoteFormat::Names ? QJsonValue(notes::noteName(played.note.pitch))
+                                                                         : QJsonValue(played.note.pitch);
+                    notes.append(QJsonArray{beat(played.start), beat(played.end - played.start), pitch, played.note.velocity});
                     continue;
                 }
                 QJsonObject note{{QStringLiteral("pitch"), played.note.pitch},
@@ -689,16 +1076,25 @@ public:
                                  {QStringLiteral("length"), beat(played.end - played.start)},
                                  {QStringLiteral("velocity"), played.note.velocity}};
                 if (silent) note.insert(QStringLiteral("muted"), true);
+                if (!played.note.bend.empty()) note.insert(QStringLiteral("bend"), bendJson(played.note.bend));
+                if (!played.note.vibrato.empty()) note.insert(QStringLiteral("vibrato"), vibratoJson(played.note.vibrato));
                 notes.append(note);
             }
         }
         QJsonObject out{{QStringLiteral("clips"), clips}};
-        if (rows) out.insert(QStringLiteral("fields"), kNoteFields);
+        if (format != NoteFormat::Objects) out.insert(QStringLiteral("fields"), kNoteFields);
         out.insert(QStringLiteral("notes"), notes);
         if (!muted.isEmpty()) out.insert(QStringLiteral("muted"), muted);
+        if (!bent.isEmpty()) {
+            out.insert(QStringLiteral("bent"), bent);
+            out.insert(QStringLiteral("bendNote"),
+                       QStringLiteral("The rows in bent have pitch bends or vibrato, which rows leave out: format "
+                                      "\"objects\" gives them, and write_midi_clip takes them so. Rewriting these notes "
+                                      "as rows drops their bends."));
+        }
         if (truncated) {
             out.insert(QStringLiteral("truncated"),
-                       QStringLiteral("Only the first %1 notes: ask for a shorter stretch (start_beat, end_beat).").arg(kMaxNotes));
+                       QStringLiteral("Only the first %1 notes: ask for a shorter stretch (start_bar, end_bar).").arg(kMaxNotes));
         }
         return out;
     }
@@ -708,19 +1104,22 @@ public:
         const Track* track = id.isEmpty() ? nullptr : project().findTrack(id);
         if (!track) return ToolResult::failure(QStringLiteral("track_id is required: a MIDI track's id from list_tracks."));
         if (!track->isMidi()) return ToolResult::failure(QStringLiteral("%1 isn't a MIDI track: it has no notes.").arg(track->name));
-        const double from = arguments.value(QStringLiteral("start_beat")).toDouble(0.0);
-        const double to = arguments.value(QStringLiteral("end_beat")).toDouble(std::numeric_limits<double>::infinity());
-        if (to <= from) return ToolResult::failure(QStringLiteral("end_beat must come after start_beat."));
-        const QString format = arguments.value(QStringLiteral("format")).toString(QStringLiteral("rows"));
-        if (format != u"rows" && format != u"objects") return ToolResult::failure(QStringLiteral("format is \"rows\" or \"objects\"."));
-        QJsonObject out = notesJson(*track, from, to, format == u"rows");
+        const Span at = span(arguments);
+        if (!at.error.isEmpty()) return ToolResult::failure(at.error);
+        const auto format = noteFormat(arguments.value(QStringLiteral("format")));
+        if (!format) return ToolResult::failure(QStringLiteral("format is \"rows\", \"names\" or \"objects\"."));
+        QJsonObject out = notesJson(*track, at.from, at.to, *format);
         out.insert(QStringLiteral("trackId"), track->id);
         return {out, {}, false};
     }
 
     // --- The selection, with what a part written there needs ---
 
-    ToolResult getSelectionContext() const {
+    ToolResult getSelectionContext(const QJsonObject& arguments) const {
+        const auto format = noteFormat(arguments.value(QStringLiteral("format")));
+        if (!format || *format == NoteFormat::Objects) {
+            return ToolResult::failure(QStringLiteral("format is \"rows\" or \"names\" (get_notes gives objects)."));
+        }
         const Selection& selection = *session_.selection();
         const auto& range = selection.timeRange();
         if (!range) {
@@ -748,23 +1147,74 @@ public:
             const labels::TrackLabel* label = session_.trackLabels()->find(track->id);
             out.insert(QStringLiteral("details"), label ? strings(label->details) : QJsonArray());
             if (track->isMidi()) {
-                const QJsonObject notes = notesJson(*track, range->start, range->end, true);
+                const QJsonObject notes = notesJson(*track, range->start, range->end, *format);
                 for (auto it = notes.constBegin(); it != notes.constEnd(); ++it) out.insert(it.key(), it.value());
             }
             tracks.append(out);
         }
         QJsonObject out{{QStringLiteral("startBeat"), beat(range->start)},
                         {QStringLiteral("endBeat"), beat(range->end)},
+                        {QStringLiteral("startBar"), bar(range->start)},
+                        {QStringLiteral("endBar"), bar(range->end)},
                         {QStringLiteral("selectedClips"), clips},
                         {QStringLiteral("tracks"), tracks},
                         {QStringLiteral("harmony"), harmonyJson(range->start, range->end, false)},
-                        {QStringLiteral("tempo"), project().tempo()},
-                        {QStringLiteral("timeSignature"), project().timeSignatureText()}};
+                        {QStringLiteral("tempo"), rounded(project().tempo())},
+                        {QStringLiteral("timeSignature"), project().timeSignatureText()},
+                        {QStringLiteral("beatsPerBar"), beatsPerBar()}};
         if (skipped > 0) {
             out.insert(QStringLiteral("moreTracks"),
                        QStringLiteral("%1 more tracks are in the selection: get_track and get_notes give them.").arg(skipped));
         }
         return {out, {}, false};
+    }
+
+    // A note's bend and vibrato as given (objects: "bend" [[time, semitones, curve]], "vibrato" [{...}]); why not.
+    static QString bendsOf(const QJsonObject& item, Note& note) {
+        for (const QJsonValue& value : item.value(QStringLiteral("bend")).toArray()) {
+            const QJsonArray row = value.toArray();
+            if (row.size() < 2 || row.size() > 3 || !row.at(0).isDouble() || !row.at(1).isDouble()) {
+                return QStringLiteral("A bend point is [time, semitones, curve]: time in beats from the note's start, "
+                                      "curve -1..1 (may be left out).");
+            }
+            BendPoint point{row.at(0).toDouble(), row.at(1).toDouble(), row.size() > 2 ? row.at(2).toDouble() : 0.0};
+            if (point.time < 0.0 || point.time > note.length + notes::kEps) {
+                return QStringLiteral("A bend point's time is 0 to the note's length (beats from its start).");
+            }
+            if (std::abs(point.semitones) > notes::kMaxBendSemitones || std::abs(point.curve) > 1.0) {
+                return QStringLiteral("A bend is at most %1 semitones either way, its curve -1 to 1.")
+                    .arg(number(notes::kMaxBendSemitones));
+            }
+            note.bend.push_back(point);
+        }
+        std::stable_sort(note.bend.begin(), note.bend.end(),
+                         [](const BendPoint& a, const BendPoint& b) { return a.time < b.time; });
+        for (const QJsonValue& value : item.value(QStringLiteral("vibrato")).toArray()) {
+            const QJsonObject v = value.toObject();
+            Vibrato vibrato;
+            vibrato.start = v.value(QStringLiteral("start")).toDouble(0.0);
+            vibrato.length = v.value(QStringLiteral("length")).toDouble(note.length - vibrato.start);
+            vibrato.depth = v.value(QStringLiteral("depth")).toDouble(notes::kDefaultVibratoDepth);
+            vibrato.rate = v.value(QStringLiteral("rate")).toDouble(notes::kDefaultVibratoRate);
+            vibrato.fade = v.value(QStringLiteral("fade")).toDouble(notes::kDefaultVibratoFade);
+            if (vibrato.start < 0.0 || vibrato.length < notes::kMinVibratoBeats ||
+                vibrato.start + vibrato.length > note.length + notes::kEps || vibrato.depth < 0.0 ||
+                vibrato.depth > notes::kMaxBendSemitones || vibrato.rate < notes::kMinVibratoRate ||
+                vibrato.rate > notes::kMaxVibratoRate || vibrato.fade < 0.0 || vibrato.fade > 1.0) {
+                return QStringLiteral("A vibrato is {start, length} beats inside the note (from its start), depth in "
+                                      "semitones, rate %1 to %2 a second, fade 0 to 1.")
+                    .arg(number(notes::kMinVibratoRate), number(notes::kMaxVibratoRate));
+            }
+            note.vibrato.push_back(vibrato);
+        }
+        std::sort(note.vibrato.begin(), note.vibrato.end(),
+                  [](const Vibrato& a, const Vibrato& b) { return a.start < b.start; });
+        for (size_t i = 1; i < note.vibrato.size(); ++i) {
+            if (note.vibrato[i].start < note.vibrato[i - 1].start + note.vibrato[i - 1].length - notes::kEps) {
+                return QStringLiteral("A note's vibratos don't overlap.");
+            }
+        }
+        return {};
     }
 
     ToolResult writeMidiClip(const QJsonObject& arguments) {
@@ -775,55 +1225,91 @@ public:
         if (!track->isMidi()) {
             return ToolResult::failure(QStringLiteral("%1 isn't a MIDI track: duplicate_track a MIDI track, or pick one.").arg(track->name));
         }
-        const double start = arguments.value(QStringLiteral("start_beat")).toDouble(-1.0);
-        const double end = arguments.value(QStringLiteral("end_beat")).toDouble(-1.0);
+        const Span at = span(arguments, true);
+        if (!at.error.isEmpty()) return ToolResult::failure(at.error);
+        const double start = at.from;
+        const double end = at.to;
         if (start < 0.0 || end - start < edits::kMinMidiClipBeats) {
-            return ToolResult::failure(QStringLiteral("start_beat (0 or later) and end_beat (after it) are required."));
+            return ToolResult::failure(QStringLiteral("The clip starts at beat 0 (bar 1) or later, and ends after it."));
         }
         const QJsonArray items = arguments.value(QStringLiteral("notes")).toArray();
         if (items.size() > kMaxNotes) return ToolResult::failure(QStringLiteral("At most %1 notes at once.").arg(kMaxNotes));
+        // The rows (or objects) to write muted, as get_notes lists them.
+        QSet<int> mutedRows;
+        for (const QJsonValue& value : arguments.value(QStringLiteral("muted")).toArray()) {
+            const int row = value.toInt(-1);
+            if (row < 0 || row >= items.size()) {
+                return ToolResult::failure(QStringLiteral("muted lists notes by their place in notes, from 0."));
+            }
+            mutedRows.insert(row);
+        }
         std::vector<Note> notes;
-        for (const QJsonValue& entry : items) {
+        int bentWritten = 0;
+        for (qsizetype i = 0; i < items.size(); ++i) {
+            const QJsonValue& entry = items[i];
             // A row, as get_notes gives them ([start_beat, length, pitch, velocity]), or an object.
             const QJsonArray row = entry.toArray();
             const QJsonObject item = entry.toObject();
             if (entry.isArray() && (row.size() < 3 || row.size() > 4)) {
                 return ToolResult::failure(QStringLiteral("A note row is [start_beat, length, pitch, velocity] (velocity may be left out)."));
             }
-            const int pitch = entry.isArray() ? row.at(2).toInt(-1) : item.value(QStringLiteral("pitch")).toInt(-1);
-            const double at = entry.isArray() ? row.at(0).toDouble(-1.0) : item.value(QStringLiteral("start_beat")).toDouble(-1.0);
+            const std::optional<int> pitch = pitchOf(entry.isArray() ? row.at(2) : item.value(QStringLiteral("pitch")));
+            const double noteAt = entry.isArray() ? row.at(0).toDouble(-1.0) : item.value(QStringLiteral("start_beat")).toDouble(-1.0);
             const double length = entry.isArray() ? row.at(1).toDouble(0.0) : item.value(QStringLiteral("length")).toDouble(0.0);
             const int velocity = entry.isArray() ? (row.size() > 3 ? row.at(3).toInt(0) : 100)
                                                  : item.value(QStringLiteral("velocity")).toInt(100);
-            if (pitch < 0 || pitch > 127) return ToolResult::failure(QStringLiteral("A note's pitch is 0 to 127 (60 is C3)."));
-            if (at < start - edits::kEps || at >= end) {
+            if (!pitch) {
+                return ToolResult::failure(QStringLiteral("A note's pitch is 0 to 127 (60 is C3), or its name (\"C3\", \"F#2\", \"Bb4\")."));
+            }
+            if (noteAt < start - edits::kEps || noteAt >= end) {
                 return ToolResult::failure(
                     QStringLiteral("A note starts at beat %1, outside the clip (%2 to %3): notes' start_beat is on the "
-                                   "song's timeline.").arg(number(at, 3), number(start, 3), number(end, 3)));
+                                   "song's timeline.").arg(number(noteAt, 3), number(start, 3), number(end, 3)));
             }
             if (!(length > 0.0)) return ToolResult::failure(QStringLiteral("A note's length is more than 0 beats."));
             if (velocity < 1 || velocity > 127) return ToolResult::failure(QStringLiteral("A note's velocity is 1 to 127."));
             Note note;
-            note.pitch = pitch;
-            note.start = std::max(0.0, at - start);  // (the clip's own beats)
+            note.pitch = *pitch;
+            note.start = std::max(0.0, noteAt - start);  // (the clip's own beats)
             note.length = length;
             note.velocity = velocity;
+            note.muted = mutedRows.contains(static_cast<int>(i)) || item.value(QStringLiteral("muted")).toBool(false);
+            if (const QString why = bendsOf(item, note); !why.isEmpty()) return ToolResult::failure(why);
+            if (note.bent()) ++bentWritten;
             notes.push_back(note);
         }
         std::sort(notes.begin(), notes.end(),
                   [](const Note& a, const Note& b) { return std::tie(a.start, a.pitch) < std::tie(b.start, b.pitch); });
+        // What it writes over: the notes played there now, and how many of them bend.
+        int replaced = 0;
+        int bentReplaced = 0;
+        for (const Clip& clip : track->clips) {
+            if (!clip.isMidi()) continue;
+            for (const PlayedNote& played : clip.playedNotes()) {
+                if (played.end <= start || played.start >= end) continue;
+                ++replaced;
+                if (played.note.bent()) ++bentReplaced;
+            }
+        }
         const Clip clip = Clip::midi(newId(), QString(), start, end - start, 0.0, std::move(notes));
         const QString trackId = track->id;
-        const QString text = QStringLiteral("Write %1 notes on %2, beats %3 to %4")
-                                 .arg(QString::number(clip.notes.size()), track->name, number(start, 3), number(end, 3));
-        return change(text, QStringLiteral("write_midi_clip"),
-                      {{QStringLiteral("trackId"), trackId}, {QStringLiteral("clipId"), clip.id}},
-                      [&](ProjectEditor& editor) {
-                          std::vector<Clip> clips = editor.project()->track(trackId).clips;
-                          clips.push_back(clip);
-                          // (It wins where it overlaps: what was there is trimmed, split or goes.)
-                          editor.commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project().tempo())}});
-                      });
+        const QString text = QStringLiteral("Write %1 notes on %2, %3")
+                                 .arg(QString::number(clip.notes.size()), track->name, stretch(start, end));
+        QJsonObject out{{QStringLiteral("trackId"), trackId},
+                        {QStringLiteral("clipId"), clip.id},
+                        {QStringLiteral("replacedNotes"), replaced}};
+        if (bentReplaced > bentWritten) {
+            out.insert(QStringLiteral("warning"),
+                       QStringLiteral("%1 of the notes it replaced had pitch bends or vibrato, more than it writes: "
+                                      "rewind it and write them as objects with their bend (get_notes format "
+                                      "\"objects\" gives them) to keep them.").arg(bentReplaced));
+        }
+        return change(text, QStringLiteral("write_midi_clip"), out, [&](ProjectEditor& editor) {
+            std::vector<Clip> clips = editor.project()->track(trackId).clips;
+            clips.push_back(clip);
+            // (It wins where it overlaps: what was there is trimmed, split or goes.)
+            editor.commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project().tempo())}});
+        });
     }
 
     ToolResult duplicateTrack(const QJsonObject& arguments) {
@@ -932,6 +1418,9 @@ private:
     static constexpr int kMaxChoices = 64;
     static constexpr int kMaxNotes = 5000;
     static constexpr int kMaxContextTracks = 16;
+    static constexpr int kRecentEdits = 5;
+    static constexpr int kSectionNames = 8;
+    static constexpr int kMaxAutomationPoints = 2000;
 
     Session& session_;
 };
@@ -940,16 +1429,41 @@ private:
 
 void addSessionTools(Protocol& protocol, Session& session) {
     auto tools = std::make_shared<Tools>(session);
+    // A stretch of the song, in beats or bars (the tools that take one).
+    const QJsonObject startBeat = property(QStringLiteral("number"), QStringLiteral("From this beat (default: the start)."));
+    const QJsonObject endBeat = property(QStringLiteral("number"), QStringLiteral("Up to this beat (default: the end)."));
+    const QJsonObject startBar = property(QStringLiteral("number"), QStringLiteral("Instead of start_beat: from where this bar starts (from 1; 17.5: halfway through bar 17)."));
+    const QJsonObject endBar = property(QStringLiteral("number"), QStringLiteral("Instead of end_beat: up to where this bar starts (bars 17 to 24: start_bar 17, end_bar 25)."));
     protocol.addTool({
         QStringLiteral("get_project"),
         QStringLiteral("Get Project"),
-        QStringLiteral("The project open in SUBstation: its name and file, tempo (BPM), time signature, key (the "
-                       "project's, else the one its notes suggest: keyInferred), loop, where its last clip ends "
-                       "(endBeat), how many tracks and returns it has, and the tracks the user has selected. "
-                       "Start here."),
+        QStringLiteral("The project open in SUBstation: its name and file, tempo (BPM), time signature and beats a bar, "
+                       "key (the project's, else the one its notes suggest: keyInferred), its style as its sounds "
+                       "suggest, loop, where its last clip ends, how many tracks and returns it has, the tracks the "
+                       "user selected and their time selection, and what the user did last (recentEdits, the latest "
+                       "first: what \"that\" is). Places are in beats and bars (startBar 17.5: halfway through bar "
+                       "17; a stretch over bars 17 to 24 has startBar 17, endBar 25: tools take bars so). Start "
+                       "here, then get_arrangement_map."),
         schema(),
         true,
         [tools](const QJsonObject&) { return tools->getProject(); },
+    });
+    protocol.addTool({
+        QStringLiteral("get_arrangement_map"),
+        QStringLiteral("Get Arrangement Map"),
+        QStringLiteral("The song's arrangement at a glance: a line a track, a character a bar (# plays, - a clip "
+                       "that is silent there, . nothing; a group's line is what its tracks play), and the sections "
+                       "guessed from where tracks come in and drop out (A, B, A again...), each with its bars and "
+                       "tracks. Use it to find the parts of the song (\"the chorus\", \"the drop\", \"where the bass "
+                       "comes in\") and to see what plays together. Sections' firstBar and lastBar are whole bars, "
+                       "both in it (a section's bars as a stretch: start_bar firstBar, end_bar lastBar + 1). Long "
+                       "songs show several bars a character (bars_per_cell); first_bar and last_bar show part of it."),
+        schema({{QStringLiteral("first_bar"), property(QStringLiteral("integer"), QStringLiteral("The first bar shown (default 1)."))},
+                {QStringLiteral("last_bar"), property(QStringLiteral("integer"), QStringLiteral("The last bar shown, itself too (default: the song's last)."))},
+                {QStringLiteral("bars_per_cell"),
+                 property(QStringLiteral("integer"), QStringLiteral("Bars a character (default: 1, or as many as keep a line to 128)."))}}),
+        true,
+        [tools](const QJsonObject& arguments) { return tools->getArrangementMap(arguments); },
     });
     protocol.addTool({
         QStringLiteral("list_tracks"),
@@ -958,8 +1472,8 @@ void addSessionTools(Protocol& protocol, Session& session) {
                        "`parent` naming a track's group), then the return tracks, then the master. Each says what it "
                        "is: its label (a few words, e.g. \"Washed Out Serum Pluck\", worked out from its name, "
                        "presets, files, notes and effects), family and role (\"brass\", \"trumpet\"), traits, and its "
-                       "mixer (volumeDb, pan from -1 to 1, mute, solo), devices and clip count. Use get_track for one "
-                       "track in full."),
+                       "mixer, devices and clip count. What is as usual is left out: no pan is the middle, no mute, "
+                       "solo or frozen is false, no parent is in no group. Use get_track for one track in full."),
         schema(),
         true,
         [tools](const QJsonObject&) { return tools->listTracks(); },
@@ -969,9 +1483,10 @@ void addSessionTools(Protocol& protocol, Session& session) {
         QStringLiteral("Get Track"),
         QStringLiteral("One track (or return, or the master: \"master\") in full: what list_tracks says, plus what "
                        "its label was made from (details: its instrument and preset, notes, files, effects and their "
-                       "amounts), its devices (plug-ins with their vendor and loaded preset; racks with their chains), "
-                       "its clips (beats, files, note counts; inactive ones too), its sends to returns and where its "
-                       "output goes."),
+                       "amounts), its devices (plug-ins with their vendor and loaded preset; racks with their chains "
+                       "and macros; sidechains; what modulators move), its clips (beats and bars; files and what they "
+                       "sound like, gain, warp, fades; note counts; inactive ones too), its sends, where its output "
+                       "goes, and what is automated (get_automation gives the points)."),
         schema({{QStringLiteral("track_id"), property(QStringLiteral("string"), QStringLiteral("The track's id, from list_tracks or find_tracks."))}},
                {QStringLiteral("track_id")}),
         true,
@@ -993,11 +1508,13 @@ void addSessionTools(Protocol& protocol, Session& session) {
         QStringLiteral("get_harmony"),
         QStringLiteral("Get Harmony"),
         QStringLiteral("The song's chords and key, inferred from the notes its MIDI tracks play (those heard: not "
-                       "muted, not drums). Chords are spans of beats with names such as \"Am7\" or \"C/E\". Give "
-                       "start_beat and end_beat for part of the song; include_tracks for the tracks they were heard "
-                       "from."),
-        schema({{QStringLiteral("start_beat"), property(QStringLiteral("number"), QStringLiteral("From this beat (default: the start)."))},
-                {QStringLiteral("end_beat"), property(QStringLiteral("number"), QStringLiteral("Up to this beat (default: the end)."))},
+                       "muted, not drums). Chords are spans of beats (and the bar each starts in) with names such as "
+                       "\"Am7\" or \"C/E\". Give start_bar and end_bar (or beats) for part of the song; include_tracks "
+                       "for the tracks they were heard from."),
+        schema({{QStringLiteral("start_beat"), startBeat},
+                {QStringLiteral("end_beat"), endBeat},
+                {QStringLiteral("start_bar"), startBar},
+                {QStringLiteral("end_bar"), endBar},
                 {QStringLiteral("include_tracks"),
                  property(QStringLiteral("boolean"), QStringLiteral("Also the tracks the chords were heard from (id, name). Default false."))}}),
         true,
@@ -1024,20 +1541,45 @@ void addSessionTools(Protocol& protocol, Session& session) {
         [tools](const QJsonObject& arguments) { return tools->getDeviceParameters(arguments); },
     });
     protocol.addTool({
+        QStringLiteral("get_automation"),
+        QStringLiteral("Get Automation"),
+        QStringLiteral("A track's automation (a return's, the master's: \"master\"): each envelope's key, what it moves "
+                       "(\"Volume\", \"Delay: Feedback\"), its range and unit, and its points as rows [beat, value, "
+                       "curve] (the value in the target's units, as get_device_parameters gives values; curve, -1 to "
+                       "1, bends the segment to the next point, left out when straight). get_track lists what is "
+                       "automated. Give key for one envelope, start_bar and end_bar (or beats) for part of the song."),
+        schema({{QStringLiteral("track_id"), trackId},
+                {QStringLiteral("key"), property(QStringLiteral("string"), QStringLiteral("One envelope's key, from get_track's automation (default: all)."))},
+                {QStringLiteral("start_beat"), startBeat},
+                {QStringLiteral("end_beat"), endBeat},
+                {QStringLiteral("start_bar"), startBar},
+                {QStringLiteral("end_bar"), endBar}},
+               {QStringLiteral("track_id")}),
+        true,
+        [tools](const QJsonObject& arguments) { return tools->getAutomation(arguments); },
+    });
+    const QJsonObject rowsFormat{
+        {QStringLiteral("type"), QStringLiteral("string")},
+        {QStringLiteral("enum"), QJsonArray{QStringLiteral("rows"), QStringLiteral("names")}},
+        {QStringLiteral("description"), QStringLiteral("\"rows\" (default: pitches as MIDI numbers) or \"names\" (pitches as names, \"C3\").")}};
+    protocol.addTool({
         QStringLiteral("get_notes"),
         QStringLiteral("Get Notes"),
         QStringLiteral("The notes a MIDI track plays, on the song's timeline, and its clips there. As rows by "
                        "default: [startBeat, length, pitch, velocity] (beats; pitch 0..127, 60 is C3; velocity "
-                       "1..127), `fields` naming them, `muted` listing the rows of notes that don't sound; "
-                       "write_midi_clip takes rows the same. format \"objects\" gives each note as an object with its "
-                       "name (\"G#3\"). Give start_beat and end_beat for part of the song."),
+                       "1..127), `fields` naming them, `muted` listing the rows of notes that don't sound, `bent` "
+                       "those with a pitch bend or vibrato; write_midi_clip takes rows the same. format \"names\" "
+                       "gives pitches as names (\"G#3\"); \"objects\" gives each note as an object with its name, its "
+                       "bend and vibrato. Give start_bar and end_bar (or beats) for part of the song."),
         schema({{QStringLiteral("track_id"), trackId},
-                {QStringLiteral("start_beat"), property(QStringLiteral("number"), QStringLiteral("From this beat (default: the start)."))},
-                {QStringLiteral("end_beat"), property(QStringLiteral("number"), QStringLiteral("Up to this beat (default: the end)."))},
+                {QStringLiteral("start_beat"), startBeat},
+                {QStringLiteral("end_beat"), endBeat},
+                {QStringLiteral("start_bar"), startBar},
+                {QStringLiteral("end_bar"), endBar},
                 {QStringLiteral("format"),
                  QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
-                             {QStringLiteral("enum"), QJsonArray{QStringLiteral("rows"), QStringLiteral("objects")}},
-                             {QStringLiteral("description"), QStringLiteral("\"rows\" (default) or \"objects\".")}}}},
+                             {QStringLiteral("enum"), QJsonArray{QStringLiteral("rows"), QStringLiteral("names"), QStringLiteral("objects")}},
+                             {QStringLiteral("description"), QStringLiteral("\"rows\" (default), \"names\" or \"objects\".")}}}},
                {QStringLiteral("track_id")}),
         true,
         [tools](const QJsonObject& arguments) { return tools->getNotes(arguments); },
@@ -1046,14 +1588,14 @@ void addSessionTools(Protocol& protocol, Session& session) {
         QStringLiteral("get_selection_context"),
         QStringLiteral("Get Selection Context"),
         QStringLiteral("Everything for working on what the user selected in the arrangement, in one call: the time "
-                       "selection's beats, the selected clips, each track in it (what get_track says of it in short: "
-                       "label, instrument and effects, mixer) with a MIDI track's notes there as rows (as get_notes "
-                       "gives them), the key and chords there, the tempo and time signature. Start here when the "
-                       "user asks for something about \"this\", \"the selection\" or \"what I selected\". Fails, "
-                       "saying so, when nothing is selected in time."),
-        schema(),
+                       "selection's beats and bars, the selected clips, each track in it (what get_track says of it in "
+                       "short: label, instrument and effects, mixer) with a MIDI track's notes there as rows (as "
+                       "get_notes gives them), the key and chords there, the tempo and time signature. Start here "
+                       "when the user asks for something about \"this\", \"the selection\" or \"what I selected\". "
+                       "Fails, saying so, when nothing is selected in time."),
+        schema({{QStringLiteral("format"), rowsFormat}}),
         true,
-        [tools](const QJsonObject&) { return tools->getSelectionContext(); },
+        [tools](const QJsonObject& arguments) { return tools->getSelectionContext(arguments); },
     });
 
     // Edits: each call is one change the user sees in View › Agent Changes, and can rewind.
@@ -1135,37 +1677,59 @@ void addSessionTools(Protocol& protocol, Session& session) {
         [tools](const QJsonObject& arguments) { return tools->setProject(arguments); },
         true,
     });
+    QJsonObject pitchSchema{{QStringLiteral("description"), QStringLiteral("A MIDI note number, 0..127 (60 is C3), or a name (\"C3\", \"F#2\", \"Bb4\").")}};
+    pitchSchema.insert(QStringLiteral("type"), QJsonArray{QStringLiteral("integer"), QStringLiteral("string")});
     const QJsonObject note{
         {QStringLiteral("type"), QStringLiteral("object")},
         {QStringLiteral("properties"),
-         QJsonObject{{QStringLiteral("pitch"), property(QStringLiteral("integer"), QStringLiteral("MIDI note number, 0..127 (60 is C3)."))},
+         QJsonObject{{QStringLiteral("pitch"), pitchSchema},
                      {QStringLiteral("start_beat"), property(QStringLiteral("number"), QStringLiteral("Where it starts on the song's timeline, inside the clip."))},
                      {QStringLiteral("length"), property(QStringLiteral("number"), QStringLiteral("How long, in beats."))},
-                     {QStringLiteral("velocity"), property(QStringLiteral("integer"), QStringLiteral("1..127 (default 100)."))}}},
+                     {QStringLiteral("velocity"), property(QStringLiteral("integer"), QStringLiteral("1..127 (default 100)."))},
+                     {QStringLiteral("muted"), property(QStringLiteral("boolean"), QStringLiteral("Deactivated: it doesn't sound (default false)."))},
+                     {QStringLiteral("bend"),
+                      QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                  {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                                                        {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}}}}},
+                                  {QStringLiteral("description"),
+                                   QStringLiteral("Pitch bend points [time, semitones, curve]: time in beats from the note's start, curve -1..1 (may be left out). As get_notes' objects give them.")}}},
+                     {QStringLiteral("vibrato"),
+                      QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                  {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
+                                  {QStringLiteral("description"),
+                                   QStringLiteral("Vibratos {start, length (beats from the note's start), depth (semitones), rate (a second), fade (0..1)}.")}}}}},
         {QStringLiteral("required"), QJsonArray{QStringLiteral("pitch"), QStringLiteral("start_beat"), QStringLiteral("length")}},
         {QStringLiteral("additionalProperties"), false}};
     const QJsonObject noteRow{
         {QStringLiteral("type"), QStringLiteral("array")},
-        {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("number")}}},
         {QStringLiteral("minItems"), 3},
         {QStringLiteral("maxItems"), 4},
-        {QStringLiteral("description"), QStringLiteral("[start_beat, length, pitch, velocity]: velocity may be left out (100).")}};
+        {QStringLiteral("description"), QStringLiteral("[start_beat, length, pitch, velocity]: pitch a number or a name (\"C3\"); velocity may be left out (100).")}};
     protocol.addTool({
         QStringLiteral("write_midi_clip"),
         QStringLiteral("Write MIDI Clip"),
-        QStringLiteral("Puts a new MIDI clip from start_beat to end_beat on a MIDI track, playing these notes (their "
-                       "start_beat on the song's timeline, as get_notes gives them), each a row [start_beat, length, "
-                       "pitch, velocity] (a fifth of the size) or an object. It replaces whatever was there "
-                       "on that track, as a clip placed by the user does: clips under it are trimmed, split or go. "
-                       "To keep the user's part, write on a copy (duplicate_track) and let them compare. A part for "
-                       "the user's time selection: its startBeat and endBeat (get_project).") + edits,
+        QStringLiteral("Puts a new MIDI clip on a MIDI track from start_bar to end_bar (or start_beat to end_beat), "
+                       "playing these notes (their start_beat on the song's timeline, as get_notes gives them), each "
+                       "a row [start_beat, length, pitch, velocity] (a fifth of the size; pitch a number or a name, "
+                       "\"C3\") or an object (which can carry a bend and vibrato). `muted` lists the notes to write "
+                       "deactivated, as get_notes' `muted` does. It replaces whatever was there on that track, as a "
+                       "clip placed by the user does: clips under it are trimmed, split or go (replacedNotes says how "
+                       "many notes; a warning if bends were lost). To keep the user's part, write on a copy "
+                       "(duplicate_track) and let them compare. A part for the user's time selection: its startBar "
+                       "and endBar (get_project).") + edits,
         schema({{QStringLiteral("track_id"), trackId},
                 {QStringLiteral("start_beat"), property(QStringLiteral("number"), QStringLiteral("Where the clip starts."))},
                 {QStringLiteral("end_beat"), property(QStringLiteral("number"), QStringLiteral("Where it ends."))},
+                {QStringLiteral("start_bar"), startBar},
+                {QStringLiteral("end_bar"), endBar},
                 {QStringLiteral("notes"),
                  QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
-                             {QStringLiteral("items"), QJsonObject{{QStringLiteral("anyOf"), QJsonArray{noteRow, note}}}}}}},
-               {QStringLiteral("track_id"), QStringLiteral("start_beat"), QStringLiteral("end_beat"), QStringLiteral("notes")}),
+                             {QStringLiteral("items"), QJsonObject{{QStringLiteral("anyOf"), QJsonArray{noteRow, note}}}}}},
+                {QStringLiteral("muted"),
+                 QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                             {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+                             {QStringLiteral("description"), QStringLiteral("The notes (their places in notes, from 0) that don't sound.")}}}},
+               {QStringLiteral("track_id"), QStringLiteral("notes")}),
         false,
         [tools](const QJsonObject& arguments) { return tools->writeMidiClip(arguments); },
     });
@@ -1214,6 +1778,76 @@ void addSessionTools(Protocol& protocol, Session& session) {
         false,
         [tools](const QJsonObject& arguments) { return tools->restoreAgentChanges(arguments); },
         true,
+    });
+
+    // Resources: the project as documents a client can read (and show) without a tool call.
+    protocol.addResource({
+        QStringLiteral("substation://project"),
+        QStringLiteral("project"),
+        QStringLiteral("Project"),
+        QStringLiteral("The project open in SUBstation, as get_project gives it: tempo, key, time signature, the "
+                       "user's selection and their last edits."),
+        QStringLiteral("application/json"),
+        [tools] {
+            return QString::fromUtf8(QJsonDocument(tools->getProject().structured.toObject()).toJson(QJsonDocument::Compact));
+        },
+    });
+    protocol.addResource({
+        QStringLiteral("substation://arrangement"),
+        QStringLiteral("arrangement"),
+        QStringLiteral("Arrangement"),
+        QStringLiteral("The song's arrangement at a glance, as get_arrangement_map gives it: where each track plays, "
+                       "a character a bar, and the sections guessed from it."),
+        QStringLiteral("text/plain"),
+        [tools] { return tools->getArrangementMap({}).text; },
+    });
+
+    // Prompts: requests the user picks in the agent (Claude Code: /mcp__substation__write_part...).
+    protocol.addPrompt({
+        QStringLiteral("write_part"),
+        QStringLiteral("Write a Part"),
+        QStringLiteral("Write a part over the bars selected in SUBstation's arrangement."),
+        {{QStringLiteral("request"), QStringLiteral("What to write (\"a funkier bass line\", \"strings that follow the chords\")."), true}},
+        [](const QJsonObject& arguments) {
+            return QStringLiteral(
+                       "In SUBstation I selected part of my song. Write this there: %1\n\n"
+                       "Call get_selection_context first: it has the selected bars, each track there with its notes and "
+                       "what it is, and the chords. If you need more of the song around it, get_arrangement_map and "
+                       "get_notes. Write on a copy of the track (duplicate_track) unless I asked you to change mine, "
+                       "with write_midi_clip over the selection's bars, in the song's key and following its chords. "
+                       "Then tell me what you wrote, on which track, and how it fits.")
+                .arg(arguments.value(QStringLiteral("request")).toString().trimmed());
+        },
+    });
+    protocol.addPrompt({
+        QStringLiteral("describe_song"),
+        QStringLiteral("Describe the Song"),
+        QStringLiteral("What the song open in SUBstation is: its sections, its tracks, its chords."),
+        {},
+        [](const QJsonObject&) {
+            return QStringLiteral(
+                "Describe the song I have open in SUBstation, without changing anything. Call get_project, then "
+                "get_arrangement_map for its sections (where tracks come in and drop out), list_tracks for what each "
+                "track is, and get_harmony over each section's bars for its chords. Tell me its form (intro, verse, "
+                "chorus... by bars), what plays in each part, the key and the progressions, and anything that stands "
+                "out: a section that is thin or crowded, tracks that never play, parts that repeat unchanged.");
+        },
+    });
+    protocol.addPrompt({
+        QStringLiteral("mix_review"),
+        QStringLiteral("Review the Mix"),
+        QStringLiteral("Suggestions for the mix of the song open in SUBstation, made only once you agree."),
+        {{QStringLiteral("focus"), QStringLiteral("What to look at most (\"the low end\", \"the vocals\"); none: everything."), false}},
+        [](const QJsonObject& arguments) {
+            const QString focus = arguments.value(QStringLiteral("focus")).toString().trimmed();
+            return QStringLiteral(
+                       "Review the mix of the song I have open in SUBstation%1. Call list_tracks for each track's level, "
+                       "pan, sends and what it is, get_arrangement_map for what plays together, and get_track (and "
+                       "get_device_parameters) for the effects on the tracks that matter. You can't hear it: reason "
+                       "from what the tracks are, their levels, pans, effects and what overlaps. Suggest changes, "
+                       "each with why, and make them (set_mixer, set_device_parameters) only once I say which.")
+                .arg(focus.isEmpty() ? QString() : QStringLiteral(", above all %1").arg(focus));
+        },
     });
 }
 
