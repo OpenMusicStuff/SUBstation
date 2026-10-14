@@ -1255,12 +1255,13 @@ private Q_SLOTS:
         QCOMPARE(engineValue("focus_hi"), 12000.f);
         tick();  // (the lines settled)
         QTRY_COMPARE(find(view_, QStringLiteral("below"))->opacity(), 1.0);  // (Upward on: Below no longer dimmed)
-        engine()->renderOffline(0.0, kSampleRate);
-        tick(12);
-        // The value under the mouse reads in the header.
+        // The value under the mouse reads in the header. (Hovered before the sound comes: the displays go by
+        // the time since their last tick, and a wait for the hover between the sound and the ticks, long on a
+        // busy machine, lets them sink back.)
         QTest::mouseMove(window_, at(SpectralGraph::BelowHandle));
         QTRY_COMPARE(graph_->hoveredHandle(), int(SpectralGraph::BelowHandle));
-        tick(12);
+        engine()->renderOffline(0.0, kSampleRate);
+        tick(24);
         QVERIFY(graph_->maxCutDb() > 3.0);
         QCOMPARE(graph_->readout(), QStringLiteral("Below -40.0 dB"));
         QTest::qWait(50);
