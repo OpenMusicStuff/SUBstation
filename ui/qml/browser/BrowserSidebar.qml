@@ -128,10 +128,17 @@ Rectangle {
             HoverHandler {
                 id: hover
             }
-            TapHandler {
-                acceptedButtons: Qt.LeftButton
-                enabled: entry.selectable
-                onTapped: sidebar.browser.scope = entry.scope
+            // A click shows the entry: up to its arrow (a click on the arrow only collapses or expands it).
+            Item {
+                anchors.left: parent.left
+                anchors.right: arrow.left
+                height: parent.height
+
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    enabled: entry.selectable
+                    onTapped: sidebar.browser.scope = entry.scope
+                }
             }
             TapHandler {
                 acceptedButtons: Qt.RightButton
