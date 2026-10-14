@@ -954,6 +954,9 @@ private Q_SLOTS:
                     .value(QStringLiteral("isError")).toBool());
         QVERIFY(call(protocol, QStringLiteral("get_arrangement_map"), {{QStringLiteral("first_bar"), 5}, {QStringLiteral("last_bar"), 4}})
                     .value(QStringLiteral("isError")).toBool());
+        for (const QString& field : {QStringLiteral("first_bar"), QStringLiteral("last_bar"), QStringLiteral("bars_per_cell")}) {
+            QVERIFY(call(protocol, QStringLiteral("get_arrangement_map"), {{field, 2.5}}).value(QStringLiteral("isError")).toBool());
+        }
 
         // An empty project says so.
         f.s().newProject();

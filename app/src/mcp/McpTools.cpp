@@ -467,7 +467,10 @@ public:
         const QJsonValue end = arguments.value(QStringLiteral("last_bar"));
         const QJsonValue perCell = arguments.value(QStringLiteral("bars_per_cell"));
         for (const QJsonValue& value : {start, end, perCell}) {
-            if (!value.isUndefined() && !(value.isDouble() && value.toDouble() >= 1.0)) {
+            // (Whole numbers: toInt() would make 17.5 its default, mapping other bars without a word.)
+            const double number = value.toDouble();
+            if (!value.isUndefined() && !(value.isDouble() && number >= 1.0 && number == std::floor(number) &&
+                                          number <= std::numeric_limits<int>::max())) {
                 return ToolResult::failure(QStringLiteral("first_bar, last_bar and bars_per_cell are whole numbers from 1."));
             }
         }
