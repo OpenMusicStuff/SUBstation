@@ -2,7 +2,8 @@
 // per-request versions and headers, the legacy initialize handshake), its
 // errors; the tools on a real session (the project, tracks with their labels,
 // one track in full, finding tracks, the harmony, a device's parameters, the
-// notes); agents' edits, each a change apart from the undo stack, rewound and
+// notes); agents' edits (parameters, the mixer, clips, notes where they are,
+// automation, tracks, devices), each a change apart from the undo stack, rewound and
 // restored, and the two histories refusing to undo each other's work; Streamable HTTP over a real
 // socket on localhost (DNS rebinding refused, keep-alive, chunked bodies); and
 // turning the server on and off, its port kept.
@@ -1004,6 +1005,377 @@ private Q_SLOTS:
         QCOMPARE(result(reply).value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
     }
 
+    // --- Edits of notes, automation, tracks and devices ----------------------------------------
+
+    void editNotesWhereTheyAre() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
+        const auto first = f.editor().addMidiClip(lead, 0, 4);
+        const auto second = f.editor().addMidiClip(lead, 8, 4);
+        QVERIFY(first && second);
+        Note bent{60, 0, 1, 100};
+        bent.bend = {{0.0, 0.0, 0.0}, {0.5, 1.0, 0.0}};
+        f.editor().setClipNotes(*first, {bent, {64, 1, 1, 80}, {67, 2, 0.9, 60}}, QStringLiteral("Notes"));
+        f.editor().setClipNotes(*second, {{36, 0.1, 0.5, 100}}, QStringLiteral("Notes"));
+        const int undoSteps = f.stack().count();
+        const auto edit = [&](const QJsonObject& arguments) {
+            QJsonObject all = arguments;
+            all.insert(QStringLiteral("track_id"), lead);
+            return call(protocol, QStringLiteral("edit_notes"), all);
+        };
+        const auto notesOf = [&](const ClipRef& ref) { return f.project().clip(lead, ref.clipId).notes; };
+
+        // Transposed: only the pitch asked for; its bend stays.
+        QJsonObject out = structured(edit({{QStringLiteral("pitches"), QJsonArray{QStringLiteral("C3")}},
+                                           {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("transpose")},
+                                                                                                {QStringLiteral("semitones"), 12}}}}}));
+        QCOMPARE(out.value(QStringLiteral("notes")).toInt(), 1);
+        QCOMPARE(notesOf(*first)[0].pitch, 72);
+        QCOMPARE(notesOf(*first)[0].bend, bent.bend);
+        QCOMPARE(notesOf(*first)[1].pitch, 64);
+        QCOMPARE(f.stack().count(), undoSteps);  // (the agents' history, not the user's undo)
+        QVERIFY(history.changes().back().text.contains(QStringLiteral("transpose +12")));
+
+        // Quantized on the song's grid, in a stretch of bars (bar 3: the second clip).
+        out = structured(edit({{QStringLiteral("start_bar"), 3},
+                               {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("quantize")},
+                                                                                    {QStringLiteral("grid"), 0.5}}}}}));
+        QCOMPARE(notesOf(*second)[0].start, 0.0);
+        QCOMPARE(notesOf(*first)[0].start, 0.0);  // (not in the stretch)
+
+        // Several in order: velocities set, then halved; lengths; legato.
+        edit({{QStringLiteral("clip_ids"), QJsonArray{first->clipId}},
+              {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("velocity")}, {QStringLiteral("set"), 100}},
+                                                        QJsonObject{{QStringLiteral("type"), QStringLiteral("velocity")}, {QStringLiteral("factor"), 0.5}},
+                                                        QJsonObject{{QStringLiteral("type"), QStringLiteral("length")}, {QStringLiteral("beats"), 0.25}}}}});
+        for (const Note& note : notesOf(*first)) {
+            QCOMPARE(note.velocity, 50);
+            QCOMPARE(note.length, 0.25);
+        }
+        edit({{QStringLiteral("end_bar"), 2}, {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("legato")}}}}});
+        QCOMPARE(notesOf(*first)[0].length, 1.0);  // (up to the next)
+        QCOMPARE(notesOf(*first)[2].length, 2.0);  // (the last: to the clip's end)
+        edit({{QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("velocity")}, {QStringLiteral("change"), -100}}}}});
+        QCOMPARE(notesOf(*second)[0].velocity, 1);  // (held to 1..127)
+
+        // Shifted, timing scaled, humanized (the same seed: the same nudges).
+        edit({{QStringLiteral("pitches"), QJsonArray{67}},
+              {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("shift")}, {QStringLiteral("beats"), -0.5}}}}});
+        QCOMPARE(notesOf(*first)[2].start, 1.5);
+        edit({{QStringLiteral("clip_ids"), QJsonArray{first->clipId}},
+              {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("scale_time")}, {QStringLiteral("factor"), 0.5}}}}});
+        QCOMPARE(notesOf(*first)[1].start, 0.5);
+        out = structured(edit({{QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("humanize_timing")},
+                                                                                    {QStringLiteral("seed"), 7}}}}}));
+        QVERIFY(out.contains(QStringLiteral("changeId")));
+        // Humanized velocities, if the model is there; else a failure saying so.
+        const QJsonObject humanized = edit({{QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("humanize_velocity")}}}}});
+        QVERIFY(!humanized.value(QStringLiteral("isError")).toBool() ||
+                humanized.value(QStringLiteral("content")).toArray()[0].toObject().value(QStringLiteral("text")).toString().contains(QStringLiteral("velocity model")));
+
+        // Muted, unmuted, deleted.
+        const auto withPitch = [&](int pitch) {
+            for (const Note& note : notesOf(*first)) {
+                if (note.pitch == pitch) return note;
+            }
+            return Note{};
+        };
+        edit({{QStringLiteral("pitches"), QJsonArray{64}}, {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("mute")}}}}});
+        QVERIFY(withPitch(64).muted);
+        QVERIFY(!withPitch(72).muted);
+        edit({{QStringLiteral("pitches"), QJsonArray{64}}, {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("delete")}}}}});
+        QCOMPARE(notesOf(*first).size(), size_t{2});
+        QCOMPARE(withPitch(64).pitch, 60);  // (gone: the default note)
+
+        // Wrong: no such operation, off the keyboard, no notes there, not a MIDI track; nothing changed.
+        const int changes = history.count();
+        QVERIFY(edit({{QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("explode")}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(edit({{QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("transpose")},
+                                                                            {QStringLiteral("semitones"), 100}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(edit({{QStringLiteral("start_bar"), 20}, {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("mute")}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(edit({}).value(QStringLiteral("isError")).toBool());
+        const QString audio = f.editor().addAudioTrack();
+        QVERIFY(call(protocol, QStringLiteral("edit_notes"),
+                     {{QStringLiteral("track_id"), audio}, {QStringLiteral("operations"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("mute")}}}}})
+                    .value(QStringLiteral("isError")).toBool());
+        QCOMPARE(history.count(), changes);
+        // Rewound, all of it: the notes as they were.
+        QVERIFY(history.rewindAll().isEmpty());
+        QCOMPARE(notesOf(*first).size(), size_t{3});
+        QCOMPARE(notesOf(*first)[0], bent);
+        QCOMPARE(notesOf(*second)[0].start, 0.1);
+    }
+
+    void writeAutomationDrawsEnvelopes() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
+        const auto write = [&](const QJsonObject& arguments) {
+            QJsonObject all = arguments;
+            all.insert(QStringLiteral("track_id"), lead);
+            return call(protocol, QStringLiteral("write_automation"), all);
+        };
+        const auto pointsOf = [&](const QString& key) {
+            for (const QJsonValue& e : structured(call(protocol, QStringLiteral("get_automation"), {{QStringLiteral("track_id"), lead}}))
+                                           .value(QStringLiteral("envelopes")).toArray()) {
+                if (e.toObject().value(QStringLiteral("key")).toString() == key) return e.toObject().value(QStringLiteral("points")).toArray();
+            }
+            return QJsonArray();
+        };
+
+        // Points in the target's units (a fader: dB), read back the same.
+        QJsonObject out = structured(write({{QStringLiteral("mixer"), QStringLiteral("volume")},
+                                            {QStringLiteral("points"), QJsonArray{QJsonArray{0, -70, 0.5}, QJsonArray{8, 0}}}}));
+        QCOMPARE(out.value(QStringLiteral("key")).toString(), automation::kMixerVolume);
+        QJsonArray points = pointsOf(automation::kMixerVolume);
+        QCOMPARE(points.size(), 2);
+        QCOMPARE(points[0].toArray()[1].toDouble(), -70.0);
+        QCOMPARE(points[1].toArray(), (QJsonArray{8, 0}));
+        QCOMPARE(points[0].toArray()[2].toDouble(), 0.5);  // (the segment from it: curved)
+        QVERIFY(f.s().agentChanges()->changes().back().text.contains(QStringLiteral("bars 1 to 2")));
+        // Points in a stretch replace it, the rest stays.
+        write({{QStringLiteral("mixer"), QStringLiteral("volume")}, {QStringLiteral("start_beat"), 2}, {QStringLiteral("end_beat"), 6},
+               {QStringLiteral("points"), QJsonArray{QJsonArray{4, -6}}}});
+        const Envelope volume = f.project().envelope(lead, automation::kMixerVolume);
+        QCOMPARE(volume.front().beat, 0.0);
+        QCOMPARE(volume.back().beat, 8.0);
+        QVERIFY(std::abs(*automation::valueAt(volume, 4.0) - automation::volumeToNormalized(-6.0)) < 1e-6);
+        // One point goes in among the others.
+        write({{QStringLiteral("mixer"), QStringLiteral("volume")}, {QStringLiteral("points"), QJsonArray{QJsonArray{7, -3}}}});
+        QCOMPARE(f.project().envelope(lead, automation::kMixerVolume).size(), volume.size() + 1);
+
+        // A ramp over bars 2 to 3 (a pan sweep).
+        write({{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("start_bar"), 2}, {QStringLiteral("end_bar"), 4},
+               {QStringLiteral("shape"), QJsonObject{{QStringLiteral("type"), QStringLiteral("ramp")}, {QStringLiteral("from"), -1}, {QStringLiteral("to"), 1}}}});
+        points = pointsOf(automation::kMixerPan);
+        QCOMPARE(points.size(), 2);
+        QCOMPARE(points[0].toArray(), (QJsonArray{4, -1}));
+        QCOMPARE(points[1].toArray(), (QJsonArray{12, 1}));
+
+        // An LFO on a device's parameter: a cycle a beat over a bar, from low to high and back.
+        const QString delay = f.editor().addDevice(lead, QStringLiteral("delay"));
+        const QJsonObject param = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                                                  {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_id"), delay}}))
+                                      .value(QStringLiteral("parameters")).toArray()[1].toObject();
+        const QString paramId = param.value(QStringLiteral("id")).toString();
+        const double low = param.value(QStringLiteral("min")).toDouble();
+        const double high = param.value(QStringLiteral("max")).toDouble();
+        out = structured(write({{QStringLiteral("device_id"), delay}, {QStringLiteral("parameter_id"), paramId},
+                                {QStringLiteral("start_bar"), 1}, {QStringLiteral("end_bar"), 2},
+                                {QStringLiteral("shape"), QJsonObject{{QStringLiteral("type"), QStringLiteral("lfo")}, {QStringLiteral("wave"), QStringLiteral("triangle")},
+                                                                      {QStringLiteral("low"), low}, {QStringLiteral("high"), high},
+                                                                      {QStringLiteral("cycle_beats"), 1}}}}));
+        const QString key = out.value(QStringLiteral("key")).toString();
+        const Envelope lfo = f.project().envelope(lead, key);
+        QCOMPARE(lfo.size(), size_t{9});  // (low, high, low... from beat 0 to 4)
+        QCOMPARE(lfo[0].value, 0.0);
+        QCOMPARE(lfo[1].beat, 0.5);
+        QCOMPARE(lfo[1].value, 1.0);
+        QCOMPARE(lfo.back().beat, 4.0);
+        // A square: steps (two points at a beat).
+        write({{QStringLiteral("key"), key}, {QStringLiteral("start_bar"), 1}, {QStringLiteral("end_bar"), 2},
+               {QStringLiteral("shape"), QJsonObject{{QStringLiteral("type"), QStringLiteral("lfo")}, {QStringLiteral("wave"), QStringLiteral("square")},
+                                                     {QStringLiteral("low"), low}, {QStringLiteral("high"), high}, {QStringLiteral("cycle_beats"), 2}}}});
+        const Envelope square = f.project().envelope(lead, key);
+        QCOMPARE(*automation::valueAt(square, 0.5), 1.0);
+        QCOMPARE(*automation::valueAt(square, 1.5), 0.0);
+        // Cleared in a stretch, then all of it.
+        write({{QStringLiteral("key"), key}, {QStringLiteral("clear"), true}, {QStringLiteral("start_beat"), 1}, {QStringLiteral("end_beat"), 3}});
+        QVERIFY(!automation::hasPointsIn(f.project().envelope(lead, key), 1.01, 2.99));
+        write({{QStringLiteral("key"), key}, {QStringLiteral("clear"), true}});
+        QVERIFY(f.project().envelope(lead, key).empty());
+
+        // Wrong: two targets or none, a value out of range, a shape without an end, points outside the stretch.
+        for (const QJsonObject& wrong : {
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("send"), QStringLiteral("x")}, {QStringLiteral("clear"), true}},
+                 QJsonObject{{QStringLiteral("points"), QJsonArray{QJsonArray{0, 0}}}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), QJsonArray{QJsonArray{0, 5}}}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")},
+                             {QStringLiteral("shape"), QJsonObject{{QStringLiteral("type"), QStringLiteral("ramp")}, {QStringLiteral("from"), 0}, {QStringLiteral("to"), 1}}}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("end_beat"), 2},
+                             {QStringLiteral("points"), QJsonArray{QJsonArray{4, 0}}}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), QJsonArray{QJsonArray{0, 0}}},
+                             {QStringLiteral("clear"), true}}}) {
+            QVERIFY2(write(wrong).value(QStringLiteral("isError")).toBool(), qPrintable(QJsonDocument(wrong).toJson(QJsonDocument::Compact)));
+        }
+        QCOMPARE(f.s().agentChanges()->count(), 8);
+        QCOMPARE(f.project().envelope(lead, automation::kMixerPan).size(), size_t{2});
+    }
+
+    void tracksAddedMovedAndGrouped() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString drums = f.editor().addMidiTrack(-1, QStringLiteral("Drums"), QStringLiteral("synth"));
+        const int undoSteps = f.stack().count();
+        const auto ids = [&] {
+            QStringList out;
+            for (const Track& track : f.project().tracks()) out << track.id;
+            return out;
+        };
+
+        // A MIDI track with an instrument, named; an empty one; an audio track after the first; a return.
+        QJsonObject out = structured(call(protocol, QStringLiteral("add_track"),
+                                          {{QStringLiteral("kind"), QStringLiteral("midi")}, {QStringLiteral("name"), QStringLiteral("Bass")},
+                                           {QStringLiteral("instrument"), QStringLiteral("synth")}}));
+        const QString bass = out.value(QStringLiteral("trackId")).toString();
+        QCOMPARE(f.project().track(bass).name, QStringLiteral("Bass"));
+        QCOMPARE(f.project().track(bass).devices.size(), size_t{1});
+        QCOMPARE(f.project().track(bass).devices[0].kind, QStringLiteral("synth"));
+        const QString empty = structured(call(protocol, QStringLiteral("add_track"), {{QStringLiteral("kind"), QStringLiteral("midi")}}))
+                                  .value(QStringLiteral("trackId")).toString();
+        QVERIFY(f.project().track(empty).devices.empty());
+        const QString audio = structured(call(protocol, QStringLiteral("add_track"),
+                                              {{QStringLiteral("kind"), QStringLiteral("audio")}, {QStringLiteral("after_track_id"), drums}}))
+                                  .value(QStringLiteral("trackId")).toString();
+        QCOMPARE(ids(), (QStringList{drums, audio, bass, empty}));
+        const QString ret = structured(call(protocol, QStringLiteral("add_track"),
+                                            {{QStringLiteral("kind"), QStringLiteral("return")}, {QStringLiteral("name"), QStringLiteral("Verb")}}))
+                                .value(QStringLiteral("trackId")).toString();
+        QVERIFY(f.project().hasReturn(ret));
+        // Wrong: an instrument on audio, an effect as an instrument, one that isn't there, a kind that isn't.
+        for (const QJsonObject& wrong : {
+                 QJsonObject{{QStringLiteral("kind"), QStringLiteral("audio")}, {QStringLiteral("instrument"), QStringLiteral("synth")}},
+                 QJsonObject{{QStringLiteral("kind"), QStringLiteral("midi")}, {QStringLiteral("instrument"), QStringLiteral("delay")}},
+                 QJsonObject{{QStringLiteral("kind"), QStringLiteral("midi")}, {QStringLiteral("instrument"), QStringLiteral("plugin:nope")}},
+                 QJsonObject{{QStringLiteral("kind"), QStringLiteral("video")}},
+                 QJsonObject{{QStringLiteral("kind"), QStringLiteral("midi")}, {QStringLiteral("after_track_id"), QStringLiteral("nope")}}}) {
+            QVERIFY(call(protocol, QStringLiteral("add_track"), wrong).value(QStringLiteral("isError")).toBool());
+        }
+
+        // Grouped (named), moved into the group, before a track, last and out of it; ungrouped.
+        out = structured(call(protocol, QStringLiteral("group_tracks"),
+                              {{QStringLiteral("track_ids"), QJsonArray{drums, audio}}, {QStringLiteral("name"), QStringLiteral("Rhythm")}}));
+        const QString group = out.value(QStringLiteral("groupId")).toString();
+        QCOMPARE(f.project().track(group).name, QStringLiteral("Rhythm"));
+        QCOMPARE(f.project().track(drums).parent, std::optional<QString>(group));
+        call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{bass}}, {QStringLiteral("group_id"), group}});
+        QCOMPARE(f.project().track(bass).parent, std::optional<QString>(group));
+        QCOMPARE(ids(), (QStringList{group, drums, audio, bass, empty}));
+        call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{bass}}, {QStringLiteral("before_track_id"), drums}});
+        QCOMPARE(ids(), (QStringList{group, bass, drums, audio, empty}));
+        call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{bass}}});
+        QCOMPARE(ids(), (QStringList{group, drums, audio, empty, bass}));
+        QVERIFY(!f.project().track(bass).parent);
+        call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{empty}}, {QStringLiteral("after_track_id"), bass}});
+        QCOMPARE(ids(), (QStringList{group, drums, audio, bass, empty}));
+        QVERIFY(call(protocol, QStringLiteral("move_tracks"), {{QStringLiteral("track_ids"), QJsonArray{group}}, {QStringLiteral("group_id"), group}})
+                    .value(QStringLiteral("isError")).toBool());  // (a group into itself)
+        call(protocol, QStringLiteral("ungroup_tracks"), {{QStringLiteral("group_ids"), QJsonArray{group}}});
+        QVERIFY(!f.project().hasTrack(group));
+        QVERIFY(!f.project().track(drums).parent);
+
+        // Colored; a color that isn't one.
+        call(protocol, QStringLiteral("set_track_color"), {{QStringLiteral("track_ids"), QJsonArray{drums, bass}}, {QStringLiteral("color"), QStringLiteral("#FF94A6")}});
+        QCOMPARE(f.project().track(bass).color, QStringLiteral("#ff94a6"));
+        QVERIFY(call(protocol, QStringLiteral("set_track_color"), {{QStringLiteral("track_ids"), QJsonArray{drums}}, {QStringLiteral("color"), QStringLiteral("red")}})
+                    .value(QStringLiteral("isError")).toBool());
+
+        // Deleted (a return too); the master can't be.
+        call(protocol, QStringLiteral("delete_tracks"), {{QStringLiteral("track_ids"), QJsonArray{empty, ret}}});
+        QVERIFY(!f.project().hasTrack(empty));
+        QVERIFY(!f.project().hasReturn(ret));
+        QVERIFY(call(protocol, QStringLiteral("delete_tracks"), {{QStringLiteral("track_ids"), QJsonArray{kMaster}}})
+                    .value(QStringLiteral("isError")).toBool());
+
+        // None of it on the user's undo stack; all of it rewound: as it was.
+        QCOMPARE(f.stack().count(), undoSteps);
+        QVERIFY(history.rewindAll().isEmpty());
+        QCOMPARE(ids(), QStringList{drums});
+        QVERIFY(f.project().returns().empty());
+    }
+
+    void devicesListedAddedMovedRemoved() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString lead = f.editor().addMidiTrack(-1, QStringLiteral("Lead"), QStringLiteral("synth"));
+        const QString audio = f.editor().addAudioTrack();
+        const auto kinds = [&](const QString& track) {
+            QStringList out;
+            for (const Device& device : f.project().track(track).devices) out << device.kind;
+            return out;
+        };
+
+        // Listed: built-in ones by words, instruments alone, a page at a time.
+        QJsonObject out = structured(call(protocol, QStringLiteral("list_devices"), {{QStringLiteral("query"), QStringLiteral("reverb")}}));
+        QJsonArray found = out.value(QStringLiteral("devices")).toArray();
+        QVERIFY(std::any_of(found.begin(), found.end(), [](const QJsonValue& v) { return v.toObject().value(QStringLiteral("id")) == QStringLiteral("reverb"); }));
+        found = structured(call(protocol, QStringLiteral("list_devices"), {{QStringLiteral("role"), QStringLiteral("instrument")}}))
+                    .value(QStringLiteral("devices")).toArray();
+        QVERIFY(!found.isEmpty());
+        for (const QJsonValue& v : found) QVERIFY(v.toObject().value(QStringLiteral("instrument")).toBool());
+        out = structured(call(protocol, QStringLiteral("list_devices"), {{QStringLiteral("limit"), 2}}));
+        QCOMPARE(out.value(QStringLiteral("devices")).toArray().size(), 2);
+        QCOMPARE(out.value(QStringLiteral("nextOffset")).toInt(), 2);
+        QVERIFY(call(protocol, QStringLiteral("list_devices"), {{QStringLiteral("type"), QStringLiteral("hardware")}}).value(QStringLiteral("isError")).toBool());
+
+        // Added: last, before another, an instrument replacing the one there.
+        const QString delay = structured(call(protocol, QStringLiteral("add_device"),
+                                              {{QStringLiteral("track_id"), lead}, {QStringLiteral("device"), QStringLiteral("delay")}}))
+                                  .value(QStringLiteral("deviceId")).toString();
+        const QString compressor = structured(call(protocol, QStringLiteral("add_device"),
+                                                   {{QStringLiteral("track_id"), lead}, {QStringLiteral("device"), QStringLiteral("compressor")},
+                                                    {QStringLiteral("before_device_id"), delay}}))
+                                       .value(QStringLiteral("deviceId")).toString();
+        QCOMPARE(kinds(lead), (QStringList{QStringLiteral("synth"), QStringLiteral("compressor"), QStringLiteral("delay")}));
+        out = structured(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("device"), QStringLiteral("sampler")}}));
+        QVERIFY(out.value(QStringLiteral("replaced")).toString().contains(QStringLiteral("Synth")));
+        QCOMPARE(kinds(lead).first(), QStringLiteral("sampler"));
+        // Wrong: an instrument on an audio track, a device that isn't there, a place that isn't.
+        QVERIFY(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device"), QStringLiteral("synth")}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device"), QStringLiteral("nope")}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device"), QStringLiteral("delay")},
+                                                             {QStringLiteral("before_device_id"), delay}})
+                    .value(QStringLiteral("isError")).toBool());  // (on another track)
+
+        // Into a rack's chain.
+        const QString rack = structured(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device"), QStringLiteral("rack")}}))
+                                 .value(QStringLiteral("deviceId")).toString();
+        const QString chain = f.editor().addRackChain(audio, rack);
+        const QString chorus = structured(call(protocol, QStringLiteral("add_device"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device"), QStringLiteral("chorus")},
+                                                                                      {QStringLiteral("chain_id"), chain}}))
+                                   .value(QStringLiteral("deviceId")).toString();
+        QCOMPARE(f.project().track(audio).devices[0].chains[0].devices[0].id, chorus);
+
+        // Moved: last on its track, to another track; refused: an instrument off its track.
+        call(protocol, QStringLiteral("move_devices"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_ids"), QJsonArray{compressor}},
+                                                       {QStringLiteral("chain_id"), QString()}});
+        QCOMPARE(kinds(lead), (QStringList{QStringLiteral("sampler"), QStringLiteral("delay"), QStringLiteral("compressor")}));
+        call(protocol, QStringLiteral("move_devices"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_ids"), QJsonArray{delay}},
+                                                       {QStringLiteral("to_track_id"), audio}, {QStringLiteral("before_device_id"), rack}});
+        QCOMPARE(kinds(audio), (QStringList{QStringLiteral("delay"), kRackKind}));
+        QCOMPARE(kinds(lead), (QStringList{QStringLiteral("sampler"), QStringLiteral("compressor")}));
+        QVERIFY(call(protocol, QStringLiteral("move_devices"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_ids"), QJsonArray{f.project().track(lead).devices[0].id}},
+                                                               {QStringLiteral("to_track_id"), audio}})
+                    .value(QStringLiteral("isError")).toBool());
+        QVERIFY(call(protocol, QStringLiteral("move_devices"), {{QStringLiteral("track_id"), lead}, {QStringLiteral("device_ids"), QJsonArray{compressor}}})
+                    .value(QStringLiteral("isError")).toBool());  // (where to?)
+
+        // Removed (a rack with what is in it).
+        call(protocol, QStringLiteral("remove_devices"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device_ids"), QJsonArray{rack}}});
+        QCOMPARE(kinds(audio), QStringList{QStringLiteral("delay")});
+        QVERIFY(call(protocol, QStringLiteral("remove_devices"), {{QStringLiteral("track_id"), audio}, {QStringLiteral("device_ids"), QJsonArray{QStringLiteral("nope")}}})
+                    .value(QStringLiteral("isError")).toBool());
+
+        // Rewound: back to the rack the user added a chain to since, which stays (their work comes first)...
+        out = structured(call(protocol, QStringLiteral("rewind_agent_changes"), {{QStringLiteral("all"), true}}));
+        QVERIFY(out.value(QStringLiteral("stopped")).toString().contains(QStringLiteral("you changed the same since")));
+        QCOMPARE(kinds(audio), QStringList{kRackKind});
+        // ...until they undo their chain: then all of it, the tracks' devices as they were.
+        f.s().undo();
+        QVERIFY(history.rewindAll().isEmpty());
+        QCOMPARE(kinds(lead), QStringList{QStringLiteral("synth")});
+        QVERIFY(kinds(audio).isEmpty());
+    }
+
     // --- Streamable HTTP ---------------------------------------------------------------------
 
     void overHttpOnLocalhost() {
@@ -1128,7 +1500,7 @@ private Q_SLOTS:
             Client client(static_cast<quint16>(free));
             const auto response = client.send(post(request(QStringLiteral("tools/list")), {}, static_cast<quint16>(free)));
             QVERIFY(response);
-            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 19);
+            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 31);
         }
 
         // A session made now starts it as the settings say; a port taken says why.

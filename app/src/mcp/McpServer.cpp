@@ -25,8 +25,11 @@ const QString kInstructions = QStringLiteral(
     "from those go to get_track. For what the user selected (\"this part\", \"the selection\"), "
     "get_selection_context gives it all in one call: its tracks, their notes there and the chords. Notes come as "
     "rows [startBeat, length, pitch, velocity], and write_midi_clip takes them so; notes with pitch bends or "
-    "vibrato are listed in `bent`, and kept only when written as objects (get_notes format \"objects\"). The edit "
-    "tools (set_device_parameters, write_midi_clip...) change the project as the user watches: each call is one "
+    "vibrato are listed in `bent`, and kept only when written as objects (get_notes format \"objects\"). To change "
+    "notes that are there (transpose, quantize, velocities...), edit_notes; to write a new part, write_midi_clip. "
+    "Devices to add (built-in ones, plug-ins, presets) come from list_devices. The edit tools "
+    "(set_device_parameters, edit_notes, write_automation, add_track, add_device...) change the project as the "
+    "user watches: each call is one "
     "change in the agent's history, which the user sees apart from their own undo and can rewind (as can "
     "rewind_agent_changes). Change what was asked for, and say what you changed.");
 
