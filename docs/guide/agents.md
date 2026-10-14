@@ -80,6 +80,7 @@ The arrangement at a glance can also go into a request as `@substation:substatio
 | The notes that are there | as the piano roll's tools change them: transpose, move, quantize, humanize (timing, or velocities as a player would), stretch, legato, lengths, velocities, deactivate or delete, some pitches only ("the kick", "the hi-hats") or a stretch of bars. Bends and vibrato stay with their notes |
 | Automation | drawn as points, a ramp (a fade, a filter sweep) or an LFO (sine, triangle, saw or square: a wobble, a tremolo) on any parameter, the mixer or a send, over a stretch of bars; or taken away |
 | Tracks | added (a MIDI track with an instrument, an audio track, a return), deleted, moved, grouped and ungrouped, colored |
+| Modulation | an LFO or an Envelope moving other devices' parameters on its track, each over a range (a filter from 200 Hz to 2 kHz), with its shape picked by name (Sine, Saw Down, Pluck...) or drawn: a wobble that keeps time with the song, rather than drawn automation |
 | Devices | added from what SUBstation has, the plug-ins installed and your presets (an instrument replaces the one on its track, as when you drop one there), removed, moved on a track or to another |
 
 The status line says each change as it happens (`Agent: Set Cutoff of Serum 2 on 4 Bass to 1.2 kHz`).

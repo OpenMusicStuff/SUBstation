@@ -9,6 +9,7 @@ namespace sub::app {
 
 struct ModulatorPoint {
     double x = 0.0, y = 0.0, curve = 0.0;
+    friend bool operator==(const ModulatorPoint&, const ModulatorPoint&) = default;
 };
 
 // The random curve of `seed` (as the device's "seed" display has it) from level `start` (its "start").

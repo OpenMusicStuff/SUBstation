@@ -1432,7 +1432,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 - **The curve** ([ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), a `DeviceCanvas`): the device's 32
   point slots (`p1_used`.., written whole by `pointsValues()` through `setDeviceParams`, so a drag is one undo step),
   edited as the Sidechain's curve is (drag, bend, add, double-click, Alt-click, Delete, the wheel, Shift), with
-  **Ctrl snapping** to the grid (sixteenths across, eighths up). Its menu: *Shapes* (`shapeList(periodic)`: the
+  **Ctrl snapping** to the grid (sixteenths across, eighths up). Its menu: *Shapes* (`modulatorShapes(periodic)`, app/src/audio/ModulatorShapes.h, shared with the MCP server's `set_modulation`: the
   LFO's start with its device's triangle, the Envelope's with its pluck), *Flip*, *Reverse* (a segment played backwards
   keeps its curve value: 1 − s(1 − u, a) = s(u, −a)), *Reset*, and the LFO's *Retrig* (checked while on). Behind it: the grid with the times of its quarters
   (`lengthText`: the rate in Hz or the synced note and its length at the tempo), the LFO's output band and its

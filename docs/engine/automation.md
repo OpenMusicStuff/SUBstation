@@ -51,9 +51,13 @@ is in [app/model.md](../app/model.md); overrides are the engine bridge's ([below
 
 `ParamInfo` ([Processor.h](../../engine/src/Processor.h)) describes one parameter of any processor: `id`, `name`,
 `unit`, `minValue`, `maxValue`, `defaultValue`, `logScale`, `valueLabels`, `steps`, `automatable`, `readOnly`,
-`hidden`, `ownText`. Values are *plain*, in the parameter's own units, from `minValue` to `maxValue`. `ownText`: the
-processor shows its values itself (`paramText()`), not the UI by `unit` (the built-in Vital's: Vital's own texts); the
-device view's knobs and the automation lanes ask it, as they ask a plug-in.
+`hidden`, `ownText`, `display`. Values are *plain*, in the parameter's own units, from `minValue` to `maxValue`.
+`ownText`: the processor shows its values itself (`paramText()`), not the UI by `unit` (the built-in Vital's: Vital's
+own texts); the device view's knobs and the automation lanes ask it, as they ask a plug-in. `display`
+(`ParamDisplay`; none for most): how a value shows when that isn't the value itself, as data that goes both ways
+(`shown()`, `value()`): a curve (squared, cubed, to the fourth, 2^value, square root, a MIDI note's frequency), an
+offset, inverted, times a multiplier, in its `unit`. The Vital's level shows squared, its envelopes' times to the
+fourth: what the MCP server reads and sets is what shows ([app/mcp.md](../app/mcp.md)).
 
 - `stepCount()`: `steps` if set; else, for a list (`valueLabels` not empty), the number of labels minus one; else 0
   (continuous).

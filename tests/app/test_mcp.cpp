@@ -17,6 +17,7 @@
 #include "mcp/McpHttpServer.h"
 #include "mcp/McpProtocol.h"
 #include "mcp/McpServer.h"
+#include "mcp/McpSupport.h"
 #include "model/Automation.h"
 #include "model/Notes.h"
 
@@ -361,7 +362,8 @@ private Q_SLOTS:
         QCOMPARE(send.value(QStringLiteral("returnId")).toString(), ret);
         QCOMPARE(send.value(QStringLiteral("levelDb")).toDouble(), -6.0);
         QVERIFY(!out.value(QStringLiteral("details")).toArray().isEmpty());
-        QCOMPARE(out.value(QStringLiteral("output")).toObject().value(QStringLiteral("to")).toString(), QStringLiteral("group"));
+        // (In no group: its output, "its group, else the master", goes to the master, and says so.)
+        QCOMPARE(out.value(QStringLiteral("output")).toObject().value(QStringLiteral("to")).toString(), QStringLiteral("master"));
         // A track that isn't there, or none asked for: errors the model can correct.
         QJsonObject failed = call(protocol, QStringLiteral("get_track"), {{QStringLiteral("track_id"), QStringLiteral("nope")}});
         QVERIFY(failed.value(QStringLiteral("isError")).toBool());
@@ -1029,6 +1031,169 @@ private Q_SLOTS:
         QCOMPARE(result(reply).value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
     }
 
+    // --- Values as devices show them ----------------------------------------------------------
+
+    void valuesAsDevicesShowThem() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        const QString growl = f.editor().addMidiTrack(-1, QStringLiteral("Growl"), QStringLiteral("vital"));
+        const QString vital = f.project().track(growl).devices.at(0).id;
+        const auto param = [&](const QString& id) {
+            const QJsonArray found = structured(call(protocol, QStringLiteral("get_device_parameters"),
+                                                     {{QStringLiteral("track_id"), growl}, {QStringLiteral("device_id"), vital},
+                                                      {QStringLiteral("query"), id}, {QStringLiteral("limit"), 500}}))
+                                         .value(QStringLiteral("parameters")).toArray();
+            for (const QJsonValue& p : found) {
+                if (p.toObject().value(QStringLiteral("id")).toString() == id) return p.toObject();
+            }
+            return QJsonObject();
+        };
+        const auto set = [&](const QString& id, const QJsonValue& value) {
+            return call(protocol, QStringLiteral("set_device_parameters"),
+                        {{QStringLiteral("track_id"), growl}, {QStringLiteral("device_id"), vital},
+                         {QStringLiteral("parameters"), QJsonArray{QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("value"), value}}}}});
+        };
+        const auto plain = [&](const QString& id) { return f.project().device(growl, vital).params.value(id); };
+
+        // An envelope's time shows to the fourth, in seconds: read and set as it shows, 60 ms as 0.06.
+        QJsonObject release = param(QStringLiteral("env_1_release"));
+        QCOMPARE(release.value(QStringLiteral("unit")).toString(), QStringLiteral("secs"));
+        QVERIFY(release.value(QStringLiteral("max")).toDouble() > 30.0);  // (2.378⁴ seconds, not 2.378)
+        QVERIFY(!structured(set(QStringLiteral("env_1_release"), 0.06)).isEmpty());
+        QVERIFY(std::abs(plain(QStringLiteral("env_1_release")) - std::pow(0.06, 0.25)) < 1e-4);
+        release = param(QStringLiteral("env_1_release"));
+        QVERIFY(std::abs(release.value(QStringLiteral("value")).toDouble() - 0.06) < 1e-4);
+        QVERIFY(release.value(QStringLiteral("text")).toString().startsWith(QStringLiteral("0.06")));
+        // A level shows squared: 0.45 is 0.45, not 0.2.
+        set(QStringLiteral("osc_2_level"), 0.45);
+        QVERIFY(std::abs(plain(QStringLiteral("osc_2_level")) - std::sqrt(0.45)) < 1e-4);
+        QVERIFY(param(QStringLiteral("osc_2_level")).value(QStringLiteral("text")).toString().startsWith(QStringLiteral("0.45")));
+        // A cutoff shows in hertz.
+        set(QStringLiteral("eq_low_cutoff"), 24);
+        QCOMPARE(param(QStringLiteral("eq_low_cutoff")).value(QStringLiteral("text")).toString(), QStringLiteral("24 Hz"));
+        QCOMPARE(param(QStringLiteral("eq_low_cutoff")).value(QStringLiteral("unit")).toString(), QStringLiteral("Hz"));
+        // Out of what it can show: refused, in its unit.
+        const QJsonObject refused = set(QStringLiteral("env_1_release"), 100);
+        QVERIFY(refused.value(QStringLiteral("isError")).toBool());
+        QVERIFY(refused.value(QStringLiteral("content")).toArray()[0].toObject().value(QStringLiteral("text")).toString().contains(QStringLiteral("secs")));
+        // Automation as it shows too: a level from 0.25 to 1, read back so.
+        call(protocol, QStringLiteral("write_automation"),
+             {{QStringLiteral("track_id"), growl}, {QStringLiteral("device_id"), vital}, {QStringLiteral("parameter_id"), QStringLiteral("osc_1_level")},
+              {QStringLiteral("points"), QJsonArray{QJsonArray{0, 0.25}, QJsonArray{4, 1}}}});
+        const QJsonArray points = structured(call(protocol, QStringLiteral("get_automation"), {{QStringLiteral("track_id"), growl}}))
+                                      .value(QStringLiteral("envelopes")).toArray()[0].toObject().value(QStringLiteral("points")).toArray();
+        QCOMPARE(points[0].toArray()[1].toDouble(), 0.25);
+        QCOMPARE(points[1].toArray()[1].toDouble(), 1.0);
+
+        // The FM choices name their oscillators: one picked by name is the one meant.
+        const QJsonArray choices = param(QStringLiteral("osc_1_distortion_type")).value(QStringLiteral("choices")).toArray();
+        QVERIFY(choices.contains(QStringLiteral("FM <- Osc 2")));
+        QVERIFY(choices.contains(QStringLiteral("FM <- Osc 3")));
+        set(QStringLiteral("osc_1_distortion_type"), QStringLiteral("FM <- Osc 3"));
+        QCOMPARE(param(QStringLiteral("osc_1_distortion_type")).value(QStringLiteral("text")).toString(), QStringLiteral("FM <- Osc 3"));
+
+        // A name two choices have (a plug-in's) is refused, saying which values they are.
+        mcp::Param twice;
+        twice.id = QStringLiteral("mode");
+        twice.spec.minimum = 0;
+        twice.spec.maximum = 2;
+        twice.spec.steps = 2;
+        twice.spec.labels = {QStringLiteral("Soft"), QStringLiteral("Hard"), QStringLiteral("Soft")};
+        auto [none, why] = mcp::ToolContext::wanted(twice, {{QStringLiteral("value"), QStringLiteral("soft")}});
+        QVERIFY(!none);
+        QVERIFY(why.contains(QStringLiteral("0 or 2")));
+        auto [hard, fine] = mcp::ToolContext::wanted(twice, {{QStringLiteral("value"), QStringLiteral("Hard")}});
+        QCOMPARE(*hard, 1.0);
+
+        // A track in a group: its output is the group's, by id.
+        const QString group = f.editor().groupTracks({growl});
+        QCOMPARE(structured(call(protocol, QStringLiteral("get_track"), {{QStringLiteral("track_id"), growl}}))
+                     .value(QStringLiteral("output")).toObject().value(QStringLiteral("trackId")).toString(),
+                 group);
+    }
+
+    void modulationMovesParameters() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString growl = f.editor().addMidiTrack(-1, QStringLiteral("Growl"), QStringLiteral("vital"));
+        const QString vital = f.project().track(growl).devices.at(0).id;
+        const QString other = f.editor().addMidiTrack(-1, QStringLiteral("Other"), QStringLiteral("synth"));
+        const QString lfo = structured(call(protocol, QStringLiteral("add_device"),
+                                            {{QStringLiteral("track_id"), growl}, {QStringLiteral("device"), QStringLiteral("lfo")}}))
+                                .value(QStringLiteral("deviceId")).toString();
+        QVERIFY(!lfo.isEmpty());
+        const auto modulate = [&](const QJsonObject& arguments) {
+            QJsonObject all = arguments;
+            all.insert(QStringLiteral("track_id"), growl);
+            if (!all.contains(QStringLiteral("modulator_id"))) all.insert(QStringLiteral("modulator_id"), lfo);
+            return call(protocol, QStringLiteral("set_modulation"), all);
+        };
+        const auto mappings = [&] { return f.project().device(growl, lfo).modulations; };
+        const auto target = [](const QString& device, const QString& param, const QJsonValue& from, const QJsonValue& to) {
+            return QJsonObject{{QStringLiteral("device_id"), device}, {QStringLiteral("parameter_id"), param},
+                               {QStringLiteral("from"), from}, {QStringLiteral("to"), to}};
+        };
+
+        // A cutoff swept from 200 Hz to 2 kHz, and the formant's X, as they show; a sine; one change.
+        QJsonObject out = structured(modulate({{QStringLiteral("targets"), QJsonArray{target(vital, QStringLiteral("filter_1_cutoff"), 200, 2000),
+                                                                                       target(vital, QStringLiteral("filter_1_formant_x"), 0.05, 0.85)}},
+                                               {QStringLiteral("shape"), QStringLiteral("sine")}}));
+        QCOMPARE(history.count(), 2);  // (the LFO added, then this)
+        QCOMPARE(mappings().size(), size_t{2});
+        QCOMPARE(mappings()[0].paramId, QStringLiteral("filter_1_cutoff"));
+        const QJsonObject cutoff = out.value(QStringLiteral("modulates")).toArray()[0].toObject();
+        QVERIFY(std::abs(cutoff.value(QStringLiteral("from")).toDouble() - 200.0) < 1.0);
+        QVERIFY(std::abs(cutoff.value(QStringLiteral("to")).toDouble() - 2000.0) < 5.0);
+        QVERIFY(cutoff.value(QStringLiteral("text")).toString().startsWith(QStringLiteral("200 Hz to 2")));
+        // Its curve: the Sine (nine points), as the device view's shape list has it.
+        const Device& device = f.project().device(growl, lfo);
+        QCOMPARE(device.params.value(QStringLiteral("p9_used")), 1.0);
+        QCOMPARE(device.params.value(QStringLiteral("p10_used")), 0.0);
+        QCOMPARE(device.params.value(QStringLiteral("p3_y")), 1.0);
+        // get_track says the same.
+        const QJsonArray devices = structured(call(protocol, QStringLiteral("get_track"), {{QStringLiteral("track_id"), growl}}))
+                                       .value(QStringLiteral("devices")).toArray();
+        QCOMPARE(devices.last().toObject().value(QStringLiteral("modulates")).toArray().size(), 2);
+
+        // Drawn points; one stopped; inverted; all cleared.
+        modulate({{QStringLiteral("points"), QJsonArray{QJsonArray{0, 1, -0.5}, QJsonArray{1, 0}}}});
+        QCOMPARE(f.project().device(growl, lfo).params.value(QStringLiteral("p3_used")), 0.0);
+        QCOMPARE(f.project().device(growl, lfo).params.value(QStringLiteral("p1_curve")), -0.5);
+        modulate({{QStringLiteral("remove"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                    {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")}}}}});
+        QCOMPARE(mappings().size(), size_t{1});
+        QJsonObject inverted = target(vital, QStringLiteral("filter_1_formant_x"), 0.2, 0.6);
+        inverted.insert(QStringLiteral("invert"), true);
+        modulate({{QStringLiteral("targets"), QJsonArray{inverted}}});
+        QCOMPARE(mappings().size(), size_t{1});  // (mapped again: replaced)
+        QVERIFY(mappings()[0].invert);
+        modulate({{QStringLiteral("clear"), true}});
+        QVERIFY(mappings().empty());
+
+        // Wrong: not a modulator, a device on another track, no to, a shape it hasn't, a mapping it hasn't, nothing.
+        const int changes = history.count();
+        const QString otherSynth = f.project().track(other).devices.at(0).id;
+        for (const QJsonObject& wrong : {
+                 QJsonObject{{QStringLiteral("modulator_id"), vital}, {QStringLiteral("clear"), true}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{target(otherSynth, QStringLiteral("cutoff"), 200, 2000)}}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                                {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")},
+                                                                                {QStringLiteral("from"), 200}}}}},
+                 QJsonObject{{QStringLiteral("targets"), QJsonArray{target(vital, QStringLiteral("filter_1_cutoff"), 200, 999999)}}},
+                 QJsonObject{{QStringLiteral("shape"), QStringLiteral("Wobble")}},
+                 QJsonObject{{QStringLiteral("points"), QJsonArray{QJsonArray{0.5, 0}, QJsonArray{0.2, 1}}}},
+                 QJsonObject{{QStringLiteral("remove"), QJsonArray{QJsonObject{{QStringLiteral("device_id"), vital},
+                                                                               {QStringLiteral("parameter_id"), QStringLiteral("filter_1_cutoff")}}}}},
+                 QJsonObject{}}) {
+            QVERIFY2(modulate(wrong).value(QStringLiteral("isError")).toBool(), qPrintable(QJsonDocument(wrong).toJson(QJsonDocument::Compact)));
+        }
+        QCOMPARE(history.count(), changes);
+        // All rewound: no LFO, nothing moved.
+        QVERIFY(history.rewindAll().isEmpty());
+        QCOMPARE(f.project().track(growl).devices.size(), size_t{1});
+    }
+
     // --- Edits of notes, automation, tracks and devices ----------------------------------------
 
     void editNotesWhereTheyAre() {
@@ -1539,7 +1704,7 @@ private Q_SLOTS:
             Client client(static_cast<quint16>(free));
             const auto response = client.send(post(request(QStringLiteral("tools/list")), {}, static_cast<quint16>(free)));
             QVERIFY(response);
-            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 26);
+            QCOMPARE(response->json().value(QStringLiteral("result")).toObject().value(QStringLiteral("tools")).toArray().size(), 27);
         }
 
         // A session made now starts it as the settings say; a port taken says why.

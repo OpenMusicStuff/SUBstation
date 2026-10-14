@@ -49,6 +49,15 @@ double rounded(double value);
 // them ("C3" is 60; "F#2", "Bb4", "C-1"). None: neither, or out of 0..127.
 std::optional<int> pitchOf(const QJsonValue& value);
 
+// A number to so many significant digits (a value shown as 0.0001296 secs, not 0).
+double significant(double value, int digits = 4);
+// A parameter's plain value as it shows (its text's number: Vital's level
+// squared, its envelope's time to the fourth...; ParamSpec::shown), its range
+// so (lowest first), and the unit it shows in. As it is for most parameters.
+double shownValue(const ParamSpec& spec, double plain);
+std::pair<double, double> shownRange(const ParamSpec& spec);
+QString shownUnit(const ParamSpec& spec);
+
 // What an edit says when the user turned edits off.
 extern const QString kNoEdits;
 
@@ -86,9 +95,13 @@ public:
 
     // A device's parameters, as the engine describes them.
     std::vector<Param> params(const QString& trackId, const Device& device) const;
-    // What a parameter is to be set to: `value` in its units (a choice's name,
-    // true or false for a switch), or `normalized` (0..1). Plain; none and why not.
+    // What a parameter is to be set to: `value` as it shows (in shownUnit(): a
+    // choice's name, true or false for a switch), or `normalized` (0..1).
+    // Plain; none and why not.
     static std::pair<std::optional<double>, QString> wanted(const Param& param, const QJsonObject& item);
+
+    // What a modulator moves: each parameter (deviceId, parameterId, name), from and to as it shows, invert.
+    QJsonArray modulationsJson(const QString& trackId, const Device& modulator) const;
 
     // Whether the user lets agents edit (addTool() checks it for every edit).
     bool editsAllowed() const;
