@@ -100,15 +100,26 @@ struct MacroMapping {
 // (normalized, as automation is), or turned upside down with `invert` (1 - its
 // value). A parameter follows one modulator at most; while it does, its own
 // value and its automation wait.
+//
+// Its amount, as a modulated knob's handle shows and drags it (as Serum's and
+// Ableton's do): unipolar, the modulator moves it from `low` by `high - low`;
+// `bipolar`, either side of the middle of the range by half of that. Only the
+// handle reads `bipolar`: the engine plays low..high either way.
 struct ModulationMapping {
     QString deviceId;
     QString paramId;
     double low = 0.0;
     double high = 1.0;
     bool invert = false;
+    bool bipolar = false;
 
     // The parameter's normalized value for the modulator at `value` (0..1).
     double target(double value) const;
+    // Its amount (-1..1: negative, the other way): high - low, or half of it when bipolar.
+    double amount() const { return bipolar ? (high - low) / 2 : high - low; }
+    // The range for `amount` from `base` (normalized: the parameter's own value), up from it or, bipolar, either
+    // side of it, held to 0..1.
+    void setAmount(double base, double amount);
 
     friend bool operator==(const ModulationMapping&, const ModulationMapping&) = default;
 };

@@ -21,8 +21,17 @@ KnobItem {
         id: hover
     }
 
-    ToolTip.visible: hover.hovered && !dragging && !editor.visible && text !== ""
-    ToolTip.text: text
+    // Over a modulated knob's amount handle, the tooltip says what it does.
+    readonly property bool overModulationHandle: hover.hovered && isOnModulationHandle(hover.point.position)
+
+    ToolTip.visible: hover.hovered && !dragging && !draggingAmount && !editor.visible && text !== ""
+    ToolTip.text: overModulationHandle
+                  ? qsTr("Modulation %1%2 (%3): drag to change · Alt+Shift-click: %4")
+                        .arg(modulationAmount > 0 && modulationBipolar ? "±" : "")
+                        .arg(Math.round(modulationAmount * 100) + "%")
+                        .arg(modulationBipolar ? qsTr("bipolar") : qsTr("unipolar"))
+                        .arg(modulationBipolar ? qsTr("unipolar") : qsTr("bipolar"))
+                  : text
     ToolTip.delay: 700
 
     onEditRequested: initialText => editor.openWith(initialText)

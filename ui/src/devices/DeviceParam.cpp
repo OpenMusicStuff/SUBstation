@@ -487,6 +487,20 @@ void DeviceParam::setModulationInverted(bool inverted) {
         session_->editor()->setModulationInverted(trackId_, modulator_, deviceId_, paramId_, inverted);
 }
 
+void DeviceParam::setModulationAmount(double amount, double base, const QString& mergeKey) {
+    if (session_ && modulated() && spec_) {
+        session_->editor()->setModulationAmount(trackId_, modulator_, deviceId_, paramId_, amount,
+                                                spec_->toNormalized(base), mergeKey);
+    }
+}
+
+void DeviceParam::toggleModulationPolarity(double base) {
+    if (session_ && modulated() && spec_) {
+        session_->editor()->setModulationBipolar(trackId_, modulator_, deviceId_, paramId_, !mapping_.bipolar,
+                                                 spec_->toNormalized(base));
+    }
+}
+
 void DeviceParam::unmapFromMacro() {
     if (!session_)
         return;

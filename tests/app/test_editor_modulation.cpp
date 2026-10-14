@@ -108,6 +108,56 @@ private Q_SLOTS:
         QCOMPARE(modulationsOf(f, track, lfo).size(), size_t(2));
     }
 
+    void theAmountAndPolarityFromTheKnobsHandle() {
+        // The maths: unipolar up from the base, bipolar either side of it, held to 0..1.
+        ModulationMapping m{"d", "p"};
+        m.setAmount(0.3, 0.4);
+        QCOMPARE(m.low, 0.3);
+        QVERIFY(near(m.high, 0.7, 1e-12));
+        QVERIFY(near(m.amount(), 0.4, 1e-12));
+        m.setAmount(0.3, -0.5);  // the other way: down from it
+        QCOMPARE(m.low, 0.3);
+        QCOMPARE(m.high, 0.0);
+        m.bipolar = true;
+        m.setAmount(0.5, 0.2);
+        QVERIFY(near(m.low, 0.3, 1e-12) && near(m.high, 0.7, 1e-12));
+        QVERIFY(near(m.amount(), 0.2, 1e-12));
+        QVERIFY(near(m.target(0.5), 0.5, 1e-12));  // the modulator's middle: the knob's own value
+
+        EditorFixture f;
+        const QString track = f.editor.addAudioTrack();
+        const QString lfo = f.editor.addDevice(track, "lfo");
+        const QString utility = f.editor.addDevice(track, "utility");
+        f.editor.mapModulation(track, lfo, utility, "gain");
+        const int steps = f.stack.count();
+        // A drag of the handle: one undo step, from the knob's value.
+        f.editor.setModulationAmount(track, lfo, utility, "gain", 0.1, 0.4, "drag");
+        f.editor.setModulationAmount(track, lfo, utility, "gain", 0.25, 0.4, "drag");
+        QCOMPARE(f.stack.count(), steps + 1);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Change Modulation Amount"));
+        QCOMPARE(modulationsOf(f, track, lfo).front().low, 0.4);
+        QVERIFY(near(modulationsOf(f, track, lfo).front().high, 0.65, 1e-12));
+        // Alt+Shift-click: bipolar round the knob's value, the amount kept; and back.
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", true, 0.5);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Bipolar Modulation"));
+        const ModulationMapping bipolar = modulationsOf(f, track, lfo).front();
+        QVERIFY(bipolar.bipolar);
+        QVERIFY(near(bipolar.low, 0.25, 1e-12) && near(bipolar.high, 0.75, 1e-12));
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", true, 0.5);  // (already: nothing)
+        QCOMPARE(f.stack.count(), steps + 2);
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", false, 0.5);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Unipolar Modulation"));
+        QVERIFY(!modulationsOf(f, track, lfo).front().bipolar);
+        QVERIFY(near(modulationsOf(f, track, lfo).front().low, 0.5, 1e-12));
+        QVERIFY(near(modulationsOf(f, track, lfo).front().high, 0.75, 1e-12));
+        f.stack.undo();
+        QCOMPARE(modulationsOf(f, track, lfo).front(), bipolar);
+        // Saved and read back.
+        const QJsonObject saved = deviceToJson(f.project.device(track, lfo));
+        QVERIFY(saved.value("modulations").toArray().at(0).toObject().value("bipolar").toBool());
+        QCOMPARE(deviceFromJson(saved).modulations.front(), bipolar);
+    }
+
     void aParameterFollowsOneModulator() {
         EditorFixture f;
         const QString track = f.editor.addAudioTrack();

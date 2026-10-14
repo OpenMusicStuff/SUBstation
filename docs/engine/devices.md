@@ -63,8 +63,8 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Eq.cpp](../../engine/src/builtin/devices/Eq.cpp) | EQ: 24 bands, placement, output gain, gain scale |
 | [builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h) | The EQ's filter design (`eq::design`, `eq::responseDb`), shared with the application layer's `eqResponseDb()` for the editor's curves; `eq::Biquad::tick` (a sample through a section, transposed direct form II: the EQ's and the Sidechain's crossover) |
 | [builtin/devices/Sidechain.cpp](../../engine/src/builtin/devices/Sidechain.cpp) | Sidechain: a curve from each hit in the key (or on the beat), lookahead, lows only |
-| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth |
-| [builtin/devices/Envelope.cpp](../../engine/src/builtin/devices/Envelope.cpp) | Envelope: a modulator; a drawn curve played from each note or sidechain hit, in ms or synced, Depth, Velocity, Threshold, Smooth |
+| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth; Random (a new random curve each cycle: `modulator::randomPoints` from a seed it publishes, so the editor draws the one playing) |
+| [builtin/devices/Envelope.cpp](../../engine/src/builtin/devices/Envelope.cpp) | Envelope: a modulator; a drawn curve played from each note or sidechain hit, in ms or synced, Depth, Velocity, Threshold, Smooth; Random (a new random curve from each trigger) |
 | [builtin/ModulatorDesign.h](../../engine/src/builtin/ModulatorDesign.h) | What the modulators share (`modulator::`): their curve's parameters (`appendPointParams`, `kPoints`), the curve as they play it (`Curve`, automation's shapes worked out once a segment, `fastmath::exp` a sample), the shapes they start with (`sinePoints`, `pluckPoints`), synced lengths, smoothing, `kDisplaySamples` |
 | [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc` (a modulator moving a parameter of a device on its track: its range and which way up), `modulationTarget`, `kMaxModulators`; see [automation.md](automation.md#modulation) |
 | [builtin/devices/Transient.cpp](../../engine/src/builtin/devices/Transient.cpp) | Transient Shaper: onsets and tails turned up or down by followers on the input's envelope, Threshold, Output, Dry/Wet, Clip, lookahead, displays |
@@ -2784,8 +2784,8 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
 - [test_modulators_engine.cpp](../../tests/engine/test_modulators_engine.cpp): the LFO and the Envelope on their
   own (listing; the curve at the rate, free and synced following the song or running on stopped; the sine; Depth,
   Offset, Phase; Retrigger; Smooth; the Envelope from notes and sidechain hits, re-armed, at rest, its length,
-  Depth and Velocity; block sizes), then modulation through the engine: a parameter moved every 64 samples, over
-  a range and inverted, a modulator after its target, synced to the song, ahead of automation (which plays again
+  Depth and Velocity; Random, from seeds, each cycle and trigger; block sizes), then modulation through the
+  engine: a parameter moved every 64 samples, over a range and inverted, a modulator after its target, synced to the song, ahead of automation (which plays again
   after), into and out of racks, a modulator moving a modulator, one switched off holding, routes the engine
   refuses, an Envelope keyed by another track.
 - [test_sidechain_device_engine.cpp](../../tests/engine/test_sidechain_device_engine.cpp): hits to the sample, the

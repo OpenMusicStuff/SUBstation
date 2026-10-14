@@ -779,11 +779,13 @@ QJsonObject deviceToJson(const Device& device) {
     if (!device.modulations.empty()) {
         QJsonArray modulations;
         for (const ModulationMapping& m : device.modulations) {
-            modulations.append(QJsonObject{{QStringLiteral("device"), m.deviceId},
-                                           {QStringLiteral("param"), m.paramId},
-                                           {QStringLiteral("low"), m.low},
-                                           {QStringLiteral("high"), m.high},
-                                           {QStringLiteral("invert"), m.invert}});
+            QJsonObject mapping{{QStringLiteral("device"), m.deviceId},
+                                {QStringLiteral("param"), m.paramId},
+                                {QStringLiteral("low"), m.low},
+                                {QStringLiteral("high"), m.high},
+                                {QStringLiteral("invert"), m.invert}};
+            if (m.bipolar) mapping[QStringLiteral("bipolar")] = true;
+            modulations.append(mapping);
         }
         data[QStringLiteral("modulations")] = modulations;
     }
@@ -845,6 +847,7 @@ Device deviceFromJson(const QJsonValue& value) {
         modulation.low = clamped(floatOr(mapping, QStringLiteral("low"), 0.0), 0.0, 1.0);
         modulation.high = clamped(floatOr(mapping, QStringLiteral("high"), 1.0), 0.0, 1.0);
         modulation.invert = truthy(mapping.value(QStringLiteral("invert")));
+        modulation.bipolar = truthy(mapping.value(QStringLiteral("bipolar")));
         device.modulations.push_back(std::move(modulation));
     }
     if (device.isRack()) {

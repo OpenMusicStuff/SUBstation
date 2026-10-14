@@ -68,6 +68,9 @@ class DeviceParam : public QObject {
     Q_PROPERTY(double modulationFrom READ modulationFrom NOTIFY modulationChanged)
     Q_PROPERTY(double modulationTo READ modulationTo NOTIFY modulationChanged)
     Q_PROPERTY(bool modulationInverted READ modulationInverted NOTIFY modulationChanged)
+    // Its amount, as a knob's handle drags it (-1..1: ModulationMapping::amount), and whether either side of its value.
+    Q_PROPERTY(double modulationAmount READ modulationAmount NOTIFY modulationChanged)
+    Q_PROPERTY(bool modulationBipolar READ modulationBipolar NOTIFY modulationChanged)
     // Normalized, where its modulator has it now (-1: not modulated, or not known yet).
     Q_PROPERTY(double modulationValue READ modulationValue NOTIFY modulationValueChanged)
     Q_PROPERTY(bool mappable READ mappable NOTIFY mappableChanged)
@@ -107,6 +110,8 @@ public:
     double modulationFrom() const;
     double modulationTo() const;
     bool modulationInverted() const { return mapping_.invert; }
+    double modulationAmount() const { return modulated() ? mapping_.amount() : 0.0; }
+    bool modulationBipolar() const { return mapping_.bipolar; }
     double modulationValue() const { return modulationValue_; }
     bool mappable() const { return mappable_; }
 
@@ -150,6 +155,10 @@ public:
     Q_INVOKABLE void modulateWith(const QString& modulatorId);
     Q_INVOKABLE void unmodulate();
     Q_INVOKABLE void setModulationInverted(bool inverted);
+    // From a knob's handle: the amount from `base` (the knob's value, in the parameter's units), one undo step per
+    // gesture; and unipolar <-> bipolar from there.
+    Q_INVOKABLE void setModulationAmount(double amount, double base, const QString& mergeKey = {});
+    Q_INVOKABLE void toggleModulationPolarity(double base);
 
     // Reads it all again (the device view does when it rebuilds).
     Q_INVOKABLE void refresh();

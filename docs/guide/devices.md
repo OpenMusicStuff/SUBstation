@@ -1391,6 +1391,12 @@ devices and plug-ins alike, in racks too.
   in the parameter's units as you drag), a white mark where it is now, **⇅ Invert**
   (the modulator upside down) and **×** to unmap it (× at the top unmaps them all).
   A min above the max turns it the other way too.
+- **The amount, on the knob itself** (as Serum's and Ableton's): a modulated knob has a small handle at its top
+  left, its amount drawn round it. Drag it up or down to change how far the modulator moves the parameter, from the
+  knob's own value (Shift is fine; down past zero turns it the other way); **Alt+Shift-click** it to switch between
+  **unipolar** (up from the knob's value) and **bipolar** (either side of it, the same amount). Its tooltip says
+  which it is. Every modulated knob has it: the devices' editors and plug-ins' parameters alike. (Track volume and
+  pan can't be modulated.)
 - While a parameter is modulated, its own value and its automation wait; they count
   again once it is unmapped or the modulator is switched off. Modulators can move other
   modulators (an LFO's Rate by an Envelope). A rack's macros can't be modulated: map
@@ -1400,8 +1406,9 @@ devices and plug-ins alike, in racks too.
   double-click (or Alt-click, or Delete) to remove one, double-click a bend to straighten
   it. Shift is fine, **Ctrl snaps** to the grid (sixteenths across, eighths up).
   Right-click for **Shapes**, *Flip Curve*, *Reverse Curve* and *Reset Curve*.
-- **As it plays**, a playhead rides the curve with a short trail. The knobs it moves follow
-  it, and so do the graphs of the devices they belong to.
+- **As it plays**, a playhead rides the curve with a short trail. The knobs it moves show it as a
+  dot riding their blue range (their pointer stays where you set them), and the graphs of the devices they
+  belong to follow it.
 - Copied together with the devices they move (or with the whole track), modulators keep
   their mappings to the copies; pasted alone, or loaded from a preset, they move nothing
   yet.
@@ -1418,10 +1425,14 @@ up from the bottom to the top at half the cycle, and down again).
   button) starts its cycle again, so it fits each note; it flashes as one comes.
 - **Depth** scales it round the middle of its targets' ranges; **Offset** moves it up or
   down (+100 %: by half the range). The shaded band and the dashed line show what it
-  plays then.
+  plays then (Phase and Smooth too).
 - **Phase** (0 to 360°) shifts where in the cycle it is; **Smooth** (0 to 250 ms) eases
   its steps and jumps (a square without clicks).
 - Shapes: Triangle, Sine, Saw Up, Saw Down, Square, Pulse, Steps, Hump, Swell.
+- **Rand** (Random): a new random shape every cycle instead of the curve drawn (1 to 6 points at random times
+  and levels, bent at random), each starting where the last ended, so one cycle flows smoothly into the next. The graph shows the shape
+  playing; the drawn curve waits meanwhile, and choosing a shape (or flipping, reversing, resetting) turns Random
+  off.
 
 ### Envelope
 
@@ -1440,6 +1451,8 @@ begin with: up at once, then falling away).
 - **Depth** scales it; **Velocity** lets softer notes play it lower (100 %: a note at
   half velocity plays it at half). **Smooth** eases it.
 - Shapes: Pluck, Attack-Decay, Swell, Ramp Down, Ramp Up, Gate, Duck, Stutter.
+- **Random**: a new random shape from every trigger instead of the curve drawn, starting where it was, and
+  holding its last point after it, as the LFO's Random.
 
 ## Racks
 

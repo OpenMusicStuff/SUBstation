@@ -44,6 +44,8 @@ Item {
         modulationFrom: control.param ? control.param.modulationFrom : 0
         modulationTo: control.param ? control.param.modulationTo : 1
         modulationValue: control.param ? control.param.modulationValue : -1
+        modulationAmount: control.param ? control.param.modulationAmount : 0
+        modulationBipolar: control.param ? control.param.modulationBipolar : false
         mappable: control.param ? control.param.mappable : false
         formatter: v => control.formatter(v)
         onMoved: (v, key) => {
@@ -53,5 +55,10 @@ Item {
                 control.param.set(v, key)
         }
         onTouched: if (control.param) control.param.touch()
+        onModulationAmountMoved: (amount, key) => {
+            if (control.param)
+                control.param.setModulationAmount(amount, knob.value, key)
+        }
+        onModulationPolarityToggled: if (control.param) control.param.toggleModulationPolarity(knob.value)
     }
 }

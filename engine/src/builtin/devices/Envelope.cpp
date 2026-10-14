@@ -15,12 +15,17 @@
 // note at velocity 64 plays it at half; a hit in the sidechain counts as full),
 // held to 0..1; Smooth eases it (a one-pole).
 //
-// Displays (ModulatorDesign.h): "value", "phase" (-1 at rest), and "key" (the
+// Random plays a new random curve from each trigger instead of the drawn one
+// (ModulatorDesign.h's randomPoints), from where the curve was at the trigger,
+// and holds its last point's value after it.
+//
+// Displays (ModulatorDesign.h): "value", "phase" (-1 at rest), "key" (the
 // sidechain's peak over each stretch, linear; without a sidechain, 1 where a
-// note came).
+// note came), "seed" and "start".
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -41,11 +46,13 @@ constexpr float kHysteresis = 0.70794578f;  // -3 dB: the key falls this far bel
 class EnvelopeProcessor final : public BuiltinProcessor {
 public:
     enum Param { Threshold = 0, Sync, Length, Synced, Depth, Velocity, Smooth, kFirstPoint };
-    enum Display { ValueDisplay = 0, PhaseDisplay, KeyDisplay };
+    static constexpr int Random = kFirstPoint + md::kPoints * md::kPointParams;  // (after the points: added later)
+    enum Display { ValueDisplay = 0, PhaseDisplay, KeyDisplay, SeedDisplay, StartDisplay };
 
     EnvelopeProcessor()
         : BuiltinProcessor(infos(), {{"value", md::kDisplaySamples}, {"phase", md::kDisplaySamples},
-                                     {"key", md::kDisplaySamples}}) {}
+                                     {"key", md::kDisplaySamples}, {"seed", md::kDisplaySamples},
+                                     {"start", md::kDisplaySamples}}) {}
 
     std::string typeId() const override { return "builtin:envelope"; }
     std::string name() const override { return "Envelope"; }
@@ -67,12 +74,23 @@ public:
         value_ = -1.f;
         displayCount_ = 0;
         keyPeak_ = 0.f;
+        randoms_.reset();
+        seed_ = -1;
+        start_ = 0.f;
     }
 
 protected:
     void render(const ProcessContext& ctx, float* const* ch, int numChannels, int numFrames) override {
         if (numChannels <= 0) return;
-        curve_.load([this](int index) { return param(index); }, kFirstPoint);
+        const bool random = isOn(Random);
+        if (!random) {
+            curve_.load([this](int index) { return param(index); }, kFirstPoint);
+            seed_ = -1;
+        } else if (seed_ < 0) {  // (before the first trigger, a curve to rest on)
+            start_ = 0.f;
+            seed_ = static_cast<int32_t>(randoms_.next(curve_, start_));
+            position_ = -1.0;
+        }
         const double samplesPerBeat = ctx.samplesPerBeat();
         const double lengthSamples =
             std::max(1.0, isOn(Sync) && samplesPerBeat > 0.0
@@ -115,6 +133,10 @@ protected:
                 }
             }
             if (hit) {
+                if (random) {  // a new curve from where this one is
+                    start_ = position_ >= 0.0 ? curve_.at(position_ / lengthSamples) : curve_.last();
+                    seed_ = static_cast<int32_t>(randoms_.next(curve_, start_));
+                }
                 position_ = 0.0;
                 level_ = 1.f - byVelocity * (1.f - velocity);
             }
@@ -134,6 +156,8 @@ protected:
                 publish(ValueDisplay, value_);
                 publish(PhaseDisplay, position_ >= 0.0 ? static_cast<float>(position_ / lengthSamples) : -1.f);
                 publish(KeyDisplay, keyPeak_);
+                publish(SeedDisplay, static_cast<float>(seed_));
+                publish(StartDisplay, start_);
                 keyPeak_ = 0.f;
             }
         }
@@ -154,6 +178,7 @@ private:
                 {"smooth", "Smooth", "ms", 0.f, 250.f, 0.f},
             };
             md::appendPointParams(list, md::pluckPoints());
+            list.push_back({"random", "Random", "", 0.f, 1.f, 0.f, false, kOnOff});
             return list;
         }();
         return kInfos;
@@ -169,6 +194,9 @@ private:
     float value_ = -1.f;  // its value, smoothed (-1: none yet)
     int displayCount_ = 0;
     float keyPeak_ = 0.f;
+    md::RandomCurves randoms_;
+    int32_t seed_ = -1;  // Random's curve now (-1: none)
+    float start_ = 0.f;  // ... its first level
 };
 
 }  // namespace

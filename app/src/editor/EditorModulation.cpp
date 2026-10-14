@@ -95,6 +95,34 @@ void ProjectEditor::setModulationInverted(const QString& trackId, const QString&
                                                         : QStringLiteral("Uninvert Modulation")));
 }
 
+void ProjectEditor::setModulationAmount(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                        const QString& paramId, double amount, double base, const QString& mergeKey) {
+    const Device* modulator = project_->findDevice(trackId, modulatorId);
+    if (modulator == nullptr) return;
+    std::vector<ModulationMapping> nw = modulator->modulations;
+    const auto mapping = mappingOf(nw, deviceId, paramId);
+    if (mapping == nw.end()) return;
+    mapping->setAmount(base, amount);
+    if (nw == modulator->modulations) return;
+    push(std::make_unique<SetModulationsCommand>(project_, trackId, modulatorId, modulator->modulations, nw,
+                                                 QStringLiteral("Change Modulation Amount"), mergeKey));
+}
+
+void ProjectEditor::setModulationBipolar(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                         const QString& paramId, bool bipolar, double base) {
+    const Device* modulator = project_->findDevice(trackId, modulatorId);
+    if (modulator == nullptr) return;
+    std::vector<ModulationMapping> nw = modulator->modulations;
+    const auto mapping = mappingOf(nw, deviceId, paramId);
+    if (mapping == nw.end() || mapping->bipolar == bipolar) return;
+    const double amount = mapping->amount();
+    mapping->bipolar = bipolar;
+    mapping->setAmount(base, amount);
+    push(std::make_unique<SetModulationsCommand>(project_, trackId, modulatorId, modulator->modulations, nw,
+                                                 bipolar ? QStringLiteral("Bipolar Modulation")
+                                                         : QStringLiteral("Unipolar Modulation")));
+}
+
 void ProjectEditor::unmapModulation(const QString& trackId, const QString& deviceId, const QString& paramId) {
     const QString modulatorId = modulatorOf(trackId, deviceId, paramId);
     if (modulatorId.isEmpty()) return;

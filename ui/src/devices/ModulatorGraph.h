@@ -17,10 +17,16 @@
 // As it plays (its displays "value", "phase" and "key", read on each
 // DisplayClock tick and played back at the audio's pace, DisplayPlayback):
 // a playhead rides the curve with a short fading trail and a soft glow; the LFO's
-// output over its range (Depth and Offset) is shaded behind the curve and drawn
-// as it plays it. The Envelope flashes at each trigger, and once a sidechain
+// output over its range (Depth and Offset) is shaded behind the curve, and what
+// it puts out over its cycle or length (Depth, Offset, the LFO's Phase shifting
+// it along, eased by Smooth) drawn dashed over it. The Envelope flashes at each trigger, and once a sidechain
 // is chosen (its hits trigger it, as notes do), the key's level shows against
 // its threshold.
+//
+// With Random on, it draws the random curve playing now (its displays "seed"
+// and "start", through modulatorRandomPoints: the engine's own), the playhead
+// riding it; the drawn curve can't be edited meanwhile, and choosing a shape,
+// flipping, reversing or resetting it turns Random off.
 
 #include "devices/DeviceCanvas.h"
 #include "devices/DisplayPlayback.h"
@@ -45,6 +51,7 @@ class ModulatorGraph : public DeviceCanvas {
     Q_PROPERTY(int selected READ selected NOTIFY curveChanged)  // the selected point (-1: none)
     Q_PROPERTY(QStringList shapes READ shapes NOTIFY curveChanged)
     Q_PROPERTY(double output READ output NOTIFY ticked)  // what it puts out now, 0..1 (-1: nothing yet)
+    Q_PROPERTY(bool random READ random NOTIFY curveChanged)  // Random on: a new random curve each cycle or trigger
 
 public:
     static constexpr int kPoints = 32;
@@ -82,6 +89,16 @@ public:
     QStringList shapes() const;
     double output() const { return output_; }
     const std::vector<Point>& points() const { return points_; }
+    bool random() const { return random_; }
+    // The curve it draws: the points, or with Random the random curve playing now.
+    const std::vector<Point>& shown() const { return random_ ? randomPoints_ : points_; }
+    // The LFO's Phase (0..1 of the cycle: where on the curve its cycle starts), and Smooth (ms).
+    double phaseShift() const { return phaseShift_; }
+    double smoothMs() const { return smoothMs_; }
+    // What it puts out at `count` + 1 evenly spaced times across its cycle or length: the shown curve (the LFO's
+    // read from Phase on) through Depth and Offset, eased by Smooth as its one-pole does (the LFO's as it settles
+    // cycle after cycle; the Envelope's from where it rests).
+    std::vector<double> outputCurve(int count) const;
     void setPoints(const std::vector<Point>& points, const QString& mergeKey = QString(),
                    const QString& text = QStringLiteral("Change Modulator Curve"));
     // The trail of where the playhead was, newest last (x, the curve's value there); empty: not playing.
@@ -134,6 +151,7 @@ private:
     };
 
     void advance(double seconds);
+    void showRandom(int seed, double start);
     QRectF hintRect() const;
     QRectF meterRect() const;
     QString readoutText(const Point& point) const;
@@ -149,13 +167,19 @@ private:
     bool periodic_ = true;
     double depth_ = 1.0;
     double offset_ = 0.0;   // the LFO's, -0.5..0.5
+    double phaseShift_ = 0.0;  // the LFO's Phase, 0..1
+    double smoothMs_ = 0.0;
     double lengthMs_ = 500.0;
     bool keyed_ = false;    // the Envelope triggered by its sidechain (too)
     double threshold_ = -24.0;
     QString lengthText_;
     QString hint_;
     // Live.
-    DisplayPlayback<3> playback_;  // value, phase, key
+    DisplayPlayback<5> playback_;  // value, phase, key, seed, start
+    bool random_ = false;
+    int randomSeed_ = -1;  // the random curve drawn (-1: none yet)
+    double randomStart_ = 0.5;
+    std::vector<Point> randomPoints_;
     double output_ = -1.0;
     double lastPhase_ = -1.0;
     std::vector<QPointF> trail_;  // (x, y on the curve), oldest first

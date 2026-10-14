@@ -4,7 +4,7 @@ import SUBstation
 
 // The Envelope's editor: its shape to draw on (ModulatorGraph: played from each
 // trigger, flashing as one comes, the key against its threshold once a
-// sidechain is chosen), then its controls (Sync and Map over its knobs: the
+// sidechain is chosen), then its controls (Sync, Random and Map over its knobs: the
 // length in ms or synced in notes, Depth, Velocity, Threshold, Smooth, and the
 // Targets button beside them), then, unfolded by that button (view state:
 // DeviceViews), what it moves (ModulatorTargets). What triggers it is what it is given: the notes it
@@ -31,7 +31,7 @@ Item {
         id: params
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["threshold", "sync", "length", "synced", "depth", "velocity", "smooth"]
+        ids: ["threshold", "sync", "length", "synced", "depth", "velocity", "smooth", "random"]
     }
     DeviceInfo {
         id: info
@@ -68,15 +68,23 @@ Item {
 
                 ParamButton {
                     objectName: "sync"
-                    width: 80
+                    width: 52
                     height: 18
                     param: params.get("sync")
                     text: qsTr("Sync")
                     tooltip: qsTr("Its length in notes, at the tempo")
                 }
+                ParamButton {
+                    objectName: "random"
+                    width: 52
+                    height: 18
+                    param: params.get("random")
+                    text: qsTr("Random")
+                    tooltip: qsTr("Random: a new random shape from every trigger, instead of the curve drawn")
+                }
                 ModulatorMapButton {
                     id: mapButton
-                    width: 80
+                    width: 52
                     height: 18
                     mappings: targets.mappings
                 }

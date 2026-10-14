@@ -556,6 +556,14 @@ public:
                                         const QString& paramId, double low, double high, const QString& mergeKey = {});
     Q_INVOKABLE void setModulationInverted(const QString& trackId, const QString& modulatorId,
                                            const QString& deviceId, const QString& paramId, bool invert);
+    // A mapping's amount (ModulationMapping::amount, -1..1) from `base` (normalized: the parameter's own value),
+    // as a modulated knob's handle drags it: one undo step per gesture (a merge key).
+    Q_INVOKABLE void setModulationAmount(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                         const QString& paramId, double amount, double base,
+                                         const QString& mergeKey = {});
+    // A mapping unipolar or bipolar, its amount kept, from `base` (normalized): one undo step.
+    Q_INVOKABLE void setModulationBipolar(const QString& trackId, const QString& modulatorId, const QString& deviceId,
+                                          const QString& paramId, bool bipolar, double base);
     // A parameter no longer modulated (by whichever modulator moves it); its own value counts again.
     Q_INVOKABLE void unmapModulation(const QString& trackId, const QString& deviceId, const QString& paramId);
     // Everything a modulator moves, unmapped. One undo step.

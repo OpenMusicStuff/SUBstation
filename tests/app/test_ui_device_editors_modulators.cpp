@@ -8,7 +8,8 @@
 // unfolded shows each target with its range (dragged, one undo step, the row
 // outliving its edits), Invert and ×; what the engine renders reaches the
 // graph (its output and playhead) and a knob it moves (its range and where it
-// is now); the Envelope's Threshold counts only once a sidechain is chosen. With SUBSTATION_UI_SCREENSHOTS set, device-editors-lfo*.png and
+// is now), its amount's handle dragged and Alt+Shift-clicked to bipolar; Random
+// drawing the random curve the engine plays; the Envelope's Threshold counts only once a sidechain is chosen. With SUBSTATION_UI_SCREENSHOTS set, device-editors-lfo*.png and
 // device-editors-envelope*.png are saved there.
 
 #include <QPointer>
@@ -18,6 +19,7 @@
 #include <QTest>
 #include <QUndoStack>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -108,7 +110,7 @@ private Q_SLOTS:
         fitted();
         QCOMPARE(mappings->rows().front().toMap().value("param").toString(), QStringLiteral("Gain"));
         QTest::qWait(50);
-        save(grab(), QStringLiteral("lfo"));
+        save(grab(), QStringLiteral("lfo.png"));
 
         // Its range, as the list sets it: one undo step a gesture.
         const int before = undo()->count();
@@ -152,12 +154,78 @@ private Q_SLOTS:
         editor()->setDeviceEnabled(track, lfo, true);
         QVERIFY(gain.modulated());
         QTest::qWait(50);
-        save(grab(), QStringLiteral("lfo-playing"));
+        save(grab(), QStringLiteral("lfo-playing.png"));
 
         // ×: unmapped.
         mappings->remove(utility, QStringLiteral("gain"));
         QCOMPARE(mappings->count(), 0);
         QVERIFY(!gain.modulated());
+    }
+
+    void phaseAndSmoothOnTheGraph() {
+        const QString track = audioTrackWith(std::vector<float>(kSampleRate, 0.5f), QStringLiteral("held"), 1.0);
+        QVERIFY(!track.isEmpty());
+        const QString lfo = editor()->addDevice(track, QStringLiteral("lfo"));
+        QQuickItem* view = show(QStringLiteral("lfo"), track, lfo);
+        auto* graph = find<ModulatorGraph>(view, QStringLiteral("modulatorGraph"));
+        QVERIFY(graph);
+        // As drawn, what it puts out is its triangle.
+        std::vector<double> out = graph->outputCurve(100);
+        QVERIFY(std::abs(out[50] - 1.0) < 1e-9 && std::abs(out[0]) < 1e-9);
+        // Phase shifts it along: at 90° the cycle starts a quarter of the way up.
+        editor()->setDeviceParam(track, lfo, QStringLiteral("phase"), 90.0);
+        QTRY_COMPARE(graph->phaseShift(), 0.25);
+        out = graph->outputCurve(100);
+        QVERIFY(std::abs(out[0] - 0.5) < 1e-9 && std::abs(out[25] - 1.0) < 1e-9);
+        // Smooth eases it: it lags the triangle and doesn't reach its top or bottom (a cycle: 500 ms, 1/4 at 120).
+        editor()->setDeviceParam(track, lfo, QStringLiteral("smooth"), 100.0);
+        QTRY_COMPARE(graph->smoothMs(), 100.0);
+        out = graph->outputCurve(100);
+        const auto top = std::max_element(out.begin(), out.end());
+        QVERIFY(*top < 0.95 && *std::min_element(out.begin(), out.end()) > 0.05);
+        QVERIFY(top - out.begin() > 25);                     // its top later than the curve's
+        QVERIFY(std::abs(out.front() - out.back()) < 0.01);  // settled: a cycle ends as it starts
+        QTest::qWait(50);
+        save(grab(), QStringLiteral("lfo-phase-smooth.png"));
+    }
+
+    void random() {
+        const QString track = audioTrackWith(std::vector<float>(kSampleRate, 0.5f), QStringLiteral("held"), 1.0);
+        QVERIFY(!track.isEmpty());
+        for (const QString kind : {QStringLiteral("lfo"), QStringLiteral("envelope")}) {
+            const QString device = editor()->addDevice(track, kind);
+            QQuickItem* view = show(kind, track, device);
+            QVERIFY(view);
+            QVERIFY(find<QQuickItem>(view, QStringLiteral("random")));
+            auto* graph = find<ModulatorGraph>(view, QStringLiteral("modulatorGraph"));
+            QVERIFY(graph);
+            QVERIFY(!graph->random());
+            editor()->setDeviceParam(track, device, QStringLiteral("random"), 1.0);
+            QTRY_VERIFY(graph->random());
+            QVERIFY(graph->shown().size() >= 3);
+            QVERIFY(graph->shown() != graph->points());
+            // Nothing to drag on it: no point or bend under the mouse.
+            const ModulatorGraph::Point first = graph->shown()[1];
+            QVERIFY(graph->hit(graph->toScreen(first.x, first.y)).first.isEmpty());
+            // What plays is drawn: the LFO's playhead rides its random curve.
+            if (kind == QLatin1String("lfo")) {
+                play(0.5);
+                QVERIFY(!graph->trail().empty());
+                const QPointF head = graph->trail().back();
+                QVERIFY(std::abs(head.y() - ModulatorGraph::curveValue(graph->shown(), head.x())) < 1e-6);
+            }
+            // A shape chosen turns Random off: it plays that.
+            const int steps = undo()->count();
+            graph->applyShape(1);
+            QCOMPARE(undo()->count(), steps + 1);
+            QTRY_VERIFY(!graph->random());
+            QCOMPARE(project()->device(track, device).params.value(QStringLiteral("random")), 0.0);
+            QTest::qWait(50);
+            editor()->setDeviceParam(track, device, QStringLiteral("random"), 1.0);
+            QTest::qWait(50);
+            save(grab(), kind + QStringLiteral("-random.png"));
+            editor()->removeDevice(track, device);
+        }
     }
 
     void envelope() {
@@ -180,7 +248,7 @@ private Q_SLOTS:
         editor()->setDeviceSidechain(track, envelope, Sidechain{kick, kPostFader});
         QTRY_VERIFY(threshold->isEnabled());
         QTest::qWait(50);
-        save(grab(), QStringLiteral("envelope"));
+        save(grab(), QStringLiteral("envelope.png"));
     }
 
     void aModulatedKnob() {
@@ -204,6 +272,37 @@ private Q_SLOTS:
         QVERIFY(knob->mappable());
         session_->modulationLearn()->stop();
         QVERIFY(!knob->mappable());
+        // Its amount's handle (top left): dragged up, more, from the knob's own value (pan 0: the middle); one
+        // undo step a drag.
+        QCOMPARE(knob->modulationAmount(), 0.5);
+        QVERIFY(!knob->modulationBipolar());
+        QQuickWindow* window = knob->window();
+        const QPoint handle = knob->mapToScene(knob->modulationHandleCenter()).toPoint();
+        QVERIFY(knob->isOnModulationHandle(knob->modulationHandleCenter()));
+        QVERIFY(!knob->isOnModulationHandle(QPointF(knob->width() / 2, knob->height() / 2)));
+        const int steps = undo()->count();
+        const double own = knob->value();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, handle);
+        QTest::mouseMove(window, handle - QPoint(0, 10));
+        QTest::mouseMove(window, handle - QPoint(0, 20));  // 20 px of 200: +0.1
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, handle - QPoint(0, 20));
+        QCOMPARE(undo()->count(), steps + 1);
+        QCOMPARE(knob->value(), own);  // (the knob itself didn't move)
+        ModulationMapping mapping = project()->device(track, lfo).modulations.front();
+        QVERIFY(std::abs(mapping.low - 0.5) < 1e-6 && std::abs(mapping.high - 1.0) < 1e-6);
+        QVERIFY(std::abs(knob->modulationAmount() - 0.5) < 1e-6);
+        // Alt+Shift-click: bipolar round the knob's value, the amount kept.
+        QTest::mouseClick(window, Qt::LeftButton, Qt::AltModifier | Qt::ShiftModifier, handle);
+        QTRY_VERIFY(knob->modulationBipolar());
+        mapping = project()->device(track, lfo).modulations.front();
+        QVERIFY(mapping.bipolar);
+        QVERIFY(std::abs(mapping.low - 0.0) < 1e-6 && std::abs(mapping.high - 1.0) < 1e-6);
+        QCOMPARE(knob->modulationFrom(), 0.0);
+        QCOMPARE(knob->modulationTo(), 1.0);
+        QTest::qWait(50);
+        save(grab(), QStringLiteral("modulated-knob.png"));
+        undo()->undo();
+        QVERIFY(!knob->modulationBipolar());
         editor()->unmapModulation(track, utility, QStringLiteral("pan"));
         QVERIFY(!knob->modulated());
     }

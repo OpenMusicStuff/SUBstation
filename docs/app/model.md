@@ -184,9 +184,11 @@ no MIDI input closes a cycle, and a device on any track (a return, the master) m
   engine's limit). A rack with an instrument in it is an *Instrument Rack* (`deviceIsInstrument`), otherwise an
   *Audio Effect Rack*. `name` is the preset it was saved as or loaded from (none: named by its kind; `deviceName`).
 - **Modulator** (a built-in device whose engine category is `Modulator`: `isModulator(kind)`, the `"lfo"` and the
-  `"envelope"`): `modulations` is a list of `ModulationMapping{deviceId, paramId, low, high, invert}`: the parameter
-  of another device on its track (anywhere: in racks too) that it moves, over its normalized `low`..`high` (`low >
-  high` the other way), upside down with `invert` (`target()`). A parameter follows one modulator at most; while it
+  `"envelope"`): `modulations` is a list of `ModulationMapping{deviceId, paramId, low, high, invert, bipolar}`: the
+  parameter of another device on its track (anywhere: in racks too) that it moves, over its normalized `low`..`high`
+  (`low > high` the other way), upside down with `invert` (`target()`). Its *amount*, as a modulated knob's handle
+  drags it (`amount()`, `setAmount(base, amount)`): unipolar, `high - low` up from `low`; `bipolar`, half of that
+  either side of the middle (only the handle reads `bipolar`: the engine plays `low`..`high` either way). A parameter follows one modulator at most; while it
   does, its own value and its automation wait (the engine plays the modulation instead). The engine plays it: see
   [engine/automation.md](../engine/automation.md#modulation).
 
@@ -478,7 +480,7 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `SetChainsCommand` | several tracks' devices at once (a device moving between tracks stays the same device) |
 | `SetDeviceParamCommand`, `SetDeviceParamsCommand` | one parameter; several at once (a macro and what it moves) |
 | `UpdateChainCommand`, `SetMacrosCommand`, `SetDeviceNameCommand` | a rack chain's name or mixer; a rack's macro mappings, with the values of the parameters a range change moves (merging per gesture); a rack's name |
-| `SetModulationsCommand` | a modulator's mappings (`Device::modulations`): a range dragged merges per gesture; Invert, unmapping one or all |
+| `SetModulationsCommand` | a modulator's mappings (`Device::modulations`): a range or an amount dragged merges per gesture; Invert, Bipolar, unmapping one or all |
 | `SetDeviceStateCommand` | a device's state (a plug-in preset, a sampler's sample) |
 | `ReplaceFilesCommand` | other files in some files' place: the clip lists of the tracks playing them and the states of the built-in devices naming them (`DeviceStates`), together; merging per hot swap (the same tracks and devices); `relink` for files only found somewhere else (frozen tracks take those) |
 | `SetDeviceEnabledCommand`, `SetDeviceSidechainCommand`, `SetDeviceMidiFromCommand` | on/off; sidechain; MIDI input (`Device::midiFrom`, "Change MIDI Input" / "Remove MIDI Input") |
@@ -595,7 +597,9 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   over `low`..`high`, which way up; it moves over from another modulator in the same step, "Map Modulation" through
   `setDevices`; `EditError` for a device that isn't a modulator, the modulator itself, another track's device, a
   rack, or a parameter that can't be automated: hidden, read-only), `tryMapModulation` [Q], `canModulate` [Q],
-  `setModulationRange` [Q] (held to 0..1, merging per gesture), `setModulationInverted` [Q], `unmapModulation` [Q]
+  `setModulationRange` [Q] (held to 0..1, merging per gesture), `setModulationInverted` [Q], `setModulationAmount`
+  [Q] (the amount from a base, the parameter's own value: a knob's handle, merging per gesture),
+  `setModulationBipolar` [Q] (unipolar or bipolar from a base, the amount kept), `unmapModulation` [Q]
   (from whichever modulator moves it), `clearModulations` [Q], `modulatorOf` [Q], `modulators` [Q] (a track's, in
   chain order, racks' depth first).
 - **Envelopes**: `setEnvelope`, `addAutomationPoint` [Q], `moveAutomationPoints`, `deleteAutomationPoints` [Q],
