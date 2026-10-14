@@ -335,9 +335,8 @@ private Q_SLOTS:
         QVERIFY(std::abs(graph->lineDb() + 0.3) < 1e-6);
         undo()->undo();
         QCOMPARE(value("maximize"), 0.0);
-        QTest::qWait(200);
-        QVERIFY(find(view, QStringLiteral("gain"))->isVisible());
-        QVERIFY(!find(view, QStringLiteral("output"))->isVisible());
+        QTRY_VERIFY(find(view, QStringLiteral("gain"))->isVisible());
+        QTRY_VERIFY(!find(view, QStringLiteral("output"))->isVisible());
         QCOMPARE(paramOf(find(view, QStringLiteral("lineBox")))->paramId(), QStringLiteral("ceiling"));
         QVERIFY(std::abs(graph->lineDb() + 0.3) < 1e-6);
 

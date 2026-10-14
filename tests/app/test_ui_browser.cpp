@@ -109,17 +109,25 @@ class TestUiBrowser : public QObject {
     QString place() const { return dir_->path(QStringLiteral("Place")); }
 
     // Until the browser shows its latest search's results.
-    // (Quiet for a moment: a search can start another as it ends, an index's change coming in meanwhile,
-    // and on a busy machine that one starts later. It is waited for too.)
+    // (And the index and the sounds' analysis done, their tags taken, and quiet for a moment: each change to
+    // the index, and new tags in a list with samples, search again, the rows replaced, the selection and the
+    // current row with them; on a busy machine the last of them comes later.)
     bool settle() {
+        const auto quiet = [this] {
+            const auto* similarity = browser().similarity();
+            return !browser().searching() && !browser().indexing() && !(similarity && similarity->analysing());
+        };
+        constexpr qint64 kBudgetMs = 30000;  // (as SoundSimilarity::waitIdle: analysing runs at background priority)
         QElapsedTimer waited;
         waited.start();
         do {
-            if (!QTest::qWaitFor([this] { return !browser().searching(); }, int(std::max<qint64>(1, 5000 - waited.elapsed()))))
-                return false;
+            if (!QTest::qWaitFor(quiet, int(std::max<qint64>(1, kBudgetMs - waited.elapsed())))) return false;
+            // The analysed sounds' tags come at most every 1.5 s, the last after the analysing ends: taken now,
+            // so the search they make (if new) starts now, and is waited for.
+            if (auto* similarity = browser().similarity()) similarity->takeTags();
             QTest::qWait(10);
-        } while (browser().searching() && waited.elapsed() < 5000);
-        return !browser().searching();
+        } while (!quiet() && waited.elapsed() < kBudgetMs);
+        return quiet();
     }
     // Until the index is done and has `count` files at least.
     bool indexed(int count) {
@@ -420,6 +428,7 @@ private Q_SLOTS:
     // A long list comes a page at a time, more as it scrolls to its end.
     void paging() {
         const QString many = dir_->path(QStringLiteral("Many"));
+        const int files = browser().fileCount();
         QDir().mkpath(many);
         for (int i = 0; i < 300; ++i) test::writeWav(many + QStringLiteral("/Hit %1.wav").arg(i, 3, 10, QLatin1Char('0')), tone(0.01));
         browser().addPlace(many);
@@ -434,6 +443,8 @@ private Q_SLOTS:
         QTRY_COMPARE(results().rowCount(), 301);
         QTRY_COMPARE(list()->property("count").toInt(), 301);
         browser().removePlace(browser().places().last());
+        // (Its files leave the index a moment later: the next test's searches mustn't find them.)
+        QTRY_VERIFY_WITH_TIMEOUT(!browser().indexing() && browser().fileCount() == files, 30000);
         QVERIFY(settle());
     }
 
@@ -561,6 +572,7 @@ private Q_SLOTS:
         QVERIFY(QFileInfo::exists(saved));
         browser().setScope({QStringLiteral("presets")});
         QTRY_VERIFY_WITH_TIMEOUT(results().total() == 1 && !browser().searching(), 5000);
+        QVERIFY(settle());  // (a change to the index after this would search again, and take the rename's row)
         QCOMPARE(names(), QStringList{QStringLiteral("Wide Utility")});
         QCOMPARE(browser().resultActions(0).size(), 4);
 
