@@ -286,10 +286,17 @@ uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format,
     return insertProcessorLocked(chainId, std::move(plugin), index);
 }
 
+void Engine::resetChainLocked(uint32_t chainId) {
+    // (A rack reset passes it on to everything in it: Renderer::resetInsert.)
+    for (const auto& insert : chainLocked(chainId).inserts) insert->requestReset();
+}
+
 void Engine::removeProcessor(uint32_t processorId) {
     std::lock_guard lock(mutex_);
     auto processor = processorLocked(processorId);
     std::erase(chainLocked(processors_[processorId].chainId).inserts, processor);
+    // A MIDI effect's notes would go on for ever in the devices it played: they stop.
+    if (processor->isMidiEffect()) resetChainLocked(processors_[processorId].chainId);
     if (processors_[processorId].rack) {  // its chains go, with everything in them
         for (const uint32_t chain : std::vector<uint32_t>(processors_[processorId].chains)) {
             removeChainContentsLocked(chain);
@@ -352,6 +359,7 @@ void Engine::moveProcessor(uint32_t processorId, uint32_t toChainId, int index) 
         }
     }
     std::erase(from.inserts, processor);
+    if (processor->isMidiEffect() && entry.chainId != toChainId) resetChainLocked(entry.chainId);  // (as removed)
     to.inserts.insert(to.inserts.begin() + insertPosition(index, to.inserts.size()), processor);
     if (from.stripId != to.stripId) {
         // Another strip's signal: what it holds of the old one (a reverb's tail,

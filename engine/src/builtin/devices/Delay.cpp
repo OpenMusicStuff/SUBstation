@@ -3,14 +3,21 @@
 // in ms; the right side can follow the left), feedback (or freezing what is in
 // the delay), a band-pass filter on the echoes, ping pong, and three ways of
 // changing the time: Repitch glides to it (pitching what is in the delay, as a tape
-// delay does), Fade crossfades to it, Jump switches at once.
+// delay does), Fade crossfades to it, Jump switches at once. In place of
+// Ableton's modulation: Swing (every other echo late), Drive (a tape-like
+// saturation in the feedback loop, each echo dirtier than the last) and Duck
+// (the echoes dip while the input plays).
 //
-// Signal flow per side: what the delay line holds is read (`echo`), filtered
-// (`wet`: the output, and what feeds back), and the line is written with the
-// input plus feedback times wet. Frozen, the line is written with its own
-// echo instead (unfiltered, so the loop doesn't fade) and the input is ignored.
-// Ping pong: the input, summed to mono, goes into the left line only, and each
-// side feeds the other.
+// Signal flow per side: two delay lines in a loop, A then B, each an echo.
+// What a line holds is read (`echo`), filtered and driven (`wet`: the output,
+// and what goes on round the loop); A is written with the input plus feedback
+// times B's wet, B with feedback times A's wet. A is read at the time
+// lengthened by the swing, B at it shortened as much, so the echoes come at
+// T + swing, 2T, 3T + swing, 4T...: without swing, one line of time T. Frozen,
+// each line is written with the other's echo instead (unfiltered, so the loop
+// doesn't fade) and the input is ignored. Ping pong: the input, summed to
+// mono, goes into the left's A, which feeds the right's B, which feeds the
+// left's A.
 //
 // Its editor draws a spectrum of the input behind the filter's curve: the
 // display "input" is the input summed to mono, one value per sample.
@@ -24,6 +31,7 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/Dsp.h"
+#include "builtin/DspBlocks.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -41,6 +49,7 @@ public:
         Link, Feedback, Freeze,
         FilterOn, FilterFreq, FilterWidth,
         Mode, PingPong, Mix,
+        Swing, Drive, Duck,
         NumParams
     };
     enum TimeMode { Repitch = 0, Fade, Jump };
@@ -69,14 +78,16 @@ public:
         feedback_.reset(sampleRate, 0.02);
         glide_ = static_cast<float>(onePoleCoefficient(0.12, sampleRate));
         fadeLength_ = std::max(1, static_cast<int>(0.06 * sampleRate));
+        ducker_.setTimes(2.f, 250.f, sampleRate);
         reset();
     }
 
     void reset() override {
         for (auto& line : lines_) std::fill(line.begin(), line.end(), 0.f);
         writePos_ = 0;
-        for (auto& side : sides_) side = Side{};
+        for (auto& stage : stages_) stage = Stage{};
         for (auto& f : filters_) f.reset();
+        ducker_.reset();
         mix_.snapTo(param(Mix) / 100.f);  // (silent now: no need to ramp)
         feedback_.snapTo(param(Feedback) / 100.f);
     }
@@ -100,56 +111,78 @@ protected:
         }
         mix_.setTarget(param(Mix) / 100.f);
         feedback_.setTarget(param(Feedback) / 100.f);
+        // Drive: into a tanh this much louder, and down as much after (so quiet echoes pass as they are).
+        const float drive = param(Drive) / 100.f;
+        const float driveGain = 1.f + 7.f * drive;
+        const float duck = param(Duck) / 100.f;
 
-        float target[2];
+        // Each stage's time: A's lengthened by the swing, B's shortened as much.
+        const double swing = kMaxSwing * param(Swing) / 100.0;
+        float target[kStages];
         for (int s = 0; s < 2; ++s) {
-            target[s] = static_cast<float>(std::clamp(timeSeconds(s, ctx.tempo), 0.001, kMaxDelaySeconds) *
-                                           sampleRate_);
+            const double time = std::clamp(timeSeconds(s, ctx.tempo), 0.001, kMaxDelaySeconds) * sampleRate_;
+            target[stageOf(s, 0)] = static_cast<float>(time * (1.0 + swing));
+            target[stageOf(s, 1)] = static_cast<float>(time * (1.0 - swing));
         }
+        // Ping pong goes round the left's A and the right's B; otherwise each side round its own.
+        const auto used = [pingPong](int stage) {
+            return !pingPong || stage == stageOf(0, 0) || stage == stageOf(1, 1);
+        };
 
         for (int i = 0; i < numFrames; ++i) {
             const float feedback = freeze ? 1.f : feedback_.next();
             const float mix = mix_.next();
             float in[2] = {ch[0][i], n > 1 ? ch[1][i] : ch[0][i]};
             publish(Input, 0.5f * (in[0] + in[1]));
-            float wet[2], echo[2];
-            for (int s = 0; s < 2; ++s) {
-                echo[s] = readSide(s, target[s], mode);
-                float y = echo[s];
+            const float level = ducker_.peak(std::max(std::abs(in[0]), std::abs(in[1])));
+            const float ducked = 1.f / (1.f + kDuckDepth * duck * level);
+            float wet[kStages] = {}, echo[kStages] = {};
+            for (int stage = 0; stage < kStages; ++stage) {
+                if (!used(stage)) continue;
+                echo[stage] = readStage(stage, target[stage], mode);
+                float y = echo[stage];
                 if (filterOn) {
-                    const dsp::Svf::Outputs high = filters_[2 * s].tick(highPass_, y);
+                    const dsp::Svf::Outputs high = filters_[2 * stage].tick(highPass_, y);
                     y = y - kButterworthK * high.band - high.low;
-                    y = filters_[2 * s + 1].tick(lowPass_, y).low;
+                    y = filters_[2 * stage + 1].tick(lowPass_, y).low;
                 }
-                wet[s] = y;
+                if (drive > 0.f) y = dsp::fastTanh(driveGain * y) / driveGain;
+                wet[stage] = y;
             }
 
-            float write[2];
-            if (freeze) {
-                write[0] = echo[0];
-                write[1] = echo[1];
-            } else if (pingPong) {
-                write[0] = 0.5f * (in[0] + in[1]) + feedback * wet[1];
-                write[1] = feedback * wet[0];
-            } else {
-                write[0] = in[0] + feedback * wet[0];
-                write[1] = in[1] + feedback * wet[1];
+            float write[kStages] = {};
+            const float mono = 0.5f * (in[0] + in[1]);
+            for (int s = 0; s < 2; ++s) {
+                const int a = stageOf(s, 0), b = stageOf(s, 1);
+                // What comes round to this side's A, and where its A's echo goes on to.
+                const int into = pingPong ? stageOf(1 - s, 1) : b;
+                if (!used(a)) continue;
+                const float input = pingPong ? (s == 0 ? mono : 0.f) : in[s];
+                write[a] = freeze ? echo[into] : input + feedback * wet[into];
+                write[into] = freeze ? echo[a] : feedback * wet[a];
             }
-            for (int s = 0; s < 2; ++s) lines_[s][writePos_] = write[s];
+            for (int stage = 0; stage < kStages; ++stage) lines_[stage][writePos_] = write[stage];
             writePos_ = (writePos_ + 1) & mask_;
 
+            const float out[2] = {ducked * (wet[stageOf(0, 0)] + wet[stageOf(0, 1)]),
+                                  ducked * (wet[stageOf(1, 0)] + wet[stageOf(1, 1)])};
             if (n == 1) {
-                ch[0][i] = in[0] + mix * (0.5f * (wet[0] + wet[1]) - in[0]);
+                ch[0][i] = in[0] + mix * (0.5f * (out[0] + out[1]) - in[0]);
             } else {
-                for (int c = 0; c < 2; ++c) ch[c][i] = in[c] + mix * (wet[c] - in[c]);
+                for (int c = 0; c < 2; ++c) ch[c][i] = in[c] + mix * (out[c] - in[c]);
             }
         }
     }
 
 private:
     static constexpr float kButterworthK = 1.41421356f;  // 1/Q, Q = 1/sqrt(2)
+    static constexpr int kStages = 4;          // per side, the loop's two lines (A, B)
+    static constexpr double kMaxSwing = 0.5;   // full swing: every other echo half the time late
+    static constexpr float kDuckDepth = 16.f;  // full duck: the echoes 1 / (1 + this × the input's peak)
 
-    struct Side {
+    static constexpr int stageOf(int side, int part) noexcept { return 2 * side + part; }
+
+    struct Stage {
         float current = -1.f;  // the delay in samples (gliding to the target in Repitch); < 0: not yet set
         float fadeFrom = 0.f;  // Fade: the time faded away from
         int fadeLeft = 0;      // Fade: samples of the crossfade still to go
@@ -165,8 +198,8 @@ private:
         return kDivisions[index] * sixteenth * (1.0 + param(base + 3) / 100.0);
     }
 
-    float readSide(int s, float target, TimeMode mode) noexcept {
-        Side& side = sides_[s];
+    float readStage(int s, float target, TimeMode mode) noexcept {
+        Stage& side = stages_[s];
         if (side.current < 0.f) side.current = target;
         switch (mode) {
             case Repitch:
@@ -193,7 +226,7 @@ private:
         }
     }
 
-    // Line s, `delay` samples ago (fractional: 4-point, 3rd-order Hermite).
+    // Line s (a stage), `delay` samples ago (fractional: 4-point, 3rd-order Hermite).
     float read(int s, float delay) const noexcept {
         delay = std::clamp(delay, 1.f, static_cast<float>(mask_ - 4));
         const double position = static_cast<double>(writePos_) - delay;
@@ -225,16 +258,20 @@ private:
             {"mode", "Mode", "", 0.f, 2.f, 0.f, false, {"Repitch", "Fade", "Jump"}},
             {"ping_pong", "Ping Pong", "", 0.f, 1.f, 0.f, false, kOnOff},
             {"mix", "Dry/Wet", "%", 0.f, 100.f, 50.f},
+            {"swing", "Swing", "%", 0.f, 100.f, 0.f},
+            {"drive", "Drive", "%", 0.f, 100.f, 0.f},
+            {"duck", "Duck", "%", 0.f, 100.f, 0.f},
         };
         return kInfos;
     }
 
     double sampleRate_ = 48000.0;
-    std::vector<float> lines_[2];
+    std::vector<float> lines_[kStages];
     size_t mask_ = 0;
     size_t writePos_ = 0;
-    Side sides_[2];
-    dsp::Svf filters_[4];  // per side: high-pass, low-pass
+    Stage stages_[kStages];
+    dsp::Svf filters_[2 * kStages];  // per stage: high-pass, low-pass
+    dsp::EnvelopeFollower ducker_;   // the input's peak, for Duck
     dsp::SvfCoefficients highPass_, lowPass_;
     float glide_ = 0.f;
     int fadeLength_ = 1;

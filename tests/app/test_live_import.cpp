@@ -951,7 +951,7 @@ private Q_SLOTS:
         auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
         const Track& bass = imported->project.tracks()[1];
         QCOMPARE(bass.devices.size(), size_t{6});
-        QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (SUBstation has no MIDI effects): Arpeggiator.")));
+        QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (MIDI effects aren't imported): Arpeggiator.")));
         QVERIFY(noteSays(imported->notes, QStringLiteral("Saturator (2)")));
 
         const Device& sampler = bass.devices[0];

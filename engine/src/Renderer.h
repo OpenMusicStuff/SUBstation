@@ -214,6 +214,9 @@ private:
         std::array<std::vector<float>, kMaxModulators> modulation;
         std::array<bool, kMaxModulators> modulationRun{};
         std::vector<float> modulationSpare;  // a modulator's second channel
+        // A chain's notes as its MIDI effects play them (processMidiEffects), by
+        // depth: two buffers, so each effect reads what the one before it wrote.
+        std::array<std::array<std::vector<ProcessEvent>, 2>, kMaxRackDepth + 1> midiNotes;
     };
 
     // The stretches of a chunk a strip's devices process: one per continuous
@@ -348,10 +351,19 @@ private:
                       const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                       bool monitored, int depth, WorkerScratch& scratch) noexcept;
     // One device (not a rack) of a chain over the slices, with its automation,
-    // what modulators do to it, and its sidechain.
+    // what modulators do to it, and its sidechain. A MIDI effect's notes go to
+    // `out`, and `outSlices` (a copy of `slices`) says which are each slice's.
     void processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
                        const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
-                       WorkerScratch& scratch) noexcept;
+                       WorkerScratch& scratch, EventOutput* out = nullptr, Slices* outSlices = nullptr) noexcept;
+    // Before a chain's devices: its MIDI effects (Processor::isMidiEffect()), in
+    // their order, each playing the notes the last one played; `slices` and
+    // `events` become the notes the chain's devices hear (in scratch.midiNotes).
+    // One switched off (or bypassed by its automation) passes the notes on, after
+    // ending the notes it was playing.
+    void processMidiEffects(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
+                            Slices& slices, ProcessEvent*& events, float* left, float* right, int frames, int depth,
+                            WorkerScratch& scratch) noexcept;
     // A strip's sidechained device: the strip's signal waits for the sidechain
     // that comes later than it (but not while monitored).
     void waitForSidechain(const RenderSnapshot& snap, const StripRender& chain, size_t i, float* left, float* right,

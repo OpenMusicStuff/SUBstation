@@ -703,6 +703,8 @@ private:
     uint32_t insertProcessorLocked(uint32_t chainId, std::shared_ptr<Processor> processor, int index,
                                    bool rack = false);
     void retireProcessorLocked(std::shared_ptr<Processor> processor);
+    // Asks every device of a chain (and in its racks) to reset: a MIDI effect left it.
+    void resetChainLocked(uint32_t chainId);
     // Removes a rack chain and everything in it (not from its rack's list).
     void removeChainContentsLocked(uint32_t chainId);
     ProcessorEntry& rackLocked(uint32_t rackId);

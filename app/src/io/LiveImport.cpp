@@ -313,7 +313,7 @@ private:
 };
 
 const QString kNoDevice = QStringLiteral("Left out (SUBstation has no device like them)");
-const QString kMidiEffects = QStringLiteral("Left out (SUBstation has no MIDI effects)");
+const QString kMidiEffects = QStringLiteral("Left out (MIDI effects aren't imported)");
 const QString kVst2Defaults =
     QStringLiteral("VST2 plug-ins became their installed VST3, at its default settings (set them up again)");
 const QString kVst2Missing = QStringLiteral("Left out (VST2 plug-ins, and no VST3 of them is installed)");

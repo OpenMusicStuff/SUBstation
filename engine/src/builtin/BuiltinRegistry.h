@@ -2,7 +2,7 @@
 // The list of built-in devices. A device registers itself where it is defined:
 // each .cpp in builtin/devices/ ends with
 //
-//     SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument, or Modulator
+//     SUB_REGISTER_BUILTIN(MyProcessor, AudioEffect);   // or Instrument, MidiEffect, or Modulator
 //
 // and that's all: the engine creates it by id, and the UI's device list, names,
 // categories and parameter defaults all come from here (see builtin_devices() in
@@ -26,8 +26,9 @@
 
 namespace sub {
 
-// Modulators (Modulation.h) process no audio: they move other devices' parameters.
-enum class BuiltinCategory { Instrument, AudioEffect, Modulator };
+// MIDI effects play their chain's notes (Processor::isMidiEffect()); modulators
+// (Modulation.h) process no audio: they move other devices' parameters.
+enum class BuiltinCategory { Instrument, MidiEffect, AudioEffect, Modulator };
 
 // What the UI needs to know about a device without instantiating one per use.
 struct BuiltinInfo {
@@ -37,6 +38,7 @@ struct BuiltinInfo {
     std::vector<ParamInfo> params;
 
     bool isInstrument() const noexcept { return category == BuiltinCategory::Instrument; }
+    bool isMidiEffect() const noexcept { return category == BuiltinCategory::MidiEffect; }
     bool isModulator() const noexcept { return category == BuiltinCategory::Modulator; }
 };
 
@@ -51,7 +53,7 @@ public:
     // A new device of this id. Throws std::invalid_argument for an unknown one.
     std::shared_ptr<Processor> create(const std::string& id) const;
 
-    // Every device, instruments first, then audio effects, then modulators, each by name.
+    // Every device, instruments first, then MIDI effects, audio effects and modulators, each by name.
     const std::vector<BuiltinInfo>& devices() const;
 
 private:
