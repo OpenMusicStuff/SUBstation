@@ -8,6 +8,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [parallel_render_bench.cpp](parallel_render_bench.cpp) | Tracks rendered on one thread and on several: offline (best of three, checked bit-identical on any number of threads) and live through the fake ASIO driver. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
+| [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints (Essentia's descriptors) on a real sample library: how fast they are made and searched, how fast the index analyses a library, and how often a sound's nearest sounds are of its kind; `--split` holds half the queries out, `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
 | [LibraryGen.h](LibraryGen.h) | Makes the synthetic sample libraries. |
@@ -26,16 +27,17 @@ thousands of shapes).
 The benchmarks are built with `-DSUBSTATION_BUILD_BENCHMARKS=ON` (off by
 default), into the build's `bin` folder with everything else. Always in Release.
 `browser_backend_bench` needs the application layer (Qt Core, as the tests do);
-`parallel_render_bench` and `builtin_devices_bench` need only the engine, and `sound_similarity_bench` only the
+`parallel_render_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
 intelligence module (no Qt either; it wants a sample library of your own).
 
 Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench sound_similarity_bench
+ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
+build/bin/warp_bench --json warp.json
 build/bin/browser_backend_bench --size 200000 --json backend.json
 build/bin/sound_similarity_bench --folder ~/Samples --cache /tmp/fingerprints.bin --json similarity.json
 ```
@@ -436,6 +438,94 @@ own, clamped alike: its library is as fast, and MSVC vectorises loops calling
 it (it doesn't those calling FastMath.h's: 2 times as slow there), so MSVC is
 unchanged. Elsewhere GCC's code is the faster: the built-in Vital, 8 notes, 1.27 %
 (MinGW) against 1.56 % (MSVC); Disperser 0.12 % against 0.25 %.
+
+# Warping
+
+```
+warp_bench [--case NAME[,NAME...]] [--seconds 30] [--block 256] [--rate 48000]
+    [--repeat 3] [--input sound|silence] [--json out.json]
+```
+
+An audio clip's own rendering, as `Renderer::renderClips()` asks for it
+(`renderResampled()`, `WarpVoice::render()`), in blocks of `--block` frames: no
+engine, no graph, no gain or pan. The clip is `--seconds` of stereo noise and
+tones at about -12 dBFS (`--input silence`: zeros), written to a float WAV and
+decoded as the engine does. Each case plays it from the start, at most
+`--seconds` of output; the cost is in nanoseconds per output frame and as the
+load on one core (best of `--repeat`). The cases: `direct` (the source read in
+place), `repitch-R` (Re-Pitch at rate R), `transients-`, `standard-` and
+`smooth-R` (each stretch configuration at rate R), `transpose+7` and `formants+7`
+(seven semitones up at the clip's own tempo, Standard, without and with
+Formants), and `standard-0.9-cached` and `formants+7-cached` (the same played
+from their [warp cache](../docs/engine/warp.md#the-warp-cache) render, as live
+playback does once it is ready; the time the render took on the cache's thread
+is printed beside them).
+
+## Results
+
+Intel Xeon at 2.1 GHz (a cloud VM, AVX2), 30 s, 48 kHz, blocks of 256, best of
+three (and of two such runs). Linux: GCC 13, Release. MinGW: MinGW-w64 GCC 13
+(msvcrt) with the engine's flags, run under Wine. Before and after Re-Pitch's
+kernel was vectorised (see [docs/engine/warp.md](../docs/engine/warp.md#re-pitch-resampling));
+the stretcher is unchanged, and differs only by noise. The raw numbers are in
+`results/warp.json`.
+
+| case | Linux before (ns/frame) | Linux after | MinGW before | MinGW after | MinGW after, load |
+|---|---|---|---|---|---|
+| direct | 0.4 | **0.4** | 0.8 | **0.7** | 0.003 % |
+| repitch-0.5 | 51.9 | **8.4** | 52.8 | **8.7** | 0.042 % |
+| repitch-0.9 | 53.7 | **8.5** | 54.1 | **8.8** | 0.042 % |
+| repitch-1.05 | 54.8 | **35.5** | 55.8 | **36.0** | 0.173 % |
+| repitch-1.5 | 74.7 | **37.3** | 77.4 | **39.3** | 0.189 % |
+| repitch-2 | 95.3 | **42.3** | 99.9 | **43.3** | 0.208 % |
+| transients-0.9 | 257.2 | **263.8** | 258.9 | **258.2** | 1.239 % |
+| standard-0.9 | 261.1 | **263.9** | 262.9 | **268.0** | 1.286 % |
+| smooth-0.9 | 298.9 | **304.7** | 272.4 | **276.6** | 1.327 % |
+| standard-1.25 | 265.7 | **264.1** | 270.6 | **266.8** | 1.281 % |
+| transpose+7 | 265.0 | **263.4** | 258.6 | **265.6** | 1.275 % |
+| formants+7 | 339.5 | **346.5** | 337.8 | **349.6** | 1.678 % |
+
+With silent input (`--input silence`, Linux), a stretched clip costs about 8 ns a
+frame (`standard-0.9` 8.2, `formants+7` 8.8): the stretcher passes silence through
+once it has lasted two analysis blocks. Re-Pitch costs the same either way.
+
+With the warp cache (Linux, the same machine; `warp_cache_linux` in
+`results/warp.json`), live playback reads a stretched clip's render once it is
+ready:
+
+| case | ns/frame | load | its render (once, in the background) |
+|---|---|---|---|
+| standard-0.9 (stretched live) | 254.6 | 1.222 % | |
+| standard-0.9-cached | **0.48** | 0.002 % | 386 ms for 30 s (268 ns/frame) |
+| formants+7 (stretched live) | 341.1 | 1.637 % | |
+| formants+7-cached | **0.49** | 0.002 % | 508 ms for 30 s (353 ns/frame) |
+
+## Where the time goes
+
+Profiled with `perf` (Linux; the MinGW build under Wine too, its samples matched
+to the executable's symbols with `nm`, not `addr2line`):
+
+- **Stretching**: Signalsmith Stretch's `processSpectrum` about 48 % (the
+  phase-vocoder prediction per bin: complex products, a division and a square
+  root per bin, bounds-checked band lookups; with Formants, `updateFormants`
+  another 20 %), its STFT and FFTs about 35 %, feeding it and reading its output
+  sample by sample about 8 %. MinGW's x87 maths isn't in it: the only `sin` in
+  the MinGW profile was the benchmark's own test signal, and `exp` 0.2 %
+  (Signalsmith calls them when configuring and twice per channel per block). MinGW
+  and Linux cost the same, and compiler flags on the stretcher alone
+  (`-fno-trapping-math`, `-freciprocal-math`, `-O2`) changed nothing beyond the
+  noise. So the stretcher itself is unchanged (making it cheaper would mean
+  changing Signalsmith's algorithm or its FFT); instead live playback reads each
+  stretched clip's render from the warp cache, made once in the background.
+- **Re-Pitch**: its own loop, three quarters of the time (the rest was the
+  benchmark's setup): per tap a double-precision table lookup, then one serial sum
+  per channel. GCC doesn't vectorise it (the tap's table position differs per tap,
+  and GCC 13 no longer emits AVX2 gathers by default). Now: up to rate 1 a phase
+  table (a frame's taps share one fraction, so its weights are two table rows
+  mixed), and above it eight taps at a time with each tap's two table values
+  loaded as one pair (6.2 times and 1.5 to 2.3 times less). Hardware gathers
+  measured about 1.5 times faster again on this CPU, but CPUs running Intel's
+  Downfall (GDS) mitigation run them very slowly, so they aren't used.
 
 # Vital: built-in against the plug-in
 

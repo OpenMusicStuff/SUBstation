@@ -184,6 +184,8 @@ void Engine::setClipFadeMs(double ms) {
     rebuildSnapshotLocked();
 }
 
+void Engine::waitForWarpRenders() { warpCache_.waitIdle(); }
+
 // ---------------------------------------------------------------------------
 // Preview
 
