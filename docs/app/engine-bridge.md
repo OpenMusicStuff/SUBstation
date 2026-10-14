@@ -467,7 +467,11 @@ two spellings of one file share one source), queues
 line, but one that isn't there at all: the File Manager lists missing files ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)),
 and a project opening with some says how many once. After a sample-rate change every source is decoded
 again (`refreshSources`). On `reset` the bridge forgets sources the new project doesn't use and calls
-`Engine::releaseUnusedSources()`. See [engine/warp.md](../engine/warp.md).
+`Engine::releaseUnusedSources()`. That lets go of more than the bridge does: a file still decoding (in the engine's
+cache, but the bridge hasn't heard yet), a deactivated clip's, a frozen track's clips' (no clip of the engine's plays
+them). So the bridge hands the engine its source again (`Engine::cacheSource`) when it hears a file is decoded and
+when a file it has is asked for: their clips play once they do, in whichever project is open by then. See
+[engine/warp.md](../engine/warp.md).
 
 ## Polling
 
@@ -615,7 +619,8 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
 ## Tests
 
 - [test_bridge_tracks.cpp](../../tests/app/test_bridge_tracks.cpp): clips and notes as the engine has them, groups as
-  buses, returns and sends, inputs from tracks, the master's mixer, the settings, a drag's preview, overrides.
+  buses, returns and sends, inputs from tracks, the master's mixer, the settings, a drag's preview, overrides, clips'
+  files decoded (playing in a project opened while they were, or after the engine let go of them).
 - [test_bridge_devices.cpp](../../tests/app/test_bridge_devices.cpp): racks keeping each device's processor as they
   are made, undone, moved and deleted; chain automation and overrides; macros moving plug-in parameters, and their
   automation moving what is mapped to them (over its range, overridden, re-enabled); sidechains;
