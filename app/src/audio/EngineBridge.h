@@ -267,6 +267,13 @@ public:
     const QMap<QString, MeterLevel>& chainMeters() const;
     Q_INVOKABLE sub::app::MeterLevel trackMeter(const QString& trackId) const;
     Q_INVOKABLE sub::app::MeterLevel chainMeter(const QString& chainId) const;
+    // What a device puts out (after it: a rack, its chains summed), as of the last metersUpdated.
+    Q_INVOKABLE sub::app::MeterLevel deviceMeter(const QString& deviceId) const;
+    // The latency (samples, compensated) a track's devices add (kMaster: the
+    // master's), and the whole output's: the latest track, its returns, the
+    // master's devices. latenciesChanged() when they change.
+    Q_INVOKABLE int trackLatency(const QString& trackId) const;
+    Q_INVOKABLE int outputLatency() const;
     // The peak of each open input channel (as deviceStatus().inputChannels lists them) since the last call.
     Q_INVOKABLE QList<float> takeInputMeters();
     quint64 scopeWritten() const;
@@ -518,6 +525,7 @@ Q_SIGNALS:
     void countingInChanged(bool countingIn);
     void metronomeChanged(bool enabled);
     void metersUpdated();  // meters() and chainMeters() were refreshed
+    void latenciesChanged();  // a track's latency or the output's changed (a device's, then, too)
     void deviceChanged();  // the audio device opened, closed, changed or reported new latencies
     void statusMessage(const QString& message);  // for the status line
     // Plug-ins (track id, device id first).
@@ -641,6 +649,7 @@ private:
     // Transport (BridgeTransport.cpp).
     void pollPosition();
     void pollMeters();
+    void pollLatencies();  // latenciesChanged() if a track's or the output's changed
     // Recording (BridgeRecording.cpp).
     void pollRecording();
     // Freezing (BridgeFreezing.cpp).

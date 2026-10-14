@@ -166,6 +166,12 @@ struct MeterReading {
     uint32_t chainId = 0;  // a rack chain's fader (on track trackId); 0: the track's own
 };
 
+struct DeviceMeterReading {
+    uint32_t processorId = 0;
+    float left = 0.f;
+    float right = 0.f;
+};
+
 // A processor's description for the UI.
 struct ProcessorInfo {
     std::string typeId;
@@ -315,6 +321,12 @@ public:
     void setMasterPan(float pan) { setTrackPan(kMaster, pan); }
     // Peak levels since the last call: the master, each track, then each rack chain (chainId set).
     std::vector<MeterReading> takeMeters();
+    // Each device's loudest output (left, right) since the last call: its meter.
+    std::vector<DeviceMeterReading> takeDeviceMeters();
+    // The latency a track's devices add (samples, compensated; kMaster: the master's), and the whole
+    // output's: the latest a track is aligned to plus the master's devices.
+    int trackLatency(uint32_t trackId);
+    int outputLatency();
 
     // --- Input and recording ------------------------------------------------------
     // A track's input: device channels (0-based, as DeviceStatus lists them): none,

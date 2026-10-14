@@ -246,26 +246,51 @@ void CurveGraph::applyAuto() {
 
 void CurveGraph::setCharacter(int index) {
     set({{QStringLiteral("character"), double(index)}}, QString(), QStringLiteral("Change Fit Character"));
-    analyze();
-    if (value(QStringLiteral("autofit")) >= 0.5)
-        applyAuto();
+    analyze();  // (with Auto on, the curve follows once it is done)
 }
 
 void CurveGraph::analyze() {
     if (kicks_.empty())
         return;
-    const int pre = int(sf::kPreSeconds * capture_.sampleRate());
-    const auto fit = sf::analyze(kicks_, bass_, capture_.sampleRate(),
-                                 int(std::nearbyint(value(QStringLiteral("character")))), pre);
+    if (fitJob_.valid()) {
+        analyzeAgain_ = true;
+        return;
+    }
+    const double rate = capture_.sampleRate();
+    const int pre = int(sf::kPreSeconds * rate);
+    const int character = int(std::nearbyint(value(QStringLiteral("character"))));
+    fitJob_ = std::async(std::launch::async, [kicks = kicks_, bass = bass_, rate, character, pre] {
+        return sf::analyze(kicks, bass, rate, character, pre);
+    });
+}
+
+void CurveGraph::collectFit(bool wait) {
+    if (!fitJob_.valid())
+        return;
+    if (!wait && fitJob_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return;
+    const std::optional<sf::Fit> fit = fitJob_.get();
     if (fit)
         fit_ = fit;
     update();
     Q_EMIT fitChanged();
+    if (value(QStringLiteral("autofit")) >= 0.5)
+        applyAuto();
+    if (analyzeAgain_) {
+        analyzeAgain_ = false;
+        analyze();
+    }
+}
+
+void CurveGraph::waitForFit() {
+    while (fitJob_.valid())
+        collectFit(true);
 }
 
 // --- Displays ----------------------------------------------------------------------------------
 
 void CurveGraph::refreshDisplays() {
+    collectFit(false);
     const double rate = sampleRate();
     if (capture_.sampleRate() != rate)
         capture_ = sf::Capture(rate);
@@ -287,9 +312,7 @@ void CurveGraph::refreshDisplays() {
         if (kicks_.size() > std::size_t(kKeepKicks))
             kicks_.erase(kicks_.begin(), kicks_.end() - kKeepKicks);
         bass_.assign(done.back().second.begin(), done.back().second.end());
-        analyze();
-        if (value(QStringLiteral("autofit")) >= 0.5)
-            applyAuto();
+        analyze();  // (with Auto on, the curve follows once it is done)
     }
 }
 

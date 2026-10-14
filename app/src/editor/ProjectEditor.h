@@ -659,8 +659,10 @@ public:
     void deleteAutomationRange(double start, double end, const QList<LaneRef>& lanes);
     // Move the automation between two beats on these lanes (`originals`: their
     // envelopes when the drag began) in time and value, as one undo step.
+    // `unautomated`: lanes that had no envelope (their original is one point at
+    // the target's own value); moved back to flat, they have none again.
     void moveAutomationRange(double start, double end, const QMap<LaneRef, Envelope>& originals, double deltaBeats,
-                             double deltaValue, const QString& mergeKey = {});
+                             double deltaValue, const QString& mergeKey = {}, const QSet<LaneRef>& unautomated = {});
     // Copy the automation between two beats to right after `end`, over what was there.
     void duplicateAutomationRange(double start, double end, const QList<LaneRef>& lanes);
     // Ctrl+C on a lane range: the automation between two beats on these lanes

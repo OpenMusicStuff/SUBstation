@@ -45,6 +45,18 @@ std::vector<double> spectrumDb(const std::vector<float>& samples, const std::vec
     return db;
 }
 
+// Each bin's power (amplitude squared, scaled as spectrumDb's amplitudes).
+std::vector<double> spectrumPower(const std::vector<float>& samples, const std::vector<double>& window, double scale) {
+    std::vector<double> windowed(samples.size());
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        windowed[i] = double(samples[i]) * window[i];
+    const std::vector<Complex> bins = rfft(windowed.data(), windowed.size(), windowed.size());
+    std::vector<double> power(bins.size());
+    for (std::size_t k = 0; k < bins.size(); ++k)
+        power[k] = std::norm(bins[k]) * scale * scale;
+    return power;
+}
+
 // numpy.interp(x, arange(n), values): between bins, held at the ends.
 double atBin(const std::vector<float>& values, double x) {
     if (values.empty())
@@ -72,6 +84,8 @@ FallingSpectrum::FallingSpectrum()
 
 bool FallingSpectrum::add(const float* samples, std::size_t count, double sampleRate) {
     sampleRate_ = sampleRate;
+    quiet_ = count > 0 ? 0 : quiet_ + 1;
+    if (count == 0 && quiet_ <= kHoldRefreshes) return false;  // (between two blocks of audio: still)
     std::vector<float> latest(spectrum_.size(), float(kFloorDb));
     if (count > 0) {
         append(samples_, samples, count);
@@ -118,22 +132,37 @@ EqAnalyzer::EqAnalyzer() : window_(hann(kFftSize)) {
     scale_ = 2.0 / std::accumulate(window_.begin(), window_.end(), 0.0);
     for (int c = 0; c < 2; ++c) {
         samples_[c].assign(kFftSize, 0.0f);
+        power_[c].assign(kFftSize / 2 + 1, 0.0);
         levels_[c].assign(kFftSize / 2 + 1, float(kFloorDb));
     }
 }
 
 void EqAnalyzer::feed(Channel channel, const float* samples, std::size_t count, double sampleRate) {
     sampleRate_ = sampleRate;
+    bool heard = false;
+    for (std::size_t i = 0; i < count && !heard; ++i)
+        heard = std::abs(samples[i]) > kSilentLevel;
+    silentSeconds_[channel] =
+        heard ? 0.0 : silentSeconds_[channel] + (count > 0 ? double(count) / std::max(1.0, sampleRate) : kRefreshSeconds);
+    quiet_[channel] = count > 0 ? 0 : quiet_[channel] + 1;
+    if (count == 0 && quiet_[channel] <= kHoldRefreshes) return;  // (between two blocks of audio: still)
     std::vector<float>& levels = levels_[channel];
-    std::vector<double> latest(levels.size(), kFloorDb);
+    std::vector<double>& power = power_[channel];
+    std::vector<double> latest(levels.size(), 0.0);  // power (silence: none)
+    double seconds = kRefreshSeconds;
     if (count > 0) {
         append(samples_[channel], samples, count);
-        latest = spectrumDb(samples_[channel], window_, scale_, 1e-7);
+        latest = spectrumPower(samples_[channel], window_, scale_);
+        seconds = double(count) / std::max(1.0, sampleRate);
     }
+    const double average = 1.0 - std::exp(-seconds / kAverageSeconds);
+    const double rise = 1.0 - std::exp(-seconds / kRiseSeconds);
+    const double fall = 1.0 - std::exp(-seconds / kFallSeconds);
     for (std::size_t k = 0; k < levels.size(); ++k) {
+        power[k] += (latest[k] - power[k]) * average;
+        const double target = std::max(10.0 * std::log10(std::max(power[k], 1e-20)), kFloorDb);
         const double level = levels[k];
-        const double rate = latest[k] > level ? kRise : kFall;
-        levels[k] = float(std::max(level + (latest[k] - level) * rate, kFloorDb));
+        levels[k] = float(std::max(level + (target - level) * (target > level ? rise : fall), kFloorDb));
     }
 }
 

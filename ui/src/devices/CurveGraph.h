@@ -33,6 +33,7 @@
 #include <QStringList>
 #include <QtQml/qqmlregistration.h>
 
+#include <future>
 #include <optional>
 #include <vector>
 
@@ -115,6 +116,9 @@ public:
     void tick(std::optional<double> phase, double keyPeak, bool hit);
     // Reads the displays (as the meters update; the tests call it after rendering).
     Q_INVOKABLE void readDisplays() { refreshDisplays(); }
+    // The fit being worked out (the analysis runs on a worker thread: it takes about 0.1 s, which on the
+    // UI thread would stall every editor's display), waited for and taken now (tests).
+    Q_INVOKABLE void waitForFit();
 
 Q_SIGNALS:
     void fitChanged();
@@ -149,7 +153,10 @@ private:
     };
 
     void set(const sub::app::OrderedMap<QString, double>& values, const QString& mergeKey, const QString& text);
+    // Works the fit out from the kicks kept, on a worker thread (one more after it, if one is running);
+    // collectFit() takes it (and fits the curve to it with Auto on) once it is done (`wait`: now).
     void analyze();
+    void collectFit(bool wait);
     void applyAuto();
     QRectF hintRect() const;
     QString readoutText(const Point& point) const;
@@ -168,6 +175,8 @@ private:
     std::vector<std::vector<double>> kicks_;
     std::vector<double> bass_;
     std::optional<sub::app::sidechainFit::Fit> fit_;
+    std::future<std::optional<sub::app::sidechainFit::Fit>> fitJob_;  // the analysis under way
+    bool analyzeAgain_ = false;  // more kicks came while it ran
     int hitsSeen_ = 0;
     QString autoGesture_;
     // Live.

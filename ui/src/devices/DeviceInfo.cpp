@@ -125,6 +125,7 @@ void DeviceInfo::connectSession() {
     connections_ << connect(bridge, &EngineBridge::pluginEditorChanged, this, ofDevice);
     connections_ << connect(bridge, &EngineBridge::pluginsPendingChanged, this, refreshAll);
     connections_ << connect(bridge, &EngineBridge::deviceChanged, this, refreshAll);  // (new latencies)
+    connections_ << connect(bridge, &EngineBridge::latenciesChanged, this, refreshAll);
     // Its switch's automation: playing, overridden, or gone; and the switch following it.
     connections_ << connect(bridge, &EngineBridge::automationStateChanged, this, [this](const QString& owner) {
         if (owner == trackId_ || owner.isEmpty())
@@ -231,12 +232,12 @@ void DeviceInfo::refresh() {
             }
             s.editorOpen = s.loaded && bridge->isPluginEditorOpen(trackId_, deviceId_);
             QStringList lines{plugin.name, plugin.vendor, bridge->pluginPath(plugin).value_or(plugin.path)};
-            if (latency)
-                lines << latencyLine(latency);
             lines.removeAll(QString());
+            if (s.loaded)
+                lines << latencyLine(latency);
             s.toolTip = lines.join(u'\n');
-        } else if (s.isRack) {
-            s.toolTip = sub::app::deviceName(*device) + (latency ? u'\n' + latencyLine(latency) : QString());
+        } else {  // a built-in device or a rack: its name and latency (a rack's: its slowest chain's)
+            s.toolTip = sub::app::deviceName(*device) + u'\n' + latencyLine(latency);
         }
         s.hasSidechainInput = bridge->hasSidechainInput(trackId_, deviceId_);
         if (const std::optional<Sidechain> sidechain = currentSidechain()) {

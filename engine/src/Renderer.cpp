@@ -1092,6 +1092,16 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
                 }
             }
         }
+        // What it passes on, for its meter (off, what goes past it).
+        if (chunkFlags_.live && !insert.isModulator()) {
+            float peakL = 0.f, peakR = 0.f;
+            for (int s = 0; s < frames; ++s) {
+                peakL = std::max(peakL, std::abs(left[s]));
+                peakR = std::max(peakR, std::abs(right[s]));
+            }
+            atomicStoreMax(insert.outputPeak(0), peakL);
+            atomicStoreMax(insert.outputPeak(1), peakR);
+        }
         for (; tap < chain.deviceTaps.size(); ++tap) {
             const int e = chain.deviceTaps[tap];
             if (snap.edges[static_cast<size_t>(e)].tapDevice > static_cast<int>(i)) break;

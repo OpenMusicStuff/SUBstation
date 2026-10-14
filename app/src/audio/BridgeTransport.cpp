@@ -103,6 +103,20 @@ void EngineBridge::pollMeters() {
         const auto key = byEngineId.constFind(reading.trackId);
         if (key != byEngineId.constEnd()) d.meters.insert(*key, level);
     }
+    QHash<quint32, QString> byProcessor;
+    for (auto it = d.pids.constBegin(); it != d.pids.constEnd(); ++it) {
+        if (it.value()) byProcessor.insert(*it.value(), it.key());
+    }
+    d.deviceMeters.clear();
+    for (const sub::DeviceMeterReading& reading : engine_.takeDeviceMeters()) {
+        const auto device = byProcessor.constFind(reading.processorId);
+        if (device == byProcessor.constEnd()) continue;
+        MeterLevel level;
+        level.left = reading.left;
+        level.right = reading.right;
+        d.deviceMeters.insert(*device, level);
+    }
+    pollLatencies();
     Q_EMIT metersUpdated();
     pollPlugins();
     if (!d.busy) pollDevice();  // not from a message loop inside a plug-in's or driver's call
@@ -113,6 +127,24 @@ const QMap<QString, MeterLevel>& EngineBridge::meters() const { return d_->meter
 const QMap<QString, MeterLevel>& EngineBridge::chainMeters() const { return d_->chainMeters; }
 
 MeterLevel EngineBridge::trackMeter(const QString& trackId) const { return d_->meters.value(trackId); }
+
+MeterLevel EngineBridge::deviceMeter(const QString& deviceId) const { return d_->deviceMeters.value(deviceId); }
+
+int EngineBridge::trackLatency(const QString& trackId) const { return d_->trackLatencies.value(trackId, 0); }
+
+int EngineBridge::outputLatency() const { return d_->outputLatency; }
+
+void EngineBridge::pollLatencies() {
+    Private& d = *d_;
+    QMap<QString, int> latencies;
+    for (auto it = d.trackIds.constBegin(); it != d.trackIds.constEnd(); ++it)
+        latencies.insert(it.key(), engine_.trackLatency(it.value()));
+    const int output = engine_.outputLatency();
+    if (latencies == d.trackLatencies && output == d.outputLatency) return;
+    d.trackLatencies = std::move(latencies);
+    d.outputLatency = output;
+    Q_EMIT latenciesChanged();
+}
 
 MeterLevel EngineBridge::chainMeter(const QString& chainId) const { return d_->chainMeters.value(chainId); }
 

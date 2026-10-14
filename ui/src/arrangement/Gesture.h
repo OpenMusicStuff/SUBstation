@@ -45,6 +45,8 @@ struct GestureClip {
 struct Readout {
     QPointF at;
     QString text;
+
+    friend bool operator==(const Readout&, const Readout&) = default;
 };
 
 class Gesture {

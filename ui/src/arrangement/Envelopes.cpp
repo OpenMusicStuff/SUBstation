@@ -77,12 +77,41 @@ std::optional<app::ParamSpec> specOf(LanesHost& host, const EnvelopeArea& area) 
 }
 
 // Where a target without an envelope draws its line: its own value.
-std::optional<double> unautomatedValue(LanesHost& host, const EnvelopeArea& area) {
+std::optional<double> unautomatedValue(LanesHost& host, const QString& owner, const QString& key) {
     app::EngineBridge& bridge = *host.hostSession()->bridge();
-    const auto value = bridge.ownValue(area.owner, area.key);
-    const auto spec = bridge.paramSpec(area.owner, area.key);
+    const auto value = bridge.ownValue(owner, key);
+    const auto spec = bridge.paramSpec(owner, key);
     if (!value || !spec) return std::nullopt;
     return spec->toNormalized(*value);
+}
+std::optional<double> unautomatedValue(LanesHost& host, const EnvelopeArea& area) {
+    return unautomatedValue(host, area.owner, area.key);
+}
+
+// A breakpoint's value (or where one would go), next to it.
+std::optional<Readout> pointReadout(LanesHost& host, const EnvelopeArea& area, const AutomationPoint& point) {
+    const auto spec = specOf(host, area);
+    if (!spec) return std::nullopt;
+    const double shown = spec->quantize(point.value);
+    return Readout{QPointF(viewOf(host).beatToX(point.beat), area.y(shown)), spec->formatNormalized(shown)};
+}
+
+// Of the segment starting at breakpoint `i`, the breakpoint lower down (the first where they're level).
+int lowerOf(const Envelope& points, int i) {
+    return points[static_cast<size_t>(i) + 1].value < points[static_cast<size_t>(i)].value ? i + 1 : i;
+}
+
+// The lane's value at the end of the selected range (just before it, where it
+// steps there), at the range's right edge.
+std::optional<Readout> rangeReadout(LanesHost& host, const EnvelopeArea& area) {
+    const auto& range = host.hostSession()->selection()->timeRange();
+    const auto spec = specOf(host, area);
+    if (!range || !spec) return std::nullopt;
+    const Envelope points = projectOf(host).envelope(area.owner, area.key);
+    const auto value = points.empty() ? unautomatedValue(host, area) : app::automation::leftValue(points, range->end);
+    if (!value) return std::nullopt;
+    const double shown = spec->quantize(*value);
+    return Readout{QPointF(viewOf(host).beatToX(range->end), area.y(shown)), spec->formatNormalized(shown)};
 }
 
 // Whether `pos` is within `grab` pixels of the envelope's line, as drawn.
@@ -188,7 +217,7 @@ class PointGesture : public Gesture {
 public:
     PointGesture(LanesHost& host, const EnvelopeArea& area, int index, const QPointF& press,
                  Qt::KeyboardModifiers modifiers, bool added = false, bool segment = false, QString mergeKey = {})
-        : host_(host), area_(area), index_(index), press_(press), added_(added || segment),
+        : host_(host), area_(area), index_(index), press_(press), added_(added || segment), segment_(segment),
           mergeKey_(mergeKey.isEmpty() ? newGestureKey() : std::move(mergeKey)) {
         app::Selection& selection = *host.hostSession()->selection();
         original_ = projectOf(host).envelope(area.owner, area.key);
@@ -207,6 +236,7 @@ public:
         selection.selectPoints(area.owner, area.key, selected);
         indices_ = selected.contains(index) ? selected : QSet<int>{index};
         current_ = index;
+        partner_ = index + 1;
     }
 
     void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override {
@@ -230,6 +260,7 @@ public:
                                                                             deltaBeats, deltaValue, mergeKey_);
         // Several points override what they land on, so the points after them move up the list.
         current_ = where.value(index_, current_);
+        partner_ = where.value(index_ + 1, partner_);
         QSet<int> moved;
         for (int i : where) moved.insert(i);
         session.selection()->selectPoints(area_.owner, area_.key, moved);
@@ -251,10 +282,13 @@ private:
         readout_.reset();
         const Envelope points = projectOf(host_).envelope(area_.owner, area_.key);
         const auto spec = specOf(host_, area_);
-        if (!active_ || !spec || current_ >= static_cast<int>(points.size()) || current_ < 0) return;
-        const AutomationPoint& point = points[static_cast<size_t>(current_)];
-        readout_ = Readout{QPointF(viewOf(host_).beatToX(point.beat), area_.y(point.value)),
-                           spec->formatNormalized(spec->quantize(point.value))};
+        const int count = static_cast<int>(points.size());
+        if (!active_ || !spec || current_ >= count || current_ < 0) return;
+        int shown = current_;
+        if (segment_ && partner_ >= 0 && partner_ < count &&
+            points[static_cast<size_t>(partner_)].value < points[static_cast<size_t>(current_)].value)
+            shown = partner_;  // a segment: the lower of its two
+        readout_ = pointReadout(host_, area_, points[static_cast<size_t>(shown)]);
     }
 
     LanesHost& host_;
@@ -262,11 +296,13 @@ private:
     int index_;
     QPointF press_;
     bool added_;
+    bool segment_;
     QString mergeKey_;
     Envelope original_;
     bool selecting_ = false;
     QSet<int> indices_;
     int current_ = 0;  // where the pressed point is now
+    int partner_ = 0;  // a segment: where its second point is now
     bool active_ = false;
     std::optional<Readout> readout_;
 };
@@ -381,7 +417,8 @@ private:
 // A press inside the selected time range on one of its lanes: a drag moves
 // the automation in the range, on all its lanes, in time and value (the range
 // goes along). (Its breakpoints and segments, and the line, are taken as
-// outside it.) A click sets the insert marker, as outside the range.
+// outside it.) A click sets the insert marker, as outside the range. A lane
+// without an envelope moves as a flat one at its target's own value.
 class RangeGesture : public Gesture {
 public:
     RangeGesture(LanesHost& host, const EnvelopeArea& area, const QPointF& press, Qt::KeyboardModifiers modifiers)
@@ -393,7 +430,17 @@ public:
             trackIds_ = range->trackIds;
         }
         lanes_ = selection.lanes();
-        for (const app::LaneRef& lane : lanes_) originals_.insert(lane, projectOf(host).envelope(lane.first, lane.second));
+        for (const app::LaneRef& lane : lanes_) {
+            Envelope points = projectOf(host).envelope(lane.first, lane.second);
+            if (points.empty()) {
+                if (const auto value = unautomatedValue(host, lane.first, lane.second)) {
+                    points = {AutomationPoint{start_, *value}};
+                    unautomated_.insert(lane);
+                }
+            }
+            originals_.insert(lane, points);
+        }
+        readout_ = rangeReadout(host, area);
     }
 
     void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override {
@@ -409,11 +456,14 @@ public:
             deltaBeats = std::max(0.0, view.snapBeat(beat, alt(modifiers))) - start_;
         }
         const double deltaValue = (press_.y() - pos.y()) / std::max(1.0, area_.values().height()) * fine(modifiers);
-        session.editor()->moveAutomationRange(start_, end_, originals_, deltaBeats, deltaValue, key_);
+        session.editor()->moveAutomationRange(start_, end_, originals_, deltaBeats, deltaValue, key_, unautomated_);
         session.selection()->setTimeRange(start_ + deltaBeats, end_ + deltaBeats, trackIds_, std::nullopt, lanes_);
         session.selection()->setInsert(start_ + deltaBeats);
+        readout_ = rangeReadout(host_, area_);
         host_.repaint();
     }
+
+    std::optional<Readout> readout() const override { return readout_; }
 
     void finish() override {
         if (!active_) LaneGesture(host_, area_, press_, modifiers_).finish();
@@ -430,7 +480,9 @@ private:
     QStringList trackIds_;
     QList<app::LaneRef> lanes_;
     QMap<app::LaneRef, Envelope> originals_;
+    QSet<app::LaneRef> unautomated_;  // lanes without an envelope when the drag began
     bool active_ = false;
+    std::optional<Readout> readout_;
 };
 
 // A press on the line: a breakpoint there at once, and a drag places it.
@@ -616,22 +668,29 @@ std::pair<std::optional<Hover>, QCursor> hover(LanesHost& host, const std::optio
     if (!area) return {std::nullopt, QCursor(Qt::ArrowCursor)};
     const Envelope points = projectOf(host).envelope(area->owner, area->key);
     const timeline::Timeline& view = viewOf(host);
-    const auto make = [&](Hover::Kind kind, std::optional<int> index = std::nullopt, double beat = 0.0,
-                          double value = 0.0) {
-        return Hover{area->owner, area->key, area->lane, kind, index, beat, value};
+    const auto make = [&](Hover::Kind kind, std::optional<int> index, double beat, double value,
+                          std::optional<Readout> readout) {
+        return Hover{area->owner, area->key, area->lane, kind, index, beat, value, std::move(readout)};
     };
+    const auto at = [&](int i) { return pointReadout(host, *area, points[static_cast<size_t>(i)]); };
     if (const auto index = pointAt(view, *area, points, pos))
-        return {make(Hover::Kind::Point, index), QCursor(Qt::PointingHandCursor)};
+        return {make(Hover::Kind::Point, index, 0.0, 0.0, at(*index)), QCursor(Qt::PointingHandCursor)};
     if (alt(modifiers) && app::automation::segmentIndex(points, view.xToBeat(pos.x())))
         return {std::nullopt, QCursor(Qt::SizeVerCursor)};
     const auto grab = grabAt(host, *area, points, pos, modifiers);
-    if (!grab && inRange(host, *area, pos)) return {make(Hover::Kind::Range), QCursor(Qt::ArrowCursor)};
+    if (!grab && inRange(host, *area, pos))
+        return {make(Hover::Kind::Range, std::nullopt, 0.0, 0.0, rangeReadout(host, *area)), QCursor(Qt::ArrowCursor)};
     const auto end = endAt(host, *area, points, pos);
     if (end && (!grab || !grab->add))
-        return {make(Hover::Kind::End, end, view.xToBeat(pos.x())), QCursor(Qt::ArrowCursor)};
-    if (grab && grab->add)
-        return {make(Hover::Kind::Add, std::nullopt, grab->target.first, grab->target.second), addCursor()};
-    if (grab) return {make(Hover::Kind::Segment, grab->segment), QCursor(Qt::ArrowCursor)};
+        return {make(Hover::Kind::End, end, view.xToBeat(pos.x()), 0.0, at(*end)), QCursor(Qt::ArrowCursor)};
+    if (grab && grab->add) {
+        const auto [beat, value] = grab->target;
+        return {make(Hover::Kind::Add, std::nullopt, beat, value, pointReadout(host, *area, {beat, value})),
+                addCursor()};
+    }
+    if (grab)
+        return {make(Hover::Kind::Segment, grab->segment, 0.0, 0.0, at(lowerOf(points, grab->segment))),
+                QCursor(Qt::ArrowCursor)};
     return {std::nullopt, QCursor(Qt::ArrowCursor)};
 }
 
@@ -733,6 +792,11 @@ void drawRange(SgPainter& p, const timeline::Timeline& view, const app::Selectio
         if (selection.lanes().contains(app::LaneRef{area.owner, area.key}))
             p.fillRect(QRectF(x0, area.rect.top(), x1 - x0, area.rect.height()), tint);
     }
+}
+
+std::optional<Readout> readoutOf(const Gesture* gesture, const std::optional<Hover>& hover) {
+    if (gesture) return gesture->readout();
+    return hover ? hover->readout : std::nullopt;
 }
 
 void drawReadout(SgPainter& p, double width, const std::optional<Readout>& readout) {

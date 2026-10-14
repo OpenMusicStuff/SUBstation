@@ -286,23 +286,23 @@ private Q_SLOTS:
         const QString device = editor()->addDevice(track, QStringLiteral("compressor"));
         QQuickItem* view = show(QStringLiteral("compressor"), track, device);
         QVERIFY(view);
-        // Every knob at once.
+        // Every parameter at once, as Ableton's Activity view lays them out (the modes are buttons).
         const QList<QQuickItem*> cells = itemsNamed(view, QStringLiteral("param_"));
-        QCOMPARE(cells.size(), 7);
+        QCOMPARE(cells.size(), 9);
+        QCOMPARE(itemsNamed(view, QStringLiteral("mode")).size(), 3);
         QVERIFY(view->implicitHeight() <= bodyHeight());  // fits the view
 
-        // Its knobs edit the model as the generic ones do (undoably).
+        // Its controls follow the model (undoably).
         auto* graph = find<ReductionGraph>(view, QStringLiteral("reductionGraph"));
         QVERIFY(graph);
-        editor()->setDeviceParam(track, device, QStringLiteral("threshold"), -30.0);
-        KnobItem* threshold = nullptr;
-        for (QQuickItem* cell : cells)
-            if (cell->property("paramId").toString() == QLatin1String("threshold"))
-                threshold = qvariant_cast<KnobItem*>(cell->property("knob"));
+        QQuickItem* threshold = find<QQuickItem>(view, QStringLiteral("param_threshold"));
         QVERIFY(threshold);
-        QCOMPARE(threshold->value(), -30.0);
+        auto* box = qvariant_cast<QObject*>(threshold->property("box"));
+        QVERIFY(box);
+        editor()->setDeviceParam(track, device, QStringLiteral("threshold"), -30.0);
+        QCOMPARE(box->property("value").toDouble(), -30.0);
         undo()->undo();
-        QCOMPARE(threshold->value(), -18.0);
+        QCOMPARE(box->property("value").toDouble(), -18.0);
 
         // What the engine reports as it renders reaches the graph with the meters.
         engine_->renderOffline(0.0, kSampleRate / 2);
@@ -627,7 +627,11 @@ private Q_SLOTS:
         const double peak = 20.0 * std::pow(1000.0, (double(loudest - columns.begin()) + 0.5) / 200);
         QVERIFY2(900 < peak && peak < 1100, qPrintable(QString::number(peak)));
         QVERIFY(std::abs(*loudest - 20 * std::log10(0.5)) < 1.0);
-        graph->addSamples({}, 48000.0);  // nothing new: it falls back slowly
+        // Nothing new for a moment (between two blocks of audio): it holds; for longer, it falls back slowly.
+        for (int i = 0; i < sub::app::analysis::kHoldRefreshes; ++i) graph->addSamples({}, 48000.0);
+        columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
+        QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - *loudest) < 0.01);
+        graph->addSamples({}, 48000.0);
         columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
         QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - (*loudest - 1.0)) < 0.01);
         QTest::qWait(50);
@@ -1119,6 +1123,7 @@ private Q_SLOTS:
             engine_->renderOffline(chunk * beatsPerChunk, period);
             graph->readDisplays();
         }
+        graph->waitForFit();  // (worked out on a worker thread)
         QCOMPARE(graph->hitCount(), 12);
         QVERIFY(graph->fit());
         const sub::app::sidechainFit::Fit fit = *graph->fit();
@@ -1140,6 +1145,7 @@ private Q_SLOTS:
         // Auto fits again at every hit, all in one step.
         QVERIFY(QMetaObject::invokeMethod(find(view, QStringLiteral("character")), "activated", Q_ARG(int, 2)));
         QCOMPARE(value(QStringLiteral("character")), 2.0);
+        graph->waitForFit();
         const sub::app::sidechainFit::Fit loose = *graph->fit();
         QVERIFY(loose.length > fit.length);  // Loose: out of the way for longer
         const int steps = undo()->count();
@@ -1149,6 +1155,7 @@ private Q_SLOTS:
         for (int chunk = 12; chunk < 16; ++chunk) {
             engine_->renderOffline(chunk * beatsPerChunk, period);
             graph->readDisplays();
+            graph->waitForFit();
         }
         QCOMPARE(undo()->count(), steps + 2);  // switching it on, then the fits (merged)
         clickButton(QStringLiteral("auto"));

@@ -414,8 +414,18 @@ void EqGraph::feed() {
 
 void EqGraph::refreshAnalyzer() {
     using sub::app::analysis::EqAnalyzer;
-    outputLive_ = analyzer_.live(EqAnalyzer::Output);
-    inputLive_ = analyzer_.live(EqAnalyzer::Input);
+    // The lines fade in quickly as audio comes, out more slowly once it stops.
+    const double dt = fadeClock_.isValid() ? std::min(0.1, fadeClock_.restart() / 1000.0) : 0.0;
+    if (!fadeClock_.isValid())
+        fadeClock_.start();
+    for (auto [fade, channel] : {std::pair{&inputFade_, EqAnalyzer::Input}, std::pair{&outputFade_, EqAnalyzer::Output}}) {
+        const bool hearing = analyzer_.hearing(channel);
+        *fade += ((hearing ? 1.0 : 0.0) - *fade) * easeFraction(dt, hearing ? 0.05 : 0.3);
+        if (*fade < 0.01)
+            *fade = 0.0;
+    }
+    outputLive_ = analyzer_.live(EqAnalyzer::Output) && outputFade_ > 0.0;
+    inputLive_ = analyzer_.live(EqAnalyzer::Input) && inputFade_ > 0.0;
     outputColumns_ = outputLive_ ? analyzer_.columns(EqAnalyzer::Output, freqs_) : std::vector<double>();
     inputColumns_ = inputLive_ ? analyzer_.columns(EqAnalyzer::Input, freqs_) : std::vector<double>();
 }
@@ -798,16 +808,18 @@ void EqGraph::paint(SgPainter& p) {
             shape.emplace_back(xs[i], spectrumY(outputColumns_[i]));
         shape.emplace_back(xs.back(), r.bottom());
         QLinearGradient fill(r.topLeft(), r.bottomLeft());
-        fill.setColorAt(0.0, withAlpha(kPostColor, 120));
-        fill.setColorAt(1.0, withAlpha(kPostColor, 18));
+        fill.setColorAt(0.0, withAlpha(kPostColor, int(std::lround(120 * outputFade_))));
+        fill.setColorAt(1.0, withAlpha(kPostColor, int(std::lround(18 * outputFade_))));
         p.fillToBaseline(shape.data(), int(shape.size()), r.bottom(), fill);
-        p.drawPolygon(shape.data(), int(shape.size()), withAlpha(kPostColor.lighter(130), 120), 1.0);
+        p.drawPolygon(shape.data(), int(shape.size()),
+                      withAlpha(kPostColor.lighter(130), int(std::lround(120 * outputFade_))), 1.0);
     }
     if ((mode == 1 || mode == 3) && inputLive_ && inputColumns_.size() == columns) {
         std::vector<QPointF> line(columns);
         for (std::size_t i = 0; i < columns; ++i)
             line[i] = QPointF(xs[i], spectrumY(inputColumns_[i]));
-        p.drawPolyline(line.data(), int(line.size()), withAlpha(kPreColor, mode == 3 ? 70 : 110), 1.0);
+        p.drawPolyline(line.data(), int(line.size()),
+                       withAlpha(kPreColor, int(std::lround((mode == 3 ? 70 : 110) * inputFade_))), 1.0);
     }
 
     // The bands, then their total.

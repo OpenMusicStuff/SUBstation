@@ -129,6 +129,22 @@ private Q_SLOTS:
         QVERIFY(f.project.envelope(a, autom::kMixerPan) == originals.value({a, autom::kMixerPan}));
     }
 
+    void movingARangeOfALaneWithoutAnEnvelope() {
+        // The lane moves as a flat envelope at the target's own value (what the
+        // drag passes as its original); back where it was, it has none again.
+        EditorFixture f;
+        const QString a = f.editor.addAudioTrack();
+        const LaneRef volume{a, autom::kMixerVolume};
+        const QMap<LaneRef, Envelope> originals{{volume, env({{1.0, 0.8}})}};
+        f.editor.moveAutomationRange(1.0, 3.0, originals, 0.0, -0.3, "drag", {volume});
+        const Envelope moved = f.project.envelope(a, autom::kMixerVolume);
+        QVERIFY(near(valueAt(moved, 0.0), 0.8) && near(valueAt(moved, 2.0), 0.5) && near(valueAt(moved, 4.0), 0.8));
+        f.editor.moveAutomationRange(1.0, 3.0, originals, 0.0, 0.0, "drag", {volume});
+        QVERIFY(!f.track(a).automation.contains(autom::kMixerVolume));
+        f.editor.moveAutomationRange(1.0, 3.0, originals, 2.0, 0.0, "drag", {volume});  // in time only: flat
+        QVERIFY(!f.track(a).automation.contains(autom::kMixerVolume));
+    }
+
     void deletingADeviceDeletesItsAutomation() {
         EditorFixture f;
         const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));

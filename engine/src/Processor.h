@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace sub {
@@ -329,6 +330,14 @@ public:
         return position;
     }
 
+    // The loudest sample out of it (left, right) since takeOutputPeak(): the
+    // renderer measures what it passes on in live chunks, for the meter after
+    // the device (a rack: what its chains sum to).
+    std::atomic<float>& outputPeak(int channel) noexcept { return outputPeak_[channel & 1]; }
+    std::pair<float, float> takeOutputPeak() noexcept {
+        return {outputPeak_[0].exchange(0.f), outputPeak_[1].exchange(0.f)};
+    }
+
 protected:
     // In process(): the automation for this call (processors may sort it).
     ParamAutomation* automation() noexcept { return automation_.data(); }
@@ -343,6 +352,7 @@ private:
     float heldModulation_ = 0.f;
     std::atomic<bool> enabled_{true};
     std::atomic<bool> resetRequested_{false};
+    std::atomic<float> outputPeak_[2]{};
     bool switchedOff_ = false;
     int switchFadeIn_ = 0;
     std::vector<ParamAutomation> automation_ = std::vector<ParamAutomation>(kMaxAutomation);
