@@ -627,13 +627,14 @@ private Q_SLOTS:
         const double peak = 20.0 * std::pow(1000.0, (double(loudest - columns.begin()) + 0.5) / 200);
         QVERIFY2(900 < peak && peak < 1100, qPrintable(QString::number(peak)));
         QVERIFY(std::abs(*loudest - 20 * std::log10(0.5)) < 1.0);
+        const double loudestDb = *loudest;  // (columns is read again below: the iterator goes with it)
         // Nothing new for a moment (between two blocks of audio): it holds; for longer, it falls back slowly.
         for (int i = 0; i < sub::app::analysis::kHoldRefreshes; ++i) graph->addSamples({}, 48000.0);
         columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
-        QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - *loudest) < 0.01);
+        QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - loudestDb) < 0.01);
         graph->addSamples({}, 48000.0);
         columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
-        QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - (*loudest - 1.0)) < 0.01);
+        QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - (loudestDb - 1.0)) < 0.01);
         QTest::qWait(50);
         save(grab(), QStringLiteral("delay-linked.png"));
     }
