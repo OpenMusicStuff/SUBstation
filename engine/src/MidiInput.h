@@ -10,7 +10,8 @@
 // the same distance into the next, and the delay stays constant instead of
 // jittering with the callbacks. Converting on arrival also makes the timing
 // testable: a message stamped against a known clock reading lands on a known
-// sample.
+// sample. (Engine::setMidiImmediate() takes the buffer off: a message plays at
+// the start of the next block, sooner but as early as the block falls.)
 //
 // The messages reach the audio thread through a single-consumer queue; the
 // producers (driver threads, sendMidiInput()) serialise on their own mutex, so
@@ -51,6 +52,16 @@ struct MidiInputEvent {
     uint8_t data2 = 0;
     Kind kind = Kind::Message;
     uint32_t value = 0;  // NoteBend: 0x80000000 is none, 0 and 0xFFFFFFFF the range's ends
+};
+
+// How late an input's system handed its messages over after taking them in
+// (WinMM: against its own time stamps, which come in whole milliseconds), since
+// the last look. No messages: nothing known.
+struct MidiInputDelivery {
+    std::string name;
+    int messages = 0;
+    double averageMs = 0.0;
+    double maxMs = 0.0;
 };
 
 // The audio device's sample clock against the host clock: written by the audio
@@ -126,6 +137,8 @@ public:
     void close(const std::string& name);
     void closeAll();
     std::vector<std::string> openNames() const;
+    // Each open input's MidiInputDelivery since the last call.
+    std::vector<MidiInputDelivery> takeDelivery();
 
 private:
     struct Device;

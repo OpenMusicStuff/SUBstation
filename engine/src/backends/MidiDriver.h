@@ -19,6 +19,9 @@ namespace sub::midi {
 class InputConnection {
 public:
     virtual ~InputConnection() = default;
+    // How late the system handed messages over since the last call (`name` left
+    // empty); one that can't tell says none came.
+    virtual MidiInputDelivery takeDelivery() { return {}; }
 };
 
 // The names of the system's inputs present now, in its order (repeated names

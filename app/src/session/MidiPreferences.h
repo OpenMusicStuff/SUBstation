@@ -30,6 +30,9 @@ public:
     // Refresh: looks for MIDI inputs plugged in or taken out since.
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void setInputEnabled(const QString& name, bool enabled);
+    // How late each open input's driver handed its messages over since the last call:
+    // "Keys: 0.6 ms on average, 1.2 at most (12 messages)", a line each; "" if none came.
+    Q_INVOKABLE QString takeDeliveryText();
 
 Q_SIGNALS:
     void changed();

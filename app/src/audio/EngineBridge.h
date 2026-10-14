@@ -166,6 +166,7 @@ class AudioSource;
 class Engine;
 enum class SidechainTap : std::uint8_t;
 struct AutomationLaneDesc;
+struct MidiInputDelivery;
 struct ParamInfo;
 struct ProcessorEventRecord;
 }  // namespace sub
@@ -201,6 +202,12 @@ class EngineBridge : public QObject {
     Q_PROPERTY(bool countingIn READ isCountingIn NOTIFY countingInChanged)
     Q_PROPERTY(bool recording READ isRecording NOTIFY recordingChanged)
     Q_PROPERTY(bool metronome READ metronome WRITE setMetronome NOTIFY metronomeChanged)
+    // Constrain Delay Compensation, and its threshold (ms): saved in the preferences.
+    Q_PROPERTY(bool constrainLatency READ constrainLatency WRITE setConstrainLatency NOTIFY constrainLatencyChanged)
+    Q_PROPERTY(double constrainThresholdMs READ constrainThresholdMs WRITE setConstrainThresholdMs
+                   NOTIFY constrainLatencyChanged)
+    // MIDI input played at once (saved in the preferences).
+    Q_PROPERTY(bool midiImmediate READ midiImmediate WRITE setMidiImmediate NOTIFY midiImmediateChanged)
     Q_PROPERTY(double cpuLoad READ cpuLoad NOTIFY metersUpdated)
     Q_PROPERTY(double sampleRate READ sampleRate NOTIFY deviceChanged)
     Q_PROPERTY(sub::app::AudioDeviceStatus deviceStatus READ deviceStatus NOTIFY deviceChanged)
@@ -266,6 +273,18 @@ public:
     int audioThreads() const;  // the engine's now
     int realtimeWorkers() const;  // of the helpers (audioThreads() - 1), those at real-time priority
     static int defaultAudioThreads();  // one per core but one
+    // Constrain Delay Compensation (sub::Engine::setConstrainLatency()): while a
+    // track is monitored, the devices slower than the threshold on its way out
+    // are bypassed and its live MIDI isn't delay-compensated. Saved and applied.
+    void applyConstrainLatency();  // as the preferences say
+    bool constrainLatency() const;
+    void setConstrainLatency(bool on);
+    double constrainThresholdMs() const;
+    void setConstrainThresholdMs(double ms);
+    // MIDI input played at once (sub::Engine::setMidiImmediate()), as the preferences say; saved and applied.
+    void applyMidiImmediate();
+    bool midiImmediate() const;
+    void setMidiImmediate(bool immediate);
 
     // --- Meters and the scope -----------------------------------------------------------
     // Track id (or kMaster) -> its meter, as of the last metersUpdated.
@@ -345,6 +364,12 @@ public:
     QString deviceParamText(const QString& trackId, const QString& deviceId, int index, double value);
     // A device's latency in samples (0 while it isn't loaded).
     int deviceLatency(const QString& trackId, const QString& deviceId);
+    // What a track played live through MIDI input is heard after (sub::Engine::liveLatency()).
+    LiveLatency liveLatency(const QString& trackId) const;
+    // How late each open MIDI input's driver handed messages over since the last call.
+    std::vector<sub::MidiInputDelivery> takeMidiInputDelivery();
+    // Bypassed now by Constrain Delay Compensation (switched on all the same).
+    bool deviceConstrained(const QString& trackId, const QString& deviceId);
     // What a device's own editor draws besides its parameters (meters, curves).
     QList<ProcessorDisplay> processorDisplays(const QString& trackId, const QString& deviceId);
     // Display `index`'s values since `position` (0 at first), oldest first,
@@ -555,6 +580,8 @@ Q_SIGNALS:
     void transportChanged(bool playing);
     void countingInChanged(bool countingIn);
     void metronomeChanged(bool enabled);
+    void constrainLatencyChanged();
+    void midiImmediateChanged();
     void metersUpdated();  // meters() and chainMeters() were refreshed
     void latenciesChanged();  // a track's latency or the output's changed (a device's, then, too)
     void deviceChanged();  // the audio device opened, closed, changed or reported new latencies

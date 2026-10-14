@@ -296,7 +296,10 @@ A callback renders a buffer ahead of what is heard, so a message that came in du
 at the same distance into the next, and the delay stays constant instead of jittering with the
 callbacks. Converting on arrival also makes the timing testable: a message stamped against a known clock
 reading lands on a known sample. `midiInputDelay` is the device's buffer size (set when the device opens;
-512 if it reports none); `audioClock()` reports it with the clock.
+512 if it reports none); `audioClock()` reports it with the clock. `Engine::setMidiImmediate()` makes it 0:
+a message is then due before the next block begins, so it plays at that block's start (sooner by up to a
+buffer, but as early as the block falls), and `startRecording()` places MIDI half a buffer earlier than it
+is met, the delay on average.
 
 The queue (`SpscQueue<MidiInputEvent, 4096>`) has one consumer, the audio thread; the producers (driver
 threads, `sendMidiInput()`) share a mutex on their side of it, so the audio thread never waits. The engine

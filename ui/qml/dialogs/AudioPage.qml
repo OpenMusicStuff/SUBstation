@@ -7,7 +7,8 @@ import SUBstation
 // form): the driver type (ASIO greyed out in a build without it, its tooltip
 // saying so), the device and its Hardware Setup (ASIO), the outputs the master
 // plays on (ASIO), the sample rate, the buffer size (greyed out when the
-// driver sets it), exclusive mode (WASAPI) and the audio threads; below them
+// driver sets it), exclusive mode (WASAPI), the audio threads and the latency
+// Constrain Delay Compensation bypasses devices over; below them
 // what runs, or why it didn't open. Each choice opens the device with it at
 // once, since what a device offers is only known while it is open; the lists
 // then show what it offers.
@@ -126,6 +127,18 @@ ColumnLayout {
             choices: page.prefs.threadChoices
             chosenIndex: page.prefs.threadIndex
             onChosen: index => page.prefs.chooseThreads(index)
+        }
+
+        Label { text: qsTr("Constrain Latency Over") }
+        ChoiceBox {
+            objectName: "constrainThreshold"
+            readonly property var values: [0, 1, 2, 3, 5, 10, 20, 50]
+            Layout.fillWidth: true
+            tooltip: qsTr("Constrain Delay Compensation (the stopwatch in the transport bar) bypasses the devices "
+                          + "with more latency than this on the way out of a monitored track.")
+            choices: values.map(v => ({label: v === 0 ? qsTr("Any latency") : qsTr("%1 ms").arg(v), value: v}))
+            chosenIndex: Math.max(0, values.indexOf(Session.bridge.constrainThresholdMs))
+            onChosen: index => Session.bridge.constrainThresholdMs = values[index]
         }
     }
 

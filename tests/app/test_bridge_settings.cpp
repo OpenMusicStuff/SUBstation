@@ -107,6 +107,55 @@ private Q_SLOTS:
         QCOMPARE(audioThreads(), 0);  // back to the default: not pinned
     }
 
+    void constrainDelayCompensation() {
+        // The transport bar's toggle and Preferences' threshold apply at once and are remembered.
+        QVERIFY(!constrainLatency());
+        QCOMPARE(constrainThresholdMs(), kDefaultConstrainThresholdMs);
+        QSettings().setValue(kConstrainThresholdKey, QStringLiteral("x"));  // (edited by hand)
+        QCOMPARE(constrainThresholdMs(), kDefaultConstrainThresholdMs);
+        setConstrainThresholdMs(500.0);
+        QCOMPARE(constrainThresholdMs(), kMaxConstrainThresholdMs);
+        setConstrainThresholdMs(kDefaultConstrainThresholdMs);
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        QSignalSpy changed(&bridge, &EngineBridge::constrainLatencyChanged);
+        bridge.setConstrainLatency(true);
+        QVERIFY(studio.engine.constrainLatency());
+        QVERIFY(bridge.constrainLatency());
+        QVERIFY(constrainLatency());
+        QCOMPARE(changed.count(), 1);
+        bridge.setConstrainLatency(true);  // (no change)
+        QCOMPARE(changed.count(), 1);
+        bridge.setConstrainThresholdMs(10.0);
+        QCOMPARE(studio.engine.constrainThresholdMs(), 10.0);
+        QCOMPARE(constrainThresholdMs(), 10.0);
+        QCOMPARE(changed.count(), 2);
+        studio.engine.setConstrainLatency(false);
+        bridge.applyConstrainLatency();  // (on start-up)
+        QVERIFY(bridge.constrainLatency());
+        QCOMPARE(bridge.constrainThresholdMs(), 10.0);
+        bridge.setConstrainLatency(false);
+        QVERIFY(!studio.engine.constrainLatency());
+        QVERIFY(!constrainLatency());
+    }
+
+    void midiPlayedAtOnce() {
+        QVERIFY(!midiImmediate());
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        QSignalSpy changed(&bridge, &EngineBridge::midiImmediateChanged);
+        bridge.setMidiImmediate(true);
+        QVERIFY(studio.engine.midiImmediate());
+        QVERIFY(midiImmediate());
+        QCOMPARE(changed.count(), 1);
+        studio.engine.setMidiImmediate(false);
+        bridge.applyMidiImmediate();  // (on start-up)
+        QVERIFY(bridge.midiImmediate());
+        bridge.setMidiImmediate(false);
+        QVERIFY(!studio.engine.midiImmediate());
+        QVERIFY(!midiImmediate());
+    }
+
     void midiInputsTurnedOff() {
         QVERIFY(disabledMidiInputs().isEmpty());  // every input plays, a new one too
         setMidiInputDisabled(QStringLiteral("Keys"), true);
