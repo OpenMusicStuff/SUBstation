@@ -9,6 +9,7 @@
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
+#include "input/KeyMap.h"
 #include "input/Modifiers.h"
 #include "model/Devices.h"
 #include "model/Edits.h"
@@ -1214,15 +1215,15 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
     if (const auto area = envelopeAreaAt(pos)) {
         const bool inRange = envelopes::inRange(*this, *area, pos);
         MenuEntry& cut = menu.add(QStringLiteral("Cut"), [actions] { actions->cutAutomation(); });
-        cut.shortcut = QStringLiteral("Ctrl+X");
+        cut.shortcut = KeyMap::hint("cut");
         cut.enabled = inRange;
         MenuEntry& copy = menu.add(QStringLiteral("Copy"), [actions] { actions->copyAutomation(); });
-        copy.shortcut = QStringLiteral("Ctrl+C");
+        copy.shortcut = KeyMap::hint("copy");
         copy.enabled = inRange;
         // At the insert marker: onto the selected lanes if this is one of them, else onto this one.
         const QString owner = area->owner, key = area->key;
         MenuEntry& paste = menu.add(QStringLiteral("Paste"), [actions, owner, key] { actions->pasteAutomationAt(owner, key); });
-        paste.shortcut = QStringLiteral("Ctrl+V");
+        paste.shortcut = KeyMap::hint("paste");
         paste.enabled = actions->clipboardKind() == QStringLiteral("automation");
         menu.addSeparator();
         envelopes::addMenuEntries(*this, *area, pos, menu);
@@ -1233,29 +1234,29 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
         // On a clip (selected first, unless it is), or anywhere in the selected area: what acts on it.
         if (hit && !selection.clips().contains(app::ClipRef{hit->trackId, hit->clip.id}))
             selection.selectClips(*s->editor(), {{hit->trackId, hit->clip.id}});
-        menu.add(QStringLiteral("Cut"), [actions] { actions->cutArea(); }).shortcut = QStringLiteral("Ctrl+X");
-        menu.add(QStringLiteral("Copy"), [actions] { actions->copyArea(); }).shortcut = QStringLiteral("Ctrl+C");
+        menu.add(QStringLiteral("Cut"), [actions] { actions->cutArea(); }).shortcut = KeyMap::hint("cut");
+        menu.add(QStringLiteral("Copy"), [actions] { actions->copyArea(); }).shortcut = KeyMap::hint("copy");
         MenuEntry& paste = menu.add(QStringLiteral("Paste"), [actions] { actions->paste(); });
-        paste.shortcut = QStringLiteral("Ctrl+V");
+        paste.shortcut = KeyMap::hint("paste");
         paste.enabled = actions->hasClipboard();
         menu.addSeparator();
         if (hit) {
             const double at = arrangement()->view().snapBeat(arrangement()->view().xToBeat(pos.x()));
             menu.add(QStringLiteral("Split Here"), [actions, at] { actions->splitAt(at); });
         }
-        menu.add(QStringLiteral("Duplicate"), [actions] { actions->duplicateArea(); }).shortcut = QStringLiteral("Ctrl+D");
+        menu.add(QStringLiteral("Duplicate"), [actions] { actions->duplicateArea(); }).shortcut = KeyMap::hint("duplicate");
         MenuEntry& consolidate = menu.add(QStringLiteral("Consolidate"), [actions] { actions->consolidate(); });
-        consolidate.shortcut = QStringLiteral("Ctrl+J");
+        consolidate.shortcut = KeyMap::hint("consolidate");
         consolidate.enabled = actions->canConsolidate();
         // (What R reverses: the audio clips in the selected area, whichever are selected as clips.)
         MenuEntry& reverse = menu.add(QStringLiteral("Reverse"), [actions] { actions->reverseSelection(); });
-        reverse.shortcut = QStringLiteral("R");
+        reverse.shortcut = KeyMap::hint("reverseClips");
         reverse.enabled = actions->canReverse();
         // (What 0 does: deactivates the clips in the selected area, or activates them if they all are.)
         const std::optional<bool> activates = actions->activates();
         MenuEntry& activation = menu.add(activates.value_or(false) ? QStringLiteral("Activate") : QStringLiteral("Deactivate"),
                                          [actions] { actions->toggleActivation(); });
-        activation.shortcut = QStringLiteral("0");
+        activation.shortcut = KeyMap::hint("toggleClipActivation");
         activation.enabled = activates.has_value();
         if (hit && hit->clip.isAudio()) {
             // The browser lists the sounds most like the part of its file the clip plays.
@@ -1285,7 +1286,7 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
             reveal.enabled = !path.isEmpty();
         }
         menu.addSeparator();
-        menu.add(QStringLiteral("Delete"), [actions] { actions->deleteArea(); }).shortcut = QStringLiteral("Del");
+        menu.add(QStringLiteral("Delete"), [actions] { actions->deleteArea(); }).shortcut = KeyMap::hint("delete");
         return menu;
     }
     const auto index = rowIndexAt(pos.y());
@@ -1293,7 +1294,7 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
     if (!trackId.isEmpty()) {
         const double beat = std::max(0.0, arrangement()->view().snapBeat(arrangement()->view().xToBeat(pos.x())));
         MenuEntry& paste = menu.add(QStringLiteral("Paste"), [actions, beat, trackId] { actions->paste(beat, trackId); });
-        paste.shortcut = QStringLiteral("Ctrl+V");
+        paste.shortcut = KeyMap::hint("paste");
         paste.enabled = actions->hasClipboard();
         menu.addSeparator();
         const app::Track* track = s->project()->findTrack(trackId);

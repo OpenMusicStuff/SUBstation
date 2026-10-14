@@ -3,6 +3,23 @@
 Every keyboard and mouse shortcut, and which keys reach a plug-in's editor while it has
 the focus. Most are also in the menus, which show their keys.
 
+## Changing the keys
+
+*Options › Preferences › Keyboard* (**Ctrl+,**, then the *Keyboard* tab) lists every menu
+command with its keys. The keys here are the *Ableton Live* profile's, the default.
+
+- **+** beside a command, then the key: the command has that key too. A key that was
+  another command's is taken from it (the line under the list says which). **Esc**: never
+  mind.
+- A key's **×** takes it from its command.
+- **Reset** gives a command the profile's keys again; **Reset All** gives every command
+  the profile's.
+- The search field finds commands by their name, their menu or their keys.
+
+Changes apply at once and are kept. The menus and the right-click menus show the keys as
+they are. Only the menus' commands can be changed: the keys of the views themselves (the
+find bar's, holding F for fades) and the mouse's modifiers stay as below.
+
 ## Transport
 
 | Action | Keys |
@@ -120,7 +137,9 @@ edit as out of it. See
 The Ctrl/Alt shortcuts also work while a plug-in's editor window has the focus, except
 Ctrl+A/C/V/X/Z/Y, which the plug-in keeps for its own text fields.
 
-So do **Space** (play / stop) and **S** (solo): the DAW comes first. They go to the
+So do **Space** (play / stop) and **S** (solo), or the keys Play / Stop and Solo
+Selected Tracks have instead: the DAW comes first. (On Linux, only Space and S: the editor
+windows hold those keys alone for the window.) They go to the
 plug-in only:
 
 - on Windows, while it types into a standard Windows text field (most plug-ins draw
