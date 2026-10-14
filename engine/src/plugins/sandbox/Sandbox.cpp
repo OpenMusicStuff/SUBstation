@@ -1,6 +1,7 @@
 #include "plugins/sandbox/Sandbox.h"
 
 #include <chrono>
+#include <new>
 #include <stdexcept>
 #include <utility>
 
@@ -23,7 +24,12 @@ std::atomic<uint64_t>& Sandbox::raiseCounter() {
 
 Sandbox::Sandbox(std::string key, std::string label, const std::string& program)
     : key_(std::move(key)), label_(std::move(label)) {
-    child_ = platform::ChildProcess::start(program, {"--parent=" + std::to_string(platform::currentProcessId())});
+    const std::string doorbell = platform::uniqueIpcName("b");
+    doorbellMemory_ = platform::SharedMemory::create(doorbell, sizeof(Doorbell));
+    doorbell_ = new (doorbellMemory_->data()) Doorbell;
+    ringSignal_ = platform::IpcSignal::create(ringSignalName(doorbell), doorbell_->rung);
+    child_ = platform::ChildProcess::start(
+        program, {"--parent=" + std::to_string(platform::currentProcessId()), "--doorbell=" + doorbell});
     reader_ = std::thread(&Sandbox::readLoop, this);
 }
 
@@ -61,6 +67,31 @@ void Sandbox::detach(uint32_t instance) {
 size_t Sandbox::clients() const {
     std::lock_guard lock(mutex_);
     return clients_.size();
+}
+
+uint32_t Sandbox::takeSlot() {
+    std::lock_guard lock(mutex_);
+    if (!freeSlots_.empty()) {
+        const uint32_t slot = freeSlots_.back();
+        freeSlots_.pop_back();
+        return slot;
+    }
+    if (nextSlot_ >= kMaxSlots) throw std::runtime_error("Its sandbox (" + label_ + ") holds as many plug-ins as it can.");
+    return nextSlot_++;
+}
+
+void Sandbox::releaseSlot(uint32_t slot) {
+    std::lock_guard lock(mutex_);
+    freeSlots_.push_back(slot);
+}
+
+bool Sandbox::ring(uint32_t slot) noexcept {
+    if (!doorbell_->push(slot)) return false;
+    if (doorbell_->anyAsleep()) {
+        doorbell_->rung.fetch_add(1, std::memory_order_seq_cst);
+        ringSignal_->notify();
+    }
+    return true;
 }
 
 bool Sandbox::send(const Message& message) {
@@ -116,6 +147,7 @@ void Sandbox::readLoop() {
                     child_->kill();
                     return;
                 }
+                doorbellMemory_->forgetName();  // (it has the doorbell: it opens it before it says it is ready)
                 break;
             }
             case Kind::Busy: busy_.store(message.reader().u8() != 0, std::memory_order_release); break;

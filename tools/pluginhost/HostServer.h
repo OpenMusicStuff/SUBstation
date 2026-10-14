@@ -12,8 +12,16 @@
 // - The reader thread reads the engine's messages into a queue for the main
 //   thread, so the engine never waits to write one, however long a load
 //   takes. When the engine goes (the channel ends) it ends the process.
-// - Each loaded plug-in has an audio thread of its own: it waits on the plug-in's
-//   block, processes it, and says so.
+// - Audio workers, a few for all the plug-ins (as many as are loaded, up to
+//   half the cores): each takes the next slot off the doorbell (the engine's
+//   queue of blocks to process, SandboxProtocol.h), processes that plug-in's
+//   block, and says so. One of the idle ones spins briefly for the next block
+//   of the same callback (where there is more than one plug-in: one alone has
+//   its next block a callback later), the others sleep until rung: so a block rarely
+//   waits for a thread to wake, and the system's real-time scheduling (MMCSS on
+//   Windows, which takes a few dozen threads a process) covers every one. A
+//   plug-in stuck in process() keeps its worker: the main thread starts
+//   another when one has been in a block for long.
 
 #include <atomic>
 #include <chrono>
@@ -41,7 +49,9 @@ namespace sub::pluginhost {
 
 class HostServer {
 public:
-    HostServer(std::unique_ptr<platform::Channel> channel, HostLoop& loop);
+    // `doorbell`: the name of the sandbox's doorbell (its memory, and its wake-up beside it).
+    // Throws std::runtime_error if it can't be opened.
+    HostServer(std::unique_ptr<platform::Channel> channel, HostLoop& loop, const std::string& doorbell);
     ~HostServer();
     HostServer(const HostServer&) = delete;
     HostServer& operator=(const HostServer&) = delete;
@@ -58,15 +68,14 @@ private:
         double sampleRate = 48000.0;
         int maxBlock = sandbox::kMaxFrames;
         std::vector<uint8_t> state;  // to restore as it loads
+        uint32_t slot = 0;  // on the doorbell
         std::unique_ptr<platform::SharedMemory> memory;
         sandbox::Block* block = nullptr;
-        std::unique_ptr<platform::IpcSignal> requestSignal;
         std::unique_ptr<platform::IpcSignal> doneSignal;
         std::shared_ptr<Processor> processor;
         vst3::Vst3Processor* vst3 = nullptr;
-        std::thread audio;
-        std::atomic<bool> stop{false};
-        std::atomic<bool> stopped{false};  // its audio thread has ended
+        std::atomic<bool> processing{false};  // a worker is in its block (one at a time)
+        bool inSlot = false;                  // the workers find it (slots_)
         bool loaded = false;
         bool announced = false;              // it said it has loaded (Loaded)
         std::string failure;                 // why it didn't load ("" : it did, or hasn't yet)
@@ -88,7 +97,17 @@ private:
     void report(Instance& instance);
     bool keyTaken(const KeyPress& key);
 
-    static void audioLoop(Instance* instance);
+    // An audio worker: busySince is when it began its current block (steady clock, ns; 0: none).
+    struct Worker {
+        std::thread thread;
+        std::atomic<int64_t> busySince{0};
+    };
+    void workerLoop(Worker& worker);
+    void serve(uint32_t slot, Worker& worker);
+    void wakeWorker();
+    // As many workers as the plug-ins loaded need (up to the most), and one more
+    // for each that is stuck in a block.
+    void checkWorkers();
     static void processBlock(Instance& instance);
 
     std::unique_ptr<platform::Channel> channel_;
@@ -98,6 +117,18 @@ private:
     std::mutex incomingMutex_;
     std::deque<sandbox::Message> incoming_;  // read, for the main thread
     std::atomic<bool> quitting_{false};
+
+    std::unique_ptr<platform::SharedMemory> doorbellMemory_;
+    sandbox::Doorbell* doorbell_ = nullptr;
+    std::unique_ptr<platform::IpcSignal> ringSignal_;
+    // The workers' way to the plug-ins: each slot's instance (null: none), and the
+    // workers looking at it (a slot is emptied, then waited for until none is).
+    std::unique_ptr<std::atomic<Instance*>[]> slots_;
+    std::unique_ptr<std::atomic<uint32_t>[]> slotUsers_;
+    std::vector<std::unique_ptr<Worker>> workers_;  // (the main thread's; never fewer)
+    std::atomic<int> spinning_{0};                  // workers spinning for the next block
+    std::atomic<bool> stopping_{false};
+    std::atomic<int> inSlots_{0};  // instances in their slots (the main thread's to change)
 
     std::map<uint32_t, std::unique_ptr<Instance>> instances_;
     std::deque<uint32_t> loads_;  // instances waiting to load, in the order they load

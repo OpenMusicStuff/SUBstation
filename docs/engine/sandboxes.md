@@ -48,7 +48,7 @@ or out of the application; the preferences' *Reload Plug-ins* does it for every 
              (modes)            │  reader thread ◄─════════════════ main thread (HostLoop): loads,
                                 │                                    every call but process(), editors,
  Renderer ─► SandboxedProcessor ┘                                    idle() and its reports
-             (a Processor)  ═══ Block (shared memory) ═══════════ an audio thread for each plug-in
+             (a Processor)  ═══ Block, Doorbell (shared memory) ═ audio workers (a few for all)
 ```
 
 | File | What it holds |
@@ -59,7 +59,7 @@ or out of the application; the preferences' *Reload Plug-ins* does it for every 
 | [PluginSandboxes.h](../../engine/src/plugins/sandbox/PluginSandboxes.h) / [.cpp](../../engine/src/plugins/sandbox/PluginSandboxes.cpp) | an engine's sandboxes: which a plug-in goes to, starting and retiring them, editor keys and the foremost editor across them |
 | [SandboxedProcessor.h](../../engine/src/plugins/sandbox/SandboxedProcessor.h) / [.cpp](../../engine/src/plugins/sandbox/SandboxedProcessor.cpp) | a plug-in in a sandbox as a `Processor` |
 | [EngineSandboxes.cpp](../../engine/src/EngineSandboxes.cpp) | the engine's API for them: the mode, the host program, reloading, prioritising, waiting, the sandboxes listed |
-| [tools/pluginhost](../../tools/pluginhost) | the host: `main.cpp`, [HostServer.h](../../tools/pluginhost/HostServer.h) / [.cpp](../../tools/pluginhost/HostServer.cpp) (the protocol, loads, the audio threads), [HostLoop.h](../../tools/pluginhost/HostLoop.h) and a file per system (the main thread's loop) |
+| [tools/pluginhost](../../tools/pluginhost) | the host: `main.cpp`, [HostServer.h](../../tools/pluginhost/HostServer.h) / [.cpp](../../tools/pluginhost/HostServer.cpp) (the protocol, loads, the audio workers), [HostLoop.h](../../tools/pluginhost/HostLoop.h) and a file per system (the main thread's loop) |
 | [platform/Ipc.h](../../platform/src/platform/Ipc.h) | `ChildProcess`, `Channel`, `SharedMemory`, `IpcSignal`: [IpcWin32.cpp](../../platform/src/platform/IpcWin32.cpp), [IpcPosix.cpp](../../platform/src/platform/IpcPosix.cpp) |
 
 ## The host process
@@ -82,9 +82,14 @@ stuck in a plug-in. A crash ends it without the system's dialog (Windows: `SetEr
   (`Report`): the values that changed since the engine last heard them, a rebuilt parameter list, a new latency or
   preset name, and the `ProcessorEvent`s. `HoldIdle` pauses that while a render runs in the background, as
   `Engine::idle()` pauses it in the application.
-- **An audio thread for each plug-in**, at real-time priority, waits on its block, processes it, and says so. A
-  plug-in stuck in `process()` keeps its thread when it is destroyed (the host leaves it as it is after a second, and
-  the sandbox's other plug-ins go on).
+- **Audio workers**, at real-time priority, as many as the plug-ins loaded, up to half the cores: each takes the
+  next plug-in off the sandbox's doorbell, processes its block, and says so. One idle worker spins for 50 µs for the
+  next block (the blocks of one callback come microseconds apart); the others sleep until the engine rings. One
+  thread a plug-in had each block wait 10-18 µs for a sleeping thread to wake, and left most of them without
+  real-time priority: Windows' MMCSS takes a few dozen threads a process (32), and a sandbox with 138 plug-ins had
+  22 % of its blocks processed on threads with it. A plug-in stuck in `process()` keeps its worker (the main
+  thread starts another once one has been in a block for 250 ms) and, when it is destroyed, its memory (the host
+  leaves it as it is after a second, and the sandbox's other plug-ins go on).
 - **The loop** ([HostLoop.h](../../tools/pluginhost/HostLoop.h)) is the one part that is the system's:
   [HostLoopPosix.cpp](../../tools/pluginhost/HostLoopPosix.cpp) polls a wake-up pipe and what the editors' X11
   connections and the plug-ins' run loop watch (it is the engine's editor event loop in that process,
@@ -102,7 +107,7 @@ used.
 
 | Engine → host | | Host → engine | |
 |---|---|---|---|
-| `Create` | path, class id, rate, block size, the block's memory, state, name | `Attached` | it has the block (its name may go) |
+| `Create` | path, class id, rate, block size, the block's memory, state, name, its slot on the doorbell | `Attached` | it has the block (its name may go) |
 | `Destroy`, `Prepare`, `ResetOffline` | | `Loaded` / `LoadFailed` | what it is (`LoadedInfo`) / why not |
 | `SetParam` | its controller (the audio hears it in the block) | `Report` | values, parameters, latency, preset, events |
 | `ParamText`, `GetState`, `SetState` | answered with `Reply` | `Reply` | ok, then the text, state or error |
@@ -111,14 +116,18 @@ used.
 
 ## Audio
 
-Each plug-in has a `Block` in shared memory (`SharedMemory`, made by the engine, opened by the host) and two wake-ups
-on its counters (`IpcSignal`: a futex on Linux, a named auto-reset event on Windows, a polled wait elsewhere).
+Each plug-in has a `Block` in shared memory (`SharedMemory`, made by the engine, opened by the host) with a wake-up
+on its `done` counter (`IpcSignal`: a futex on Linux, a named auto-reset event on Windows, a polled wait elsewhere),
+and a slot on its sandbox's `Doorbell` (given with `Create`). The doorbell, one a sandbox (made by the engine, named
+to the host as it starts: `--doorbell=`), is a queue of the slots whose blocks are to be processed (Vyukov's
+bounded queue, many to many, lock-free; a plug-in has one block on its way at most, so it never fills), the
+workers asleep, and a wake-up on its counter `rung`.
 `SandboxedProcessor::process()`, on whichever thread renders the plug-in:
 
 1. If the plug-in hasn't loaded (or crashed), it returns: the audio passes by, as for a missing plug-in.
 2. Offline, the first block waits for the reset asked for before the render. `resetOffline()` sends `ResetOffline`
    without waiting for it (it runs on the main thread, under the engine's lock, and the sandbox's main thread may be
-   loading another plug-in, or stuck in one); the host's main thread does it, its audio thread the blocks. The wait
+   loading another plug-in, or stuck in one); the host's main thread does it, its workers the blocks. The wait
    ends 10 s after the reset was asked for, and every plug-in was asked at once: a stuck sandbox costs a render 10 s,
    not 10 s a plug-in.
 3. If the host still has the previous block (it didn't make it in time), this one passes by too: a plug-in that hangs
@@ -126,14 +135,19 @@ on its counters (`IpcSignal`: a futex on Linux, a named auto-reset event on Wind
    didn't make it, the next ones pass by until the host catches up.
 4. It fills the block: the context (`BlockContext`), the notes and MIDI, the automation for this call
    (`Processor::automation()`), the values the UI set since (a queue the main thread fills, VST3 ids and normalized
-   values), the audio and the sidechain, and a reset if one was asked for; then moves `request` and wakes the host.
+   values), the audio and the sidechain, and a reset if one was asked for; then moves `request` and queues its slot
+   on the doorbell (`Sandbox::ring()`), which wakes a worker only if they all sleep.
 5. It waits for `done` to match: a spin of a few microseconds, then on the wake-up, at most twice as long as the block
    lasts (3 to 50 ms) live, a minute offline (`Engine::setSandboxOfflineWait()`), and never past its sandbox ending.
    Done, it copies the audio back; not, the audio passes through unprocessed (`lateBlocks()` counts those).
 
-The host's audio thread applies what the block holds to the plug-in (`Processor::automate()`,
-`Vst3Processor::queueParamChange()`, `setSidechain()`) and calls `process()` in place. A round trip costs about
-25-30 µs on Linux.
+A worker takes the slot, applies what the block holds to the plug-in (`Processor::automate()`,
+`Vst3Processor::queueParamChange()`, `setSidechain()`), calls `process()` in place, moves `done` and wakes the
+rendering thread. One worker at a time is in a plug-in's block; one that finds another there leaves it, and that
+one looks again once out, so a block handed over meanwhile is never left behind. A round trip costs about 25-30 µs
+on Linux; on Windows (a 24-core Core Ultra 7, a 138-plug-in project, Together) about 15 µs besides the plug-in's own
+time: 4-5 µs for a worker to take the block, 10 µs for the rendering thread to wake. `benchmarks/project_bench.cpp`
+plays a real project in each mode and measures it.
 
 This is the one place the rendering thread waits for another thread: the real-time rules
 ([architecture.md](../architecture.md#real-time-rules-and-the-boundary-with-the-audio-thread)) say so.

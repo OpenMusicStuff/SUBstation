@@ -11,6 +11,8 @@
 // one too: nothing waits for a sandbox that is gone.
 //
 // Messages go out from the main thread (any thread may send: they take turns).
+// Blocks to process go on its doorbell (SandboxProtocol.h), from the rendering
+// threads (ring()): each plug-in in it has a slot there (takeSlot()).
 
 #include <atomic>
 #include <condition_variable>
@@ -76,6 +78,14 @@ public:
     void detach(uint32_t instance);  // (after which the client hears nothing more)
     size_t clients() const;
 
+    // A plug-in's slot on the doorbell, while it is in this sandbox. Throws
+    // std::runtime_error if every one is taken (kMaxSlots plug-ins).
+    uint32_t takeSlot();
+    void releaseSlot(uint32_t slot);
+    // Real-time: the block of the plug-in in `slot` is to be processed (its
+    // `request` moved). False if it couldn't be queued (the memory trampled).
+    bool ring(uint32_t slot) noexcept;
+
     // A request id for a message whose reply goes to the plug-in it is about.
     static uint32_t newRequest();
     // Sends a message. False if the sandbox is gone.
@@ -104,6 +114,9 @@ private:
 
     const std::string key_;
     const std::string label_;
+    std::unique_ptr<platform::SharedMemory> doorbellMemory_;
+    Doorbell* doorbell_ = nullptr;
+    std::unique_ptr<platform::IpcSignal> ringSignal_;
     std::unique_ptr<platform::ChildProcess> child_;
     std::thread reader_;
     std::atomic<bool> alive_{true};
@@ -122,6 +135,8 @@ private:
     std::map<uint32_t, std::shared_ptr<Waiter>> waiting_;  // request -> who waits for it
     std::vector<SandboxKey> keys_;
     std::string ending_;
+    std::vector<uint32_t> freeSlots_;  // (the lowest last)
+    uint32_t nextSlot_ = 0;            // slots never taken start here
 };
 
 }  // namespace sub::sandbox

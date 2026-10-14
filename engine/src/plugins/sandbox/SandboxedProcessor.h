@@ -108,13 +108,13 @@ public:
     uint64_t lateBlocks() const { return lateBlocks_.load(std::memory_order_relaxed); }
 
 private:
-    // Its sandbox and instance there, and the block they share.
+    // Its sandbox, instance and slot there, and the block they share.
     struct Link {
         std::shared_ptr<Sandbox> sandbox;
         uint32_t instance = 0;
+        uint32_t slot = 0;  // on the sandbox's doorbell
         std::unique_ptr<platform::SharedMemory> memory;
         Block* block = nullptr;
-        std::unique_ptr<platform::IpcSignal> request;
         std::unique_ptr<platform::IpcSignal> done;
         std::atomic<bool> ended{false};  // its sandbox ended
     };

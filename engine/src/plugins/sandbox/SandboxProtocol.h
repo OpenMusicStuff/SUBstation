@@ -11,10 +11,12 @@
 //   engine's in order, but for loads, which wait while anything else is there
 //   to do; the engine reads the host's on a thread of its own and takes them
 //   on the main thread (Engine::idle()).
-// - Audio: each plug-in's Block, in memory both processes map, with a wake-up
-//   on each of its two counters. The thread rendering the plug-in fills the
-//   block and moves `request`; the host's audio thread for that plug-in
-//   processes it in place and moves `done` to match.
+// - Audio: each plug-in's Block, in memory both processes map. The thread
+//   rendering the plug-in fills the block, moves `request`, and queues the
+//   plug-in's slot on the sandbox's Doorbell (memory both map too, with a
+//   wake-up on its counter); one of the host's audio workers takes it,
+//   processes the block in place, moves `done` to match and wakes the engine's
+//   thread (a wake-up on `done`).
 //
 // Both sides are built from the same sources, so the block is laid out alike
 // in both; the host says which version (and block size) it speaks when it
@@ -34,11 +36,11 @@ class Channel;
 
 namespace sub::sandbox {
 
-inline constexpr uint32_t kVersion = 1;
+inline constexpr uint32_t kVersion = 2;
 
 enum class Kind : uint32_t {
     // Engine → host. (Instance: the plug-in it is about; request: answered by a Reply with it.)
-    Create = 1,           // path, uid, sample rate (f64), max block (u32), block's memory name, state, name
+    Create = 1,           // path, uid, sample rate (f64), max block (u32), block's memory name, state, name, slot (u32)
     Destroy,              // -
     Prepare,              // sample rate (f64), max block (u32)
     ResetOffline,         // - (request)
@@ -184,8 +186,58 @@ struct Block {
     float sidechain[2][kMaxFrames];
 };
 
-// The names of a block's wake-ups (beside the block's memory, named `memory`).
-inline std::string requestSignalName(const std::string& memory) { return memory + "q"; }
+// The name of a block's wake-up for the engine (beside the block's memory, named `memory`).
 inline std::string doneSignalName(const std::string& memory) { return memory + "d"; }
+
+// --- The doorbell ----------------------------------------------------------------------------
+
+// Plug-ins in one sandbox at once: each has a slot of its own there (the engine
+// gives it, with Create), which is what goes on the doorbell's queue.
+inline constexpr uint32_t kMaxSlots = 4096;
+inline constexpr uint32_t kDoorbellMagic = 0x53554244;  // "SUBD"
+
+// A sandbox's blocks to process, in the order they were handed over: the slots
+// of the plug-ins whose `request` moved. The engine's rendering threads queue
+// them (push), the host's audio workers take them (pop): Vyukov's bounded
+// queue, many to many, lock-free. A plug-in has one block on its way at most
+// (the engine hands it the next once `done` has caught up), so the queue never
+// fills; push() fails only if the memory was trampled (a crashed host's
+// plug-in), and it never loops for long whatever is in it.
+//
+// Workers with nothing to take spin briefly, then count themselves asleep and
+// wait on `rung`. Whoever queues a slot looks at `sleepers` after it (a full
+// fence between) and, if any sleep, moves `rung` and wakes one (ring()).
+struct Doorbell {
+    uint32_t magic = kDoorbellMagic;
+    uint32_t size = sizeof(Doorbell);
+    alignas(64) std::atomic<uint32_t> rung{0};      // moved to wake a sleeping worker (a signal on it)
+    alignas(64) std::atomic<uint32_t> sleepers{0};  // the host's workers asleep, or about to be
+    alignas(64) std::atomic<uint64_t> tail{0};      // the next position to queue in
+    alignas(64) std::atomic<uint64_t> head{0};      // the next position to take from
+    struct Cell {
+        std::atomic<uint64_t> sequence{0};
+        uint32_t slot = 0;
+        uint32_t pad = 0;
+    };
+    alignas(64) Cell cells[kMaxSlots];
+
+    Doorbell() noexcept;  // (the engine's, in the memory it makes)
+    bool push(uint32_t slot) noexcept;
+    bool pop(uint32_t& slot) noexcept;
+    // Whether something is queued that no worker has taken yet (a moment ago).
+    bool waiting() const noexcept {
+        return tail.load(std::memory_order_acquire) != head.load(std::memory_order_acquire);
+    }
+    // After queuing: whether a worker sleeps, to be woken (a full fence first).
+    bool anyAsleep() const noexcept {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        return sleepers.load(std::memory_order_seq_cst) > 0;
+    }
+};
+
+// The name of a doorbell's wake-up (beside its memory, named `memory`).
+inline std::string ringSignalName(const std::string& memory) { return memory + "r"; }
+
+static_assert(std::atomic<uint64_t>::is_always_lock_free, "the doorbell's counters are shared by two processes");
 
 }  // namespace sub::sandbox

@@ -42,11 +42,16 @@ SandboxedProcessor::SandboxedProcessor(PluginSandboxes& sandboxes, PluginOrigin 
     link_.sandbox = sandboxes.sandboxFor(origin_);
     offlineWaitUs_ = static_cast<int64_t>(sandboxes.offlineWaitMs()) * 1000;
     link_.instance = Sandbox::newInstance();
+    link_.slot = link_.sandbox->takeSlot();
     const std::string memory = platform::uniqueIpcName("p");
-    link_.memory = platform::SharedMemory::create(memory, sizeof(Block));
-    link_.block = new (link_.memory->data()) Block;
-    link_.request = platform::IpcSignal::create(requestSignalName(memory), link_.block->request);
-    link_.done = platform::IpcSignal::create(doneSignalName(memory), link_.block->done);
+    try {
+        link_.memory = platform::SharedMemory::create(memory, sizeof(Block));
+        link_.block = new (link_.memory->data()) Block;
+        link_.done = platform::IpcSignal::create(doneSignalName(memory), link_.block->done);
+    } catch (...) {
+        link_.sandbox->releaseSlot(link_.slot);
+        throw;
+    }
 
     platform::ByteWriter out;
     out.str(origin_.path);
@@ -56,6 +61,7 @@ SandboxedProcessor::SandboxedProcessor(PluginSandboxes& sandboxes, PluginOrigin 
     out.str(memory);
     writeBytes(out, state);
     out.str(name_);
+    out.u32(link_.slot);
     link_.sandbox->attach(link_.instance, this);  // (a sandbox already gone says so at once)
     link_.sandbox->send({Kind::Create, link_.instance, 0, std::move(out.bytes)});
 }
@@ -63,6 +69,7 @@ SandboxedProcessor::SandboxedProcessor(PluginSandboxes& sandboxes, PluginOrigin 
 SandboxedProcessor::~SandboxedProcessor() {
     link_.sandbox->detach(link_.instance);  // (nothing more comes for it)
     link_.sandbox->send({Kind::Destroy, link_.instance});
+    link_.sandbox->releaseSlot(link_.slot);  // (the host has let it go before it reads a Create that takes it again)
 }
 
 std::string SandboxedProcessor::name() const { return name_; }
@@ -204,7 +211,10 @@ void SandboxedProcessor::process(const ProcessContext& ctx, float* const* channe
     block.flags = flags;
 
     block.request.store(++sent_, std::memory_order_release);
-    link_.request->notify();
+    if (!link_.sandbox->ring(link_.slot)) {  // (only trampled memory)
+        lateBlocks_.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
     // Live, a little longer than the block lasts (a plug-in slower than that is late anyway).
     const int64_t lasts = static_cast<int64_t>(numFrames * 1e6 / std::max(ctx.sampleRate, 1.0));
     const int64_t timeout = ctx.offline ? offlineWaitUs_ : std::clamp<int64_t>(lasts * 2, 3000, 50000);

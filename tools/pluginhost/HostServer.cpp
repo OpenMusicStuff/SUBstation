@@ -19,6 +19,19 @@ using sandbox::Message;
 namespace {
 
 constexpr auto kIdleInterval = std::chrono::milliseconds(30);  // as the engine bridge idles plug-ins (33 ms)
+// Audio workers: as many as the plug-ins loaded, up to half the cores (the
+// engine's threads have the rest), and more than that only for stuck ones.
+const int kMostWorkers = std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 16);
+constexpr int kMostWorkersEver = 64;
+constexpr int kSpinners = 1;                                  // idle workers spinning for the next block at once
+constexpr auto kSpin = std::chrono::microseconds(50);         // for this long
+constexpr auto kStuck = std::chrono::milliseconds(250);       // in one block this long: another worker starts
+constexpr auto kLetGo = std::chrono::seconds(1);              // a plug-in going waits this long for its block
+
+int64_t nowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
 
 std::vector<float> valuesOf(const Processor& processor) {
     std::vector<float> values(processor.params().size());
@@ -28,8 +41,17 @@ std::vector<float> valuesOf(const Processor& processor) {
 
 }  // namespace
 
-HostServer::HostServer(std::unique_ptr<platform::Channel> channel, HostLoop& loop)
-    : channel_(std::move(channel)), loop_(loop) {}
+HostServer::HostServer(std::unique_ptr<platform::Channel> channel, HostLoop& loop, const std::string& doorbell)
+    : channel_(std::move(channel)), loop_(loop) {
+    doorbellMemory_ = platform::SharedMemory::open(doorbell, sizeof(sandbox::Doorbell));
+    doorbell_ = static_cast<sandbox::Doorbell*>(doorbellMemory_->data());
+    if (doorbell_->magic != sandbox::kDoorbellMagic || doorbell_->size != sizeof(sandbox::Doorbell)) {
+        throw std::runtime_error("The engine's doorbell isn't this host's.");
+    }
+    ringSignal_ = platform::IpcSignal::open(sandbox::ringSignalName(doorbell), doorbell_->rung);
+    slots_ = std::make_unique<std::atomic<Instance*>[]>(sandbox::kMaxSlots);
+    slotUsers_ = std::make_unique<std::atomic<uint32_t>[]>(sandbox::kMaxSlots);
+}
 
 HostServer::~HostServer() = default;
 
@@ -66,6 +88,7 @@ int HostServer::run() {
         if (!more && !loads_.empty()) loadNext();
         const auto now = std::chrono::steady_clock::now();
         if (now >= nextIdle_) {
+            checkWorkers();
             if (!idleHeld_) idleAll();
             nextIdle_ = now + kIdleInterval;
         }
@@ -83,6 +106,10 @@ int HostServer::run() {
     std::vector<uint32_t> ids;
     for (const auto& [id, instance] : instances_) ids.push_back(id);
     for (const uint32_t id : ids) destroy(id);
+    // (A worker stuck in a plug-in stays so: the process ends without waiting for it.)
+    stopping_.store(true, std::memory_order_release);
+    for (size_t i = 0; i < workers_.size(); ++i) wakeWorker();
+    for (auto& worker : workers_) worker->thread.detach();
     return 0;
 }
 
@@ -247,15 +274,15 @@ void HostServer::create(const Message& message) {
     const std::string memory = in.str();
     instance->state = sandbox::readBytes(in);
     instance->name = in.str();
+    instance->slot = in.u32();
     try {
         if (!in.ok()) throw std::runtime_error("The engine's request was garbled.");
+        if (instance->slot >= sandbox::kMaxSlots) throw std::runtime_error("The engine's slot for it isn't one.");
         instance->memory = platform::SharedMemory::open(memory, sizeof(sandbox::Block));
         instance->block = static_cast<sandbox::Block*>(instance->memory->data());
         if (instance->block->magic != sandbox::kBlockMagic || instance->block->size != sizeof(sandbox::Block)) {
             throw std::runtime_error("The engine's audio block isn't this host's.");
         }
-        instance->requestSignal =
-            platform::IpcSignal::open(sandbox::requestSignalName(memory), instance->block->request);
         instance->doneSignal = platform::IpcSignal::open(sandbox::doneSignalName(memory), instance->block->done);
         send({Kind::Attached, instance->id});
         loads_.push_back(instance->id);
@@ -273,22 +300,23 @@ void HostServer::destroy(uint32_t id) {
     const auto found = instances_.find(id);
     if (found == instances_.end()) return;
     Instance& instance = *found->second;
-    instance.stop = true;
-    if (instance.requestSignal) instance.requestSignal->notify();
-    if (instance.audio.joinable()) {
-        // A plug-in stuck in process() keeps its thread: it is left as it is (destroying it
-        // under that call would be worse), and the sandbox's other plug-ins go on.
-        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-        while (!instance.stopped && std::chrono::steady_clock::now() < until) {
+    if (instance.inSlot) {
+        // Out of the workers' reach, once none is looking at it any more.
+        slots_[instance.slot].store(nullptr, std::memory_order_seq_cst);
+        instance.inSlot = false;
+        --inSlots_;
+        std::atomic<uint32_t>& users = slotUsers_[instance.slot];
+        const auto until = std::chrono::steady_clock::now() + kLetGo;
+        while (users.load(std::memory_order_seq_cst) != 0 && std::chrono::steady_clock::now() < until) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        if (!instance.stopped) {
-            instance.audio.detach();
+        if (users.load(std::memory_order_seq_cst) != 0) {
+            // Stuck in process(): it is left as it is (destroying it under that call would be
+            // worse); its worker stays with it, and the sandbox's other plug-ins go on.
             static_cast<void>(found->second.release());
             instances_.erase(found);
             return;
         }
-        instance.audio.join();
     }
     try {
         instance.processor.reset();  // (its editor goes with it)
@@ -341,7 +369,10 @@ void HostServer::loadNext() {
         info.params = processor.params();
         info.values = valuesOf(processor);
         instance.sentValues = info.values;
-        instance.audio = std::thread(&HostServer::audioLoop, &instance);
+        slots_[instance.slot].store(&instance, std::memory_order_seq_cst);  // (the workers find its blocks)
+        instance.inSlot = true;
+        ++inSlots_;
+        checkWorkers();
         platform::ByteWriter out;
         sandbox::writeLoaded(out, info);
         send({Kind::Loaded, id, 0, std::move(out.bytes)});
@@ -464,22 +495,93 @@ bool HostServer::keyTaken(const KeyPress& key) {
     return true;
 }
 
-void HostServer::audioLoop(Instance* instance) {
+void HostServer::checkWorkers() {
+    const int64_t now = nowNs();
+    const auto stuckNs = std::chrono::duration_cast<std::chrono::nanoseconds>(kStuck).count();
+    int stuck = 0;
+    for (const auto& worker : workers_) {
+        const int64_t since = worker->busySince.load(std::memory_order_relaxed);
+        if (since != 0 && now - since > stuckNs) ++stuck;
+    }
+    const int wanted = std::min(inSlots_.load(std::memory_order_relaxed), kMostWorkers) + stuck;
+    while (static_cast<int>(workers_.size()) < std::min(wanted, kMostWorkersEver)) {
+        auto worker = std::make_unique<Worker>();
+        Worker& w = *worker;
+        workers_.push_back(std::move(worker));
+        w.thread = std::thread([this, &w] { workerLoop(w); });
+    }
+}
+
+void HostServer::wakeWorker() {
+    doorbell_->rung.fetch_add(1, std::memory_order_seq_cst);
+    ringSignal_->notify();
+}
+
+void HostServer::workerLoop(Worker& worker) {
     const platform::ScopedRealtimePriority realtime;
     const ScopedNoDenormals noDenormals;
-    sandbox::Block& block = *instance->block;
-    uint32_t seen = block.done.load(std::memory_order_acquire);
-    while (!instance->stop.load(std::memory_order_acquire)) {
-        instance->requestSignal->wait(seen, 200000);
-        if (instance->stop.load(std::memory_order_acquire)) break;
-        const uint32_t request = block.request.load(std::memory_order_acquire);
-        if (request == seen) continue;
-        processBlock(*instance);
-        seen = request;
-        block.done.store(request, std::memory_order_release);
-        instance->doneSignal->notify();
+    sandbox::Doorbell& doorbell = *doorbell_;
+    uint32_t slot = 0;
+    while (!stopping_.load(std::memory_order_acquire)) {
+        if (doorbell.pop(slot)) {
+            serve(slot, worker);
+            continue;
+        }
+        // Nothing queued. The next block of this callback comes soon: one of the idle spins for it
+        // (but for a plug-in alone: its next block is a callback away).
+        const bool several = inSlots_.load(std::memory_order_relaxed) > 1;
+        if (several && spinning_.fetch_add(1, std::memory_order_acq_rel) < kSpinners) {
+            const auto until = std::chrono::steady_clock::now() + kSpin;
+            bool took = false;
+            for (int spins = 1; !took; ++spins) {
+                took = doorbell.pop(slot);
+                if (took || (spins % 64 == 0 && std::chrono::steady_clock::now() > until)) break;
+                cpuRelax();
+            }
+            spinning_.fetch_sub(1, std::memory_order_acq_rel);
+            if (took) {
+                serve(slot, worker);
+                continue;
+            }
+        } else if (several) {
+            spinning_.fetch_sub(1, std::memory_order_acq_rel);
+        }
+        // Asleep until rung (Doorbell: counted first, then a last look, then the wait).
+        doorbell.sleepers.fetch_add(1, std::memory_order_seq_cst);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        const uint32_t rung = doorbell.rung.load(std::memory_order_seq_cst);
+        const bool took = doorbell.pop(slot);
+        if (!took) ringSignal_->wait(rung, 200000);  // (now and then: stopping_)
+        doorbell.sleepers.fetch_sub(1, std::memory_order_seq_cst);
+        if (took) serve(slot, worker);
     }
-    instance->stopped.store(true, std::memory_order_release);
+}
+
+void HostServer::serve(uint32_t slot, Worker& worker) {
+    if (slot >= sandbox::kMaxSlots) return;  // (trampled memory)
+    // More waiting than the spinning will take: wake another worker for it.
+    if (doorbell_->waiting() && spinning_.load(std::memory_order_acquire) == 0 && doorbell_->anyAsleep()) wakeWorker();
+    std::atomic<uint32_t>& users = slotUsers_[slot];
+    users.fetch_add(1, std::memory_order_seq_cst);
+    if (Instance* instance = slots_[slot].load(std::memory_order_seq_cst)) {
+        sandbox::Block& block = *instance->block;
+        // One worker at a time in a plug-in's block. One that finds another there leaves it to that
+        // one, which looks again once out: a block handed over meanwhile is never left behind.
+        while (block.request.load(std::memory_order_seq_cst) != block.done.load(std::memory_order_seq_cst)) {
+            bool expected = false;
+            if (!instance->processing.compare_exchange_strong(expected, true, std::memory_order_seq_cst)) break;
+            const uint32_t request = block.request.load(std::memory_order_acquire);
+            if (request != block.done.load(std::memory_order_acquire)) {
+                worker.busySince.store(nowNs(), std::memory_order_relaxed);
+                processBlock(*instance);
+                worker.busySince.store(0, std::memory_order_relaxed);
+                block.done.store(request, std::memory_order_release);
+                instance->doneSignal->notify();
+            }
+            instance->processing.store(false, std::memory_order_seq_cst);
+        }
+    }
+    users.fetch_sub(1, std::memory_order_seq_cst);
 }
 
 void HostServer::processBlock(Instance& instance) {

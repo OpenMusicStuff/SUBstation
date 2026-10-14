@@ -7,6 +7,64 @@
 
 namespace sub::sandbox {
 
+// --- The doorbell (Vyukov's bounded MPMC queue) --------------------------------------------------
+
+namespace {
+
+constexpr uint64_t kCellMask = kMaxSlots - 1;
+static_assert((kMaxSlots & kCellMask) == 0, "the doorbell's cells are a power of two");
+// Attempts at a position before giving up: other threads move it on meanwhile, a
+// handful at a time; only trampled memory makes them run out.
+constexpr int kAttempts = 256;
+
+}  // namespace
+
+Doorbell::Doorbell() noexcept {
+    for (uint64_t i = 0; i < kMaxSlots; ++i) cells[i].sequence.store(i, std::memory_order_relaxed);
+}
+
+bool Doorbell::push(uint32_t slot) noexcept {
+    uint64_t position = tail.load(std::memory_order_relaxed);
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        Cell& cell = cells[position & kCellMask];
+        const uint64_t sequence = cell.sequence.load(std::memory_order_acquire);
+        const auto difference = static_cast<int64_t>(sequence - position);
+        if (difference == 0) {
+            if (tail.compare_exchange_weak(position, position + 1, std::memory_order_relaxed)) {
+                cell.slot = slot;
+                cell.sequence.store(position + 1, std::memory_order_release);
+                return true;
+            }
+        } else if (difference < 0) {
+            return false;  // full
+        } else {
+            position = tail.load(std::memory_order_relaxed);
+        }
+    }
+    return false;
+}
+
+bool Doorbell::pop(uint32_t& slot) noexcept {
+    uint64_t position = head.load(std::memory_order_relaxed);
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        Cell& cell = cells[position & kCellMask];
+        const uint64_t sequence = cell.sequence.load(std::memory_order_acquire);
+        const auto difference = static_cast<int64_t>(sequence - (position + 1));
+        if (difference == 0) {
+            if (head.compare_exchange_weak(position, position + 1, std::memory_order_relaxed)) {
+                slot = cell.slot;
+                cell.sequence.store(position + kCellMask + 1, std::memory_order_release);
+                return true;
+            }
+        } else if (difference < 0) {
+            return false;  // empty (or the one queuing there hasn't finished)
+        } else {
+            position = head.load(std::memory_order_relaxed);
+        }
+    }
+    return false;
+}
+
 namespace {
 
 constexpr uint32_t kHeaderSize = 12;              // kind, instance, request

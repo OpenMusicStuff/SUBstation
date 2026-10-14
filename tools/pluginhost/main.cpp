@@ -4,13 +4,14 @@
 // time to load never holds up the application's window, and one that crashes
 // takes down only its sandbox.
 //
-// It is started by the engine only: `--parent=<pid>` and the channel to it
-// (platform/Ipc.h). It ends when the engine says Quit, or goes.
+// It is started by the engine only: `--parent=<pid>`, `--doorbell=<name>` (its
+// blocks to process: SandboxProtocol.h) and the channel to it (platform/Ipc.h). It ends when the engine says Quit, or goes.
 //
 // Links the engine's VST3 host (sub_engine) and nothing of Qt.
 
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <memory>
 #include <string>
 
@@ -20,22 +21,27 @@
 
 int main(int argc, char** argv) {
     int parent = 0;
+    std::string doorbell;
     std::unique_ptr<sub::platform::Channel> channel;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg.rfind("--parent=", 0) == 0) parent = std::atoi(arg.c_str() + 9);
+        else if (arg.rfind("--doorbell=", 0) == 0) doorbell = arg.substr(11);
         else if (sub::platform::isChannelArgument(arg)) channel = sub::platform::parentChannel(arg);
     }
-    if (!channel) {
+    if (!channel || doorbell.empty()) {
         std::fprintf(stderr, "substation-plugin-host is started by SUBstation, to run plug-ins in.\n");
         return 2;
     }
     sub::platform::childProcessStarted(parent);
     auto loop = sub::pluginhost::HostLoop::create();
     int code = 0;
-    {
-        sub::pluginhost::HostServer server(std::move(channel), *loop);
+    try {
+        sub::pluginhost::HostServer server(std::move(channel), *loop, doorbell);
         code = server.run();
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "substation-plugin-host: %s\n", error.what());
+        code = 2;
     }
     loop.reset();
     std::fflush(nullptr);
