@@ -217,13 +217,14 @@ void DeviceInfo::refresh() {
             s.canMoveLeft = index > first;
             s.canMoveRight = index < int(siblings->size()) - 1;
         }
-        s.loaded = bridge->engineDeviceId(trackId_, deviceId_).has_value();
+        s.loaded = bridge->pluginRunning(trackId_, deviceId_);  // (one loading in its sandbox: not yet)
         const int latency = s.loaded ? bridge->deviceLatency(trackId_, deviceId_) : 0;
         if (s.isPlugin && device->plugin) {
             const sub::app::PluginRef& plugin = *device->plugin;
             s.pending = !s.loaded && bridge->pluginPending(deviceId_);
+            s.reloadable = !s.loaded && bridge->pluginReloadable(trackId_, deviceId_);
             if (s.pending) {
-                s.pluginMessage = plugin.name + QStringLiteral(" is loading…");  // (they load one by one)
+                s.pluginMessage = plugin.name + QStringLiteral(" is loading…");
             } else if (!s.loaded) {
                 s.pluginMessage = bridge->pluginError(deviceId_);
                 if (s.pluginMessage.isEmpty())

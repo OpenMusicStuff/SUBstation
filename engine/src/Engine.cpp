@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "platform/Paths.h"
+#include "plugins/sandbox/PluginSandboxes.h"
 
 namespace sub {
 
@@ -22,6 +23,7 @@ Engine::Engine()
           midiInput(port, message, size, hostTime);
       }) {
     std::lock_guard lock(mutex_);
+    sandboxes_ = std::make_unique<sandbox::PluginSandboxes>();
     master_.chainId = addChainLocked(kMaster, 0);
     scheduler_ = std::make_unique<Scheduler>(defaultAudioThreads());
     renderer_.setScheduler(scheduler_.get());
@@ -309,6 +311,7 @@ void Engine::idle(bool releaseAll) {
     }
     dead.clear();
 
+    sandboxes_->idle();  // (unused ones quit)
     bool realign = false;
     for (const auto& p : live) realign |= p->idle();
     if (live.empty()) return;

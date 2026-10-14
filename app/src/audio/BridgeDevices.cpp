@@ -476,7 +476,8 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
         pluginFailed(deviceId, plugin.name + QStringLiteral(" is not installed."));
         return std::nullopt;
     }
-    if (d_->deferring) {  // it loads after the project shows (BridgeLoading.cpp)
+    // In this process it loads after the project shows (BridgeLoading.cpp); in a sandbox it loads there meanwhile.
+    if (d_->deferring && engine_.pluginHosting() == sub::PluginHosting::InProcess) {
         deferPlugin(deviceId);
         return std::nullopt;
     }
@@ -488,7 +489,8 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
         const BusyScope busy(d_->busy);
         try {
             processorId = engine_.addPluginProcessor(chainId, plugin.format.toStdString(), path->toStdString(),
-                                                     plugin.uid.toStdString(), -1);
+                                                     plugin.uid.toStdString(), -1,
+                                                     {plugin.name.toStdString(), plugin.vendor.toStdString()});
         } catch (const std::exception& error) {
             failure = QString::fromStdString(error.what());
         }
@@ -502,7 +504,8 @@ std::optional<quint32> EngineBridge::loadPlugin(quint32 chainId, const Device& d
     std::optional<QByteArray> state;
     if (d_->pluginStates.contains(deviceId)) state = d_->pluginStates.take(deviceId);
     if (!state && saved && !saved->isEmpty()) state = fromBase64(*saved);
-    if (state && !state->isEmpty()) setPluginState(processorId, plugin.name, *state);
+    if (state && !state->isEmpty()) setPluginState(processorId, plugin.name, *state);  // (in a sandbox: as it loads)
+    noteSandboxLoading(deviceId, processorId);
     return processorId;
 }
 
@@ -537,6 +540,7 @@ void EngineBridge::forgetProcessor(const QString& deviceId, std::optional<quint3
     d.pids.remove(deviceId);
     d.where.remove(deviceId);
     d.pluginErrors.remove(deviceId);
+    sandboxLoaded(deviceId);  // (no longer loading, if it was)
     d.editorsWanted.remove(deviceId);
     d.ownEnabled.remove(deviceId);
     if (!processorId) return;
@@ -639,10 +643,16 @@ void EngineBridge::setBuiltinState(quint32 processorId, const Device& device) {
 
 void EngineBridge::waitForDeviceStates() {
     loadPendingPlugins();
+    if (!d_->sandboxLoading.isEmpty()) {
+        engine_.waitForPlugins(kSandboxLoadWaitMs);
+        pollPlugins();  // (what they reported: their parameters, for their automation)
+    }
     d_->statePool.waitForDone();
 }
 
-bool EngineBridge::devicesReady() const { return d_->pendingPlugins.isEmpty() && d_->statePool.waitForDone(0); }
+bool EngineBridge::devicesReady() const {
+    return d_->pendingPlugins.isEmpty() && d_->sandboxLoading.isEmpty() && d_->statePool.waitForDone(0);
+}
 
 const QMap<QString, QString>& EngineBridge::pluginErrors() const { return d_->pluginErrors; }
 

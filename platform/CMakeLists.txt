@@ -3,19 +3,22 @@
 # and how they compare, files, threads' priorities (and macOS's audio
 # workgroups). No Qt and nothing of the
 # other layers: the engine, the browser backend and the intelligence module
-# stand on it (cmake/CheckBoundaries.cmake). Each system's code is a file of
-# its own: PlatformWin32.cpp on Windows, PlatformPosix.cpp elsewhere. Headers
-# are included by their folder: "platform/Paths.h".
+# stand on it (cmake/CheckBoundaries.cmake). Each system's code is in files of
+# its own: PlatformWin32.cpp and IpcWin32.cpp on Windows, PlatformPosix.cpp and
+# IpcPosix.cpp elsewhere. Headers are included by their folder: "platform/Paths.h".
 add_library(sub_platform STATIC src/platform/Files.cpp src/platform/Unicode.cpp)
 if (WIN32)
-    target_sources(sub_platform PRIVATE src/platform/PlatformWin32.cpp)
+    target_sources(sub_platform PRIVATE src/platform/PlatformWin32.cpp src/platform/IpcWin32.cpp)
     target_compile_definitions(sub_platform PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
     target_link_libraries(sub_platform PRIVATE avrt)
 else()
     # libdbus (for rtkit, on Linux) is loaded at run time: dlopen.
     find_package(Threads REQUIRED)
-    target_sources(sub_platform PRIVATE src/platform/PlatformPosix.cpp)
+    target_sources(sub_platform PRIVATE src/platform/PlatformPosix.cpp src/platform/IpcPosix.cpp)
     target_link_libraries(sub_platform PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(sub_platform PRIVATE rt)  # (shm_open, with a C library older than glibc 2.34)
+    endif()
 endif()
 add_library(sub::platform ALIAS sub_platform)
 target_include_directories(sub_platform PUBLIC src)

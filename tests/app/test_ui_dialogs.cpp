@@ -30,6 +30,7 @@
 #include "plugins/PluginIndex.h"
 #include "session/AudioPreferences.h"
 #include "session/MidiPreferences.h"
+#include "session/PluginHostingPreferences.h"
 #include "session/RenderProgress.h"
 #include "session/Selection.h"
 #include "theme/Theme.h"
@@ -262,7 +263,7 @@ private Q_SLOTS:
     // Preferences › Plug-ins (test_plugin_folders_in_preferences): the
     // standard folders stay; a folder added is kept and its plug-ins found (in
     // folders inside it too); a rescan reads everything; a removed folder's
-    // plug-ins go.
+    // plug-ins go. Plug-in Hosting: a choice applies at once, and says what it means.
     void pluginsPage() {
         sub::app::PluginIndex& index = *session().plugins();
         open(QStringLiteral("preferencesDialog"));
@@ -276,6 +277,22 @@ private Q_SLOTS:
         folders->setProperty("currentIndex", 0);
         QVERIFY(!shown(QStringLiteral("removePluginFolder"))->isEnabled());  // the standard folders stay
         test::screenshot(window_, QStringLiteral("preferences-plugins"));
+
+        sub::app::PluginHostingPreferences& hosting = *session().pluginHosting();
+        QCOMPARE(comboText(QStringLiteral("pluginHosting")), QStringLiteral("Within SUBstation"));  // (the tests')
+        QCOMPARE(shown(QStringLiteral("pluginHostingStatus"))->property("text").toString(),
+                 QStringLiteral("Plug-ins run within SUBstation."));
+        choose(QStringLiteral("pluginHosting"), 2);
+        QCOMPARE(hosting.mode(), QStringLiteral("manufacturer"));
+        QCOMPARE(session().bridge()->pluginHosting(), sub::app::PluginHostingMode::ByManufacturer);
+        QCOMPARE(comboText(QStringLiteral("pluginHosting")), QStringLiteral("By Manufacturer"));
+        QVERIFY(shown(QStringLiteral("pluginHostingDescription"))->property("text").toString().startsWith(
+            QStringLiteral("A sandbox for each plug-in maker")));
+        QCOMPARE(shown(QStringLiteral("pluginHostingStatus"))->property("text").toString(),
+                 QStringLiteral("No plug-in runs in a sandbox now."));
+        QVERIFY(shown(QStringLiteral("reloadPlugins"))->isEnabled());
+        choose(QStringLiteral("pluginHosting"), 0);
+        QCOMPARE(hosting.mode(), QStringLiteral("within"));
 #ifndef SUBSTATION_TEST_PLUGINS_BUNDLE
         close(QStringLiteral("preferencesDialog"));
         QSKIP("the test plug-ins are not built");
@@ -294,10 +311,10 @@ private Q_SLOTS:
         QCOMPARE(folders->property("currentIndex").toInt(), 1);
         QVERIFY(shown(QStringLiteral("removePluginFolder"))->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(!index.scanning(), 30000);
-        QCOMPARE(index.pluginCount(), 5);
+        QCOMPARE(index.pluginCount(), 6);
         QCOMPARE(index.failureCount(), 1);
         QCOMPARE(shown(QStringLiteral("scanStatus"))->property("text").toString(),
-                 QStringLiteral("5 plug-ins found · 1 file could not be read"));
+                 QStringLiteral("6 plug-ins found · 1 file could not be read"));
         QVERIFY(shown(QStringLiteral("rescanPlugins"))->isEnabled());
         test::screenshot(window_, QStringLiteral("preferences-plugins-found"));
 
@@ -305,7 +322,7 @@ private Q_SLOTS:
         QVERIFY(index.scanning());
         QVERIFY(!shown(QStringLiteral("rescanPlugins"))->isEnabled());
         QTRY_VERIFY_WITH_TIMEOUT(!index.scanning(), 30000);
-        QCOMPARE(index.pluginCount(), 5);
+        QCOMPARE(index.pluginCount(), 6);
         test::click(window_, test::centerOf(shown(QStringLiteral("removePluginFolder"))));
         QVERIFY(index.customFolders().isEmpty());
         QCOMPARE(folders->property("count").toInt(), 1);

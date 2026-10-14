@@ -107,4 +107,17 @@ void setEditorKeyFilter(std::function<bool(const EditorKey&)> filter) { keyFilte
 
 const std::function<bool(const EditorKey&)>& editorKeyFilter() { return keyFilter(); }
 
+namespace {
+std::function<void()>& raisedHook() {
+    static std::function<void()> hook;
+    return hook;
+}
+}  // namespace
+
+void setEditorRaisedHook(std::function<void()> hook) { raisedHook() = std::move(hook); }
+
+void editorRaised() {
+    if (raisedHook()) raisedHook()();
+}
+
 }  // namespace sub

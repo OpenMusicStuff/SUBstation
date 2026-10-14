@@ -7,6 +7,7 @@
 #include <QVariantList>
 
 #include "audio/EditorKeys.h"
+#include "audio/EngineBridge.h"
 #include "input/Shortcuts.h"
 #include "session/ComputerKeyboard.h"
 #include "session/RenderProgress.h"
@@ -81,16 +82,47 @@ int pressedModifiers() {
     return modifiers;
 }
 
-BOOL CALLBACK findEditor(HWND hwnd, LPARAM found) {  // top-level windows, from the top down
+// The foremost editor of these processes (top-level windows come from the top down).
+struct EditorSearch {
+    QList<int> processes;
+    HWND found = nullptr;
+};
+
+BOOL CALLBACK findEditor(HWND hwnd, LPARAM search) {
+    auto* s = reinterpret_cast<EditorSearch*>(search);
     DWORD process = 0;
     GetWindowThreadProcessId(hwnd, &process);
-    if (process == GetCurrentProcessId() && IsWindowVisible(hwnd) && isEditorClass(hwnd)) {
-        *reinterpret_cast<HWND*>(found) = hwnd;
+    if (s->processes.contains(int(process)) && IsWindowVisible(hwnd) && isEditorClass(hwnd)) {
+        s->found = hwnd;
         return FALSE;
     }
     return TRUE;
 }
+
+bool closeForemostOf(const QList<int>& processes) {
+    EditorSearch search{processes};
+    EnumWindows(findEditor, reinterpret_cast<LPARAM>(&search));
+    if (!search.found) return false;
+    PostMessageW(search.found, WM_CLOSE, 0, 0);  // (another process's too)
+    return true;
+}
 #endif
+
+// EditorKey's modifiers (the engine's EditorHost.h, which the UI doesn't include): the key table's.
+constexpr int kEditorShift = 1, kEditorControl = 2, kEditorAlt = 4;
+
+int editorModifiers(Qt::KeyboardModifiers modifiers) {
+    return (modifiers & Qt::ShiftModifier ? kEditorShift : 0) | (modifiers & Qt::ControlModifier ? kEditorControl : 0) |
+           (modifiers & Qt::AltModifier ? kEditorAlt : 0);
+}
+
+int qtModifiers(int editor) {
+    int modifiers = Qt::NoModifier;
+    if (editor & kEditorShift) modifiers |= Qt::ShiftModifier;
+    if (editor & kEditorControl) modifiers |= Qt::ControlModifier;
+    if (editor & kEditorAlt) modifiers |= Qt::AltModifier;
+    return modifiers;
+}
 
 }  // namespace
 
@@ -122,12 +154,26 @@ void PluginEditorKeys::setTarget(QObject* target) {
     if (target == target_) return;
     target_ = target;
     Q_EMIT targetChanged();
+    updateSandboxKeys();
 }
 
 void PluginEditorKeys::setSession(app::Session* session) {
     if (session == session_) return;
+    for (const QMetaObject::Connection& connection : sessionConnections_) disconnect(connection);
+    sessionConnections_.clear();
     session_ = session;
+    if (session_) {
+        app::EngineBridge* bridge = session_->bridge();
+        sessionConnections_ << connect(bridge, &app::EngineBridge::pluginEditorKey, this,
+                                       &PluginEditorKeys::sandboxKeyPressed);
+        // What the window takes may be other now: the table again.
+        const auto update = [this] { updateSandboxKeys(); };
+        sessionConnections_ << connect(bridge, &app::EngineBridge::pluginEditorChanged, this, update);
+        sessionConnections_ << connect(session_->computerKeyboard(), &app::ComputerKeyboard::changed, this, update);
+        sessionConnections_ << connect(session_->render(), &app::RenderProgress::activeChanged, this, update);
+    }
     Q_EMIT sessionChanged();
+    updateSandboxKeys();
 }
 
 bool PluginEditorKeys::supported() {
@@ -178,30 +224,119 @@ QObject* PluginEditorKeys::actionFor(int virtualKey, int modifiers, bool textFie
     return actionForKey(qtKey(virtualKey), modifiers, textField);
 }
 
-QObject* PluginEditorKeys::actionForKey(int key, int modifiers, bool textField) const {
-    if (key == 0 || !target_) return nullptr;
+namespace {
+
+// An Action's or Shortcut's key sequences.
+QList<QKeySequence> sequencesOf(QObject* candidate) {
+    QVariant shortcut;
+    if (candidate->inherits("QQuickAction"))
+        shortcut = candidate->property("shortcut");
+    else if (candidate->inherits("QQuickShortcut"))
+        shortcut = QVariantList{candidate->property("sequence"), candidate->property("sequences")};
+    else
+        return {};
+    return keySequences(shortcut);
+}
+
+}  // namespace
+
+QList<QObject*> PluginEditorKeys::candidates() const {
+    if (!target_) return {};
+    // The window's Actions (the menus') and its Shortcuts (their other keys), in the order they were made.
+    QList<QObject*> found{target_.data()};
+    found += target_->findChildren<QObject*>();
+    return found;
+}
+
+bool PluginEditorKeys::takesKey(int key, int modifiers) const {
+    if (key == 0) return false;
     const auto mods = Qt::KeyboardModifiers(modifiers) & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     if (!(mods & (Qt::ControlModifier | Qt::AltModifier))) {
-        if (!dawKey(key) || (mods & Qt::ShiftModifier) || textField) return nullptr;
-        if (session_ && session_->computerKeyboard()->takesKey(key)) return nullptr;
+        if (!dawKey(key) || (mods & Qt::ShiftModifier)) return false;
+        if (session_ && session_->computerKeyboard()->takesKey(key)) return false;
     }
+    return !matches(QKeySequence(QKeyCombination(mods, Qt::Key(key))), keptForPlugin());
+}
+
+QObject* PluginEditorKeys::actionForKey(int key, int modifiers, bool textField) const {
+    if (!target_ || !takesKey(key, modifiers)) return nullptr;
+    const auto mods = Qt::KeyboardModifiers(modifiers) & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
+    if (!(mods & (Qt::ControlModifier | Qt::AltModifier)) && textField) return nullptr;
     const QKeySequence pressed(QKeyCombination(mods, Qt::Key(key)));
-    if (matches(pressed, keptForPlugin())) return nullptr;
-    // The window's Actions (the menus') and its Shortcuts (their other keys), in the order they were made.
-    QList<QObject*> candidates{target_.data()};
-    candidates += target_->findChildren<QObject*>();
-    for (QObject* candidate : candidates) {
-        QVariant shortcut;
-        if (candidate->inherits("QQuickAction"))
-            shortcut = candidate->property("shortcut");
-        else if (candidate->inherits("QQuickShortcut"))
-            shortcut = QVariantList{candidate->property("sequence"), candidate->property("sequences")};
-        else
-            continue;
+    for (QObject* candidate : candidates()) {
+        if (!candidate->inherits("QQuickAction") && !candidate->inherits("QQuickShortcut")) continue;
         if (!candidate->property("enabled").toBool()) continue;
-        if (matches(pressed, keySequences(shortcut))) return candidate;
+        if (matches(pressed, sequencesOf(candidate))) return candidate;
     }
     return nullptr;
+}
+
+quint32 PluginEditorKeys::systemKey(int key) {
+#ifdef Q_OS_WIN
+    if (key >= Qt::Key_A && key <= Qt::Key_Z) return quint32(0x41 + (key - Qt::Key_A));
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) return quint32(0x30 + (key - Qt::Key_0));
+    if (key >= Qt::Key_F1 && key <= Qt::Key_F12) return quint32(0x70 + (key - Qt::Key_F1));
+    switch (key) {
+        case Qt::Key_Equal: return 0xBB;
+        case Qt::Key_Comma: return 0xBC;
+        case Qt::Key_Minus: return 0xBD;
+        case Qt::Key_Period: return 0xBE;
+        case Qt::Key_Backspace: return 0x08;
+        case Qt::Key_Tab: return 0x09;
+        case Qt::Key_Delete: return 0x2E;
+        case Qt::Key_Home: return 0x24;
+        case Qt::Key_Space: return quint32(kVirtualSpace);
+        default: return 0;
+    }
+#else
+    if (key >= Qt::Key_A && key <= Qt::Key_Z) return quint32(0x61 + (key - Qt::Key_A));  // XK_a..XK_z
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) return quint32(0x30 + (key - Qt::Key_0));
+    if (key >= Qt::Key_F1 && key <= Qt::Key_F12) return quint32(0xFFBE + (key - Qt::Key_F1));
+    switch (key) {
+        case Qt::Key_Equal: return 0x3D;
+        case Qt::Key_Comma: return 0x2C;
+        case Qt::Key_Minus: return 0x2D;
+        case Qt::Key_Period: return 0x2E;
+        case Qt::Key_Backspace: return 0xFF08;
+        case Qt::Key_Tab: return 0xFF09;
+        case Qt::Key_Delete: return 0xFFFF;
+        case Qt::Key_Home: return 0xFF50;
+        case Qt::Key_Space: return 0x20;
+        default: return 0;
+    }
+#endif
+}
+
+QList<QPair<quint32, int>> PluginEditorKeys::sandboxKeys() const {
+    QList<QPair<quint32, int>> keys;
+    if (session_ && session_->render()->active()) return keys;  // (the window takes no keys meanwhile)
+    for (QObject* candidate : candidates()) {
+        for (const QKeySequence& sequence : sequencesOf(candidate)) {
+            if (sequence.count() != 1) continue;  // (a chord of several keys: not from an editor)
+            const QKeyCombination combination = sequence[0];
+            const int key = int(combination.key());
+            const auto mods = combination.keyboardModifiers() & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
+            const quint32 code = systemKey(key);
+            if (code == 0 || !takesKey(key, int(mods))) continue;
+            const QPair<quint32, int> entry{code, editorModifiers(mods)};
+            if (!keys.contains(entry)) keys.append(entry);
+        }
+    }
+    return keys;
+}
+
+void PluginEditorKeys::updateSandboxKeys() {
+    if (session_) session_->bridge()->setSandboxEditorKeys(sandboxKeys());
+}
+
+void PluginEditorKeys::sandboxKeyPressed(quint32 key, int modifiers, bool repeat, bool textField) {
+#ifdef Q_OS_WIN
+    const int qt = qtKey(int(key));
+#else
+    const int qt = qtKeyForKeysym(key);
+#endif
+    // (What the key does is done once the bridge is done with what the plug-ins reported.)
+    pressed(qt, qtModifiers(modifiers), textField, repeat, Qt::QueuedConnection);
 }
 
 bool PluginEditorKeys::keyPressed(int virtualKey, int modifiers, bool textField, bool repeat) {
@@ -230,13 +365,20 @@ bool PluginEditorKeys::pressed(int key, int modifiers, bool textField, bool repe
 
 bool PluginEditorKeys::closeForemostEditor() {
 #ifdef Q_OS_WIN
-    HWND found = nullptr;
-    EnumWindows(findEditor, reinterpret_cast<LPARAM>(&found));
-    if (!found) return false;
-    PostMessageW(found, WM_CLOSE, 0, 0);
-    return true;
+    return closeForemostOf({int(GetCurrentProcessId())});
 #else
     return app::closeForemostEditor();
+#endif
+}
+
+bool PluginEditorKeys::closeForemostPluginEditor() {
+#ifdef Q_OS_WIN
+    QList<int> processes{int(GetCurrentProcessId())};
+    if (session_) processes += session_->bridge()->sandboxProcessIds();
+    return closeForemostOf(processes);
+#else
+    if (closeForemostEditor()) return true;
+    return session_ && session_->bridge()->closeForemostSandboxEditor();
 #endif
 }
 

@@ -91,14 +91,18 @@
 // keep theirs, but the engine doesn't render them. A time selection edited
 // over a frozen track changes its segments (clipsChanged): they play again.
 //
-// Opening a project: its plug-ins load after it shows, one at a time between
-// the UI's events (each in a turn of the event loop of its own, kPluginGapMs
-// apart); pluginsLoading reports how far they got. The project plays without
-// them meanwhile. Renders wait for them (and for built-in devices' states:
-// waitForDeviceStates, devicesReady). They load on the UI thread all the same:
-// plug-ins must be created and set up there (VST3 says so, and JUCE plug-ins
-// take the thread that creates them for their message thread), and some hang
-// when loaded on another. What takes long is each plug-in, not the project.
+// Plug-ins load without holding up the window (BridgeLoading.cpp). Where the
+// plug-in hosting preference says (setPluginHosting): in sandboxes, processes of
+// their own (docs/engine/sandboxes.md), where each loads while the window goes
+// on, and a plug-in that crashes takes down only its sandbox (it says so, and
+// can be loaded again: reloadPlugin); or in this process, where a project's
+// plug-ins load after it shows, one at a time between the UI's events (each in
+// a turn of the event loop of its own, kPluginGapMs apart): plug-ins must be
+// created and set up on the UI thread (VST3 says so, and JUCE plug-ins take the
+// thread that creates them for their message thread), so a slow one still makes
+// the window wait for it there. Either way pluginsLoading reports how far they
+// got, the project plays without them meanwhile, and renders wait for them (and
+// for built-in devices' states: waitForDeviceStates, devicesReady).
 //
 // Renders in the background: startFreeze and startExport return a RenderTask at
 // once (RenderTask.h); the UI shows its progress, may cancel it, and finishes it
@@ -144,6 +148,7 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
+#include <QPair>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -182,6 +187,8 @@ inline constexpr int kMaxHiddenEditors = 8;
 inline constexpr int kPluginGapMs = 20;
 // A plug-in's call is running a message loop: the next one loads after it.
 inline constexpr int kPluginRetryMs = 50;
+// The longest a render that must have them (waitForDeviceStates) waits for plug-ins loading in sandboxes.
+inline constexpr int kSandboxLoadWaitMs = 120000;
 inline constexpr int kPositionPollMs = 16;  // the playhead, about 60 times a second
 inline constexpr int kMeterPollMs = 33;     // meters, recording, plug-ins, the device: about 30 times a second
 
@@ -370,7 +377,7 @@ public:
     void pollPlugins();
 
     // A project's plug-ins loading after it opened.
-    Q_INVOKABLE bool pluginPending(const QString& deviceId) const;  // its plug-in waits to load
+    Q_INVOKABLE bool pluginPending(const QString& deviceId) const;  // its plug-in waits to load (or loads in a sandbox)
     int pluginsPending() const;  // how many wait
     // A track's plug-ins load next (the one shown in the device view).
     Q_INVOKABLE void prioritizePlugins(const QString& trackId);
@@ -383,6 +390,30 @@ public:
     void waitForDeviceStates();
     // Whether every device is ready to render offline (without waiting).
     Q_INVOKABLE bool devicesReady() const;
+
+    // --- Plug-in hosting (docs/engine/sandboxes.md) -------------------------------------------
+    // Where plug-ins loaded from now on run (reloadPlugins moves those loaded already).
+    void setPluginHosting(PluginHostingMode mode);
+    PluginHostingMode pluginHosting() const;
+    void setPluginHostProgram(const QString& path);  // substation-plugin-host
+    QList<PluginSandbox> pluginSandboxes() const;
+    QList<int> sandboxProcessIds() const;  // running (their windows are plug-in editors too)
+    // A device's plug-in loaded again, as it was last: one that crashed or couldn't
+    // be loaded in its sandbox, or any (where the hosting mode says now). Its
+    // editor closes; it says so if it can't be.
+    Q_INVOKABLE void reloadPlugin(const QString& trackId, const QString& deviceId);
+    // Every plug-in loaded again: those that crashed or failed (`brokenOnly`), or all.
+    Q_INVOKABLE void reloadPlugins(bool brokenOnly = false);
+    // Whether a device's plug-in crashed or couldn't be loaded in its sandbox (reloadPlugin may bring it back).
+    Q_INVOKABLE bool pluginReloadable(const QString& trackId, const QString& deviceId);
+    // Whether a device runs: its processor is there, and a plug-in's has loaded (not loading in its
+    // sandbox, nor failed or crashed there).
+    Q_INVOKABLE bool pluginRunning(const QString& trackId, const QString& deviceId);
+    // Sandboxed editors: the keys the application takes from them, as (key, EditorKey's modifiers):
+    // X11 keysyms on Linux, virtual-key codes on Windows. Those pressed come as pluginEditorKey.
+    void setSandboxEditorKeys(const QList<QPair<quint32, int>>& keys);
+    // Closes the foremost sandboxed editor, as its close button would; false if none is shown.
+    bool closeForemostSandboxEditor();
 
     // --- Parameters and automation -----------------------------------------------------------
     // Whether the engine plays this target's envelope (it has one, not overridden).
@@ -531,9 +562,11 @@ Q_SIGNALS:
     void pluginStateDirty();  // a plug-in changed in a way no edit shows: the project has changes
     void pluginPresetChanged(const QString& trackId, const QString& deviceId);  // pluginPresetName() is another
     void devicesLoaded(const QString& trackId);  // its devices' processors were (re)created
-    // A project's plug-ins loading: loaded, of how many ((0, 0): all done).
+    // Plug-ins loading (a project's, or in sandboxes): loaded, of how many ((0, 0): all done).
     void pluginsLoading(int loaded, int total);
     void pluginsPendingChanged();
+    // A key the application takes, pressed in a sandboxed editor (setSandboxEditorKeys).
+    void pluginEditorKey(quint32 key, int modifiers, bool repeat, bool textField);
     // Automation owner (track id or kMaster): which of its envelopes play, or are overridden, changed.
     void automationStateChanged(const QString& owner);
     void recordingChanged(bool recording);  // recording started or ended
@@ -621,6 +654,9 @@ private:
     void loadNextPlugin();
     void reportPlugins();
     bool loadDeferred(const QString& deviceId);
+    void noteSandboxLoading(const QString& deviceId, quint32 processorId);  // (if it loads in a sandbox)
+    void sandboxLoaded(const QString& deviceId);  // (loaded, failed, crashed or gone)
+    void pluginLoadedAgain(const QString& trackId, const QString& deviceId, quint32 processorId);
     // Parameters (BridgeParameters.cpp).
     void onAutomationChanged(const QString& owner, const QString& key);
     void pushAutomation(const QString& owner);

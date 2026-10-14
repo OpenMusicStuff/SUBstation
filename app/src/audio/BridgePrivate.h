@@ -148,9 +148,10 @@ struct EngineBridge::Private {
     QHash<QString, QString> reversed;  // source key -> its reversed copy, written this session
     QMap<QString, QString> midiErrors;  // MIDI input -> why it couldn't be opened
 
-    bool deferring = false;  // plug-ins added now wait to load (a project opening)
+    bool deferring = false;  // plug-ins added now wait to load (a project opening; in this process)
     QStringList pendingPlugins;  // device ids whose plug-ins wait to load, in the order they load
-    int pluginsTotal = 0;  // of those, and those loaded since the project opened
+    QSet<QString> sandboxLoading;  // device ids whose plug-ins load in their sandboxes now
+    int pluginsTotal = 0;  // of those, and those loaded since none was loading
     QTimer pluginTimer;
 
     QThreadPool pool;  // decoding files

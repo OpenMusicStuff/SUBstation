@@ -269,7 +269,9 @@ old)` with the value before, so undo can restore it.
 - The editor button and Show Editor toggle the plug-in's own editor (`DeviceInfo::showEditor`, which brings an open
   one to the front); its state follows `bridge.isPluginEditorOpen` on `pluginEditorChanged`.
 - A plug-in that isn't loaded shows why instead of its parameters (`DeviceInfo::pluginMessage`): loading (a project
-  just opened), missing or failed (it keeps its place).
+  just opened, or in its sandbox: `loaded` is the bridge's `pluginRunning`), missing or failed (it keeps its place), or
+  crashed with its sandbox; one that crashed or failed in a sandbox (`reloadable`) shows *Reload* under the message,
+  and its menu *Reload Plug-in* (for one that runs too: a restart).
 - Values are read again when the plug-in rebuilds its parameters, changes them itself, loads a preset, or an undo
   sets them.
 

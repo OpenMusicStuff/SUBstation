@@ -324,7 +324,7 @@ ApplicationWindow {
         window: window
     }
 
-    // The window's shortcuts while a plug-in's (Win32) editor has the focus (Windows only).
+    // The window's shortcuts while a plug-in's editor has the focus (its own or a sandbox's).
     PluginEditorKeys {
         id: pluginKeys
         target: window
@@ -571,7 +571,7 @@ ApplicationWindow {
                         text: qsTr("Close Plug-in &Editor")
                         shortcut: "Ctrl+W"
                         enabled: pluginKeys.supported
-                        onTriggered: pluginKeys.closeForemostEditor()
+                        onTriggered: pluginKeys.closeForemostPluginEditor()
                     }
                 }
                 // Ctrl+Shift+W, as a browser's Ctrl+Shift+T: the selected track's editor closed last opens again,

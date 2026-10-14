@@ -78,8 +78,10 @@ TEST_CASE("scan lists the classes of a module") {
     for (const auto& d : sub::vst3::Vst3Format::instance().scanFile(testPluginsBundle())) found[d.name] = d;
     std::vector<std::string> names;
     for (const auto& [name, d] : found) names.push_back(name);
-    CHECK(names == (std::vector<std::string>{"SUB Test Effect", "SUB Test Mono", "SUB Test Note Effect",
-                                             "SUB Test Sidechain", "SUB Test Synth"}));  // not the controller class
+    CHECK(names == (std::vector<std::string>{"SUB Test Crasher", "SUB Test Effect", "SUB Test Mono",
+                                             "SUB Test Note Effect", "SUB Test Sidechain",
+                                             "SUB Test Synth"}));  // not the controller class
+    CHECK_EQ(found["SUB Test Crasher"].vendor, std::string("SUB Crash Works"));  // (its own maker, not the factory's)
     const auto& synth = found["SUB Test Synth"];
     CHECK(synth.isInstrument);
     CHECK_EQ(synth.category, std::string("Instrument|Synth"));

@@ -547,6 +547,17 @@ close that editor or every one (Ctrl+W, a new project). `closeForemostEditor()` 
 (`app::closeForemostEditor()`). The rules are plain code, so the tests run `actionFor()`, `keyPressed()` and
 `keysymPressed()` on any platform.
 
+Plug-ins in sandboxes ([engine/sandboxes.md](../engine/sandboxes.md)) have their editors in their sandbox's process,
+whose keys this process never sees (and which can't wait for it to decide). So `PluginEditorKeys` works out, by the
+same rules, every key of the window's `Action`s and `Shortcut`s it takes (`sandboxKeys()`: single keys, as the
+system's key codes, `systemKey()` being `qtKey()`'s and `qtKeyForKeysym()`'s other way; none while a render's dialog
+is up) and hands the table to the sandboxes (`EngineBridge::setSandboxEditorKeys`), again when it may have changed: the
+computer MIDI keyboard switched, a render starting or ending, an editor opening. A sandbox keeps those keys from its
+plug-ins and passes them on; `pluginEditorKey` triggers the action as for an editor of this process (an action
+switched off meanwhile triggers nothing). Ctrl+W is `closeForemostPluginEditor()`: on Windows the first visible editor
+window, top down, of this process or a sandbox's (`EngineBridge::sandboxProcessIds()`); on Linux this process's
+foremost editor, else the sandboxes' (`closeForemostSandboxEditor()`).
+
 ## Gotchas
 
 - **`paint()` reads only.** It runs on the render thread while the GUI thread waits; changing anything there

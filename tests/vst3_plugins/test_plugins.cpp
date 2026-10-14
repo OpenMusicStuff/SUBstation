@@ -1,4 +1,4 @@
-// SUBstation's test plug-ins: five tiny VST3 plug-ins whose output the tests
+// SUBstation's test plug-ins: six tiny VST3 plug-ins whose output the tests
 // can predict exactly. They cover the host's code paths rather than sounding
 // good:
 //
@@ -18,6 +18,8 @@
 //  * SUB Test Note Effect: an effect with an event input (as a vocoder or a
 //    pitch corrector has), no edit controller: its output is its input plus,
 //    for each held note, velocity/127 (DC).
+//  * SUB Test Crasher (by "SUB Crash Works"): doubles its input, and crashes,
+//    hangs or loads slowly on demand, for the plug-in sandboxes' tests.
 //  * SUB Test Sidechain: a single-component effect with a sidechain (a stereo
 //    aux input, inactive until the host activates it): its output is its input
 //    plus its sidechain, and a read-only parameter, Key Silent, says whether the
@@ -354,6 +356,66 @@ private:
     std::vector<std::pair<int16, float>> held_;  // (pitch, velocity)
 };
 
+// SUB Test Crasher, by another maker ("SUB Crash Works"): an effect with an
+// event input that doubles its input (so a test hears it ran), and misbehaves
+// on demand, for the plug-in sandboxes' tests: a note-on of key 0 ends the
+// process as it plays (a crash), key 1 makes process() hang for good; a state
+// that says "crash" ends the process as it is restored. With
+// SUB_TEST_PLUGIN_SLOW_LOAD_MS set, it takes that long to initialize (a big
+// plug-in loading).
+class Crasher : public AudioEffect {
+public:
+    static FUnknown* createInstance(void*) { return static_cast<IAudioProcessor*>(new Crasher); }
+
+    tresult PLUGIN_API initialize(FUnknown* context) override {
+        const tresult result = AudioEffect::initialize(context);
+        if (result != kResultOk) return result;
+        if (const char* slow = std::getenv("SUB_TEST_PLUGIN_SLOW_LOAD_MS")) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::atoi(slow)));
+        }
+        addAudioInput(STR16("Input"), SpeakerArr::kStereo);
+        addAudioOutput(STR16("Output"), SpeakerArr::kStereo);
+        addEventInput(STR16("Orders"), 16);
+        return kResultOk;
+    }
+
+    tresult PLUGIN_API setState(IBStream* state) override {
+        char said[5] = {};
+        int32 read = 0;
+        if (state && state->read(said, 5, &read) == kResultOk && read == 5 && std::string(said, 5) == "crash") {
+            std::_Exit(3);
+        }
+        return kResultOk;
+    }
+
+    tresult PLUGIN_API getState(IBStream* state) override {
+        int32 written = 0;
+        return state ? state->write(const_cast<char*>("fine!"), 5, &written) : kInvalidArgument;
+    }
+
+    tresult PLUGIN_API process(ProcessData& data) override {
+        if (IEventList* events = data.inputEvents) {
+            for (int32 e = 0; e < events->getEventCount(); ++e) {
+                Event event{};
+                if (events->getEvent(e, event) != kResultOk || event.type != Event::kNoteOnEvent) continue;
+                if (event.noteOn.pitch == 0) std::_Exit(3);
+                if (event.noteOn.pitch == 1) {
+                    for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
+                }
+            }
+        }
+        if (data.numInputs < 1 || data.numOutputs < 1 || data.numSamples <= 0) return kResultOk;
+        AudioBusBuffers& in = data.inputs[0];
+        AudioBusBuffers& out = data.outputs[0];
+        for (int32 c = 0; c < out.numChannels; ++c) {
+            const float* from = in.channelBuffers32[std::min(c, in.numChannels - 1)];
+            for (int32 i = 0; i < data.numSamples; ++i) out.channelBuffers32[c][i] = from[i] * 2.f;
+        }
+        out.silenceFlags = 0;
+        return kResultOk;
+    }
+};
+
 }  // namespace sub_test
 
 // ---------------------------------------------------------------------------
@@ -414,5 +476,12 @@ DEF_CLASS2(INLINE_UID_FROM_FUID(sub_test::kSidechainUID), PClassInfo::kManyInsta
 DEF_CLASS2(INLINE_UID_FROM_FUID(sub_test::kNoteEffectUID), PClassInfo::kManyInstances, kVstAudioEffectClass,
            "SUB Test Note Effect", Vst::kDistributable, "Fx|Pitch Shift", "1.0.0", kVstVersionString,
            sub_test::NoteEffect::createInstance)
+
+{  // (a maker of its own: DEF_CLASS2 gives every class the factory's)
+    TUID lcid = INLINE_UID_FROM_FUID(sub_test::kCrasherUID);
+    static PClassInfo2 crasher(lcid, PClassInfo::kManyInstances, kVstAudioEffectClass, "SUB Test Crasher", 0, "Fx",
+                               "SUB Crash Works", "1.0.0", kVstVersionString);
+    gPluginFactory->registerClass(&crasher, sub_test::Crasher::createInstance);
+}
 
 END_FACTORY

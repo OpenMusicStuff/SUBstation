@@ -82,19 +82,48 @@ plug-in it is. A plug-in that moved is found again by its class id; a missing on
 its place and settings in the project, shows what's wrong in the device view, and loads
 when it's back (after a rescan).
 
-Opening a project shows it at once, and its plug-ins load after it, one at a time, while
-you work (the title bar counts them, on its right: *Loading plug-ins: 3 of 12*).
-Meanwhile:
+Opening a project shows it at once, and its plug-ins load after it while you work (the
+title bar counts them, on its right: *Loading plug-ins: 3 of 12*). Meanwhile:
 
-- a plug-in still waiting says so in the device view (*… is loading*), and its track plays
+- a plug-in still loading says so in the device view (*… is loading*), and its track plays
   without it (an instrument's track is silent);
-- the selected track's plug-ins load first, and opening a plug-in's editor loads it at once;
+- the selected track's plug-ins load first, and opening a plug-in's editor loads it next;
 - you can edit, move or delete devices as usual, and save: a plug-in not loaded yet keeps
   its settings as they were;
 - exporting and freezing wait for them (their progress dialog says how many are left).
 
-They load on the window's own thread, as plug-ins require, so a slow one can still make
-the window pause while it loads; the project around it doesn't wait.
+In sandboxes (the default: see [Plug-in hosting](#plug-in-hosting)) they load in processes
+of their own and the window never waits for them, however long one takes. Within
+SUBstation they load one at a time on the window's own thread, as plug-ins require, so a
+slow one makes the window pause while it loads (the project around it doesn't wait).
+
+## Plug-in hosting
+
+*Preferences › Plug-ins › Plug-in Hosting* says where plug-ins run, as in Bitwig:
+
+| Mode | Where | |
+|---|---|---|
+| **Within SUBstation** | in SUBstation itself | The least memory and CPU, but a plug-in that crashes takes SUBstation down, and one that takes its time to load holds up the window meanwhile. |
+| **Together** (the default) | every plug-in in one sandbox | If a plug-in crashes, the plug-ins stop and SUBstation goes on. |
+| **By Manufacturer** | a sandbox for each plug-in maker | If a plug-in crashes, the other makers' plug-ins go on. |
+| **By Plug-in** | a sandbox for each plug-in (its instances share it) | If one crashes, every other plug-in goes on. |
+| **Individually** | a sandbox for each instance of each plug-in | The safest, and the most memory and CPU. |
+
+A sandbox is a process of its own (`substation-plugin-host`, next to SUBstation) that runs
+plug-ins: they load there while you work, their editors are its windows, and a plug-in
+that crashes takes down only its sandbox. The plug-ins that were in it then say so in the
+device view (*… crashed: its sandbox (All plug-ins) stopped.*), let their audio through
+unchanged, and come back as they were last saved with **Reload** (beside the message, or
+*Reload Plug-in* in the device's menu, which also restarts one that runs). A plug-in in a
+sandbox that hangs costs the audio one buffer: it is skipped until it answers again.
+
+A new mode applies to plug-ins as they load (a project opened, a device added); **Reload
+Plug-ins**, beside it, loads every plug-in again where it says now. The preferences say
+what runs where (*14 plug-ins in 3 sandboxes*).
+
+Keyboard shortcuts work from a sandboxed plug-in's editor as from any (see
+[shortcuts.md](shortcuts.md)), and Ctrl+W closes the foremost editor, whichever sandbox it
+is in.
 
 ## Latency
 

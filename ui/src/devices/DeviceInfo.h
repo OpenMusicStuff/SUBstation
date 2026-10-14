@@ -64,8 +64,11 @@ class DeviceInfo : public QObject {
     Q_PROPERTY(bool canMoveRight READ canMoveRight NOTIFY changed)
     // Its processor is there (a plug-in loaded; a built-in device or rack made).
     Q_PROPERTY(bool loaded READ loaded NOTIFY changed)
-    // A plug-in waiting to load (a project just opened: they load one by one).
+    // A plug-in waiting to load (a project just opened, in this process: they load one
+    // by one), or loading in its sandbox.
     Q_PROPERTY(bool pending READ pending NOTIFY changed)
+    // A plug-in that crashed, or couldn't be loaded in its sandbox: it can be loaded again (Reload).
+    Q_PROPERTY(bool reloadable READ reloadable NOTIFY changed)
     // What a plug-in that isn't loaded shows instead of its parameters: "… is
     // loading…", why it failed, or "… is not loaded." ("": it is loaded).
     Q_PROPERTY(QString pluginMessage READ pluginMessage NOTIFY changed)
@@ -105,6 +108,7 @@ public:
     bool canMoveRight() const { return state_.canMoveRight; }
     bool loaded() const { return state_.loaded; }
     bool pending() const { return state_.pending; }
+    bool reloadable() const { return state_.reloadable; }
     QString pluginMessage() const { return state_.pluginMessage; }
     bool editorOpen() const { return state_.editorOpen; }
     bool hasSidechainInput() const { return state_.hasSidechainInput; }
@@ -179,6 +183,7 @@ private:
         bool canMoveRight = false;
         bool loaded = false;
         bool pending = false;
+        bool reloadable = false;
         QString pluginMessage;
         bool editorOpen = false;
         bool hasSidechainInput = false;

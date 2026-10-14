@@ -271,6 +271,7 @@ add_library(sub_engine STATIC
     src/EngineDevice.cpp
     src/EngineInput.cpp
     src/EngineOffline.cpp
+    src/EngineSandboxes.cpp
     src/Mp3Writer.cpp
     src/EngineSnapshot.cpp
     src/EngineTracks.cpp
@@ -297,6 +298,10 @@ add_library(sub_engine STATIC
     src/plugins/Vst3Format.cpp
     src/plugins/Vst3Ids.cpp
     src/plugins/Vst3Processor.cpp
+    src/plugins/sandbox/PluginSandboxes.cpp
+    src/plugins/sandbox/Sandbox.cpp
+    src/plugins/sandbox/SandboxedProcessor.cpp
+    src/plugins/sandbox/SandboxProtocol.cpp
 )
 # Each system's audio driver types, MIDI inputs and plug-in editor windows are files of their own.
 if (WIN32)

@@ -30,6 +30,7 @@ Plug-ins load and play on Linux too, with their editor windows (X11, under XWayl
 | [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) | `EditorWindow` where there is none (not Windows, and not Linux with xcb): it never opens |
 | [Vst3Platform.h](../../engine/src/plugins/Vst3Platform.h) | what hosting does differently on each system: `prepareThreadForModules()`, `systemPluginFolders()`, `binaryInBundle()`; [Vst3PlatformWin32.cpp](../../engine/src/plugins/Vst3PlatformWin32.cpp), [Vst3PlatformPosix.cpp](../../engine/src/plugins/Vst3PlatformPosix.cpp) |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addPluginProcessor()`, `retireProcessorLocked()`, the processor and editor calls (made without the engine lock) |
+| [EngineSandboxes.cpp](../../engine/src/EngineSandboxes.cpp), [plugins/sandbox/](../../engine/src/plugins/sandbox) | plug-ins in sandboxes, processes of their own: [sandboxes.md](sandboxes.md) |
 | [Engine.cpp](../../engine/src/Engine.cpp) | `Engine::idle()`: plug-ins' main-thread work, destroying removed ones, realigning on latency changes |
 | [tools/scanner/main.cpp](../../tools/scanner/main.cpp) | `substation-scan`: reads plug-in files with `Vst3Format::scanFile()` for the application, in a process of its own |
 
@@ -106,10 +107,16 @@ so the module outlives everything the plug-in made.
 
 Plug-ins are created, configured, asked about and destroyed on the main thread, as VST3 requires; only `process()`
 (and `reset()`, which only sets a flag) runs on the rendering thread (the audio thread, its workers, or a render in
-the background). Loading them on another thread isn't an option: JUCE plug-ins take the thread that creates their
-first instance for their message thread (their timers and async calls run there), and Komplete Kontrol hung when
-its module was loaded off the main thread. A project's plug-ins load after it opens, one at a time between the
-UI's events, instead (the engine bridge's [BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)).
+the background). Loading them on another thread of the same process isn't an option: JUCE plug-ins take the thread
+that creates their first instance for their message thread (their timers and async calls run there), and Komplete
+Kontrol hung when its module was loaded off the main thread. So in the application a project's plug-ins load after it
+opens, one at a time between the UI's events (the engine bridge's
+[BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)), and each still holds up the window while it loads. To
+keep the window going while they load, plug-ins run in **sandboxes** instead, processes of their own whose main thread
+is theirs ([sandboxes.md](sandboxes.md)): `Vst3Processor` runs there unchanged, on that process's main thread, and the
+engine has a `SandboxedProcessor` in its place. Where they run is the plug-in hosting preference's
+(`Engine::setPluginHosting()`); in the application is one of its modes, and the rest of this page describes a plug-in
+wherever it runs.
 
 - Plug-ins may run a message loop inside a call (a licence dialog) that calls back into the engine or the UI. The
   engine's lock (`Engine::mutex_`) is recursive, and slow plug-in calls don't hold it: `addPluginProcessor()` loads
@@ -474,17 +481,22 @@ sidechain only.
 
 ## Tests
 
-The tests use four VST3 plug-ins built with the engine ([tests/vst3_plugins/](../../tests/vst3_plugins)): *SUB Test
+The tests use the VST3 plug-ins built with the engine ([tests/vst3_plugins/](../../tests/vst3_plugins)): *SUB Test
 Synth*, an instrument with a separate controller (it reports the transport it gets back as parameters, and a note's
 tuning expression bends that note's sine; as a synth reusing voices can, a new note keeps the tuning of the last
 note to end until it gets its own); *SUB Test Effect*, a single-component effect with adjustable latency and an
 editor (on Windows a Win32 window; on Linux an X11 window on its own xcb connection, run by the host's `IRunLoop`,
 built where the engine has X11 editors); *SUB Test Mono*, a mono effect without a controller; and *SUB Test Note Effect*, an
-effect with an event input whose output is its input plus each held note's velocity / 127 (DC); plus *SUB Test Sidechain* ([test_sidechain.cpp](../../tests/vst3_plugins/test_sidechain.cpp)),
+effect with an event input whose output is its input plus each held note's velocity / 127 (DC); *SUB Test Crasher*,
+by a maker of its own ("SUB Crash Works"), which doubles its input and crashes, hangs or loads slowly when asked to
+(for the sandboxes' tests); plus *SUB Test Sidechain* ([test_sidechain.cpp](../../tests/vst3_plugins/test_sidechain.cpp)),
 whose output is its input plus its sidechain. The tests see only these, never the installed ones: the engine's tests
 load the bundle by its path (`SUBSTATION_TEST_PLUGINS_BUNDLE`, [harness/Fixtures.h](../../tests/engine/harness/Fixtures.h)),
 and the application's tests point `SUBSTATION_VST3_PATH` at folders of their own.
 
+- [tests/engine/test_plugin_sandboxes.cpp](../../tests/engine/test_plugin_sandboxes.cpp) and
+  [test_plugin_sandboxes_x11.cpp](../../tests/engine/test_plugin_sandboxes_x11.cpp): plug-ins in sandboxes
+  ([sandboxes.md](sandboxes.md#tests)).
 - [tests/engine/test_vst3_engine.cpp](../../tests/engine/test_vst3_engine.cpp): scanning a module's classes,
   sample-exact notes, pitch, velocity and chords, parameters as the plug-in describes them and changes reaching the
   processor, the transport and loop splitting, repeatable offline renders, effects, automation reaching the plug-in

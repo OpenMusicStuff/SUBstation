@@ -100,6 +100,8 @@ Rectangle {
             menu.entry(qsTr("Show Editor"), () => Session.bridge.openPluginEditor(trackId, id), undefined, info.loaded)
             menu.entry(qsTr("Load VST3 Preset…"), () => panel.loadVst3Preset(id), undefined, info.loaded)
             menu.entry(qsTr("Save VST3 Preset…"), () => panel.saveVst3Preset(id, info.name), undefined, info.loaded)
+            menu.entry(qsTr("Reload Plug-in"), () => Session.bridge.reloadPlugin(trackId, id), undefined,
+                       info.loaded || info.reloadable)
             menu.separator()
         }
         if (info.kind === "vital") {

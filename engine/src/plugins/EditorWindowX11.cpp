@@ -99,6 +99,7 @@ void toFront(EditorWindow* window) {
     auto& open = windows();
     open.erase(std::remove(open.begin(), open.end(), window), open.end());
     open.insert(open.begin(), window);
+    editorRaised();
 }
 
 }  // namespace

@@ -184,6 +184,13 @@ struct ProcessorEvent {
         LatencyChanged,
         ParamTouched,      // the user took hold of a parameter in the plug-in's editor (paramIndex)
         PresetChanged,     // the preset (patch, instrument) the plug-in has loaded is another: presetName()
+        // A plug-in in a sandbox (plugins/sandbox): its state as Engine::processorInfo() says.
+        Loaded,            // it loaded: its parameters, latency, sidechain, editor are known now
+        LoadFailed,        // it couldn't be loaded (processorInfo().problem says why)
+        Crashed,           // its sandbox ended: it passes its input on until loaded again
+        Problem,           // something went wrong (processorInfo().problem): its state wasn't taken
+        EditorOpened,      // the editor asked for is open now
+        NoEditor,          // the editor asked for couldn't be opened
     };
     Type type = Type::ParamsChanged;
     int paramIndex = -1;  // ParamEdited, ParamTouched: which parameter,

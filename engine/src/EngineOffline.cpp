@@ -11,6 +11,7 @@
 #include "AudioFileWriter.h"
 #include "MiniaudioFiles.h"
 #include "miniaudio.h"
+#include "plugins/sandbox/PluginSandboxes.h"
 
 namespace sub {
 namespace {
@@ -273,6 +274,7 @@ std::shared_ptr<RenderJob> Engine::startJobLocked(const std::string& path, int64
         throw;
     }
     job_ = job.get();
+    sandboxes_->holdIdle(true);  // (in sandboxes too: a plug-in restarting would leave a gap in the render)
     return job;
 }
 
@@ -284,6 +286,7 @@ bool Engine::isRendering() {
 void Engine::endJob(RenderJob& job) {
     std::lock_guard lock(mutex_);
     if (job_ == &job) job_ = nullptr;
+    sandboxes_->holdIdle(false);
     endOfflineLocked();
 }
 

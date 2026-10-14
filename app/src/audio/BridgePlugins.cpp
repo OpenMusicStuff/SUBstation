@@ -305,6 +305,14 @@ void EngineBridge::dispatchProcessorEvents(const std::vector<sub::ProcessorEvent
         if (std::find(changed.begin(), changed.end(), place) == changed.end()) changed.push_back(place);
     };
     bool dirty = false;
+    QStringList loadedTracks;  // tracks whose plug-ins loaded (in their sandboxes), or went
+    const auto nameOf = [this](const QString& trackId, const QString& deviceId) {
+        const Device* device = project_->findDevice(trackId, deviceId);
+        return device == nullptr ? QString() : deviceName(*device);
+    };
+    const auto problemOf = [this](quint32 processorId) {
+        return QString::fromStdString(engine_.processorInfo(processorId).problem);
+    };
     using Type = sub::ProcessorEvent::Type;
     for (const sub::ProcessorEventRecord& event : events) {
         const auto found = places.constFind(event.processorId);
@@ -347,10 +355,64 @@ void EngineBridge::dispatchProcessorEvents(const std::vector<sub::ProcessorEvent
         case Type::EditorRequested: requestPluginEditor(trackId, deviceId); break;  // like any editor, shown with its track
         case Type::StateDirty: dirty = true; break;
         case Type::PresetChanged: Q_EMIT pluginPresetChanged(trackId, deviceId); break;
+        // A plug-in in a sandbox.
+        case Type::Loaded:  // its parameters, latency, sidechain and MIDI input are known now
+            d.pluginErrors.remove(deviceId);
+            pluginLoadedAgain(trackId, deviceId, event.processorId);
+            sandboxLoaded(deviceId);
+            if (!loadedTracks.contains(trackId)) loadedTracks.append(trackId);
+            break;
+        case Type::LoadFailed:
+            pluginFailed(deviceId, nameOf(trackId, deviceId) + QStringLiteral(" could not be loaded: ") +
+                                       problemOf(event.processorId));
+            sandboxLoaded(deviceId);
+            if (!loadedTracks.contains(trackId)) loadedTracks.append(trackId);
+            break;
+        case Type::Crashed:
+            pluginFailed(deviceId, nameOf(trackId, deviceId) + QStringLiteral(" crashed: ") + problemOf(event.processorId) +
+                                       QStringLiteral(". Reload it to go on."));
+            sandboxLoaded(deviceId);
+            d.editorsWanted.remove(deviceId);
+            Q_EMIT pluginEditorChanged(trackId, deviceId);
+            if (!loadedTracks.contains(trackId)) loadedTracks.append(trackId);
+            break;
+        case Type::Problem:
+            Q_EMIT statusMessage(nameOf(trackId, deviceId) + QStringLiteral(": its settings could not be restored (") +
+                                 problemOf(event.processorId) + u')');
+            break;
+        case Type::EditorOpened:
+            d.closedEditors[trackId].removeAll(deviceId);  // (open: not one to reopen)
+            Q_EMIT pluginEditorChanged(trackId, deviceId);
+            break;
+        case Type::NoEditor:
+            d.editorsWanted.remove(deviceId);
+            Q_EMIT statusMessage(nameOf(trackId, deviceId) + QStringLiteral(" has no editor."));
+            Q_EMIT pluginEditorChanged(trackId, deviceId);
+            break;
         }
+    }
+    if (!loadedTracks.isEmpty()) {
+        pushRoutes();  // (sidechains into them, MIDI inputs: now that they say they have them)
+        for (const QString& trackId : loadedTracks) Q_EMIT devicesLoaded(trackId);
     }
     for (const auto& [trackId, deviceId] : changed) Q_EMIT pluginParamsChanged(trackId, deviceId);
     if (dirty) Q_EMIT pluginStateDirty();
+}
+
+// A device's processor is another plug-in instance than before (it loaded in its
+// sandbox, or loaded again): what the bridge knew of its parameters goes.
+void EngineBridge::pluginLoadedAgain(const QString& trackId, const QString& deviceId, quint32 processorId) {
+    Private& d = *d_;
+    d.paramIds.remove(processorId);
+    d.paramInfos.remove(processorId);
+    d.paramSpecs.remove(processorId);
+    pushAutomation(trackId);  // its envelopes, by its parameters
+    d.modulation.remove(trackId);
+    if (project_->hasOwner(trackId)) {
+        pushEnabled(trackId);
+        pushModulation(trackId);
+    }
+    Q_EMIT pluginParamsRebuilt(trackId, deviceId);
 }
 
 void EngineBridge::pollPlugins() {
@@ -359,7 +421,124 @@ void EngineBridge::pollPlugins() {
     std::vector<sub::ProcessorEventRecord> events = std::exchange(d_->injectedEvents, {});
     for (sub::ProcessorEventRecord& event : engine_.takeProcessorEvents()) events.push_back(event);
     dispatchProcessorEvents(events);
+    for (const sub::SandboxEditorKey& key : engine_.takeSandboxEditorKeys()) {
+        Q_EMIT pluginEditorKey(key.key, key.modifiers, key.repeat, key.textField);
+    }
 }
+
+// --- Plug-in hosting -----------------------------------------------------------------------------
+
+namespace {
+
+sub::PluginHosting engineHosting(PluginHostingMode mode) {
+    switch (mode) {
+        case PluginHostingMode::Within: return sub::PluginHosting::InProcess;
+        case PluginHostingMode::Together: return sub::PluginHosting::Together;
+        case PluginHostingMode::ByManufacturer: return sub::PluginHosting::ByManufacturer;
+        case PluginHostingMode::ByPlugin: return sub::PluginHosting::ByPlugin;
+        case PluginHostingMode::Individually: return sub::PluginHosting::Individually;
+    }
+    return sub::PluginHosting::Together;
+}
+
+PluginHostingMode appHosting(sub::PluginHosting hosting) {
+    switch (hosting) {
+        case sub::PluginHosting::InProcess: return PluginHostingMode::Within;
+        case sub::PluginHosting::Together: return PluginHostingMode::Together;
+        case sub::PluginHosting::ByManufacturer: return PluginHostingMode::ByManufacturer;
+        case sub::PluginHosting::ByPlugin: return PluginHostingMode::ByPlugin;
+        case sub::PluginHosting::Individually: return PluginHostingMode::Individually;
+    }
+    return PluginHostingMode::Together;
+}
+
+}  // namespace
+
+void EngineBridge::setPluginHosting(PluginHostingMode mode) { engine_.setPluginHosting(engineHosting(mode)); }
+
+PluginHostingMode EngineBridge::pluginHosting() const { return appHosting(engine_.pluginHosting()); }
+
+void EngineBridge::setPluginHostProgram(const QString& path) { engine_.setPluginHostProgram(path.toStdString()); }
+
+QList<PluginSandbox> EngineBridge::pluginSandboxes() const {
+    QList<PluginSandbox> list;
+    for (const sub::PluginSandboxInfo& info : engine_.pluginSandboxes()) {
+        list.append({QString::fromStdString(info.label), info.pid, info.running, static_cast<int>(info.plugins)});
+    }
+    return list;
+}
+
+QList<int> EngineBridge::sandboxProcessIds() const {
+    QList<int> pids;
+    for (const int pid : engine_.sandboxProcessIds()) pids.append(pid);
+    return pids;
+}
+
+bool EngineBridge::pluginReloadable(const QString& trackId, const QString& deviceId) {
+    const auto processorId = engineDeviceId(trackId, deviceId);
+    if (!processorId || !d_->pluginIds.contains(*processorId)) return false;
+    const sub::PluginStatus status = engine_.processorInfo(*processorId).status;
+    return status == sub::PluginStatus::Crashed || status == sub::PluginStatus::Failed;
+}
+
+bool EngineBridge::pluginRunning(const QString& trackId, const QString& deviceId) {
+    const auto processorId = engineDeviceId(trackId, deviceId);
+    if (!processorId) return false;
+    if (!d_->pluginIds.contains(*processorId)) return true;  // (a built-in device, a rack)
+    return engine_.processorInfo(*processorId).status == sub::PluginStatus::Ready;
+}
+
+void EngineBridge::reloadPlugin(const QString& trackId, const QString& deviceId) {
+    guarded("reload plug-in", [&] {
+        Private& d = *d_;
+        const auto processorId = engineDeviceId(trackId, deviceId);
+        if (!processorId || !d.pluginIds.contains(*processorId)) return;
+        const Device* device = project_->findDevice(trackId, deviceId);
+        const QString name = device == nullptr ? QString() : deviceName(*device);
+        d.editorsWanted.remove(deviceId);
+        d.hiddenEditors.erase(std::remove(d.hiddenEditors.begin(), d.hiddenEditors.end(), *processorId),
+                              d.hiddenEditors.end());
+        {
+            const BusyScope busy(d.busy);  // (in this process, loading may run a message loop)
+            try {
+                engine_.reloadProcessor(*processorId);
+            } catch (const std::exception& error) {
+                Q_EMIT statusMessage(name + QStringLiteral(" could not be loaded again: ") +
+                                     QString::fromStdString(error.what()));
+                return;
+            }
+        }
+        d.pluginErrors.remove(deviceId);
+        sandboxLoaded(deviceId);  // (it was loading: it starts again)
+        pluginLoadedAgain(trackId, deviceId, *processorId);
+        noteSandboxLoading(deviceId, *processorId);
+        pushRoutes();
+        Q_EMIT pluginEditorChanged(trackId, deviceId);
+        Q_EMIT devicesLoaded(trackId);
+    });
+}
+
+void EngineBridge::reloadPlugins(bool brokenOnly) {
+    // (A copy: loading in this process may run a message loop that changes the chains.)
+    std::vector<std::pair<QString, QString>> plugins;  // (track, device)
+    for (auto it = d_->devices.constBegin(); it != d_->devices.constEnd(); ++it) {
+        const QString trackId = d_->chainOwner.value(it.key());
+        for (const auto& [deviceId, processorId] : it.value()) {
+            if (!processorId || !d_->pluginIds.contains(*processorId) || d_->where.value(deviceId) != it.key()) continue;
+            if (brokenOnly && !pluginReloadable(trackId, deviceId)) continue;
+            plugins.emplace_back(trackId, deviceId);
+        }
+    }
+    for (const auto& [trackId, deviceId] : plugins) reloadPlugin(trackId, deviceId);
+}
+
+void EngineBridge::setSandboxEditorKeys(const QList<QPair<quint32, int>>& keys) {
+    std::vector<std::pair<uint32_t, int>> table;
+    for (const auto& [key, modifiers] : keys) table.emplace_back(key, modifiers);
+    engine_.setSandboxEditorKeys(table);
+}
+
+bool EngineBridge::closeForemostSandboxEditor() { return engine_.closeForemostSandboxEditor(); }
 
 // --- What a device's editor reads ----------------------------------------------------------------
 
