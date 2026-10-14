@@ -37,8 +37,10 @@ int main(int argc, char** argv) {
     auto loop = sub::pluginhost::HostLoop::create();
     int code = 0;
     try {
-        sub::pluginhost::HostServer server(std::move(channel), *loop, doorbell);
-        code = server.run();
+        // Never destroyed: its audio workers are let go, not joined (one may be stuck in a
+        // plug-in), and may still look at it until the process ends.
+        auto* server = new sub::pluginhost::HostServer(std::move(channel), *loop, doorbell);
+        code = server->run();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "substation-plugin-host: %s\n", error.what());
         code = 2;
