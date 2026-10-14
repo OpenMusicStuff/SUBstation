@@ -1370,7 +1370,7 @@ Plays the notes held one after another, in a pattern, over one to four octaves.
 
 Its editor draws the pattern: sixteen steps of a three-note chord, walked as the style
 walks it, over the octaves, each as long as the gate and the odd ones late by the swing. As it
-plays, the step sounding lights up. Octaves and Velocity sit under Rate, Gate and Swing.
+plays, the active step lights up. Octaves and Velocity sit under Rate, Gate and Swing.
 
 ## Modulators: LFO and Envelope
 
