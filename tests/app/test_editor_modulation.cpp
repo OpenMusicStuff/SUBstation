@@ -175,6 +175,22 @@ private Q_SLOTS:
         const QJsonObject saved = deviceToJson(f.project.device(track, lfo));
         QVERIFY(saved.value("modulations").toArray().at(0).toObject().value("bipolar").toBool());
         QCOMPARE(deviceFromJson(saved).modulations.front(), bipolar);
+        // A range that isn't a number ("nan", "inf") is a damaged file, not a range at an end.
+        for (const char* bad : {"nan", "inf", "-inf"}) {
+            QJsonObject damaged = saved;
+            QJsonArray mappings = damaged.value("modulations").toArray();
+            QJsonObject first = mappings.at(0).toObject();
+            first["low"] = QString::fromLatin1(bad);
+            mappings[0] = first;
+            damaged["modulations"] = mappings;
+            bool refused = false;
+            try {
+                deviceFromJson(damaged);
+            } catch (...) {
+                refused = true;
+            }
+            QVERIFY2(refused, bad);
+        }
     }
 
     void aParameterFollowsOneModulator() {

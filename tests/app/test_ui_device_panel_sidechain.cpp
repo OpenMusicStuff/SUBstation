@@ -58,9 +58,22 @@ class TestUiDevicePanelSidechain : public QObject {
         ui_.polish();
         test::click(window(), test::centerOf(button(deviceId)));
         if (!ui_.menuOpened()) return {};
+        parkMouseOffMenu();
         return test::menuTexts(ui_.menu());
     }
-    // Chooses an entry of a device's sidechain menu.
+    // Moves the mouse (still where it clicked) to a corner of the window the menu doesn't cover: else, as
+    // frames draw, the hover sent at a mouse at rest can highlight the entry under it and take the keyboard.
+    void parkMouseOffMenu() {
+        auto* menuItem = qvariant_cast<QQuickItem*>(ui_.menu()->property("contentItem"));
+        const QRectF covered = menuItem ? QRectF(menuItem->mapToScene(QPointF(0, 0)), menuItem->size()) : QRectF();
+        for (const QPoint corner : {QPoint(2, 2), QPoint(window()->width() - 3, 2), QPoint(2, window()->height() - 3),
+                                    QPoint(window()->width() - 3, window()->height() - 3)}) {
+            if (covered.adjusted(-20, -20, 20, 20).contains(corner)) continue;
+            test::moveTo(window(), corner, {}, Qt::NoButton);
+            return;
+        }
+    }
+        // Chooses an entry of a device's sidechain menu.
     void choose(const QString& deviceId, const QString& entry) {
         QVERIFY(!openMenu(deviceId).isEmpty());
         QVERIFY2(ui_.choose(entry), qPrintable(entry));

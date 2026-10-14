@@ -845,8 +845,11 @@ Device deviceFromJson(const QJsonValue& value) {
         modulation.deviceId = toStr(need(mapping, QStringLiteral("device")));
         modulation.paramId = toStr(need(mapping, QStringLiteral("param")));
         // (Set from a knob's handle, a range's ends may reach past the parameter's: -1..2.)
-        modulation.low = clamped(floatOr(mapping, QStringLiteral("low"), 0.0), -1.0, 2.0);
-        modulation.high = clamped(floatOr(mapping, QStringLiteral("high"), 1.0), -1.0, 2.0);
+        const double low = floatOr(mapping, QStringLiteral("low"), 0.0);
+        const double high = floatOr(mapping, QStringLiteral("high"), 1.0);
+        if (!std::isfinite(low) || !std::isfinite(high)) damaged(QStringLiteral("a modulation's range isn't finite"));
+        modulation.low = clamped(low, -1.0, 2.0);
+        modulation.high = clamped(high, -1.0, 2.0);
         modulation.invert = truthy(mapping.value(QStringLiteral("invert")));
         modulation.bipolar = truthy(mapping.value(QStringLiteral("bipolar")));
         device.modulations.push_back(std::move(modulation));
