@@ -21,8 +21,10 @@
 // Tools are added with addTool(); a tool's call gets its arguments and returns
 // a ToolResult (its structured content, and the text the model reads). An error
 // in the tool's use (a track that isn't there) is a result with isError, which
-// the model sees; an unknown tool is a protocol error. Everything runs on the
-// application's thread.
+// the model sees; an unknown tool is a protocol error. Prompts (addPrompt():
+// requests the user picks in the agent, as its slash commands) and resources
+// (addResource(): documents the client reads, by URI) are answered the same
+// way. Everything runs on the application's thread.
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -49,6 +51,7 @@ inline constexpr int kInvalidRequest = -32600;
 inline constexpr int kMethodNotFound = -32601;
 inline constexpr int kInvalidParams = -32602;
 inline constexpr int kInternal = -32603;
+inline constexpr int kResourceNotFound = -32002;
 inline constexpr int kHeaderMismatch = -32020;
 inline constexpr int kUnsupportedVersion = -32022;
 }  // namespace code
@@ -79,6 +82,33 @@ struct Tool {
     bool idempotent = false;
 };
 
+// A prompt's argument: always a string.
+struct PromptArgument {
+    QString name;
+    QString description;
+    bool required = false;
+};
+
+// A prompt: a request the user picks (Claude Code lists them as slash
+// commands), given as one user message for the model.
+struct Prompt {
+    QString name;         // "write_part"
+    QString title;        // "Write a Part"
+    QString description;  // for the user: what it asks
+    std::vector<PromptArgument> arguments;
+    std::function<QString(const QJsonObject& arguments)> text;  // the message, with the arguments in it
+};
+
+// A resource: a document the client reads by its URI, as it is now.
+struct Resource {
+    QString uri;   // "substation://arrangement"
+    QString name;  // "arrangement"
+    QString title;
+    QString description;
+    QString mimeType;  // "text/plain", "application/json"
+    std::function<QString()> read;
+};
+
 // The headers a transport received with a message (none: not sent, or no HTTP).
 struct Headers {
     bool http = false;  // checked only over HTTP
@@ -102,6 +132,11 @@ public:
     // Tools are listed in the order they were added (deterministic, as the spec asks).
     void addTool(Tool tool);
     const std::vector<Tool>& tools() const { return tools_; }
+    // Prompts and resources: listed in the order added too. Without any, the server doesn't offer them.
+    void addPrompt(Prompt prompt);
+    void addResource(Resource resource);
+    const std::vector<Prompt>& prompts() const { return prompts_; }
+    const std::vector<Resource>& resources() const { return resources_; }
 
     // One JSON-RPC message (a request or a notification) and its headers.
     Reply handle(const QJsonObject& message, const Headers& headers = {});
@@ -117,11 +152,17 @@ private:
     QJsonObject result(const QJsonObject& fields, bool modern) const;
     QJsonObject listTools(bool modern) const;
     Reply callTool(const QJsonValue& id, const QJsonObject& params, bool modern);
+    QJsonObject listPrompts(bool modern) const;
+    Reply getPrompt(const QJsonValue& id, const QJsonObject& params, bool modern) const;
+    QJsonObject listResources(bool modern) const;
+    Reply readResource(const QJsonValue& id, const QJsonObject& params, bool modern) const;
 
     QString name_;
     QString version_;
     QString instructions_;
     std::vector<Tool> tools_;
+    std::vector<Prompt> prompts_;
+    std::vector<Resource> resources_;
 };
 
 }  // namespace sub::app::mcp

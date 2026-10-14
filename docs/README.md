@@ -72,7 +72,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Plug-in scanner](app/plugin-scanner.md) | `plugins/`, `tools/scanner`: finding and reading VST3 plug-ins in child processes |
 | [Analysis](app/analysis.md) | `analysis/`: signal maths for the devices' editors (the Sidechain's fit, spectra) |
 | [Updates](app/updates.md) | `update/`: versions and channels, reading the releases' feed, downloading and checking an update, installing it as SUBstation quits |
-| [MCP server](app/mcp.md) | `mcp/`: agents reading and editing the project through the Model Context Protocol: the protocol (both eras), Streamable HTTP on localhost, the tools, the agents' history apart from undo |
+| [MCP server](app/mcp.md) | `mcp/`: agents reading and editing the project through the Model Context Protocol: the protocol (both eras), Streamable HTTP on localhost, the tools, the arrangement map and its sections, prompts and resources, the agents' history apart from undo |
 
 ### UI
 
