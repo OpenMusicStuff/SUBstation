@@ -41,7 +41,7 @@ using vitalpatch::Engine;
 
 class VitalProcessor final : public BuiltinProcessor {
 public:
-    VitalProcessor() : BuiltinProcessor(vitalpatch::params()), pushed_(vitalpatch::params().size()) {}
+    VitalProcessor() : BuiltinProcessor(vitalpatch::params(), displayInfos()), pushed_(vitalpatch::params().size()) {}
     ~VitalProcessor() override {
         delete pending_.exchange(nullptr);
         delete retired_.exchange(nullptr);
@@ -167,6 +167,43 @@ private:
     static constexpr int kMaxHeld = 256;
     static constexpr int kFadeSamples = 480;  // the old engine's fade, when a new one takes over
     static constexpr float kSilence = 1e-6f;  // -120 dBFS: below it for a second with no voices, it sleeps
+
+    // What its editor draws: the output's samples (mono), and every kDisplaySamples the voices playing,
+    // the newest voice's LFO phases (0..1), its envelopes' phases (Vital's stage, 1 delay .. 5 release,
+    // plus the position in it) and values (0..1); -1 for an LFO or envelope while no voice plays.
+    static constexpr int kDisplaySamples = 256;
+    enum Display { OutputDisplay = 0, VoicesDisplay, FirstLfoDisplay };
+    static constexpr int kFirstEnvelopeDisplay = FirstLfoDisplay + vitalpatch::kNumLfos;
+    static constexpr int kFirstEnvelopeValueDisplay = kFirstEnvelopeDisplay + vitalpatch::kNumEnvelopes;
+
+    static std::vector<DisplayInfo> displayInfos() {
+        std::vector<DisplayInfo> infos = {{"output", 1}, {"voices", kDisplaySamples}};
+        for (int i = 0; i < vitalpatch::kNumLfos; ++i) infos.push_back({"lfo_" + std::to_string(i + 1), kDisplaySamples});
+        for (int i = 0; i < vitalpatch::kNumEnvelopes; ++i)
+            infos.push_back({"env_" + std::to_string(i + 1), kDisplaySamples});
+        for (int i = 0; i < vitalpatch::kNumEnvelopes; ++i)
+            infos.push_back({"env_" + std::to_string(i + 1) + "_value", kDisplaySamples});
+        return infos;
+    }
+
+    void publishStatus(const Engine& engine) {
+        publish(VoicesDisplay, static_cast<float>(engine.sound->getNumActiveVoices()));
+        for (int i = 0; i < vitalpatch::kNumLfos; ++i) {
+            float phase = -1.f;
+            if (const vital::StatusOutput* status = engine.lfoPhases[i]; status && !status->isClearValue(status->value())) {
+                const float encoded = status->value()[0];
+                phase = std::clamp((encoded - std::floor(encoded)) / vital::utils::kPhaseEncodingMultiplier, 0.f, 1.f);
+            }
+            publish(FirstLfoDisplay + i, phase);
+        }
+        for (int i = 0; i < vitalpatch::kNumEnvelopes; ++i) {
+            const vital::StatusOutput* phase = engine.envelopePhases[i];
+            const vital::StatusOutput* value = engine.envelopeValues[i];
+            const bool playing = phase && value && !phase->isClearValue(phase->value());
+            publish(kFirstEnvelopeDisplay + i, playing ? phase->value()[0] : -1.f);
+            publish(kFirstEnvelopeValueDisplay + i, playing ? std::clamp(value->value()[0], 0.f, 1.f) : -1.f);
+        }
+    }
 
     struct Held {
         bool on = false;
@@ -305,6 +342,12 @@ private:
             ch[0][start + i] = left;
             if (numChannels > 1) ch[1][start + i] = right;
             peak = std::max(peak, std::max(std::abs(left), std::abs(right)));
+            publish(OutputDisplay, 0.5f * (left + right));
+        }
+        displayCount_ += frames;
+        if (displayCount_ >= kDisplaySamples) {
+            displayCount_ %= kDisplaySamples;
+            publishStatus(*live_);
         }
         if (fading_) {
             fading_->sound->correctToTime(seconds_);
@@ -473,6 +516,7 @@ private:
     double seconds_ = 0.0;
     int silentSamples_ = 0;
     bool sleeping_ = false;
+    int displayCount_ = 0;  // samples since the last status was published
 };
 
 }  // namespace

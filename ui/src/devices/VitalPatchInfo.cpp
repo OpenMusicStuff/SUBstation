@@ -89,6 +89,7 @@ void VitalPatchInfo::refresh() {
     QVariantList modulations;
     int free = 0;
     QString presetName;
+    QString author;
     QStringList macroNames;
     QStringList wavetableNames;
     QStringList lfoNames;
@@ -107,6 +108,7 @@ void VitalPatchInfo::refresh() {
                                             sub::app::vitalDestinationName(slot.destination)}});
         }
         presetName = sub::app::vitalStateValue(*device, QStringLiteral("preset_name"));
+        author = sub::app::vitalStateValue(*device, QStringLiteral("author"));
         wavetableNames = sub::app::vitalWavetableNames(*device);
         lfoNames = sub::app::vitalLfoNames(*device);
         for (int i = 0; i < 4; ++i) {
@@ -115,7 +117,7 @@ void VitalPatchInfo::refresh() {
                                                                                          : name);
         }
     }
-    if (modulations == modulations_ && free == freeSlots_ && presetName == presetName_ && macroNames == macroNames_ &&
+    if (modulations == modulations_ && free == freeSlots_ && presetName == presetName_ && author == author_ && macroNames == macroNames_ &&
         wavetableNames == wavetableNames_ && lfoNames == lfoNames_)
         return;
     wavetableNames_ = wavetableNames;
@@ -123,6 +125,7 @@ void VitalPatchInfo::refresh() {
     modulations_ = modulations;
     freeSlots_ = free;
     presetName_ = presetName;
+    author_ = author;
     macroNames_ = macroNames;
     Q_EMIT changed();
 }

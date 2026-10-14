@@ -45,7 +45,7 @@ session's ([session.md](session.md)).
 | [Clip.h](../../app/src/model/Clip.h) | `Clip` (audio and MIDI alike), `Note`, `BendPoint`, `Vibrato`, `PlayedNote`; `kWarpModes`, `legacyWarpMode`, `kMinSegmentBpm`, `kMaxSegmentBpm` |
 | [Device.h](../../app/src/model/Device.h) | `Device`, `Chain`, `PluginRef`, `Sidechain`, `MacroMapping`; the device-tree helpers (`iterDevices`, `iterChains`, `devicePath`, `deviceAt`, `findDevice`, `findChain`, `chainIndex`, `chainDevices`, `containerOf`, `rackDepth`, `rackHeight`, `refreshIds`); `kPluginKind`, `kRackKind`, `kMaxRackDepth`, `kDefaultMacroCount`, `kMaxMacroCount`, `macroParam`, `macroIndex`, `macroCount`, `macroName`, the taps `kPostFader`, `kPreFader`, `kPreFx` |
 | [Devices.h](../../app/src/model/Devices.h) | Kinds of devices: `builtinDevices()`, `builtinDevice()`, `builtinCategories()` (from the engine); `isInstrument`, `deviceIsInstrument`, `loadsInto`, `deviceName`, `kindName`; `newDevice`, `newRack`, `newChain`; `builtinParamInfo`, `deviceIdsOf`, `deviceIdsOfList`, `addDeviceIds` (into a set of many lists' ids), `innerDeviceIds` (what is in a rack) |
-| [Vital.h](../../app/src/model/Vital.h) | A built-in Vital as the application sees it besides its parameters (see [Vital](#vital)): `isVital`, `vitalModulations`, `vitalModulationSlots`, `vitalSources`, `vitalDestinations`, `vitalSourceName`, `vitalDestinationName`, `vitalSlotParam`, `vitalWavetableNames`, `vitalLfoNames`, `vitalShapeNames`, `vitalStateValue` |
+| [Vital.h](../../app/src/model/Vital.h) | A built-in Vital as the application sees it besides its parameters (see [Vital](#vital)): `isVital`, `vitalModulations`, `vitalModulationSlots`, `vitalSources`, `vitalDestinations`, `vitalSourceName`, `vitalDestinationName`, `vitalSlotParam`, `vitalWavetableNames`, `vitalLfoNames`, `vitalShapeNames`, `vitalWavetableFrames`, `vitalLfoShape`, `vitalStateValue` |
 | [Routing.h](../../app/src/model/Routing.h) | The group tree (`TreeEntry`, `TrackTree`, `treeProblem`, `repairTree`) and the routing graph (`routingGraph`, `feeds`, `wouldCycle`, `inputWouldCycle`, `sidechainWouldCycle`); `isDefaultOutput` (an output that goes where the default does: its own group, or the master from outside a group) |
 | [Automation.h](../../app/src/model/Automation.h) | `AutomationPoint`, `Envelope`, `AutomationView`, `kMaster`; in `sub::app::automation`: target keys, the mixer's normalized mappings, evaluation (`valueAt`, `leftValue`, `shape`), every envelope edit |
 | [ParamSpec.h](../../app/src/model/ParamSpec.h) | `ParamSpec`: any automatable parameter described alike, with the engine's normalized mapping; `mixerSpecs`, `sendSpec`, `chainSpecs`, `formatValue` |
@@ -386,7 +386,9 @@ Vital's parameters as its `params` (Vital's ids) and the rest of its patch as it
 [Vital.h](../../app/src/model/Vital.h) reads them (through the engine's `VitalPatch.h`, which has no Vital headers):
 the modulations slot by slot (`vitalModulationSlots`: all 64, "" in a free one; `vitalModulations`: those in use),
 every source and destination Vital's engine has and their names, a slot's parameters (`vitalSlotParam(slot,
-"amount")` is `modulation_<slot + 1>_amount`), the wavetables' and LFO shapes' names. The editor's edits
+"amount")` is `modulation_<slot + 1>_amount`), the wavetables' and LFO shapes' names, and what the editor draws:
+`vitalWavetableFrames(device, oscillator, points)` (the wavetable's frames as Vital's engine renders them, each
+`points` values) and `vitalLfoShape(device, lfo, samples)` (an LFO's values across a cycle and its points). The editor's edits
 ([EditorVital.cpp](../../app/src/editor/EditorVital.cpp)), one undo step each:
 
 - `setVitalModulation(track, device, slot, source, destination)` [Q]: a slot's source and destination (both "": the
