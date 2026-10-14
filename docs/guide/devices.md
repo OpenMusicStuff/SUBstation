@@ -1405,7 +1405,7 @@ devices and plug-ins alike, in racks too.
   and down), drag between points or use the wheel to bend, click to add a point,
   double-click (or Alt-click, or Delete) to remove one, double-click a bend to straighten
   it. Shift is fine, **Ctrl snaps** to the grid (sixteenths across, eighths up).
-  Right-click for **Shapes**, *Flip Curve*, *Reverse Curve* and *Reset Curve*.
+  Right-click for **Shapes**, *Flip Curve*, *Reverse Curve* and *Reset Curve* (and the LFO's *Retrig*).
 - **As it plays**, a playhead rides the curve with a short trail. The knobs it moves show it as a
   dot riding their blue range (their pointer stays where you set them), and the graphs of the devices they
   belong to follow it.
@@ -1421,7 +1421,7 @@ up from the bottom to the top at half the cycle, and down again).
 - **Rate** in Hz (0.01 to 40), or with **Sync** in notes (1/64 to 8 bars). Synced, it
   follows the song's position while it plays (a 1/4 LFO starts its cycle on every beat,
   wherever playback starts or loops); stopped, it runs on at the tempo.
-- **Retrig**: every note it hears (its track's, or a MIDI track's: the **MIDI From**
+- **Retrig** (in the curve's right-click menu): every note it hears (its track's, or a MIDI track's: the **MIDI From**
   button) starts its cycle again, so it fits each note; it flashes as one comes.
 - **Depth** scales it round the middle of its targets' ranges; **Offset** moves it up or
   down (+100 %: by half the range). The shaded band and the dashed line show what it

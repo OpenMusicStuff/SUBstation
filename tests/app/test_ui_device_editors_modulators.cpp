@@ -70,6 +70,28 @@ private Q_SLOTS:
         QVERIFY(graph->periodic());
         QCOMPARE(graph->points().size(), size_t(3));  // its triangle
         QCOMPARE(graph->shapes().front(), QStringLiteral("Triangle"));
+        // Retrig lives in the curve's menu, checked while on; choosing it switches it.
+        QVERIFY(!find<QQuickItem>(view, QStringLiteral("retrigger")));
+        auto* menu = qvariant_cast<QObject*>(view->property("curveMenu"));
+        QVERIFY(menu);
+        const auto retrigEntry = [&]() -> QObject* {
+            QMetaObject::invokeMethod(menu, "build", Q_ARG(QVariant, -1));
+            for (const QVariant& made : menu->property("made").toList()) {
+                QObject* action = qvariant_cast<QObject*>(made);
+                if (action && action->property("text").toString().startsWith(QStringLiteral("Retrig")))
+                    return action;
+            }
+            return nullptr;
+        };
+        QObject* retrig = retrigEntry();
+        QVERIFY(retrig);
+        QVERIFY(retrig->property("checkable").toBool() && !retrig->property("checked").toBool());
+        QMetaObject::invokeMethod(retrig, "trigger");
+        QTRY_COMPARE(project()->device(track, lfo).params.value(QStringLiteral("retrigger")), 1.0);
+        retrig = retrigEntry();
+        QVERIFY(retrig->property("checked").toBool());
+        QMetaObject::invokeMethod(retrig, "trigger");  // and off again
+        QTRY_COMPARE(project()->device(track, lfo).params.value(QStringLiteral("retrigger")), 0.0);
 
         // A point dragged: one undo step; Ctrl snaps it to the grid.
         const int steps = undo()->count();

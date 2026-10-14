@@ -1433,7 +1433,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
   edited as the Sidechain's curve is (drag, bend, add, double-click, Alt-click, Delete, the wheel, Shift), with
   **Ctrl snapping** to the grid (sixteenths across, eighths up). Its menu: *Shapes* (`shapeList(periodic)`: the
   LFO's start with its device's triangle, the Envelope's with its pluck), *Flip*, *Reverse* (a segment played backwards
-  keeps its curve value: 1 − s(1 − u, a) = s(u, −a)), *Reset*. Behind it: the grid with the times of its quarters
+  keeps its curve value: 1 − s(1 − u, a) = s(u, −a)), *Reset*, and the LFO's *Retrig* (checked while on). Behind it: the grid with the times of its quarters
   (`lengthText`: the rate in Hz or the synced note and its length at the tempo), the LFO's output band and its
   curve as played over its cycle or length (`outputCurve()`: Depth and Offset, the LFO's Phase shifting it along,
   eased by Smooth as its one-pole does, the LFO's settled cycle after cycle; dashed) when that isn't the curve. With Random on (`random`) it draws
@@ -1447,7 +1447,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
   the threshold at the right. A trigger (the Envelope's playhead starting again; the LFO's `key`) briefly lights
   the frame's edge. (`output`, its value now, feeds the targets' markers.) The Envelope's hint over the curve, while a sidechain triggers it and
   none is chosen, asks the frame for its sidechain menu.
-- **The controls**: a row of buttons (Sync, the LFO's Retrig, Random, and Map: [ModulatorMapButton.qml](../../ui/qml/devices/editors/ModulatorMapButton.qml)),
+- **The controls**: a row of buttons (Sync, Random, and Map: [ModulatorMapButton.qml](../../ui/qml/devices/editors/ModulatorMapButton.qml)),
   then `EditorKnob`s at 38 px in 56 px cells (Rate or the synced rate, swapped by Sync; Depth, Offset, Phase,
   Smooth; the Envelope's Length, Depth, Velocity, Threshold dimmed until a sidechain is chosen, Smooth). The
   Envelope has no trigger setting: the notes it hears and, once chosen, its sidechain's hits trigger it.
