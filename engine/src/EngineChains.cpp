@@ -8,6 +8,7 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "plugins/Vst3Format.h"
+#include "plugins/sandbox/SandboxedProcessor.h"
 
 namespace sub {
 
@@ -267,7 +268,8 @@ uint32_t Engine::addBuiltinProcessor(uint32_t chainId, const std::string& type, 
 }
 
 uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format, const std::string& path,
-                                    const std::string& uid, int index) {
+                                    const std::string& uid, int index, const PluginIdentity& identity,
+                                    const std::vector<uint8_t>& state) {
     if (format != "VST3") throw std::invalid_argument("Unsupported plug-in format: " + format);
     double rate = 0.0;
     {
@@ -275,15 +277,25 @@ uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format,
         chainLocked(chainId);
         rate = sampleRate_;
     }
-    // Loading can take a while (and show dialogs), so it doesn't hold the lock.
-    auto plugin = vst3::Vst3Format::instance().instantiate(path, uid, rate, Renderer::kMaxBlock);
+    // Loading can take a while (and show dialogs), so it doesn't hold the lock. (In a
+    // sandbox it doesn't take the time here: the plug-in loads there meanwhile.)
+    ProcessorEntry::Plugin plugin{path, uid, identity, {}};
+    auto processor = makePlugin(plugin, state, rate, plugin.problem);
     std::lock_guard lock(mutex_);
-    if (sampleRate_ != rate) plugin->prepare(sampleRate_, Renderer::kMaxBlock);  // the device changed meanwhile
+    if (sampleRate_ != rate) processor->prepare(sampleRate_, Renderer::kMaxBlock);  // the device changed meanwhile
     if (!chains_.contains(chainId)) {  // its track went while the plug-in loaded (a dialog's message loop)
-        retireProcessorLocked(std::move(plugin));
+        retireProcessorLocked(std::move(processor));
         throw std::invalid_argument("Unknown chain id " + std::to_string(chainId));
     }
-    return insertProcessorLocked(chainId, std::move(plugin), index);
+    const uint32_t id = insertProcessorLocked(chainId, std::move(processor), index);
+    if (!plugin.problem.empty()) {  // (its state, in this process; in a sandbox it says so as it loads)
+        ProcessorEventRecord problem;
+        problem.type = ProcessorEvent::Type::Problem;
+        problem.processorId = id;
+        engineEvents_.push_back(problem);
+    }
+    processors_[id].plugin = std::move(plugin);
+    return id;
 }
 
 void Engine::resetChainLocked(uint32_t chainId) {
@@ -377,9 +389,29 @@ void Engine::moveProcessor(uint32_t processorId, uint32_t toChainId, int index) 
 }
 
 ProcessorInfo Engine::processorInfo(uint32_t processorId) {
-    auto p = processor(processorId);
-    return {p->typeId(),    p->name(),         p->latencySamples(), p->tailSamples(),
-            p->hasEditor(), p->hasSidechain(), p->acceptsMidi()};
+    std::shared_ptr<Processor> p;
+    std::string problem;
+    {
+        std::lock_guard lock(mutex_);
+        p = processorLocked(processorId);
+        if (const auto& plugin = processors_.at(processorId).plugin) problem = plugin->problem;
+    }
+    ProcessorInfo info{p->typeId(),    p->name(),         p->latencySamples(), p->tailSamples(),
+                       p->hasEditor(), p->hasSidechain(), p->acceptsMidi()};
+    info.problem = problem;
+    if (const auto* sandboxed = dynamic_cast<const sandbox::SandboxedProcessor*>(p.get())) {
+        using Status = sandbox::SandboxedProcessor::Status;
+        switch (sandboxed->status()) {
+            case Status::Loading: info.status = PluginStatus::Loading; break;
+            case Status::Ready: info.status = PluginStatus::Ready; break;
+            case Status::Failed: info.status = PluginStatus::Failed; break;
+            case Status::Crashed: info.status = PluginStatus::Crashed; break;
+        }
+        info.problem = sandboxed->problem();
+        info.sandbox = sandboxed->sandboxLabel();
+        info.sandboxPid = sandboxed->sandboxPid();
+    }
+    return info;
 }
 
 void Engine::setProcessorMidiInput(uint32_t processorId, uint32_t sourceTrackId) {
@@ -515,6 +547,10 @@ std::vector<ProcessorEventRecord> Engine::takeProcessorEvents() {
         for (const auto& [id, entry] : processors_) current.emplace_back(id, entry.processor);
     }
     std::vector<ProcessorEventRecord> records;
+    {
+        std::lock_guard lock(mutex_);
+        records = std::exchange(engineEvents_, {});
+    }
     std::vector<ProcessorEvent> events;
     for (const auto& [id, p] : current) {
         events.clear();

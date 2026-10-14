@@ -28,12 +28,13 @@ foreach (_source IN LISTS APP_TEST_SOURCES)
         add_dependencies(${_name} sub_test_plugins)
         target_compile_definitions(${_name} PRIVATE SUBSTATION_TEST_PLUGINS_BUNDLE="${SUBSTATION_TEST_PLUGINS_BUNDLE}")
     endif()
-    target_compile_definitions(${_name} PRIVATE SUBSTATION_SCANNER="$<TARGET_FILE:substation-scan>")
+    target_compile_definitions(${_name} PRIVATE SUBSTATION_SCANNER="$<TARGET_FILE:substation-scan>"
+                                                SUBSTATION_PLUGIN_HOST="$<TARGET_FILE:substation-plugin-host>")
     if (_name STREQUAL "test_bridge_plugins" AND TARGET PkgConfig::XCB_XTEST)  # (an X11 editor: XDisplay.h)
         target_link_libraries(${_name} PRIVATE PkgConfig::XCB PkgConfig::XCB_XTEST)
         target_compile_definitions(${_name} PRIVATE SUBSTATION_EDITOR_TESTS=1)
     endif()
-    add_dependencies(${_name} substation-scan)
+    add_dependencies(${_name} substation-scan substation-plugin-host)
     set_target_properties(${_name} PROPERTIES WIN32_EXECUTABLE OFF)
     # QT_FORCE_STDERR_LOGGING: on Windows, Qt Test and qWarning write to the
     # debugger, not the output ctest shows, when the process has no console window.

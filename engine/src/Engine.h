@@ -57,6 +57,7 @@
 #include "MidiInput.h"
 #include "Modulation.h"
 #include "NoteBend.h"
+#include "PluginHosting.h"
 #include "Processor.h"
 #include "Recorder.h"
 #include "RenderJob.h"
@@ -69,6 +70,10 @@
 #include "rt/RtUtils.h"
 
 namespace sub {
+
+namespace sandbox {
+class PluginSandboxes;
+}
 
 struct ClipDesc {
     std::string path;
@@ -173,6 +178,15 @@ struct DeviceMeterReading {
     float right = 0.f;
 };
 
+// Whether a plug-in has loaded. One in this process has (or it wouldn't be
+// there); one in a sandbox loads after it is added (PluginHosting.h).
+enum class PluginStatus : uint8_t {
+    Ready,    // loaded (and every built-in device)
+    Loading,  // in its sandbox: it passes its input on meanwhile
+    Failed,   // it couldn't be loaded there (`problem` says why)
+    Crashed,  // its sandbox ended (`problem`): it passes its input on until reloaded (reloadProcessor())
+};
+
 // A processor's description for the UI.
 struct ProcessorInfo {
     std::string typeId;
@@ -182,6 +196,37 @@ struct ProcessorInfo {
     bool hasEditor = false;
     bool hasSidechain = false;  // it has a sidechain (aux) input: setProcessorSidechain()
     bool acceptsMidi = false;   // it plays notes (an instrument, an effect with a MIDI input): setProcessorMidiInput()
+    PluginStatus status = PluginStatus::Ready;
+    // Failed, Crashed: why; Ready: what last went wrong (ProcessorEvent::Problem: its state wasn't taken).
+    std::string problem;
+    std::string sandbox;  // the sandbox it runs in, as the user knows it ("" : in this process)
+    int sandboxPid = 0;
+};
+
+// Which plug-in maker made a plug-in and what it is called, as the scan found
+// them: which sandbox it goes to (by maker), and its name until it has loaded.
+struct PluginIdentity {
+    std::string name;
+    std::string vendor;
+};
+
+// A sandbox plug-ins run in (Engine::pluginSandboxes()).
+struct PluginSandboxInfo {
+    std::string label;  // what it holds: "All plug-ins", a maker, a plug-in
+    int pid = 0;
+    bool running = false;
+    size_t plugins = 0;  // in it now
+};
+
+// A key pressed in a sandboxed plug-in's editor that the application takes
+// (Engine::setSandboxEditorKeys()): the system's key code (an X11 keysym,
+// unshifted; a Windows virtual-key code), EditorHost.h's modifiers, held down,
+// in a text field the system knows.
+struct SandboxEditorKey {
+    uint32_t key = 0;
+    int modifiers = 0;
+    bool repeat = false;
+    bool textField = false;
 };
 
 // A ProcessorEvent and the processor it came from.
@@ -427,10 +472,17 @@ public:
     uint32_t processorChain(uint32_t processorId);
     // `index`: where in the chain (-1 or past the end: last).
     uint32_t addBuiltinProcessor(uint32_t chainId, const std::string& type, int index);
-    // Loads a plug-in ("VST3" format) into the chain. Main thread; throws
-    // std::runtime_error with a message for the user if it can't be loaded.
+    // Loads a plug-in ("VST3" format) into the chain, where pluginHosting() says:
+    // in this process (it has loaded when this returns), or in a sandbox (it is
+    // in the chain at once and loads there meanwhile: ProcessorEvent::Loaded or
+    // LoadFailed, processorInfo().status). Main thread; throws std::runtime_error
+    // with a message for the user if it can't be loaded (or no sandbox started).
+    // `state` (none: as it starts) is restored as it loads (in a sandbox, before it
+    // says it has loaded); one it doesn't take is a ProcessorEvent::Problem
+    // (processorInfo().problem says why), not an exception.
     uint32_t addPluginProcessor(uint32_t chainId, const std::string& format, const std::string& path,
-                                const std::string& uid, int index);
+                                const std::string& uid, int index, const PluginIdentity& identity = {},
+                                const std::vector<uint8_t>& state = {});
     // Removes a device (a rack with its chains and everything in them).
     void removeProcessor(uint32_t processorId);
     // Reorders a chain; `processorIds` must be the chain's processors, each once.
@@ -518,6 +570,44 @@ public:
     void setEditorTitle(uint32_t processorId, const std::string& title);
     // What processors reported since the last call (edits in a plug-in's editor...).
     std::vector<ProcessorEventRecord> takeProcessorEvents();
+
+    // --- Plug-in hosting (PluginHosting.h, docs/engine/sandboxes.md) -------------
+    // Where plug-ins loaded from now on run: in this process, or in sandboxes
+    // (processes of their own, of the host program: setPluginHostProgram()),
+    // grouped as the mode says. Those loaded already stay where they are, until
+    // reloaded (reloadProcessor()).
+    void setPluginHosting(PluginHosting hosting);
+    PluginHosting pluginHosting();
+    void setPluginHostProgram(const std::string& path);  // substation-plugin-host
+    // Loads a plug-in again, as it was last (its state now, or the last known
+    // of one whose sandbox ended), where pluginHosting() says now, in its place:
+    // the same processor id, chain, sidechain and MIDI input. Its editor closes.
+    // Main thread. Throws std::invalid_argument for a processor that isn't a
+    // plug-in, std::runtime_error if it can't be loaded (it stays as it was).
+    void reloadProcessor(uint32_t processorId);
+    // These plug-ins load first in their sandboxes (those still waiting to), in this order.
+    void prioritizeProcessors(const std::vector<uint32_t>& processorIds);
+    // How many plug-ins in sandboxes are still loading.
+    size_t pluginsLoading();
+    // Waits until no plug-in in a sandbox is loading (calling idle() meanwhile), at
+    // most `timeoutMs`: false if some still are. Main thread; for renders that must
+    // have them, and tests.
+    bool waitForPlugins(int timeoutMs);
+    std::vector<PluginSandboxInfo> pluginSandboxes();
+    // How long a sandbox that no plug-in uses any more stays before it quits (5 s).
+    void setSandboxRetireDelay(int milliseconds);
+    // How long an offline render waits for a sandboxed plug-in's block before it goes on without
+    // (a minute; once: a plug-in that misses it is waited for no more until it catches up). Tests.
+    void setSandboxOfflineWait(int milliseconds);
+    // Sandboxed editors: the keys (key, modifiers: SandboxEditorKey's) the application
+    // takes from them, and those pressed since the last call. (Editors in this process
+    // ask EditorHost.h's key filter, or are the application's own windows: Windows.)
+    void setSandboxEditorKeys(const std::vector<std::pair<uint32_t, int>>& keys);
+    std::vector<SandboxEditorKey> takeSandboxEditorKeys();
+    // Closes the foremost of the sandboxes' editors, as its close button would; false if none is shown.
+    bool closeForemostSandboxEditor();
+    // The sandboxes' processes, running (their windows are plug-ins' editors too).
+    std::vector<int> sandboxProcessIds();
 
     // --- Transport ------------------------------------------------------------
     void play(double countInBeats = 0.0);  // a count-in: the metronome clicks, then the playhead moves
@@ -693,7 +783,19 @@ private:
         // Its latency (insertLatency) when the snapshot was last aligned: idle()
         // realigns when it differs, whatever the processor's own idle() says.
         int alignedLatency = 0;
+        // A plug-in: which (reloadProcessor() loads it again), and what last went
+        // wrong with one in this process (its state wasn't taken).
+        struct Plugin {
+            std::string path;
+            std::string uid;
+            PluginIdentity identity;
+            std::string problem;
+        };
+        std::optional<Plugin> plugin;
     };
+    // A plug-in loaded where hosting_ says, with `state` (none: as it starts). Not under the lock.
+    std::shared_ptr<Processor> makePlugin(const ProcessorEntry::Plugin& plugin, const std::vector<uint8_t>& state,
+                                          double sampleRate, std::string& problem);
     // A strip's devices depth first (Routing.h's slots): each device of its main
     // chain, and after a rack the devices of its chains, chain by chain.
     struct StripSlot {
@@ -848,6 +950,11 @@ private:
     static std::string sourceKey(const std::string& path);
 
     mutable std::recursive_mutex mutex_;
+    // Where plug-ins run, and the sandboxes (before everything holding processors: they go after them).
+    PluginHosting hosting_ = PluginHosting::InProcess;
+    std::unique_ptr<sandbox::PluginSandboxes> sandboxes_;
+    // Reports of the engine's own about processors (a plug-in reloaded in its place).
+    std::vector<ProcessorEventRecord> engineEvents_;
 
     AudioDevice device_;
     bool deviceRunning_ = false;

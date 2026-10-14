@@ -49,6 +49,8 @@ void prepareApplication() {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, runFolder(QStringLiteral("sub-settings")));
     QSettings().clear();
+    // Plug-ins in the tests' own process, as a test expects them, unless it asks for sandboxes.
+    qputenv("SUBSTATION_PLUGIN_HOSTING", "within");
     qputenv("SUBSTATION_PRESETS", (runFolder(QStringLiteral("sub-presets")) + QStringLiteral("/Presets")).toUtf8());
     qputenv("SUBSTATION_LIBRARY", (runFolder(QStringLiteral("sub-library")) + QStringLiteral("/library.json")).toUtf8());
     qputenv("SUBSTATION_BROWSER_INDEX",

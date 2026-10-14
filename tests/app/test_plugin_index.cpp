@@ -530,7 +530,7 @@ private Q_SLOTS:
             QVERIFY(QFile::link(QStringLiteral(SUBSTATION_TEST_PLUGINS_BUNDLE), installed));
             QCOMPARE(findPluginFiles({home + QStringLiteral("/.vst3")}), QStringList{installed});  // (in it: it is no plug-in)
             const ScanResult result = PluginScanner(QStringLiteral(SUBSTATION_SCANNER), cacheFile()).scan(QStringList{installed});
-            QCOMPARE(result.plugins.size(), size_t(5));
+            QCOMPARE(result.plugins.size(), size_t(6));
             QVERIFY(result.failures.empty());
 #endif
         }
@@ -558,7 +558,8 @@ private Q_SLOTS:
             QCOMPARE(p.format, QStringLiteral("VST3"));
             QCOMPARE(p.uid.size(), 32);
         }
-        QCOMPARE(found, QStringList({QStringLiteral("SUB Test Effect|SUBstation|Fx|Delay|0"),
+        QCOMPARE(found, QStringList({QStringLiteral("SUB Test Crasher|SUB Crash Works|Fx|0"),
+                                     QStringLiteral("SUB Test Effect|SUBstation|Fx|Delay|0"),
                                      QStringLiteral("SUB Test Mono|SUBstation|Fx|0"),
                                      QStringLiteral("SUB Test Note Effect|SUBstation|Fx|Pitch Shift|0"),
                                      QStringLiteral("SUB Test Sidechain|SUBstation|Fx|Dynamics|0"),

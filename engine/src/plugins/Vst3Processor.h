@@ -30,6 +30,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "Processor.h"
@@ -68,6 +69,14 @@ public:
     float getParam(int index) const override;
     void setParam(int index, float value) override;
     std::string paramText(int index, float value) const override;
+
+    // setParam() in two halves, for a plug-in sandbox (plugins/sandbox), where the
+    // UI's changes reach the audio with the block and the controller in a message:
+    // the controller and the value (main thread; the id and normalized value set,
+    // none for a read-only parameter), and the audio (any thread: the rendering one).
+    std::optional<std::pair<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>> setControllerParam(int index,
+                                                                                                      float value);
+    void queueParamChange(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue normalized) noexcept;
 
     std::vector<uint8_t> getState() override;
     void setState(const std::vector<uint8_t>& state) override;

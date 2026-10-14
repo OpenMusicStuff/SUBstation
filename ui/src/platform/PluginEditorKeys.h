@@ -34,7 +34,20 @@
 //   editors either.
 //
 // Ctrl+W (View › Close Plug-in Editor) closes the foremost editor, from the
-// main window or from any editor (closeForemostEditor()).
+// main window or from any editor (closeForemostPluginEditor()).
+//
+// Plug-ins in sandboxes (processes of their own: docs/engine/sandboxes.md) have
+// their editors in their sandbox's process, whose keys this process never sees,
+// and which can't wait for it to say. So this object works out, by the same
+// rules, every key of the window's shortcuts the application takes (sandboxKeys():
+// a key table, as the system's key codes) and hands it to the sandboxes, which
+// keep those keys from their plug-ins and pass them on (EngineBridge::
+// pluginEditorKey); their action is triggered as for an editor of this process.
+// The table is worked out again when it may have changed (the computer MIDI
+// keyboard switched, keys given to other commands, a render starting or
+// ending, an editor opening); an
+// action switched off meanwhile triggers nothing (its key isn't the plug-in's
+// either).
 // Ctrl+Shift+W (View › Reopen Closed Plug-in Editor) reopens the selected
 // track's editor closed last, from either too (an Action like any other).
 //
@@ -49,6 +62,7 @@
 #include <QByteArray>
 #include <QKeySequence>
 #include <QList>
+#include <QPair>
 #include <QObject>
 #include <QPointer>
 #include <QtQml/qqmlregistration.h>
@@ -97,6 +111,13 @@ public:
     // Closes the foremost plug-in editor of this process, as its close button
     // would: false if none is shown (or plug-ins show no editor here).
     Q_INVOKABLE static bool closeForemostEditor();
+    // The foremost of every plug-in editor: this process's or a sandbox's.
+    Q_INVOKABLE bool closeForemostPluginEditor();
+    // The keys the application takes from sandboxed editors, as (the system's key code: an X11 keysym, a
+    // Windows virtual-key code; EditorKey's modifiers): none while a render's dialog is up.
+    QList<QPair<quint32, int>> sandboxKeys() const;
+    // The system's key code for a Qt key (qtKey's or qtKeyForKeysym's, the other way); 0 for others.
+    static quint32 systemKey(int qtKey);
 
     bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
@@ -107,10 +128,19 @@ Q_SIGNALS:
 private:
     // The rules, for a Qt key.
     QObject* actionForKey(int key, int modifiers, bool textField) const;
+    // Whether the rules take this key (without Ctrl or Alt: only the DAW's, and not the MIDI keyboard's).
+    bool takesKey(int key, int modifiers) const;
+    // The window's Actions and Shortcuts, in the order they were made.
+    QList<QObject*> candidates() const;
+    // The key table to the sandboxes, as it is now.
+    void updateSandboxKeys();
+    // A key a sandboxed editor passed on.
+    void sandboxKeyPressed(quint32 key, int modifiers, bool repeat, bool textField);
     bool pressed(int key, int modifiers, bool textField, bool repeat, Qt::ConnectionType when = Qt::DirectConnection);
 
     QPointer<QObject> target_;
     QPointer<app::Session> session_;
+    QList<QMetaObject::Connection> sessionConnections_;
     bool installed_ = false;  // the native event filter (Windows)
     bool filtering_ = false;  // the engine's key filter (Linux)
 };

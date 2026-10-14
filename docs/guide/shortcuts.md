@@ -148,7 +148,9 @@ plug-in only:
 - and S while the computer MIDI keyboard is on (it plays a note in the main window too).
 
 Held down, Space acts once. Other keys without Ctrl or Alt (Delete, letters, ...) go to
-the plug-in.
+the plug-in. All this holds for plug-ins in sandboxes too ([plugins.md](plugins.md#plug-in-hosting)),
+but for a shortcut switched off at that moment (Undo with nothing to undo): its key
+doesn't reach the plug-in either.
 
 ---
 

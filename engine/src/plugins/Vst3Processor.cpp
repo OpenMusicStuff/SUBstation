@@ -699,17 +699,23 @@ float Vst3Processor::getParam(int index) const {
 }
 
 void Vst3Processor::setParam(int index, float value) {
+    if (const auto set = setControllerParam(index, value)) toAudio_.push(set->first, set->second);
+}
+
+std::optional<std::pair<ParamID, ParamValue>> Vst3Processor::setControllerParam(int index, float value) {
     ParamMeta meta;
     {
         std::lock_guard lock(mutex_);
-        if (index < 0 || index >= static_cast<int>(meta_.size()) || meta_[index].readOnly) return;
+        if (index < 0 || index >= static_cast<int>(meta_.size()) || meta_[index].readOnly) return std::nullopt;
         meta = meta_[index];
         values_[index].store(toPlain(toNormalized(value, meta.steps), meta.steps));
     }
     const ParamValue normalized = toNormalized(value, meta.steps);
     controller_->setParamNormalized(meta.id, normalized);
-    toAudio_.push(meta.id, normalized);
+    return std::pair{meta.id, normalized};
 }
+
+void Vst3Processor::queueParamChange(ParamID id, ParamValue normalized) noexcept { toAudio_.push(id, normalized); }
 
 std::string Vst3Processor::paramText(int index, float value) const {
     ParamMeta meta;

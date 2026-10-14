@@ -178,6 +178,19 @@ public:
     friend bool operator==(const ProcessorDisplay&, const ProcessorDisplay&) = default;
 };
 
+// Where plug-ins run (the engine's PluginHosting: docs/engine/sandboxes.md): in
+// the application, or in sandboxes (processes of their own), all together, one
+// for each maker, one for each plug-in, or one for each instance.
+enum class PluginHostingMode { Within, Together, ByManufacturer, ByPlugin, Individually };
+
+// A sandbox plug-ins run in (EngineBridge::pluginSandboxes).
+struct PluginSandbox {
+    QString label;  // what it holds: "All plug-ins", a maker, a plug-in
+    int pid = 0;
+    bool running = false;
+    int plugins = 0;
+};
+
 // What an owner (a track or the master) has that can be automated, one group a
 // part (EngineBridge::paramGroups): its mixer (id "mixer"), then each device (by id).
 struct ParamGroup {

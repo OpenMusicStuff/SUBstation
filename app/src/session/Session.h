@@ -32,7 +32,8 @@
 // - hotSwap: a hot swap: the browser's selection swapped into clips or
 //   samplers (HotSwap; it takes the browser's double-click and Enter);
 // - audioPreferences, midiPreferences: Preferences › Audio and › MIDI
-//   (Preferences › Plug-ins is the plug-in index's: plugins).
+//   (Preferences › Plug-ins is the plug-in index's: plugins; and where plug-ins
+//   run, in sandboxes or not: pluginHosting, PluginHostingPreferences).
 //
 // Files: before New, Open, Open Recent and Quit, the UI asks "Save changes to
 // the current project?" (confirmDiscardText) when the project isn't `clean`
@@ -70,6 +71,7 @@ namespace sub::app {
 class AgentHistory;
 class ArrangementActions;
 class AudioPreferences;
+class PluginHostingPreferences;
 class BrowserController;
 class ComputerKeyboard;
 class DeviceSelection;
@@ -118,6 +120,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::HotSwap* hotSwap READ hotSwap CONSTANT)
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
     Q_PROPERTY(sub::app::MidiPreferences* midiPreferences READ midiPreferences CONSTANT)
+    Q_PROPERTY(sub::app::PluginHostingPreferences* pluginHosting READ pluginHosting CONSTANT)
     // The MCP server agents read and edit the project through (Options › MCP Server).
     Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
     // What agents changed through it, apart from the undo stack: each change
@@ -176,6 +179,7 @@ class Session : public QObject {
 public:
     struct Options {
         QString scanner;            // the plug-in scanner's executable; empty: next to the application
+        QString pluginHost;         // the plug-in sandboxes' executable; empty: next to the application
         bool scanPlugins = true;    // scan the plug-ins at once (tests turn it off)
         bool browserIndex = true;   // keep the browser's index and the sounds' fingerprints on disk (tests turn it off)
         bool analyseSounds = true;  // fingerprint the browser's files in the background, for Find Similar (tests turn it off)
@@ -214,6 +218,7 @@ public:
     HotSwap* hotSwap() const { return hotSwap_; }
     AudioPreferences* audioPreferences() const { return audioPreferences_; }
     MidiPreferences* midiPreferences() const { return midiPreferences_; }
+    PluginHostingPreferences* pluginHosting() const { return pluginHosting_; }
     PresetIndex* presets() const { return presets_; }
     McpServer* mcp() const { return mcp_; }
     AgentHistory* agentChanges() const { return agents_; }
@@ -511,6 +516,7 @@ private:
     FileManager* files_ = nullptr;
     AudioPreferences* audioPreferences_ = nullptr;
     MidiPreferences* midiPreferences_ = nullptr;
+    PluginHostingPreferences* pluginHosting_ = nullptr;
     QPointer<Render> rendering_;
     std::function<std::optional<Freeze>(FreezeRender&)> finishFreeze_;
     double playStart_ = 0.0;

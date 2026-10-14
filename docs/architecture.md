@@ -65,6 +65,7 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
 | Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
+| Plug-in host | [tools/pluginhost](../tools/pluginhost/main.cpp) | `substation-plugin-host`, a program of its own: the plug-in sandboxes | `sub_engine` | [engine/sandboxes.md](engine/sandboxes.md) |
 
 [ui/main.cpp](../ui/main.cpp) puts the layers together: it makes the `QGuiApplication`, the engine, the
 `Session` on the engine, registers the session as the QML singleton `Session` (`sub::ui::registerSession`,
@@ -163,7 +164,7 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 
 | Thread | Runs | Must not |
 |---|---|---|
-| Qt GUI thread (main) | QML and the items' event handlers; the whole application layer: session, model, undo, editor, bridge, browser controller, plug-in index; every engine call but those below; plug-in creation, editors and `Engine::idle()`; opening audio devices and MIDI inputs | block on the audio thread |
+| Qt GUI thread (main) | QML and the items' event handlers; the whole application layer: session, model, undo, editor, bridge, browser controller, plug-in index; every engine call but those below; plug-in creation, editors and `Engine::idle()` (plug-ins in the application: the *Within SUBstation* hosting mode); opening audio devices and MIDI inputs | block on the audio thread; wait for a plug-in sandbox to load a plug-in |
 | Qt Quick render thread | the scene graph's sync and rendering: every `SgCanvas` item's `paint()`, during the sync step, while the GUI thread is blocked. (Where Qt uses its basic render loop, this is the GUI thread itself.) | write anything: `paint()` reads the item and the model, and changes nothing (no property writes, signals, JavaScript or new QObjects) |
 | Audio thread (driver callback) | the `Renderer`, a chunk at a time; it hands tracks to the workers | lock, allocate, free, or wait for any other thread |
 | Render workers ([Scheduler](engine/scheduler.md)) | tracks of the routing graph, each after what goes into it | the same as the audio thread |
@@ -179,6 +180,8 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 | Sound similarity's search thread (`sub_intelligence`) | fingerprints the sound searched from if it must (a clip's part, a file outside the library), compares it with every file; then the wake callback | the same |
 | Plug-in index's scan thread (`QThread`) | `PluginScanner::scan()`: the cache, and the child processes it starts and reads | touch the index's objects (it hands its result over when it finishes) |
 | `substation-scan` child processes | load VST3 modules to read their classes | — (a crash or a hang costs only that file) |
+| A plug-in sandbox's reader thread (`Sandbox`) | reads what a sandbox says: replies to whoever waits, the rest kept for each plug-in until `Engine::idle()` | call into the plug-ins' processors but to hand them a message (`SandboxClient`) |
+| `substation-plugin-host` child processes ([engine/sandboxes.md](engine/sandboxes.md)) | plug-ins in sandboxes: their main thread (loads, every call but `process()`, editors, idling), a reader thread, an audio thread for each plug-in | — (a crash costs only that sandbox's plug-ins) |
 
 The application's renders in the background (exporting, freezing, reversing) never wait on the GUI thread: a
 `RenderTask` looks at its job every 30 ms on a timer and says how far it got, and the session's renders follow its
@@ -187,7 +190,10 @@ signals. There are no nested event loops (see [app/session.md](app/session.md#re
 ## Real-time rules and the boundary with the audio thread
 
 - **The audio callback never locks, allocates, frees or waits.** (That is the host's part; what a plug-in does in
-  its `process()` is up to the plug-in.)
+  its `process()` is up to the plug-in.) But for one thing: a plug-in in a sandbox is processed in its sandbox's
+  process, and the thread rendering it waits for it there, on a wake-up in shared memory, at most a little longer
+  than the block lasts (then the block passes through unprocessed, and so do the next until the sandbox has caught
+  up: a plug-in that hangs costs one wait, not one a block). See [engine/sandboxes.md](engine/sandboxes.md#audio).
 - **Edits build an immutable `RenderSnapshot`**, published with one atomic pointer swap. Retired snapshots are freed
   once the audio thread's epoch counter shows it no longer uses them, never by the audio thread: by whichever
   thread makes the next engine call (`collectGarbageLocked()`), and by `Engine::idle()`, which the bridge calls
@@ -205,10 +211,12 @@ signals. There are no nested event loops (see [app/session.md](app/session.md#re
   (see [app/engine-bridge.md](app/engine-bridge.md#polling)).
 - **Renders are deterministic**: the result never depends on which thread finished a track first, so offline
   renders are bit-identical on any number of threads.
-- **Plug-ins live on the GUI thread.** They are created, called and destroyed there, as plug-in formats require.
-  A plug-in (or an ASIO driver's control panel) may run a message loop inside a call, which may call back into the
-  UI and the engine on that thread: the engine's mutex is recursive, slow plug-in calls are made without it, and
-  the bridge doesn't dispatch plug-in reports or device events while such a call runs.
+- **Plug-ins live on a UI thread**: the GUI thread for plug-ins in the application, a sandbox's own main thread for
+  plug-ins in a sandbox ([engine/sandboxes.md](engine/sandboxes.md)). They are created, called and destroyed there,
+  as plug-in formats require. A plug-in (or an ASIO driver's control panel) may run a message loop inside a call,
+  which may call back into the UI and the engine on that thread: the engine's mutex is recursive, slow plug-in calls
+  are made without it, and the bridge doesn't dispatch plug-in reports or device events while such a call runs. The
+  GUI thread never waits for a sandbox to load a plug-in: questions to one wait only while it is free, and briefly.
 
 Details: [engine/README.md](engine/README.md) (the edit model, snapshots, epochs, `Transport.h`'s shared state),
 [engine/rendering.md](engine/rendering.md), [engine/scheduler.md](engine/scheduler.md),
@@ -247,6 +255,8 @@ its devices and hands their values on through `Processor::automate()` (see
 ## One program
 
 The engine, the application layer and the UI are linked into one executable, built from one source tree, so they
-can't disagree about the engine's API: there is no API version to keep in step. The only other program is
-`substation-scan`, which the plug-in index starts to read plug-in files; it speaks a line-based JSON protocol
-([app/plugin-scanner.md](app/plugin-scanner.md)).
+can't disagree about the engine's API: there is no API version to keep in step. The two other programs are child
+processes of it, built from the same tree: `substation-scan`, which the plug-in index starts to read plug-in files
+(a line-based JSON protocol: [app/plugin-scanner.md](app/plugin-scanner.md)), and `substation-plugin-host`, the plug-in
+sandboxes, which the engine starts to run plug-ins in (a binary protocol and shared memory, whose version it checks:
+[engine/sandboxes.md](engine/sandboxes.md)).

@@ -320,8 +320,14 @@ that isn't loaded yet gets its input once it is) and a source the engine has. It
 
 ### Opening a project
 
+Where plug-ins run is the plug-in hosting preference's (`setPluginHosting`, the session's `PluginHostingPreferences`):
+in sandboxes, a plug-in loads in its sandbox's process while the window goes on ([Plug-ins in
+sandboxes](#plug-ins-in-sandboxes)); within SUBstation, a project's plug-ins load after it opens, one at a time, as
+follows.
+
 On `reset` (a project opened, or a new one) `onReset` builds the engine's tracks, clips, mixers and built-in devices at
-once, but a plug-in device found where it was (or by its id) doesn't load then: while `deferring`, `loadPlugin` hands
+once, but a plug-in device found where it was (or by its id) doesn't load then: while `deferring` (and plug-ins run
+within SUBstation), `loadPlugin` hands
 it to the loading queue ([BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)), which keeps its device id in
 `pendingPlugins`. Until its turn the device is in the engine as a missing plug-in is: in its chain with no processor.
 A missing plug-in ("not installed") is said at once.
@@ -346,7 +352,44 @@ meanwhile is skipped; one that came back (undo) has loaded already, as any devic
 
 Plug-ins load on the GUI thread all the same: plug-ins must be created and set up there (VST3 says so, and JUCE
 plug-ins take the thread that creates them for their message thread), and some hang when loaded on another. See
-[engine/plugins.md](../engine/plugins.md#threads-and-the-engine-lock).
+[engine/plugins.md](../engine/plugins.md#threads-and-the-engine-lock). So one that takes its time holds up the window
+while it loads; in a sandbox none does.
+
+### Plug-ins in sandboxes
+
+With plug-ins in sandboxes ([engine/sandboxes.md](../engine/sandboxes.md)), `loadPlugin` adds a plug-in to the engine
+at once, never deferred: the engine starts loading it in its sandbox and returns. Its state goes with it
+(`addPluginProcessor`'s `state`, in either mode), so it has it before it says it has loaded: its values then and its
+first block are its state's. The device has its processor, and `sandboxLoading` keeps it until the engine says it has
+loaded, couldn't, or crashed ([BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)). The rest is as above: the
+same progress (`pluginsLoading`, counting both kinds), `pluginPending` (the device view says it is loading),
+`prioritizePlugins` and `loadPluginNow` (they go first in their sandboxes: `Engine::prioritizeProcessors`), renders
+waiting (`devicesReady`; `waitForDeviceStates` waits for the engine, at most `kSandboxLoadWaitMs`, then takes what the
+plug-ins reported). `pluginRunning(track, device)` says whether a device's processor runs: a plug-in still loading in
+its sandbox, or crashed there, doesn't (the device view shows its message instead of its parameters).
+
+What the engine reports of them (`dispatchProcessorEvents`):
+
+- `Loaded`: its parameters, latency, sidechain and MIDI input are known now. What the bridge knew of its parameters
+  goes, its automation and modulation are pushed again (by its parameters), routes too (a sidechain into it, its
+  MIDI input: they need to know it has them), `pluginParamsRebuilt` and `devicesLoaded`.
+- `LoadFailed`: "*name* could not be loaded: *why*" (`pluginError`, and the status line).
+- `Crashed`: its sandbox ended. "*name* crashed: its sandbox (*label*) stopped. Reload it to go on."; its editor is no
+  longer wanted. The device keeps its place and passes its input on.
+- `Problem`: "*name*: its settings could not be restored (*why*)".
+- `EditorOpened` / `NoEditor`: opening an editor in a sandbox is asked, not waited for (`openPluginEditor` says it
+  asked); `pluginEditorChanged` follows either, and "*name* has no editor." the second.
+
+`reloadPlugin(track, device)` loads a device's plug-in again, as it was last (`Engine::reloadProcessor`: its state
+then, or the last known of one that crashed), where the hosting mode says now; `reloadPlugins(brokenOnly)` every one
+(those that crashed or failed, or all: *Reload Plug-ins* in the preferences moves them all to where the mode says).
+`pluginReloadable` says whether one crashed or failed (the device view's *Reload*).
+
+Sandboxed editors' keys never reach this process: `setSandboxEditorKeys` hands the sandboxes the keys the window's
+shortcuts take (the UI's `PluginEditorKeys` works them out), and those pressed come back as `pluginEditorKey`.
+`closeForemostSandboxEditor()` closes the foremost of their editors (Ctrl+W); `sandboxProcessIds()` lists their
+processes (on Windows the UI finds the foremost editor among their windows itself). `pluginSandboxes()` lists the
+sandboxes (the preferences' status).
 
 ### Freezing
 
@@ -579,7 +622,8 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
 | `statusMessage(text)` | for the status line |
 | `pluginParamEdited`, `pluginParamTouched`, `pluginParamsChanged`, `pluginParamsRebuilt`, `pluginEditorChanged`, `pluginStateDirty`, `pluginPresetChanged` | plug-in reports (above) |
 | `devicesLoaded(track id)` | a track's processors were (re)created |
-| `pluginsLoading(loaded, total)`, `pluginsPendingChanged()` | a project's plug-ins loading |
+| `pluginsLoading(loaded, total)`, `pluginsPendingChanged()` | plug-ins loading (a project's, or in sandboxes) |
+| `pluginEditorKey(key, modifiers, repeat, textField)` | a key the window takes, pressed in a sandboxed editor |
 | `automationStateChanged(owner)` | which envelopes play or are overridden changed |
 | `recordingChanged(recording)`, `recordingUpdated()`, `takesRecorded(takes)` | recording |
 

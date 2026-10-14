@@ -30,6 +30,9 @@ if (TARGET PkgConfig::ALSA)
     target_link_libraries(engine_tests PRIVATE PkgConfig::ALSA)  # (test_midi_alsa.cpp's sequencer client)
 endif()
 sub_project_warnings(engine_tests)
+# The plug-in sandboxes' process (test_plugin_sandboxes.cpp).
+add_dependencies(engine_tests substation-plugin-host)
+target_compile_definitions(engine_tests PRIVATE SUBSTATION_PLUGIN_HOST="$<TARGET_FILE:substation-plugin-host>")
 if (TARGET sub_test_plugins)
     add_dependencies(engine_tests sub_test_plugins)
     target_compile_definitions(engine_tests PRIVATE SUBSTATION_TEST_PLUGINS_BUNDLE="${SUBSTATION_TEST_PLUGINS_BUNDLE}")
@@ -49,6 +52,12 @@ add_executable(platform_tests engine/harness/Main.cpp ${PLATFORM_TEST_SOURCES})
 target_include_directories(platform_tests PRIVATE engine)  # (harness/Test.h)
 target_link_libraries(platform_tests PRIVATE sub_platform)
 sub_project_warnings(platform_tests)
+# The child process the IPC tests start (test_ipc.cpp).
+add_executable(ipc_test_child platform/child/ipc_child.cpp)
+target_link_libraries(ipc_test_child PRIVATE sub_platform)
+sub_project_warnings(ipc_test_child)
+add_dependencies(platform_tests ipc_test_child)
+target_compile_definitions(platform_tests PRIVATE SUBSTATION_IPC_CHILD="$<TARGET_FILE:ipc_test_child>")
 add_test(NAME platform COMMAND platform_tests)
 
 # --- Intelligence tests: Qt-free, with the engine tests' harness (Test.h, Main.cpp) --------

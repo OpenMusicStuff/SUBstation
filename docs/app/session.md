@@ -26,6 +26,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 | [ComputerKeyboard.h](../../app/src/session/ComputerKeyboard.h) | The computer MIDI keyboard |
 | [ModulationLearn.h](../../app/src/session/ModulationLearn.h) | A modulator's Map: the next parameter touched on its track is mapped to it |
 | [AudioPreferences.h](../../app/src/session/AudioPreferences.h), [MidiPreferences.h](../../app/src/session/MidiPreferences.h) | Preferences › Audio and › MIDI, without their widgets |
+| [PluginHostingPreferences.h](../../app/src/session/PluginHostingPreferences.h) | Preferences › Plug-ins › Plug-in Hosting, without its widgets: where plug-ins run |
 | [SessionSupport.h](../../app/src/session/SessionSupport.h) | Small helpers the parts share (plug-in refs from QML maps, clip refs for QML) |
 | [files/FileManager.h](../../app/src/files/FileManager.h), [files/HotSwap.h](../../app/src/files/HotSwap.h) | The File Manager and hot swaps ([below](#the-file-manager-and-hot-swaps-filemanager-hotswap)); what they work from: [files/ProjectFiles.h](../../app/src/files/ProjectFiles.h) (the files a project plays, and what plays each) and [files/MissingFiles.h](../../app/src/files/MissingFiles.h) (finding missing files again) |
 
@@ -57,6 +58,7 @@ reads them as constant properties:
 | `modulationLearn` | `ModulationLearn` | a modulator (an LFO, an Envelope) waiting for the next parameter touched on its track (`ProjectEditor::parameterTouched`) to be mapped to it: `start`, `stop`, `toggle`, `isLearning`, `active`; its own controls don't count, it says why for another track's or a switch, and it stops once it maps one, its modulator goes or the project is replaced ([ui/device-view.md](../ui/device-view.md#modulators)) |
 | `files`, `hotSwap` | `FileManager`, `HotSwap` | [below](#the-file-manager-and-hot-swaps-filemanager-hotswap) |
 | `audioPreferences`, `midiPreferences` | `AudioPreferences`, `MidiPreferences` | [below](#preferences) |
+| `pluginHosting` | `PluginHostingPreferences` | [below](#preferences) |
 
 `Session::Options` is for the tests: `scanner` (the plug-in scanner's program; empty: `substation-scan` beside the
 application), `scanPlugins` (scan at once), `browserIndex` (keep the browser's index and the sounds' fingerprints on
@@ -386,7 +388,16 @@ output's, and the input's too where inputs are open (or the driver is ASIO).
 `refresh()` finds inputs plugged in or taken out since; `status`.
 
 **Preferences › Plug-ins** is the plug-in index itself (`Session.plugins`): the standard and the user's folders, adding
-and removing folders, rescanning ([plugin-scanner.md](plugin-scanner.md#in-the-application)).
+and removing folders, rescanning ([plugin-scanner.md](plugin-scanner.md#in-the-application)); and where plug-ins run,
+`PluginHostingPreferences` (`Session.pluginHosting`,
+[PluginHostingPreferences.h](../../app/src/session/PluginHostingPreferences.h)): `mode` ("within", "together" (the
+default), "manufacturer", "plugin", "instance": [engine/sandboxes.md](../engine/sandboxes.md#hosting-modes)), saved
+as `plugins/hosting` and applied to the bridge at once (plug-ins loaded from then on); `modes` (`[{value, label,
+toolTip}]`, the choices); `reloadPlugins()` (every plug-in again, where the mode says now); `status` (what runs where:
+"3 plug-ins in 2 sandboxes"). It is made before the bridge loads anything, and gives the engine the host program
+(`substation-plugin-host` next to the application; `Session::Options::pluginHost`, or `SUBSTATION_PLUGIN_HOST`). Without
+a saved mode the default is "together", or `SUBSTATION_PLUGIN_HOSTING`'s (the tests set "within": their plug-ins run in
+their own process unless a test asks for sandboxes).
 
 ## Settings
 

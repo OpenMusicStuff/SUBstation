@@ -5,9 +5,10 @@ the static library `sub_platform` (namespace `sub::platform`). The engine, the b
 module stand on it, and so, through them, the application layer. It has no Qt and nothing of the layers on it
 (`ctest -R boundaries` checks: [architecture.md](architecture.md#the-boundaries-checked)).
 
-Each system's code is a file of its own, chosen by CMake ([platform/CMakeLists.txt](../platform/CMakeLists.txt)):
-[PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) on Windows,
-[PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) elsewhere. The headers declare the same functions for
+Each system's code is in files of its own, chosen by CMake ([platform/CMakeLists.txt](../platform/CMakeLists.txt)):
+[PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) and [IpcWin32.cpp](../platform/src/platform/IpcWin32.cpp)
+on Windows, [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) and
+[IpcPosix.cpp](../platform/src/platform/IpcPosix.cpp) elsewhere. The headers declare the same functions for
 every system, so what calls them has no `#ifdef`s. Supporting another system (macOS's own calls, say) means another
 file behind the same headers, or a branch in the POSIX one; nothing that calls them changes.
 
@@ -22,6 +23,8 @@ Headers are included by their folder: `#include "platform/Paths.h"`.
 | [Files.h](../platform/src/platform/Files.h) / [Files.cpp](../platform/src/platform/Files.cpp) | By UTF-8 path: `FileStamp`/`stamp()` (size and last-write time), `replaceFile()`, `openFile()`, `readFile()` (a whole file), `writeFileAtomically()` (to `.tmp`, then over the file). |
 | [Bytes.h](../platform/src/platform/Bytes.h) | Binary files' fields, little-endian on every system: `ByteWriter`, `ByteReader` (a read past the end makes `ok()` false for good), and `fnv1a()`, their checksum (and a hash of keys). The browser's saved index and the sound similarity's store are made of these. |
 | [Threads.h](../platform/src/platform/Threads.h) | Priorities: `enterBackgroundMode()` (the browser's indexer, the sound similarity's threads) and `ScopedRealtimePriority` (the engine's render workers); audio workgroups: `AudioWorkgroup`, `ScopedWorkgroupMembership`. |
+| [Ipc.h](../platform/src/platform/Ipc.h) | Processes of our own: `ChildProcess` and its `Channel`, `parentChannel()` and `childProcessStarted()` (the child's), `SharedMemory`, `IpcSignal` (a wake-up on a shared counter), `uniqueIpcName()`: see [Processes](#processes). |
+| [IpcWin32.cpp](../platform/src/platform/IpcWin32.cpp), [IpcPosix.cpp](../platform/src/platform/IpcPosix.cpp) | `Ipc.h` on Windows (pipes, a job, file mappings, events) and elsewhere (a socket pair, `posix_spawn`, `shm_open`, futexes on Linux). |
 | [PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) | Windows: `LCMapStringEx` for keys, the wide (`W`) file calls, `MoveFileExW`, `THREAD_MODE_BACKGROUND_BEGIN`, MMCSS (`AvSetMmThreadCharacteristicsW`, "Pro Audio"). |
 | [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) | Elsewhere: `stat`, `rename`, `fopen`; on Linux the thread's nice value and idle I/O class, `SCHED_FIFO` and rtkit (libdbus, `dlopen`ed); on macOS the time-constraint policy and `os_workgroup`. |
 
@@ -77,6 +80,33 @@ system raised it; where it refuses, the thread stays as it was.
 `os_workgroup_join`/`leave`, macOS 11 and later), so the system schedules them with the device's thread, to its
 deadline, and on Apple Silicon keeps them on the performance cores. Other systems have none: every `AudioWorkgroup`
 is empty there and joining one does nothing.
+
+## Processes
+
+[Ipc.h](../platform/src/platform/Ipc.h) is what the plug-in sandboxes are made of ([engine/sandboxes.md](engine/sandboxes.md)):
+a process of SUBstation's own with a private channel to it, memory both map, and a wake-up one gives the other. Its
+code is a pair of files of its own: [IpcWin32.cpp](../platform/src/platform/IpcWin32.cpp) and
+[IpcPosix.cpp](../platform/src/platform/IpcPosix.cpp).
+
+- **`ChildProcess::start(program, arguments)`** starts a program with a `Channel` to it (a byte stream both ways,
+  blocking; either side closing or ending ends it on both). The child gets its end from an argument the parent adds
+  (`--channel=...`, `parentChannel()`); its own stdin, stdout and stderr stay as they were, so a plug-in printing
+  never garbles the channel. Windows: two anonymous pipes, the child inheriting its two ends and nothing else
+  (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`), no console window. POSIX: a socket pair (its end is the child's descriptor 3),
+  `posix_spawn`, and a peer that went makes a write fail rather than raise `SIGPIPE`.
+- **It ends with the parent**, even stuck: on Windows it is in a job that kills it when its last handle (the
+  parent's) closes; on Linux it asks for `SIGKILL` when its parent dies (`childProcessStarted()`, first thing in
+  the child, which also turns off Windows' crash dialog: the parent hears of a crash at once). The object ending
+  kills it if it is still there.
+- **`SharedMemory`**: named, made by one process (zeroed) and opened by another; the maker removes the name once the
+  other has it (`forgetName()`), so nothing is left behind should either die. Windows: a named file mapping
+  (`Local\`); POSIX: `shm_open` (names short: macOS takes 31 characters, `uniqueIpcName()`).
+- **`IpcSignal`**: a wake-up on a 32-bit counter in shared memory, which the audio thread uses: neither `notify()` nor
+  `wait()` allocates or locks. Linux: a futex on the counter itself (shared, not `FUTEX_PRIVATE_FLAG`); Windows: a
+  named auto-reset event beside it (the counter decides: an event may hold a wake-up for an earlier change);
+  elsewhere a polled wait, 50 µs at a time (macOS's own, `os_sync_wait_on_address`, can take its place).
+- **`allowForeground()`** (Windows): lets the child bring a window of its own to the front now (Windows only lets
+  the process the user works in do that), before it opens a plug-in's editor.
 
 ## Performance
 

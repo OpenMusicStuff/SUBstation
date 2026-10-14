@@ -6,8 +6,9 @@ import SUBstation
 // PluginParams), four to a page in a 2×2 grid, the device's title bar paging
 // through them (`pages`, `page`): centred under the title bar (KnobQuadrants),
 // so the margins left and right are equal; or what it says instead: that it is loading
-// (a project just opened), why it didn't load (missing, failed: it keeps its
-// place), or that it has no parameters to show (use its own editor). The
+// (a project just opened, or in its sandbox), why it didn't load (missing, failed: it
+// keeps its place) or that it crashed, with Reload to load it again (one in a
+// sandbox), or that it has no parameters to show (use its own editor). The
 // message is cut to four lines (MESSAGE_LINES), so a long one keeps the device
 // as tall as the others; its tooltip has it all.
 Item {
@@ -56,9 +57,20 @@ Item {
         ToolTip.delay: 700
     }
 
+    RoleButton {
+        id: reload
+        objectName: "reloadPlugin"
+        x: 8
+        y: message.y + message.height + 6
+        visible: body.info.reloadable
+        text: qsTr("Reload")
+        tooltip: qsTr("Load the plug-in again, as it was last")
+        onClicked: Session.bridge.reloadPlugin(body.trackId, body.deviceId)
+    }
+
     KnobQuadrants {
         id: grid
-        y: message.visible ? message.y + message.height + 4 - 6 : 0
+        y: reload.visible ? reload.y + reload.height + 4 - 6 : message.visible ? message.y + message.height + 4 - 6 : 0
         width: body.width
         height: body.height - y
         cells: pluginCells

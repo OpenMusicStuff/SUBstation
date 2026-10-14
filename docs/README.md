@@ -53,6 +53,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Warping and sources](engine/warp.md) | time stretching, Re-Pitch, decoding, peaks |
 | [Devices](engine/devices.md) | the `Processor` interface and the built-in devices; adding one |
 | [Plug-in hosting](engine/plugins.md) | VST3 hosting, editors, threading |
+| [Plug-in sandboxes](engine/sandboxes.md) | plug-ins in processes of their own: the hosting modes, the host program, messages, audio in shared memory, crashes |
 
 ### Application layer
 
@@ -87,7 +88,7 @@ operating system.
 
 | Page | Covers |
 |---|---|
-| [Platform layer](platform.md) | paths in the system's form and their keys, files, binary fields and checksums, threads' priorities; one file per system |
+| [Platform layer](platform.md) | paths in the system's form and their keys, files, binary fields and checksums, threads' priorities, child processes, shared memory and wake-ups between processes; one file per system |
 
 ### Browser
 

@@ -64,6 +64,12 @@ const std::function<bool(const EditorKey&)>& editorKeyFilter();
 // the above serves (Linux, built with X11's xcb).
 bool editorsUseHost();
 
+// Called whenever one of the engine's own editor windows comes to the front
+// (focused, opened, brought to front): a plug-in sandbox tells the engine, so
+// that the foremost editor of all its processes can be found. None: nothing.
+void setEditorRaisedHook(std::function<void()> hook);
+void editorRaised();  // (the windows')
+
 // Closes the foremost editor (the one last focused, opened or brought to
 // front, of those shown), as its close button would: false if none is shown.
 // Only for the engine's own windows (editorsUseHost()).

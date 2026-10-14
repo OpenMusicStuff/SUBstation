@@ -9,11 +9,15 @@ import SUBstation
 // the user's own, red if they don't exist any more) and rescanning them.
 // Folders added or removed apply at once: only the new files are read, and a
 // removed folder's plug-ins leave the browser. The scan's status shows the
-// count and the files that could not be read (why, in its tooltip).
+// count and the files that could not be read (why, in its tooltip). Then where
+// plug-ins run (Session.pluginHosting): within SUBstation or in sandboxes, and
+// Reload Plug-ins, which moves those loaded already to where it says now.
 ColumnLayout {
     id: page
 
     readonly property var plugins: Session.plugins
+    readonly property var hosting: Session.pluginHosting
+    readonly property int hostingIndex: hosting.modes.findIndex(m => m.value === hosting.mode)
     readonly property alias folderList: folders
 
     // Adds a folder (and scans it); the folder (added, or listed already) is current.
@@ -135,6 +139,48 @@ ColumnLayout {
             ToolTip.text: page.plugins.failuresText
             ToolTip.delay: 700
         }
+    }
+
+    Item {
+        implicitHeight: 6
+    }
+
+    Label { text: qsTr("Plug-in Hosting") }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 6
+
+        ChoiceBox {
+            objectName: "pluginHosting"
+            Layout.fillWidth: true
+            tooltip: qsTr("Where plug-ins run: in SUBstation, or in sandboxes of their own")
+            choices: page.hosting.modes
+            chosenIndex: page.hostingIndex
+            onChosen: index => page.hosting.mode = page.hosting.modes[index].value
+        }
+        RoleButton {
+            objectName: "reloadPlugins"
+            text: qsTr("Reload Plug-ins")
+            tooltip: qsTr("Load every plug-in again, where Plug-in Hosting says now.")
+            onClicked: page.hosting.reloadPlugins()
+        }
+    }
+
+    Label {
+        objectName: "pluginHostingDescription"
+        Layout.fillWidth: true
+        wrapMode: Text.Wrap
+        color: Theme.textDim
+        text: (page.hostingIndex >= 0 ? page.hosting.modes[page.hostingIndex].toolTip + " " : "")
+              + qsTr("Plug-ins loaded already stay where they are until reloaded.")
+    }
+
+    Label {
+        objectName: "pluginHostingStatus"
+        Layout.fillWidth: true
+        text: page.hosting.status
+        color: Theme.textDim
     }
 
     FolderDialog {

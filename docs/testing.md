@@ -181,6 +181,10 @@ doesn't link Qt Quick.
 | `SUBSTATION_SCANNER` | The scanner program instead of `substation-scan` beside the application (`PluginScanner::defaultProgram()`) | the tests hand the built scanner over directly (`Session::Options::scanner`, `PluginIndex`'s), from the `SUBSTATION_SCANNER` compile definition |
 | `SUBSTATION_UI_SCREENSHOTS` | A folder the UI's tests save screenshots into (`SUBSTATION_SCREENS` is read too) | not set: set it to look |
 | `SUB_TEST_PLUGIN_CRASH`, `SUB_TEST_PLUGIN_HANG` | `1`: the test plug-ins' module kills the process, or hangs, as it loads | the scanner's tests |
+| `SUB_TEST_PLUGIN_SLOW_LOAD_MS` | SUB Test Crasher takes that long to initialize (a big plug-in loading) | the sandboxes' tests (a sandbox started meanwhile inherits it) |
+| `SUB_TEST_EFFECT_SLOW_LOAD_MS` | SUB Test Effect takes that long to initialize | the sandboxes' tests (a state set while it loads) |
+| `SUBSTATION_PLUGIN_HOSTING` | the plug-in hosting mode without a saved one (`prepareApplication()` sets `within`) | the application's tests |
+| `SUBSTATION_PLUGIN_HOST` | the plug-in sandboxes' program (also a compile definition: its path in the build) | the sandboxes' tests |
 | `SUB_FAKE_SCANNER`, `SUB_FAKE_SCANNER_LOG` | `test_plugin_index` started as a fake scanner (below), and the file it logs the files it reads to | `test_plugin_index` |
 
 ## The fake ASIO driver
@@ -229,15 +233,16 @@ manual mode to time the audio thread.
 
 ## The test VST3 plug-ins
 
-[tests/vst3_plugins](../tests/vst3_plugins) builds one module, `SUBTestPlugins.vst3`, with five tiny plug-ins whose
+[tests/vst3_plugins](../tests/vst3_plugins) builds one module, `SUBTestPlugins.vst3`, with six tiny plug-ins whose
 output the tests can predict exactly. They cover the host's code paths rather than sounding good:
 
 | Plug-in | What it is |
 |---|---|
 | **SUB Test Synth** (instrument; [test_plugins.cpp](../tests/vst3_plugins/test_plugins.cpp)) | A processor with a separate edit controller. Each held note adds velocity/127 (*DC* mode) or a sine at the note's pitch, times *Gain*; a note expression "tuning" for a note (by its id) bends that note's sine, and, as a synth reusing a voice can, a new note keeps the tuning of the last note to end until a tuning of its own comes. It reports the transport it was given (tempo, playing, beat, loop) back as read-only parameters, and has ten *Macro* parameters that only its controller keeps (in its own state). |
-| **SUB Test Effect** ([test_effect.cpp](../tests/vst3_plugins/test_effect.cpp)) | A single-component effect (processor and controller in one object, like most JUCE plug-ins): *Gain*, a *Latency* parameter that delays the audio and reports it (up to 4096 samples), a bypass parameter, state, and on Windows a Win32 editor that can resize itself and edit a parameter on request (elsewhere it has no editor). |
+| **SUB Test Effect** ([test_effect.cpp](../tests/vst3_plugins/test_effect.cpp)) | A single-component effect (processor and controller in one object, like most JUCE plug-ins): *Gain*, a *Latency* parameter that delays the audio and reports it (up to 4096 samples), a bypass parameter, state, and on Windows a Win32 editor that can resize itself and edit a parameter on request (elsewhere it has no editor); with `SUB_TEST_EFFECT_SLOW_LOAD_MS` it takes that long to initialize. |
 | **SUB Test Mono** | Mono in, mono out, no edit controller. |
 | **SUB Test Note Effect** | An effect with an event input (as a vocoder or a pitch corrector has), no edit controller: its output is its input plus, for each held note, velocity/127. What takes another track's notes. |
+| **SUB Test Crasher** (by "SUB Crash Works", a maker of its own) | An effect with an event input that doubles its input, and misbehaves on demand, for the plug-in sandboxes' tests: a note-on of key 0 ends the process as it plays (a crash), key 1 makes `process()` hang for good, a state that says "crash" ends the process as it is restored; with `SUB_TEST_PLUGIN_SLOW_LOAD_MS` it takes that long to initialize. |
 | **SUB Test Sidechain** ([test_sidechain.cpp](../tests/vst3_plugins/test_sidechain.cpp)) | A single-component effect with a stereo aux input, inactive until the host activates it: its output is its input plus its sidechain, and a read-only parameter, *Key Silent*, says whether the host flagged the sidechain silent. |
 
 They are built on Windows and Linux ([TestPlugins.cmake](../tests/TestPlugins.cmake)), into a bundle laid out as VST3
@@ -313,6 +318,7 @@ Rendered offline unless the file says otherwise; the live tests play through the
 | [test_freeze_engine.cpp](../tests/engine/test_freeze_engine.cpp) | A track's signal before its fader rendered (lined up, solo ignored, a group's bus, its tail, into a 32-bit WAV); frozen tracks playing through their faders without their devices or notes; frozen groups; sends tapping frozen audio; no latency from frozen tracks. |
 | [test_render_jobs.cpp](../tests/engine/test_render_jobs.cpp) | Renders in the background (`RenderJob`): the same as in the foreground, cancelled (no file left), one at a time, the project as it was when it started, let go of unfinished. |
 | [test_parallel_engine.cpp](../tests/engine/test_parallel_engine.cpp) | Rendering on several threads, bit-identical to one thread on random routing graphs; cost ordering on a hand-made graph. |
+| [test_plugin_sandboxes.cpp](../tests/engine/test_plugin_sandboxes.cpp), [test_plugin_sandboxes_x11.cpp](../tests/engine/test_plugin_sandboxes_x11.cpp) | Plug-ins in sandboxes ([engine/sandboxes.md](engine/sandboxes.md#tests)): rendering as in the application, reports, states, loads that don't wait, the hosting modes' sandboxes, crashes and reloads, a hung plug-in, editors and their keys on Xvfb. |
 | [test_vst3_engine.cpp](../tests/engine/test_vst3_engine.cpp) | VST3 hosting with the test plug-ins: instruments and effects, parameters, transport and loop splitting, latency, mono buses, state, editors (Windows). |
 | [test_editors_x11.cpp](../tests/engine/test_editors_x11.cpp) | Plug-in editors on Linux, on an X server of the test's own: SUB Test Effect's X11 editor edited, resized (by the plug-in, and by the user within its limits), its timer run by the host's run loop, its state dirty, hidden, closed by its close button and with its device; the content scale from `Xft.dpi`; the keys a shortcut can be asked of the key filter (taken, or replayed to the plug-in), others the plug-in's, repeats; the foremost editor closed. |
 | [test_asio.cpp](../tests/engine/test_asio.cpp) | ASIO with the fake driver: finding and opening it, rates and buffer sizes, channels, every sample format, inputs, the driver's requests (resets, new latencies, another clock), its control panel, errors, playing on the driver's thread. |
@@ -374,6 +380,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 |---|---|
 | [test_bridge_tracks.cpp](../tests/app/test_bridge_tracks.cpp) | Clips and notes as the engine has them (none of deactivated clips or notes), groups as buses, returns and sends (made silent when only automated), inputs from tracks, the master's mixer, the settings, a drag's preview, overrides. |
 | [test_bridge_devices.cpp](../tests/app/test_bridge_devices.cpp) | Racks keeping each device's processor as they are made, undone, moved and deleted; chain and nested automation and overrides; macros moving plug-in parameters, and macro automation moving what is mapped to them; sidechains; presets reaching the engine. |
+| [test_bridge_sandboxes.cpp](../tests/app/test_bridge_sandboxes.cpp) | Plug-ins in sandboxes through the bridge: a project opening without waiting for them, states, automation and sidechains once loaded, a crash and Reload, Reload Plug-ins moving them, the hosting preference. |
 | [test_bridge_plugins.cpp](../tests/app/test_bridge_plugins.cpp) | Plug-ins in projects and their state, a project's plug-ins loading after it opens, missing and moved plug-ins, devices keeping their processors as they move, plug-ins' reports (edits for undo only from a shown editor), editors (on Linux an X11 one, run by Qt's event loop, on an X server of its own), automating plug-in parameters. |
 | [test_bridge_freeze.cpp](../tests/app/test_bridge_freeze.cpp) | Frozen tracks playing their frozen audio without their devices (and getting them back), where a time selection moved it and where a drag would take it, renders in the background followed and cancelled, reversed copies written and found again. |
 | [test_bridge_recording.cpp](../tests/app/test_bridge_recording.cpp) | What records and why not, inputs, monitoring and arming in the engine, a take recorded, drawn live and handed on. |

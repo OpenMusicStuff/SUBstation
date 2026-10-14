@@ -98,7 +98,7 @@ EngineBridge::~EngineBridge() {
 void EngineBridge::shutdown() {
     stopLoadingPlugins();
     closeAllEditors();
-    waitForDeviceStates();
+    d_->statePool.waitForDone();  // (no plug-in is waited for: they all go)
     removeEngineTracks();
     d_->devices.clear();
     d_->pluginIds.clear();

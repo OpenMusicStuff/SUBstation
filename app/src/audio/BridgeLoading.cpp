@@ -1,16 +1,23 @@
-// Loading a project's plug-ins after it opens: the project shows (and plays,
-// without them) at once, and its plug-ins load one at a time, each in a turn of
-// the event loop of its own, a little apart, so the window goes on between them.
+// Loading plug-ins without holding up the window.
 //
-// They load on the UI thread all the same: plug-ins must be created and set up
-// there (VST3 says so, and JUCE plug-ins take the thread that creates them for
-// their message thread), and some hang when loaded on another. What takes long
-// is each plug-in, not the project around it.
+// In sandboxes (the plug-in hosting preference: docs/engine/sandboxes.md), a
+// plug-in loads in its sandbox's process while the window goes on: it is in its
+// chain at once, and the engine says when it has loaded (or couldn't, or its
+// sandbox ended). The bridge counts those still loading (sandboxLoading).
 //
-// Devices whose plug-in waits (in the order they load) are in the engine with no
-// processor, as a plug-in that isn't installed is (none in their chains), until
-// their turn: they are then new to their chain (wherever they are by then) and
-// get their processor as a device added does.
+// In this process, a project's plug-ins load after it opens: the project shows
+// (and plays, without them) at once, and its plug-ins load one at a time, each
+// in a turn of the event loop of its own, a little apart, so the window goes on
+// between them. They load on the UI thread all the same: plug-ins must be
+// created and set up there (VST3 says so, and JUCE plug-ins take the thread that
+// creates them for their message thread), and some hang when loaded on another.
+// What takes long is each plug-in, not the project around it. Devices whose
+// plug-in waits (in the order they load) are in the engine with no processor, as
+// a plug-in that isn't installed is (none in their chains), until their turn:
+// they are then new to their chain (wherever they are by then) and get their
+// processor as a device added does.
+//
+// Either way pluginsLoading() reports how far they got, and renders wait for them.
 
 #include "audio/BridgePrivate.h"
 
@@ -26,23 +33,40 @@ void EngineBridge::deferPlugin(const QString& deviceId) {
 }
 
 void EngineBridge::startLoadingPlugins() {
-    if (d_->pendingPlugins.isEmpty()) return;
-    Q_EMIT pluginsLoading(0, d_->pluginsTotal);
+    if (pluginsPending() == 0) return;
+    Q_EMIT pluginsLoading(d_->pluginsTotal - pluginsPending(), d_->pluginsTotal);
     Q_EMIT pluginsPendingChanged();
-    d_->pluginTimer.start(0);
+    if (!d_->pendingPlugins.isEmpty()) d_->pluginTimer.start(0);
 }
 
 void EngineBridge::stopLoadingPlugins() {
     d_->pluginTimer.stop();
-    const bool had = !d_->pendingPlugins.isEmpty();
+    const bool had = pluginsPending() > 0;
     d_->pendingPlugins.clear();
+    d_->sandboxLoading.clear();
     d_->pluginsTotal = 0;
     if (had) Q_EMIT pluginsPendingChanged();
 }
 
-bool EngineBridge::pluginPending(const QString& deviceId) const { return d_->pendingPlugins.contains(deviceId); }
+bool EngineBridge::pluginPending(const QString& deviceId) const {
+    return d_->pendingPlugins.contains(deviceId) || d_->sandboxLoading.contains(deviceId);
+}
 
-int EngineBridge::pluginsPending() const { return static_cast<int>(d_->pendingPlugins.size()); }
+int EngineBridge::pluginsPending() const {
+    return static_cast<int>(d_->pendingPlugins.size() + d_->sandboxLoading.size());
+}
+
+void EngineBridge::noteSandboxLoading(const QString& deviceId, quint32 processorId) {
+    if (engine_.processorInfo(processorId).status != sub::PluginStatus::Loading) return;
+    if (d_->sandboxLoading.contains(deviceId)) return;
+    d_->sandboxLoading.insert(deviceId);
+    ++d_->pluginsTotal;
+    if (!d_->deferring) reportPlugins();  // (a project opening says so once its tracks are there)
+}
+
+void EngineBridge::sandboxLoaded(const QString& deviceId) {
+    if (d_->sandboxLoading.remove(deviceId)) reportPlugins();
+}
 
 void EngineBridge::prioritizePlugins(const QString& trackId) {
     QStringList first;
@@ -52,9 +76,20 @@ void EngineBridge::prioritizePlugins(const QString& trackId) {
         (on ? first : rest).append(deviceId);
     }
     if (!first.isEmpty()) d_->pendingPlugins = first + rest;
+    // Those loading in sandboxes: first in theirs.
+    std::vector<uint32_t> loading;
+    for (const QString& deviceId : d_->sandboxLoading) {
+        if (d_->chainOwner.value(d_->where.value(deviceId)) != trackId) continue;
+        if (const std::optional<quint32> processorId = d_->pids.value(deviceId)) loading.push_back(*processorId);
+    }
+    if (!loading.empty()) engine_.prioritizeProcessors(loading);
 }
 
 void EngineBridge::loadPluginNow(const QString& deviceId) {
+    if (d_->sandboxLoading.contains(deviceId)) {  // (it loads in its sandbox: next there)
+        if (const std::optional<quint32> processorId = d_->pids.value(deviceId)) engine_.prioritizeProcessors({*processorId});
+        return;
+    }
     if (!d_->pendingPlugins.removeOne(deviceId)) return;
     loadDeferred(deviceId);
     reportPlugins();
@@ -84,8 +119,8 @@ void EngineBridge::loadNextPlugin() {
 
 void EngineBridge::reportPlugins() {
     if (!d_->pluginsTotal) return;
-    if (!d_->pendingPlugins.isEmpty()) {
-        Q_EMIT pluginsLoading(d_->pluginsTotal - static_cast<int>(d_->pendingPlugins.size()), d_->pluginsTotal);
+    if (const int pending = pluginsPending(); pending > 0) {
+        Q_EMIT pluginsLoading(d_->pluginsTotal - pending, d_->pluginsTotal);
         Q_EMIT pluginsPendingChanged();
     } else {
         stopLoadingPlugins();

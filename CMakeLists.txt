@@ -8,7 +8,8 @@ project(SUBstation VERSION 0.2.0 LANGUAGES C CXX)
 #   intelligence/  sound similarity, and later more (no Qt)          -> sub_intelligence
 #   app/           the application layer (Qt Core/Gui, no QML)       -> sub_app
 #   ui/            the Qt Quick UI: QML and scene-graph items         -> sub_ui, the substation executable
-# plus tools/scanner (the VST3 scanner's child process, no Qt) and tests/.
+# plus tools/scanner (the VST3 scanner's child process, no Qt), tools/pluginhost
+# (the plug-in sandboxes' process, no Qt) and tests/.
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,7 +45,7 @@ find_package(Threads REQUIRED)
 include(cmake/Warnings.cmake)
 
 # Everything built lands in one folder, so the executables find the scanner and
-# the tests find the test plug-ins next to them.
+# the plug-in host, and the tests find the test plug-ins next to them.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
@@ -53,6 +54,7 @@ add_subdirectory(engine)
 add_subdirectory(browser)
 add_subdirectory(intelligence)  # (after the engine: it decodes with its miniaudio target)
 add_subdirectory(tools/scanner)
+add_subdirectory(tools/pluginhost)
 
 if (SUBSTATION_BUILD_APP)
     find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2)

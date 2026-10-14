@@ -22,7 +22,6 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -36,6 +35,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
 #endif
 
 #include "Browser.h"
@@ -57,47 +59,31 @@ namespace {
 
 // The reference: the browser's index and search as they were in Python (support/BrowserReference.h).
 namespace reference = sub::app::test::reference;
-using reference::fsPath;
 using reference::lower;
 
-// A folder's modification time, put back later. (On Windows by its handle:
-// MinGW's std::filesystem can't set a folder's.)
-class FolderTime {
-public:
-    explicit FolderTime(const QString& path) : path_(path) {
-#ifdef _WIN32
-        const HANDLE folder = open();
-        QVERIFY(folder != INVALID_HANDLE_VALUE);
-        GetFileTime(folder, nullptr, nullptr, &time_);
-        CloseHandle(folder);
-#else
-        time_ = std::filesystem::last_write_time(fsPath(path_));
-#endif
-    }
-    void restore() {
-#ifdef _WIN32
-        const HANDLE folder = open();
-        QVERIFY(folder != INVALID_HANDLE_VALUE);
-        QVERIFY(SetFileTime(folder, nullptr, nullptr, &time_));
-        CloseHandle(folder);
-#else
-        std::filesystem::last_write_time(fsPath(path_), time_);
-#endif
-    }
+// Sets a folder's modification time to a fixed whole second: one every file system
+// keeps exactly (in memory and on disk), so it reads back as the very time the index
+// saved. (On Windows by its handle: MinGW's std::filesystem can't set a folder's.)
+constexpr qint64 kPinnedTime = 978307200;  // 2001-01-01 00:00:00 UTC
 
-private:
+void pinFolderTime(const QString& path) {
 #ifdef _WIN32
-    HANDLE open() const {
-        return CreateFileW(reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(path_).utf16()),
-                           FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                           nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-    }
-    FILETIME time_{};
+    const HANDLE folder = CreateFileW(reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(path).utf16()),
+                                      FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    QVERIFY(folder != INVALID_HANDLE_VALUE);
+    // In 100 ns steps from 1601.
+    const uint64_t ticks = (static_cast<uint64_t>(kPinnedTime) + 11644473600u) * 10000000u;
+    const FILETIME time{static_cast<DWORD>(ticks), static_cast<DWORD>(ticks >> 32)};
+    const bool set = SetFileTime(folder, nullptr, nullptr, &time);
+    CloseHandle(folder);
+    QVERIFY(set);
 #else
-    std::filesystem::file_time_type time_;
+    const timespec times[2] = {{0, UTIME_OMIT}, {static_cast<time_t>(kPinnedTime), 0}};
+    QVERIFY(utimensat(AT_FDCWD, QFile::encodeName(path).constData(), times, 0) == 0);
 #endif
-    QString path_;
-};
+    QCOMPARE(QFileInfo(path).lastModified().toMSecsSinceEpoch(), kPinnedTime * 1000);
+}
 
 constexpr double kDay = 86400.0;
 constexpr uint32_t kMaxFiles = 300000;
@@ -829,16 +815,19 @@ private Q_SLOTS:
 
     void rescanListsEveryFolderAgain() {
         const QString lib = tmp_->filePath(QStringLiteral("lib"));
-        touch(lib + QStringLiteral("/Drums/Kick.wav"));
+        const QString drums = lib + QStringLiteral("/Drums");
+        touch(drums + QStringLiteral("/Kick.wav"));
+        // Pinned before it is listed, and again below: the time saved is the one put back.
+        // (Putting back a time read with nanoseconds isn't exact on every file system.)
+        pinFolderTime(drums);
         const QString store = tmp_->filePath(QStringLiteral("index.bin"));
         {
             Backend first({lib}, store);
             QVERIFY(first.wait());
         }
         // A file the folder's time doesn't tell about (the time is put back).
-        FolderTime drums(lib + QStringLiteral("/Drums"));
-        touch(lib + QStringLiteral("/Drums/Snare.wav"));
-        drums.restore();
+        touch(drums + QStringLiteral("/Snare.wav"));
+        pinFolderTime(drums);
         Backend b({lib}, store);
         QVERIFY(b.wait());
         QCOMPARE(names(b.items()), QStringList{QStringLiteral("Kick.wav")});  // checked by time only

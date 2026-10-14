@@ -28,6 +28,7 @@
 #include "session/DeviceSelection.h"
 #include "session/ModulationLearn.h"
 #include "session/MidiPreferences.h"
+#include "session/PluginHostingPreferences.h"
 #include "session/RenderProgress.h"
 #include "session/Selection.h"
 #include "session/Session.h"
@@ -76,6 +77,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<HotSwap>("HotSwap");
     registerUncreatable<AudioPreferences>("AudioPreferences");
     registerUncreatable<MidiPreferences>("MidiPreferences");
+    registerUncreatable<PluginHostingPreferences>("PluginHostingPreferences");
     qmlRegisterUncreatableType<QUndoStack>(kUri, 1, 0, "UndoStack", kMadeByTheSession);
     qmlRegisterSingletonInstance(kUri, 1, 0, "Session", session);
 }

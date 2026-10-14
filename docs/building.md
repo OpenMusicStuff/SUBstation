@@ -74,8 +74,9 @@ plug-in scanner `substation-scan` needs too); without it, run from a prompt with
 `PATH` instead. Use the compiler the Qt build was made with: MSVC for an `msvc*` Qt, Qt's own MinGW for a `mingw_64`
 one (another GCC may not match its C++ runtime). A nightly CI run builds and tests both. The build is
 incremental: re-run `ninja -C build` after changing anything. Everything built lands in `build/bin`: `substation`,
-`substation-scan` (the plug-in scanner, which the application starts from its own folder), the test executables,
-and the test plug-ins under `build/testplugins`.
+`substation-scan` (the plug-in scanner) and `substation-plugin-host` (the plug-in sandboxes), which the application
+starts from its own folder, the test executables, and the test plug-ins under `build/testplugins`. Both go beside
+`substation` when it is installed or packaged.
 
 Sources are globbed per library (`file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`): a new `.cpp`, `.h` or `.qml` under
 `app/src`, `ui/src` or `ui/qml`, or a new built-in device in `engine/src/builtin/devices`, is picked up by the next
@@ -114,6 +115,7 @@ Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
 | `humanbro` | static library | intelligence | [HUMANBRO](../intelligence/third_party/humanbro)'s C++ runtime: MIDI features and the tree ensemble that predicts velocities. Built with its own strict floating-point flags (`/fp:precise`; `-ffp-contract=off -fno-fast-math`). |
 | `sub_intelligence` | static library | intelligence | Sound similarity, harmony, humanizing, and later more ([intelligence/](../intelligence/CMakeLists.txt)): no Qt, nothing of the engine or the browser; decodes through `miniaudio`, describes sounds with `essentia`, predicts velocities with `humanbro`; the operating system through `sub_platform`. Configuring copies its models ([intelligence/models](../intelligence/models)) into `bin/models`, beside the executables. |
 | `substation-scan` | executable | tools | The VST3 scanner's child process ([tools/scanner](../tools/scanner/main.cpp)): links `sub_engine`, no Qt. |
+| `substation-plugin-host` | executable | tools | The plug-in sandboxes' process ([tools/pluginhost](../tools/pluginhost/main.cpp), [engine/sandboxes.md](engine/sandboxes.md)): links `sub_engine`, no Qt; its main loop a file per system. |
 | `sub_app` | static library | app | The application layer ([app/](../app/CMakeLists.txt)): Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence`. Built with `QT_NO_KEYWORDS` (public): it and everything on it write `Q_SIGNALS`, `Q_SLOTS`, `Q_EMIT`. |
 | `sub_ui`, `sub_uiplugin` | static library + its QML plugin | ui | The QML module `SUBstation` ([ui/](../ui/CMakeLists.txt)): the QML files, the C++ Qt Quick items, the icons; and `SUBstation.Style`, the Qt Quick Controls style (`ui/style`). |
 | `substation` | executable | ui | [ui/main.cpp](../ui/main.cpp): makes the engine, the application's session on it, and the UI on that. |
