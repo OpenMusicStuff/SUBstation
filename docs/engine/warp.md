@@ -100,6 +100,9 @@ lower-cased, so two spellings of a path share it).
   snapshot, so clips waiting for this file become audible. If the device's rate changed meanwhile it decodes again
   (up to four tries, then `std::runtime_error`).
 - `cachedSource(path)` returns what is cached, at whatever rate.
+- `cacheSource(source)` caches a source `loadSource()` returned again, if the cache let go of it meanwhile (and it is
+  at the engine rate), and rebuilds the snapshot as `loadSource()` does. The engine bridge hands back what it holds:
+  a file it decoded, by the time it hears so, or one it asks for again.
 - `releaseUnusedSources()` drops sources no clip uses (except the one previewing).
 - When the device's sample rate changes, `reloadSourcesLocked()` decodes every cached source again at the new rate;
   files that vanished or became unreadable are dropped, and their clips go silent.

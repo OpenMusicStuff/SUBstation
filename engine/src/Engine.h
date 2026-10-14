@@ -253,6 +253,9 @@ public:
     // --- Sources --------------------------------------------------------------
     std::shared_ptr<AudioSource> loadSource(const std::string& path);  // cached; blocking
     std::shared_ptr<AudioSource> cachedSource(const std::string& path);
+    // A source loadSource() returned, cached again if releaseUnusedSources() let go of it
+    // meanwhile (not one at another rate); the clips waiting for its file become audible.
+    void cacheSource(std::shared_ptr<AudioSource> source);
     void releaseUnusedSources();
 
     // --- Tracks ---------------------------------------------------------------

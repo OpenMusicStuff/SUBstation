@@ -1,8 +1,9 @@
 // The engine taking the project's tracks through the bridge: clips and notes as
 // the engine has them (none of deactivated clips), groups as buses, returns and sends (made silent when only
 // automated), inputs from other tracks' outputs (resampling), the master's
-// mixer, the project's settings, a drag's preview, and automation overridden by
-// hand. The changes are made as the editor makes them (the model's commands).
+// mixer, the project's settings, a drag's preview, automation overridden by
+// hand, and clips' files decoded (playing whichever project was open meanwhile).
+// The changes are made as the editor makes them (the model's commands).
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
@@ -465,6 +466,57 @@ private Q_SLOTS:
         // Opening another project forgets what it doesn't use.
         studio.project.clear();
         QVERIFY(!bridge.source(wav));
+    }
+
+    // A file decoded while its project closed (the engine let go of it then: no clip used
+    // it) plays in a project opened before the bridge heard it was decoded.
+    void aFileDecodedWhileProjectsOpenPlays() {
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        const QString wav = test::writeWav(dir.path("dc.wav"), std::vector<float>(test::kSampleRate, 0.25f));
+        studio.clipTrack(wav, 2.0, QStringLiteral("A"));
+        const QString path = dir.path("decoding.gilproj");
+        saveProject(studio.project, path);
+        QVERIFY(bridge.isLoading(wav));
+        BridgeTestAccess::finishDecoding(bridge);
+        studio.project.clear();
+        loadProject(studio.project, path);
+        QTRY_VERIFY(!bridge.isLoading(wav));
+        QVERIFY(bridge.source(wav));
+        QVERIFY(test::peak(studio.render(1000)) > 0.2f);
+    }
+
+    // Files the bridge kept through opening a project that the engine let go of (no clip
+    // of its played them: a deactivated clip's, a frozen track's clips') play once they play again.
+    void filesNoClipPlayedPlayAgain() {
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        const QString wav = test::writeWav(dir.path("dc.wav"), std::vector<float>(test::kSampleRate, 0.25f));
+        QString track = studio.clipTrack(wav, 1.0, QStringLiteral("A"));
+        QTRY_VERIFY(!bridge.isLoading(wav));
+        Clip clip = studio.project.track(track).clips.front();
+        clip.muted = true;
+        studio.edit.setClips(track, {clip});
+        const QString path = dir.path("kept.gilproj");
+        saveProject(studio.project, path);
+        loadProject(studio.project, path);
+        QVERIFY(bridge.source(wav));  // (its waveform shows)
+        track = studio.project.tracks().front().id;
+        clip.muted = false;
+        studio.edit.setClips(track, {clip});
+        QVERIFY(test::peak(studio.render(1000)) > 0.2f);
+        // Frozen (as silence), then unfrozen after opening it again.
+        const QString silence = test::writeWav(dir.path("silence.wav"), std::vector<float>(test::kSampleRate, 0.f));
+        studio.edit.freeze(track, Freeze{silence, 1.0, studio.project.tempo()});
+        QVERIFY(test::peak(studio.render(1000)) < 0.01f);
+        saveProject(studio.project, path);
+        loadProject(studio.project, path);
+        QVERIFY(bridge.source(wav));
+        track = studio.project.tracks().front().id;
+        studio.edit.unfreeze(track);
+        QVERIFY(test::peak(studio.render(1000)) > 0.2f);
     }
 };
 
