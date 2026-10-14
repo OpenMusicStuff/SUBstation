@@ -12,8 +12,9 @@
 // The feed is GitHub's list of the repository's releases
 // (GET /repos/{owner}/{repo}/releases): each release's tag says its version and
 // channel; its assets hold the download for this platform
-// (SUBstation-<version>-windows-x64.zip) and its SHA-256 (GitHub's `digest`,
-// else a <zip>.sha256 asset beside it).
+// (SUBstation-<version>-windows-x64-setup.exe for an installed SUBstation,
+// SUBstation-<version>-windows-x64.zip for one unzipped by hand) and its
+// SHA-256 (GitHub's `digest`, else a <download>.sha256 asset beside it).
 
 #include <QByteArray>
 #include <QDateTime>
@@ -68,8 +69,9 @@ struct UpdateRelease {
 
 // The download's name for `version` on this platform's suffix ("-windows-x64.zip").
 QString updateAssetName(const UpdateVersion& version, const QString& platformSuffix);
-// This platform's suffix: "-windows-x64.zip" on Windows; elsewhere "-linux-x64.zip" (none is released yet).
-QString updatePlatformSuffix();
+// This platform's suffix: on Windows "-windows-x64-setup.exe" (the installer, for
+// an installed SUBstation) or "-windows-x64.zip"; elsewhere "-linux-x64.zip" (none is released yet).
+QString updatePlatformSuffix(bool installer);
 
 // The releases in a GitHub releases list (drafts and tags that aren't versions
 // left out), the assets matched by `platformSuffix`. `error` says why if the

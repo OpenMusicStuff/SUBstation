@@ -496,7 +496,8 @@ application-layer object that holds the logic. What the preferences mean to the 
     driver's panel runs (it may run a message loop of its own); the status (rich text: what runs, or why it didn't
     open). A driver this build lacks (ASIO without the SDK) is greyed out with a tooltip saying so. Each choice
     reopens the device, since what a device offers is only known while it is open; only settings that opened are
-    saved.
+    saved. Under the status, in a build with ASIO, Steinberg's trademark attribution (`trademarkNotice`), which their
+    ASIO usage guidelines ask for wherever ASIO is set up.
   - **MIDI** (`MidiPage` on [MidiPreferences](../../app/src/session/MidiPreferences.h)): a check box per input
     (`inputs`: name, enabled, error: an input that couldn't be opened shows in red, why in its tooltip) →
     `setInputEnabled(name, on)`; Refresh → `refresh()`.

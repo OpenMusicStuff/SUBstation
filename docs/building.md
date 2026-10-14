@@ -161,6 +161,10 @@ If several are found, the one whose path sorts highest wins (the newest of sever
 `ASIO SDK: <folder>` when it found it; without it, it warns and builds the engine with WASAPI only (the preferences
 then show ASIO greyed out, and the ASIO tests are skipped). Re-run CMake after adding the SDK.
 
+The releases are built with SDK 2.3.4, downloaded and checked against a pinned SHA-256, and taken under its GPLv3
+option ([releasing.md](releasing.md#asio), [licensing.md](licensing.md)). ASIO is a registered trademark of Steinberg
+Media Technologies GmbH.
+
 What the engine does with ASIO is in [engine/audio-devices.md](engine/audio-devices.md).
 
 ## Third-party code

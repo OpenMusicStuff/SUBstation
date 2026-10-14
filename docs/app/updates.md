@@ -27,8 +27,12 @@ The feed is GitHub's REST list of the repository's releases, `https://api.github
 an address: one look a day is far below it). `SUBSTATION_UPDATE_FEED` replaces it with any URL, `file:` included (the
 tests'). `parseUpdateReleases` keeps each release whose tag is a version and that isn't a draft, with its title,
 notes, page and date, and the asset named `SUBstation-<version><suffix>`, the suffix being this platform's
-(`updatePlatformSuffix()`: `-windows-x64.zip` on Windows; `-linux-x64.zip` elsewhere, which no release has yet). The
-asset's checksum is GitHub's `digest` (`sha256:<hex>`) when there is one, else the asset `<zip>.sha256` beside it.
+(`updatePlatformSuffix(installed)`: on Windows `-windows-x64-setup.exe`, the installer, for a SUBstation the installer
+installed, or `-windows-x64.zip` for one unzipped by hand; `-linux-x64.zip` elsewhere, which no release has yet). The
+asset's checksum is GitHub's `digest` (`sha256:<hex>`) when there is one, else the asset `<download>.sha256` beside it.
+
+Which kind this SUBstation is: `installed` (`isInstalledCopy`: the installer's uninstaller, `unins000.exe`, is in
+the application's folder).
 
 `pickUpdate` takes the newest release the channel offers that is newer than this build. Releases with no download for
 this platform are still offered (the page then says so and links the release).
@@ -60,22 +64,36 @@ idle ──checkNow──▶ checking ──▶ upToDate
   found and, looking by itself, looks again at once; `autoCheck` turned on looks if due.
 - **Downloading.** `download()` (at once after a look with `autoInstall`; or when `autoInstall` is turned on with an
   update `available`) refuses a release with no checksum. It fetches the `.sha256` first if there's no digest, then the
-  zip into `AppLocalDataLocation/updates/<zip>.part` (earlier zips there deleted), hashing as it comes; a hash that
-  doesn't match deletes it (`error`); one that does renames it to `<zip>` and is `ready`.
+  download (the installer or the zip) into `AppLocalDataLocation/updates/<download>.part` (earlier downloads there
+  deleted), hashing as it comes; a hash that doesn't match deletes it (`error`); one that does renames it to
+  `<download>` and is `ready`.
 - **Installing.** `installNow()` (Restart to Install) marks it to install and restart and emits `quitRequested`; the
   window closes as Quit closes it, asking about unsaved changes (a close cancelled leaves it to install at the next).
   `applyOnQuit()`, called by `main()` after the session has shut down, installs if `installPending` (ready, on
-  Windows, and `autoInstall` or `installNow()`): it checks the zip's hash again, writes the script beside it
+  Windows, and `autoInstall` or `installNow()`): it checks the download's hash again, writes the script beside it
   (`install-update.ps1`) and starts it detached (`Options::launch`; `QProcess::startDetached`), with this process's id,
-  the zip, the application's folder, and whether to start SUBstation again (only after `installNow()`).
+  the download (`-Package`), the application's folder, and whether to start SUBstation again (only after
+  `installNow()`).
+
+### Installing
 
 The script ([UpdateInstall.cpp](../../app/src/update/UpdateInstall.cpp)) waits for that process to end (up to two
-minutes), unpacks the zip into a temporary folder, finds `substation.exe` in it, and `robocopy`s its folder over the
-application's (retrying files still held for 20 s), deletes the zip and the temporary folder, and starts SUBstation
-again if asked (the old one, if the copy failed). It writes what it did to `install-update.log` beside the script.
+minutes). Then:
+
+- **An installer** (`*.exe`): it runs it silently (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS`)
+  and waits for it. Inno Setup installs over the installation it finds (the same `AppId`), in its folder and with its
+  choices, so the uninstaller knows every file.
+- **A zip**: it unpacks it into a temporary folder, finds `substation.exe` in it, and `robocopy`s its folder over the
+  application's (retrying files still held for 20 s).
+
+Before either, it checks the signature: if the SUBstation it updates is validly signed (Authenticode), the installer,
+or the zip's `substation.exe`, must be validly signed by the same subject, or nothing is installed. An unsigned
+SUBstation (one built by hand, or a release from before signing was set up) has nothing to compare with, and installs
+what its checksum let through. Then it deletes the download and the temporary folder, and starts SUBstation again if
+asked (the old one, if installing failed). It writes what it did to `install-update.log` beside the script.
 
 `Options` is for the tests: the feed, the version and channel to be, the platform suffix, the folders, whether it looks
-by itself and installs, the first look's delay, and what starts the installer.
+by itself, installs and was installed, the first look's delay, and what starts the installer.
 
 ## Settings
 
@@ -92,6 +110,7 @@ by itself and installs, the first look's delay, and what starts the installer.
   and a release picked on each channel, `.sha256` files, `isDue`; the `Updater` on feeds and zips in files: the
   settings (kept, the defaults, the summary), Check Now finding none and one, a download checked and the installer
   started only once asked (its command and script), Install updates automatically, a checksum that doesn't match, no
-  checksum, no feed, looking by itself (and not when not due, or not on).
+  checksum, no feed, looking by itself (and not when not due, or not on), an installed SUBstation taking the
+  installer.
 - [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp) `updatesPage`: the page driven with the mouse.
 - `prepareApplication()` points `SUBSTATION_UPDATE_FEED` at a file that isn't there, so no test reads GitHub.

@@ -340,7 +340,7 @@ private Q_SLOTS:
         QFile scriptFile(script);
         QVERIFY(scriptFile.open(QIODevice::ReadOnly));
         QCOMPARE(scriptFile.readAll(), sub::app::updateInstallScript());
-        QCOMPARE(QDir::fromNativeSeparators(argument(command, QStringLiteral("-Zip"))), updates->downloadedFile());
+        QCOMPARE(QDir::fromNativeSeparators(argument(command, QStringLiteral("-Package"))), updates->downloadedFile());
         QCOMPARE(QDir::fromNativeSeparators(argument(command, QStringLiteral("-AppDir"))), path(QStringLiteral("app")));
         QCOMPARE(argument(command, QStringLiteral("-ProcessId")), QString::number(QCoreApplication::applicationPid()));
         QCOMPARE(argument(command, QStringLiteral("-Restart")), QStringLiteral("1"));
@@ -447,6 +447,64 @@ private Q_SLOTS:
         }
     }
 
+    // Installed by the installer (its uninstaller in the folder) or unzipped by
+    // hand: which download it takes; an older installer goes as a new one comes.
+    void installedOrUnzipped() {
+        const QString app = path(QStringLiteral("app"));
+        QVERIFY(!sub::app::isInstalledCopy(app));
+        QVERIFY(!updater(feed({}))->installed());
+        QFile uninstaller(app + QStringLiteral("/unins000.exe"));
+        QVERIFY(uninstaller.open(QIODevice::WriteOnly));
+        uninstaller.close();
+        QVERIFY(sub::app::isInstalledCopy(app));
+        QVERIFY(updater(feed({}))->installed());
+#ifdef _WIN32
+        QCOMPARE(sub::app::updatePlatformSuffix(true), QStringLiteral("-windows-x64-setup.exe"));
+        QCOMPARE(sub::app::updatePlatformSuffix(false), QStringLiteral("-windows-x64.zip"));
+#endif
+
+        // A release's installer, downloaded and checked as a zip is.
+        Updater::Options options;
+        options.feed = feed({});
+        options.currentVersion = QStringLiteral("0.2.0");
+        options.platformSuffix = QStringLiteral("-test-setup.exe");
+        options.downloadFolder = path(QStringLiteral("downloads"));
+        options.appFolder = app;
+        options.automatic = false;
+        options.installable = true;
+        options.launch = [this](const sub::app::UpdateInstallCommand& command) {
+            launched_.push_back(command);
+            return true;
+        };
+        QDir().mkpath(path(QStringLiteral("downloads")));
+        QFile old(path(QStringLiteral("downloads/SUBstation-0.1.0-test-setup.exe")));
+        QVERIFY(old.open(QIODevice::WriteOnly));
+        old.close();
+        QJsonObject setup = release(QStringLiteral("0.3.0"), "setup");
+        // (release() names the zip: the same asset as the installer.)
+        QJsonArray assets = setup[QStringLiteral("assets")].toArray();
+        QJsonObject asset = assets[0].toObject();
+        const QString zipName = asset[QStringLiteral("name")].toString();
+        const QString setupName = QStringLiteral("SUBstation-0.3.0-test-setup.exe");
+        QVERIFY(QFile::rename(path(zipName), path(setupName)));
+        asset[QStringLiteral("name")] = setupName;
+        asset[QStringLiteral("browser_download_url")] = QUrl::fromLocalFile(path(setupName)).toString();
+        setup[QStringLiteral("assets")] = QJsonArray{asset};
+        options.feed = feed({setup});
+        Updater updates(options);
+        QVERIFY(updates.installed());
+        updates.checkNow();
+        QTRY_COMPARE(updates.state(), QStringLiteral("available"));
+        updates.download();
+        QTRY_COMPARE(updates.state(), QStringLiteral("ready"));
+        QVERIFY(!old.exists());
+        QCOMPARE(updates.downloadedFile(), path(QStringLiteral("downloads/") + setupName));
+        updates.installNow();
+        QVERIFY(updates.applyOnQuit());
+        QCOMPARE(QDir::fromNativeSeparators(argument(launched_.back(), QStringLiteral("-Package"))),
+                 updates.downloadedFile());
+    }
+
     // The installer's command line, and its script's parameters.
     void installCommand() {
         const auto command = sub::app::updateInstallCommand(QStringLiteral("C:/u/install-update.ps1"),
@@ -457,7 +515,8 @@ private Q_SLOTS:
         QCOMPARE(argument(command, QStringLiteral("-Restart")), QStringLiteral("0"));
         QVERIFY(QDir::fromNativeSeparators(argument(command, QStringLiteral("-Log"))).endsWith(QStringLiteral("/u/install-update.log")));
         const QByteArray script = sub::app::updateInstallScript();
-        for (const char* parameter : {"$Zip", "$AppDir", "$ProcessId", "$Restart", "$Log", "robocopy", "Wait-Process"})
+        for (const char* parameter : {"$Package", "$AppDir", "$ProcessId", "$Restart", "$Log", "robocopy", "Wait-Process", "/VERYSILENT",
+                                      "Assert-SameSigner", "Get-AuthenticodeSignature"})
             QVERIFY2(script.contains(parameter), parameter);
     }
 };

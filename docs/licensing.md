@@ -33,7 +33,7 @@ the licences, not legal advice: for a commercial release, have it checked.
 | [HUMANBRO](../intelligence/third_party/humanbro) runtime | intelligence/third_party/humanbro | the project's own (no licence file of its own) | Humanize › Velocity | yes, if it is under the MIT licence too: see [below](#to-decide) |
 | [velocity.hbm](../intelligence/models) | intelligence/models | none stated; trained on MAESTRO v3, which is CC BY-NC-SA 4.0 | the velocity model | see [below](#to-decide) |
 | [TaggerModel.inc](../intelligence/src/tagging/TaggerModel.inc) | intelligence/src/tagging | none stated (SUBstation's own, trained by [tools/sound_tagger](../tools/sound_tagger)); trained on NSynth, TinySOL, LibriSpeech and VocalSet (CC BY 4.0), Freesound sounds (CC0 and CC BY 3.0 only), and tidal-drum-machines (no licence stated) | the sound tagger's model: weights compiled in, no audio of the corpora | see [below](#to-decide) |
-| Steinberg's ASIO SDK | not in the repository; used if present at build time | proprietary *or* GPLv3 (Steinberg's dual licence, since October 2025) | ASIO on Windows | only under its **GPLv3** option: see [below](#to-decide) |
+| Steinberg's ASIO® SDK | not in the repository; used if present at build time (the releases download 2.3.4: [releasing.md](releasing.md#asio)) | proprietary *or* GPLv3 (Steinberg's dual licence, since 2.3.4, October 2025) | ASIO on Windows | under its **GPLv3** option, as the releases take it: see [below](#to-decide) |
 | VST3 plug-ins | loaded at run time | their makers' | hosted | not part of SUBstation: they are separate programs loaded through the VST3 interface |
 
 ## Shipping SUBstation: what the AGPLv3 asks
@@ -43,7 +43,9 @@ When you give or sell someone a build (the AGPL's "convey"):
 1. **Licence it as AGPLv3**: say so where you distribute it, and ship the licence texts: Essentia's
    [COPYING.txt](../intelligence/third_party/essentia/COPYING.txt) (the AGPLv3), Vital's
    [LICENSE](../engine/third_party/vital/LICENSE) (the GPLv3), [LICENSE](../LICENSE) (MIT), and the
-   third-party notices (each `third_party` folder's licence files, and Qt's).
+   third-party notices (each `third_party` folder's licence files, and Qt's). The releases' `licenses/` folder holds
+   them, with a `README.txt` saying so and linking the build's source
+   ([tools/release/package-windows.ps1](../tools/release/package-windows.ps1)).
 2. **Offer the complete corresponding source** of the build: SUBstation's source at the commit built, Essentia
    included (it is in the repository, with its local changes in
    [local-changes.patch](../intelligence/third_party/essentia/local-changes.patch)), and the build scripts. A tag of
@@ -88,7 +90,11 @@ MIT.
   Since October 2025 Steinberg offers the ASIO SDK under GPLv3 as well; GPLv3 code may be combined with AGPLv3 code
   (section 13 of each). So for a build you distribute: use an ASIO SDK that Steinberg offers under GPLv3, take it under
   that licence, and follow Steinberg's trademark rules if you use the ASIO name or logo; or ship without ASIO (WASAPI
-  only). Builds for your own use are unaffected: the AGPL's conditions apply to distributing.
+  only). Builds for your own use are unaffected: the AGPL's conditions apply to distributing. The releases do the
+  first: SDK 2.3.4 under GPLv3, its licence text in `licenses/`, and the attribution *"ASIO is a registered trademark
+  of Steinberg Media Technologies GmbH."* in Help › About, Preferences › Audio and `licenses/README.txt`. Steinberg's
+  usage guidelines also ask for the *ASIO Compatible* logo in the About box and where ASIO is set up; that is still
+  to do ([releasing.md](releasing.md#asio)).
 - **HUMANBRO's runtime.** The repository calls it "the project's own". If you are its author, the root MIT licence
   covers it; say so in its folder (a `LICENSE` there, or a line in its README) to make it unambiguous.
 - **The velocity model.** HUMANBRO's model was trained on MAESTRO v3, which Google publishes under

@@ -27,10 +27,22 @@ have, and when it last looked; **Release Notes** opens the update's page.
 
 Every download is checked against its checksum before it's installed; one that doesn't match is thrown away.
 
+## Installing SUBstation
+
+Each release has two downloads:
+
+- **`SUBstation-<version>-windows-x64-setup.exe`**: the installer. It installs SUBstation for you (no administrator
+  needed) into `%LOCALAPPDATA%\Programs\SUBstation`, with a Start menu entry, a desktop shortcut if you like, and
+  `.gilproj` projects opening in SUBstation. Uninstall it from Settings › Apps. Updates run the next version's
+  installer for you, silently.
+- **`SUBstation-<version>-windows-x64.zip`**: portable. Unzip it anywhere you can write to (not *Program Files*)
+  and run `substation.exe`; updates copy the new version over that folder.
+
+A signed release shows its publisher's name in Windows, and a signed SUBstation installs an update only if it is
+signed by the same publisher.
+
 ## Good to know
 
-- SUBstation installs an update over the folder it runs from: keep it in a folder you can write to (your user folder,
-  not *Program Files*).
 - Updates install on Windows. On Linux SUBstation tells you an update is out and links its page.
 - A build you made yourself never looks by itself: Check Now still works.
 - Your projects, presets and preferences aren't touched by an update.

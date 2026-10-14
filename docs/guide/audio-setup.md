@@ -3,7 +3,7 @@
 *Options › Preferences* (**Ctrl+,**, or click the audio device's name at the right of
 the transport bar) chooses the audio device, the MIDI inputs and the plug-in folders
 (and the theme: [look-and-feel.md](look-and-feel.md)).
-SUBstation plays through ASIO drivers, or WASAPI shared or exclusive, with the sample
+SUBstation plays through ASIO® drivers, or WASAPI shared or exclusive, with the sample
 rate and buffer size you choose. On Linux it plays through PipeWire, or the *System*
 driver where PipeWire doesn't run (see [below](#on-linux)).
 
@@ -132,6 +132,8 @@ recording; what was recorded so far is kept.
   and says so.
 
 ---
+
+ASIO is a registered trademark of Steinberg Media Technologies GmbH.
 
 For developers: [../engine/audio-devices.md](../engine/audio-devices.md),
 [../app/engine-bridge.md](../app/engine-bridge.md) (`AudioSettings`),

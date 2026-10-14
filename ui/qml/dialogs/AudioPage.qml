@@ -139,6 +139,18 @@ ColumnLayout {
         color: Theme.textDim
     }
 
+    // (Steinberg's ASIO usage guidelines: the attribution where ASIO is set up.)
+    Label {
+        objectName: "asioTrademark"
+        Layout.fillWidth: true
+        Layout.maximumWidth: 520
+        visible: text !== ""
+        text: page.prefs.trademarkNotice
+        wrapMode: Text.Wrap
+        color: Theme.textDim
+        font: Theme.smallFont
+    }
+
     Item {
         Layout.fillHeight: true
     }

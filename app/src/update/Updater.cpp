@@ -72,9 +72,11 @@ Updater::Updater(Options options, QObject* parent) : QObject(parent), network_(n
     currentText_ = options.currentVersion.isEmpty() ? version() : options.currentVersion;
     current_ = UpdateVersion::parse(currentText_).value_or(UpdateVersion{});
     buildChannel_ = options.buildChannel.isEmpty() ? releaseChannel() : options.buildChannel;
-    platformSuffix_ = options.platformSuffix.isEmpty() ? updatePlatformSuffix() : options.platformSuffix;
     downloadFolder_ = options.downloadFolder;
     appFolder_ = options.appFolder;
+    // (Installed by the installer: updated by the next one; else by the zip.)
+    installed_ = options.installed.value_or(isInstalledCopy(appFolder()));
+    platformSuffix_ = options.platformSuffix.isEmpty() ? updatePlatformSuffix(installed_) : options.platformSuffix;
     automatic_ = options.automatic.value_or(buildChannel_ != QLatin1String("dev"));
     installable_ = options.installable.value_or(canInstallUpdates());
     firstCheckDelayMs_ = options.firstCheckDelayMs;
@@ -93,6 +95,10 @@ Updater::Updater(Options options, QObject* parent) : QObject(parent), network_(n
 }
 
 Updater::~Updater() { abort(); }
+
+QString Updater::appFolder() const {
+    return appFolder_.isEmpty() ? QCoreApplication::applicationDirPath() : appFolder_;
+}
 
 QString Updater::folder() const {
     if (!downloadFolder_.isEmpty()) return downloadFolder_;
@@ -331,8 +337,8 @@ void Updater::fetchAsset() {
     const QString dir = folder();
     QDir().mkpath(dir);
     // (Earlier downloads go: only the newest is kept.)
-    for (const QFileInfo& old : QDir(dir).entryInfoList({QStringLiteral("*.zip"), QStringLiteral("*.part")}, QDir::Files))
-        QFile::remove(old.absoluteFilePath());
+    const QStringList downloads{QStringLiteral("*.zip"), QStringLiteral("*.exe"), QStringLiteral("*.part")};
+    for (const QFileInfo& old : QDir(dir).entryInfoList(downloads, QDir::Files)) QFile::remove(old.absoluteFilePath());
     partial_ = std::make_unique<QFile>(dir + QLatin1Char('/') + found_->assetName + QStringLiteral(".part"));
     if (!partial_->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         const QString error = partial_->errorString();
@@ -424,8 +430,7 @@ bool Updater::applyOnQuit() {
         file.write(updateInstallScript());
         if (!file.commit()) return false;
     }
-    const QString appDir = appFolder_.isEmpty() ? QCoreApplication::applicationDirPath() : appFolder_;
-    return launch_(updateInstallCommand(script, downloaded_, appDir, QCoreApplication::applicationPid(),
+    return launch_(updateInstallCommand(script, downloaded_, appFolder(), QCoreApplication::applicationPid(),
                                         installRequested_));
 }
 

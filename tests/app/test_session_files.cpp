@@ -386,6 +386,8 @@ private Q_SLOTS:
         QCOMPARE(s.aboutTitle(), QStringLiteral("About SUBstation"));
         QVERIFY(s.aboutText().startsWith(QStringLiteral("<b>SUBstation</b> ") + version()));
         QVERIFY(s.aboutText().contains(QStringLiteral("VST is a registered trademark")));
+        // (With ASIO: Steinberg's attribution, as Preferences › Audio shows it.)
+        QCOMPARE(s.aboutText().contains(sub::app::kAsioTrademark), !sub::app::AudioPreferences::trademarkNotice().isEmpty());
         QVERIFY(s.requestClose());  // no render running: the UI goes on
         QCOMPARE(s.confirmDiscardText(), QStringLiteral("Save changes to the current project?"));
         QCOMPARE(s.projectFilter(), QStringLiteral("SUBstation Project (*.gilproj)"));

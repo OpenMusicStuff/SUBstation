@@ -1,7 +1,7 @@
 # SUBstation
 
 A DAW for Windows (and Linux) built around an Ableton-style arrangement view, written
-from scratch in C++20. It has a real-time audio engine with ASIO, WASAPI and PipeWire,
+from scratch in C++20. It has a real-time audio engine with ASIO®, WASAPI and PipeWire,
 VST3 hosting and delay compensation everywhere. It comes with more than twenty built-in
 devices, including the whole of [Vital](https://github.com/mtytel/vital) compiled in from
 its source. It can import Ableton Live Sets. It also has some ideas you won't find in
@@ -256,3 +256,6 @@ SUBstation's own code is under the [MIT licence](LICENSE). Builds include
 as a whole, under the AGPLv3's terms: ship it with its source. See
 [docs/licensing.md](docs/licensing.md), which also covers the ASIO SDK and the velocity
 model.
+
+ASIO is a registered trademark of Steinberg Media Technologies GmbH. VST is a registered
+trademark of Steinberg Media Technologies GmbH.
