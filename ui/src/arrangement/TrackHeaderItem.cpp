@@ -336,7 +336,23 @@ QColor TrackHeaderItem::barText() const {
 }
 
 QString TrackHeaderItem::nameToolTip() const {
-    return session_ && session_->trackLabels() ? session_->trackLabels()->toolTip(trackId_) : QString();
+    if (!session_) return {};
+    QStringList lines;
+    if (session_->trackLabels()) lines << session_->trackLabels()->toolTip(trackId_);
+    // Its devices' latency (compensated); the master's, the whole output's too.
+    const app::EngineBridge* bridge = session_->bridge();
+    const double rate = std::max(1.0, bridge->sampleRate());
+    const auto samples = [rate](int latency) {
+        return QStringLiteral("%1 samples (%2 ms)").arg(latency).arg(1000.0 * latency / rate, 0, 'f', 1);
+    };
+    if (isMaster()) {
+        lines << QStringLiteral("Total latency: ") + samples(bridge->outputLatency())
+              << QStringLiteral("Master devices: ") + samples(bridge->trackLatency(trackId_));
+    } else {
+        lines << QStringLiteral("Latency: ") + samples(bridge->trackLatency(trackId_));
+    }
+    lines.removeAll(QString());
+    return lines.join(u'\n');
 }
 
 QVariantList TrackHeaderItem::lanes() const {
@@ -435,6 +451,7 @@ void TrackHeaderItem::connectAll() {
     connect(bridge, &app::EngineBridge::metersUpdated, this, &TrackHeaderItem::updateMeter);
     connect(bridge, &app::EngineBridge::deviceChanged, this, [this] {
         if (isMaster()) Q_EMIT changed();  // (its Main Out)
+        Q_EMIT nameToolTipChanged();       // (a new sample rate: the latencies in ms)
     });
     connect(session_->selection(), &app::Selection::changed, this, [this] {
         Q_EMIT selectedChanged();
@@ -447,6 +464,7 @@ void TrackHeaderItem::connectAll() {
         if (id == trackId_) startRename();
     });
     connect(session_->trackLabels(), &app::TrackLabels::changed, this, &TrackHeaderItem::nameToolTipChanged);
+    connect(bridge, &app::EngineBridge::latenciesChanged, this, &TrackHeaderItem::nameToolTipChanged);
     refresh();
     Q_EMIT nameToolTipChanged();
 }
@@ -1300,14 +1318,24 @@ MenuEntries TrackHeaderItem::paramMenu(int lane) {
     const QString key = laneKey(lane);
     const QString current = groupOf(key);
     const auto& automated = project()->automation(trackId_);
+    // A device with many parameters (a plug-in's hundreds): under a search field, as the sidechain menu's tracks.
+    constexpr std::size_t kSearchFrom = 12;
     for (const app::ParamGroup& group : session_->bridge()->paramGroups(trackId_)) {
         if (group.id != current) continue;
-        for (const app::ParamSpec& spec : group.specs) {
-            const QString chosen = spec.key;
-            MenuEntry& entry = menu.add(spec.name, [this, lane, chosen] { chooseLane(lane, chosen); });
-            entry.checkable = true;
-            entry.checked = spec.key == key;
-            if (automated.contains(spec.key)) entry.dot = Theme::automationOn();
+        const auto addParams = [&](auto& list) {
+            for (const app::ParamSpec& spec : group.specs) {
+                const QString chosen = spec.key;
+                MenuEntry& entry = list.add(spec.name, [this, lane, chosen] { chooseLane(lane, chosen); });
+                entry.checkable = true;
+                entry.checked = spec.key == key;
+                if (automated.contains(spec.key)) entry.dot = Theme::automationOn();
+            }
+        };
+        if (group.specs.size() > kSearchFrom) {
+            MenuList params(menu.addSearch().children);
+            addParams(params);
+        } else {
+            addParams(menu);
         }
     }
     if (menu.isEmpty()) menu.add(QStringLiteral("No parameters")).enabled = false;

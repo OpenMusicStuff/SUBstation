@@ -81,12 +81,17 @@ void ProjectEditor::deleteAutomationRange(double start, double end, const QList<
 }
 
 void ProjectEditor::moveAutomationRange(double start, double end, const QMap<LaneRef, Envelope>& originals,
-                                        double deltaBeats, double deltaValue, const QString& mergeKey) {
+                                        double deltaBeats, double deltaValue, const QString& mergeKey,
+                                        const QSet<LaneRef>& unautomated) {
     QMap<LaneRef, Envelope> nw;
     QMap<LaneRef, Envelope> current;
     for (auto it = originals.constBegin(); it != originals.constEnd(); ++it) {
         if (it.value().empty() || !project_->hasOwner(it.key().first)) continue;
-        nw.insert(it.key(), automation::moveRange(it.value(), start, end, deltaBeats, deltaValue));
+        Envelope moved = automation::moveRange(it.value(), start, end, deltaBeats, deltaValue);
+        const bool flat = std::all_of(moved.begin(), moved.end(),
+                                      [&](const AutomationPoint& p) { return p.value == moved.front().value; });
+        if (flat && unautomated.contains(it.key())) moved.clear();
+        nw.insert(it.key(), std::move(moved));
         current.insert(it.key(), project_->envelope(it.key().first, it.key().second));
     }
     if (nw != current) {

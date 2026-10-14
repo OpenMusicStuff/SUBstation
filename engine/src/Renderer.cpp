@@ -919,6 +919,23 @@ void Renderer::resetInsert(Processor& insert, const RackRender* rack) noexcept {
     }
 }
 
+void Renderer::meterOutput(Processor& insert, const float* left, const float* right, int frames) noexcept {
+    float peakL = 0.f, peakR = 0.f;
+    for (int s = 0; s < frames; ++s) {
+        peakL = std::max(peakL, std::abs(left[s]));
+        peakR = std::max(peakR, std::abs(right[s]));
+    }
+    atomicStoreMax(insert.outputPeak(0), peakL);
+    atomicStoreMax(insert.outputPeak(1), peakR);
+}
+
+void Renderer::meterSkipped(const StripRender& chain, const float* left, const float* right, int frames) noexcept {
+    if (!chunkFlags_.live) return;
+    for (const auto& insert : chain.inserts) {
+        if (!insert->isModulator()) meterOutput(*insert, left, right, frames);
+    }
+}
+
 void Renderer::tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack, const float* left,
                               const float* right, int frames) noexcept {
     for (const ChainRender& chain : rack.chains) {
@@ -934,6 +951,7 @@ void Renderer::processInserts(const RenderSnapshot& snap, const StripRender& str
                               bool monitored, WorkerScratch& scratch) noexcept {
     if (!takeResets(strip)) {  // nothing changes the signal along the chain
         for (const int e : strip.deviceTaps) tapInto(snap, e, left, right, frames);
+        meterSkipped(strip, left, right, frames);  // (its devices' meters show what goes past them)
         return;
     }
 
@@ -1093,6 +1111,8 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
                 }
             }
         }
+        // What it passes on, for its meter (off, what goes past it).
+        if (chunkFlags_.live && !insert.isModulator()) meterOutput(insert, left, right, frames);
         for (; tap < chain.deviceTaps.size(); ++tap) {
             const int e = chain.deviceTaps[tap];
             if (snap.edges[static_cast<size_t>(e)].tapDevice > static_cast<int>(i)) break;
@@ -1265,6 +1285,7 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
             processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1, scratch);
         } else {  // nothing changes the signal along it
             for (const int e : chain.deviceTaps) tapInto(snap, e, chainL, chainR, frames);
+            meterSkipped(chain, chainL, chainR, frames);
         }
         const bool audible = !chain.params->mute.load(std::memory_order_relaxed) &&
                              (!anySolo || chain.params->solo.load(std::memory_order_relaxed));

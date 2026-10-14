@@ -540,7 +540,7 @@ void ArrangementLanes::paint(SgPainter& p) {
                 p.fillRect(QRectF(x, row->top - scroll, 1, row->height() - 1), Theme::insertMarker());
         }
     }
-    envelopes::drawReadout(p, width(), gesture ? gesture->readout() : std::nullopt);
+    envelopes::drawReadout(p, width(), envelopes::readoutOf(gesture, hoverPoint_));
 }
 
 void ArrangementLanes::drawClip(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,

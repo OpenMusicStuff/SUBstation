@@ -382,6 +382,10 @@ private:
     static bool takeResets(const StripRender& chain) noexcept;
     // Resets a device now; a rack asks everything in it to reset as it runs next.
     static void resetInsert(Processor& insert, const RackRender* rack) noexcept;
+    // A device's meter: the loudest of what it passes on (live chunks only).
+    static void meterOutput(Processor& insert, const float* left, const float* right, int frames) noexcept;
+    // A chain skipped (none of its devices on): each one's meter takes what goes past it.
+    void meterSkipped(const StripRender& chain, const float* left, const float* right, int frames) noexcept;
     // A rack its switch passes by: the taps after the devices in it (in its
     // chains, and in racks in them) take what it passes on.
     static void tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack, const float* left,

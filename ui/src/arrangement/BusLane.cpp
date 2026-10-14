@@ -98,7 +98,7 @@ void BusLane::paint(SgPainter& p) {
         envelopes::drawArea(p, view, selection, area, project.envelope(area.owner, area.key), looks_[i], visible,
                             hoverPoint_, gesture_ != nullptr);
     }
-    envelopes::drawReadout(p, width(), gesture_ ? gesture_->readout() : std::nullopt);
+    envelopes::drawReadout(p, width(), envelopes::readoutOf(gesture_.get(), hoverPoint_));
 }
 
 // --- Mouse: automation -------------------------------------------------------------------------

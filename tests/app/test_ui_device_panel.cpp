@@ -181,7 +181,7 @@ private Q_SLOTS:
         // (centred in the editors' room: half of it more above them and below)
         const double room = ui_.panel()->property("editorRoom").toDouble();
         QCOMPARE(margins(utility, knobs), std::make_pair(6.0 + room / 2, 6.0 + room / 2));
-        auto* graph = test::itemNamed(frame(compressor), QStringLiteral("reductionGraph"));
+        auto* graph = test::itemNamed(frame(compressor), QStringLiteral("compressorDisplay"));
         QVERIFY(graph);
         QCOMPARE(margins(compressor, inFrame(compressor, graph)), std::make_pair(6.0, 6.0));
         editor().setChainListShown(track, rack, true);  // (hidden by default)

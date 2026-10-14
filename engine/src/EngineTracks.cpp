@@ -387,6 +387,31 @@ std::vector<MeterReading> Engine::takeMeters() {
     return meters;
 }
 
+std::vector<DeviceMeterReading> Engine::takeDeviceMeters() {
+    std::lock_guard lock(mutex_);
+    std::vector<DeviceMeterReading> meters;
+    meters.reserve(processors_.size());
+    for (auto& [id, entry] : processors_) {
+        if (!entry.processor) continue;
+        const auto [left, right] = entry.processor->takeOutputPeak();
+        meters.push_back({id, left, right});
+    }
+    return meters;
+}
+
+int Engine::trackLatency(uint32_t trackId) {
+    std::lock_guard lock(mutex_);
+    if (!snapshotHold_) return 0;
+    if (trackId == kMaster) return snapshotHold_->master.latency;
+    const TrackRender* track = snapshotHold_->findTrack(trackId);
+    return track ? track->latency : 0;
+}
+
+int Engine::outputLatency() {
+    std::lock_guard lock(mutex_);
+    return snapshotHold_ ? snapshotHold_->outputLatency() : 0;
+}
+
 // ---------------------------------------------------------------------------
 // Automation
 
