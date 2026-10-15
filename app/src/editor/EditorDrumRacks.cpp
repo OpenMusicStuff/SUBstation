@@ -90,12 +90,14 @@ QString ProjectEditor::loadDrumPad(const QString& trackId, const QString& rackId
             loadSample(trackId, sampler->id, path, start, end);
             return padId;
         }
-        // A pad without a Sampler: one goes first in it.
+        // A pad without a Sampler: one goes first in it, in place of the
+        // instrument there (a chain has one, as insertDevices keeps it).
         const std::vector<Device> before = track->devices;
         std::vector<Device> after = before;
         Device sampler = padSamplerOf(newDeviceOf(kSamplerKind), path);
         for (const auto& [param, value] : partParams(start, end)) sampler.params.insert(param, value);
         Chain& into = *findChain(after, padId).chain;
+        std::erase_if(into.devices, [](const Device& device) { return deviceIsInstrument(device); });
         into.devices.insert(into.devices.begin(), std::move(sampler));
         if (followsSample(into, {})) into.name = sampleName(path);
         setDevices(trackId, before, std::move(after), QStringLiteral("Load Pad"));

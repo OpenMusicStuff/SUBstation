@@ -105,6 +105,17 @@ private Q_SLOTS:
         f.editor.renameChain(track, kick, QStringLiteral("Big Kick"));
         f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/samples/Kick 3.wav"));
         QCOMPARE(f.project.chain(track, kick).name, QStringLiteral("Big Kick"));
+        // A pad playing another instrument: the Sampler takes its place (a chain has one instrument).
+        const QString synthPad = f.editor.addRackChain(track, rackId);
+        const QString synth = f.editor.addDevice(track, QStringLiteral("synth"), -1, synthPad);
+        const QString utility = f.editor.addDevice(track, QStringLiteral("utility"), -1, synthPad);
+        QVERIFY(!synth.isEmpty() && !utility.isEmpty());
+        const int synthKey = f.project.chain(track, synthPad).receiveNote;
+        QCOMPARE(f.editor.loadDrumPad(track, rackId, synthKey, QStringLiteral("/samples/Clap.wav")), synthPad);
+        const Chain& replaced = f.project.chain(track, synthPad);
+        QCOMPARE(replaced.devices.size(), size_t(2));
+        QCOMPARE(replaced.devices[0].kind, kSamplerKind);
+        QCOMPARE(replaced.devices[1].id, utility);  // (its effects stay)
         // Not a Drum Rack, or no path: nothing.
         const QString synthTrack = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString rack = f.editor.groupDevices(synthTrack, {f.track(synthTrack).devices[0].id});
