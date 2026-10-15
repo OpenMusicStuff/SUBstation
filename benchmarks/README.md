@@ -546,16 +546,17 @@ Signalsmith Linear, whose power-of-two transforms run on KFR's DFT
 
 ## Results
 
-Intel Xeon at 2.8 GHz (a cloud VM, 4 cores, AVX2), Linux, GCC 13, Release.
-Nanoseconds a transform; real is a forward and an inverse.
+Intel Xeon at 2.8 GHz (a cloud VM, 4 cores, AVX2), Linux, GCC 13, Release,
+both compiled with the engine's flags (`-mavx2 -mfma`). Nanoseconds a
+transform; real is a forward and an inverse.
 
 | size | complex: own | KFR | | real: own | KFR | |
 |---:|---:|---:|---:|---:|---:|---:|
-| 64 | 246 | 63 | 3.9× | 556 | (own) | — |
-| 256 | 1299 | 195 | 6.7× | 3261 | 1073 | 3.0× |
-| 1024 | 6730 | 1145 | 5.9× | 13921 | 2551 | 5.5× |
-| 4096 | 32141 | 8021 | 4.0× | 67709 | 7545 | 9.0× |
-| 16384 | 137081 | 36153 | 3.8× | 299040 | 37661 | 7.9× |
+| 64 | 195 | 60 | 3.2× | 462 | (own) | — |
+| 256 | 1009 | 190 | 5.3× | 2273 | 1075 | 2.1× |
+| 1024 | 5013 | 1166 | 4.3× | 11029 | 2213 | 5.0× |
+| 4096 | 23817 | 5445 | 4.4× | 54049 | 7747 | 7.0× |
+| 16384 | 114666 | 36367 | 3.2× | 246252 | 35659 | 6.9× |
 
 Real transforms below 128 points stay on the library's own (KFR's was no
 quicker at 64). What it does to the devices, before (the library's own FFT)
@@ -572,8 +573,31 @@ and after, the same machine, best of two runs each:
 | `builtin_devices_bench` spectral (load) | 0.66 % | 0.55–0.60 % | −9 to −17 % |
 
 (Vocoder, which has no FFT, measured 1.69–1.83 % in the same runs: the noise.)
-The rest of a stretch's time is its own (spectral processing, windows,
-resampling), so the FFT's speed-up shows as a fifth or so of it.
+
+## Why, and why only so much
+
+- **The library's own FFT** (`SimpleFFT`) is a plain recursive radix-4: each
+  pass's inner loop runs over the stride, which is 1 in the last passes, so
+  half its passes are scalar; its twiddles are read at a stride from one table;
+  and every pass goes through the whole buffer (no blocking for the cache). Its
+  real transform (`SimpleRealFFT`) is a whole complex FFT of the signal with the
+  imaginary part zero: twice the work it needs. KFR's has hand-written AVX2
+  radix-4/8 kernels (four complex numbers a register, FMA), each stage's
+  twiddles contiguous, and a real transform made of a half-size complex one.
+  Hence 3–5× on complex transforms and 5–7× on real ones from 1024 points.
+  Below that, a plan's dispatch is a larger part of the time: real transforms
+  under 128 points stay on the library's own.
+- **Stretch** uses neither real transform: `RealFFT` packs the signal into a
+  half-size complex FFT (`SplitFFT`, of factors 3 and 5 too, on the
+  power-of-two `Pow2FFT` KFR now runs) and unpacks it itself, so it gains the
+  complex speed-up only. Under callgrind (2 s of `standard-0.9` and
+  `formants+7`), the FFT was 22 % of the instructions before and 4.5 % after,
+  of a total 21 % smaller: as the time measured. `processSpectrum` (the phase
+  vocoder's own work, unchanged) is about half of it.
+- **Transposing at the clip's tempo** gains less (−6 to −7 %): Stretch analyses
+  each input block once instead of twice when it doesn't change the tempo (58M
+  instructions of FFT for 2 s against 87M at 0.9), and shifts the pitch in
+  `processSpectrum` (143M against 132M): the FFT is a smaller part.
 
 # Vital: built-in against the plug-in
 
