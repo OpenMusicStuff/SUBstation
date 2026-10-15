@@ -185,6 +185,23 @@ private Q_SLOTS:
         QCOMPARE(clips[1].durationBeats, 4.0);
     }
 
+    void quantizedEndsStopWhereTheLoopWrapped() {
+        // The loop over 0..1.8 s (beats 0..3.6), round it once more: a note held to the loop's end,
+        // its end put on a beat's grid, stops at beat 3.6 in its pass, and so does that pass's clip.
+        EditorFixture f;
+        const QString track = f.editor.addMidiTrack();
+        RecordedTake take{track, {}, 0.0, 3.0, {{1.0, 1.8, 60, 100, {}}, {2.0, 2.5, 62, 100, {}}}, true};
+        take.wraps = {{1.8, 1.8}};
+        const auto passes = loopPasses(take);
+        QCOMPARE(passes.size(), size_t(2));
+        QCOMPARE(*passes[0].cutSec, 1.8);  // ended where the loop wrapped
+        QVERIFY(!passes[1].cutSec);        // ended where recording stopped
+        f.editor.addRecordings({take}, 1.0, true);
+        const TakeLane& first = f.track(track).takes.at(0);
+        QCOMPARE(first.clips.at(0).startBeat + first.clips.at(0).durationBeats, 3.6);
+        QCOMPARE(first.clips.at(0).notes.at(0).start + first.clips.at(0).notes.at(0).length, 3.6);
+    }
+
     void recordingRoundTheLoopMakesALaneForEachPass() {
         EditorFixture f;
         const QString track = f.editor.addAudioTrack();

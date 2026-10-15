@@ -1017,9 +1017,9 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
     const double tempo = project_->tempo();
     const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
     const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
-    // Cut at Punch Out: nothing goes past it, not even an end put on the grid.
-    const double limit = take.punchOutSec ? secondsToBeats(*take.punchOutSec, tempo) - start
-                                          : std::numeric_limits<double>::infinity();
+    // Cut short (the loop's end, Punch Out): nothing goes past it, not even an end put on the grid.
+    const double limit = take.cutSec ? secondsToBeats(*take.cutSec, tempo) - start
+                                     : std::numeric_limits<double>::infinity();
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
         double begin = secondsToBeats(played.start, tempo) - start;
