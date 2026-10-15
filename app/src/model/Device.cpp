@@ -88,12 +88,13 @@ bool Device::operator==(const Device& other) const {
            plugin == other.plugin && state == other.state && sidechain == other.sidechain &&
            midiFrom == other.midiFrom && chains == other.chains &&
            macros == other.macros && macroNames == other.macroNames && modulations == other.modulations &&
-           name == other.name;
+           name == other.name && drum == other.drum;
 }
 
 bool Chain::operator==(const Chain& other) const {
     return id == other.id && name == other.name && devices == other.devices && volumeDb == other.volumeDb &&
-           pan == other.pan && mute == other.mute && solo == other.solo;
+           pan == other.pan && mute == other.mute && solo == other.solo && receiveNote == other.receiveNote &&
+           locked == other.locked;
 }
 
 std::vector<Device*> iterDevices(std::vector<Device>& devices) {

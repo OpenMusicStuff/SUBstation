@@ -93,6 +93,7 @@ class Render;
 class RenderProgress;
 class Selection;
 class SoundSimilarity;
+class SimilarSamples;
 class SoundSuggestions;
 class TrackLabels;
 class TrackSearch;
@@ -109,6 +110,8 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::BrowserController* browser READ browser CONSTANT)
     Q_PROPERTY(sub::app::PluginIndex* plugins READ plugins CONSTANT)
     Q_PROPERTY(sub::app::SoundSimilarity* similarity READ similarity CONSTANT)
+    // The Sampler's and the Drum Rack's similar-sound arrows.
+    Q_PROPERTY(sub::app::SimilarSamples* similarSamples READ similarSamples CONSTANT)
     Q_PROPERTY(sub::app::Harmony* harmony READ harmony CONSTANT)
     Q_PROPERTY(sub::app::SoundSuggestions* suggestions READ suggestions CONSTANT)
     Q_PROPERTY(sub::app::Humanizer* humanizer READ humanizer CONSTANT)
@@ -126,6 +129,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::PluginHostingPreferences* pluginHosting READ pluginHosting CONSTANT)
     Q_PROPERTY(sub::app::Updater* updates READ updates CONSTANT)
     Q_MOC_INCLUDE("update/Updater.h")
+    Q_MOC_INCLUDE("intelligence/SimilarSamples.h")
     // The MCP server agents read and edit the project through (Options › MCP Server).
     Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
     // What agents changed through it, apart from the undo stack: each change
@@ -211,6 +215,7 @@ public:
     BrowserController* browser() const { return browser_; }
     PluginIndex* plugins() const { return plugins_; }
     SoundSimilarity* similarity() const { return similarity_; }
+    SimilarSamples* similarSamples() const { return similarSamples_; }
     Harmony* harmony() const { return harmony_; }
     SoundSuggestions* suggestions() const { return suggestions_; }
     Humanizer* humanizer() const { return humanizer_; }
@@ -512,6 +517,7 @@ private:
     EngineBridge* bridge_ = nullptr;
     PluginIndex* plugins_ = nullptr;
     SoundSimilarity* similarity_ = nullptr;
+    SimilarSamples* similarSamples_ = nullptr;
     Harmony* harmony_ = nullptr;
     SoundSuggestions* suggestions_ = nullptr;
     Humanizer* humanizer_ = nullptr;

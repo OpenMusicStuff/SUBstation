@@ -72,7 +72,7 @@ public:
     int playingSlice() const;
     void setPlayhead(double where);
 
-    // Play `path` ("": no sample), undoably ("Load Sample" / "Clear Sample").
+    // Play `path` ("": no sample), undoably ("Load Sample" / "Clear Sample"; ProjectEditor::loadSample).
     Q_INVOKABLE void loadSample(const QString& path);
     Q_INVOKABLE void clearSample() { loadSample(QString()); }
 
@@ -111,7 +111,6 @@ private:
     void readSample();
     void updateColumns();
     void updateLayout();
-    static QString droppedFile(const QDropEvent* event);
     void setDrag(const QString& marker);
     // A frame (as the sample plays) as x; a percent of it as a frame (snapped with Snap on), as the sampler has it.
     double xOfFrame(double frame) const;

@@ -50,6 +50,7 @@ class DeviceInfo : public QObject {
     Q_PROPERTY(QString name READ name NOTIFY changed)  // its title
     Q_PROPERTY(QString toolTip READ toolTip NOTIFY changed)  // its title's ("": none)
     Q_PROPERTY(bool isRack READ isRack NOTIFY changed)
+    Q_PROPERTY(bool isDrumRack READ isDrumRack NOTIFY changed)  // a rack whose chains are pads
     Q_PROPERTY(bool isPlugin READ isPlugin NOTIFY changed)
     Q_PROPERTY(bool instrument READ instrument NOTIFY changed)
     Q_PROPERTY(bool enabled READ enabled NOTIFY changed)  // as heard: following its automation while it plays
@@ -98,6 +99,7 @@ public:
     QString name() const { return state_.name; }
     QString toolTip() const { return state_.toolTip; }
     bool isRack() const { return state_.isRack; }
+    bool isDrumRack() const { return state_.isDrumRack; }
     bool isPlugin() const { return state_.isPlugin; }
     bool instrument() const { return state_.instrument; }
     bool enabled() const { return state_.enabled; }
@@ -174,6 +176,7 @@ private:
         QString name;
         QString toolTip;
         bool isRack = false;
+        bool isDrumRack = false;
         bool isPlugin = false;
         bool instrument = false;
         bool enabled = true;

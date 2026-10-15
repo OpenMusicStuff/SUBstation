@@ -206,7 +206,7 @@ private Q_SLOTS:
         std::vector<double> starts;
         for (const Note& n : f.project.clip(refs[0].trackId, refs[0].clipId).notes) starts.push_back(round6(n.start + 1.1));
         QVERIFY((starts == std::vector<double>{1.1, 1.6, 3.95}));
-        // Their ends on the grid too: a step long at least.
+        // Their ends on the grid too (a step long where the end would land on the start).
         refs = f.editor.addRecordings({take}, 0.5, true);
         clip = f.project.clip(refs[0].trackId, refs[0].clipId);
         got.clear();

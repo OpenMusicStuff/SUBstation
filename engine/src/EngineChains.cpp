@@ -249,6 +249,21 @@ void Engine::setChainSolo(uint32_t chainId, bool solo) {
     rackChainLocked(chainId).params->solo.store(solo);
 }
 
+void Engine::setChainReceiveNote(uint32_t chainId, int note) {
+    std::lock_guard lock(mutex_);
+    ChainModel& chain = rackChainLocked(chainId);
+    note = note < 0 ? -1 : std::min(note, 127);
+    if (chain.receiveNote == note) return;
+    chain.receiveNote = note;
+    for (const auto& insert : chain.inserts) insert->requestReset();  // (no note left sounding without its note-off)
+    rebuildSnapshotLocked();
+}
+
+int Engine::chainReceiveNote(uint32_t chainId) {
+    std::lock_guard lock(mutex_);
+    return rackChainLocked(chainId).receiveNote;
+}
+
 void Engine::retireProcessorLocked(std::shared_ptr<Processor> processor) {
     processor->closeEditor();
     graveyard_.push_back(std::move(processor));  // destroyed in idle(), once no snapshot uses it

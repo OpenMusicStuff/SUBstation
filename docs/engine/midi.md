@@ -167,7 +167,10 @@ active and live notes of tracks no longer in the snapshot: their instruments are
 
 Because note-offs come from `activeNotes_`, not the snapshot, a note edited or deleted while it sounds
 still ends when it was going to. Every chain of a rack hears the track's notes, so an Instrument Rack
-layers its instruments ([routing.md](routing.md)). A device then processes each stretch with the events
+layers its instruments, but a Drum Rack's pad (a chain with a key: `setChainReceiveNote`) hears only
+its key's, as C3 ([routing.md](routing.md#racks)). Constrained, a track played live plays its own
+clips' notes `TrackRender::clipDelay` late, so only its input comes early
+([routing.md](routing.md#delay-compensation)). A device then processes each stretch with the events
 that fall in it (`processInserts` splits them by slice).
 
 ### Bends: MIDI 2.0's per-note pitch bend

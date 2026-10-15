@@ -676,7 +676,7 @@ void DeviceSelection::dropDevices(const QStringList& kinds, const QVariantList& 
     // New effects go where they were dropped (an instrument always goes first).
     std::vector<std::pair<QString, std::optional<PluginRef>>> added;
     for (const QString& kind : kinds) {
-        if (builtinDevice(kind) != nullptr) added.emplace_back(kind, std::nullopt);
+        if (isDeviceKind(kind)) added.emplace_back(kind, std::nullopt);
     }
     for (const PluginRef& ref : pluginRefsFromList(plugins)) added.emplace_back(kPluginKind, ref);
     bool refused = false;

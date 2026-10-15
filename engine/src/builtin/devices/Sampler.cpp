@@ -325,6 +325,7 @@ private:
     // loaded) and what was last handed over.
     mutable std::mutex mutex_;
     std::string path_;
+    StateValues others_;  // the state's other values, kept as they came (the application's)
     std::shared_ptr<const AudioSource> published_;
     std::atomic<Sample*> pending_{nullptr};
     SpscQueue<Sample*, 8> retired_;
@@ -479,8 +480,9 @@ bool SamplerProcessor::idle() {
 
 BuiltinProcessor::StateValues SamplerProcessor::stateValues() const {
     std::lock_guard lock(mutex_);
-    if (path_.empty()) return {};
-    return {{"sample", path_}};
+    StateValues values = others_;  // (what the application keeps with it: the similar sounds' reference)
+    if (!path_.empty()) values["sample"] = path_;
+    return values;
 }
 
 void SamplerProcessor::setStateValues(const StateValues& values) {
@@ -489,6 +491,8 @@ void SamplerProcessor::setStateValues(const StateValues& values) {
     {
         std::lock_guard lock(mutex_);
         path_ = path;
+        others_ = values;
+        others_.erase("sample");
     }
     std::shared_ptr<const AudioSource> source;
     if (!path.empty()) {

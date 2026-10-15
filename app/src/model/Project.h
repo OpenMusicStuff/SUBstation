@@ -109,6 +109,8 @@ enum class ChainField {
     Pan,       // double
     Mute,      // bool
     Solo,      // bool
+    ReceiveNote,  // double (a key, 0-127; a Drum Rack's pad)
+    Locked,       // bool (a Drum Rack's pad: its sample stays as similar sounds are swapped in)
 };
 using ChainValue = std::variant<bool, double, QString>;
 QString chainFieldName(ChainField field);  // "volume_db"

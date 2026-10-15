@@ -206,6 +206,7 @@ void DeviceInfo::refresh() {
         s.exists = true;
         s.kind = device->kind;
         s.isRack = device->isRack();
+        s.isDrumRack = device->isDrumRack();
         s.isPlugin = device->isPlugin();
         s.name = s.isPlugin && device->plugin ? device->plugin->name : sub::app::deviceName(*device);
         s.instrument = sub::app::deviceIsInstrument(*device);

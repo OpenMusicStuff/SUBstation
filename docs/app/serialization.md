@@ -63,7 +63,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 23; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 24; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
@@ -167,7 +167,8 @@ values, or a sixth value that isn't an object, makes the file damaged.
 | `midi_from` | only when set: the id of the MIDI track whose notes it plays instead of its own track's (version 22) |
 | `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23), and `"bipolar": true` for a bipolar one (its knob's handle drags it either side of the knob's value; older versions read it as unipolar) |
 | `name` | racks only, when set: the preset it was saved as or loaded from |
-| `chains` | racks only: `[{"id", "name", "volume_db", "pan", "mute", "solo", "devices": [...]}]` |
+| `drum` | racks only, `true` for a Drum Rack (version 24): its chains are pads |
+| `chains` | racks only: `[{"id", "name", "volume_db", "pan", "mute", "solo", "devices": [...]}]`; a Drum Rack's pads also have `"receive_note"` (their key, 0..127; one missing or taken twice gets the first free key from C1 up) and `"locked": true` when locked against similar sounds swapping their samples in |
 | `macros` | racks only: `[{"macro": 0..15, "device", "param", "low", "high"}]` (`low` > `high`: the other way round) |
 | `macro_names` | racks only: one name per macro (`""`: named by its number), so how many it has (1..16) |
 
@@ -228,6 +229,7 @@ that makes an older file load as it was, and saving writes the current version.
 | 21 | tracks' outputs (`output`) and where inputs from tracks are tapped (`input_tap`) | outputs into their groups (or the master), inputs taken after the source's fader |
 | 22 | notes' bends (a sixth value: points and vibratos, MIDI 2.0's per-note pitch bend) and devices' MIDI inputs from other tracks (`midi_from`) | no note bent; every device playing its own track's notes |
 | 23 | modulators' mappings (`modulations`) | none (no modulators either) |
+| 24 | Drum Racks (`drum` on a rack, `receive_note` and `locked` on its chains) | none: every rack an Instrument or Audio Effect Rack |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and every rack's devices. The

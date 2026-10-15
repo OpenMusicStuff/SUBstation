@@ -255,6 +255,8 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    // A clip moved down out of the arrangement: the move stops, and a drag of its part of its file starts.
+    void dragClipOut(const app::Clip& clip);
     // A clip as the last paint drew it, to draw its frame again over the selection's tint.
     struct Frame {
         QString trackId;

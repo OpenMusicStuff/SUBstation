@@ -81,6 +81,8 @@ void Renderer::setScheduler(Scheduler* scheduler) {
         for (auto& depth : scratch.midiNotes) {
             for (auto& buffer : depth) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         }
+        for (auto& buffer : scratch.padNotes) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
+        scratch.modulatorNotes.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         for (std::vector<float>& values : scratch.modulation) values.assign(kMaxBlock, 0.f);
         scratch.modulationSpare.assign(kMaxBlock, 0.f);
     }
@@ -1026,8 +1028,17 @@ void Renderer::runModulators(const RenderSnapshot& snap, const StripRender& stri
             if (processor.takeResetRequest()) processor.reset();
             std::fill_n(values, frames, 0.f);
             std::fill_n(scratch.modulationSpare.data(), frames, 0.f);
-            processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, slices, events, values,
-                          scratch.modulationSpare.data(), frames, scratch);
+            // One on a Drum Rack's pad hears the pad's notes, as its devices do.
+            const int key = modulator.rack ? modulator.rack->chains[static_cast<size_t>(modulator.chain)].receiveNote : -1;
+            if (key >= 0) {
+                Slices padSlices;
+                padNotes(key, slices, events, scratch.modulatorNotes.data(), padSlices);
+                processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, padSlices,
+                              scratch.modulatorNotes.data(), values, scratch.modulationSpare.data(), frames, scratch);
+            } else {
+                processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, slices, events, values,
+                              scratch.modulationSpare.data(), frames, scratch);
+            }
             for (int s = 0; s < frames; ++s) values[s] = modulationTarget(values[s], 0.f, 1.f, false);
             if (frames > 0) processor.setHeldModulation(values[frames - 1]);
         } else {
@@ -1344,6 +1355,26 @@ void Renderer::fillSwitch(const RenderSnapshot& snap, const AutomationRender& la
     }
 }
 
+void Renderer::padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
+                        Slices& outSlices) noexcept {
+    outSlices = slices;
+    int count = 0;
+    for (int s = 0; s < slices.count; ++s) {
+        const Slice& from = slices.slice[static_cast<size_t>(s)];
+        Slice& into = outSlices.slice[static_cast<size_t>(s)];
+        into.firstEvent = count;
+        for (int e = from.firstEvent; e < from.endEvent && count < TrackBuffers::kMaxEvents; ++e) {
+            ProcessEvent event = events[e];
+            if (event.type != ProcessEvent::Type::Midi) {
+                if (event.data[0] != key) continue;
+                event.data[0] = 60;  // (C3: a Sampler plays its sample as it is)
+            }
+            out[count++] = event;
+        }
+        into.endEvent = count;
+    }
+}
+
 void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                            const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                            [[maybe_unused]] bool monitored, WorkerScratch& scratch) noexcept {
@@ -1364,7 +1395,17 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
         // (Never as monitored: a chain skipping its sidechain waits would play early
         // against the chains lined up to it by chain.compensation.)
         if (takeResets(chain)) {
-            processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1, scratch);
+            if (chain.receiveNote >= 0) {  // a Drum Rack's pad: its own key's notes
+                Slices padSlices;
+                ProcessEvent* padEvents =
+                    scratch.padNotes[static_cast<size_t>(std::clamp(rack.depth, 0, kMaxRackDepth - 1))].data();
+                padNotes(chain.receiveNote, slices, events, padEvents, padSlices);
+                processChain(snap, chain, context, padSlices, padEvents, chainL, chainR, frames, false, rack.depth + 1,
+                             scratch);
+            } else {
+                processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1,
+                             scratch);
+            }
         } else {  // nothing changes the signal along it
             for (const int e : chain.deviceTaps) tapInto(snap, e, chainL, chainR, frames);
             meterSkipped(chain, chainL, chainR, frames);

@@ -90,8 +90,8 @@ its take replaces them. With monitoring *Off* it is silent until recording stops
 - A key still held when recording stops ends with the take.
 - *Edit › Record Quantization* (none, 1/4 to 1/32, triplets) puts recorded notes' starts
   on that grid (lengths as played). With *Quantize Note Ends* checked in the same menu (as
-  Ableton's *Quantize Note End*), their ends go on the grid too, each note a grid step long
-  at least. Both are kept with the preferences.
+  Ableton's *Quantize Note End*), their ends go on the grid too (a note whose end would land
+  where it starts lasts a grid step). Both are kept with the preferences.
 - A MIDI 2.0 controller's per-note pitch bends are recorded with their notes: each
   note's bend as it was played, drawn with as few points as keep its shape (to edit in
   the piano roll's bend mode: [midi.md](midi.md#pitch-bends-vibrato-and-slides)). MIDI 1.0's

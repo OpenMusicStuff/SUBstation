@@ -82,7 +82,7 @@ Item {
         if (deviceInfo.isRack) {
             props.panel = frame.panel
             props.info = deviceInfo
-            bodyLoader.setSource(Qt.resolvedUrl("RackDeviceBody.qml"), props)
+            bodyLoader.setSource(Qt.resolvedUrl(deviceInfo.isDrumRack ? "DrumRackBody.qml" : "RackDeviceBody.qml"), props)
         } else if (deviceInfo.isPlugin) {
             props.info = deviceInfo
             bodyLoader.setSource(Qt.resolvedUrl("PluginDeviceBody.qml"), props)

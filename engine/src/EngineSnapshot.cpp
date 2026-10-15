@@ -161,6 +161,7 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
             ChainRender render;
             render.id = model.id;
             render.params = model.params;
+            render.receiveNote = model.receiveNote;
             render.compensation = c < lineUp.size() ? lineUp[c] : 0;
             ensureDelay(model.delay, render.compensation);
             render.delay = model.delay;

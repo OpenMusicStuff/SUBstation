@@ -117,7 +117,7 @@ QString renamePreset(const QString& path, const QString& name) {
 }
 
 std::optional<QString> defaultPath(const QString& kind, const std::optional<PluginRef>& plugin, const QString& root) {
-    if (kind == kRackKind || (kind == kPluginKind && !plugin)) return std::nullopt;
+    if (kind == kRackKind || kind == kDrumRackKind || (kind == kPluginKind && !plugin)) return std::nullopt;
     Device device;
     device.kind = kind;
     device.plugin = plugin;

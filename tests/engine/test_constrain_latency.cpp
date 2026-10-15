@@ -42,11 +42,18 @@ TEST_CASE("constrained, the slow devices a monitored track is heard through are 
     CHECK(bypassed() == none);  // nothing is monitored
     CHECK_EQ(engine.outputLatency(), 220 + 300 + 100);
 
+    CHECK_EQ(engine.liveLatency(played).clipDelay, 0);
     engine.setTrackArmed(played, true);  // Auto: monitored
     CHECK(bypassed() == slowOnTheWay);
     CHECK_EQ(engine.trackLatency(played), 20);
     CHECK_EQ(engine.trackLatency(bus), 0);
     CHECK_EQ(engine.outputLatency(), 400);  // the other track's, now the latest
+    // Its way out isn't delay-compensated: its own clips' notes are delayed as much
+    // instead (the bus would have waited 380 for the other track), so they stay in time.
+    CHECK(engine.liveLatency(played).live);
+    CHECK_EQ(engine.liveLatency(played).compensation, 0);
+    CHECK_EQ(engine.liveLatency(played).clipDelay, 400 - 20);
+    CHECK_EQ(engine.liveLatency(other).clipDelay, 0);
     // Still switched on: offline renders hear them, and they are bypassed again after.
     const Samples out = engine.renderOffline(0.0, 2 * kBeat);
     CHECK(above(channel(out, 0), 1e-6) == std::vector<int64_t>{kBeat});

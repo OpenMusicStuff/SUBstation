@@ -983,9 +983,9 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
         if (quantize > 0) {  // on the arrangement's grid, unless that is outside the clip
             const double snapped = roundHalfEven((start + begin) / quantize) * quantize - start;
             if (snapped >= 0 && snapped < end - start) begin = snapped;
-            if (quantizeEnds) {  // its end on the grid too, a step long at least
+            if (quantizeEnds) {  // its end on the grid too (a step long, if that would be where it starts)
                 const double snappedEnd = roundHalfEven((start + playedEnd) / quantize) * quantize - start;
-                length = std::max(snappedEnd - begin, quantize);
+                length = snappedEnd - begin > 1e-9 ? snappedEnd - begin : quantize;
             }
         }
         if (begin < 0 || begin >= end - start || length <= 0) continue;

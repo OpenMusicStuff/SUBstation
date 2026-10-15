@@ -16,6 +16,7 @@
 #include "files/HotSwap.h"
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
+#include "intelligence/SimilarSamples.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/SoundSuggestions.h"
 #include "intelligence/TrackLabels.h"
@@ -57,6 +58,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     if (!options_.browserIndex) similarityOptions.storePath = QString();
     similarityOptions.analyse = options_.analyseSounds;
     similarity_ = new SoundSimilarity(similarityOptions, this);
+    similarSamples_ = new SimilarSamples(project_, editor_, similarity_, this);
     harmony_ = new Harmony(project_, this);
     // The song's key reaches the engine, for the devices that follow it (Hue's Auto): now, and as it changes.
     const auto pushKey = [this] {
@@ -123,7 +125,8 @@ void Session::wire() {
                             static_cast<QObject*>(devices_), static_cast<QObject*>(keyboard_),
                             static_cast<QObject*>(learn_),
                             static_cast<QObject*>(humanizer_), static_cast<QObject*>(files_),
-                            static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_)}) {
+                            static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_),
+                            static_cast<QObject*>(similarSamples_)}) {
         connect(source, SIGNAL(statusMessage(QString)), this, SIGNAL(statusMessage(QString)));
     }
     connect(editor_, &ProjectEditor::refused, this, &Session::statusMessage);  // an edit a frozen track can't take

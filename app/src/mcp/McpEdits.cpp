@@ -717,6 +717,7 @@ public:
             out.push_back({device.kind, device.name, QStringLiteral("builtin"), device.category, {}, device.instrument});
         }
         out.push_back({kRackKind, QStringLiteral("Rack"), QStringLiteral("builtin"), QStringLiteral("Racks"), {}, false});
+        out.push_back({kDrumRackKind, QStringLiteral("Drum Rack"), QStringLiteral("builtin"), QStringLiteral("Racks"), {}, true});
         if (session_.plugins()) {
             for (const PluginInfo& plugin : session_.plugins()->plugins()) {
                 out.push_back({kPluginPrefix + plugin.uid, plugin.name, QStringLiteral("plugin"), plugin.category,
@@ -798,7 +799,7 @@ public:
             }
             return true;
         }
-        if (id == kRackKind || builtinDevice(id)) {
+        if (id == kRackKind || isDeviceKind(id)) {
             builtin = id;
             return true;
         }
@@ -841,7 +842,7 @@ public:
         const auto place = chainPlace(*track, arguments, error);
         if (!place) return ToolResult::failure(error);
         const QString trackId = track->id;
-        const QString name = preset ? deviceName(*preset) : plugin ? plugin->name : builtinDevice(builtin) ? builtinDevice(builtin)->name : QStringLiteral("Rack");
+        const QString name = preset ? deviceName(*preset) : plugin ? plugin->name : builtinDevice(builtin) ? builtinDevice(builtin)->name : builtin == kDrumRackKind ? QStringLiteral("Drum Rack") : QStringLiteral("Rack");
         const QString text = QStringLiteral("Add %1 to %2").arg(name, track->name);
         QStringList added;
         QJsonObject out{{QStringLiteral("trackId"), trackId}};

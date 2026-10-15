@@ -97,7 +97,8 @@ const std::vector<std::pair<QString, double>>& recordQuantizeChoices();
 double recordQuantize();
 void setRecordQuantize(double grid);
 // Whether record quantization puts recorded notes' ends on its grid too (as
-// Ableton's "Quantize Note End"), not only their starts. Off by default.
+// Ableton's "Quantize Note End"), not only their starts: a note whose end would
+// land where it starts lasts a grid step. Off by default.
 bool recordQuantizeEnds();
 void setRecordQuantizeEnds(bool ends);
 

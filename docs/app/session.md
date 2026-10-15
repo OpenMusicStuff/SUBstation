@@ -46,6 +46,7 @@ reads them as constant properties:
 | `project`, `undoStack`, `editor`, `selection`, `bridge` | `Project`, `QUndoStack`, `ProjectEditor`, `Selection`, `EngineBridge` | [model.md](model.md), [engine-bridge.md](engine-bridge.md) |
 | `browser`, `plugins` | `BrowserController`, `PluginIndex` | the browser ([browser.md](../browser.md)); the plug-ins, also Preferences › Plug-ins ([plugin-scanner.md](plugin-scanner.md)) |
 | `similarity` | `SoundSimilarity` | finding similar sounds ([intelligence.md](../intelligence.md)); the browser's Find Similar uses it |
+| `similarSamples` | `SimilarSamples` | the Sampler's and the Drum Rack's similar-sound arrows: stepping Samplers through the sounds most like their references ([intelligence.md](../intelligence.md#swapping-in-similar-samples)) |
 | `harmony` | `Harmony` | the song's chords and key, from its MIDI ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
 | `trackLabels` | `TrackLabels` | what each track is, in a few words, and what that was made from ([intelligence.md](../intelligence.md#track-labels-the-application-side)); the tooltip over a track's name, and what the MCP server tells agents of each track |
 | `mcp` | `McpServer` | the MCP server agents read and edit the project through ([mcp.md](mcp.md)); its `statusMessage` is the session's |

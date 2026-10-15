@@ -217,6 +217,9 @@ private:
         // A chain's notes as its MIDI effects play them (processMidiEffects), by
         // depth: two buffers, so each effect reads what the one before it wrote.
         std::array<std::array<std::vector<ProcessEvent>, 2>, kMaxRackDepth + 1> midiNotes;
+        // A Drum Rack pad's notes (padNotes), by its rack's depth; and a modulator's in a pad.
+        std::array<std::vector<ProcessEvent>, kMaxRackDepth> padNotes;
+        std::vector<ProcessEvent> modulatorNotes;
     };
 
     // The stretches of a chunk a strip's devices process: one per continuous
@@ -387,6 +390,10 @@ private:
     void fillSwitch(const RenderSnapshot& snap, const AutomationRender& lane, int frames, float* out,
                     WorkerScratch& scratch) const noexcept;
     // A rack, in place: its chains (each from its input) summed.
+    // The notes a Drum Rack's pad hears: only those of its key, as C3 (raw MIDI
+    // goes on to it too), into `out` (TrackBuffers::kMaxEvents long), slice by slice.
+    static void padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
+                         Slices& outSlices) noexcept;
     void processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                      const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                      bool monitored, WorkerScratch& scratch) noexcept;

@@ -54,6 +54,7 @@ session's ([session.md](session.md)).
 | [Commands.h](../../app/src/model/Commands.h) | The `QUndoCommand` subclasses and what they share: `ValueCommand` (a target, its old and new value), `MergeableCommand` (one that merges continuous gestures: `kMergeId`, `mergeId`), `InsertCommand`/`RemoveCommand` (a track into or out of the tracks or the returns) |
 | [Timebase.h](../../app/src/model/Timebase.h) | `TimeSignature`, beats and seconds, bar.beat.sixteenth formatting and parsing, dB and pan text |
 | [Keys.h](../../app/src/model/Keys.h) | Musical keys (`Key`), tempo and key from file names (`parseFilename`), what a dropped clip starts with (`clipSettings`) |
+| [SamplerState.h](../../app/src/model/SamplerState.h) | `sub::app::samplerState`: a Sampler's sample and its similar sounds' reference in its state, and stepping through similar sounds (`step`) |
 | [DeviceState.h](../../app/src/model/DeviceState.h) | `sub::app::deviceState`: a built-in device's state besides its parameters (a sampler's sample), in the engine's text format, base64 in `Device::state` |
 | [RecordedTake.h](../../app/src/model/RecordedTake.h) | `RecordedTake`, `RecordedTakeNote`: what a recording hands the editor |
 | [Errors.h](../../app/src/model/Errors.h) | `EditError` (an edit the user can't make), `ProjectFileError` (a file that can't be read or written); both are `UserError`s, carrying a `QString` message for the user (one catch takes either) |
@@ -183,6 +184,13 @@ no MIDI input closes a cycle, and a device on any track (a return, the master) m
   normalized `low`..`high` (`low > high` turns it the other way, 0.5..1 is its upper half; `target()`). Racks nest at most `kMaxRackDepth` = 8 deep (the
   engine's limit). A rack with an instrument in it is an *Instrument Rack* (`deviceIsInstrument`), otherwise an
   *Audio Effect Rack*. `name` is the preset it was saved as or loaded from (none: named by its kind; `deviceName`).
+- **Drum Rack** (a rack with `drum` set: `isDrumRack()`; asked for by the kind `kDrumRackKind`, `"drum_rack"`, which
+  no device has: `newDevice` makes `newDrumRack()`, `isDeviceKind` and `isInstrument` know it): an instrument even
+  while empty, named *Drum Rack*, its presets loading only into Drum Racks. Its chains are **pads**: each has its key
+  (`Chain::receiveNote`, 0..127, one pad a key; -1 for every other rack's chains), whose notes alone its devices hear,
+  as C3 (`kDrumPadNote`), and `locked` (similar sounds swapped in leave its sample be). Pads are kept in key order as
+  they are added (`newDrumPad`, named after their key, `drumNoteName()`, until a sample names them); `drumPad(rack,
+  key)` finds one, `padSampler(pad)` the Sampler playing its sample (its first).
 - **Modulator** (a built-in device whose engine category is `Modulator`: `isModulator(kind)`, the `"lfo"` and the
   `"envelope"`): `modulations` is a list of `ModulationMapping{deviceId, paramId, low, high, invert, bipolar}`: the
   parameter of another device on its track (anywhere: in racks too) that it moves, over its normalized `low`..`high`
@@ -378,8 +386,11 @@ tempo), and a `transpose` to the project key. Used by `ProjectEditor::addClips`.
 
 [DeviceState.h](../../app/src/model/DeviceState.h) encodes a built-in device's non-parameter values as the engine
 does (`BuiltinProcessor::encodeState`): `name=value` lines, a backslash escaping a backslash or a newline.
-`deviceState::toModel`/`fromModel` wrap it in base64 for `Device::state`. The Sampler's one value is `"sample"`, its
-file path (see [ui/device-view.md](../ui/device-view.md)); a Vital's are its patch's ([Vital](#vital)).
+`deviceState::toModel`/`fromModel` wrap it in base64 for `Device::state`. The Sampler's are `"sample"`, its file path
+(see [ui/device-view.md](../ui/device-view.md)), and the reference its similar sounds come from
+([SamplerState.h](../../app/src/model/SamplerState.h): `"similar_reference"`, and `"similar_reference_saved"` when the
+user saved it; `samplerState::loaded()`, `stepped()`, `referenceSet()` and `step()` are the rules, see
+[intelligence.md](../intelligence.md#swapping-in-similar-samples)); a Vital's are its patch's ([Vital](#vital)).
 
 ### Vital
 
@@ -594,7 +605,14 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   (the macro and every mapped parameter in one `SetDeviceParamsCommand`), `setMacroCount` [Q] (1..16: new macros
   last, at 0; those taken away with their values, mappings and automation, one step), `renameMacro` [Q] (`""` or
   "Macro N": by its number), `setMacroRange` [Q] (a mapping's `low`..`high`, held to 0..1; the parameter goes where
-  its macro puts it in the new range, in the same `SetMacrosCommand`, merging per gesture).
+  its macro puts it in the new range, in the same `SetMacrosCommand`, merging per gesture). A Drum Rack's
+  `addRackChain` and `duplicateRackChain` put the pad on a free key (`freePadNote`); `setChainParam`'s
+  `receive_note` moves a pad to another key (the pad there takes this one's: "Move Pad"), `locked` locks it.
+- **Samplers and Drum Racks** (EditorDrumRacks.cpp): `loadSample` [Q] (a sample, or a part of a file as Start and
+  End, loaded by hand: one step, the reference rules of `samplerState::loaded`), `loadDrumPad` [Q] (onto a pad's key:
+  into its Sampler, or a new pad with one, named after the sample; -1: the first free key), `swapSamples` (Samplers
+  stepped to similar sounds, one step for them all), `setSimilarReference` [Q]; a pad named after the sample its
+  Sampler played follows it (`renamePadsFollowing`).
 - **Modulation** (EditorModulation.cpp): `mapModulation` (a parameter of another device on the modulator's track,
   over `low`..`high`, which way up; it moves over from another modulator in the same step, "Map Modulation" through
   `setDevices`; `EditError` for a device that isn't a modulator, the modulator itself, another track's device, a

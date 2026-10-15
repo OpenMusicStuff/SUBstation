@@ -91,7 +91,7 @@ QString ProjectEditor::addDevice(const QString& trackId, const QString& kind, in
                                  const std::optional<PluginRef>& plugin, const QString& chain) {
     if (!project_->hasOwner(trackId)) return {};
     if (kind == kPluginKind && !plugin) return {};
-    if (kind != kPluginKind && kind != kRackKind && builtinDevice(kind) == nullptr) return {};
+    if (kind != kPluginKind && kind != kRackKind && !isDeviceKind(kind)) return {};
     const Device device = newDeviceOf(kind, plugin);
     const QStringList added = insertDevices(trackId, {device}, index, chain,
                                             QStringLiteral("Add %1").arg(deviceName(device)));

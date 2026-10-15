@@ -281,6 +281,8 @@ struct ChainRender : StripRender {
     int compensation = 0;  // samples it is delayed to line up with the rack's slowest chain
     int delayIndex = -1;   // its place in RenderSnapshot::chainDelays (offline renders bring lines of their own)
     std::shared_ptr<DelayLine> delay;  // for the live renderer
+    // A Drum Rack's pad: the key whose notes alone its devices hear, as C3 (60); -1: every note.
+    int receiveNote = -1;
 };
 
 // A rack as the renderer runs it (Renderer::processRack). Without chains it
