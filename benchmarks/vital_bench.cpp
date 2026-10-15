@@ -35,7 +35,7 @@
 #include "Json.h"
 #include "Processor.h"
 #include "builtin/BuiltinRegistry.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 #include "rt/RtUtils.h"
 
 #ifdef _WIN32

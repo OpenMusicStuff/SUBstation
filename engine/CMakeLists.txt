@@ -196,7 +196,7 @@ endif()
 set_target_properties(vst3_hosting PROPERTIES CXX_STANDARD 17)
 
 # --- VST 2 SDK (BSD-3-Clause; Xaymar's clean-room, header-only vst2sdk in third_party/vst2sdk) ---
-# Included only through src/plugins/Vst2Sdk.h.
+# Included only through src/plugins/vst2/Vst2Sdk.h.
 add_library(vst2sdk INTERFACE)
 target_include_directories(vst2sdk SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vst2sdk/include)
 
@@ -299,15 +299,15 @@ add_library(sub_engine STATIC
     src/builtin/VitalPatch.cpp
     ${BUILTIN_DEVICE_SOURCES}
     ${CMAKE_CURRENT_BINARY_DIR}/generated/BuiltinDevices.cpp
-    src/plugins/EditorWindow.cpp
+    src/plugins/editor/EditorWindow.cpp
     src/plugins/PluginFormats.cpp
     src/plugins/PresetName.cpp
-    src/plugins/Vst2Format.cpp
-    src/plugins/Vst2Preset.cpp
-    src/plugins/Vst2Processor.cpp
-    src/plugins/Vst3Format.cpp
-    src/plugins/Vst3Ids.cpp
-    src/plugins/Vst3Processor.cpp
+    src/plugins/vst2/Vst2Format.cpp
+    src/plugins/vst2/Vst2Preset.cpp
+    src/plugins/vst2/Vst2Processor.cpp
+    src/plugins/vst3/Vst3Format.cpp
+    src/plugins/vst3/Vst3Ids.cpp
+    src/plugins/vst3/Vst3Processor.cpp
     src/plugins/sandbox/PluginSandboxes.cpp
     src/plugins/sandbox/Sandbox.cpp
     src/plugins/sandbox/SandboxedProcessor.cpp
@@ -316,11 +316,11 @@ add_library(sub_engine STATIC
 # Each system's audio driver types, MIDI inputs and plug-in editor windows are files of their own.
 if (WIN32)
     target_sources(sub_engine PRIVATE src/backends/AudioBackendsWin32.cpp src/backends/MidiWinMM.cpp
-                                      src/plugins/EditorWindowWin32.cpp src/plugins/Vst3PlatformWin32.cpp
-                                      src/plugins/Vst2PlatformWin32.cpp)
+                                      src/plugins/editor/EditorWindowWin32.cpp src/plugins/vst3/Vst3PlatformWin32.cpp
+                                      src/plugins/vst2/Vst2PlatformWin32.cpp)
 else()
-    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/plugins/Vst3PlatformPosix.cpp
-                                      src/plugins/Vst2PlatformPosix.cpp)
+    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/plugins/vst3/Vst3PlatformPosix.cpp
+                                      src/plugins/vst2/Vst2PlatformPosix.cpp)
 endif()
 # Plug-in editors on Linux: X11 windows through xcb (libxcb1-dev). Without it,
 # or on other systems but Windows, plug-ins show no editor (EditorWindowNone.cpp).
@@ -330,7 +330,7 @@ if (SUBSTATION_X11_EDITORS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         pkg_check_modules(XCB IMPORTED_TARGET GLOBAL xcb)
     endif()
     if (XCB_FOUND)
-        target_sources(sub_engine PRIVATE src/plugins/EditorWindowX11.cpp src/plugins/Vst3RunLoop.cpp)
+        target_sources(sub_engine PRIVATE src/plugins/editor/EditorWindowX11.cpp src/plugins/editor/Vst3RunLoop.cpp)
         target_link_libraries(sub_engine PRIVATE PkgConfig::XCB)
         target_compile_definitions(sub_engine PUBLIC SUBSTATION_HAS_X11_EDITORS=1)
     else()
@@ -339,7 +339,7 @@ if (SUBSTATION_X11_EDITORS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 endif()
 if (NOT WIN32 AND NOT (SUBSTATION_X11_EDITORS AND XCB_FOUND))
-    target_sources(sub_engine PRIVATE src/plugins/EditorWindowNone.cpp)
+    target_sources(sub_engine PRIVATE src/plugins/editor/EditorWindowNone.cpp)
 endif()
 # MIDI input on Linux: ALSA's sequencer (libasound2-dev). Without it, or on
 # other systems but Windows, the engine lists no MIDI inputs (MidiNone.cpp).

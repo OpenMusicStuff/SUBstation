@@ -18,7 +18,7 @@ Session::importLiveSet(path)                      (session/SessionFiles.cpp)
 |---|---|
 | [io/LiveSet.h](../../app/src/io/LiveSet.h) / [.cpp](../../app/src/io/LiveSet.cpp) | `Element` (a tag, attributes, trimmed text, children; `at("A/B")`, `value()`, `number()`, `flag()`), `readLiveSet`, `parseLiveSet`, `gunzip`, `isGzip` |
 | [io/LiveImport.h](../../app/src/io/LiveImport.h) / [.cpp](../../app/src/io/LiveImport.cpp) | `importLiveSet`, `ImportOptions` (the installed plug-ins), `ImportResult`; `vstPreset`, `vst2CompatibleState` |
-| [engine/src/plugins/Vst3Ids.h](../../engine/src/plugins/Vst3Ids.h) | VST3 class ids: from the four words Live stores to `PluginDescription::uid` (`classIdFromWords`), to a .vstpreset's spelling (`presetClassId`), and back (`wordsFromClassId`) |
+| [engine/src/plugins/vst3/Vst3Ids.h](../../engine/src/plugins/vst3/Vst3Ids.h) | VST3 class ids: from the four words Live stores to `PluginDescription::uid` (`classIdFromWords`), to a .vstpreset's spelling (`presetClassId`), and back (`wordsFromClassId`) |
 | [app/third_party/puff](../../app/third_party/puff) | Mark Adler's inflate (zlib licence), vendored unmodified |
 
 ## Reading

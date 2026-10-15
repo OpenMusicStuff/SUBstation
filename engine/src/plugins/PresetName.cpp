@@ -1,6 +1,6 @@
 #include "plugins/PresetName.h"
 
-#include "plugins/Vst2Preset.h"
+#include "plugins/vst2/Vst2Preset.h"
 
 #include <algorithm>
 #include <cctype>

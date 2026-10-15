@@ -1,4 +1,4 @@
-#include "plugins/Vst2Format.h"
+#include "plugins/vst2/Vst2Format.h"
 
 #include <algorithm>
 #include <chrono>
@@ -6,10 +6,10 @@
 #include <stdexcept>
 
 #include "platform/Paths.h"
-#include "plugins/Vst2Platform.h"
-#include "plugins/Vst2Preset.h"
-#include "plugins/Vst2Processor.h"
-#include "plugins/Vst3Platform.h"
+#include "plugins/vst2/Vst2Platform.h"
+#include "plugins/vst2/Vst2Preset.h"
+#include "plugins/vst2/Vst2Processor.h"
+#include "plugins/vst3/Vst3Platform.h"
 
 namespace sub::vst2 {
 

@@ -10,7 +10,7 @@
 #include "EditorHost.h"
 #include "pluginterfaces/base/smartpointer.h"
 #include "pluginterfaces/gui/iplugview.h"
-#include "plugins/Vst3Support.h"
+#include "plugins/vst3/Vst3Support.h"
 
 namespace sub::vst3 {
 

@@ -1,4 +1,4 @@
-// Plug-in editors on Linux (plugins/EditorWindowX11.cpp), on an X server of
+// Plug-in editors on Linux (plugins/editor/EditorWindowX11.cpp), on an X server of
 // the test's own (harness/XDisplay.h): SUB Test Effect's editor (an X11
 // window of the plug-in's own connection, run by the host's IRunLoop) asked
 // to edit, resize and mark its state dirty with client messages, as a user's

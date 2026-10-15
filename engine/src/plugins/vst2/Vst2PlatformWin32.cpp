@@ -1,6 +1,6 @@
 // VST2 hosting on Windows (see Vst2Platform.h).
 
-#include "plugins/Vst2Platform.h"
+#include "plugins/vst2/Vst2Platform.h"
 
 #include <windows.h>
 #include <shlobj.h>

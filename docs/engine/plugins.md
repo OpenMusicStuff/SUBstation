@@ -17,25 +17,29 @@ Plug-ins load and play on Linux too, with their editor windows (X11, under XWayl
 
 ## Files
 
+One folder per part: the formats' shared interface and preset names at the top, `vst3/` and `vst2/` each format's
+hosting, `editor/` the editor windows both formats' editors are held in (and VST 3's run loop for them on Linux),
+`sandbox/` plug-ins in processes of their own.
+
 | File | What it holds |
 |---|---|
 | [PluginFormat.h](../../engine/src/plugins/PluginFormat.h) | `PluginDescription` and the `PluginFormat` interface: `name()`, `defaultSearchPaths()`, `scanFile()`, `instantiate()`; `PluginProcessor`, what a sandbox's host needs of a plug-in; `pluginFormat(name)`, `pluginFormatOfFile(path)` ([PluginFormats.cpp](../../engine/src/plugins/PluginFormats.cpp)) |
-| [Vst3Format.h](../../engine/src/plugins/Vst3Format.h) / [.cpp](../../engine/src/plugins/Vst3Format.cpp) | the host context plug-ins see ("SUBstation"), loaded modules (shared by instances, unloaded with the last), scanning, instantiation |
-| [Vst3Processor.h](../../engine/src/plugins/Vst3Processor.h) / [.cpp](../../engine/src/plugins/Vst3Processor.cpp) | a VST3 plug-in as a `Processor`: buses, events, parameters, automation, state, restarts, the component handler, its preset's name |
+| [Vst3Format.h](../../engine/src/plugins/vst3/Vst3Format.h) / [.cpp](../../engine/src/plugins/vst3/Vst3Format.cpp) | the host context plug-ins see ("SUBstation"), loaded modules (shared by instances, unloaded with the last), scanning, instantiation |
+| [Vst3Processor.h](../../engine/src/plugins/vst3/Vst3Processor.h) / [.cpp](../../engine/src/plugins/vst3/Vst3Processor.cpp) | a VST3 plug-in as a `Processor`: buses, events, parameters, automation, state, restarts, the component handler, its preset's name |
 | [PresetName.h](../../engine/src/plugins/PresetName.h) / [.cpp](../../engine/src/plugins/PresetName.cpp) | which preset a plug-in has loaded, from its saved state: `presetNameFromState()`, `presetNameFromPreset()` (a `.vstpreset`), `isPlaceholderPresetName()` |
-| [Vst3Support.h](../../engine/src/plugins/Vst3Support.h) | allocation-free building blocks for the audio thread: `ProcessGuard`, `HostEventList`, `HostParamQueue`, `HostParamChanges`, `ParamChangeQueue`, `SpinLock` |
-| [EditorWindow.h](../../engine/src/plugins/EditorWindow.h) / [.cpp](../../engine/src/plugins/EditorWindow.cpp) | the window holding a plug-in's editor (`IPlugView`, `IPlugFrame`), and what every system's window does with the view |
-| [EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp) | `EditorWindow` on Windows: a Win32 window |
-| [EditorWindowX11.cpp](../../engine/src/plugins/EditorWindowX11.cpp) | `EditorWindow` on Linux: an X11 window of its own xcb connection; `editorsUseHost()`, `closeForemostEditor()` |
-| [Vst3RunLoop.h](../../engine/src/plugins/Vst3RunLoop.h) / [.cpp](../../engine/src/plugins/Vst3RunLoop.cpp) | VST 3's run loop for plug-ins on Linux (`Steinberg::Linux::IRunLoop`): their file descriptors and timers on the editor event loop |
+| [Vst3Support.h](../../engine/src/plugins/vst3/Vst3Support.h) | allocation-free building blocks for the audio thread: `ProcessGuard`, `HostEventList`, `HostParamQueue`, `HostParamChanges`, `ParamChangeQueue`, `SpinLock` |
+| [EditorWindow.h](../../engine/src/plugins/editor/EditorWindow.h) / [.cpp](../../engine/src/plugins/editor/EditorWindow.cpp) | the window holding a plug-in's editor (`IPlugView`, `IPlugFrame`), and what every system's window does with the view |
+| [EditorWindowWin32.cpp](../../engine/src/plugins/editor/EditorWindowWin32.cpp) | `EditorWindow` on Windows: a Win32 window |
+| [EditorWindowX11.cpp](../../engine/src/plugins/editor/EditorWindowX11.cpp) | `EditorWindow` on Linux: an X11 window of its own xcb connection; `editorsUseHost()`, `closeForemostEditor()` |
+| [Vst3RunLoop.h](../../engine/src/plugins/editor/Vst3RunLoop.h) / [.cpp](../../engine/src/plugins/editor/Vst3RunLoop.cpp) | VST 3's run loop for plug-ins on Linux (`Steinberg::Linux::IRunLoop`): their file descriptors and timers on the editor event loop |
 | [EditorHost.h](../../engine/src/EditorHost.h) / [.cpp](../../engine/src/EditorHost.cpp) | what editors need from the application on Linux: the main thread's event loop (`EventLoop`, the engine's own until the application gives one), and the key filter (`EditorKey`) |
-| [EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) | `EditorWindow` where there is none (not Windows, and not Linux with xcb): it never opens |
-| [Vst3Platform.h](../../engine/src/plugins/Vst3Platform.h) | what hosting does differently on each system: `prepareThreadForModules()`, `systemPluginFolders()`, `binaryInBundle()`; [Vst3PlatformWin32.cpp](../../engine/src/plugins/Vst3PlatformWin32.cpp), [Vst3PlatformPosix.cpp](../../engine/src/plugins/Vst3PlatformPosix.cpp) |
-| [Vst2Sdk.h](../../engine/src/plugins/Vst2Sdk.h) | VST 2's interface: vst2sdk's `vst.h`, made includable anywhere, and what a host needs that it leaves out (`TimeInfo`, `EventList`, a few host opcodes) |
-| [Vst2Format.h](../../engine/src/plugins/Vst2Format.h) / [.cpp](../../engine/src/plugins/Vst2Format.cpp) | VST2 libraries (`Module`, shared by instances), the host callback, scanning (shells too), instantiation |
-| [Vst2Processor.h](../../engine/src/plugins/Vst2Processor.h) / [.cpp](../../engine/src/plugins/Vst2Processor.cpp) | a VST2 plug-in as a `Processor`: channels, events, parameters, automation, state, the host's answers, its editor through a VST 3 view standing in for it |
-| [Vst2Preset.h](../../engine/src/plugins/Vst2Preset.h) / [.cpp](../../engine/src/plugins/Vst2Preset.cpp) | `.fxp` and `.fxb` files (a VST2's state): `readPreset`, `writePreset`; `vst2Uid` |
-| [Vst2Platform.h](../../engine/src/plugins/Vst2Platform.h) | VST2's folders and loading a library on each system: [Vst2PlatformWin32.cpp](../../engine/src/plugins/Vst2PlatformWin32.cpp), [Vst2PlatformPosix.cpp](../../engine/src/plugins/Vst2PlatformPosix.cpp) |
+| [EditorWindowNone.cpp](../../engine/src/plugins/editor/EditorWindowNone.cpp) | `EditorWindow` where there is none (not Windows, and not Linux with xcb): it never opens |
+| [Vst3Platform.h](../../engine/src/plugins/vst3/Vst3Platform.h) | what hosting does differently on each system: `prepareThreadForModules()`, `systemPluginFolders()`, `binaryInBundle()`; [Vst3PlatformWin32.cpp](../../engine/src/plugins/vst3/Vst3PlatformWin32.cpp), [Vst3PlatformPosix.cpp](../../engine/src/plugins/vst3/Vst3PlatformPosix.cpp) |
+| [Vst2Sdk.h](../../engine/src/plugins/vst2/Vst2Sdk.h) | VST 2's interface: vst2sdk's `vst.h`, made includable anywhere, and what a host needs that it leaves out (`TimeInfo`, `EventList`, a few host opcodes) |
+| [Vst2Format.h](../../engine/src/plugins/vst2/Vst2Format.h) / [.cpp](../../engine/src/plugins/vst2/Vst2Format.cpp) | VST2 libraries (`Module`, shared by instances), the host callback, scanning (shells too), instantiation |
+| [Vst2Processor.h](../../engine/src/plugins/vst2/Vst2Processor.h) / [.cpp](../../engine/src/plugins/vst2/Vst2Processor.cpp) | a VST2 plug-in as a `Processor`: channels, events, parameters, automation, state, the host's answers, its editor through a VST 3 view standing in for it |
+| [Vst2Preset.h](../../engine/src/plugins/vst2/Vst2Preset.h) / [.cpp](../../engine/src/plugins/vst2/Vst2Preset.cpp) | `.fxp` and `.fxb` files (a VST2's state): `readPreset`, `writePreset`; `vst2Uid` |
+| [Vst2Platform.h](../../engine/src/plugins/vst2/Vst2Platform.h) | VST2's folders and loading a library on each system: [Vst2PlatformWin32.cpp](../../engine/src/plugins/vst2/Vst2PlatformWin32.cpp), [Vst2PlatformPosix.cpp](../../engine/src/plugins/vst2/Vst2PlatformPosix.cpp) |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addPluginProcessor()`, `retireProcessorLocked()`, the processor and editor calls (made without the engine lock) |
 | [EngineSandboxes.cpp](../../engine/src/EngineSandboxes.cpp), [plugins/sandbox/](../../engine/src/plugins/sandbox) | plug-ins in sandboxes, processes of their own: [sandboxes.md](sandboxes.md) |
 | [Engine.cpp](../../engine/src/Engine.cpp) | `Engine::idle()`: plug-ins' main-thread work, destroying removed ones, realigning on latency changes |
@@ -382,7 +386,7 @@ blocks set `ProcessContext::offline`, but the plug-in is still processed in `kRe
 ## `EditorWindow`
 
 `EditorWindow` is the same class on every system: what it does with the view (attaching it, telling it its size and
-its content scale, detaching it) is [EditorWindow.cpp](../../engine/src/plugins/EditorWindow.cpp)'s, and the window
+its content scale, detaching it) is [EditorWindow.cpp](../../engine/src/plugins/editor/EditorWindow.cpp)'s, and the window
 itself is a file per system's (`EditorWindow::Native`). `EditorWindow::canHold(view)` says whether this system's
 window can hold a view (the platform type it supports: an HWND on Windows, an X11 window on Linux);
 `Vst3Processor::openEditor()` asks it before making one. macOS's (`kPlatformTypeNSView`) goes beside them.
@@ -390,14 +394,14 @@ window can hold a view (the platform type it supports: an HWND on Windows, an X1
 where it has one (Linux).
 
 Where there are no editor windows (not Windows, and not Linux built with xcb):
-[EditorWindowNone.cpp](../../engine/src/plugins/EditorWindowNone.cpp) stands in, `canHold()` is false and the window
+[EditorWindowNone.cpp](../../engine/src/plugins/editor/EditorWindowNone.cpp) stands in, `canHold()` is false and the window
 never opens, so `openEditor()` returns false (`hasEditor()` still says whether the plug-in has one). The application
 then says the plug-in has no editor, and the device view's generic editor (a knob per parameter) is the way to edit
 it. The same happens on Linux with no X server (`DISPLAY`): the window can't open.
 
 ### Windows
 
-[EditorWindowWin32.cpp](../../engine/src/plugins/EditorWindowWin32.cpp).
+[EditorWindowWin32.cpp](../../engine/src/plugins/editor/EditorWindowWin32.cpp).
 
 A plain Win32 top-level window (class `SUBstationPluginEditor`) holding the plug-in's `IPlugView`, owned by the main
 window so it floats above it; Qt's event loop dispatches its messages like any other window's. Main thread only.
@@ -424,7 +428,7 @@ Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEd
 
 ### Linux (X11)
 
-[EditorWindowX11.cpp](../../engine/src/plugins/EditorWindowX11.cpp): an X11 top-level window holding the view
+[EditorWindowX11.cpp](../../engine/src/plugins/editor/EditorWindowX11.cpp): an X11 top-level window holding the view
 (`kPlatformTypeX11EmbedWindowID`: the plug-in makes its own window inside it, on its own connection). Qt runs on X11
 (on Wayland through XWayland) and so do the editors. Main thread only.
 
@@ -435,7 +439,7 @@ Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEd
   `QTimer`). What is registered is unregistered through the loop it was registered on (kept with it), even if the
   application's loop changed meanwhile. Events xcb reads while waiting for a reply stay in its queue with nothing left to read on the socket,
   so the window also looks at its queue every 50 ms.
-- **The plug-in's run loop.** The frame hands the view a `RunLoop` ([Vst3RunLoop.h](../../engine/src/plugins/Vst3RunLoop.h),
+- **The plug-in's run loop.** The frame hands the view a `RunLoop` ([Vst3RunLoop.h](../../engine/src/plugins/editor/Vst3RunLoop.h),
   VST 3's `Steinberg::Linux::IRunLoop`): `registerEventHandler` watches a file descriptor, `registerTimer` starts a
   timer, each on the editor event loop, holding the handler while it is registered. What the plug-in leaves
   registered goes when its view is detached.
@@ -483,8 +487,8 @@ Keyboard shortcuts while an editor has the focus are routed by the UI (`PluginEd
 
 ## VST2
 
-VST2 plug-ins are hosted through [Vst2Format](../../engine/src/plugins/Vst2Format.h) and
-[Vst2Processor](../../engine/src/plugins/Vst2Processor.h), as VST3 ones are through theirs: the same threads, the same
+VST2 plug-ins are hosted through [Vst2Format](../../engine/src/plugins/vst2/Vst2Format.h) and
+[Vst2Processor](../../engine/src/plugins/vst2/Vst2Processor.h), as VST3 ones are through theirs: the same threads, the same
 `ProcessGuard`, parameter queues and events, the same editor windows, in the application or in a sandbox alike. What
 differs is VST 2's.
 
@@ -492,7 +496,7 @@ differs is VST 2's.
 
 VST 2's interface is Xaymar's clean-room vst2sdk (`engine/third_party/vst2sdk/include/vst.h`, BSD-3-Clause, its
 `VERSION.txt` says which), unmodified. Everything includes it through
-[Vst2Sdk.h](../../engine/src/plugins/Vst2Sdk.h), never itself:
+[Vst2Sdk.h](../../engine/src/plugins/vst2/Vst2Sdk.h), never itself:
 
 - `vst.h` defines two tables of feature names as variables in the header (two files including it would both define
   them): `Vst2Sdk.h` makes them each file's own (`static`).
@@ -587,7 +591,7 @@ answers what is its own (`Vst2Processor::hostCall`):
 
 `getState()` is an `.fxb` of its bank's chunk for a plug-in that keeps one (`VST_EFFECT_FLAG_CHUNKS`: "FBCh", the
 chunk from `GET_CHUNK_DATA`, with its program count and current program), else an `.fxp` of its program's values
-("FxCk", with its program's name). `setState()` takes any of the four forms ([Vst2Preset.h](../../engine/src/plugins/Vst2Preset.h):
+("FxCk", with its program's name). `setState()` takes any of the four forms ([Vst2Preset.h](../../engine/src/plugins/vst2/Vst2Preset.h):
 a program's or a bank's values or chunk), checks the plug-in's id ("These settings are not for <name>"), and sets it
 with the plug-in taken from the audio (`ScopedSuspend`): a chunk (`SET_CHUNK_DATA`, as a bank or a program), or
 values and the program's name; a bank's programs each (`PROGRAM_SET`), then its current one. The same bytes are what

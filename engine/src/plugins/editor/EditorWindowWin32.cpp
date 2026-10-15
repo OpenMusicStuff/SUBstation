@@ -1,7 +1,7 @@
 // Plug-in editor windows on Windows (see EditorWindow.h): a plain Win32 window
 // owned by the main window, holding the view as an HWND child.
 
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 
 #include "EditorHost.h"
 

@@ -20,8 +20,8 @@
 #include "model/Keys.h"
 #include "model/ParamSpec.h"
 #include "model/Track.h"
-#include "plugins/Vst2Preset.h"
-#include "plugins/Vst3Ids.h"
+#include "plugins/vst2/Vst2Preset.h"
+#include "plugins/vst3/Vst3Ids.h"
 
 #include <QDir>
 #include <QFileInfo>

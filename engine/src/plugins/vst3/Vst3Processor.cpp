@@ -1,4 +1,4 @@
-#include "plugins/Vst3Processor.h"
+#include "plugins/vst3/Vst3Processor.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,7 +6,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 #include "plugins/PresetName.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/gui/iplugview.h"

@@ -17,7 +17,7 @@
 #include "Engine.h"
 #include "Test.h"
 #include "builtin/BuiltinRegistry.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 namespace subtest {
 

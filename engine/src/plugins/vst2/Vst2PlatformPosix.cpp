@@ -1,6 +1,6 @@
 // VST2 hosting elsewhere than Windows (see Vst2Platform.h): Linux.
 
-#include "plugins/Vst2Platform.h"
+#include "plugins/vst2/Vst2Platform.h"
 
 #include <dlfcn.h>
 

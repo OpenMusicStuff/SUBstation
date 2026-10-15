@@ -34,9 +34,9 @@
 #include <vector>
 
 #include "Processor.h"
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 #include "plugins/PluginFormat.h"
-#include "plugins/Vst3Support.h"
+#include "plugins/vst3/Vst3Support.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"

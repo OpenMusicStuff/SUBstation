@@ -37,10 +37,10 @@
 #include <vector>
 
 #include "Processor.h"
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 #include "plugins/PluginFormat.h"
-#include "plugins/Vst2Sdk.h"
-#include "plugins/Vst3Support.h"
+#include "plugins/vst2/Vst2Sdk.h"
+#include "plugins/vst3/Vst3Support.h"
 
 namespace sub::vst2 {
 

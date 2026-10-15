@@ -15,8 +15,8 @@
 #include "Text.h"
 #include "browser/PathKeys.h"
 #include "platform/Paths.h"
-#include "plugins/Vst2Format.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst2/Vst2Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 namespace sub::app {
 

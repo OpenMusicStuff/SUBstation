@@ -25,7 +25,7 @@
 #include <QtTest>
 
 #include "TestSupport.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 #include <chrono>
 #include <cstdlib>

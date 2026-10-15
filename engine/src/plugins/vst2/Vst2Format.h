@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "plugins/PluginFormat.h"
-#include "plugins/Vst2Sdk.h"
+#include "plugins/vst2/Vst2Sdk.h"
 
 namespace sub::vst2 {
 

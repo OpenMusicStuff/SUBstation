@@ -17,9 +17,9 @@
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 #include "plugins/PresetName.h"
-#include "plugins/Vst2Format.h"
-#include "plugins/Vst2Preset.h"
-#include "plugins/Vst2Processor.h"
+#include "plugins/vst2/Vst2Format.h"
+#include "plugins/vst2/Vst2Preset.h"
+#include "plugins/vst2/Vst2Processor.h"
 
 using namespace subtest;
 

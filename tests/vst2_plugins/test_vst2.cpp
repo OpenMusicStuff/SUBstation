@@ -1,5 +1,5 @@
 // The test VST2 plug-ins, built with the same SDK the engine hosts them with
-// (engine/src/plugins/Vst2Sdk.h). One source, three libraries (SUB_TEST_VST2_KIND):
+// (engine/src/plugins/vst2/Vst2Sdk.h). One source, three libraries (SUB_TEST_VST2_KIND):
 //
 //  * SUB VST2 Gain ('SuG2', an effect): its output is (input + sidechain) times
 //    2 * Gain, inverted by Invert (a switch), Latency late (0..1 is 0..1000
@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include "plugins/Vst2Sdk.h"
+#include "plugins/vst2/Vst2Sdk.h"
 
 #if defined(SUB_TEST_X11)
 #include <xcb/xcb.h>

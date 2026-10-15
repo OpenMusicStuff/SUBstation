@@ -78,7 +78,7 @@ MIT.
 - **VST2 hosting.** Steinberg stopped licensing its VST 2 SDK in 2018, so SUBstation hosts VST2 plug-ins through
   Xaymar's vst2sdk, a clean-room reimplementation of the interface (BSD-3-Clause) whose README argues it is legal as
   reverse engineering for interoperability and says to have a lawyer confirm that for a commercial product. What
-  SUBstation adds to it (`engine/src/plugins/Vst2Sdk.h`: the time info's and the event list's layouts, a few
+  SUBstation adds to it (`engine/src/plugins/vst2/Vst2Sdk.h`: the time info's and the event list's layouts, a few
   opcodes' numbers) is the same kind of interface fact, written for interoperability. Neither grants a right to
   Steinberg's trademarks: the About box's "VST is a registered trademark of Steinberg Media Technologies GmbH" stays.
   Building without it would mean taking the VST2 files out of `engine/src/plugins` and `pluginFormat()`.

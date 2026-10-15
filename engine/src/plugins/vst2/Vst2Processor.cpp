@@ -1,4 +1,4 @@
-#include "plugins/Vst2Processor.h"
+#include "plugins/vst2/Vst2Processor.h"
 
 #include <algorithm>
 #include <cmath>
@@ -7,8 +7,8 @@
 
 #include "platform/Paths.h"
 #include "plugins/PresetName.h"
-#include "plugins/Vst2Format.h"
-#include "plugins/Vst2Preset.h"
+#include "plugins/vst2/Vst2Format.h"
+#include "plugins/vst2/Vst2Preset.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "rt/RtUtils.h"
 

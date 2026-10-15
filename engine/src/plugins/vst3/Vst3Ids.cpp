@@ -1,4 +1,4 @@
-#include "plugins/Vst3Ids.h"
+#include "plugins/vst3/Vst3Ids.h"
 
 #include "pluginterfaces/base/funknown.h"
 #include "public.sdk/source/vst/utility/uid.h"
