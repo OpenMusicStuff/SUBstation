@@ -53,6 +53,8 @@ class DeviceInfo : public QObject {
     Q_PROPERTY(bool isPlugin READ isPlugin NOTIFY changed)
     Q_PROPERTY(bool instrument READ instrument NOTIFY changed)
     Q_PROPERTY(bool enabled READ enabled NOTIFY changed)  // as heard: following its automation while it plays
+    // Bypassed by Constrain Delay Compensation (on all the same): its title is dimmed.
+    Q_PROPERTY(bool constrained READ constrained NOTIFY changed)
     // How its on/off switch shows its automation: "on" while it plays, "off" when overridden, "".
     Q_PROPERTY(QString enabledAutomation READ enabledAutomation NOTIFY changed)
     Q_PROPERTY(bool folded READ folded NOTIFY changed)
@@ -99,6 +101,7 @@ public:
     bool isPlugin() const { return state_.isPlugin; }
     bool instrument() const { return state_.instrument; }
     bool enabled() const { return state_.enabled; }
+    bool constrained() const { return state_.constrained; }
     QString enabledAutomation() const { return state_.enabledAutomation; }
     bool folded() const { return state_.folded; }
     bool chainListShown() const { return state_.chainListShown; }
@@ -174,6 +177,7 @@ private:
         bool isPlugin = false;
         bool instrument = false;
         bool enabled = true;
+        bool constrained = false;
         QString enabledAutomation;
         bool folded = false;
         bool chainListShown = false;

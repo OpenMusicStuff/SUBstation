@@ -342,7 +342,7 @@ void Engine::idle(bool releaseAll) {
     // snapshot was aligned to (a change, another edit rebuilding the snapshot, then the change undone):
     // check against the snapshot too.
     for (auto it = processors_.begin(); !realign && it != processors_.end(); ++it) {
-        realign = !it->second.rack && insertLatency(*it->second.processor) != it->second.alignedLatency;
+        realign = !it->second.rack && ownLatency(*it->second.processor) != it->second.alignedLatency;
     }
     if (realign && job_ == nullptr) rebuildSnapshotLocked();  // a latency changed: new delay compensation
 }

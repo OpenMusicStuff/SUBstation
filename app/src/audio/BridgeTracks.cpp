@@ -440,6 +440,41 @@ void EngineBridge::chooseAudioThreads(int threads) {
 
 int EngineBridge::audioThreads() const { return engine_.audioThreads(); }
 
+void EngineBridge::applyMidiImmediate() {
+    engine_.setMidiImmediate(sub::app::midiImmediate());
+    Q_EMIT midiImmediateChanged();
+}
+
+bool EngineBridge::midiImmediate() const { return engine_.midiImmediate(); }
+
+void EngineBridge::setMidiImmediate(bool immediate) {
+    if (immediate == midiImmediate()) return;
+    sub::app::setMidiImmediate(immediate);
+    applyMidiImmediate();
+}
+
+void EngineBridge::applyConstrainLatency() {
+    engine_.setConstrainLatency(sub::app::constrainLatency(), sub::app::constrainThresholdMs());
+    pollLatencies();
+    Q_EMIT constrainLatencyChanged();
+}
+
+bool EngineBridge::constrainLatency() const { return engine_.constrainLatency(); }
+
+void EngineBridge::setConstrainLatency(bool on) {
+    if (on == constrainLatency()) return;
+    sub::app::setConstrainLatency(on);
+    guarded("Constrain Delay Compensation", [&] { applyConstrainLatency(); });
+}
+
+double EngineBridge::constrainThresholdMs() const { return engine_.constrainThresholdMs(); }
+
+void EngineBridge::setConstrainThresholdMs(double ms) {
+    sub::app::setConstrainThresholdMs(ms);
+    if (sub::app::constrainThresholdMs() == constrainThresholdMs()) return;
+    guarded("Constrain Delay Compensation", [&] { applyConstrainLatency(); });
+}
+
 int EngineBridge::realtimeWorkers() const { return engine_.realtimeWorkers(); }
 
 int EngineBridge::defaultAudioThreads() { return sub::Engine::defaultAudioThreads(); }

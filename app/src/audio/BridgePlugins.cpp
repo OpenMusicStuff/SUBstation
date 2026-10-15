@@ -569,6 +569,20 @@ int EngineBridge::deviceLatency(const QString& trackId, const QString& deviceId)
     return processorId ? engine_.processorInfo(*processorId).latency : 0;
 }
 
+LiveLatency EngineBridge::liveLatency(const QString& trackId) const {
+    const auto engineId = engineTrackId(trackId);
+    if (!engineId) return {};
+    const sub::LiveLatency l = engine_.liveLatency(*engineId);
+    return {l.live, l.midiDelay, l.devices, l.compensation, l.output};
+}
+
+std::vector<sub::MidiInputDelivery> EngineBridge::takeMidiInputDelivery() { return engine_.takeMidiInputDelivery(); }
+
+bool EngineBridge::deviceConstrained(const QString& trackId, const QString& deviceId) {
+    const auto processorId = engineDeviceId(trackId, deviceId);
+    return processorId && engine_.processorInfo(*processorId).constrained;
+}
+
 QList<ProcessorDisplay> EngineBridge::processorDisplays(const QString& trackId, const QString& deviceId) {
     QList<ProcessorDisplay> displays;
     const auto processorId = engineDeviceId(trackId, deviceId);

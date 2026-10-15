@@ -43,6 +43,16 @@ public:
 };
 
 // A meter's peak levels since the last reading (linear, 1 = full scale).
+// What a track played live through MIDI input is heard after, in frames (sub::LiveLatency).
+struct LiveLatency {
+    bool live = false;     // constrained: no delay compensation on its way out
+    int midiDelay = 0;     // MIDI input's
+    int devices = 0;       // its devices', its groups' and the master's
+    int compensation = 0;  // delay compensation on its way to the master
+    int output = 0;        // the device's output latency
+    int total() const { return midiDelay + devices + compensation + output; }
+};
+
 struct MeterLevel {
     Q_GADGET
     Q_PROPERTY(double left MEMBER left)

@@ -355,6 +355,17 @@ QString TrackHeaderItem::nameToolTip() const {
     } else {
         lines << QStringLiteral("Latency: ") + samples(bridge->trackLatency(trackId_));
     }
+    // A MIDI track: what a note played on it is heard after, and why.
+    if (const app::Track* t = track(); t && t->isMidi()) {
+        const app::LiveLatency live = bridge->liveLatency(trackId_);
+        const auto ms = [rate](int frames) { return QString::number(1000.0 * frames / rate, 'f', 1); };
+        lines << QStringLiteral("Played live: %1 ms = MIDI input %2 + devices %3 + delay compensation %4 + "
+                                "output %5")
+                     .arg(ms(live.total()), ms(live.midiDelay), ms(live.devices), ms(live.compensation),
+                          ms(live.output));
+        if (live.compensation > 0)
+            lines << QStringLiteral("(Constrain Delay Compensation, the stopwatch, takes the compensation off while it is armed)");
+    }
     lines.removeAll(QString());
     return lines.join(u'\n');
 }
@@ -413,6 +424,7 @@ void TrackHeaderItem::connectAll() {
     app::EngineBridge* bridge = session_->bridge();
     connected_ = {session_.data(), p, bridge, session_->selection(), arrangement_.data(), session_->trackLabels()};
     connect(p, &app::Project::trackChanged, this, [this](const QString& id) {
+        Q_EMIT nameToolTipChanged();  // (any track armed may change how soon this one plays live)
         if (id == trackId_) {
             refresh();
             return;
@@ -469,6 +481,8 @@ void TrackHeaderItem::connectAll() {
     });
     connect(session_->trackLabels(), &app::TrackLabels::changed, this, &TrackHeaderItem::nameToolTipChanged);
     connect(bridge, &app::EngineBridge::latenciesChanged, this, &TrackHeaderItem::nameToolTipChanged);
+    connect(bridge, &app::EngineBridge::constrainLatencyChanged, this, &TrackHeaderItem::nameToolTipChanged);
+    connect(bridge, &app::EngineBridge::midiImmediateChanged, this, &TrackHeaderItem::nameToolTipChanged);
     refresh();
     Q_EMIT nameToolTipChanged();
 }

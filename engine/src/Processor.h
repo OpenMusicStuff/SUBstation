@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -122,6 +123,53 @@ struct ProcessContext {
     double beatsPerBar() const noexcept { return std::max(1, timeSigNum) * 4.0 / std::max(1, timeSigDen); }
 };
 
+// How a parameter's value is shown when that isn't the value itself, as Vital's
+// knobs show theirs: a curve of the value (squared for a level, to the fourth
+// for an envelope's time, 2^value for a glide, a MIDI note's frequency for a
+// cutoff), plus an offset, inverted if `invert`, times `multiply`, in `unit`.
+// Agents and other readers work in what is shown; values stay what the
+// processor is linear in.
+struct ParamDisplay {
+    enum class Curve : uint8_t { Linear, Square, Cube, Fourth, Pow2, SquareRoot, NoteHz };
+    Curve curve = Curve::Linear;
+    double offset = 0.0;
+    double multiply = 1.0;
+    bool invert = false;
+    std::string unit;  // "secs", "%", "dB", "Hz"... ("": none)
+
+    double shown(double value) const noexcept {
+        switch (curve) {
+        case Curve::Linear: break;
+        case Curve::Square: value *= value; break;
+        case Curve::Cube: value *= value * value; break;
+        case Curve::Fourth: value *= value; value *= value; break;
+        case Curve::Pow2: value = std::pow(2.0, value); break;
+        case Curve::SquareRoot: value = std::sqrt(std::max(value, 0.0)); break;
+        case Curve::NoteHz: value = 440.0 * std::pow(2.0, (value - 69.0) / 12.0); break;
+        }
+        value += offset;
+        if (invert) value = 1.0 / value;
+        return value * multiply;
+    }
+    // The value showing as `shown` (NaN: none does, e.g. a negative level).
+    double value(double shown) const noexcept {
+        double x = multiply != 0.0 ? shown / multiply : shown;
+        if (invert) x = 1.0 / x;
+        x -= offset;
+        switch (curve) {
+        case Curve::Linear: return x;
+        case Curve::Square: return x >= 0.0 ? std::sqrt(x) : std::nan("");
+        case Curve::Cube: return std::cbrt(x);
+        case Curve::Fourth: return x >= 0.0 ? std::sqrt(std::sqrt(x)) : std::nan("");
+        case Curve::Pow2: return x > 0.0 ? std::log2(x) : std::nan("");
+        case Curve::SquareRoot: return x >= 0.0 ? x * x : std::nan("");
+        case Curve::NoteHz: return x > 0.0 ? 69.0 + 12.0 * std::log2(x / 440.0) : std::nan("");
+        }
+        return x;
+    }
+    friend bool operator==(const ParamDisplay&, const ParamDisplay&) = default;
+};
+
 // A parameter, whatever kind of processor it belongs to. Its values are plain
 // (in its own units, from minValue to maxValue). Automation, and anything else
 // that treats all parameters alike, works on normalized values (0..1), which
@@ -142,6 +190,7 @@ struct ParamInfo {
     bool readOnly = false;                 // set by the processor itself (a meter or a display)
     bool hidden = false;                   // not for a generic editor (e.g. a plug-in's own bypass)
     bool ownText = false;                  // shown as the processor's paramText() has it, not by its unit
+    std::optional<ParamDisplay> display;   // shown otherwise than its value (none: as it is, in `unit`)
 
     // The number of steps between the lowest and highest value of a discrete
     // parameter (a list, or whole values); 0 for a continuous one.
@@ -279,6 +328,16 @@ public:
         enabled_.store(enabled, std::memory_order_relaxed);
     }
     bool isEnabled() const noexcept { return enabled_.load(std::memory_order_relaxed); }
+    // Bypassed by the engine while it constrains delay compensation
+    // (Engine::setConstrainLatency()): switched on, but not processed, and it
+    // adds no latency. It is reset as it goes, like a device switched off.
+    void setConstrained(bool constrained) noexcept {
+        if (constrained && !isConstrained()) requestReset();
+        constrained_.store(constrained, std::memory_order_relaxed);
+    }
+    bool isConstrained() const noexcept { return constrained_.load(std::memory_order_relaxed); }
+    // What renders and delay compensation go by: switched on and not bypassed.
+    bool isActive() const noexcept { return isEnabled() && !isConstrained(); }
 
     // Thread-safe: asks whichever renderer processes this next to reset() it
     // first (the engine does this around offline renders).
@@ -387,6 +446,7 @@ private:
     bool sidechainConnected_ = false;
     float heldModulation_ = 0.f;
     std::atomic<bool> enabled_{true};
+    std::atomic<bool> constrained_{false};
     std::atomic<bool> resetRequested_{false};
     std::atomic<float> outputPeak_[2]{};
     bool switchedOff_ = false;

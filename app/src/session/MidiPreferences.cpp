@@ -1,4 +1,5 @@
 #include "session/MidiPreferences.h"
+#include "Engine.h"  // sub::MidiInputDelivery
 
 #include <QSet>
 #include <QVariantMap>
@@ -19,6 +20,19 @@ void MidiPreferences::refresh() {
 void MidiPreferences::setInputEnabled(const QString& name, bool enabled) {
     bridge_->setMidiInputEnabled(name, enabled);
     show();
+}
+
+QString MidiPreferences::takeDeliveryText() {
+    QStringList lines;
+    for (const sub::MidiInputDelivery& delivery : bridge_->takeMidiInputDelivery()) {
+        if (delivery.messages == 0) continue;
+        lines << QStringLiteral("%1: %2 ms on average, %3 at most (%4 messages)")
+                     .arg(QString::fromStdString(delivery.name))
+                     .arg(delivery.averageMs, 0, 'f', 1)
+                     .arg(delivery.maxMs, 0, 'f', 1)
+                     .arg(delivery.messages);
+    }
+    return lines.join(u'\n');
 }
 
 void MidiPreferences::show() {

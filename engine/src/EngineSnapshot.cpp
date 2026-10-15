@@ -19,7 +19,53 @@ namespace sub {
 
 int Engine::insertLatency(const Processor& insert) {
     constexpr int kMaxLatency = 1 << 20;
+    return insert.isActive() ? std::clamp(insert.latencySamples(), 0, kMaxLatency) : 0;
+}
+
+int Engine::ownLatency(const Processor& insert) {
+    constexpr int kMaxLatency = 1 << 20;
     return insert.isEnabled() ? std::clamp(insert.latencySamples(), 0, kMaxLatency) : 0;
+}
+
+void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const std::vector<char>& silent) {
+    // The strips a player is heard through (by tracks_ index, the master last):
+    // each track monitored (In, or Auto and armed), and every strip its signal
+    // goes on into, through outputs and sends. (Into a track taking it as its
+    // input it goes on only if that track is monitored too, so is one of them.)
+    std::vector<char>& heard = liveStrips_;
+    heard.assign(tracks_.size() + 1, 0);
+    if (constrainLatency_ && !constrainHeld_) {
+        std::vector<int> pending;
+        for (size_t t = 0; t < tracks_.size(); ++t) {
+            const TrackModel& track = tracks_[t];
+            const bool live = track.monitor == MonitorMode::In || (track.monitor == MonitorMode::Auto && track.armed);
+            if (!live || silent[t]) continue;
+            heard[t] = 1;
+            pending.push_back(static_cast<int>(t));
+        }
+        while (!pending.empty()) {
+            const int from = pending.back();
+            pending.pop_back();
+            for (const RouteEdge& edge : edges) {
+                if (edge.from != from || !edge.sums) continue;
+                const size_t to = edge.to < 0 ? tracks_.size() : static_cast<size_t>(edge.to);
+                if (heard[to]) continue;
+                heard[to] = 1;
+                if (edge.to >= 0) pending.push_back(edge.to);
+            }
+        }
+    }
+    // Their devices slower than the threshold are bypassed; every other device plays.
+    const int threshold = static_cast<int>(std::llround(std::max(0.0, constrainThresholdMs_) * sampleRate_ / 1000.0));
+    for (auto& [id, entry] : processors_) {
+        bool constrained = false;
+        if (!entry.rack) {  // (a rack's latency is its chains': their devices are bypassed instead)
+            const uint32_t strip = chains_.at(entry.chainId).stripId;
+            const int index = strip == kMaster ? static_cast<int>(tracks_.size()) : trackIndexLocked(strip);
+            constrained = index >= 0 && heard[static_cast<size_t>(index)] && ownLatency(*entry.processor) > threshold;
+        }
+        entry.processor->setConstrained(constrained);
+    }
 }
 
 std::vector<AutomationNode> Engine::automationNodes(const AutomationLaneDesc& desc, double samplesPerBeat) {
@@ -255,7 +301,7 @@ void Engine::collectModulators(const StripRender& chain, const RackRender* rack,
 
 void Engine::rebuildSnapshotLocked() {
     for (auto& [id, entry] : processors_) {
-        if (!entry.rack) entry.alignedLatency = insertLatency(*entry.processor);
+        if (!entry.rack) entry.alignedLatency = ownLatency(*entry.processor);
     }
     dropGoneOutputSidechainsLocked();
     auto snap = std::make_shared<RenderSnapshot>();
@@ -312,6 +358,8 @@ void Engine::rebuildSnapshotLocked() {
             silent[t] = frozen[t] || idle[t];
         }
     }
+    constrainLatencyLocked(edges, silent);
+    snap->constrained = constrainLatency_ && !constrainHeld_;
     // What goes into a frozen track lines up with nothing: it isn't heard.
     std::vector<RouteEdge> aligning = edges;
     for (RouteEdge& edge : aligning) {
@@ -579,6 +627,7 @@ void Engine::rebuildSnapshotLocked() {
         render.midiInput = track.midiInput;
         render.monitor = track.frozen ? MonitorMode::Off : track.monitor;
         render.armed = track.armed && !track.frozen;
+        render.live = liveStrips_[static_cast<size_t>(t)] != 0;
         // Its devices hear the timeline as late as its input; its fader after them
         // (its edges are delayed after the fader, to line up where they go).
         buildAutomationLocked(build, render.inputLatency + render.latency, render);
@@ -686,7 +735,7 @@ void Engine::rebuildSnapshotLocked() {
                   [](const ClipRender& a, const ClipRender& b) { return a.start < b.start; });
         // Worth a thread of its own: devices to run, or clips to stretch.
         const bool enabledDevice = std::any_of(render.inserts.begin(), render.inserts.end(),
-                                               [](const auto& insert) { return insert->isEnabled(); });
+                                               [](const auto& insert) { return insert->isActive(); });
         const bool warping = std::any_of(render.clips.begin(), render.clips.end(), [](const ClipRender& clip) {
             return clip.playback != ClipRender::Playback::Direct;
         });

@@ -362,7 +362,9 @@ private Q_SLOTS:
         // A knob of the track's: mapped, and done.
         f.editor.touchParameter(track, autom::deviceKey(utility, "pan"));
         QVERIFY(!learn.active());
-        QCOMPARE(modulationsOf(f, track, lfo), (std::vector<ModulationMapping>{{utility, "pan", 0.0, 1.0, false}}));
+        // (unipolar, from where the knob is to its maximum)
+        const double panAt = f.editor.paramInfo(track, utility, "pan")->toNormalized(0.0);
+        QCOMPARE(modulationsOf(f, track, lfo), (std::vector<ModulationMapping>{{utility, "pan", panAt, 1.0, false}}));
         QVERIFY(said.last().at(0).toString().contains(QStringLiteral("Pan")));
         // Toggled off; given up when its modulator goes.
         learn.toggle(track, lfo);
@@ -371,6 +373,76 @@ private Q_SLOTS:
         learn.start(track, lfo);
         f.editor.removeDevice(track, lfo);
         QVERIFY(!learn.active());
+    }
+
+    void aNewMappingIsUnipolarFromTheValueToTheMaximum() {
+        EditorFixture f;
+        const QString track = f.editor.addAudioTrack();
+        const QString lfo = f.editor.addDevice(track, "lfo");
+        const QString utility = f.editor.addDevice(track, "utility");
+        const auto info = f.editor.paramInfo(track, utility, "gain");
+        QVERIFY(info);
+        const double value = info->fromNormalized(0.3);
+        f.editor.setDeviceParam(track, utility, "gain", value);
+        QVERIFY(f.editor.tryMapModulation(track, lfo, utility, "gain"));
+        const ModulationMapping m = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(m.low, 0.3, 1e-9));
+        QCOMPARE(m.high, 1.0);
+        QVERIFY(!m.bipolar && !m.invert);
+        // The knob's own value is untouched, and it is the base.
+        QVERIFY(near(f.project.device(track, utility).params.value("gain"), value, 1e-9));
+    }
+
+    void aParameterSetByHandTakesItsMappingAlong() {
+        EditorFixture f;
+        const QString track = f.editor.addAudioTrack();
+        const QString lfo = f.editor.addDevice(track, "lfo");
+        const QString utility = f.editor.addDevice(track, "utility");
+        const auto info = f.editor.paramInfo(track, utility, "gain");
+        QVERIFY(info);
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(0.2));
+        QVERIFY(f.editor.tryMapModulation(track, lfo, utility, "gain"));  // 0.2..1.0: an amount of 0.8
+        const int steps = f.stack.count();
+        // A drag of the knob: one undo step, the range moves with it (the amount kept, its end past 1 as the
+        // handle's are), and the value is what was set.
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(0.4), "drag");
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(0.5), "drag");
+        QCOMPARE(f.stack.count(), steps + 1);
+        ModulationMapping m = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(m.low, 0.5, 1e-9) && near(m.high, 1.3, 1e-9));
+        QVERIFY(near(m.amount(), 0.8, 1e-9));
+        QVERIFY(near(f.project.device(track, utility).params.value("gain"), info->fromNormalized(0.5), 1e-9));
+        // Back down: nothing was lost at the top.
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(0.1));
+        m = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(m.low, 0.1, 1e-9) && near(m.high, 0.9, 1e-9));
+        // Bipolar: either side of the knob.
+        f.editor.setModulationBipolar(track, lfo, utility, "gain", true, 0.1);
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(0.5));
+        m = modulationsOf(f, track, lfo).front();
+        QVERIFY(m.bipolar);  // (the amount kept: 0.8 either side of 0.5)
+        QVERIFY(near(m.low, -0.3, 1e-9) && near(m.high, 1.3, 1e-9));
+        // Undo puts both back.
+        f.stack.undo();
+        m = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(m.low, -0.7, 1e-9) && near(m.high, 0.9, 1e-9));
+        QVERIFY(near(f.project.device(track, utility).params.value("gain"), info->fromNormalized(0.1), 1e-9));
+        // Several at once (a graph's handle) take theirs along too; an unmodulated one is set as before.
+        f.editor.setDeviceParams(track, utility, {"gain", "width"}, {info->fromNormalized(0.6), 50.0});
+        m = modulationsOf(f, track, lfo).front();
+        QVERIFY(near(m.low, -0.2, 1e-9) && near(m.high, 1.4, 1e-9));
+        QCOMPARE(f.project.device(track, utility).params.value("width"), 50.0);
+        f.stack.undo();
+        QVERIFY(near(f.project.device(track, utility).params.value("gain"), info->fromNormalized(0.1), 1e-9));
+        // A value that leaves the normalized base where it was (past the top, say) is still part of the drag.
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0), "top");
+        const int atTop = f.stack.count();
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0) + 1.0, "top");
+        f.editor.setDeviceParam(track, utility, "gain", info->fromNormalized(1.0) + 2.0, "top");
+        QCOMPARE(f.stack.count(), atTop);
+        // A parameter nothing modulates is as it was: no mapping to move.
+        f.editor.setDeviceParam(track, utility, "pan", 0.5);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Change Device Parameter"));
     }
 
     // --- The engine plays it ---

@@ -1381,7 +1381,7 @@ devices and plug-ins alike, in racks too.
 
 - **Mapping**: click **Map** (beside Sync; it pulses), then touch any parameter on
   the track: a knob, a button, a plug-in's knob, a handle in another device's graph. It
-  is mapped over its whole range. **Esc** (or Map again) gives up. Or right-click any
+  is mapped unipolar, from where the knob is now up to its maximum. **Esc** (or Map again) gives up. Or right-click any
   parameter › **Modulate With** › the modulator. A parameter follows one modulator at a
   time: mapping it to another moves it over.
 - **Its targets**, in the list the **Targets** arrow beside the knobs unfolds (it shows
@@ -1396,7 +1396,8 @@ devices and plug-ins alike, in racks too.
   knob's own value (Shift is fine; down past zero turns it the other way); **Alt+Shift-click** it to switch between
   **unipolar** (up from the knob's value) and **bipolar** (either side of it, the same amount). Its tooltip says
   which it is. Every modulated knob has it: the devices' editors and plug-ins' parameters alike. (Track volume and
-  pan can't be modulated.)
+  pan can't be modulated.) Turn the knob itself and the modulation goes with it, the same amount from the new
+  value (where that passes the maximum it is cut off, and comes back when you turn the knob back).
 - While a parameter is modulated, its own value and its automation wait; they count
   again once it is unmapped or the modulator is switched off. Modulators can move other
   modulators (an LFO's Rate by an Envelope). A rack's macros can't be modulated: map

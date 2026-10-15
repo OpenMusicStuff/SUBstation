@@ -162,6 +162,15 @@ const std::map<QString, Icon>& icons() {
                                               p.drawLine(QPointF(8, 32), QPointF(36, 32));
                                               p.drawPath(path({{26, 20}, {38, 32}, {26, 44}}, false));
                                           }};
+        // A stopwatch: Constrain Delay Compensation.
+        t[QStringLiteral("constrain_latency")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                                      p.setPen(pen(c, 5, Qt::RoundCap));
+                                                      p.setBrush(Qt::NoBrush);
+                                                      p.drawEllipse(QPointF(32, 36), 21, 21);
+                                                      p.drawLine(QPointF(26, 6), QPointF(38, 6));
+                                                      p.drawLine(QPointF(32, 6), QPointF(32, 15));
+                                                      p.drawLine(QPointF(32, 36), QPointF(42, 26));
+                                                  }};
         // Six spokes with a pair of twigs each: a frozen track.
         t[QStringLiteral("snowflake")] = {&Theme::frozen, [](QPainter& p, const QColor& c, bool) {
                                               p.setPen(pen(c, 4.5, Qt::RoundCap));

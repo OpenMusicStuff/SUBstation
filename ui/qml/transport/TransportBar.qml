@@ -4,8 +4,8 @@ import QtQuick.Layouts
 import SUBstation
 
 // The bar on top of the window, left to right: the tempo, the time signature,
-// the metronome (its count-in a drop-down on its right), the project key and
-// the computer MIDI keyboard | the position (bar. beat. sixteenth), play, stop,
+// the metronome (its count-in a drop-down on its right), the project key, the
+// computer MIDI keyboard and Constrain Delay Compensation | the position (bar. beat. sixteenth), play, stop,
 // record, Re-Enable Automation, the oscilloscope | loop, follow, the CPU load
 // and the audio device (a click opens Preferences). (Lock Envelopes is in the
 // arrangement's corner, as Ableton's: GridInfo.)
@@ -170,6 +170,20 @@ Rectangle {
             checkable: false
             checked: Session.computerKeyboard.enabled
             onClicked: Session.computerKeyboard.toggle()
+        }
+        ToggleButton {
+            objectName: "constrainLatency"
+            Layout.preferredHeight: Theme.controlHeight
+            role: "tool"
+            iconName: "constrain_latency"
+            tooltip: qsTr("Constrain Delay Compensation: while a track is monitored (armed), devices with\n"
+                          + "more than %1 ms of latency on its way out (its own, its groups', the master's)\n"
+                          + "are bypassed, and its live MIDI plays without waiting for the other tracks.\n"
+                          + "Exports and freezing hear every device. The threshold is in Preferences.")
+                             .arg(Session.bridge.constrainThresholdMs)
+            checkable: false
+            checked: Session.bridge.constrainLatency
+            onClicked: Session.bridge.constrainLatency = !Session.bridge.constrainLatency
         }
 
         Item {

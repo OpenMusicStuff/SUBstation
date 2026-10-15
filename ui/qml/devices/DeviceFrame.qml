@@ -246,7 +246,7 @@ Item {
                 text: deviceInfo.name
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
-                color: Theme.text
+                color: deviceInfo.constrained ? Theme.textDim : Theme.text  // bypassed while monitoring
                 font: Theme.uiFont(9, true)
 
                 HoverHandler {

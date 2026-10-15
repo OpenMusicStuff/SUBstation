@@ -57,6 +57,16 @@ void MidiInputDevices::closeAll() {
     while (!open_.empty()) open_.pop_back();  // the last opened first
 }
 
+std::vector<MidiInputDelivery> MidiInputDevices::takeDelivery() {
+    std::vector<MidiInputDelivery> out;
+    for (const auto& device : open_) {
+        MidiInputDelivery delivery = device->connection->takeDelivery();
+        delivery.name = device->name;
+        out.push_back(std::move(delivery));
+    }
+    return out;
+}
+
 std::vector<std::string> MidiInputDevices::openNames() const {
     std::vector<std::string> names;
     for (const auto& device : open_) names.push_back(device->name);

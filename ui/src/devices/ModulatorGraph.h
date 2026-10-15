@@ -31,6 +31,8 @@
 #include "devices/DeviceCanvas.h"
 #include "devices/DisplayPlayback.h"
 
+#include "audio/ModulatorShapes.h"
+
 #include <QElapsedTimer>
 #include <QPointF>
 #include <QStringList>
@@ -64,10 +66,7 @@ public:
     static constexpr double kMeterFloor = -60.0;
     static constexpr int kTrail = 10;  // the playhead's trail, in ticks
 
-    struct Point {
-        double x = 0.0, y = 0.0, curve = 0.0;
-        friend bool operator==(const Point&, const Point&) = default;
-    };
+    using Point = sub::app::ModulatorPoint;
 
     explicit ModulatorGraph(QQuickItem* parent = nullptr);
 
@@ -77,8 +76,6 @@ public:
     static double curveValue(const std::vector<Point>& points, double x);
     // The parameters for a curve of these points (every slot: the same parameters every time).
     static sub::app::OrderedMap<QString, double> pointsValues(const std::vector<Point>& points);
-    // Shapes to start from: (name, points), the LFO's or the Envelope's.
-    static const std::vector<std::pair<QString, std::vector<Point>>>& shapeList(bool periodic);
     // How many beats a synced value's name stands for ("1/4": 1, "3/16": 0.75, "1.5 Bars": 6); 0: not one.
     static double syncedBeats(const QString& label);
 

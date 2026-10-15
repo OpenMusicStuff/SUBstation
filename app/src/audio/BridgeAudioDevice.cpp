@@ -129,6 +129,8 @@ void EngineBridge::closeDevice() {
 
 bool EngineBridge::startAudio() {
     guarded("audio threads", [&] { applyAudioThreads(); });
+    guarded("Constrain Delay Compensation", [&] { applyConstrainLatency(); });
+    applyMidiImmediate();
     openMidiInputs();
     const AudioSettings settings = AudioSettings::load();
     const QString error = openDevice(settings);

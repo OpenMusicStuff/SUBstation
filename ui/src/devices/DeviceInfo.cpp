@@ -25,6 +25,10 @@ namespace {
 
 QString latencyLine(int latency) { return QStringLiteral("Latency: %1 samples (compensated)").arg(latency); }
 
+QString constrainedLine() {
+    return QStringLiteral("Bypassed while monitoring: Constrain Delay Compensation is on");
+}
+
 // Devices' names in a chain, those of the same name numbered ("EQ (2)").
 QStringList numberedNames(const std::vector<Device>& devices) {
     QStringList names;
@@ -126,6 +130,7 @@ void DeviceInfo::connectSession() {
     connections_ << connect(bridge, &EngineBridge::pluginsPendingChanged, this, refreshAll);
     connections_ << connect(bridge, &EngineBridge::deviceChanged, this, refreshAll);  // (new latencies)
     connections_ << connect(bridge, &EngineBridge::latenciesChanged, this, refreshAll);
+    connections_ << connect(bridge, &EngineBridge::constrainLatencyChanged, this, refreshAll);  // (bypassed or not)
     // Its switch's automation: playing, overridden, or gone; and the switch following it.
     connections_ << connect(bridge, &EngineBridge::automationStateChanged, this, [this](const QString& owner) {
         if (owner == trackId_ || owner.isEmpty())
@@ -220,6 +225,7 @@ void DeviceInfo::refresh() {
         }
         s.loaded = bridge->pluginRunning(trackId_, deviceId_);  // (one loading in its sandbox: not yet)
         const int latency = s.loaded ? bridge->deviceLatency(trackId_, deviceId_) : 0;
+        s.constrained = s.loaded && bridge->deviceConstrained(trackId_, deviceId_);
         if (s.isPlugin && device->plugin) {
             const sub::app::PluginRef& plugin = *device->plugin;
             s.pending = !s.loaded && bridge->pluginPending(deviceId_);
@@ -236,9 +242,13 @@ void DeviceInfo::refresh() {
             lines.removeAll(QString());
             if (s.loaded)
                 lines << latencyLine(latency);
+            if (s.constrained)
+                lines << constrainedLine();
             s.toolTip = lines.join(u'\n');
         } else {  // a built-in device or a rack: its name and latency (a rack's: its slowest chain's)
             s.toolTip = sub::app::deviceName(*device) + u'\n' + latencyLine(latency);
+            if (s.constrained)
+                s.toolTip += u'\n' + constrainedLine();
         }
         s.hasSidechainInput = bridge->hasSidechainInput(trackId_, deviceId_);
         if (const std::optional<Sidechain> sidechain = currentSidechain()) {
