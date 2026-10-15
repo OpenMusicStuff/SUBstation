@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ArrangementTestSupport.h"
@@ -803,6 +804,11 @@ private Q_SLOTS:
             QVERIFY(swatch);
             QTRY_VERIFY(swatch->isVisible() && swatch->width() > 0);
             const QPointF centre(swatch->width() / 2, swatch->height() / 2);
+            // Once the submenu has opened and its swatch stays put: while it opens it is still
+            // being placed, and a click where the swatch was misses it.
+            QTRY_VERIFY(submenu->property("opened").toBool());
+            QPoint placed;
+            QTRY_VERIFY(std::exchange(placed, test::at(swatch, centre)) == test::at(swatch, centre));
             test::moveTo(window(), test::at(swatch, centre));
             QTest::mouseClick(window(), Qt::LeftButton, {}, test::at(swatch, centre));
             QTRY_VERIFY(!menu->property("visible").toBool());
