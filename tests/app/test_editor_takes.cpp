@@ -9,6 +9,7 @@
 #include "io/Serialization.h"
 #include "model/Edits.h"
 #include "model/Ids.h"
+#include "model/RecordedTake.h"
 
 #include <QSet>
 #include <QTest>
@@ -77,6 +78,67 @@ private Q_SLOTS:
         const Clip& kept = f.track(track).takes[0].clips.at(0);
         QVERIFY(kept.isMidi());
         QCOMPARE(kept.notes, f.track(track).clips.at(0).notes);
+    }
+
+    void aTakeRoundTheLoopIsATakeForEachPass() {
+        // Recorded from beat 1 (0.5 s) with the loop over beats 0..4 (0..2 s): round it twice and a half.
+        RecordedTake take = audioTake("t", "C:/rec/loop.wav", 0.5, 4.5);  // recording time 0.5..5 s
+        take.wraps = {{2.0, 2.0}, {4.0, 2.0}};
+        const std::vector<RecordedTake> passes = loopPasses(take);
+        QCOMPARE(passes.size(), size_t(3));
+        QCOMPARE(passes[0].startSec, 0.5);
+        QCOMPARE(passes[0].durationSec, 1.5);
+        QCOMPARE(passes[0].offsetSec, 0.0);
+        QCOMPARE(passes[1].startSec, 0.0);  // round again from the loop's start
+        QCOMPARE(passes[1].durationSec, 2.0);
+        QCOMPARE(passes[1].offsetSec, 1.5);  // its stretch of the file
+        QCOMPARE(passes[2].startSec, 0.0);
+        QCOMPARE(passes[2].durationSec, 1.0);
+        QCOMPARE(passes[2].offsetSec, 3.5);
+        for (const RecordedTake& pass : passes) QCOMPARE(pass.fileSec, 4.5);
+
+        // A pass a moment long (stopped just after the loop wrapped) is none.
+        take.durationSec = 3.52;  // to 4.02 s
+        QCOMPARE(loopPasses(take).size(), size_t(2));
+        // Without wraps: the take itself.
+        QCOMPARE(loopPasses(audioTake("t", "a.wav", 1.0, 2.0)).size(), size_t(1));
+
+        // MIDI: the notes starting in each pass, at their place round the loop, cut at its end.
+        RecordedTake midi{"t", {}, 0.0, 4.0, {{0.5, 1.0, 60, 100, {}}, {1.5, 2.5, 62, 100, {}}, {2.5, 3.0, 64, 90, {}}},
+                          true};
+        midi.wraps = {{2.0, 2.0}};
+        const auto notes = loopPasses(midi);
+        QCOMPARE(notes.size(), size_t(2));
+        QCOMPARE(notes[0].notes.size(), size_t(2));
+        QCOMPARE(notes[0].notes[1].end, 2.0);  // held over the wrap: cut there
+        QCOMPARE(notes[1].notes.size(), size_t(1));
+        QCOMPARE(notes[1].notes[0].start, 0.5);
+        QCOMPARE(notes[1].notes[0].pitch, 64);
+    }
+
+    void recordingRoundTheLoopMakesALaneForEachPass() {
+        EditorFixture f;
+        const QString track = f.editor.addAudioTrack();
+        RecordedTake take = audioTake(track, "C:/rec/loop.wav", 0.0, 5.0);  // the loop over beats 0..4, round 2.5 times
+        take.wraps = {{2.0, 2.0}, {4.0, 2.0}};
+        f.editor.addRecordings({take});
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Record"));
+        QCOMPARE(laneNames(f.track(track)), (QStringList{"Take 1", "Take 2", "Take 3"}));
+        // The track plays the last time round where it got to, the one before for the rest.
+        const auto& clips = f.track(track).clips;
+        QVERIFY((spans(clips) == Spans{{0, 2}, {2, 4}}));
+        QCOMPARE(clips[0].offsetSec, 4.0);  // the third pass
+        QCOMPARE(clips[1].offsetSec, 3.0);  // the second's last second
+        QVERIFY((edits::compedSpans(clips, f.track(track).takes[2].clips, 120.0) ==
+                 std::vector<edits::Interval>{{0, 2}}));
+        QVERIFY(edits::compedSpans(clips, f.track(track).takes[0].clips, 120.0).empty());
+        // Comping the first pass back: its audio, from the file's start.
+        QVERIFY(f.editor.compTake(track, f.track(track).takes[0].id, 0.0, 4.0));
+        QVERIFY((spans(f.track(track).clips) == Spans{{0, 4}}));
+        QCOMPARE(f.track(track).clips[0].offsetSec, 0.0);
+        f.stack.undo();
+        f.stack.undo();
+        QVERIFY(f.track(track).clips.empty() && f.track(track).takes.empty());
     }
 
     void compingARangeReplacesWhatPlaysThere() {

@@ -151,7 +151,10 @@ is in), `folded`, `sends` (return id → `Send`), `frozen`, `takes` and `takesSh
 
 **Take lanes** (`TakeLane`: `id`, `name`, `clips`). Recording keeps what each take played on a lane of its own below
 its track (`ProjectEditor::addRecordings`: "Take 1", "Take 2"..., `nextTakeName`), as copies with ids of their own,
-in the same undo step that puts the takes on the track; the track's own clips are then the *comp*. A take lane's
+in the same undo step that puts the takes on the track; the track's own clips are then the *comp*. A take
+recorded round the loop (`RecordedTake::wraps`: the engine's recording time) is cut into the passes it made
+(`loopPasses`, [RecordedTake.h](../../app/src/model/RecordedTake.h)): a clip and a lane each, the later passes
+winning on the track. A take lane's
 clips don't play, aren't selected, and nothing but the take-lane edits touches them: `compTake` (what a lane holds
 between two beats, its silence too, replaces what the track plays there: `edits::removeRange` then
 `edits::sliceRange`, copies again), `deleteTakeLane`, `deleteTakeLanes` (`SetTakeLanesCommand`, the track's whole

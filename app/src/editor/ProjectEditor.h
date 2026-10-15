@@ -226,8 +226,10 @@ public:
     // the notes played (their starts on the grid of `quantize` beats, if given:
     // record quantization). As in Ableton's Arrangement recording, a take
     // replaces what was under it. The clips made.
-    // Each track's takes are also kept on a take lane of their own below it
-    // ("Take 1", "Take 2"...: Track::takes), in the same undo step.
+    // A take recorded round the loop is a take for each pass it made
+    // (loopPasses), the last one played winning where they overlap. Each one is
+    // also kept on a take lane of its own below its track ("Take 1", "Take
+    // 2"...: Track::takes), in the same undo step.
     ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0);
 
     // --- Take lanes (EditorTakes.cpp) ---

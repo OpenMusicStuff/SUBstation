@@ -60,10 +60,10 @@
 // after its fader (an input edge: resampling), which renders first; or the
 // master's, which renders last, so it is recorded but never heard (monitoring
 // it would feed it back). While recording, the input of the tracks recorded
-// goes to the RecordingSession's rings, tagged with the timeline position it
-// was taken at: the device's in the prologue, the tracks' and the master's in
-// the epilogue (the master's after its fader, before the metronome); the loop
-// doesn't wrap then. A track being recorded plays none of its clips (nor a
+// goes to the RecordingSession's rings, tagged with the position it was taken
+// at in recording time (the timeline's, plus the loop lengths gone back as the
+// loop wrapped: LoopWrap): the device's in the prologue, the tracks' and the
+// master's in the epilogue (the master's after its fader, before the metronome). A track being recorded plays none of its clips (nor a
 // MIDI track its clips' notes): the take replaces them, so unmonitored it is
 // silent (TrackBuffers::recorded). A count-in clicks before the playhead moves
 // (the metronome, even if it is off).
@@ -155,7 +155,10 @@ public:
     void drainPreviewNotes(SharedState& shared) noexcept;
     static void discardPreviewNotes(SharedState& shared) noexcept;
 
-    void setPosition(int64_t samples) noexcept { position_ = samples < 0 ? 0 : samples; }
+    void setPosition(int64_t samples) noexcept {
+        position_ = samples < 0 ? 0 : samples;
+        loopWrapped_ = false;  // (a locate is no wrap, whatever it lands on)
+    }
     int64_t position() const noexcept { return position_; }
     void setPlaying(bool playing) noexcept { playing_ = playing; }
     bool playing() const noexcept { return playing_; }
@@ -246,6 +249,9 @@ private:
         int offset;
         bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
         bool chase;  // playback starts here: notes already underway sound
+        bool wrap = false;     // the jump is the loop's wrap (from `from`, its end)
+        int64_t from = 0;      // a wrap: where the timeline went back from
+        int64_t linear = 0;    // while recording: its position in recording time (LoopWrap); else `position`
     };
     struct Tick {
         int offset;
@@ -469,6 +475,7 @@ private:
     int64_t chunkFrom_ = -1;  // where the last chunk ended (-1: it didn't play): what a jump at this one's start left
     bool playing_ = false;
     bool chasePending_ = false;  // playback just started: its first segment chases notes
+    bool loopWrapped_ = false;   // the loop wrapped at the end of the last segment (the next one starts there)
     int64_t countIn_ = 0;        // samples of count-in still to come before the playhead moves
     int64_t countInTotal_ = 0;
 

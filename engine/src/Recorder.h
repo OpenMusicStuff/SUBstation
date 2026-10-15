@@ -173,21 +173,37 @@ struct MidiRecordingTake {
 #pragma warning(pop)
 #endif
 
+// The loop wrapping while recording. Takes run on in *recording time*: the
+// timeline as if the loop had never wrapped (the playhead's position plus the
+// loop lengths it went back so far), so a take is one straight stretch of it.
+// At `at` (recording time: where the loop ended) the timeline went `back`
+// samples back (to the loop's start). A sample of recording time u is heard at
+// timeline sample u less the `back` of every wrap at or before it.
+struct LoopWrap {
+    int64_t at = 0;
+    int64_t back = 0;
+
+    friend bool operator==(const LoopWrap&, const LoopWrap&) = default;
+};
+
 // What a finished take left: a WAV file, or a MIDI take's notes, and where it
 // goes on the timeline.
 struct RecordedTake {
     uint32_t trackId = 0;
     std::string path;         // empty for a MIDI take
-    int64_t startSample = 0;  // timeline sample of its first frame (audio: latency-corrected; may be negative)
+    int64_t startSample = 0;  // recording time of its first frame (audio: latency-corrected; may be negative)
     int64_t frames = 0;       // 0: nothing was recorded (no file)
     int channels = 0;
     double sampleRate = 0.0;
     int64_t droppedFrames = 0;  // lost to overruns (silence in the file)
     std::string error;          // the file could not be written
     bool midi = false;
-    // A MIDI take's notes, latency-corrected, in timeline samples, within the
+    // A MIDI take's notes, latency-corrected, in recording time, within the
     // take; notes still held when it ended end with it.
     std::vector<RecordedNote> notes;
+    // Where the loop wrapped while it recorded (the session's: every take's the
+    // same), in order. None: recording time is the timeline's.
+    std::vector<LoopWrap> wraps;
 };
 
 // The tracks being recorded together, and their disk writer.
@@ -216,6 +232,16 @@ public:
     void interrupt() noexcept { interrupted_.store(true, std::memory_order_relaxed); }
     bool interrupted() const noexcept { return interrupted_.load(std::memory_order_relaxed); }
 
+    static constexpr int kMaxWraps = 4096;  // more wraps than this end the recording
+    // Real-time: how far recording time is ahead of the timeline (the loop
+    // lengths gone back so far; audio thread only).
+    int64_t wrapOffset() const noexcept { return wrapOffset_; }
+    // Real-time: the loop wrapped from `from` (timeline: its end) back to `to`.
+    // False if there is no room for another wrap (the takes end).
+    bool wrap(int64_t from, int64_t to) noexcept;
+    // Edit side: the wraps so far.
+    std::vector<LoopWrap> wraps() const;
+
     // Edit side, once the audio thread can no longer see the session: writes
     // what is left, closes the files, and says what they hold.
     std::vector<RecordedTake> finish();
@@ -231,6 +257,9 @@ private:
     double sampleRate_;
     int64_t midiPlacement_;
     std::atomic<bool> interrupted_{false};
+    std::vector<LoopWrap> wraps_ = std::vector<LoopWrap>(kMaxWraps);  // the first numWraps_ (audio thread writes)
+    std::atomic<int> numWraps_{0};
+    int64_t wrapOffset_ = 0;
     std::mutex mutex_;
     std::condition_variable wake_;
     bool stop_ = false;

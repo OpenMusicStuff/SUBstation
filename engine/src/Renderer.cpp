@@ -125,6 +125,7 @@ void Renderer::applyCommand(const TransportCommand& command) noexcept {
         case TransportCommand::Type::Stop:
             playing_ = false;
             countIn_ = 0;
+            loopWrapped_ = false;  // (playing again is no wrap)
             break;
         case TransportCommand::Type::Locate:
             setPosition(std::llround(std::max(0.0, command.beat) * samplesPerBeat_));
@@ -241,21 +242,27 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         }
         bool chase = chasePending_ && done < frames;
         if (done < frames) chasePending_ = false;
-        // Recording goes straight on: the loop doesn't wrap (punching in and out of it comes later).
-        const bool loop = flags.loop && !recording_;
+        // (Recording wraps with the loop too: its takes run on in recording time, recordInput().)
+        const bool loop = flags.loop;
         while (done < frames) {
             int length = frames - done;
             const bool looping = loop && numSegments_ < kMaxSegments - 1;
             if (looping && position_ < snap.loopEnd && position_ + length > snap.loopEnd) {
                 length = static_cast<int>(snap.loopEnd - position_);
             }
-            segments_[numSegments_++] = {position_, length, done, position_ != expectedPosition_, chase};
+            const bool jump = position_ != expectedPosition_;
+            segments_[numSegments_++] = {position_, length,   done, jump, chase, jump && loopWrapped_,
+                                         expectedPosition_, position_};
+            loopWrapped_ = false;
             chase = false;
             if (flags.metronome) scheduleTicks(snap, position_, length, done);
             position_ += length;
             expectedPosition_ = position_;
             done += length;
-            if (looping && position_ == snap.loopEnd) position_ = snap.loopStart;
+            if (looping && position_ == snap.loopEnd) {
+                position_ = snap.loopStart;
+                loopWrapped_ = position_ != snap.loopEnd;
+            }
         }
     }
 
@@ -271,7 +278,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     context.keyTonic = snap.keyTonic;
     context.keyMinor = snap.keyMinor;
     context.playing = playing_;
-    context.looping = flags.loop && !recording_;
+    context.looping = flags.loop;
     context.loopStartBeat = snap.loopStart / spb;
     context.loopEndBeat = snap.loopEnd / spb;
     context.offline = !flags.live;
@@ -664,12 +671,19 @@ void Renderer::recordInput() noexcept {
     RecordingSession& session = *recording_;
     for (int s = 0; s < numSegments_; ++s) {
         if (session.interrupted()) return;
-        const Segment& segment = segments_[s];
+        Segment& segment = segments_[s];
+        // The loop's wrap goes on in recording time, the timeline's position plus
+        // the loop lengths gone back so far (LoopWrap); any other jump ends the takes.
+        if (segment.wrap && !session.wrap(segment.from, segment.position)) {
+            session.interrupt();
+            return;
+        }
+        segment.linear = segment.position + session.wrapOffset();
         bool jumped = false;
         const auto begin = [&](std::atomic<int64_t>& start) {
             if (start.load(std::memory_order_relaxed) == RecordingTake::kNotStarted) {
-                start.store(segment.position, std::memory_order_release);
-            } else if (segment.jump) {
+                start.store(segment.linear, std::memory_order_release);
+            } else if (segment.jump && !segment.wrap) {
                 jumped = true;
             }
         };
@@ -818,7 +832,7 @@ void Renderer::recordMidi(MidiRecordingTake* take, int offset, uint8_t channel, 
     for (int s = 0; s < numSegments_; ++s) {
         const Segment& segment = segments_[s];
         if (offset >= segment.offset && offset < segment.offset + segment.length) {
-            take->push({segment.position + (offset - segment.offset), channel, key, velocity, bend, semitones});
+            take->push({segment.linear + (offset - segment.offset), channel, key, velocity, bend, semitones});
             return;
         }
     }

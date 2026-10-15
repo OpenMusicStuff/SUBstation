@@ -103,6 +103,9 @@ std::vector<RecordedTake> EngineBridge::stopRecording() {
         recorded.startSec = static_cast<double>(take.startSample) / rate;
         recorded.durationSec = static_cast<double>(take.frames) / rate;
         recorded.midi = take.midi;
+        for (const sub::LoopWrap& wrap : take.wraps) {
+            recorded.wraps.push_back({static_cast<double>(wrap.at) / rate, static_cast<double>(wrap.back) / rate});
+        }
         for (const sub::RecordedNote& note : take.notes) {
             RecordedTakeNote played{static_cast<double>(note.start) / rate, static_cast<double>(note.end) / rate,
                                     note.key, note.velocity, {}};
@@ -129,6 +132,8 @@ void EngineBridge::pollRecording() {
         live->started = progress.started;
         live->startSample = progress.startSample;
         live->frames = progress.frames;
+        live->wraps.clear();
+        for (const sub::LoopWrap& wrap : progress.wraps) live->wraps.push_back({wrap.at, wrap.back});
         if (progress.midi) {
             live->notes.clear();
             for (const sub::RecordedNote& note : progress.notes) {

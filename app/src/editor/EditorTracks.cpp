@@ -939,51 +939,59 @@ void ProjectEditor::setTrackMidiInput(const QString& trackId, const std::optiona
 ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize) {
     const Project& p = *project_;
     const double tempo = p.tempo();
+    // Each track's passes (a take recorded round the loop made one each time
+    // round: loopPasses), in the order they were played: a clip each.
     OrderedMap<QString, std::vector<Clip>> byTrack;
-    for (const RecordedTake& take : takes) {
-        if (!p.hasTrack(take.trackId) || take.durationSec <= 0) continue;
-        const Track& track = p.track(take.trackId);
-        if (track.isMidi() != take.midi) continue;
-        if (take.midi) {
-            byTrack[take.trackId].push_back(recordedMidiClip(take, quantize));
-            continue;
+    for (const RecordedTake& recorded : takes) {
+        if (!p.hasTrack(recorded.trackId) || recorded.durationSec <= 0) continue;
+        const Track& track = p.track(recorded.trackId);
+        if (track.isMidi() != recorded.midi) continue;
+        for (const RecordedTake& take : loopPasses(recorded)) {
+            if (take.midi) {
+                byTrack[take.trackId].push_back(recordedMidiClip(take, quantize));
+                continue;
+            }
+            double startBeat = secondsToBeats(take.startSec, tempo);
+            double offset = take.offsetSec;
+            double duration = take.durationSec;
+            if (startBeat < 0) {  // it began before the timeline (the count-in's latency)
+                offset -= take.startSec;
+                duration += take.startSec;
+                startBeat = 0.0;
+            }
+            if (duration <= 0) continue;
+            const double file = take.fileSec > 0 ? take.fileSec : take.offsetSec + take.durationSec;
+            byTrack[take.trackId].push_back(Clip::audio(newId(), take.path, QFileInfo(take.path).completeBaseName(),
+                                                        startBeat, duration, offset, file));
         }
-        double startBeat = secondsToBeats(take.startSec, tempo);
-        double offset = 0.0;
-        if (startBeat < 0) {  // it began before the timeline (the count-in's latency)
-            offset = -take.startSec;
-            startBeat = 0.0;
-        }
-        const double duration = take.durationSec - offset;
-        if (duration <= 0) continue;
-        byTrack[take.trackId].push_back(Clip::audio(newId(), take.path, QFileInfo(take.path).completeBaseName(),
-                                                    startBeat, duration, offset, take.durationSec));
     }
+    // On the track, each pass replaces what was under it (the last time round the loop wins).
     QMap<QString, std::vector<Clip>> after;
     ClipRefs refs;
     for (const auto& [trackId, clips] : byTrack) {
-        QSet<QString> newIds;
         std::vector<Clip> all = p.track(trackId).clips;
         for (const Clip& clip : clips) {
-            newIds.insert(clip.id);
             all.push_back(clip);
-            refs.append({trackId, clip.id});
+            all = edits::resolveOverlaps(all, {clip.id}, tempo);
         }
-        after.insert(trackId, edits::resolveOverlaps(all, newIds, tempo));
+        for (const Clip& clip : all) {
+            if (std::any_of(clips.begin(), clips.end(), [&](const Clip& c) { return c.id == clip.id; }))
+                refs.append({trackId, clip.id});
+        }
+        after.insert(trackId, all);
     }
     if (after.isEmpty()) return refs;
     const QString text = QStringLiteral("Record");
     Macro macro(undoStack_, text);
     if (!commitClips(text, after)) return {};
-    for (const auto& [trackId, clips] : byTrack) {  // (a take lane of each track's takes, copies of them)
+    for (const auto& [trackId, clips] : byTrack) {  // (a take lane of each pass, a copy of it)
         const Track& track = p.track(trackId);
         std::vector<TakeLane> lanes = track.takes;
-        TakeLane lane{newId(), nextTakeName(track), {}};
+        int number = nextTakeName(track).section(QLatin1Char(' '), 1).toInt();  // ("Take 3": 3)
         for (Clip copy : clips) {
             copy.id = newId();
-            lane.clips.push_back(std::move(copy));
+            lanes.push_back({newId(), QStringLiteral("Take %1").arg(number++), {std::move(copy)}});
         }
-        lanes.push_back(std::move(lane));
         push(std::make_unique<SetTakeLanesCommand>(project_, trackId, track.takes, std::move(lanes), text));
     }
     return refs;

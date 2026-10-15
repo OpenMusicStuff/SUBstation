@@ -27,16 +27,45 @@ struct RecordedTakeNote {
 
 // A recorded WAV file and where it starts: `startSec` from the timeline's start
 // (negative: it began before it). A MIDI take has no file but `notes`.
+//
+// While the loop wrapped as it recorded, a take is one straight stretch of
+// *recording time*: the timeline as if the loop had never wrapped. `wraps` says
+// where it did: at `atSec` (recording time: the loop's end) the timeline went
+// `backSec` back (to the loop's start). Its times (startSec, its notes') are in
+// recording time; each pass round the loop is a take of its own
+// (ProjectEditor::addRecordings, loopPasses()).
 struct RecordedTake {
+    struct Wrap {
+        double atSec = 0.0;
+        double backSec = 0.0;
+
+        bool operator==(const Wrap&) const = default;
+    };
+
     QString trackId;
     QString path;
     double startSec = 0.0;
     double durationSec = 0.0;
     std::vector<RecordedTakeNote> notes;
     bool midi = false;
+    std::vector<Wrap> wraps;
+    // A pass of a take (loopPasses): where in the file it starts, and how long
+    // the file is (0: durationSec, from offsetSec).
+    double offsetSec = 0.0;
+    double fileSec = 0.0;
 
     bool operator==(const RecordedTake&) const = default;
 };
+
+// A pass round the loop this short (seconds: stopping just after the loop
+// wrapped) is no take of its own, unless it is all there is.
+inline constexpr double kMinPassSec = 0.05;
+
+// A take as the passes it made round the loop, in order: each a take of its own
+// on the timeline (no wraps), the part of the take between two wraps (an audio
+// pass a stretch of its file, `offsetSec` into it; a MIDI pass the notes that
+// start in it, cut at its end). Without wraps, the take itself.
+std::vector<RecordedTake> loopPasses(const RecordedTake& take);
 
 }  // namespace sub::app
 

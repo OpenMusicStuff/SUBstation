@@ -130,6 +130,9 @@ struct RecordingProgress {
     std::vector<float> peaks;
     bool midi = false;
     std::vector<RecordedNote> notes;  // a MIDI take's notes so far (held ones end at -1)
+    // Where the loop wrapped so far: startSample, frames and notes are in
+    // recording time (RecordedTake::wraps).
+    std::vector<LoopWrap> wraps;
 };
 
 // What a track played live is heard after (Engine::liveLatency()), in frames.

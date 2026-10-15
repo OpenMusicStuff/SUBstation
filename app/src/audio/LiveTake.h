@@ -5,6 +5,7 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <algorithm>
 #include <vector>
 
 namespace sub::app {
@@ -24,14 +25,34 @@ struct LiveTake {
     // Frames each live peak stands for (the engine's Engine::kRecordPeakFrames).
     static constexpr int kPeakFrames = 128;
 
+    // The loop wrapping as it records (as RecordedTake::Wrap, in samples): its
+    // times are in recording time; the pass under way is the part of it after
+    // the last wrap (passStart()), heard from the loop's start.
+    struct Wrap {
+        qint64 at = 0;
+        qint64 back = 0;
+
+        friend bool operator==(const Wrap&, const Wrap&) = default;
+    };
+
     QString trackId;
-    qint64 startSample = 0;  // timeline sample of its first frame
+    qint64 startSample = 0;  // recording time of its first frame
     bool started = false;
     qint64 frames = 0;
     // (min, max) per kPeakFrames frames, all channels: 2 floats a peak.
     std::vector<float> peaks;
     bool midi = false;
-    std::vector<LiveNote> notes;  // a MIDI take's notes so far
+    std::vector<LiveNote> notes;  // a MIDI take's notes so far (in recording time)
+    std::vector<Wrap> wraps;
+
+    // Recording time where the pass under way began (its first frame's, or the last wrap's).
+    qint64 passStart() const { return wraps.empty() ? startSample : std::max(startSample, wraps.back().at); }
+    // How far the timeline is behind recording time in that pass (the wraps' `back`s).
+    qint64 passOffset() const {
+        qint64 back = 0;
+        for (const Wrap& wrap : wraps) back += wrap.back;
+        return back;
+    }
 
     qint64 peakCount() const { return static_cast<qint64>(peaks.size() / 2); }
     float peakMin(qint64 index) const { return peaks[static_cast<size_t>(2 * index)]; }

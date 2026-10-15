@@ -62,7 +62,8 @@ its take replaces them. With monitoring *Off* it is silent until recording stops
     bars: the metronome counts in even if it is off) if stopped;
   - or from the playhead while playing (punch in).
 - Record again to stop recording and keep playing; Stop or Space stop both.
-- While recording the loop doesn't wrap.
+- With the loop on, recording goes round it as playback does: each time round is a pass,
+  kept as a take of its own (see [Recording round the loop](#recording-round-the-loop)).
 
 ## Takes
 
@@ -99,6 +100,21 @@ alike.
 - The comp's clips are ordinary clips: move, trim, fade and edit them as any other.
 - The File Manager lists the files the track's clips play, not those only a take lane
   plays.
+
+### Recording round the loop
+
+With the loop on, recording wraps at the loop's end and goes on from its start, as
+playback does, until you stop it: play a part over and over, then choose the best.
+
+- Each time round is a take of its own on its own take lane ("Take 1", "Take 2", ...;
+  the first one from wherever recording began). Stopping just after the loop wrapped
+  makes no take of that moment.
+- The track plays the last time round (where you stopped part-way, the one before for the
+  rest of the loop): show the take lanes to comp from the others.
+- While recording, the take draws only the time round under way.
+- Audio takes are one WAV file, each take a stretch of it; MIDI takes the notes that
+  start in that time round (one held over the loop's end ends there).
+- Moving the playhead still ends the recording; the loop's wrap doesn't.
 
 ### MIDI takes
 
