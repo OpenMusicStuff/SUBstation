@@ -709,6 +709,7 @@ std::optional<QString> Importer::routedTrack(const QString& target, QString* tap
     if (!match.hasMatch()) return std::nullopt;
     const QString liveId = match.captured(1);
     const QString where = match.captured(2);
+    if (!ids_.contains(liveId)) return std::nullopt;
     if (tap) *tap = where.contains(u"PreFx") ? kPreFx : where.contains(u"PostFx") ? kPreFader : kPostFader;
     // A Drum Rack pad's ("DeviceOut.0.B2"): its whole track, after the rack.
     static const QRegularExpression pad(QStringLiteral("DeviceOut\\.\\d+\\.B\\d+"));
@@ -722,7 +723,6 @@ std::optional<QString> Importer::routedTrack(const QString& target, QString* tap
         }
         notes_.listed(QStringLiteral("Sidechains from a Drum Rack's pad hear the whole rack"), name);
     }
-    if (!ids_.contains(liveId)) return std::nullopt;
     return ids_.value(liveId);
 }
 
