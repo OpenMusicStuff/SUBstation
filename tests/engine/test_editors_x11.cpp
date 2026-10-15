@@ -201,6 +201,9 @@ TEST_CASE("x11 editor: a VST2 plug-in's") {
 
     x.send(editor.view, x.atom("SUB_TEST_RESIZE"), 420, 260);
     CHECK(pumpUntil(engine, [&] { return x.size(editor.frame) == std::make_pair(420, 260); }));
+    // Asked from the plug-in's own thread: the window follows on the main thread, in idle().
+    x.send(editor.view, x.atom("SUB_TEST_RESIZE_ELSEWHERE"), 380, 240);
+    CHECK(pumpUntil(engine, [&] { return x.size(editor.frame) == std::make_pair(380, 240); }));
 
     x.close(editor.frame);
     CHECK(pumpUntil(engine, [&] { return !engine.isEditorOpen(gain); }));

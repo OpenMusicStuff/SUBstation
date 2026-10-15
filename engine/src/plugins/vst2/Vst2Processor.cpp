@@ -540,6 +540,11 @@ intptr_t Vst2Processor::hostCall(int32_t opcode, int32_t index, int64_t value, v
         case kGetTime: return reinterpret_cast<intptr_t>(&time_);
         case VST_HOST_OPCODE_IO_MODIFIED: ioChanged_.store(true); return 1;
         case VST_HOST_OPCODE_EDITOR_RESIZE:
+            if (index <= 0 || value <= 0 || value > 0xFFFF || index > 0xFFFF) return 0;
+            if (std::this_thread::get_id() != mainThread_) {  // (the view may be going there: in idle())
+                pendingResize_.store((uint64_t(uint32_t(index)) << 32) | uint32_t(value));
+                return 1;
+            }
             return view_ && view_->resize(index, static_cast<int>(value)) ? 1 : 0;
         case VST_HOST_OPCODE_GET_SAMPLE_RATE: return static_cast<intptr_t>(sampleRate_.load());
         case VST_HOST_OPCODE_GET_BLOCK_SIZE: return maxBlock_.load();
@@ -560,6 +565,9 @@ bool Vst2Processor::idle() {
         pushEvent({ProcessorEvent::Type::EditorClosed});
     }
     if (editor_ && editor_->isOpen()) dispatch(VST_EFFECT_OPCODE_EDITOR_KEEP_ALIVE);  // (its timers, on some)
+    if (const uint64_t size = pendingResize_.exchange(0); size && view_) {  // asked for from another thread
+        view_->resize(static_cast<int>(size >> 32), static_cast<int>(size & 0xFFFFFFFF));
+    }
 
     bool changed = false;
     if (automationPending_.exchange(false, std::memory_order_acquire)) {
@@ -774,6 +782,7 @@ bool Vst2Processor::openEditor(void* ownerWindow, const std::string& title) {
 void Vst2Processor::closeEditor() { dropEditor(); }
 
 void Vst2Processor::dropEditor() {
+    pendingResize_.store(0);  // (for the editor going)
     if (!editor_) return;
     editorPosition_ = editor_->position();
     editor_.reset();

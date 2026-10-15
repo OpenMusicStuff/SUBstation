@@ -8,7 +8,9 @@
 //    Where the engine has X11 editors (SUB_TEST_X11), an editor: an X11 window of
 //    its own connection inside the host's, run by the host's editor idle calls,
 //    which client messages ask to edit Gain (one gesture: 0.25, then 0.3) and to
-//    ask the host for another size (SUB_TEST_EDIT_GAIN, SUB_TEST_RESIZE w h).
+//    ask the host for another size (SUB_TEST_EDIT_GAIN, SUB_TEST_RESIZE w h; from
+//    a thread of its own, as plug-ins drawing on their own threads may:
+//    SUB_TEST_RESIZE_ELSEWHERE w h).
 //  * SUB VST2 Synth ('SuS2', an instrument): its output is DC, each held note's
 //    velocity / 127 times 2 * Level, sample-exactly at its events' offsets; it
 //    reports the host's transport as parameters it sets itself from process()
@@ -31,6 +33,7 @@
 #include <xcb/xcb.h>
 
 #include <cstdlib>
+#include <thread>
 #endif
 
 #if defined(_WIN32)
@@ -165,7 +168,7 @@ private:
 // hands to its owner.
 class X11Editor {
 public:
-    enum class Request { None, EditGain, Resize };
+    enum class Request { None, EditGain, Resize, ResizeElsewhere };
 
     bool open(void* parent, int width, int height) {
         c_ = xcb_connect(nullptr, nullptr);
@@ -178,6 +181,7 @@ public:
                           &events);
         editGain_ = atom("SUB_TEST_EDIT_GAIN");
         resize_ = atom("SUB_TEST_RESIZE");
+        resizeElsewhere_ = atom("SUB_TEST_RESIZE_ELSEWHERE");
         xcb_map_window(c_, window_);
         xcb_flush(c_);
         return true;
@@ -200,10 +204,10 @@ public:
             if ((event->response_type & 0x7F) == XCB_CLIENT_MESSAGE) {
                 const auto* message = reinterpret_cast<const xcb_client_message_event_t*>(event);
                 if (message->type == editGain_) request = Request::EditGain;
-                if (message->type == resize_) {
+                if (message->type == resize_ || message->type == resizeElsewhere_) {
                     width = int(message->data.data32[0]);
                     height = int(message->data.data32[1]);
-                    request = Request::Resize;
+                    request = message->type == resize_ ? Request::Resize : Request::ResizeElsewhere;
                 }
             }
             std::free(event);
@@ -228,7 +232,7 @@ private:
 
     xcb_connection_t* c_ = nullptr;
     xcb_window_t window_ = 0;
-    xcb_atom_t editGain_ = 0, resize_ = 0;
+    xcb_atom_t editGain_ = 0, resize_ = 0, resizeElsewhere_ = 0;
 };
 constexpr int32_t kEditorFlag = VST_EFFECT_FLAG_EDITOR;
 #else
@@ -319,7 +323,8 @@ private:
     void idleEditor() {
         int width = 0, height = 0;
         for (;;) {
-            switch (editor_.poll(width, height)) {
+            const X11Editor::Request request = editor_.poll(width, height);
+            switch (request) {
                 case X11Editor::Request::None: return;
                 case X11Editor::Request::EditGain:  // a knob dragged: one gesture
                     host(sub::vst2::kBeginEdit, kGain);
@@ -330,11 +335,17 @@ private:
                     host(sub::vst2::kEndEdit, kGain);
                     break;
                 case X11Editor::Request::Resize:
+                case X11Editor::Request::ResizeElsewhere: {
                     rect_.right = int16_t(width);
                     rect_.bottom = int16_t(height);
                     editor_.resize(width, height);
-                    host(VST_HOST_OPCODE_EDITOR_RESIZE, width, height);
+                    if (request == X11Editor::Request::Resize) {
+                        host(VST_HOST_OPCODE_EDITOR_RESIZE, width, height);
+                    } else {
+                        std::thread([&] { host(VST_HOST_OPCODE_EDITOR_RESIZE, width, height); }).join();
+                    }
                     break;
+                }
             }
         }
     }

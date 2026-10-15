@@ -31,6 +31,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -193,7 +194,12 @@ private:
     std::chrono::steady_clock::time_point lastPresetCheck_{};
 
     std::unique_ptr<vst3::EditorWindow> editor_;
-    EditorView* view_ = nullptr;  // the editor's view while editor_ holds it
+    EditorView* view_ = nullptr;  // the editor's view while editor_ holds it (main thread only)
+    // The main thread (editors' and views' own), and a size the plug-in asked for
+    // from another thread: the window follows in the next idle() (width << 32 |
+    // height; 0: none), as the view is the main thread's alone.
+    std::thread::id mainThread_ = std::this_thread::get_id();
+    std::atomic<uint64_t> pendingResize_{0};
     std::optional<vst3::EditorWindow::Position> editorPosition_;
 };
 

@@ -542,7 +542,7 @@ answers what is its own (`Vst2Processor::hostCall`):
 | begin / end edit | a gesture (`ParamTouched` as it starts) |
 | get time | the current call's `TimeInfo` (see below) |
 | I/O changed | its channels, latency or parameter count changed: re-read in `idle()` |
-| size window | its editor asks for a size: the window follows (see [Editors](#editors)) |
+| size window | its editor asks for a size: the window follows (see [Editors](#editors)); asked from another thread than the main one (a plug-in drawing on its own), in the next `idle()`, as the view and its window are the main thread's alone |
 | refresh (update display) | its names or values changed (a program picked): re-read in `idle()` |
 | sample rate, block size | the processor's |
 | effect directory | its library's folder |
