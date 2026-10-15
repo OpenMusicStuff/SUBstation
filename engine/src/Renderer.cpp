@@ -288,13 +288,14 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     if (wasPlaying_ && !playing_) releaseLiveNotes_ = true;
     wasPlaying_ = playing_;
 
+    const bool punched = insidePunch(snap);
     // 2. What each track hears in this chunk, worked out in order: everything
     // here touches state the tracks share (sounding notes, MIDI input, the
     // recording, stretchers).
     for (const TrackRender& track : snap.tracks) {
         TrackBuffers& buffers = *track.buffers;
         buffers.monitored = isMonitored(track, flags);
-        buffers.recorded = flags.live && isRecorded(track.id);
+        buffers.recorded = flags.live && punched && isRecorded(track.id);
         const bool hearsMidi = hearsMidiInput(track, flags);
         // Constrained, a track played live (and what it is heard through) is
         // heard as soon as it can be, like monitored audio, playing back or not.
@@ -796,6 +797,18 @@ bool Renderer::hearsMidiInput(const TrackRender& track, ChunkFlags flags) const 
         case MonitorMode::In: return true;
         case MonitorMode::Auto: return track.armed;  // clips' notes go on playing alongside
         case MonitorMode::Off: break;
+    }
+    return false;
+}
+
+bool Renderer::insidePunch(const RenderSnapshot& snap) const noexcept {
+    if (!snap.punchIn && !snap.punchOut) return true;
+    if (numSegments_ == 0) return !snap.punchIn || position_ >= snap.loopStart;  // (stopped, or counting in)
+    // Inside if any of the chunk's stretches reaches into it (a chunk is a few milliseconds).
+    for (int s = 0; s < numSegments_; ++s) {
+        const Segment& segment = segments_[s];
+        const int64_t end = segment.position + segment.length;
+        if ((!snap.punchIn || end > snap.loopStart) && (!snap.punchOut || segment.position < snap.loopEnd)) return true;
     }
     return false;
 }

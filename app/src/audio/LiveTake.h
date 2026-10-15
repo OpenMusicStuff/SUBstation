@@ -6,6 +6,7 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 namespace sub::app {
@@ -44,6 +45,9 @@ struct LiveTake {
     bool midi = false;
     std::vector<LiveNote> notes;  // a MIDI take's notes so far (in recording time)
     std::vector<Wrap> wraps;
+    // Punch In and Out (timeline samples): only what is between them is kept, and drawn.
+    std::optional<qint64> punchIn;
+    std::optional<qint64> punchOut;
 
     // Recording time where the pass under way began (its first frame's, or the last wrap's).
     qint64 passStart() const { return wraps.empty() ? startSample : std::max(startSample, wraps.back().at); }

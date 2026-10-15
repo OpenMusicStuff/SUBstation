@@ -72,6 +72,8 @@ QString settingsFieldName(SettingsField field) {
     case SettingsField::LoopStart: return QStringLiteral("loop_start");
     case SettingsField::LoopEnd: return QStringLiteral("loop_end");
     case SettingsField::AutomationLocked: return QStringLiteral("automation_locked");
+    case SettingsField::PunchIn: return QStringLiteral("punch_in");
+    case SettingsField::PunchOut: return QStringLiteral("punch_out");
     }
     return {};
 }
@@ -87,6 +89,8 @@ SettingsValue Project::setting(SettingsField field) const {
     case SettingsField::LoopStart: return loopStart_;
     case SettingsField::LoopEnd: return loopEnd_;
     case SettingsField::AutomationLocked: return automationLocked_;
+    case SettingsField::PunchIn: return punchIn_;
+    case SettingsField::PunchOut: return punchOut_;
     }
     return {};
 }
@@ -723,6 +727,8 @@ void Project::updateSettings(const SettingsValues& values) {
         case SettingsField::LoopStart: loopStart_ = std::get<double>(value); break;
         case SettingsField::LoopEnd: loopEnd_ = std::get<double>(value); break;
         case SettingsField::AutomationLocked: automationLocked_ = std::get<bool>(value); break;
+        case SettingsField::PunchIn: punchIn_ = std::get<bool>(value); break;
+        case SettingsField::PunchOut: punchOut_ = std::get<bool>(value); break;
         }
     }
     Q_EMIT settingsChanged();
@@ -750,6 +756,8 @@ void Project::replaceContents(ProjectContents contents) {
     loopEnabled_ = contents.loopEnabled;
     loopStart_ = contents.loopStart;
     loopEnd_ = contents.loopEnd;
+    punchIn_ = contents.punchIn;
+    punchOut_ = contents.punchOut;
     master_ = contents.master ? std::move(*contents.master) : newMaster();
     automationLocked_ = contents.automationLocked;
     tracks_ = std::move(contents.tracks);

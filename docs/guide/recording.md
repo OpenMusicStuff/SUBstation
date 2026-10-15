@@ -116,6 +116,26 @@ playback does, until you stop it: play a part over and over, then choose the bes
   start in that time round (one held over the loop's end ends there).
 - Moving the playhead still ends the recording; the loop's wrap doesn't.
 
+### Punch In and Out
+
+The **Punch In** and **Punch Out** buttons either side of Loop in the transport bar
+restrict recording to the loop brace, as in Ableton, whether the loop is on or not:
+
+- **Punch In**: start recording before the loop's start to play along to what comes
+  before it: the armed tracks play their clips until the playhead reaches the loop's
+  start, and only what is played from there is kept.
+- **Punch Out**: the armed tracks play their clips again from the loop's end, and what
+  is played after it isn't kept. With the loop on, recording goes round the loop before
+  it gets there: Punch Out matters with the loop off.
+- Both together: drop into the loop's stretch and out of it again, the rest of the
+  track left as it was. With the loop on, every time round is a take (above), each just
+  the loop's stretch.
+- While recording, the take is drawn only inside the punch region.
+- They are settings of the project (saved with it); turning them on or off is an undo
+  step, as the loop's is. The punch region is the one when recording began.
+- The audio file still holds everything recorded, the run-in too: the takes are the
+  stretches of it inside the punch region.
+
 ### MIDI takes
 
 - Recording records armed MIDI tracks along with audio ones: the notes show on the take

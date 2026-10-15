@@ -665,6 +665,11 @@ public:
     // pitch class (0 = C), or -1 when none is known. Throws std::invalid_argument for a tonic past 11.
     void setSongKey(int tonic, bool minor);
     void setLoop(bool enabled, double startBeat, double endBeat);
+    // Punch In and Out: while recording, the tracks recorded play their clips
+    // before the loop's start (In) and from its end (Out), loop on or not, as
+    // they do when they don't record. (What is recorded there is the
+    // application's to leave out of its takes: they record all the same.)
+    void setPunch(bool in, bool out);
     void setMetronome(bool enabled);
     bool metronome() const { return shared_.metronome.load(std::memory_order_relaxed); }
     // The short fade against clicks at a clip's edge that cuts into its file
@@ -1035,6 +1040,8 @@ private:
     bool loopEnabled_ = false;
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 16.0;
+    bool punchIn_ = false;
+    bool punchOut_ = false;
     double clipFadeMs_ = 4.0;
     bool constrainLatency_ = false;    // setConstrainLatency()
     double constrainThresholdMs_ = 3.0;

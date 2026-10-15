@@ -147,6 +147,9 @@ struct EngineBridge::Private {
 
     QMap<quint32, QString> recording;  // engine track id -> track id, while recording
     QMap<QString, LiveTake> liveTakes;  // track id -> its take while recording
+    // Where Punch In and Out had the takes begin and end when recording began (timeline seconds).
+    std::optional<double> punchInSec;
+    std::optional<double> punchOutSec;
     QSet<QString> previewing;  // tracks playing a dragged clip's preview (previewClips)
     QHash<QString, QString> reversed;  // source key -> its reversed copy, written this session
     QMap<QString, QString> midiErrors;  // MIDI input -> why it couldn't be opened

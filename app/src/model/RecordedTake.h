@@ -7,6 +7,7 @@
 #include <QString>
 #include <QtGlobal>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -53,6 +54,10 @@ struct RecordedTake {
     // the file is (0: durationSec, from offsetSec).
     double offsetSec = 0.0;
     double fileSec = 0.0;
+    // Punch In and Out as they were (timeline seconds): what was played before
+    // `punchInSec` or from `punchOutSec` is left out of its passes (loopPasses).
+    std::optional<double> punchInSec;
+    std::optional<double> punchOutSec;
 
     bool operator==(const RecordedTake&) const = default;
 };
@@ -62,9 +67,11 @@ struct RecordedTake {
 inline constexpr double kMinPassSec = 0.05;
 
 // A take as the passes it made round the loop, in order: each a take of its own
-// on the timeline (no wraps), the part of the take between two wraps (an audio
-// pass a stretch of its file, `offsetSec` into it; a MIDI pass the notes that
-// start in it, cut at its end). Without wraps, the take itself.
+// on the timeline (no wraps, no punch), the part of the take between two wraps
+// (an audio pass a stretch of its file, `offsetSec` into it; a MIDI pass the
+// notes that start in it, cut at its end), and of that only what is inside the
+// punch region (punchInSec, punchOutSec): a pass outside it is none. Without
+// wraps or punching, the take itself.
 std::vector<RecordedTake> loopPasses(const RecordedTake& take);
 
 }  // namespace sub::app

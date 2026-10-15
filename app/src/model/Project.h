@@ -124,6 +124,8 @@ enum class SettingsField {
     LoopStart,         // double
     LoopEnd,           // double
     AutomationLocked,  // bool
+    PunchIn,           // bool
+    PunchOut,          // bool
 };
 using SettingsValue = std::variant<bool, double, TimeSignature, std::optional<Key>>;
 using SettingsValues = QMap<SettingsField, SettingsValue>;
@@ -137,6 +139,8 @@ struct ProjectContents {
     bool loopEnabled = false;
     double loopStart = 0.0;
     double loopEnd = 16.0;
+    bool punchIn = false;
+    bool punchOut = false;
     bool automationLocked = false;
     std::optional<Track> master;  // none: a new master
     std::vector<Track> tracks;
@@ -153,6 +157,8 @@ class Project : public QObject {
     Q_PROPERTY(bool loopEnabled READ loopEnabled NOTIFY settingsChanged)
     Q_PROPERTY(double loopStart READ loopStart NOTIFY settingsChanged)
     Q_PROPERTY(double loopEnd READ loopEnd NOTIFY settingsChanged)
+    Q_PROPERTY(bool punchIn READ punchIn NOTIFY settingsChanged)
+    Q_PROPERTY(bool punchOut READ punchOut NOTIFY settingsChanged)
     Q_PROPERTY(bool automationLocked READ automationLocked NOTIFY settingsChanged)
     Q_PROPERTY(QString timeSignatureText READ timeSignatureText NOTIFY settingsChanged)
     Q_PROPERTY(QString keyName READ keyName NOTIFY settingsChanged)
@@ -169,6 +175,11 @@ public:
     bool loopEnabled() const { return loopEnabled_; }
     double loopStart() const { return loopStart_; }
     double loopEnd() const { return loopEnd_; }
+    // Punch In and Out (Ableton's): recording keeps only what is played from
+    // the loop's start (In) and up to its end (Out); outside, recorded tracks
+    // play their clips. Whether the loop is on or not.
+    bool punchIn() const { return punchIn_; }
+    bool punchOut() const { return punchOut_; }
     // Locked: automation stays where it is when clips move. Unlocked, the
     // automation under clips moves (or is copied) with them, as in Ableton.
     bool automationLocked() const { return automationLocked_; }
@@ -423,6 +434,8 @@ private:
     TimeSignature timeSignature_;
     std::optional<Key> key_;
     bool loopEnabled_ = false;
+    bool punchIn_ = false;
+    bool punchOut_ = false;
     double loopStart_ = 0.0;
     double loopEnd_ = 16.0;
     bool automationLocked_ = false;

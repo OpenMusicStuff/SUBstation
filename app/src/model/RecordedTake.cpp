@@ -1,11 +1,12 @@
 #include "model/RecordedTake.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace sub::app {
 
 std::vector<RecordedTake> loopPasses(const RecordedTake& take) {
-    if (take.wraps.empty()) return {take};
+    if (take.wraps.empty() && !take.punchInSec && !take.punchOutSec) return {take};
     // Where each pass begins in recording time, and how far behind it the timeline is there.
     const double begin = take.startSec, end = take.startSec + take.durationSec;
     std::vector<std::pair<double, double>> cuts{{begin, 0.0}};
@@ -17,11 +18,15 @@ std::vector<RecordedTake> loopPasses(const RecordedTake& take) {
             cuts.emplace_back(wrap.atSec, cuts.back().second + wrap.backSec);
         }
     }
+    // Of each, only what is inside the punch region, in recording time.
+    const double punchIn = take.punchInSec.value_or(-std::numeric_limits<double>::infinity());
+    const double punchOut = take.punchOutSec.value_or(std::numeric_limits<double>::infinity());
     std::vector<RecordedTake> passes;
     for (size_t i = 0; i < cuts.size(); ++i) {
-        const auto [from, back] = cuts[i];
-        const double to = i + 1 < cuts.size() ? cuts[i + 1].first : end;
-        if (to - from < kMinPassSec && cuts.size() > 1) continue;
+        const double back = cuts[i].second;
+        const double from = std::max(cuts[i].first, punchIn + back);
+        const double to = std::min(i + 1 < cuts.size() ? cuts[i + 1].first : end, punchOut + back);
+        if (to <= from || (to - from < kMinPassSec && cuts.size() > 1)) continue;
         RecordedTake pass;
         pass.trackId = take.trackId;
         pass.path = take.path;

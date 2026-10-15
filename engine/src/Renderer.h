@@ -461,6 +461,9 @@ private:
     bool hearsMidiInput(const TrackRender& track, ChunkFlags flags) const noexcept;
     // Whether a take of the track records now: it plays none of its clips then.
     bool isRecorded(uint32_t trackId) const noexcept;
+    // Whether this chunk's playhead is where recording replaces the recorded
+    // tracks' clips: inside the punch region (anywhere, without Punch In or Out).
+    bool insidePunch(const RenderSnapshot& snap) const noexcept;
     MidiRecordingTake* midiTake(uint32_t trackId) const noexcept;
     void routeMidiInput(const TrackRender& track, bool hears, MidiRecordingTake* take, TrackBuffers& out) noexcept;
     void recordMidi(MidiRecordingTake* take, int offset, uint8_t channel, uint8_t key, uint8_t velocity,

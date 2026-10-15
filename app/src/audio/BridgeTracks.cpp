@@ -426,6 +426,7 @@ void EngineBridge::pushSettings() {
     engine_.setTempo(project_->tempo());
     engine_.setTimeSignature(project_->timeSignature().numerator, project_->timeSignature().denominator);
     engine_.setLoop(project_->loopEnabled(), project_->loopStart(), project_->loopEnd());
+    engine_.setPunch(project_->punchIn(), project_->punchOut());
 }
 
 void EngineBridge::applyAudioThreads() {

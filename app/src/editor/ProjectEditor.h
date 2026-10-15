@@ -260,6 +260,9 @@ public:
     // The loop: at least a sixteenth long, not before the timeline's start.
     Q_INVOKABLE void setLoop(bool enabled, double start, double end, const QString& mergeKey = {});
     Q_INVOKABLE void setLoopEnabled(bool enabled);
+    // Punch In and Out (Project::punchIn, punchOut).
+    Q_INVOKABLE void setPunchIn(bool enabled);
+    Q_INVOKABLE void setPunchOut(bool enabled);
 
     // --- Clips and time selections (EditorClips.cpp) ---
 

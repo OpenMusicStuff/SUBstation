@@ -12,6 +12,8 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include <cmath>
+
 namespace sub::app {
 
 bool EngineBridge::isRecording() const { return !d_->recording.isEmpty(); }
@@ -69,12 +71,19 @@ QString EngineBridge::startRecording(double countInBeats) {
     }
     d_->recording.clear();
     d_->liveTakes.clear();
+    // The punch region as it is now (the loop's, by Punch In and Out), for the takes.
+    const double secondsPerBeat = 60.0 / project_->tempo();
+    d_->punchInSec = project_->punchIn() ? std::optional<double>(project_->loopStart() * secondsPerBeat) : std::nullopt;
+    d_->punchOutSec = project_->punchOut() ? std::optional<double>(project_->loopEnd() * secondsPerBeat) : std::nullopt;
+    const double rate = engine_.sampleRate();
     for (size_t i = 0; i < targets.size(); ++i) {
         const QString& trackId = tracks[static_cast<qsizetype>(i)];
         d_->recording.insert(targets[i].trackId, trackId);
         LiveTake live;
         live.trackId = trackId;
         live.midi = project_->track(trackId).isMidi();
+        if (d_->punchInSec) live.punchIn = std::llround(*d_->punchInSec * rate);
+        if (d_->punchOutSec) live.punchOut = std::llround(*d_->punchOutSec * rate);
         d_->liveTakes.insert(trackId, live);
     }
     Q_EMIT recordingChanged(true);
@@ -103,6 +112,8 @@ std::vector<RecordedTake> EngineBridge::stopRecording() {
         recorded.startSec = static_cast<double>(take.startSample) / rate;
         recorded.durationSec = static_cast<double>(take.frames) / rate;
         recorded.midi = take.midi;
+        recorded.punchInSec = d_->punchInSec;
+        recorded.punchOutSec = d_->punchOutSec;
         for (const sub::LoopWrap& wrap : take.wraps) {
             recorded.wraps.push_back({static_cast<double>(wrap.at) / rate, static_cast<double>(wrap.back) / rate});
         }

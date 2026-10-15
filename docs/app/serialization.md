@@ -67,7 +67,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
-| `loop` | `{"enabled", "start", "end"}` | the loop brace, in beats (default off, 0..16) |
+| `loop` | `{"enabled", "start", "end"}`, and `"punch_in"`, `"punch_out"` (true) only when on | the loop brace, in beats (default off, 0..16), and Punch In and Out (default off) |
 | `automation_locked` | bool | Lock Envelopes |
 | `master` | object | the master track (below) |
 | `folded_devices` | list of device ids | devices shown folded; only ids of devices that exist are saved |

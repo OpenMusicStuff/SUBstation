@@ -70,9 +70,14 @@ void LiveTakes::drawTake(SgPainter& p, const QColor& trackColor, const app::Live
     // only the pass under way shows (LiveTake::passStart), from the loop's start.
     const qint64 offset = take.passOffset();
     const double start = static_cast<double>(take.startSample - offset) / rate * tempo / 60.0;
-    const double passStart = static_cast<double>(take.passStart() - offset) / rate * tempo / 60.0;
-    double end = static_cast<double>(take.startSample + take.frames - offset) / rate * tempo / 60.0;
+    // And only inside the punch region (Punch In and Out): nothing yet before it, no more after it.
+    const auto beatOf = [&](qint64 sample) { return static_cast<double>(sample) / rate * tempo / 60.0; };
+    double passStart = beatOf(take.passStart() - offset);
+    if (take.punchIn) passStart = std::max(passStart, beatOf(*take.punchIn));
+    double end = beatOf(take.startSample + take.frames - offset);
     if (const auto playhead = arrangement()->playhead()) end = std::max(passStart, *playhead);
+    if (take.punchOut) end = std::min(end, beatOf(*take.punchOut));
+    if (end <= passStart) return;
     const double x0 = view.beatToX(std::max(0.0, passStart)), x1 = view.beatToX(end);
     const QRectF rect(x0, rowTop + 1, std::max(1.0, x1 - x0), rowHeight - 3);
     if (rect.right() < visible.left() || rect.left() > visible.right()) return;

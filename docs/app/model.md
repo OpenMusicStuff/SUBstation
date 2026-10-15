@@ -426,7 +426,7 @@ Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: 
 ## The Project object and its signals
 
 `Project` ([Project.h](../../app/src/model/Project.h)) holds `tempo`, `timeSignature`, `key`, the loop
-(`loopEnabled`, `loopStart`, `loopEnd`, beats), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
+(`loopEnabled`, `loopStart`, `loopEnd`, beats; `punchIn`, `punchOut`: recording kept only inside the loop brace), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
 `shownChainLists` (the racks whose chain list shows: hidden by default) and `hiddenRackDevices` (the racks whose
 chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
 `automationLocked`, `timeSignatureText`, `keyName`, `path`).
@@ -569,7 +569,7 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   the same undo step.
 - **Returns and sends**: `addReturnTrack` [Q], `setSend` (`EditError` for a cycle), `removeSend` [Q].
 - **Settings**: `setTempo` [Q] (20..999, rounded to 0.01), `setTimeSignature` [Q], `setKey`, `setKeyByName` [Q],
-  `setLoop` [Q], `setLoopEnabled` [Q], `setAutomationLocked` [Q].
+  `setLoop` [Q], `setLoopEnabled` [Q], `setPunchIn` [Q], `setPunchOut` [Q], `setAutomationLocked` [Q].
 - **Clips**: `commitClips`, `addClips` (audio files one after another, set up by `clipSettings`; a new audio track if
   needed), `addMidiClip`, `addMidiClipsOver`, `midiClipSpan`, `setClipNotes` (and `setClipsNotes`: several clips' notes in one
   undo step, for the piano roll editing them together, bends too), `moveClips` (with `clampTrackDelta`:

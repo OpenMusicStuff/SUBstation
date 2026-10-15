@@ -116,6 +116,58 @@ private Q_SLOTS:
         QCOMPARE(notes[1].notes[0].pitch, 64);
     }
 
+    void punchingKeepsOnlyTheLoopsStretch() {
+        // Played in from 0.5 s, the loop 1..3 s (beats 2..6), round it once more and stopped at 2.5 s
+        // (recording time 0.5..4.5 s: at 3 s the timeline went back 2 s).
+        RecordedTake take = audioTake("t", "C:/rec/punch.wav", 0.5, 4.0);
+        take.wraps = {{3.0, 2.0}};
+        take.punchInSec = 1.0;
+        std::vector<RecordedTake> passes = loopPasses(take);
+        QCOMPARE(passes.size(), size_t(2));
+        QCOMPARE(passes[0].startSec, 1.0);  // from the loop's start: the run-in left out
+        QCOMPARE(passes[0].durationSec, 2.0);
+        QCOMPARE(passes[0].offsetSec, 0.5);
+        QCOMPARE(passes[1].startSec, 1.0);
+        QCOMPARE(passes[1].offsetSec, 2.5);
+        QCOMPARE(passes[1].durationSec, 1.5);
+
+        // Punch Out, the loop off: what was played after the loop's end is left out.
+        RecordedTake straight = audioTake("t", "C:/rec/out.wav", 0.0, 5.0);
+        straight.punchInSec = 1.0;
+        straight.punchOutSec = 3.0;
+        passes = loopPasses(straight);
+        QCOMPARE(passes.size(), size_t(1));
+        QCOMPARE(passes[0].startSec, 1.0);
+        QCOMPARE(passes[0].durationSec, 2.0);
+        QCOMPARE(passes[0].offsetSec, 1.0);
+        // Recorded only before the punch region: nothing.
+        straight.durationSec = 0.8;
+        QVERIFY(loopPasses(straight).empty());
+
+        // MIDI: the notes started inside it, cut at Punch Out.
+        RecordedTake midi{"t", {}, 0.0, 5.0, {{0.5, 1.5, 60, 100, {}}, {2.5, 3.5, 62, 100, {}}, {4.0, 4.5, 64, 90, {}}},
+                          true};
+        midi.punchInSec = 1.0;
+        midi.punchOutSec = 3.0;
+        passes = loopPasses(midi);
+        QCOMPARE(passes.size(), size_t(1));
+        QCOMPARE(passes[0].notes.size(), size_t(1));
+        QCOMPARE(passes[0].notes[0].pitch, 62);
+        QCOMPARE(passes[0].notes[0].end, 3.0);
+
+        // On a track: its clips before the punch region stay as they were.
+        EditorFixture f;
+        const QString track = f.editor.addAudioTrack();
+        f.editor.addClips(track, 0.0, {{"C:/x/old.wav", 4.0}});  // beats 0..8
+        RecordedTake punched = audioTake(track, "C:/rec/p.wav", 0.0, 4.0);
+        punched.punchInSec = 1.0;
+        punched.punchOutSec = 3.0;
+        f.editor.addRecordings({punched});
+        QVERIFY((spans(f.track(track).clips) == Spans{{0, 2}, {2, 6}, {6, 8}}));
+        QCOMPARE(f.track(track).clips[1].path, QStringLiteral("C:/rec/p.wav"));
+        QCOMPARE(f.track(track).takes.size(), size_t(1));
+    }
+
     void recordingRoundTheLoopMakesALaneForEachPass() {
         EditorFixture f;
         const QString track = f.editor.addAudioTrack();
@@ -211,8 +263,11 @@ private Q_SLOTS:
         const QString track = f.editor.addAudioTrack();
         f.editor.addRecordings({audioTake(track, "C:/rec/one.wav", 0.0, 1.0)});
         f.editor.setTakesShown(track, true);
+        f.editor.setPunchIn(true);
+        QVERIFY(!projectToJson(f.project)["loop"].toObject().contains("punch_out"));  // (only when on)
         Project loaded;
         loadInto(loaded, projectToJson(f.project));
+        QVERIFY(loaded.punchIn() && !loaded.punchOut());
         QVERIFY(loaded.track(track).takes == f.track(track).takes);
         QVERIFY(loaded.track(track).takesShown);
 

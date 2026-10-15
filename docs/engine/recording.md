@@ -155,7 +155,11 @@ In the prologue, each track's `TrackBuffers::monitored` is worked out by `isMoni
 - `In`: always; `Auto`: armed and (stopped, or recording); `Off`: never.
 
 `TrackBuffers::recorded` is worked out there too, by `isRecorded()`: a take of the track records
-(the session isn't interrupted; live renders only). Such a track renders none of its clips
+(the session isn't interrupted; live renders only), and the chunk is inside the punch region
+(`insidePunch()`: with Punch In (`Engine::setPunch`, `RenderSnapshot::punchIn`) not before the loop's
+start, with Punch Out not from its end; a chunk reaching into it counts). Outside it a recorded track
+plays its clips as any other, while its take goes on recording: the application keeps only what is
+inside (`loopPasses`). Such a track renders none of its clips
 (`renderTrack()`, `assignVoices()`) and gets none of its clips' notes (`buildNoteEvents()` with
 `clipNotes` false, which releases those sounding): the take replaces them, so with monitoring Off
 the track is silent while it records, and monitored it hears only its input.
@@ -271,8 +275,8 @@ replacing what was under them, a take recorded round the loop a clip and a take 
 - **Another input source**: add an `InputEdge::Source` and a `RecordingTake::Source`, decide whether it
   is monitorable, push it from the prologue (if it is known before the graph) or the epilogue (if it is
   rendered), and give it a placement in `startRecording()`.
-- **Punching in and out at the loop's edges** (recording only inside it, playing before it): today a
-  take records from where it starts, the loop's passes cut out of it afterwards by the application.
+- **Punching in and out without the run-in on disk**: a take records from where it starts, the punch
+  region and the loop's passes cut out of it afterwards by the application.
 - **WASAPI inputs**: only the backend is missing ([audio-devices.md](audio-devices.md)).
 
 ## Gotchas
