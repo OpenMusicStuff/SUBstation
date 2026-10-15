@@ -11,7 +11,7 @@ import SUBstation
 //
 //   onMenuRequested: (entries, pos) => menu.show(entries, lanes, lanes, pos.x, pos.y)
 Menu {
-    id: menu
+    id: arrangementMenu
 
     property var target: null
     // What fill() made: held here until the next show() (made without a parent,
@@ -21,22 +21,22 @@ Menu {
     property MenuSearch searchField: null
 
     function show(entries, target, parentItem, x, y) {
-        menu.target = target
+        arrangementMenu.target = target
         release()
-        fill(menu, entries)
-        if (menu.count > 0)
-            menu.popup(parentItem, x, y)
+        fill(arrangementMenu, entries)
+        if (arrangementMenu.count > 0)
+            arrangementMenu.popup(parentItem, x, y)
     }
 
     function choose(id) {
-        if (menu.target)
-            menu.target.triggerMenu(id)
+        if (arrangementMenu.target)
+            arrangementMenu.target.triggerMenu(id)
     }
 
     // Empties the menu (and its submenus), then destroys what fill() made.
     function release() {
         searchField = null
-        empty(menu)
+        empty(arrangementMenu)
         for (let i = 0; i < made.length; ++i)
             made[i].destroy()
         made = []
@@ -67,11 +67,11 @@ Menu {
                 const search = make(searchComponent, {
                     menu: m,
                     rows: entry.children,
-                    run: child => menu.choose(child.id),
+                    run: child => arrangementMenu.choose(child.id),
                     rowComponent: rowComponent
                 })
                 m.addItem(search)
-                if (m === menu)
+                if (m === arrangementMenu)
                     searchField = search
             } else if (entry.submenu) {
                 const sub = make(submenuComponent, { title: entry.text, enabled: entry.enabled })
@@ -86,7 +86,8 @@ Menu {
     Component {
         id: itemComponent
         ArrangementMenuItem {
-            onTriggered: menu.choose(entryId)
+            // (Not `menu`: a MenuItem's own property, the menu it is in, a submenu for a submenu's entries.)
+            onTriggered: arrangementMenu.choose(entryId)
         }
     }
 

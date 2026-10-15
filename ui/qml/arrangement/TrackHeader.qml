@@ -318,7 +318,12 @@ TrackHeaderItem {
         width: header.nameColumnRight - x - 3
         height: header.box + 2
         visible: header.renaming
-        padding: 2
+        // (Each side: the style's TextField sets them, which `padding` alone doesn't override;
+        // its 4 above and below leave the text too little height in the name bar's.)
+        topPadding: 1
+        bottomPadding: 1
+        leftPadding: 2
+        rightPadding: 2
         font: Theme.uiFont(9)
         onVisibleChanged: {
             if (visible) {

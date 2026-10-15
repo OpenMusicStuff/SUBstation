@@ -429,7 +429,9 @@ A right-click asks the item for its menu as [MenuEntries](../../ui/src/arrangeme
 with what it does as a C++ function. `menuRequested(entries, pos)` hands them to QML as a list
 (`MenuEntries::toVariant()`, each with an id); [ArrangementMenu.qml](../../ui/qml/arrangement/ArrangementMenu.qml)
 shows them and calls `triggerMenu(id)` on the item with the one chosen, which runs it in C++. The item keeps the
-last menu until then. Shortcuts are hints only: the window's actions handle the keys.
+last menu until then. Shortcuts are hints only: the window's actions handle the keys. (Its entries call the menu by
+its id, `arrangementMenu`, not `menu`: a `MenuItem`'s own `menu` is the menu it is in, a submenu for a submenu's
+entries.)
 
 The lanes' menu (`ArrangementLanes::contextMenu(pos)`): on an automation lane, Cut and Copy (enabled inside the
 selected range), Paste (copied automation) and the lane's own entries ([below](#hit-testing-and-the-press)). On a clip
@@ -529,7 +531,7 @@ runs), volume and pan, the meter and the choosers.
 | Monitoring | In, Auto, Off buttons (role `monitor`, the one chosen `lit`) → `setMonitor()` → `editor.trySetTrackMonitor` |
 | Audio To | `outputMenu()`, as Ableton's: *Ext. Out* (disabled: not there yet), *Configure…*, *Main*, its group, the tracks it can go into (`outputTargets()`: audio tracks, for their Track In, and any track or return with a device that `bridge.hasSidechainInput`; those it feeds disabled), *Sends Only* → `editor.trySetTrackOutput(id, to, target)`. Into a track not monitoring In, the status line says it is heard only while that track monitors. |
 | Where it goes | `outputChannelMenu()`: the target's *Track In* and *Sidechain-‹device›* for each of its devices taking a sidechain |
-| Right-click | `contextMenu()`: Rename, Color, Insert Audio/MIDI/Return Track, Cut, Copy, Paste (the session's, on the selected tracks), Duplicate, Delete, Group, Ungroup, Fold/Unfold, Move Out of Group, Freeze/Unfreeze and Flatten (`Session.freezeActions()`), Show/Hide Automation, Show Automation in New Lane, Re-Enable Automation. A return's: Rename, Color, Insert Return Track, Delete, freezing, automation. The master's: automation. |
+| Right-click | `contextMenu()`: Rename, Color (on every selected track and group, one undo step: `setTracksColor`), Insert Audio/MIDI/Return Track, Cut, Copy, Paste (the session's, on the selected tracks), Duplicate, Delete, Group, Ungroup, Fold/Unfold, Move Out of Group, Freeze/Unfreeze and Flatten (`Session.freezeActions()`), Show/Hide Automation, Show Automation in New Lane, Re-Enable Automation. A return's: Rename, Color, Insert Return Track, Delete, freezing, automation. The master's: automation. |
 
 Dragging headers to move tracks: `Arrangement::dropTarget(trackIds, y)` gives `(index, parent group, the group shown
 as taking them, line y)`:
