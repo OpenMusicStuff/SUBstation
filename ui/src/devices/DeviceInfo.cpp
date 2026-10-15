@@ -206,6 +206,7 @@ void DeviceInfo::refresh() {
         s.exists = true;
         s.kind = device->kind;
         s.isRack = device->isRack();
+        s.isDrumRack = device->isDrumRack();
         s.isPlugin = device->isPlugin();
         s.name = s.isPlugin && device->plugin ? device->plugin->name : sub::app::deviceName(*device);
         s.pluginFormat = s.isPlugin && device->plugin ? device->plugin->format : QString();
@@ -214,6 +215,7 @@ void DeviceInfo::refresh() {
         s.folded = project->isDeviceFolded(deviceId_);
         s.chainListShown = s.isRack && project->isChainListShown(deviceId_);
         s.rackDevicesShown = project->areRackDevicesShown(deviceId_);
+        s.rackMacrosShown = project->areRackMacrosShown(deviceId_);
         const std::optional<QString> chain = sub::app::containerOf(track->devices, deviceId_);
         s.chainId = chain.value_or(QString());
         if (const auto* siblings = sub::app::chainDevices(track->devices, chain); siblings && !s.instrument) {

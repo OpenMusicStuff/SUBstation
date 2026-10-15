@@ -46,6 +46,7 @@ reads them as constant properties:
 | `project`, `undoStack`, `editor`, `selection`, `bridge` | `Project`, `QUndoStack`, `ProjectEditor`, `Selection`, `EngineBridge` | [model.md](model.md), [engine-bridge.md](engine-bridge.md) |
 | `browser`, `plugins` | `BrowserController`, `PluginIndex` | the browser ([browser.md](../browser.md)); the plug-ins, also Preferences › Plug-ins ([plugin-scanner.md](plugin-scanner.md)) |
 | `similarity` | `SoundSimilarity` | finding similar sounds ([intelligence.md](../intelligence.md)); the browser's Find Similar uses it |
+| `similarSamples` | `SimilarSamples` | the Sampler's and the Drum Rack's similar-sound arrows: stepping Samplers through the sounds most like their references ([intelligence.md](../intelligence.md#swapping-in-similar-samples)) |
 | `harmony` | `Harmony` | the song's chords and key, from its MIDI ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
 | `trackLabels` | `TrackLabels` | what each track is, in a few words, and what that was made from ([intelligence.md](../intelligence.md#track-labels-the-application-side)); the tooltip over a track's name, and what the MCP server tells agents of each track |
 | `mcp` | `McpServer` | the MCP server agents read and edit the project through ([mcp.md](mcp.md)); its `statusMessage` is the session's |
@@ -92,7 +93,7 @@ The session connects its parts to each other in `Session::wire()`:
   (`EngineBridge::showPluginEditors`) and its plug-ins load first (`prioritizePlugins`). The selection drops what no
   longer exists whenever tracks, clips or automation change (`Selection::prune`), and a parameter changed by hand (or
   taken hold of: `parameterTouched`) shows its automation lane, if it can be automated.
-- **Recording**: `takesRecorded` → `ProjectEditor::addRecordings(takes, recordQuantize())`, one undo step; the new
+- **Recording**: `takesRecorded` → `ProjectEditor::addRecordings(takes, recordQuantize(), recordQuantizeEnds())`, one undo step; the new
   clips are selected.
 - **The browser**: previews go to the bridge (`previewFile`, `stopPreview`), but while a hot swap runs and the
   transport plays (what is selected is heard in the song); what it activates (a double-click, Enter) goes on the
@@ -116,7 +117,7 @@ The full list, with what each does, is in [Session.h](../../app/src/session/Sess
 | Transport | `togglePlay()` (Space: plays from the insert marker; again, stops and goes back to where playback started), `toggleRecord()` (F9: records the armed tracks from the insert marker after the count-in, or from the playhead while playing; again, stops recording while playing goes on), `stop()` (the stop button; stopped, it goes to the start), `locate(beat)`, `countInBars` (0, 1, 2 or 4) with `countInChoices`, `recordQuantize` with `recordQuantizeChoices`, `automationOverridden` |
 | Create | `insertAudioTrack()`, `insertMidiTrack()` (after the selected track, in its group; selected), `insertReturnTrack()`, `insertMidiClip(gridStep)`, `groupSelected()`, `ungroupSelected()` (tracks, or devices while the device view has the focus), `deleteSelectedTracks()` |
 | Adding | `addDeviceToSelectedTrack(kind)`, `addPluginToSelectedTrack({format, uid, name, vendor, path, instrument})`, `addPresetToSelectedTrack(path)` (an instrument with no MIDI track selected: on a new MIDI track), `addFileAtInsert(path)`, `presetSaved(path)` |
-| Edit | `cut()`, `copy()`, `paste()`, `duplicate()`, `whatIsCopied(verb)`, `deleteSelection()`, `split()`, `selectAll()`, `consolidate()`, `reverseClips()`, `toggleClipActivation()`, `soloSelectedTracks()`, `renameTarget(browserListFocused)` |
+| Edit | `cut()`, `copy()`, `paste()`, `duplicate()`, `whatIsCopied(verb)`, `deleteSelection()`, `split()`, `selectAll()`, `consolidate()`, `reverseClips()`, `toggleClipActivation()`, `soloSelectedTracks()`, `armSelectedTracks()`, `renameTarget(browserListFocused)` |
 | Freezing | `toggleFreeze()` (Ctrl+Shift+F), `flattenSelectedTracks()`, `freezeActions(ids)` (a track menu's texts and states), `freezeTracks(ids)`, `unfreezeTracks(ids)`, `flattenTracks(ids)` |
 | Files | `newProject()`, `openProject(path)`, `saveProject()`, `saveProjectAs(path)`, `suggestedSavePath()`, `recentProjects`, `recentProjectAvailable(path)`, `recentMenuItems()`, `clearRecentProjects()`, `lastFolder`, `projectFilter`, `projectExtension`, `confirmDiscardText`; `saveAsTemplate()`, `clearTemplate()`, `hasTemplate`, `templatePath()`; `importLiveSet(path)`, `liveSetFilter` |
 | Export | `exportRangeChoices()` ("arrangement", "loop" while the loop is on, "selection" while there is a time selection), `exportProblem(range)`, `suggestedExportPath(fileType)`, `exportBitDepthChoices`, `defaultExportBitDepth` (24), `exportFileTypeChoices` (WAV, MP3), `exportBitrateChoices`, `defaultExportBitrate` (320), `exportAudio(path, range, bitDepth, fileType, bitrate)` |

@@ -23,6 +23,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | [DeviceKnobPages.qml](../../ui/qml/devices/DeviceKnobPages.qml), [DeviceParamKnob.qml](../../ui/qml/devices/DeviceParamKnob.qml), [ParamCell.qml](../../ui/qml/devices/ParamCell.qml), [DeviceParams](../../ui/src/devices/DeviceParams.h), [DeviceParam](../../ui/src/devices/DeviceParam.h), [ParamMenu.qml](../../ui/qml/devices/ParamMenu.qml) | A built-in device without an editor: a knob (or list) per parameter, four to a page; a parameter's cell (`ParamCell`, which `PluginParamKnob` shows a plug-in's parameter in too), its state and its menu |
 | [PluginDeviceBody.qml](../../ui/qml/devices/PluginDeviceBody.qml), [PluginParamKnob.qml](../../ui/qml/devices/PluginParamKnob.qml), [PluginParams](../../ui/src/devices/PluginParams.h) | A plug-in's generic editor: its parameters (`PluginParams`, `PluginParam`), or why it shows none |
 | [RackDeviceBody.qml](../../ui/qml/devices/RackDeviceBody.qml), [RackMacroKnob.qml](../../ui/qml/devices/RackMacroKnob.qml), [RackMacroMappings.qml](../../ui/qml/devices/RackMacroMappings.qml), [RackChainRow.qml](../../ui/qml/devices/RackChainRow.qml), [RackChainView.qml](../../ui/qml/devices/RackChainView.qml), [RackMacro](../../ui/src/devices/RackMacro.h) (`RackMacro`, `RackMacros`), [RackChain](../../ui/src/devices/RackChain.h), [RackChains](../../ui/src/devices/RackChains.h) | A rack: its buttons, macros and chain list, a macro's mappings and their ranges, a chain's row, the chain shown beside the rack |
+| [DrumRackBody.qml](../../ui/qml/devices/DrumRackBody.qml), [DrumPad.qml](../../ui/qml/devices/DrumPad.qml), [DrumRack](../../ui/src/devices/DrumRack.h) (`DrumRack`, `DrumPadItem`) | A Drum Rack: its pads, the keys' overview, the similar-sound arrows, a pad's menu; dropping samples on pads |
 | [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h) | The base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
 | [DisplayValue](../../ui/src/devices/DisplayValue.h) | A device's display as a number for QML, drawing nothing: its newest value, eased (`smoothed`), and whether any came lately (`active`), for editors drawn in QML to animate by (the Arpeggiator's, the Bitcrusher's) |
 | [editors/DeviceEditors.qml](../../ui/qml/devices/editors/DeviceEditors.qml) | The editor registry (a singleton): `editorFor(kind)` |
@@ -48,6 +49,8 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Hue: [HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml), [HueSpectrum](../../ui/src/devices/HueSpectrum.h), [HueWheel](../../ui/src/devices/HueWheel.h), the application layer's [Chroma.h](../../app/src/analysis/Chroma.h) | |
 | Vintage Hall: [VintageHallEditor.qml](../../ui/qml/devices/editors/VintageHallEditor.qml), [VintageHallLoop](../../ui/src/devices/VintageHallLoop.h), the application layer's [VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h) | |
 | Transient Shaper: [TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml), [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h), [TransientGraph](../../ui/src/devices/TransientGraph.h), the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) | |
+| Vocoder: [VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml), [VocoderGraph](../../ui/src/devices/VocoderGraph.h), the application layer's [VocoderResponse.h](../../app/src/audio/VocoderResponse.h) | |
+| Vocal Rider: [VocalRiderEditor.qml](../../ui/qml/devices/editors/VocalRiderEditor.qml), [VocalRiderGraph](../../ui/src/devices/VocalRiderGraph.h) | |
 | Sidechain: [SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml), [CurveGraph](../../ui/src/devices/CurveGraph.h), [ClashView](../../ui/src/devices/ClashView.h) | |
 | Sampler: [SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml), [SampleView](../../ui/src/devices/SampleView.h), the application layer's [SampleSlices.h](../../app/src/audio/SampleSlices.h) | |
 | Vital: [VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml), [VitalPatchInfo](../../ui/src/devices/VitalPatchInfo.h) (its patch besides its parameters: the modulations, the wavetables' and LFO shapes' names, the preset's name, author and macros' names; the matrix's and the wavetables' edits, through the editor), its panels: [VitalGraph](../../ui/src/devices/VitalGraph.h) (their base), [VitalWavetableGraph](../../ui/src/devices/VitalWavetableGraph.h), [VitalEnvelopeGraph](../../ui/src/devices/VitalEnvelopeGraph.h), [VitalLfoGraph](../../ui/src/devices/VitalLfoGraph.h), [VitalFilterGraph](../../ui/src/devices/VitalFilterGraph.h), [VitalScope](../../ui/src/devices/VitalScope.h) | |
@@ -192,7 +195,7 @@ and editor, its sidechain, its MIDI input) reading the project again whenever th
   (a device that plays notes), the sidechain button (a device with a sidechain input), the page arrows and "n/m" (only with more than one page), or, for an editor that
   names its pages (`pageNames`: the Sampler's *Sample* and *Controls*, as Simpler's), a tab per page instead
   (`pageTab_<name>`, lit while it shows), the save button.
-- **Body**: a `Loader` taking all the height there is: a rack's `RackDeviceBody`, a plug-in's `PluginDeviceBody`,
+- **Body**: a `Loader` taking all the height there is: a rack's `RackDeviceBody` (a Drum Rack's `DrumRackBody`), a plug-in's `PluginDeviceBody`,
   the device's editor (`DeviceEditors.editorFor(kind)`), or `DeviceKnobPages`. A body may have `pages` and `page`
   (the title bar pages through them; the page is restored from the area when the body is made again). Its content
   starts 6 px below the title bar and what fills the height (a graph, a rack's chain list) ends 6 px above the
@@ -329,6 +332,32 @@ its `DeviceInfo` (`info`: `chainListShown`, `rackDevicesShown`, read from the pr
   Ctrl+R renames). Right-click: Rename, Duplicate, Delete, Add Chain, Show Volume Automation, Show Pan Automation;
   after the menu (unless Rename, or the chain went) the chain shows beside its rack.
 
+A **Drum Rack** (`DeviceInfo.isDrumRack`: a rack with `drum` set) loads
+[DrumRackBody.qml](../../ui/qml/devices/DrumRackBody.qml) instead, over [DrumRack](../../ui/src/devices/DrumRack.h):
+
+- **The strip** as a rack's; then **the overview** (`overview`: 128 keys, four to a row, the lowest at the bottom, lit
+  where `DrumRack.filled`; the pads shown framed; a press or a drag sets `firstNote`); **the pads** (`padGrid`: a
+  `Repeater` over `DrumRack.pads`, sixteen `DrumPad`s from `firstNote`, top row first, so the lowest key is at the
+  bottom left; 50 px wide, a quarter of the height each); **the arrows** (`padsUp`, `padsDown`: `DrumRack.scroll(±1)`,
+  a row of four keys; the wheel over a pad too) and `lockedCount`; its macros (and their + and −) unless collapsed
+  (`DeviceInfo.rackMacrosShown`: the project's `hiddenRackMacros`, view state) and chain list as a rack's (a pad's
+  row each).
+- **Its title bar** (DeviceFrame, for `isDrumRack`): `macrosButton` (▾/▸: `deviceSelection.toggleRackMacros`) and
+  the similar sounds (`previousSimilar`, `nextSimilar`: `similarSamples.stepRack(track, rack, ±1)`; disabled with no
+  unlocked pad with a sample, or while it searches), before the save button.
+- **A pad** ([DrumPad.qml](../../ui/qml/devices/DrumPad.qml)) is a `DrumPadItem`: an audio drag over it
+  (`droppedAudio()`) lights it (`dropping`) and its drop calls `DrumRack::loadSample(note, path, start, end)`
+  (`editor.loadDrumPad`, then the pad shows beside the rack); other drags it ignores, so they go on to the
+  `DeviceChainArea`, which takes a pad with a chain as a chain row (`panelRole` "chainRow" while it has one: devices
+  dropped there go into it). It shows its name and key name, lit while shown beside the rack; a press shows it
+  (`DrumRack::select`) and plays its key until released (`bridge.previewNote`); its lock (`lock_envelopes`) at its
+  top right, its activator and solo along its bottom (`DrumRack::toggleLock`, `toggleMute`, `toggleSolo`: `editor.setChainParam`); a
+  double-click (or Ctrl+R: `startRename()`, as a chain row's) renames it in place.
+- **A pad's menu** (`DrumRackBody.showPadMenu(pad, x, y)`, in the panel's menu): Load Sample… (a file dialog onto its
+  key), Lock/Unlock Pad, Save as Similar Reference, Return to Reference, Previous and Next Similar Sound (its Sampler),
+  Rename, Duplicate, Delete. The rack's own menu adds Save Pads as Similar References and Return Pads to References
+  (`menuActions`).
+
 Racks in the engine: [engine/routing.md](../engine/routing.md).
 
 ## Device editors
@@ -359,7 +388,9 @@ readonly property var editors: ({
     "spectral": "SpectralEditor.qml",
     "transient": "TransientEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
-    "vital": "VitalEditor.qml"
+    "vital": "VitalEditor.qml",
+    "vocal_rider": "VocalRiderEditor.qml",
+    "vocoder": "VocoderEditor.qml"
 })
 ```
 
@@ -1233,6 +1264,31 @@ The editors:
     and fade (τ 250 ms); the in-tune band's glow eases (τ 120 ms); while no voice is heard everything but the scale
     fades out (τ 220 ms; back in τ 60 ms), the name dimming to the last note heard. It repaints only while
     something moves.
+- **Vocoder** ([VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml)), laid out as Ableton's: down the
+  left the Carrier drop-down and, under it, the chosen carrier's own settings (Noise: Rate and Crackle; Pitch
+  Tracking: the wave, Pitch, and Low and High boxes; External and Modulator: a line on what they take), Enhance at
+  the bottom; beside them Unvoiced and Sens. over Fast and Slow; in the middle the bank
+  ([VocoderGraph](../../ui/src/devices/VocoderGraph.h), at least 268 px, as wide as the row under it) over Bands,
+  Low, High, BW and Precise or Retro; at the right Formant, Depth and Gate over Attack, Release and Level, then
+  Mono, Stereo and L/R over Dry/Wet. Boxes are as wide as their texts (`EditorBoxWidth`).
+  - The bank, on a log axis from 20 Hz to 20 kHz with its decade grid: a bar per band, from halfway to the band
+    below to halfway to the one above, as tall as the newest whole frame of `bands` says (-72 dB at the bottom),
+    the bands' filters drawn faintly over them (`vocoderBandResponseDb()`: the engine's `bandResponseDb`), ticks
+    along the bottom where the carrier's bands are (blue while Formant moves them), and along the top the count and
+    range, and while tracking the pitch (`pitch`, newest over 50 ms) in Hz with its note.
+  - Its animation, in `advance()` by `tickSeconds()`: a bar rises at once (τ 15 ms) and falls smoothly (τ 180 ms);
+    nothing for 250 ms and all fall to the bottom, fading (τ 400 ms; back in τ 50 ms). It repaints only while
+    something moves.
+- **Vocal Rider** ([VocalRiderEditor.qml](../../ui/qml/devices/editors/VocalRiderEditor.qml)): its display (300 px)
+  with Target's box and the ride now ("Ride +3.2 dB", from the graph's `gain`) along its top, then four knobs a row:
+  Range Min, Range Max, Speed and Output over Vocal Sens., Music Sens. and Vocal or Flat.
+  - The display ([VocalRiderGraph](../../ui/src/devices/VocalRiderGraph.h)) scrolls the last 5 s as the
+    Compressor's `ReductionGraph` does (rings by absolute index, a steady 30 ms lag, columns of whole buckets): above,
+    on -60..0 dB, `level` filled grey, `level` + `gain` outlined (what comes out) and `music` in yellow; the target
+    as a blue line (dragged up and down, Shift a tenth, one undo step per drag, "Change Vocal Rider Target";
+    double-click resets it; right-click on it opens its menu), and while Music Sens. moves it, the target the device
+    used (`target`) as a fainter line. The bottom 30 % is a lane of `gain` (0 dB across its middle, as far as the
+    range goes either way, Range Min and Max dashed); presses there go to the frame.
 - **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages, no margins round its spectrum: the
   spectrum fills the body from edge to edge (as wide as the Vintage Hall folded: its loop, four cells, their gaps and
   its margins), and over its top edge the key and HQ (Quality) at the left, the arrow at the right (a `fold` icon
@@ -1348,9 +1404,17 @@ The editors:
     the bridge's `Waveform`, which is the engine's decoded source). Drag Start, End, or Loop Start while Classic
     loops (within `kMarkerGrab` 5 px, the nearest; Loop Start by its handle in the bottom `kLoopHandle` 10 px first,
     so it can be pulled off Start; one undo step per drag, kept within the others); drop an audio file on it, or
-    double-click it to browse.
-  - The device's menu starts with Load Sample…, Clear Sample and Reverse (`menuActions`). The sample's path lives in
-    the device's state ("sample"); loading one is `editor.setDeviceState(..., "Load Sample")`, undoable. The waveform
+    double-click it to browse. What it takes is `app::droppedAudio()` ([BrowserMime.h](../../app/src/browser/BrowserMime.h)):
+    the first audio file's URL, or a clip dragged out of the arrangement (`kClipMime`: its part of its file, which sets
+    Start and End).
+  - The similar sounds' arrows (`similarArrows`: `previousSimilar`, `nextSimilar`, `RoleButton`s over the ruler at the
+    display's bottom right, while it has a sample) call `Session.similarSamples.step(track, device, ±1)`
+    ([intelligence.md](../intelligence.md#swapping-in-similar-samples)); disabled while it searches.
+  - The device's menu starts with Load Sample…, Clear Sample, Reverse, Save as Similar Reference and Return to
+    Reference (`menuActions`; the last enabled by `similarSamples.canReturn`, read again as the sample changes). The
+    sample's path lives in the device's state ("sample", beside the similar sounds' reference:
+    [SamplerState.h](../../app/src/model/SamplerState.h)); loading one is `editor.loadSample(track, device, path,
+    start, end)`, one undo step. The waveform
     is the bridge's (`waveform(path)`, requested if not decoded yet; quick, as the engine decoded it for the sampler).
 - **Vital** ([VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml)): nine pages named in the title bar
   (`pageNames`: Osc, Sample, Filter, Env, LFO, Random, FX, Matrix, Voice), 996 px wide in three parts: a column on
@@ -1530,6 +1594,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_panel_plugins.cpp](../../tests/app/test_ui_device_panel_plugins.cpp) | A plug-in's parameters in pages, edited undoably and following automation; devices fitting the view; the editor button, double-click and Show Editor; VST3 presets; plug-ins loading after a project opens, and missing ones; dropping plug-ins; selecting, deleting and reordering devices; dragging a device to another track |
 | [test_ui_device_panel_presets.cpp](../../tests/app/test_ui_device_panel_presets.cpp) | The save button on every kind of device (asking before replacing), a rack taking the preset's name, presets dropped between devices and onto a device of their kind (outlined; one undo step) or of another, default presets |
 | [test_ui_device_panel_racks.cpp](../../tests/app/test_ui_device_panel_racks.cpp) | Ctrl+G and Ctrl+Shift+G, macros and chains, the chain list and the chain's devices shown when asked for, the chain clicked shown beside the rack and dropped into, chain mixers, macros added and taken away, renamed in place, automated, mapping to a macro, its ranges and unmapping, Ctrl+R on a chain (its list hidden too), a chain's menu, the view's height staying put |
+| [test_ui_device_panel_drums.cpp](../../tests/app/test_ui_device_panel_drums.cpp) | Drum Racks: sixteen pads, the lowest key at the bottom left, moved a row of keys at a time; audio files and clips from the arrangement dropped on a pad load onto its key (a Sampler, named after the sample, shown beside the rack), devices dropped on a pad with a chain go into it; a pad's lock, activator, solo, click and menu; the rack's menu; its similar-sound arrows |
 | [test_ui_device_panel_sidechain.cpp](../../tests/app/test_ui_device_panel_sidechain.cpp) | The sidechain button and its menu: sources, cycles greyed out, taps (after devices in racks too) |
 | [test_ui_device_panel_midi_from.cpp](../../tests/app/test_ui_device_panel_midi_from.cpp) | The MIDI From button (on an instrument and an effect with a MIDI input, not on one without), its tooltip (following its source's name) and menu, choosing a track and its own again, undo, its source deleted |
 | [test_ui_device_editors.cpp](../../tests/app/test_ui_device_editors.cpp) | The registry (every kind with an editor, and the generic knobs for the others); the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and Sampler's editors, each loaded as the view loads it, driven with the mouse and keys, the project and (rendering offline) the engine checked; what the editors share (SgPainter's additions, the animation helpers, `EditorKnob` and `DeviceParamMap`); the parameter cell and its menu. Its host, and every editor test's, is [support/EditorHarness.h](../../tests/app/support/EditorHarness.h) |
@@ -1550,5 +1615,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_editors_vintage_hall.cpp](../../tests/app/test_ui_device_editors_vintage_hall.cpp) | The Vintage Hall's editor: fitting the body folded and with Advanced open (the loop first, the knobs beside it, the editor as wide as they are and its margin; every caption and every text a readout takes whole; Advanced sliding open and shut, not at once), the defaults, the log knobs log, a knob's drag one undo step; the loop being the engine's (its lap for Size, the taps' weights for Attack, easing to a new Size); dragging it (up for Decay, across for Size, Shift finely, one undo step, named; a double-click resetting both); the displays reaching it (the taps' levels, the output, comets at a recent onset, few for a backlog's) and its coming to rest |
 | [test_ui_device_editors_vital.cpp](../../tests/app/test_ui_device_editors_vital.cpp) | Vital's editor: as wide as it was (996 px); every page and each of its choices showing Vital's parameters (each one the device has, inside the body; every section's somewhere; no caption or readout cut short), a knob editing the model undoably with Vital's text ("262 Hz") and the editor's caption, knobs that do nothing dimmed (the formant's, a rate or a tempo by the timing, following the page), the matrix adding a modulation (its row, its amount and switches the slot's parameters, an LFO's bipolar), removing it and undoing, every source and destination to choose; the preset's name; the wavetables' and LFO shapes' names and buttons on their pages, following the patch; the panels: the oscillator's frames (a square's), dragged through (one step), the envelope's handles dragged (one step each) and reset, its curves Vital's, the LFO's shape following the patch, the filter's response (low-pass, high-pass) and its handle dragged; what the engine plays reaching them (the envelope's and the LFO's dots, the voices) and the dot going once silent; with `SUBSTATION_UI_SCREENSHOTS`, each page saved, a note playing |
 | [test_ui_device_editors_transient.cpp](../../tests/app/test_ui_device_editors_transient.cpp) | The Transient Shaper's editor: fitting the body (its parts inside it side by side, the editor as wide as they are and its margin; every caption and every text a readout takes whole), the defaults, only Attack, Sustain and Output bipolar, the times log, Attack and Sustain signed; Clip undoable, the lookahead reaching the engine's latency; the shape's handles (up and down for the amount, across for the time, never both; Shift; one undo step each, named; the curve following a drag at once; double-click resetting a handle's two; presses off them the frame's; the right button the amount's menu); the curve being the engine's hit (exactly, once settled), morphing to a new shape, the handles at the peak and on the tail; the displays reaching both graphs (the history, the gain's parts, sparks, rings and a playhead at a recent transient, none for a backlog's), and both coming to rest |
+| [test_ui_device_editors_vocoder.cpp](../../tests/app/test_ui_device_editors_vocoder.cpp) | The Vocoder's editor: fitting the body; every control there, the boxes' texts whole (`EditorBoxWidth`); Noise's and Pitch Tracking's own settings shown only for their carrier; the bank (`bandCount()`, `bandCentre()`) following Bands and Low; what the engine rendered reaching the bars (the band nearest a 1 kHz tone the loudest, falling once nothing comes) and the pitch tracked |
+| [test_ui_device_editors_vocal_rider.cpp](../../tests/app/test_ui_device_editors_vocal_rider.cpp) | The Vocal Rider's editor: fitting the body; every control there, Target's box whole; the ride and the level as the device made them (a -30 dB tone ridden up 12 dB); the target line dragged up (one undo step) and reset by a double-click |
 | [test_session_devices.cpp](../../tests/app/test_session_devices.cpp) | `DeviceSelection` through the session: selecting, the focus, the clipboard, folding, racks, drops, presets |
 | [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) | The Sidechain's fit |

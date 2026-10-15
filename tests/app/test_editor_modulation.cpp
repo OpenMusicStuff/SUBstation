@@ -302,7 +302,7 @@ private Q_SLOTS:
         f.editor.mapModulation(track, envelope, utility, "width", 0.1, 0.6, true);
         const QJsonObject saved = projectToJson(f.project);
         QCOMPARE(saved[QStringLiteral("version")].toInt(), kProjectVersion);
-        QCOMPARE(kProjectVersion, 23);
+        QVERIFY(kProjectVersion >= 23);
         const QJsonObject device = saved[QStringLiteral("tracks")].toArray()[0].toObject()[QStringLiteral("devices")]
                                        .toArray()[0].toObject();
         QCOMPARE(device[QStringLiteral("modulations")].toArray().size(), 1);

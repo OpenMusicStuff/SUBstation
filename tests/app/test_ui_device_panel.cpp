@@ -224,8 +224,12 @@ private Q_SLOTS:
         // Its menu starts with its own entries.
         ui_.rightClick(centerOf(sampler, "title"));
         QVERIFY(ui_.menuOpened());
-        QCOMPARE(test::menuTexts(menu()).mid(0, 4), (QStringList{"Load Sample…", "Clear Sample", "Reverse", "Fold"}));
+        QCOMPARE(test::menuTexts(menu()).mid(0, 6), (QStringList{"Load Sample…", "Clear Sample", "Reverse",
+                                                                 "Save as Similar Reference", "Return to Reference",
+                                                                 "Fold"}));
         QVERIFY(!test::menuEnabled(menu(), QStringLiteral("Clear Sample")));
+        QVERIFY(!test::menuEnabled(menu(), QStringLiteral("Save as Similar Reference")));
+        QVERIFY(!test::menuEnabled(menu(), QStringLiteral("Return to Reference")));
         closeMenu();
         // One page: no arrows.
         QVERIFY(!partOf(compressor, "nextButton")->isVisible());

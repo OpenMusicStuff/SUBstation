@@ -47,6 +47,11 @@ struct PluginRef {
 
 inline const QString kPluginKind = QStringLiteral("plugin");
 inline const QString kRackKind = QStringLiteral("rack");  // a device group: chains side by side
+// What a new Drum Rack is asked for by (the browser, a drop, addDevice): a rack
+// with `drum` set. No device has this kind: a Drum Rack is a rack.
+inline const QString kDrumRackKind = QStringLiteral("drum_rack");
+inline constexpr int kDrumPadNote = 60;      // what a pad's devices hear its notes as (C3, a Sampler's root)
+inline constexpr int kDrumFirstPadNote = 36; // the first pad (C1), as in Ableton
 inline constexpr int kMaxRackDepth = 8;  // racks nest at most this deep (the engine's MAX_RACK_DEPTH)
 inline constexpr int kDefaultMacroCount = 4;  // a new rack's macros
 inline constexpr int kMaxMacroCount = 16;     // a rack has 1 to this many: its parameters macroParam(0..15)
@@ -163,16 +168,22 @@ struct Device {
     std::vector<ModulationMapping> modulations;  // a modulator's
     // A rack's own name (the preset it was saved as or loaded from); none: by its kind.
     std::optional<QString> name;
+    // A Drum Rack (a rack): its chains are pads, each playing the notes of its
+    // own key (Chain::receiveNote), as C3. An instrument even while empty.
+    bool drum = false;
 
     bool isPlugin() const { return kind == kPluginKind; }
     bool isRack() const { return kind == kRackKind; }
+    bool isDrumRack() const { return isRack() && drum; }
 
     bool operator==(const Device& other) const;
     bool operator!=(const Device& other) const { return !(*this == other); }
 };
 
 // A chain of a rack: its devices, and its mixer (volume, pan, mute, and solo:
-// while any of a rack's chains is soloed, only those are heard).
+// while any of a rack's chains is soloed, only those are heard). A Drum Rack's
+// chain is a pad: it hears only the notes of its key (`receiveNote`), as C3;
+// locked, swapping in similar sounds leaves its sample be.
 struct Chain {
     QString id;
     QString name;
@@ -181,6 +192,8 @@ struct Chain {
     double pan = 0.0;
     bool mute = false;
     bool solo = false;
+    int receiveNote = -1;  // a pad's key (0-127); -1: every note (a chain of another rack)
+    bool locked = false;   // a pad's sample stays when the rack swaps in similar sounds
 
     bool operator==(const Chain& other) const;
     bool operator!=(const Chain& other) const { return !(*this == other); }

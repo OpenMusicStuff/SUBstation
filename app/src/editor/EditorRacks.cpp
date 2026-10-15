@@ -13,6 +13,7 @@
 #include <QUndoStack>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <set>
 
@@ -93,6 +94,11 @@ QString ProjectEditor::addRackChain(const QString& trackId, const QString& rackI
     if (rack == nullptr || !rack->isRack()) throw EditError(QStringLiteral("Chains belong to racks"));
     const int count = static_cast<int>(rack->chains.size());
     Chain chain = newChain(name.isEmpty() ? QStringLiteral("Chain %1").arg(count + 1) : name);
+    if (rack->isDrumRack()) {  // a pad: on the first key without one
+        const int note = freePadNote(*rack);
+        if (note < 0) throw EditError(QStringLiteral("Every key has a pad already"));
+        chain = newDrumPad(note, name);
+    }
     const QString id = chain.id;
     rack->chains.insert(rack->chains.begin() + editing::clampIndex(index, count), std::move(chain));
     push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, QStringLiteral("Add Chain")));
@@ -131,6 +137,11 @@ QString ProjectEditor::duplicateRackChain(const QString& trackId, const QString&
     Device holder = newRack({rack->chains[index]});
     refreshIds(holder);
     const QString id = holder.chains.front().id;
+    if (rack->isDrumRack()) {  // a pad: onto the next key without one
+        const int note = freePadNote(*rack, rack->chains[index].receiveNote + 1);
+        if (note < 0) return {};
+        holder.chains.front().receiveNote = note;
+    }
     rack->chains.insert(rack->chains.begin() + index + 1, std::move(holder.chains.front()));
     push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, QStringLiteral("Duplicate Chain")));
     return findChain(project_->track(trackId).devices, id).chain != nullptr ? id : QString();
@@ -182,10 +193,31 @@ void ProjectEditor::setChainParam(const QString& trackId, const QString& chainId
         value = std::clamp(value, -1.0, 1.0);
         break;
     case ChainField::Mute: label = QStringLiteral("Toggle Chain Activator"); break;
+    case ChainField::Locked: label = value != 0.0 ? QStringLiteral("Lock Pad") : QStringLiteral("Unlock Pad"); break;
+    case ChainField::ReceiveNote: {
+        // A pad's key: one pad a key, so the pad there (if any) takes this one's.
+        if (chain.receiveNote < 0) return;  // (not a pad)
+        value = std::clamp(std::round(value), 0.0, 127.0);
+        if (static_cast<int>(value) == chain.receiveNote) return;
+        const int from = chain.receiveNote;
+        const std::vector<Device> before = project_->track(trackId).devices;
+        std::vector<Device> after = before;
+        Device* rack = findChain(after, chainId).rack;
+        if (rack == nullptr || !rack->isDrumRack()) return;
+        for (Chain& pad : rack->chains) {
+            if (pad.id == chainId) {
+                pad.receiveNote = static_cast<int>(value);
+            } else if (pad.receiveNote == static_cast<int>(value)) {
+                pad.receiveNote = from;  // (the two swap keys)
+            }
+        }
+        push(std::make_unique<SetDevicesCommand>(project_, trackId, before, after, QStringLiteral("Move Pad")));
+        return;
+    }
     default: return;  // (a chain's name: renameChain)
     }
     const ChainValue old = chainValue(chain, field);
-    const ChainValue nw = field == ChainField::Mute ? ChainValue(value != 0.0) : ChainValue(value);
+    const ChainValue nw = field == ChainField::Mute || field == ChainField::Locked ? ChainValue(value != 0.0) : ChainValue(value);
     if (nw != old) push(std::make_unique<UpdateChainCommand>(project_, trackId, chainId, field, old, nw, label, mergeKey));
     if (field == ChainField::VolumeDb || field == ChainField::Pan) {
         const QString& rack = project_->chainRack(trackId, chainId).id;

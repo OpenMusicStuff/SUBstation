@@ -357,6 +357,10 @@ void DeviceSelection::toggleChainList(const QString& rackId) {
     if (!trackId_.isEmpty()) editor_->setChainListShown(trackId_, rackId, !project_->isChainListShown(rackId));
 }
 
+void DeviceSelection::toggleRackMacros(const QString& rackId) {
+    if (!trackId_.isEmpty()) editor_->setRackMacrosShown(trackId_, rackId, !project_->areRackMacrosShown(rackId));
+}
+
 void DeviceSelection::toggleRackDevices(const QString& rackId) {
     if (!trackId_.isEmpty()) editor_->setRackDevicesShown(trackId_, rackId, !project_->areRackDevicesShown(rackId));
 }
@@ -687,7 +691,7 @@ void DeviceSelection::dropDevices(const QStringList& kinds, const QVariantList& 
     // New effects go where they were dropped (an instrument always goes first).
     std::vector<std::pair<QString, std::optional<PluginRef>>> added;
     for (const QString& kind : kinds) {
-        if (builtinDevice(kind) != nullptr) added.emplace_back(kind, std::nullopt);
+        if (isDeviceKind(kind)) added.emplace_back(kind, std::nullopt);
     }
     for (const PluginRef& ref : pluginRefsFromList(plugins)) added.emplace_back(kPluginKind, ref);
     bool refused = false;

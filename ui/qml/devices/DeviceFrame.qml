@@ -82,7 +82,7 @@ Item {
         if (deviceInfo.isRack) {
             props.panel = frame.panel
             props.info = deviceInfo
-            bodyLoader.setSource(Qt.resolvedUrl("RackDeviceBody.qml"), props)
+            bodyLoader.setSource(Qt.resolvedUrl(deviceInfo.isDrumRack ? "DrumRackBody.qml" : "RackDeviceBody.qml"), props)
         } else if (deviceInfo.isPlugin) {
             props.info = deviceInfo
             bodyLoader.setSource(Qt.resolvedUrl("PluginDeviceBody.qml"), props)
@@ -340,6 +340,38 @@ Item {
                 Layout.preferredWidth: 16
                 Layout.preferredHeight: 16
                 onClicked: frame.setPage(frame.page + 1)
+            }
+            // A Drum Rack's: its macros collapsed or shown, and every unlocked
+            // pad's sample swapped for the previous or next sound like it.
+            DeviceHeaderButton {
+                id: macrosButton
+                objectName: "macrosButton"
+                visible: deviceInfo.isDrumRack
+                text: deviceInfo.rackMacrosShown ? "▾" : "▸"
+                checkable: false
+                lit: false
+                tooltip: deviceInfo.rackMacrosShown ? qsTr("Collapse the macros") : qsTr("Show the macros")
+                Layout.preferredWidth: 16
+                Layout.preferredHeight: 16
+                onClicked: Session.deviceSelection.toggleRackMacros(frame.deviceId)
+            }
+            Repeater {
+                model: deviceInfo.isDrumRack ? [["previousSimilar", "‹", -1], ["nextSimilar", "›", 1]] : []
+                DeviceHeaderButton {
+                    required property var modelData
+                    // (The body's pads: none with a sample but locked ones, or a search under way, disables them.)
+                    readonly property var drums: frame.body && frame.body.drums ? frame.body.drums : null
+                    objectName: modelData[0]
+                    text: modelData[1]
+                    checkable: false
+                    enabled: drums !== null && drums.padCount > drums.lockedCount && !Session.similarSamples.searching
+                    tooltip: modelData[2] < 0
+                             ? qsTr("Similar sounds: every pad but the locked ones back a sound (back to its reference)")
+                             : qsTr("Similar sounds: every pad but the locked ones to its next sound like its reference")
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    onClicked: Session.similarSamples.stepRack(frame.trackId, frame.deviceId, modelData[2])
+                }
             }
             DeviceHeaderButton {
                 id: saveButton

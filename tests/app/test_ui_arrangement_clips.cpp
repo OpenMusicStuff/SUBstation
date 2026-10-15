@@ -181,6 +181,24 @@ private Q_SLOTS:
         QCOMPARE(notes.playedNotes()[1].end, 3.0);
     }
 
+    void aClipDraggedDownOutOfTheArrangementLeavesItsPlace() {
+        // (Onto the device view: a Sampler or a Drum Rack's pad takes its part of its file, as a drag.)
+        const QString track = dcTrack(Clip::audio(QStringLiteral("c"), dc_, QStringLiteral("DC"), 0.0, 2.0, 0.0, 2.0));
+        QVERIFY(!track.isEmpty());
+        const double y = h_->row(0).top - arrangement()->scrollY() + 6;  // its title bar (selects it, and moves it)
+        const QPoint from = h_->at(QPointF(h_->x(1.0), y));
+        test::press(window(), from);
+        test::moveTo(window(), h_->at(QPointF(h_->x(2.0), y)));
+        QVERIFY(lanes()->gestureActive());  // moving it
+        const double below = lanes()->height() + arrangement()->returnsHeight() + arrangement()->masterHeight() + 40;
+        test::moveTo(window(), h_->at(QPointF(h_->x(2.0), below)));
+        QVERIFY(!lanes()->gestureActive());  // the move ended: a drag of it starts instead
+        test::release(window(), h_->at(QPointF(h_->x(2.0), below)));  // (before it does: nothing dragged)
+        QCOMPARE(clipOf(0).startBeat, 0.0);  // where it was
+        QCOMPARE(project().track(track).clips.size(), size_t(1));
+        QVERIFY(undo().undoText() != QStringLiteral("Move"));
+    }
+
     void ctrlShiftOnTheBodySlidesTheContent() {
         // Beats 4-6, playing seconds 1-2 of the file.
         const QString track = dcTrack(Clip::audio(QStringLiteral("c"), dc_, QStringLiteral("DC"), 4.0, 1.0, 1.0, 2.0));

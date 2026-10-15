@@ -77,7 +77,7 @@ See [building.md](building.md).
 | [BrowserController.h](../app/src/browser/BrowserController.h) | `BrowserController` (`Session.browser`): the sidebar's entries, search, the sort, the list shown, the folder tree of a place, preview requests, use counts, the context menus' actions, places and their settings, Find Similar. QML binds to it. |
 | [FileIndex.h](../app/src/browser/FileIndex.h) | `FileIndex` (the backend on the application thread's side), `SearchResult` (a result read a page at a time), `placeSpec()`, `usageRecords()`. |
 | [BrowserSearch.h](../app/src/browser/BrowserSearch.h) | What to ask the search for: the sorts (`sortOrders()`), the group numbers, `Scope`, `scopeQuery()`, `placePrefix()`, `pluginTag()`. The sort orders are documented here. |
-| [BrowserItem.h](../app/src/browser/BrowserItem.h) | `BrowserItem` (and its `key()`), `ItemKind`, `builtinItems()`, `pluginItem()`. |
+| [BrowserItem.h](../app/src/browser/BrowserItem.h) | `BrowserItem` (and its `key()`), `ItemKind`, `builtinItems()` (the engine's built-in devices, and the Drum Rack among the instruments: `kDrumRackKind`), `pluginItem()`. |
 | [ItemListModel.h](../app/src/browser/ItemListModel.h) | The list shown: paged, draggable. |
 | [SidebarModel.h](../app/src/browser/SidebarModel.h) | The sidebar as a flat list: a collapsed entry's sub-entries are left out (`BrowserController::setExpanded`; Samples starts collapsed, the choice kept in the settings, `browser/collapsed`). |
 | [BrowserMime.h](../app/src/browser/BrowserMime.h) | The drag formats and their readers (`pluginRefs`, `deviceKinds`, `presetPaths`, `movedDevices`). |
@@ -441,6 +441,7 @@ failed save is ignored. An item's tooltip shows how often it was used.
 | `application/x-substation-device` | a JSON list of built-in device kinds | `deviceKinds()` |
 | `application/x-substation-preset` | a JSON list of preset files | `presetPaths()` |
 | `application/x-substation-device-move` | not the browser's: devices dragged from a track's chain in the device view, as plain text: the track's id, then the devices' ids, a line each | `movedDevices()` (written by `movedDevicesData()`) |
+| `application/x-substation-clip` | not the browser's: an audio clip dragged down out of the arrangement (`ArrangementLanes::dragClipOut`), with its file's URL: JSON `{path, offset_sec, duration_sec, source_sec}` | `droppedAudio()` (a Sampler's display, a Drum Rack's pad: the first audio file's URL otherwise; written by `clipMimeData()`) |
 
 The arrangement and the device view read them on a drop ([ui/arrangement.md](ui/arrangement.md#drag-and-drop),
 [ui/device-view.md](ui/device-view.md#dragging-and-dropping)).

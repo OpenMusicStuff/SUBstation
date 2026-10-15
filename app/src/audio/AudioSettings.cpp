@@ -153,4 +153,8 @@ double recordQuantize() {
 
 void setRecordQuantize(double grid) { QSettings().setValue(kRecordQuantizeKey, grid); }
 
+bool recordQuantizeEnds() { return QSettings().value(kRecordQuantizeEndsKey, false).toBool(); }
+
+void setRecordQuantizeEnds(bool ends) { QSettings().setValue(kRecordQuantizeEndsKey, ends); }
+
 }  // namespace sub::app

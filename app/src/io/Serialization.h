@@ -35,7 +35,8 @@
 // ("macro_names", "" for a macro named by its number; version 18; older racks
 // had eight: they load with those they use, mapped or turned, and at least
 // kDefaultMacroCount). The racks whose chain list shows ("chain_lists_shown")
-// and those whose chain's devices don't ("rack_devices_hidden") are stored by
+// and those whose chain's devices don't ("rack_devices_hidden"), and those whose
+// macros are collapsed ("rack_macros_hidden"), are stored by
 // id, as folded devices are (files without them show no chain list, and every
 // rack's devices). Deactivated clips (audio and MIDI) store "muted", and
 // deactivated notes a fifth value, true (version 20; older files have none:
@@ -94,8 +95,9 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // track's number; kNameTemplatesVersion), 20: deactivated clips and notes, 21:
 // tracks' outputs and where inputs from tracks are tapped, 22: notes' bends
 // (MIDI 2.0's per-note pitch bend: points and vibratos) and devices' MIDI inputs
-// from other tracks, 23: modulators' mappings (Device::modulations)
-inline constexpr int kProjectVersion = 23;
+// from other tracks, 23: modulators' mappings (Device::modulations), 24: Drum
+// Racks (a rack's `drum`, its chains' `receive_note` and `locked`)
+inline constexpr int kProjectVersion = 24;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

@@ -81,6 +81,8 @@ void Renderer::setScheduler(Scheduler* scheduler) {
         for (auto& depth : scratch.midiNotes) {
             for (auto& buffer : depth) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         }
+        for (auto& buffer : scratch.padNotes) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
+        scratch.modulatorNotes.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         for (std::vector<float>& values : scratch.modulation) values.assign(kMaxBlock, 0.f);
         scratch.modulationSpare.assign(kMaxBlock, 0.f);
     }
@@ -243,20 +245,35 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         if (done < frames) chasePending_ = false;
         // Recording goes straight on: the loop doesn't wrap (punching in and out of it comes later).
         const bool loop = flags.loop && !recording_;
+        chunkLoop_ = loop;
+        chunkLoopStart_ = snap.loopStart;
+        chunkLoopEnd_ = snap.loopEnd;
+        if (!loop) looped_ = false;
+        loopedAtChunk_ = looped_;
         while (done < frames) {
             int length = frames - done;
             const bool looping = loop && numSegments_ < kMaxSegments - 1;
             if (looping && position_ < snap.loopEnd && position_ + length > snap.loopEnd) {
                 length = static_cast<int>(snap.loopEnd - position_);
             }
-            segments_[numSegments_++] = {position_, length, done, position_ != expectedPosition_, chase};
+            const bool jump = position_ != expectedPosition_;
+            const bool wrap = jump && wrapNext_ && loop && position_ == snap.loopStart;
+            if (jump) looped_ = wrap;
+            segments_[numSegments_++] = {position_, length, done, jump, chase, wrap};
             chase = false;
             if (flags.metronome) scheduleTicks(snap, position_, length, done);
             position_ += length;
             expectedPosition_ = position_;
             done += length;
-            if (looping && position_ == snap.loopEnd) position_ = snap.loopStart;
+            wrapNext_ = false;
+            if (looping && position_ == snap.loopEnd) {
+                position_ = snap.loopStart;
+                wrapNext_ = true;
+            }
         }
+    } else {
+        wrapNext_ = false;
+        looped_ = false;
     }
 
     const double spb = snap.samplesPerBeat();
@@ -1011,8 +1028,17 @@ void Renderer::runModulators(const RenderSnapshot& snap, const StripRender& stri
             if (processor.takeResetRequest()) processor.reset();
             std::fill_n(values, frames, 0.f);
             std::fill_n(scratch.modulationSpare.data(), frames, 0.f);
-            processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, slices, events, values,
-                          scratch.modulationSpare.data(), frames, scratch);
+            // One on a Drum Rack's pad hears the pad's notes, as its devices do.
+            const int key = modulator.rack ? modulator.rack->chains[static_cast<size_t>(modulator.chain)].receiveNote : -1;
+            if (key >= 0) {
+                Slices padSlices;
+                padNotes(key, slices, events, scratch.modulatorNotes.data(), padSlices);
+                processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, padSlices,
+                              scratch.modulatorNotes.data(), values, scratch.modulationSpare.data(), frames, scratch);
+            } else {
+                processDevice(snap, chain, static_cast<size_t>(modulator.insert), context, slices, events, values,
+                              scratch.modulationSpare.data(), frames, scratch);
+            }
             for (int s = 0; s < frames; ++s) values[s] = modulationTarget(values[s], 0.f, 1.f, false);
             if (frames > 0) processor.setHeldModulation(values[frames - 1]);
         } else {
@@ -1329,6 +1355,26 @@ void Renderer::fillSwitch(const RenderSnapshot& snap, const AutomationRender& la
     }
 }
 
+void Renderer::padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
+                        Slices& outSlices) noexcept {
+    outSlices = slices;
+    int count = 0;
+    for (int s = 0; s < slices.count; ++s) {
+        const Slice& from = slices.slice[static_cast<size_t>(s)];
+        Slice& into = outSlices.slice[static_cast<size_t>(s)];
+        into.firstEvent = count;
+        for (int e = from.firstEvent; e < from.endEvent && count < TrackBuffers::kMaxEvents; ++e) {
+            ProcessEvent event = events[e];
+            if (event.type != ProcessEvent::Type::Midi) {
+                if (event.data[0] != key) continue;
+                event.data[0] = 60;  // (C3: a Sampler plays its sample as it is)
+            }
+            out[count++] = event;
+        }
+        into.endEvent = count;
+    }
+}
+
 void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                            const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                            [[maybe_unused]] bool monitored, WorkerScratch& scratch) noexcept {
@@ -1349,7 +1395,17 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
         // (Never as monitored: a chain skipping its sidechain waits would play early
         // against the chains lined up to it by chain.compensation.)
         if (takeResets(chain)) {
-            processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1, scratch);
+            if (chain.receiveNote >= 0) {  // a Drum Rack's pad: its own key's notes
+                Slices padSlices;
+                ProcessEvent* padEvents =
+                    scratch.padNotes[static_cast<size_t>(std::clamp(rack.depth, 0, kMaxRackDepth - 1))].data();
+                padNotes(chain.receiveNote, slices, events, padEvents, padSlices);
+                processChain(snap, chain, context, padSlices, padEvents, chainL, chainR, frames, false, rack.depth + 1,
+                             scratch);
+            } else {
+                processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1,
+                             scratch);
+            }
         } else {  // nothing changes the signal along it
             for (const int e : chain.deviceTaps) tapInto(snap, e, chainL, chainR, frames);
             meterSkipped(chain, chainL, chainR, frames);
@@ -1744,6 +1800,32 @@ void Renderer::bendNotes(const TrackRender& track, const Segment& segment, Track
     }
 }
 
+int Renderer::delayedSegments(int64_t delay, Segment* out) const noexcept {
+    int count = 0;
+    bool looped = loopedAtChunk_;
+    for (int s = 0; s < numSegments_; ++s) {
+        const Segment& segment = segments_[s];
+        if (segment.jump) looped = segment.wrap;
+        const int64_t position = segment.position - delay;
+        // Within `delay` of the loop's start after a wrap: that long ago the
+        // playhead was still before the loop's end.
+        const bool beforeWrap = chunkLoop_ && looped && segment.position >= chunkLoopStart_ &&
+                                position < chunkLoopStart_ && chunkLoopEnd_ - chunkLoopStart_ >= delay;
+        if (!beforeWrap) {
+            out[count++] = {position, segment.length, segment.offset, segment.jump, segment.chase};
+            continue;
+        }
+        const int64_t early = chunkLoopStart_ - position;
+        const int first = static_cast<int>(std::min<int64_t>(segment.length, early));
+        // At the wrap itself the timeline played late goes straight on (to the loop's end).
+        out[count++] = {chunkLoopEnd_ - early, first, segment.offset, segment.jump && !segment.wrap, segment.chase};
+        if (first < segment.length) {
+            out[count++] = {chunkLoopStart_, segment.length - first, segment.offset + first, true, false, true};
+        }
+    }
+    return count;
+}
+
 void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
                                MidiRecordingTake* take) noexcept {
     // Notes played by hand come first, all at the block start and in the order
@@ -1782,8 +1864,23 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
     routeMidiInput(track, hearsInput, take, out);
     if (!playing_ || !clipNotes) releaseNotes(track.id, 0, out);
 
-    for (int s = 0; s < numSegments_ && clipNotes; ++s) {
-        const Segment& segment = segments_[s];
+    // Played live while compensation is constrained, the track is heard early:
+    // its clips' notes play late by as much, in time with the other tracks.
+    std::array<Segment, 2 * kMaxSegments> delayed;
+    const Segment* segments = segments_.data();
+    int numSegments = numSegments_;
+    if (track.clipDelay > 0 || out.clipDelay > 0) {
+        numSegments = delayedSegments(track.clipDelay, delayed.data());
+        segments = delayed.data();
+        if (out.clipDelay != track.clipDelay && numSegments > 0) {  // (a jump in what they play)
+            delayed[0].jump = true;
+            delayed[0].chase = true;
+        }
+    }
+    if (playing_) out.clipDelay = track.clipDelay;
+
+    for (int s = 0; s < numSegments && clipNotes; ++s) {
+        const Segment& segment = segments[s];
         if (segment.jump) releaseNotes(track.id, segment.offset, out);
         const int64_t segEnd = segment.position + segment.length;
 

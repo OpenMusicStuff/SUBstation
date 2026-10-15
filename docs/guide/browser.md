@@ -117,6 +117,8 @@ for how well it works.
   and noisiness, band by band; sub-bass and air; how metallic or harmonic it is; how fast
   it starts and how long it rings; pitch, for tonal sounds, down to an 808's; and whether
   it is a one-shot or a loop. Neither the level nor the sample rate matters.
+- The Sampler and the Drum Rack swap in similar sounds too, from the arrows under the
+  Sampler's waveform and beside the Drum Rack's pads ([devices.md](devices.md#drum-rack)).
 - Nothing needs indexing by hand: every file the browser finds is analysed in the
   background (at low priority: playback is never held up), and only once; new and
   changed files are analysed when they show up. A 5 000-file library takes about half a

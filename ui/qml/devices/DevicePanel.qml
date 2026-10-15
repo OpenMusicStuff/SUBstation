@@ -115,7 +115,7 @@ Rectangle {
             menu.separator()
         }
         if (info.isRack) {
-            menu.entry(qsTr("Add Chain"), () => {
+            menu.entry(info.isDrumRack ? qsTr("Add Pad") : qsTr("Add Chain"), () => {
                 if (Session.editor.tryAddRackChain(trackId, id) !== "")
                     Session.editor.setChainListShown(trackId, id, true)  // (where it shows)
             })

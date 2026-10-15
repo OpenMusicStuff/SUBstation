@@ -54,7 +54,9 @@ QtObject {
         "spectral": "SpectralEditor.qml",
         "transient": "TransientEditor.qml",
         "vintage_hall": "VintageHallEditor.qml",
-        "vital": "VitalEditor.qml"
+        "vital": "VitalEditor.qml",
+        "vocal_rider": "VocalRiderEditor.qml",
+        "vocoder": "VocoderEditor.qml"
     })
 
     // The editor's component URL for built-in devices of `kind`, or "" when it has none of its own.

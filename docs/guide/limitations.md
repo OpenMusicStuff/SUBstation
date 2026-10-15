@@ -60,10 +60,13 @@ What SUBstation doesn't do yet, by area.
   wavetables, LFO shapes, modulations or Oversampling restarts held notes (struck again)
   as its engine is built anew.
 - The Sampler plays one sample (no zones or multisamples). Of Simpler, it doesn't have
-  manual slicing (moving or adding slices by hand), slicing to a drum rack, previewing
+  manual slicing (moving or adding slices by hand), slicing to a Drum Rack, previewing
   slices by clicking them, warp markers within the sample or detecting its tempo (Warp
   takes the whole sample as so many beats), filter and pitch envelopes, the filter's
   analog-modelled circuits, or Spread.
+- The Drum Rack has no return chains, choke groups or per-pad send levels, and a pad
+  plays its key as C3 (there is no separate "play" key, nor key or velocity zones). Live
+  Sets' Drum Racks still import as a group of tracks, a pad each.
 
 ## Audio clips
 

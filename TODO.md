@@ -557,9 +557,10 @@ Sound similarity
       sound-index.bin; only new or changed files analysed again.
 - [x] Find Similar Sounds: an audio file's menu in the browser, an audio
       clip's (its part of the file) in the arrangement; the Similarity sort.
-- [ ] Swap in similar samples in the sampler (step through
-      `SimilarSounds::best()`).
-- [ ] The same in the drum rack (once there is one), per pad.
+- [x] Swap in similar samples in the sampler (step through
+      `SimilarSounds::best()`: the arrows under its waveform, from a reference
+      saved or the sample stepping started from).
+- [x] The same in the Drum Rack, per pad, and for every pad but the locked ones at once.
 - [x] A file manager view (View › File Manager): the project's files, missing
       ones found again (by name, in the background), one replaced everywhere it
       plays; hot swap (a clip's menu, a file's button) lists similar sounds and

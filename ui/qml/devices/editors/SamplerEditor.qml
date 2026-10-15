@@ -20,8 +20,10 @@ import SUBstation
 // pitch, filter, pan) and whether notes restart it; pan.
 //
 // Drop an audio file on the display, or double-click it, to load one; drag its
-// markers. The device's menu starts with Load Sample…, Clear Sample and
-// Reverse (menuActions). Every control shows its parameter as it is now (its
+// markers. The arrows at the waveform's bottom right swap in the sounds most
+// like its reference, one at a time (Session.similarSamples). The device's
+// menu starts with Load Sample…, Clear Sample, Reverse, Save as Similar
+// Reference and Return to Reference (menuActions). Every control shows its parameter as it is now (its
 // automation's value while that plays), sets it undoably, touches it when
 // pressed, and right-click gives its menu.
 Item {
@@ -54,6 +56,22 @@ Item {
                 editor.params["reverse"].set(editor.on("reverse") ? 0 : 1)
                 checked = Qt.binding(() => editor.on("reverse"))
             }
+        },
+        // The similar sounds' reference (the arrows under the waveform step from it).
+        Action {
+            objectName: "saveSimilarReference"
+            text: qsTr("Save as Similar Reference")
+            enabled: view.samplePath !== ""
+            onTriggered: Session.similarSamples.saveReference(editor.trackId, editor.deviceId)
+        },
+        Action {
+            objectName: "returnToReference"
+            text: qsTr("Return to Reference")
+            enabled: {
+                view.samplePath  // (again as the sample changes)
+                return Session.similarSamples.canReturn(editor.trackId, editor.deviceId)
+            }
+            onTriggered: Session.similarSamples.returnToReference(editor.trackId, editor.deviceId)
         }
     ]
     readonly property alias view: view
@@ -259,6 +277,35 @@ Item {
                 width: parent.width
                 height: parent.height - editor.stripHeight
                 onBrowseRequested: editor.browse()
+            }
+
+            // At the waveform's bottom right, over its ruler: the sounds most
+            // like its reference, one at a time (right-click saves the sample
+            // playing as the reference, or goes back to it).
+            Row {
+                id: similarArrows
+                objectName: "similarArrows"
+                anchors.right: view.right
+                anchors.rightMargin: 3
+                y: view.height - height - 2
+                spacing: 1
+                visible: view.samplePath !== ""
+
+                Repeater {
+                    model: [["‹", -1, qsTr("Previous similar sound (back to the reference: right-click to save another)")],
+                            ["›", 1, qsTr("Next similar sound: the sounds most like the reference, best first")]]
+                    RoleButton {
+                        required property var modelData
+                        objectName: modelData[1] < 0 ? "previousSimilar" : "nextSimilar"
+                        width: 16
+                        height: 13
+                        role: "small"
+                        text: modelData[0]
+                        tooltip: modelData[2]
+                        enabled: !Session.similarSamples.searching
+                        onClicked: Session.similarSamples.step(editor.trackId, editor.deviceId, modelData[1])
+                    }
+                }
             }
 
             Item {

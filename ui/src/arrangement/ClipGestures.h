@@ -45,6 +45,10 @@ public:
     std::vector<GestureClip> ghosts() const override;
     std::vector<GestureClip> kept() const override;
     std::optional<app::TimeRange> timeRange() const override;
+    // What a drag out of the arrangement takes along (onto a Sampler, a Drum
+    // Rack's pad): the one audio clip being moved, cut to the selection; none
+    // for several, or MIDI.
+    std::optional<app::Clip> draggedAudio() const;
 
 private:
     void preview();

@@ -4,7 +4,9 @@
 // filtering it, ending it, a clip's part of a file, a file outside the
 // library, files found later, and a sound that can't be analysed. And what the
 // sound tagger hears in the files: searches by how they sound, their rows'
-// labels, Samples › Kicks, and the project's sounds in the Best sort.
+// labels, Samples › Kicks, and the project's sounds in the Best sort. And the
+// Sampler's and the Drum Rack's arrows stepping through similar sounds
+// (SimilarSamples), from a reference.
 
 #include <QDir>
 #include <QFile>
@@ -14,6 +16,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "EditorFixture.h"
 #include "TestSupport.h"
 
 #include <cmath>
@@ -26,6 +29,10 @@
 #include "browser/ItemListModel.h"
 #include "browser/PathKeys.h"
 #include "intelligence/Harmony.h"
+#include "intelligence/SimilarSamples.h"
+#include "model/DeviceState.h"
+#include "model/Devices.h"
+#include "model/SamplerState.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/SoundSuggestions.h"
 #include "model/Project.h"
@@ -278,6 +285,109 @@ private Q_SLOTS:
         QVERIFY(best[0].second >= best[1].second);
         QVERIFY(result.similarity(best[0].first) > result.similarity(lib_ + QStringLiteral("/Hats/Hat 1.wav")));
         QVERIFY(std::isnan(result.similarity(outside)));
+    }
+
+    void theSamplersArrowsStepThroughSimilarSounds() {
+        make();
+        QVERIFY(settle());
+        test::EditorFixture f;
+        SimilarSamples similar(&f.project, &f.editor, similarity_.get());
+        QSignalSpy messages(&similar, &SimilarSamples::statusMessage);
+        const QString track = f.editor.addMidiTrack(-1, {}, kSamplerKind);
+        const QString sampler = f.track(track).devices[0].id;
+        const auto values = [&] { return deviceState::fromModel(f.project.device(track, sampler).state); };
+        const auto sample = [&] { return samplerState::sample(values()); };
+        const auto step = [&](int direction) {
+            similar.step(track, sampler, direction);
+            return QTest::qWaitFor([&] { return !similar.searching(); }, 20000);
+        };
+        QVERIFY(step(1));  // no sample: nothing to step from
+        QCOMPARE(sample(), QString());
+        QVERIFY(!messages.isEmpty());
+        const QString kick = lib_ + QStringLiteral("/Kicks/Kick 1.wav");
+        f.editor.loadSample(track, sampler, kick);
+        QVERIFY(!similar.canReturn(track, sampler));
+        // Forward: the other kicks first, most like it first; the reference stays Kick 1.
+        QVERIFY(step(1));
+        const QString first = sample();
+        QCOMPARE(kindOf(QFileInfo(first).fileName()), QStringLiteral("Kick"));
+        QVERIFY(first != kick);
+        QCOMPARE(samplerState::reference(values()), kick);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Swap Similar Sample"));
+        QVERIFY(similar.canReturn(track, sampler));
+        QVERIFY(step(1));
+        const QString second = sample();
+        QCOMPARE(kindOf(QFileInfo(second).fileName()), QStringLiteral("Kick"));
+        QVERIFY(second != kick && second != first);
+        // Back: the one before, then the reference itself.
+        QVERIFY(step(-1));
+        QCOMPARE(sample(), first);
+        QVERIFY(step(-1));
+        QCOMPARE(sample(), kick);
+        QVERIFY(!similar.canReturn(track, sampler));
+        // Return to Reference.
+        QVERIFY(step(1));
+        QVERIFY(step(1));
+        QCOMPARE(sample(), second);
+        similar.returnToReference(track, sampler);
+        QCOMPARE(sample(), kick);
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Return to Reference"));
+        // Another reference saved: the steps come from it (the hats).
+        f.editor.loadSample(track, sampler, lib_ + QStringLiteral("/Hats/Hat 1.wav"));
+        similar.saveReference(track, sampler);
+        QCOMPARE(samplerState::reference(values()), lib_ + QStringLiteral("/Hats/Hat 1.wav"));
+        QVERIFY(step(1));
+        QCOMPARE(kindOf(QFileInfo(sample()).fileName()), QStringLiteral("Hat"));
+        QVERIFY(sample() != lib_ + QStringLiteral("/Hats/Hat 1.wav"));
+    }
+
+    void theDrumRacksArrowsStepItsUnlockedPads() {
+        make();
+        QVERIFY(settle());
+        test::EditorFixture f;
+        SimilarSamples similar(&f.project, &f.editor, similarity_.get());
+        const QString track = f.editor.addMidiTrack(-1, {}, kDrumRackKind);
+        const QString rack = f.track(track).devices[0].id;
+        const QString kick = lib_ + QStringLiteral("/Kicks/Kick 1.wav");
+        const QString hat = lib_ + QStringLiteral("/Hats/Hat 1.wav");
+        const QString snare = lib_ + QStringLiteral("/Snares/Snare 1.wav");
+        const QString kickPad = f.editor.loadDrumPad(track, rack, 36, kick);
+        const QString hatPad = f.editor.loadDrumPad(track, rack, 42, hat);
+        const QString snarePad = f.editor.loadDrumPad(track, rack, 38, snare);
+        f.editor.setChainParam(track, hatPad, QStringLiteral("locked"), 1.0);
+        QCOMPARE(similar.rackSamplers(track, rack).size(), 2);  // (not the locked one)
+        const auto padSample = [&](const QString& pad) {
+            return samplerState::sample(deviceState::fromModel(padSampler(f.project.chain(track, pad))->state));
+        };
+        const int steps = f.stack.count();
+        similar.stepRack(track, rack, 1);
+        QVERIFY(QTest::qWaitFor([&] { return !similar.searching(); }, 20000));
+        QCOMPARE(f.stack.count(), steps + 1);  // one undo step for every pad
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Swap Similar Samples"));
+        QVERIFY(padSample(kickPad) != kick);
+        QCOMPARE(kindOf(QFileInfo(padSample(kickPad)).fileName()), QStringLiteral("Kick"));
+        QVERIFY(padSample(snarePad) != snare);
+        QCOMPARE(kindOf(QFileInfo(padSample(snarePad)).fileName()), QStringLiteral("Snare"));
+        QCOMPARE(padSample(hatPad), hat);  // locked
+        QCOMPARE(f.project.chain(track, kickPad).name, QFileInfo(padSample(kickPad)).completeBaseName());
+        QVERIFY(similar.rackCanReturn(track, rack));
+        similar.returnRackToReferences(track, rack);
+        QCOMPARE(padSample(kickPad), kick);
+        QCOMPARE(padSample(snarePad), snare);
+        QVERIFY(!similar.rackCanReturn(track, rack));
+        // Their samples saved as their references: one undo step for them all (none when they are already).
+        const int before = f.stack.count();
+        similar.saveRackReferences(track, rack);
+        QCOMPARE(f.stack.count(), before + 1);
+        QCOMPARE(samplerState::reference(deviceState::fromModel(padSampler(f.project.chain(track, kickPad))->state)), kick);
+        similar.saveRackReferences(track, rack);
+        QCOMPARE(f.stack.count(), before + 1);
+        // Every pad locked: nothing to step.
+        for (const QString& pad : {kickPad, snarePad}) f.editor.setChainParam(track, pad, QStringLiteral("locked"), 1.0);
+        QSignalSpy messages(&similar, &SimilarSamples::statusMessage);
+        similar.stepRack(track, rack, 1);
+        QVERIFY(!similar.searching());
+        QCOMPARE(messages.count(), 1);
     }
 
     void filesFoundLaterAreAnalysedToo() {

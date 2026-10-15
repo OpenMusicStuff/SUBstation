@@ -1,6 +1,6 @@
 #pragma once
 // The insert-effect / instrument interface. Built-in devices and hosted plug-ins
-// (plugins/Vst3Processor, plugins/Vst2Processor) implement it, so the renderer never needs to know
+// (plugins/vst3/Vst3Processor, plugins/vst2/Vst2Processor) implement it, so the renderer never needs to know
 // where a processor came from.
 //
 // Threads: process() and reset() run on the rendering thread (the audio thread,

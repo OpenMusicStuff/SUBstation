@@ -2,8 +2,9 @@
 // track is monitored, the devices slower than the threshold on its way out (its
 // own, its groups', the master's) are bypassed, latency and all, and come back
 // once nothing is monitored; offline renders hear them all. Live, a track
-// playing its MIDI input then isn't delay-compensated (with the fake ASIO driver:
-// skipped without the ASIO SDK).
+// playing its MIDI input then isn't delay-compensated, but its own clips' notes
+// are delayed to stay in time (with the fake ASIO driver: skipped without the
+// ASIO SDK).
 
 #include "Engine.h"
 #include "harness/Fixtures.h"
@@ -41,11 +42,18 @@ TEST_CASE("constrained, the slow devices a monitored track is heard through are 
     CHECK(bypassed() == none);  // nothing is monitored
     CHECK_EQ(engine.outputLatency(), 220 + 300 + 100);
 
+    CHECK_EQ(engine.liveLatency(played).clipDelay, 0);
     engine.setTrackArmed(played, true);  // Auto: monitored
     CHECK(bypassed() == slowOnTheWay);
     CHECK_EQ(engine.trackLatency(played), 20);
     CHECK_EQ(engine.trackLatency(bus), 0);
     CHECK_EQ(engine.outputLatency(), 400);  // the other track's, now the latest
+    // Its way out isn't delay-compensated: its own clips' notes are delayed as much
+    // instead (the bus would have waited 380 for the other track), so they stay in time.
+    CHECK(engine.liveLatency(played).live);
+    CHECK_EQ(engine.liveLatency(played).compensation, 0);
+    CHECK_EQ(engine.liveLatency(played).clipDelay, 400 - 20);
+    CHECK_EQ(engine.liveLatency(other).clipDelay, 0);
     // Still switched on: offline renders hear them, and they are bypassed again after.
     const Samples out = engine.renderOffline(0.0, 2 * kBeat);
     CHECK(above(channel(out, 0), 1e-6) == std::vector<int64_t>{kBeat});
@@ -105,6 +113,48 @@ TEST_CASE("constrained, live MIDI is heard without delay compensation") {
     engine.setConstrainLatency(false);
     driver.process(2);
     CHECK_ALLCLOSE(note(), held({{170, 180, 127}}, 2 * kBuffer), 1e-7, 1e-6);
+}
+
+TEST_CASE("constrained, a live track's own clips' notes stay in time: only its input comes early") {
+    RecordingTest t;
+    auto& driver = t.driver;
+    auto& engine = t.engine;
+    const uint32_t track = keys(engine, driver);  // armed: it hears its MIDI input
+    latentEffect(engine, engine.addTrack(), 100);  // the master lines the played track up with it
+    // A note in its clip, starting a beat in and lasting 10 samples.
+    engine.setTrackNotes(track, {{1.0, 10.0 / kRecordSpb, 60, 127}});
+    driver.process(2);
+    // Where the clip's note is heard: the first sample above silence after playing from the start.
+    const auto clipNoteAt = [&] {
+        engine.setPositionBeats(0.0);
+        driver.process(2);
+        engine.play();
+        std::vector<double> out;
+        const int buffers = static_cast<int>(kRecordSpb / kBuffer) + 4;
+        for (int b = 0; b < buffers; ++b) {
+            const std::vector<double> block = heard(driver);
+            out.insert(out.end(), block.begin(), block.end());
+        }
+        engine.stop();
+        driver.process(2);
+        for (size_t i = 0; i < out.size(); ++i)
+            if (out[i] > 1e-6) return static_cast<int64_t>(i);
+        return int64_t{-1};
+    };
+    const int64_t compensated = clipNoteAt();
+    REQUIRE(compensated > 0);
+    engine.setConstrainLatency(true, 1.0);
+    driver.process(2);
+    CHECK(engine.liveLatency(track).live);
+    CHECK_EQ(clipNoteAt(), compensated);  // as late as with compensation: in time with the other track
+    // Played meanwhile, the input still comes at once.
+    engine.play();
+    driver.process(2);
+    send(engine, {kNoteOn, 61, 127}, 10);
+    send(engine, {kNoteOff, 61, 0}, 20);
+    CHECK_ALLCLOSE(heard(driver, 2), held({{10, 20, 127}}, 2 * kBuffer), 1e-7, 1e-6);
+    engine.stop();
+    driver.process(2);
 }
 
 TEST_CASE("MIDI input played at once starts the next block") {

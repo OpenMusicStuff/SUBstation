@@ -128,6 +128,10 @@ TEST_CASE("its state round-trips its path") {
     const auto [track, device] = samplerTrack(engine, {}, path);
     CHECK(engine.processorState(device) == state(path));
     CHECK(decodeState(engine.processorState(device)) == (std::map<std::string, std::string>{{"sample", path}}));
+    // And the values it doesn't use itself as they came (the application's: the similar sounds' reference).
+    const std::map<std::string, std::string> withReference{{"sample", path}, {"similar_reference", "/x/kick.wav"}};
+    engine.setProcessorState(device, encodeState(withReference));
+    CHECK(decodeState(engine.processorState(device)) == withReference);
 }
 
 TEST_CASE("it plays the sample at its root key") {

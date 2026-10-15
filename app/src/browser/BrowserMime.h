@@ -12,6 +12,10 @@
 // its chain, into a rack's, or onto another track in the arrangement), go as
 // plain text under a type of their own:
 //   application/x-substation-device-move  the track's id, then the devices' ids, a line each
+//
+// An audio clip dragged out of the arrangement (onto a Sampler, a Drum Rack's
+// pad, the desktop) goes as its file's URL, and its part of the file as JSON:
+//   application/x-substation-clip  {"path", "offset_sec", "duration_sec", "source_sec"}
 
 #include <QByteArray>
 #include <QMimeData>
@@ -31,6 +35,7 @@ inline constexpr const char* kPluginMime = "application/x-substation-plugin";
 inline constexpr const char* kDeviceMime = "application/x-substation-device";
 inline constexpr const char* kPresetMime = "application/x-substation-preset";
 inline constexpr const char* kDeviceMoveMime = "application/x-substation-device-move";
+inline constexpr const char* kClipMime = "application/x-substation-clip";
 
 // The types a drag from the browser may carry.
 QStringList browserMimeTypes();
@@ -63,5 +68,19 @@ QByteArray movedDevicesData(const QString& trackId, const QStringList& deviceIds
 // Devices dragged from a track's chain, if the drag is of those.
 std::optional<MovedDevices> movedDevices(const QMimeData* mime);
 std::optional<MovedDevices> movedDevices(const QByteArray& data);
+
+// A sound dropped where samples go (a Sampler, a Drum Rack's pad): an audio
+// file, the first dragged (from the browser, the desktop), or a clip's part of
+// one: from `start` to `end`, fractions of the file (0 and 1: the whole of it).
+struct DroppedAudio {
+    QString path;
+    double start = 0.0;
+    double end = 1.0;
+
+    friend bool operator==(const DroppedAudio&, const DroppedAudio&) = default;
+};
+std::optional<DroppedAudio> droppedAudio(const QMimeData* mime);
+// The drag's data for an audio clip's part of its file (seconds; `sourceSec`: the file's length).
+std::unique_ptr<QMimeData> clipMimeData(const QString& path, double offsetSec, double durationSec, double sourceSec);
 
 }  // namespace sub::app

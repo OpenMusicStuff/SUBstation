@@ -501,6 +501,10 @@ Chain chainFromJson(const QJsonValue& value) {
     chain.pan = clamped(c.contains(QStringLiteral("pan")) ? toFloat(c.value(QStringLiteral("pan"))) : 0.0, -1.0, 1.0);
     chain.mute = truthy(c.value(QStringLiteral("mute")));
     chain.solo = truthy(c.value(QStringLiteral("solo")));
+    if (c.contains(QStringLiteral("receive_note"))) {
+        chain.receiveNote = static_cast<int>(clamped(toInt(c.value(QStringLiteral("receive_note"))), -1, 127));
+    }
+    chain.locked = truthy(c.value(QStringLiteral("locked")));
     return chain;
 }
 
@@ -797,14 +801,18 @@ QJsonObject deviceToJson(const Device& device) {
     if (device.isRack()) {
         QJsonArray chains;
         for (const Chain& c : device.chains) {
-            chains.append(QJsonObject{{QStringLiteral("id"), c.id},
-                                      {QStringLiteral("name"), c.name},
-                                      {QStringLiteral("volume_db"), c.volumeDb},
-                                      {QStringLiteral("pan"), c.pan},
-                                      {QStringLiteral("mute"), c.mute},
-                                      {QStringLiteral("solo"), c.solo},
-                                      {QStringLiteral("devices"), devicesToJson(c.devices)}});
+            QJsonObject chain{{QStringLiteral("id"), c.id},
+                              {QStringLiteral("name"), c.name},
+                              {QStringLiteral("volume_db"), c.volumeDb},
+                              {QStringLiteral("pan"), c.pan},
+                              {QStringLiteral("mute"), c.mute},
+                              {QStringLiteral("solo"), c.solo},
+                              {QStringLiteral("devices"), devicesToJson(c.devices)}};
+            if (c.receiveNote >= 0) chain[QStringLiteral("receive_note")] = c.receiveNote;
+            if (c.locked) chain[QStringLiteral("locked")] = true;
+            chains.append(chain);
         }
+        if (device.drum) data[QStringLiteral("drum")] = true;
         data[QStringLiteral("chains")] = chains;
         QJsonArray macros;
         for (const MacroMapping& m : device.macros) {
@@ -860,7 +868,30 @@ Device deviceFromJson(const QJsonValue& value) {
         device.modulations.push_back(std::move(modulation));
     }
     if (device.isRack()) {
+        device.drum = truthy(d.value(QStringLiteral("drum")));
         for (const QJsonValue& c : listOr(d, QStringLiteral("chains"))) device.chains.push_back(chainFromJson(c));
+        // A Drum Rack's pads: a key each. The first pad of each key keeps it; one
+        // without a key, or a key taken already, gets the first key no pad has.
+        QSet<int> keys;
+        std::vector<Chain*> keyless;
+        for (Chain& chain : device.chains) {
+            if (!device.drum) {
+                chain.receiveNote = -1;
+                chain.locked = false;
+            } else if (chain.receiveNote < 0 || keys.contains(chain.receiveNote)) {
+                keyless.push_back(&chain);
+            } else {
+                keys.insert(chain.receiveNote);
+            }
+        }
+        for (Chain* chain : keyless) {
+            int note = kDrumFirstPadNote;
+            while (note <= 127 && keys.contains(note)) ++note;
+            if (note > 127) note = 0;
+            while (note < kDrumFirstPadNote && keys.contains(note)) ++note;
+            chain->receiveNote = note;
+            keys.insert(note);
+        }
         const QSet<QString> inside = innerDeviceIds(device);
         std::vector<MacroMapping> mappings;
         for (const QJsonValue& m : listOr(d, QStringLiteral("macros"))) {
@@ -1045,6 +1076,7 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
             {QStringLiteral("folded_devices"), present(project.foldedDevices())},
             {QStringLiteral("chain_lists_shown"), present(project.shownChainLists())},
             {QStringLiteral("rack_devices_hidden"), present(project.hiddenRackDevices())},
+            {QStringLiteral("rack_macros_hidden"), present(project.hiddenRackMacros())},
             {QStringLiteral("tracks"), tracks},
             {QStringLiteral("returns"), returns}};
 }
@@ -1144,6 +1176,9 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     for (const QJsonValue& id : listOr(data, QStringLiteral("chain_lists_shown"))) contents.shownChainLists.insert(toStr(id));
     for (const QJsonValue& id : listOr(data, QStringLiteral("rack_devices_hidden"))) {
         contents.hiddenRackDevices.insert(toStr(id));
+    }
+    for (const QJsonValue& id : listOr(data, QStringLiteral("rack_macros_hidden"))) {
+        contents.hiddenRackMacros.insert(toStr(id));
     }
     contents.path = projectFile;
     return contents;
