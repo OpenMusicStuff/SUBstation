@@ -27,8 +27,8 @@
 // undoing a change to the devices doesn't unfold them): the device view shows it
 // as a narrow strip with its name, and a folded rack hides its chains. A rack's
 // chain list shows only when asked for (shownChainLists()), and the devices of
-// the chain it shows, beside it, unless hidden (hiddenRackDevices()): view state
-// as well.
+// the chain it shows, beside it, unless hidden (hiddenRackDevices()), and its
+// macros, unless collapsed (hiddenRackMacros()): view state as well.
 //
 // Return tracks (kind "return") are fed by sends: any track, group or return can
 // send its signal to a return, at a level, after its fader or before it
@@ -109,6 +109,8 @@ enum class ChainField {
     Pan,       // double
     Mute,      // bool
     Solo,      // bool
+    ReceiveNote,  // double (a key, 0-127; a Drum Rack's pad)
+    Locked,       // bool (a Drum Rack's pad: its sample stays as similar sounds are swapped in)
 };
 using ChainValue = std::variant<bool, double, QString>;
 QString chainFieldName(ChainField field);  // "volume_db"
@@ -148,6 +150,7 @@ struct ProjectContents {
     QSet<QString> foldedDevices;
     QSet<QString> shownChainLists;
     QSet<QString> hiddenRackDevices;
+    QSet<QString> hiddenRackMacros;
     QString path;  // the file it was opened from ("": none)
 };
 
@@ -310,6 +313,8 @@ public:
     // Ids of the racks that don't show their chain's devices beside them (view state: shown by default).
     const QSet<QString>& hiddenRackDevices() const { return hiddenRackDevices_; }
     bool areRackDevicesShown(const QString& rackId) const { return !hiddenRackDevices_.contains(rackId); }
+    const QSet<QString>& hiddenRackMacros() const { return hiddenRackMacros_; }
+    bool areRackMacrosShown(const QString& rackId) const { return !hiddenRackMacros_.contains(rackId); }
 
     // --- Mutations (call through undo commands) ---
     void insertTrack(Track track, int index);
@@ -372,6 +377,7 @@ public:
     // Show or hide a rack's chain list, or its chain's devices beside it (view state: not undone).
     void setChainListShown(const QString& trackId, const QString& rackId, bool shown);
     void setRackDevicesShown(const QString& trackId, const QString& rackId, bool shown);
+    void setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown);
     void updateSettings(const SettingsValues& values);
     // Replace an envelope; an empty one removes the target's automation.
     void setEnvelope(const QString& owner, const QString& key, const Envelope& points);
@@ -445,6 +451,7 @@ private:
     QSet<QString> foldedDevices_;
     QSet<QString> shownChainLists_;
     QSet<QString> hiddenRackDevices_;
+    QSet<QString> hiddenRackMacros_;
     QString path_;
 };
 

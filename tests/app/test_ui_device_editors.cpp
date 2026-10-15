@@ -38,6 +38,7 @@
 #include "audio/DisperserResponse.h"
 #include "app/AppTypes.h"
 #include "audio/EngineBridge.h"
+#include "browser/BrowserMime.h"
 #include "controls/KnobItem.h"
 #include "controls/ValueBoxItem.h"
 #include "devices/CurveGraph.h"
@@ -210,7 +211,7 @@ private Q_SLOTS:
         for (const char* kind : {"amp", "arpeggiator", "bitcrusher", "chorus", "compressor", "delay", "disperser",
                                  "envelope", "eq", "erosion", "gate", "gigatune", "lfo", "limiter", "multiband",
                                  "phaser", "reverb", "sampler", "saturator", "sidechain", "spectral", "transient",
-                                 "vintage_hall", "vital"}) {
+                                 "vintage_hall", "vital", "vocal_rider", "vocoder"}) {
             QVariant url;
             QMetaObject::invokeMethod(root_.get(), "editorFor", Q_RETURN_ARG(QVariant, url),
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));
@@ -437,6 +438,44 @@ private Q_SLOTS:
                  (sub::app::deviceState::Values{{QStringLiteral("sample"), path}}));
         QCOMPARE(engineState(track, devices.front().id),
                  (sub::app::deviceState::Values{{QStringLiteral("sample"), path}}));
+    }
+
+    void samplerSimilarArrowsAndClipsDropped() {
+        const QString path = sub::app::test::writeWav(dir_.path(QStringLiteral("tone.wav")),
+                                                     std::vector<float>(size_t(kSampleRate), 0.25f));
+        auto [track, device, view, samples] = sampler();
+        QVERIFY(view && samples);
+        QQuickItem* arrows = find(view, QStringLiteral("similarArrows"));
+        QVERIFY(arrows);
+        QVERIFY(!arrows->isVisible());  // no sample: nothing to step from
+        // A clip dragged out of the arrangement onto the waveform: its part of its file, one undo step.
+        {
+            const auto mime = sub::app::clipMimeData(path, 0.25, 0.5, 1.0);
+            QDropEvent drop(QPointF(40, 40), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(samples, &drop);
+            QVERIFY(drop.isAccepted());
+        }
+        QCOMPARE(samples->samplePath(), path);
+        QCOMPARE(param(track, device, QStringLiteral("start")), 25.0);
+        QCOMPARE(param(track, device, QStringLiteral("end")), 75.0);
+        QCOMPARE(undo()->undoText(), QStringLiteral("Load Sample"));
+        undo()->undo();
+        QCOMPARE(samples->samplePath(), QString());
+        undo()->redo();
+        // The arrows, at the waveform's bottom right.
+        QVERIFY(arrows->isVisible());
+        const QRectF placed = arrows->mapRectToItem(samples, QRectF(0, 0, arrows->width(), arrows->height()));
+        QVERIFY(placed.right() <= samples->width() && placed.right() >= samples->width() - 8);
+        QVERIFY(placed.bottom() <= samples->height() && placed.bottom() >= samples->height() - 6);
+        QVERIFY(placed.left() > samples->width() / 2);
+        // Without a library to find similar sounds in, it says so.
+        QSignalSpy said(session_.get(), &Session::statusMessage);
+        QQuickItem* next = find(view, QStringLiteral("nextSimilar"));
+        QVERIFY(next && next->isEnabled());
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, scenePoint(next, QPointF(next->width() / 2, next->height() / 2)));
+        QTRY_VERIFY_WITH_TIMEOUT(!said.isEmpty() && said.last().at(0).toString().startsWith(QStringLiteral("No similar sounds")),
+                                 20000);
+        QCOMPARE(samples->samplePath(), path);  // (stays)
     }
 
     void samplerModesSlicesAndWarp() {

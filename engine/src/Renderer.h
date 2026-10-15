@@ -155,10 +155,7 @@ public:
     void drainPreviewNotes(SharedState& shared) noexcept;
     static void discardPreviewNotes(SharedState& shared) noexcept;
 
-    void setPosition(int64_t samples) noexcept {
-        position_ = samples < 0 ? 0 : samples;
-        loopWrapped_ = false;  // (a locate is no wrap, whatever it lands on)
-    }
+    void setPosition(int64_t samples) noexcept { position_ = samples < 0 ? 0 : samples; }
     int64_t position() const noexcept { return position_; }
     void setPlaying(bool playing) noexcept { playing_ = playing; }
     bool playing() const noexcept { return playing_; }
@@ -220,6 +217,9 @@ private:
         // A chain's notes as its MIDI effects play them (processMidiEffects), by
         // depth: two buffers, so each effect reads what the one before it wrote.
         std::array<std::array<std::vector<ProcessEvent>, 2>, kMaxRackDepth + 1> midiNotes;
+        // A Drum Rack pad's notes (padNotes), by its rack's depth; and a modulator's in a pad.
+        std::array<std::vector<ProcessEvent>, kMaxRackDepth> padNotes;
+        std::vector<ProcessEvent> modulatorNotes;
     };
 
     // The stretches of a chunk a strip's devices process: one per continuous
@@ -249,9 +249,9 @@ private:
         int offset;
         bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
         bool chase;  // playback starts here: notes already underway sound
-        bool wrap = false;     // the jump is the loop's wrap (from `from`, its end)
-        int64_t from = 0;      // a wrap: where the timeline went back from
-        int64_t linear = 0;    // while recording: its position in recording time (LoopWrap); else `position`
+        bool wrap = false;  // the jump is the loop's, from its end back to its start
+        int64_t from = 0;    // a wrap: where the timeline went back from (the loop's end)
+        int64_t linear = 0;  // while recording: its position in recording time (LoopWrap); else `position`
     };
     struct Tick {
         int offset;
@@ -392,6 +392,10 @@ private:
     void fillSwitch(const RenderSnapshot& snap, const AutomationRender& lane, int frames, float* out,
                     WorkerScratch& scratch) const noexcept;
     // A rack, in place: its chains (each from its input) summed.
+    // The notes a Drum Rack's pad hears: only those of its key, as C3 (raw MIDI
+    // goes on to it too), into `out` (TrackBuffers::kMaxEvents long), slice by slice.
+    static void padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
+                         Slices& outSlices) noexcept;
     void processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                      const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                      bool monitored, WorkerScratch& scratch) noexcept;
@@ -440,6 +444,10 @@ private:
     void mixPreview(SharedState& shared, int frames) noexcept;
     // A track's note events for this chunk, into `out`: preview notes, its MIDI
     // input (if `hearsInput`, or to `take`), then (if `clipNotes`) its clips' notes.
+    // The chunk's segments as a track's clips' notes play them, `delay` samples
+    // late (on the timeline as it was played that long ago: before a loop wrap,
+    // its end); into `out`, returning how many.
+    int delayedSegments(int64_t delay, Segment* out) const noexcept;
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
                          MidiRecordingTake* take) noexcept;
     void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept;
@@ -478,7 +486,6 @@ private:
     int64_t chunkFrom_ = -1;  // where the last chunk ended (-1: it didn't play): what a jump at this one's start left
     bool playing_ = false;
     bool chasePending_ = false;  // playback just started: its first segment chases notes
-    bool loopWrapped_ = false;   // the loop wrapped at the end of the last segment (the next one starts there)
     int64_t countIn_ = 0;        // samples of count-in still to come before the playhead moves
     int64_t countInTotal_ = 0;
 
@@ -511,6 +518,13 @@ private:
     uint64_t blockCounter_ = 1;  // stamps voice use; 0 means "never used"
     std::array<Segment, kMaxSegments> segments_{};
     int numSegments_ = 0;
+    // The loop as this chunk plays it, for clips' notes played late (TrackRender::clipDelay).
+    bool chunkLoop_ = false;
+    int64_t chunkLoopStart_ = 0;
+    int64_t chunkLoopEnd_ = 0;
+    bool wrapNext_ = false;   // the last segment ended at the loop's end: the next starts it again
+    bool looped_ = false;     // the playhead wrapped since playback started or it jumped (at the chunk's start)
+    bool loopedAtChunk_ = false;
     std::array<Tick, kMaxTicks> ticks_{};  // this chunk's, from pendingTicks_
     int numTicks_ = 0;
     std::array<PendingTick, kMaxPendingTicks> pendingTicks_{};  // ring, in time order

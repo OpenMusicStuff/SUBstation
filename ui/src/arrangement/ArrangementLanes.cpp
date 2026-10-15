@@ -28,6 +28,7 @@
 
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDrag>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
@@ -37,6 +38,7 @@
 #include <QLineF>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QQuickWindow>
 #include <QStyleHints>
 #include <QTimer>
@@ -132,7 +134,7 @@ struct DroppedDevices {
 DroppedDevices droppedDevices(const QMimeData* mime) {
     DroppedDevices devices;
     for (const QString& kind : app::deviceKinds(mime)) {
-        if (app::builtinDevice(kind) == nullptr) continue;
+        if (!app::isDeviceKind(kind)) continue;
         devices.kinds << kind;
         devices.anyInstrument = devices.anyInstrument || app::isInstrument(kind);
     }
@@ -993,6 +995,17 @@ void ArrangementLanes::click(const QPointF& pos, Qt::KeyboardModifiers mods, con
 void ArrangementLanes::mouseMoveEvent(QMouseEvent* event) {
     hoverPos_ = event->position();
     if (gesture_) {
+        // An audio clip dragged out of the arrangement (down onto the device
+        // view: a Sampler, a Drum Rack's pad) goes as its part of its file.
+        const Arrangement& a = *arrangement();
+        const double bottom = height() + a.returnsHeight() + a.masterHeight();
+        if (auto* move = dynamic_cast<arrangement::MoveRangeGesture*>(gesture_.get());
+            move != nullptr && event->position().y() >= bottom) {
+            if (const std::optional<app::Clip> clip = move->draggedAudio()) {
+                dragClipOut(*clip);
+                return;
+            }
+        }
         moveGesture(event->position(), event->modifiers());
         return;
     }
@@ -1007,6 +1020,25 @@ void ArrangementLanes::mouseReleaseEvent(QMouseEvent* event) {
     gesture_.reset();  // (a click in a clip range selects as elsewhere: no gesture follows it)
     if (ready()) updateHover(event->position(), event->modifiers());
     repaint();
+}
+
+void ArrangementLanes::dragClipOut(const app::Clip& clip) {
+    // The move ends where it began; the drag starts once this event is done with.
+    edgeScroll_.stop();
+    std::unique_ptr<Gesture> gesture = std::move(gesture_);
+    gesture->cancel();
+    repaint();
+    const QPointer<ArrangementLanes> self(this);
+    QTimer::singleShot(0, this, [self, clip] {
+        // (Not if the button went up meanwhile: the drag would wait for a release that came already.)
+        if (!self || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) return;
+        std::unique_ptr<QMimeData> mime = app::clipMimeData(clip.path, clip.offsetSec, clip.durationSec,
+                                                            clip.sourceDurationSec);
+        QPointer<QDrag> drag = new QDrag(self.data());
+        drag->setMimeData(mime.release());
+        drag->exec(Qt::CopyAction);
+        if (drag) drag->deleteLater();
+    });
 }
 
 void ArrangementLanes::mouseUngrabEvent() {

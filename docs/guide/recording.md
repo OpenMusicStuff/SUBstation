@@ -11,6 +11,8 @@ resampling, and MIDI from the computer MIDI keyboard.
 - An audio or MIDI track's header has an **arm** button (●). Arming one disarms the
   others unless Ctrl is held, and clicking a selected track's arms all the selected
   tracks.
+- **Ctrl+Shift+A** (*Edit › Arm Selected Tracks*) arms the selected tracks and disarms the
+  others; with all of them armed already, it disarms them.
 - Arming a track with no input says so in the status line: choose one to record.
 - Group tracks have no arm button: they record nothing.
 
@@ -145,7 +147,9 @@ restrict recording to the loop brace, as in Ableton, whether the loop is on or n
   latency, the delay compensation's lag and the buffer MIDI waits for.
 - A key still held when recording stops ends with the take.
 - *Edit › Record Quantization* (none, 1/4 to 1/32, triplets) puts recorded notes' starts
-  on that grid (lengths as played).
+  on that grid (lengths as played). With *Quantize Note Ends* checked in the same menu (as
+  Ableton's *Quantize Note End*), their ends go on the grid too (a note whose end would land
+  where it starts lasts a grid step). Both are kept with the preferences.
 - A MIDI 2.0 controller's per-note pitch bends are recorded with their notes: each
   note's bend as it was played, drawn with as few points as keep its shape (to edit in
   the piano roll's bend mode: [midi.md](midi.md#pitch-bends-vibrato-and-slides)). MIDI 1.0's

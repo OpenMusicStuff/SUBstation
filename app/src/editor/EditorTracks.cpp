@@ -683,6 +683,21 @@ void ProjectEditor::setTrackColor(const QString& trackId, const QString& color) 
     }
 }
 
+void ProjectEditor::setTracksColor(const QStringList& trackIds, const QString& color) {
+    QStringList changing;
+    for (const QString& id : trackIds) {
+        const Track* track = project_->findTrack(id);
+        if (track != nullptr && color != track->color && !changing.contains(id)) changing << id;
+    }
+    if (changing.size() == 1) {
+        setTrackColor(changing.front(), color);
+        return;
+    }
+    if (changing.isEmpty()) return;
+    Macro macro(undoStack_, QStringLiteral("Change Track Colors"));
+    for (const QString& id : changing) setTrackColor(id, color);
+}
+
 void ProjectEditor::setTrackParam(const QString& trackId, TrackField field, double value, const QString& mergeKey) {
     QString label;
     switch (field) {
@@ -936,7 +951,7 @@ void ProjectEditor::setTrackMidiInput(const QString& trackId, const std::optiona
 
 // --- Recording ---
 
-ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize) {
+ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize, bool quantizeEnds) {
     const Project& p = *project_;
     const double tempo = p.tempo();
     // Each track's passes (a take recorded round the loop made one each time
@@ -948,7 +963,7 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
         if (track.isMidi() != recorded.midi) continue;
         for (const RecordedTake& take : loopPasses(recorded)) {
             if (take.midi) {
-                byTrack[take.trackId].push_back(recordedMidiClip(take, quantize));
+                byTrack[take.trackId].push_back(recordedMidiClip(take, quantize, quantizeEnds));
                 continue;
             }
             double startBeat = secondsToBeats(take.startSec, tempo);
@@ -997,17 +1012,22 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
     return refs;
 }
 
-Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize) const {
+Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, bool quantizeEnds) const {
     const double tempo = project_->tempo();
     const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
     const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
         double begin = secondsToBeats(played.start, tempo) - start;
-        const double length = secondsToBeats(played.end, tempo) - start - begin;
+        double length = secondsToBeats(played.end, tempo) - start - begin;
+        const double playedEnd = begin + length;
         if (quantize > 0) {  // on the arrangement's grid, unless that is outside the clip
             const double snapped = roundHalfEven((start + begin) / quantize) * quantize - start;
             if (snapped >= 0 && snapped < end - start) begin = snapped;
+            if (quantizeEnds) {  // its end on the grid too (a step long, if that would be where it starts)
+                const double snappedEnd = roundHalfEven((start + playedEnd) / quantize) * quantize - start;
+                length = snappedEnd - begin > 1e-9 ? snappedEnd - begin : quantize;
+            }
         }
         if (begin < 0 || begin >= end - start || length <= 0) continue;
         Note note{std::clamp(played.pitch, 0, 127), begin, length, std::clamp(played.velocity, 1, 127)};
@@ -1017,7 +1037,10 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize) 
         for (const BendPoint& point : notes::simplifiedBend(bend)) note = notes::withBendPoint(note, point);
         clipNotes.push_back(std::move(note));
     }
-    return Clip::midi(newId(), QString(), start, end - start, 0.0, notes::normalize(clipNotes));
+    // (Long enough for the notes' ends: one put on the grid may end after the take.)
+    double length = end - start;
+    for (const Note& note : clipNotes) length = std::max(length, note.start + note.length);
+    return Clip::midi(newId(), QString(), start, length, 0.0, notes::normalize(clipNotes));
 }
 
 }  // namespace sub::app

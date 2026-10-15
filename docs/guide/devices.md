@@ -11,8 +11,8 @@ their own page: [plugins.md](plugins.md).
 - It shows the built-in Synth and Sampler instruments, the Arpeggiator MIDI effect, the
   Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
   Compressor, Saturator, Amp, Erosion, Bitcrusher, Delay, Chorus-Ensemble, Phaser-Flanger,
-  Reverb, Vintage Hall, Disperser, Transient Shaper, EQ and Sidechain, the LFO and Envelope
-  modulators, and plug-ins, all through the same interface: they show alike.
+  Reverb, Vintage Hall, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ and Sidechain, the LFO
+  and Envelope modulators, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only. A MIDI
   effect (the Arpeggiator) sits after the instrument but plays before it: it changes the
   notes the chain's instrument hears, wherever it is in the chain.
@@ -47,8 +47,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Amp, Erosion, the Bitcrusher, the Delay, the
   Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
-  Transient Shaper, the EQ, the Sidechain, the Arpeggiator, the LFO and the Envelope have
-  editors of their own (below).
+  Transient Shaper, the Vocoder, the Vocal Rider, the EQ, the Sidechain, the Arpeggiator, the LFO
+  and the Envelope have editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
   *Map to Macro* (see [automation.md](automation.md) and [Macros](#macros)); and, on a
@@ -207,6 +207,15 @@ the bottom.
 
 - Drop an audio file on the display (from the browser or the desktop) or double-click it
   to load one; the right-click menu has *Load Sample…*, *Clear Sample* and *Reverse*.
+  An audio clip dragged down out of the arrangement onto it loads its part of its file
+  (Start and End set to that part).
+- **Similar sounds**: the **‹** and **›** arrows at the display's bottom right swap in the
+  sounds most like the sample (as the browser's *Find Similar Sounds* finds them in its
+  places), most like it first, one at a time; each swap is an undo step. They step from
+  a **reference**: the sample you started stepping from, so **‹** goes back through what
+  you heard to it. Right-click › *Save as Similar Reference* makes the sample playing the
+  reference (it stays until you save another, whatever you load meanwhile); *Return to
+  Reference* plays it again. The reference is saved with the project.
 - Drag Start, End and (Classic, looping) Loop Start on the display.
 - Under the display: **Gain**; the mode's own settings; **Snap** (Start, End, Loop
   Start and slices move to the nearest zero crossing, so notes don't click as they
@@ -1264,6 +1273,69 @@ loud they are: drums that cut through or sit back, a room tamed or brought out.
   can be automated, and changes don't click. It follows a sound's envelope, not its
   waveform, so even a bass note's level is read smoothly.
 
+### Vocoder
+
+Makes one sound speak with another, as Ableton's Vocoder does: the input (the **modulator**, usually a
+voice) is split into bands, and each band's level shapes the same band of the **carrier** (a synth, noise),
+so the carrier takes on the voice's words.
+
+- **Carrier**: what speaks.
+  - **Noise**: its own noise. **Rate** (100 Hz to 20 kHz) holds it at a lower sample rate for a grainier
+    sound; **Crackle** (0 to 100 %) thins it into ever sparser clicks, as loud.
+  - **External**: the sidechain. Choose a track (a pad, a chord synth) as the device's sidechain in its title
+    bar; with none, nothing comes out.
+  - **Modulator**: the input itself; with Enhance, a filter bank's colour of it.
+  - **Pitch Tracking**: an oscillator following the input's pitch, monophonically (a saw, or pulses of
+    50, 25 or 12.5 %). **Pitch** moves it by semitones (±24); **Low** and **High** limit the pitches it looks
+    for. Unpitched moments keep the last pitch.
+- **Enhance**: brings every band of the carrier to the same steady level: a brighter, clearer voice from any
+  carrier. Without it the carrier's own spectrum and dynamics colour the result.
+- **Unvoiced** (0 to 100 %): adds noise where the input has no pitch (s, f, t), as loud as its highs, so
+  consonants come through even on a dark carrier. **Sens.** sets how readily a sound counts as unvoiced;
+  **Fast** or **Slow**, how quickly that is heard.
+- **Bands** (4 to 40, 20 at first) spread evenly from **Low** to **High** (80 Hz to 12 kHz at first). **BW**
+  (10 to 200 %) sets their width: at 100 % neighbours meet at −3 dB; wider is smoother, narrower more
+  resonant. **Precise**: every band as wide and as loud. **Retro**: gentler slopes, the high bands narrower
+  and louder, as old hardware vocoders were.
+- **Formant** (±12 semitones): moves the carrier's bands against the modulator's, for a smaller or larger
+  voice. A band moved past the top of the spectrum is left out.
+- **Depth** (0 to 200 %): how far the input's spectrum shapes the carrier: 0 % the carrier as it is (but as
+  loud as the input), 100 % the input's spectrum, 200 % its peaks stand out further. The level stays the
+  same.
+- **Gate** (−96 to 0 dB): bands the input is quieter in than this are silent (at −96 dB, none).
+- **Attack** (0.1 to 100 ms) and **Release** (1 ms to 3 s): how quickly each band follows the input up and
+  down; a long release smears the words into a pad.
+- **Mono** (the input and the carrier each summed), **Stereo** (the input summed, the carrier in stereo:
+  noise of its own each side) or **L/R** (each side vocoded on its own); **Level** (±24 dB) and **Dry/Wet**.
+
+Whatever the carrier's level, what comes out is about as loud as the input. Its editor is laid out as
+Ableton's: the carrier and its settings at the left, beside them the unvoiced controls; in the middle the
+filter bank, each band lit as loud as the input is in it with its filter drawn over it, the carrier's bands
+marked along the bottom where Formant moves them, and the pitch followed (with its note) at the top right while
+tracking; under it the bands' count, range, width and Precise or Retro; at the right Formant, Depth, Gate,
+Attack, Release and Level, the channel modes and Dry/Wet.
+
+### Vocal Rider
+
+Rides a vocal's level to a target, as an engineer riding its fader would: quiet words come up, loud ones go
+down, without a compressor's sound (no attack, ratio or knee: a slow gain that follows the phrase).
+
+- **Target** (−50 to 0 dB): the level the vocal is ridden to, as the rider hears it.
+- **Range Min** (−24 to 0 dB) and **Range Max** (0 to +24 dB): the most it turns the vocal down and up.
+- **Speed** (20 ms to 2 s): how quickly it rides: short follows every word, long only the phrases.
+- **Vocal Sens.** (−80 to 0 dB): the level the vocal counts from. Under it (breaths, bleed, silence, a
+  phrase's tail) the ride holds where it was, so nothing quiet is brought up.
+- **Music Sens.** (0 to 100 %): with the music the vocal sits in on the sidechain, how far the target follows
+  the music's level: at 100 % the vocal rides to the music's level as the song gets louder or quieter; at 0 %
+  the music doesn't count.
+- **Vocal** weighting hears the level as a listener does (BS.1770's K-weighting shelf, and no rumble under
+  100 Hz); **Flat** hears every frequency alike. **Output** (±24 dB) after the ride.
+
+Its editor shows the last 5 seconds: the vocal's level filled grey, what comes out outlined over it, the music on
+the sidechain as a yellow line, and the target as a blue line (drag it up or down, Shift finely; double-click
+to reset it, right-click for its menu); under them a lane of the ride itself, up for gain and down for cut, with
+Range Min and Max dashed. The ride now shows at the top right.
+
 ### EQ
 
 An equalizer after FabFilter's Pro-Q: up to 24 bands on one curve.
@@ -1540,6 +1612,41 @@ one undo step.
   macro by hand overrides its automation, as with any parameter, until it is
   re-enabled.
 - The macro's tooltip lists what it moves; its name is lit while it moves something.
+
+### Drum Rack
+
+A rack of pads, as Ableton's Drum Rack. Add one from the browser (*Instruments › Drum
+Rack*), dropped on a track or the device view, or double-clicked; with no MIDI track
+selected it makes one. Each of its chains is a **pad**, playing only the notes of its own
+key, which its devices hear as C3: a Sampler on a pad plays its sample at its own pitch.
+
+- **Pads**: sixteen at a time, four by four, the lowest key (C1 at first) at the bottom
+  left. The ▴ and ▾ arrows beside them (or the wheel over them) show a row of keys up or
+  down; the narrow strip at their left shows all 128 keys, lit where a pad is, and a click
+  there shows those pads.
+- **Loading samples**: drop an audio file on a pad (from the browser or the desktop), or
+  an audio clip dragged down out of the arrangement (its part of its file), or right-click
+  › *Load Sample…*. The pad gets a Sampler with the sample, in **1-Shot** (a hit plays
+  whole however short the note), and the sample's name. Onto a
+  pad with a sample, the new one replaces it (and a pad named after its sample takes the
+  new name; one you named keeps its name).
+- Click a pad to play its key and show its devices beside the rack (its Sampler); drop
+  devices on a pad with a sample to add them to it. Each pad has a **lock** at its top
+  right, and its activator (mute) and solo along its bottom; double-click its name (or right-click › *Rename*,
+  or Ctrl+R) to rename it. Its right-click menu also duplicates (onto the next free key)
+  and deletes it.
+- **Similar sounds**: the **‹** and **›** arrows in the Drum Rack's title bar swap
+  every pad's sample for the next (or previous) sound like it, each pad from its own
+  reference, as the Sampler's arrows do, in one undo step. **Locked** pads keep their
+  samples. A pad's menu steps it alone, saves its sample as its reference or returns to
+  it; the rack's menu has *Save Pads as Similar References* and *Return Pads to
+  References* for every pad but the locked ones.
+- Its chain list (the rows button) lists the pads, as a rack's chains, with their mixers;
+  *Add Pad* (or **+ Chain**) adds an empty pad on the first free key. Its macros work as
+  any rack's; the **▾** in its title bar collapses them (and **▸** shows them again), which
+  is saved with the project.
+- A Drum Rack is an instrument even while empty: it goes first on a MIDI track. Its
+  presets load into Drum Racks only.
 
 ## Presets
 

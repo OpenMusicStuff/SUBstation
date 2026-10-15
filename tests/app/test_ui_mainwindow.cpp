@@ -753,6 +753,17 @@ private Q_SLOTS:
         QCOMPARE(session().recordQuantize(), 0.0);
         QCOMPARE(checkedOne(), 0);
         QCOMPARE(prop(QStringLiteral("quantize_0"), "text").toString(), QStringLiteral("No Quantization"));
+        // Quantize Note Ends: with a grid only, checked from the session.
+        QVERIFY(!prop(QStringLiteral("quantize_ends"), "enabled").toBool());
+        session().setRecordQuantize(choices[4].toMap().value(QStringLiteral("value")).toDouble());
+        QVERIFY(prop(QStringLiteral("quantize_ends"), "enabled").toBool());
+        QVERIFY(!prop(QStringLiteral("quantize_ends"), "checked").toBool());
+        trigger(QStringLiteral("quantize_ends"));
+        QVERIFY(session().recordQuantizeEnds());
+        QVERIFY(prop(QStringLiteral("quantize_ends"), "checked").toBool());
+        session().setRecordQuantizeEnds(false);
+        QVERIFY(!prop(QStringLiteral("quantize_ends"), "checked").toBool());
+        session().setRecordQuantize(0.0);
 
         // Snap to Grid: checked while the arrangement snaps (the placeholder: as at first).
         QVERIFY(prop(QStringLiteral("snapToGrid"), "checked").toBool());

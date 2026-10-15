@@ -6,8 +6,10 @@
 #include <QList>
 #include <QUrl>
 
+#include <algorithm>
 #include <optional>
 
+#include "audio/AudioFiles.h"
 #include "io/Json.h"
 #include "io/VitalPresets.h"
 
@@ -142,6 +144,41 @@ std::optional<MovedDevices> movedDevices(const QByteArray& data) {
 std::optional<MovedDevices> movedDevices(const QMimeData* mime) {
     if (mime == nullptr || !mime->hasFormat(QString::fromLatin1(kDeviceMoveMime))) return std::nullopt;
     return movedDevices(mime->data(QString::fromLatin1(kDeviceMoveMime)));
+}
+
+std::optional<DroppedAudio> droppedAudio(const QMimeData* mime) {
+    if (mime == nullptr) return std::nullopt;
+    if (mime->hasFormat(QLatin1String(kClipMime))) {  // a clip's part of its file
+        const QJsonObject clip = QJsonDocument::fromJson(mime->data(QLatin1String(kClipMime))).object();
+        const QString path = clip.value(QStringLiteral("path")).toString();
+        const double offset = clip.value(QStringLiteral("offset_sec")).toDouble();
+        const double duration = clip.value(QStringLiteral("duration_sec")).toDouble();
+        const double source = clip.value(QStringLiteral("source_sec")).toDouble();
+        if (!path.isEmpty() && isAudioFile(path)) {
+            DroppedAudio audio{path};
+            if (source > 0.0 && duration > 0.0) {
+                audio.start = std::clamp(offset / source, 0.0, 1.0);
+                audio.end = std::clamp((offset + duration) / source, audio.start, 1.0);
+            }
+            return audio;
+        }
+    }
+    for (const QUrl& url : mime->urls()) {
+        const QString path = url.toLocalFile();
+        if (!path.isEmpty() && isAudioFile(path)) return DroppedAudio{path};
+    }
+    return std::nullopt;
+}
+
+std::unique_ptr<QMimeData> clipMimeData(const QString& path, double offsetSec, double durationSec, double sourceSec) {
+    auto mime = std::make_unique<QMimeData>();
+    mime->setUrls({QUrl::fromLocalFile(path)});
+    const QJsonObject clip{{QStringLiteral("path"), path},
+                           {QStringLiteral("offset_sec"), offsetSec},
+                           {QStringLiteral("duration_sec"), durationSec},
+                           {QStringLiteral("source_sec"), sourceSec}};
+    mime->setData(QLatin1String(kClipMime), QJsonDocument(clip).toJson(QJsonDocument::Compact));
+    return mime;
 }
 
 }  // namespace sub::app

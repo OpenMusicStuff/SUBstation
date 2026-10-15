@@ -10,6 +10,7 @@
 // here). With $SUBSTATION_SCREENS set, it saves screenshots there.
 
 #include <QFileInfo>
+#include <QFontMetricsF>
 #include <QJSValue>
 #include <QMouseEvent>
 #include <QQuickItem>
@@ -772,6 +773,64 @@ private Q_SLOTS:
         QCOMPARE(project().track(group).name.isEmpty(), false);
     }
 
+    // A header's Color submenu, chosen in the menu shown (as a mouse does it): its
+    // colour, or the colour of every track and group selected with it, one undo step.
+    void theColorSubmenuColorsTheSelectedTracks() {
+        const QStringList ids = makeTracks(3);
+        const QString group = editor().groupTracks({ids[1]});
+        h_->settle();
+        // Picks the colour at `index` from `id`'s header's menu, by the mouse.
+        auto pickColor = [&](const QString& id, int index) {
+            QTest::mouseClick(window(), Qt::RightButton, {}, test::at(header(id), QPointF(20, 8)));
+            h_->settle();
+            QObject* menu = popup();
+            QTRY_VERIFY(menu->property("visible").toBool());
+            QQuickItem* colorItem = nullptr;
+            for (int i = 0; i < menu->property("count").toInt() && !colorItem; ++i) {
+                QQuickItem* item = nullptr;
+                QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem*, item), Q_ARG(int, i));
+                if (item && item->property("text").toString() == QStringLiteral("Color")) colorItem = item;
+            }
+            QVERIFY(colorItem);
+            auto* submenu = colorItem->property("subMenu").value<QObject*>();
+            QVERIFY(submenu);
+            const QPointF middle(colorItem->width() / 2, colorItem->height() / 2);
+            test::moveTo(window(), test::at(colorItem, middle));  // (it opens as the mouse comes over it)
+            QTRY_VERIFY(submenu->property("visible").toBool());
+            QCOMPARE(submenu->property("count").toInt(), int(sub::app::kTrackColors.size()));
+            QQuickItem* swatch = nullptr;
+            QMetaObject::invokeMethod(submenu, "itemAt", Q_RETURN_ARG(QQuickItem*, swatch), Q_ARG(int, index));
+            QVERIFY(swatch);
+            QTRY_VERIFY(swatch->isVisible() && swatch->width() > 0);
+            const QPointF centre(swatch->width() / 2, swatch->height() / 2);
+            test::moveTo(window(), test::at(swatch, centre));
+            QTest::mouseClick(window(), Qt::LeftButton, {}, test::at(swatch, centre));
+            QTRY_VERIFY(!menu->property("visible").toBool());
+            h_->settle();
+        };
+
+        // One track: its colour.
+        const QString first = sub::app::kTrackColors[3];
+        QVERIFY(project().track(ids[0]).color != first);
+        pickColor(ids[0], 3);
+        QCOMPARE(project().track(ids[0]).color, first);
+        QCOMPARE(undo().undoText(), QStringLiteral("Change Track Color"));
+
+        // A track and a group selected (Ctrl-click): both, as one undo step; the others stay.
+        const QString other = project().track(ids[2]).color;
+        selection().selectTrack(ids[0], true);
+        selection().selectTrack(group, true, Selection::Mode::Toggle);
+        const QString second = sub::app::kTrackColors[5];
+        pickColor(group, 5);
+        QCOMPARE(project().track(ids[0]).color, second);
+        QCOMPARE(project().track(group).color, second);
+        QCOMPARE(project().track(ids[2]).color, other);
+        QCOMPARE(undo().undoText(), QStringLiteral("Change Track Colors"));
+        undo().undo();
+        QCOMPARE(project().track(ids[0]).color, first);
+        QVERIFY(project().track(group).color != second);
+    }
+
     void clickingHeadersSelectsTracks() {
         const QStringList ids = makeTracks(3);
         click(test::at(header(ids[0]), QPointF(60, 8)));
@@ -1048,6 +1107,13 @@ private Q_SLOTS:
         QVERIFY(arrangement()->renameTrack(track));
         h_->settle();
         QVERIFY(field->isVisible() && field->hasActiveFocus());
+        // Its text whole, not cut off at the top: the room inside its padding is a line's height at least,
+        // and the field is inside the header.
+        const qreal inside = field->height() - field->property("topPadding").toReal() -
+                             field->property("bottomPadding").toReal();
+        QVERIFY2(inside >= QFontMetricsF(field->property("font").value<QFont>()).height(),
+                 qPrintable(QString::number(inside)));
+        QVERIFY(field->y() >= 0 && field->y() + field->height() <= header(track)->height());
         QCOMPARE(field->property("text").toString(), project().track(track).nameTemplate);
         QVERIFY(field->property("text").toString().startsWith(QStringLiteral("# ")));
         QCOMPARE(field->property("selectedText").toString(), field->property("text").toString());

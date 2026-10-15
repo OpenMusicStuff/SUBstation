@@ -37,6 +37,9 @@ std::vector<BrowserItem> builtinItems(const QString& category) {
         for (const QString& kind : kinds) {
             items.push_back({builtinDevice(kind)->name, kind, ItemKind::Device, name, std::nullopt, {}});
         }
+        if (name == QStringLiteral("Instruments")) {  // and the Drum Rack (a rack: not the engine's)
+            items.push_back({QStringLiteral("Drum Rack"), kDrumRackKind, ItemKind::Device, name, std::nullopt, {}});
+        }
     }
     return items;
 }

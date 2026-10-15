@@ -206,6 +206,15 @@ private Q_SLOTS:
         std::vector<double> starts;
         for (const Note& n : f.project.clip(refs[0].trackId, refs[0].clipId).notes) starts.push_back(round6(n.start + 1.1));
         QVERIFY((starts == std::vector<double>{1.1, 1.6, 3.95}));
+        // Their ends on the grid too (a step long where the end would land on the start).
+        refs = f.editor.addRecordings({take}, 0.5, true);
+        clip = f.project.clip(refs[0].trackId, refs[0].clipId);
+        got.clear();
+        for (const Note& n : clip.notes) got.push_back({n.pitch, round6(clip.startBeat + n.start), round6(n.length)});
+        QVERIFY((got == std::vector<Got>{{C, 1.1, 0.4}, {E, 1.5, 0.5}, {G, 4.0, 0.5}}));
+        // The clip reaches the last note's end (put on the grid past the take's), so all of it plays.
+        QVERIFY(round6(clip.startBeat + clip.durationBeats) >= 4.5);
+        QCOMPARE(clip.playedNotes().back().end - clip.playedNotes().back().start, 0.5);
     }
 
     // --- More of the clip editor on MIDI clips ---

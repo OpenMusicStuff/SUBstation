@@ -167,8 +167,12 @@ compensation  = heard(point) - arrival(edge)                  per edge
   still switched on (`isEnabled()`), but renders and delay compensation go by `isActive()`, so it
   isn't processed and adds no latency. `ProcessorEntry::alignedLatency` keeps the latency it
   would have (`ownLatency()`), so `idle()` still sees it change. With the snapshot's
-  `constrained`, a track hearing its MIDI input (In, or Auto and armed; playing back too, its
-  own clips' notes then early) is `TrackBuffers::uncompensated` like a monitored one. Offline renders hold it off
+  `constrained`, a track hearing its MIDI input (In, or Auto and armed; playing back too) is
+  `TrackBuffers::uncompensated` like a monitored one. Its own clips' notes then play
+  `TrackRender::clipDelay` late (the sum of the compensations its way out skips, worked out
+  with the snapshot), so only its input comes early: `Renderer::delayedSegments()` gives the
+  chunk's segments that long ago (just after a loop wrap, the loop's end), and a change in
+  the delay counts as a jump. Offline renders hold it off
   (`constrainHeld_`, from `suspendLiveLocked()` to `endOfflineLocked()`), so exports and
   freezing hear every device.
 
@@ -248,6 +252,13 @@ it (for the UI). Its `process()` is never called; the renderer runs its chains
   fader (`TrackParams`: gain, pan, mute, solo among the rack's chains), metered like a track
   (`takeMeters()` reports them with `chainId`). Chain faders are automated as lanes of the rack:
   `chain:<chain id>:volume` and `chain:<chain id>:pan`.
+- **Pads** (a Drum Rack's chains): `setChainReceiveNote(chain, key)` (`ChainModel::receiveNote`,
+  copied to `ChainRender::receiveNote`) gives a chain a key; it then hears only that key's notes,
+  as C3 (60), so a Sampler on it plays its sample at its own pitch: `Renderer::padNotes()` filters
+  the slices' events into the worker's `padNotes` scratch (by the rack's depth) before
+  `processChain`, raw MIDI going on too. A modulator on a pad hears the pad's notes
+  (`modulatorNotes`). Changing a chain's key resets its devices (a note sounding on the old key
+  would miss its note-off). -1 (the default): every note, so an Instrument Rack layers.
 - **Nesting**: racks nest at most `kMaxRackDepth` (8) deep. `addRack` checks the chain's depth
   (`chainDepthLocked()`); `moveProcessor` refuses a rack moving into one of its own chains, or one
   whose height (`rackHeightLocked()`) would take it too deep.
@@ -317,6 +328,9 @@ The frozen audio itself is a render of the track's signal before its fader:
   included), not the devices of one chain; `EdgeRender::tapDevice` is the place in the chain that
   writes it (the strip's own, or a rack chain's).
 - Changing a send from pre- to post-fader rebuilds the snapshot; changing only its level doesn't.
+- A device taking a live track's notes (MIDI From) gets them as that track plays them: its
+  clips' notes `clipDelay` late (they are copied after the delay), so on a track that is itself
+  compensated they come that much late while the source is armed and constrained.
 - Delay lines for an edge are reused only while long enough; a larger delay starts the line
   again from silence (a short gap in that edge's audio).
 

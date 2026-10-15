@@ -35,7 +35,8 @@
 // ("macro_names", "" for a macro named by its number; version 18; older racks
 // had eight: they load with those they use, mapped or turned, and at least
 // kDefaultMacroCount). The racks whose chain list shows ("chain_lists_shown")
-// and those whose chain's devices don't ("rack_devices_hidden") are stored by
+// and those whose chain's devices don't ("rack_devices_hidden"), and those whose
+// macros are collapsed ("rack_macros_hidden"), are stored by
 // id, as folded devices are (files without them show no chain list, and every
 // rack's devices). Deactivated clips (audio and MIDI) store "muted", and
 // deactivated notes a fifth value, true (version 20; older files have none:
@@ -54,7 +55,7 @@
 // from a track that isn't a MIDI track there is dropped. An audio or MIDI track
 // stores its take lanes ("takes": [{"id", "name", "clips": [clips, as the
 // track's]}], oldest first) and whether they show ("takes_shown": true) when it
-// has them (version 24; older files have none).
+// has them (version 25; older files have none).
 //
 // There is no per-version migration code: each addition has a default that
 // makes an older file load as it was, and saving writes the current version.
@@ -97,9 +98,10 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // track's number; kNameTemplatesVersion), 20: deactivated clips and notes, 21:
 // tracks' outputs and where inputs from tracks are tapped, 22: notes' bends
 // (MIDI 2.0's per-note pitch bend: points and vibratos) and devices' MIDI inputs
-// from other tracks, 23: modulators' mappings (Device::modulations), 24: take
+// from other tracks, 23: modulators' mappings (Device::modulations), 24: Drum
+// Racks (a rack's `drum`, its chains' `receive_note` and `locked`), 25: take
 // lanes (Track::takes, takesShown)
-inline constexpr int kProjectVersion = 24;
+inline constexpr int kProjectVersion = 25;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

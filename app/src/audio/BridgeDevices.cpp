@@ -188,6 +188,7 @@ void EngineBridge::placeRack(const QString& trackId, const Device& rack, quint32
             } catch (const std::invalid_argument&) {
             }
             engineChain = moved;
+            d.chainMixer.remove(chain.id);  // (the new engine chain has its fader and key to take)
         } else if (!engineChain) {
             engineChain = engine_.addRackChain(processorId, -1);
             d.devices.insert(chain.id, {});
@@ -418,13 +419,14 @@ void EngineBridge::onChainChanged(const QString& trackId, const QString& chainId
     pushChainMixers(trackId);
 }
 
-// A track's rack chains' faders to the engine (those that changed).
+// A track's rack chains' faders (and Drum Rack pads' keys) to the engine (those that changed).
 void EngineBridge::pushChainMixers(const QString& trackId) {
     if (!project_->hasOwner(trackId)) return;
     for (const ConstRackChain& rc : iterChains(project_->track(trackId).devices)) {
         const Chain& chain = *rc.chain;
         const auto engineChain = d_->chains.constFind(chain.id);
-        const Private::ChainMixer state{chain.volumeDb, chain.pan, chain.mute, chain.solo};
+        const int receiveNote = rc.rack->isDrumRack() ? chain.receiveNote : -1;
+        const Private::ChainMixer state{chain.volumeDb, chain.pan, chain.mute, chain.solo, receiveNote};
         const auto found = d_->chainMixer.constFind(chain.id);
         const Private::ChainMixer* old = found != d_->chainMixer.constEnd() ? &*found : nullptr;
         if (engineChain == d_->chains.constEnd() || (old != nullptr && *old == state)) continue;
@@ -433,6 +435,7 @@ void EngineBridge::pushChainMixers(const QString& trackId) {
         if (!old || old->pan != state.pan) engine_.setChainPan(id, static_cast<float>(chain.pan));
         if (!old || old->mute != state.mute) engine_.setChainMute(id, chain.mute);
         if (!old || old->solo != state.solo) engine_.setChainSolo(id, chain.solo);
+        if (!old || old->receiveNote != state.receiveNote) engine_.setChainReceiveNote(id, receiveNote);
         d_->chainMixer.insert(chain.id, state);
     }
 }

@@ -63,6 +63,7 @@ struct AudioSettings {
 inline const QString kAudioThreadsKey = QStringLiteral("audio/threads");
 inline const QString kMidiDisabledKey = QStringLiteral("midi/disabled_inputs");
 inline const QString kRecordQuantizeKey = QStringLiteral("record/quantize");
+inline const QString kRecordQuantizeEndsKey = QStringLiteral("record/quantize_ends");
 inline const QString kMidiImmediateKey = QStringLiteral("midi/immediate");
 inline const QString kConstrainLatencyKey = QStringLiteral("audio/constrain_latency");
 inline const QString kConstrainThresholdKey = QStringLiteral("audio/constrain_threshold_ms");
@@ -95,5 +96,10 @@ const std::vector<std::pair<QString, double>>& recordQuantizeChoices();
 // The grid recorded MIDI notes start on, in beats (0: as played).
 double recordQuantize();
 void setRecordQuantize(double grid);
+// Whether record quantization puts recorded notes' ends on its grid too (as
+// Ableton's "Quantize Note End"), not only their starts: a note whose end would
+// land where it starts lasts a grid step. Off by default.
+bool recordQuantizeEnds();
+void setRecordQuantizeEnds(bool ends);
 
 }  // namespace sub::app

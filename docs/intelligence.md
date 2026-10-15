@@ -1026,8 +1026,25 @@ go of it first, then the session closes it (saving the fingerprints). `Session::
 background analysis off (the tests' sessions list the user's Music folder): searches then only analyse the sound
 searched from.
 
-A `SimilarSounds` keeps its result alive; `scorer()` is what the browser's search sorts by, `best(n)` what the sampler
-and the drum rack will step through to swap in similar sounds, and `similarity(path)` takes Qt's paths.
+A `SimilarSounds` keeps its result alive; `scorer()` is what the browser's search sorts by, `best(n)` what the Sampler
+and the Drum Rack step through to swap in similar sounds, and `similarity(path)` takes Qt's paths.
+
+### Swapping in similar samples
+
+`SimilarSamples` ([SimilarSamples.h](../app/src/intelligence/SimilarSamples.h), `Session.similarSamples`) is what
+the Sampler's arrows under its waveform, and a Drum Rack's (every pad but the locked ones), do. A Sampler steps through
+`best(kCount)` (50) of its **reference**: the sample stepping started from, or one saved with *Save as Similar
+Reference* ([model/SamplerState.h](../app/src/model/SamplerState.h): the reference is kept in the Sampler's state
+beside its sample, so it is saved with the project; a sample loaded by hand drops a reference stepping started from,
+but not a saved one). `samplerState::step()` is the stepping: next from the reference (or from a sound not among them)
+is the best; previous from the best is the reference itself. The swaps go through `ProjectEditor::swapSamples()`, one
+undo step for every pad stepped, a pad named after its sample following it.
+
+The index searches one sound at a time and hands out the latest search's result only, which the browser's Find
+Similar shares: `SimilarSamples` queues its requests, asks for the searches they need one after another (a search
+another took the place of is asked again, up to `kRetries` times), and keeps what they found until the library's
+analysis moves on (`analysedFiles()` changes), so stepping back and forth asks no more. `searching` is true while a
+step waits (the arrows are disabled); what it couldn't do (no library, nothing more to step to) goes to the status line.
 
 `SoundSimilarity::tags()` is the library's tag table as last taken: at once when the saved fingerprints are read,
 then, while fingerprints or the library change, at most every 1.5 s (`kTagsMs`), made on a thread of its own and
@@ -1154,8 +1171,8 @@ What it is used for:
   sound give the reason as their error.
 - **Weights the user picks** (as Sononym's aspects): `SoundIndexOptions::weights` (`AspectWeights`); a search could
   take its own.
-- **Swapping similar samples** (the sampler, the drum rack, a file manager): `SoundSimilarity::find()` with the
-  sample's file, then step through `SimilarSounds::best()`.
+- **Swapping similar samples** somewhere else (a file manager): `SimilarSamples` (above) as the Sampler and the
+  Drum Rack use it, or `SoundSimilarity::find()` with the sample's file, then step through `SimilarSounds::best()`.
 - **Another part of the module** (MIDI generation...): a folder of its own under `intelligence/src`
   beside `similarity/` and `harmony/`, sharing `core/`; its Qt side under `app/src/intelligence`. What it needs to know
   of a song's harmony: `Session.harmony` (`chords()`, `key()`), or `inferHarmony()` on notes of its own.

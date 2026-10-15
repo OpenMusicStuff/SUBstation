@@ -889,9 +889,13 @@ MenuEntries TrackHeaderItem::contextMenu() {
         selection.focusTracks();  // (its Cut and Copy: these tracks, not devices or clips)
     }
     menu.add(QStringLiteral("Rename"), [this] { startRename(); });
+    // Its colour, or the colour of every track (group, return) selected with it.
+    QStringList coloring = selected;
+    coloring.removeAll(app::kMaster);
     MenuEntry& colors = menu.addSubmenu(QStringLiteral("Color"));
     for (const QString& color : app::kTrackColors) {
-        MenuList(colors.children).add(color, [editor, id, color] { editor->setTrackColor(id, color); }).swatch = Theme::trackColor(color);
+        MenuList(colors.children).add(color, [editor, coloring, color] { editor->setTracksColor(coloring, color); }).swatch =
+            Theme::trackColor(color);
     }
     menu.addSeparator();
     if (isReturn()) {

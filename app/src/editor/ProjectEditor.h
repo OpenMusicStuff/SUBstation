@@ -128,6 +128,9 @@ public:
     // Its name template ("# Lead": "4 Lead", the # its number; TrackField::Name).
     Q_INVOKABLE void renameTrack(const QString& trackId, const QString& name);
     Q_INVOKABLE void setTrackColor(const QString& trackId, const QString& color);
+    // The same colour on several tracks (groups, returns) as one undo step; the ones that have it already, and
+    // the ones that aren't there, are left alone.
+    Q_INVOKABLE void setTracksColor(const QStringList& trackIds, const QString& color);
     // Mixer settings: VolumeDb, Pan, Mute, Solo (the master: volume and pan;
     // EditError for the others: the master is always heard). Mute and Solo are
     // bools (any value but 0 is true). Solo is a listening aid: saved, but not
@@ -230,7 +233,7 @@ public:
     // (loopPasses), the last one played winning where they overlap. Each one is
     // also kept on a take lane of its own below its track ("Take 1", "Take
     // 2"...: Track::takes), in the same undo step.
-    ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0);
+    ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0, bool quantizeEnds = false);
 
     // --- Take lanes (EditorTakes.cpp) ---
 
@@ -475,10 +478,11 @@ public:
                              const QString& chain = {}, const QSet<QString>& folded = {}, const QString& text = {});
     // Fold or unfold devices in the device view. View state: saved, not undone.
     Q_INVOKABLE void setDevicesFolded(const QString& trackId, const QStringList& deviceIds, bool folded);
-    // Show or hide a rack's chain list, or its chain's devices beside it, in
-    // the device view. View state: saved, not undone.
+    // Show or hide a rack's chain list, its chain's devices beside it, or its
+    // macros (collapsed), in the device view. View state: saved, not undone.
     Q_INVOKABLE void setChainListShown(const QString& trackId, const QString& rackId, bool shown);
     Q_INVOKABLE void setRackDevicesShown(const QString& trackId, const QString& rackId, bool shown);
+    Q_INVOKABLE void setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown);
     // Move a device to position `index` in its chain (an instrument stays first).
     Q_INVOKABLE void moveDevice(const QString& trackId, const QString& deviceId, int index);
     // Move devices together (in their order on the track) to before the device
@@ -527,12 +531,41 @@ public:
     Q_INVOKABLE void moveRackChain(const QString& trackId, const QString& chainId, int index);
     Q_INVOKABLE void renameChain(const QString& trackId, const QString& chainId, const QString& name);
     // A rack chain's mixer: VolumeDb, Pan, Mute, Solo (saved, but not undone,
-    // as a track's). Mute and Solo are bools (any value but 0 is true).
+    // as a track's). Mute and Solo are bools (any value but 0 is true). A Drum
+    // Rack's pad also has ReceiveNote (its key: the pad there, if any, takes
+    // this one's; "Move Pad") and Locked (a bool; undoable).
     void setChainParam(const QString& trackId, const QString& chainId, ChainField field, double value,
                        const QString& mergeKey = {});
-    // The same by the field's name ("volume_db", "pan", "mute", "solo").
+    // The same by the field's name ("volume_db", "pan", "mute", "solo", "receive_note", "locked").
     Q_INVOKABLE void setChainParam(const QString& trackId, const QString& chainId, const QString& field, double value,
                                    const QString& mergeKey = {});
+
+    // --- Samplers and Drum Racks (EditorDrumRacks.cpp) ---
+
+    // Loads a sample into a Sampler by hand (a drop, a file dialog; "": clears
+    // it), or a clip's part of one: from `start` to `end`, fractions of the file
+    // (the whole: Start and End stay as they are). A similar-sound reference
+    // stepping started from goes; a saved one stays (model/SamplerState.h). A
+    // Drum Rack's pad named after the sample it played is named after this
+    // one. One undo step.
+    Q_INVOKABLE void loadSample(const QString& trackId, const QString& deviceId, const QString& path,
+                                double start = 0.0, double end = 1.0);
+    // Loads a sample (or a part of one, as loadSample) onto a Drum Rack's pad
+    // for `note` (-1: the first key without a pad, from C1 up): into its
+    // Sampler, or a new pad with a Sampler (named after the sample). One undo
+    // step; the pad's id ("" if it isn't a Drum Rack, or every key has a pad).
+    Q_INVOKABLE QString loadDrumPad(const QString& trackId, const QString& rackId, int note, const QString& path,
+                                    double start = 0.0, double end = 1.0);
+    // Samplers stepped to similar sounds (device -> its new sample), keeping
+    // the reference they are found from (the sample stepped from, if none),
+    // and their pads' names following. One undo step (`text`).
+    void swapSamples(const QString& trackId, const QList<QPair<QString, QString>>& samples,
+                     const QString& text = QStringLiteral("Swap Similar Sample"));
+    // A Sampler's sample saved as the reference its similar sounds come from
+    // (until another is saved). One undo step.
+    Q_INVOKABLE void setSimilarReference(const QString& trackId, const QString& deviceId);
+    // A Drum Rack's first key without a pad, from `from` up (then down from it); -1: none.
+    static int freePadNote(const Device& rack, int from = kDrumFirstPadNote);
 
     // Macros: a rack's parameters, each moving the parameters mapped to it.
     // Their values are normalized. paramInfo() describes a device's parameter;
@@ -841,7 +874,7 @@ private:
     void dropSidechains(const QSet<QString>& sourceIds, const QString& text);
     // Devices taking these tracks' notes take their own track's again.
     void dropMidiInputs(const QSet<QString>& sourceIds, const QString& text);
-    Clip recordedMidiClip(const RecordedTake& take, double quantize) const;
+    Clip recordedMidiClip(const RecordedTake& take, double quantize, bool quantizeEnds) const;
 
     // Settings.
     void setSettings(const QString& text, const SettingsValues& values, const QString& mergeKey = {});
@@ -876,6 +909,10 @@ private:
     bool pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
                              const QMap<DeviceParam, double>& old, const QString& text, const QString& mergeKey);
 
+    // Drum Racks' pads named after the samples these Samplers played (device,
+    // its sample before) named after the ones they play now (EditorDrumRacks.cpp).
+    void renamePadsFollowing(const QString& trackId, const QList<QPair<QString, QString>>& samplersBefore,
+                             const QString& text);
     // Devices.
     bool setDevices(const QString& trackId, const std::vector<Device>& before, std::vector<Device> after,
                     const QString& text);

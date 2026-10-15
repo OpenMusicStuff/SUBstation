@@ -142,6 +142,7 @@ struct LiveLatency {
     int devices = 0;         // its devices', its groups' and the master's
     int compensation = 0;    // delay compensation on its way to the master
     int output = 0;          // the device's output latency (as its driver reports it)
+    int clipDelay = 0;       // live: how late its own clips' notes play, in time with the other tracks (TrackRender::clipDelay)
     int total() const { return midiDelay + devices + compensation + output; }
 };
 
@@ -541,7 +542,9 @@ public:
     // kMaxRackDepth deep), and a fader: gain, pan, mute and solo (solo among the
     // rack's chains), metered like a track's. The rack's latency is its slowest
     // chain's: the others are delayed to line up with it. Every chain's devices
-    // hear the track's notes (layering instruments). Throws std::invalid_argument
+    // hear the track's notes (layering instruments), but a chain given a key to
+    // receive (a Drum Rack's pad: setChainReceiveNote) hears only the notes of
+    // that key, as C3 (60). Throws std::invalid_argument
     // for an unknown chain or rack, or a rack nested too deep.
     static constexpr int kMaxRackDepth = sub::kMaxRackDepth;
     uint32_t addRack(uint32_t chainId, int index);
@@ -555,6 +558,10 @@ public:
     void setChainPan(uint32_t chainId, float pan);
     void setChainMute(uint32_t chainId, bool mute);
     void setChainSolo(uint32_t chainId, bool solo);
+    // The key whose notes alone a chain hears (as C3), or -1: every note. Its
+    // devices are reset (a note sounding on the key before ends).
+    void setChainReceiveNote(uint32_t chainId, int note);
+    int chainReceiveNote(uint32_t chainId);
     // A device's sidechain: what its aux input hears (hasSidechain in its
     // ProcessorInfo), from a track (a track, a group or a return; not the master,
     // which renders after everything), tapped after the track's fader, before it,
@@ -801,6 +808,7 @@ private:
         std::vector<std::shared_ptr<Processor>> inserts;
         std::shared_ptr<TrackParams> params;  // a rack chain's fader (null for a main chain)
         std::shared_ptr<DelayLine> delay;     // a rack chain's delay compensation, kept across snapshots
+        int receiveNote = -1;                 // a rack chain's key (a Drum Rack's pad); -1: every note
     };
     // A device's sidechain (a routing edge into it), with its state and delay
     // lines kept across snapshots.

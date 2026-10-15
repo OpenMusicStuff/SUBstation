@@ -481,7 +481,7 @@ void ArrangementActions::detectTempo(const ClipRefs& added) {
 bool ArrangementActions::dropDevices(const QStringList& kinds, const QVariantList& plugins, const QString& trackId) {
     std::vector<std::pair<QString, std::optional<PluginRef>>> devices;  // built-in ones, then plug-ins
     for (const QString& kind : kinds) {
-        if (builtinDevice(kind) != nullptr) devices.emplace_back(kind, std::nullopt);
+        if (isDeviceKind(kind)) devices.emplace_back(kind, std::nullopt);
     }
     for (const PluginRef& ref : pluginRefsFromList(plugins)) devices.emplace_back(kPluginKind, ref);
     if (devices.empty()) return false;

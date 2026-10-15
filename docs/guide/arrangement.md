@@ -37,6 +37,9 @@ folding, the master, the title bar and the transport bar, and projects.
 - **Move** clips by dragging them, also onto other tracks of the same kind (audio onto
   audio, MIDI onto MIDI). **Ctrl-drag** copies them. While playing, you hear a clip
   where you drag it to straight away; the move itself is one undo step, when you let go.
+- **Drag an audio clip out** of the arrangement, down onto the device view: the move stops
+  (the clip stays where it was) and the clip's part of its file goes with the mouse, to drop
+  on a Sampler or a Drum Rack's pad (or onto the desktop, as its file).
 - **Trim** either edge by dragging it (heard as you drag, too).
 - **Stretch** a clip by holding **Alt** over either edge (the cursor shows a two-headed
   arrow, the edge lights up orange) and dragging it: the other edge stays, and the clip plays

@@ -22,7 +22,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
                                                                     moveProcessor, setChainOrder, addRack,
                                                                     addRackChain, setProcessorSidechain...
   freezeChanged                  ─► onFreezeChanged ──────────────► setTrackFrozen, the frozen audio as its clips
-  chainChanged                   ─► onChainChanged ───────────────► setChainGain/Pan/Mute/Solo
+  chainChanged                   ─► onChainChanged ───────────────► setChainGain/Pan/Mute/Solo/ReceiveNote
   deviceParamChanged             ─► onDeviceParamChanged ─────────► setProcessorParam
   deviceStateChanged             ─► pushDeviceState ──────────────► setProcessorState
   settingsChanged                ─► pushSettings ─────────────────► setTempo, setTimeSignature, setLoop
@@ -233,7 +233,8 @@ too, and loaded) and `engineChainId(chain)` (a rack chain's engine chain) give t
   (`forgetProcessor`), a rack with what is still in it.
 - Then the chain orders (`setChainOrder`, `setRackChainOrder`), automation (the devices' envelopes go to their
   processors), editor titles, on/off (`pushEnabled`), rack chain faders and sidechains are pushed, and
-  `devicesLoaded(track id)` is emitted.
+  `devicesLoaded(track id)` is emitted. A rack chain's fader goes with its key when its rack is a Drum Rack
+  (`pushChainMixers`: `ChainMixer::receiveNote`, `Engine::setChainReceiveNote`; -1 for any other rack's chains).
 
 A track isn't synced again from inside its own sync (`syncing`). A frozen track has no devices as far as the bridge is
 concerned (see [Freezing](#freezing)).
@@ -602,6 +603,7 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 | `audio/threads` | render threads; 0: the engine's default (one per core but one) | `audioThreads()` |
 | `midi/disabled_inputs` | MIDI inputs turned off (every other input is used, so a new one just plays) | `disabledMidiInputs()` |
 | `record/quantize` | record quantization grid in beats; 0: as played (`recordQuantizeChoices()` lists the choices) | `recordQuantize()` |
+| `record/quantize_ends` | record quantization puts notes' ends on the grid too (off by default) | `recordQuantizeEnds()` |
 
 `AudioSettings::load()` falls back to the default driver for an unknown one; `save()` writes them all. The audio
 preferences ([session.md](session.md#preferences)) save them when a change opens successfully, so the program opens the

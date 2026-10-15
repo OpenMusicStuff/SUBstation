@@ -15,6 +15,7 @@
 #include "intelligence/AudioAnalysis.h"
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
+#include "intelligence/SimilarSamples.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/TrackLabels.h"
 #include "intelligence/TrackSearch.h"
@@ -61,6 +62,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<SidebarModel>("SidebarModel");
     registerUncreatable<PluginIndex>("PluginIndex");
     registerUncreatable<SoundSimilarity>("SoundSimilarity");
+    registerUncreatable<SimilarSamples>("SimilarSamples");
     registerUncreatable<Harmony>("Harmony");
     registerUncreatable<AudioAnalysis>("AudioAnalysis");
     registerUncreatable<Humanizer>("Humanizer");

@@ -72,6 +72,7 @@ struct EngineBridge::Private {
         double pan = 0.0;
         bool mute = false;
         bool solo = false;
+        int receiveNote = -1;  // a Drum Rack's pad's key
 
         friend bool operator==(const ChainMixer&, const ChainMixer&) = default;
     };

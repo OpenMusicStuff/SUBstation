@@ -17,6 +17,7 @@
 #include "intelligence/AudioAnalysis.h"
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
+#include "intelligence/SimilarSamples.h"
 #include "intelligence/SoundSimilarity.h"
 #include "intelligence/SoundSuggestions.h"
 #include "intelligence/TrackLabels.h"
@@ -58,6 +59,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     if (!options_.browserIndex) similarityOptions.storePath = QString();
     similarityOptions.analyse = options_.analyseSounds;
     similarity_ = new SoundSimilarity(similarityOptions, this);
+    similarSamples_ = new SimilarSamples(project_, editor_, similarity_, this);
     audioAnalysis_ = new AudioAnalysis(bridge_, this);
     audioAnalysis_->setEnabled(options_.analyseAudio);
     harmony_ = new Harmony(project_, this);
@@ -143,7 +145,8 @@ void Session::wire() {
                             static_cast<QObject*>(devices_), static_cast<QObject*>(keyboard_),
                             static_cast<QObject*>(learn_),
                             static_cast<QObject*>(humanizer_), static_cast<QObject*>(files_),
-                            static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_)}) {
+                            static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_),
+                            static_cast<QObject*>(similarSamples_)}) {
         connect(source, SIGNAL(statusMessage(QString)), this, SIGNAL(statusMessage(QString)));
     }
     connect(editor_, &ProjectEditor::refused, this, &Session::statusMessage);  // an edit a frozen track can't take
@@ -225,7 +228,7 @@ void Session::wire() {
     connect(bridge_, &EngineBridge::pluginStateDirty, undoStack_, &QUndoStack::resetClean);
     // A recording ended: its takes become clips, one undo step, and are selected.
     connect(bridge_, &EngineBridge::takesRecorded, this, [this](const std::vector<RecordedTake>& takes) {
-        const ClipRefs refs = editor_->addRecordings(takes, sub::app::recordQuantize());
+        const ClipRefs refs = editor_->addRecordings(takes, sub::app::recordQuantize(), sub::app::recordQuantizeEnds());
         if (!refs.isEmpty()) selection_->selectClips(*editor_, refs);
     });
     // Re-Enable Automation: lit while automation is overridden somewhere.
@@ -357,6 +360,14 @@ void Session::setRecordQuantize(double grid) {
     if (std::abs(grid - sub::app::recordQuantize()) < 1e-9) return;
     sub::app::setRecordQuantize(grid);
     Q_EMIT recordQuantizeChanged();
+}
+
+bool Session::recordQuantizeEnds() const { return sub::app::recordQuantizeEnds(); }
+
+void Session::setRecordQuantizeEnds(bool ends) {
+    if (ends == sub::app::recordQuantizeEnds()) return;
+    sub::app::setRecordQuantizeEnds(ends);
+    Q_EMIT recordQuantizeEndsChanged();
 }
 
 QVariantList Session::recordQuantizeChoices() const {

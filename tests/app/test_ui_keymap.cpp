@@ -77,6 +77,7 @@ private Q_SLOTS:
             {"delete", {"Del", "Backspace"}},
             {"selectAll", {"Ctrl+A"}},
             {"soloSelectedTracks", {"S"}},
+            {"armSelectedTracks", {"Ctrl+Shift+A"}},
             {"playStop", {"Space"}},
             {"record", {"F9"}},
             {"goToStart", {"Home"}},

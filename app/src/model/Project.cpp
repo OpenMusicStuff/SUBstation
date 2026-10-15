@@ -40,13 +40,15 @@ QString chainFieldName(ChainField field) {
     case ChainField::Pan: return QStringLiteral("pan");
     case ChainField::Mute: return QStringLiteral("mute");
     case ChainField::Solo: return QStringLiteral("solo");
+    case ChainField::ReceiveNote: return QStringLiteral("receive_note");
+    case ChainField::Locked: return QStringLiteral("locked");
     }
     return {};
 }
 
 std::optional<ChainField> chainFieldFromName(const QString& name) {
     for (ChainField field : {ChainField::Name, ChainField::VolumeDb, ChainField::Pan, ChainField::Mute,
-                             ChainField::Solo}) {
+                             ChainField::Solo, ChainField::ReceiveNote, ChainField::Locked}) {
         if (chainFieldName(field) == name) return field;
     }
     return std::nullopt;
@@ -59,6 +61,8 @@ ChainValue chainValue(const Chain& chain, ChainField field) {
     case ChainField::Pan: return chain.pan;
     case ChainField::Mute: return chain.mute;
     case ChainField::Solo: return chain.solo;
+    case ChainField::ReceiveNote: return static_cast<double>(chain.receiveNote);
+    case ChainField::Locked: return chain.locked;
     }
     return {};
 }
@@ -619,6 +623,8 @@ void Project::updateChain(const QString& trackId, const QString& chainId, ChainF
     case ChainField::Pan: changed.pan = asDouble(value); break;
     case ChainField::Mute: changed.mute = std::get<bool>(value); break;
     case ChainField::Solo: changed.solo = std::get<bool>(value); break;
+    case ChainField::ReceiveNote: changed.receiveNote = std::clamp(static_cast<int>(std::lround(asDouble(value))), -1, 127); break;
+    case ChainField::Locked: changed.locked = std::get<bool>(value); break;
     }
     Q_EMIT chainChanged(trackId, chainId);
 }
@@ -716,6 +722,16 @@ void Project::setRackDevicesShown(const QString& trackId, const QString& rackId,
     Q_EMIT rackViewChanged(trackId);
 }
 
+void Project::setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown) {
+    if (shown != hiddenRackMacros_.contains(rackId)) return;
+    if (shown) {
+        hiddenRackMacros_.remove(rackId);
+    } else {
+        hiddenRackMacros_.insert(rackId);
+    }
+    Q_EMIT rackViewChanged(trackId);
+}
+
 void Project::updateSettings(const SettingsValues& values) {
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
         const SettingsValue& value = it.value();
@@ -766,6 +782,7 @@ void Project::replaceContents(ProjectContents contents) {
     foldedDevices_ = std::move(contents.foldedDevices);
     shownChainLists_ = std::move(contents.shownChainLists);
     hiddenRackDevices_ = std::move(contents.hiddenRackDevices);
+    hiddenRackMacros_ = std::move(contents.hiddenRackMacros);
     const bool pathChange = path_ != contents.path;
     path_ = contents.path;
     Q_EMIT reset();
