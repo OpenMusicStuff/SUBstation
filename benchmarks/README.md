@@ -9,6 +9,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
 | [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
+| [fft_bench.cpp](fft_bench.cpp) | Signalsmith Linear's power-of-two FFTs on KFR's against the library's own: nanoseconds a transform, complex and real, each size. Signalsmith Linear and KFR alone. |
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [project_bench.cpp](project_bench.cpp) | A real project (a `.gilproj` of your own, with its plug-ins) played live in each plug-in hosting mode, at the pace a device asks for buffers, through the fake ASIO driver: the callback's time (what the CPU meter shows) and the CPU the engine's process and the sandboxes use (from the threads' cycle counts), thread by thread. The application layer, no UI; Windows. Leave `QT_QPA_PLATFORM` unset: plug-ins with a Qt of their own (Kontakt) read it too. |
 | [sound_features_dump.cpp](sound_features_dump.cpp) | Essentia's descriptors of a list of files (or parts of files), optionally band-limited first: what the sound tagger is trained on ([tools/sound_tagger](../tools/sound_tagger/README.md)). Not a measure. |
@@ -36,10 +37,11 @@ Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench sound_similarity_bench
+ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench fft_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
+build/bin/fft_bench
 build/bin/browser_backend_bench --size 200000 --json backend.json
 build/bin/sound_similarity_bench --folder ~/Samples --cache /tmp/fingerprints.bin --json similarity.json
 ```
@@ -528,6 +530,50 @@ to the executable's symbols with `nm`, not `addr2line`):
   loaded as one pair (6.2 times and 1.5 to 2.3 times less). Hardware gathers
   measured about 1.5 times faster again on this CPU, but CPUs running Intel's
   Downfall (GDS) mitigation run them very slowly, so they aren't used.
+
+# FFTs: Signalsmith Linear on KFR
+
+```
+fft_bench [--repeat 5] [--min 64] [--max 16384]
+```
+
+Signalsmith Stretch (warping, the Sampler) and Spectral take their FFTs from
+Signalsmith Linear, whose power-of-two transforms run on KFR's DFT
+(`SIGNALSMITH_USE_KFR`: a backend of SUBstation's,
+[platform/fft-kfr.h](../engine/third_party/signalsmith-linear/signalsmith-linear/platform/fft-kfr.h)).
+`fft_bench` times the transforms alone, the library's own (`SimpleFFT`, and
+`SimpleRealFFT` on it) against KFR's, float, best of `--repeat`.
+
+## Results
+
+Intel Xeon at 2.8 GHz (a cloud VM, 4 cores, AVX2), Linux, GCC 13, Release.
+Nanoseconds a transform; real is a forward and an inverse.
+
+| size | complex: own | KFR | | real: own | KFR | |
+|---:|---:|---:|---:|---:|---:|---:|
+| 64 | 246 | 63 | 3.9× | 556 | (own) | — |
+| 256 | 1299 | 195 | 6.7× | 3261 | 1073 | 3.0× |
+| 1024 | 6730 | 1145 | 5.9× | 13921 | 2551 | 5.5× |
+| 4096 | 32141 | 8021 | 4.0× | 67709 | 7545 | 9.0× |
+| 16384 | 137081 | 36153 | 3.8× | 299040 | 37661 | 7.9× |
+
+Real transforms below 128 points stay on the library's own (KFR's was no
+quicker at 64). What it does to the devices, before (the library's own FFT)
+and after, the same machine, best of two runs each:
+
+| | before | after | |
+|---|---:|---:|---:|
+| `warp_bench` transients-0.9 (ns/frame) | 278 | 225 | −19 % |
+| standard-0.9 | 285 | 243 | −15 % |
+| smooth-0.9 | 308 | 248 | −19 % |
+| standard-1.25 | 292 | 242 | −17 % |
+| transpose+7 | 296 | 275 | −7 % |
+| formants+7 | 365 | 343 | −6 % |
+| `builtin_devices_bench` spectral (load) | 0.66 % | 0.55–0.60 % | −9 to −17 % |
+
+(Vocoder, which has no FFT, measured 1.69–1.83 % in the same runs: the noise.)
+The rest of a stretch's time is its own (spectral processing, windows,
+resampling), so the FFT's speed-up shows as a fifth or so of it.
 
 # Vital: built-in against the plug-in
 

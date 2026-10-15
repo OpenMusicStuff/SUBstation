@@ -1378,6 +1378,8 @@ using ModifiedRealFFT = RealFFT<Sample, splitComputation, true>;
 #	include "./platform/fft-ipp.h"
 #elif defined(SIGNALSMITH_USE_CMSISDSP)
 #	include "./platform/fft-cmsisdsp.h"
+#elif defined(SIGNALSMITH_USE_KFR) // (SUBstation's: KFR's DFT, see platform/fft-kfr.h)
+#	include "./platform/fft-kfr.h"
 #elif defined(SIGNALSMITH_USE_XSIMD)
 //	This is the same as the basic one
 #	include "./platform/fft-linear.h"

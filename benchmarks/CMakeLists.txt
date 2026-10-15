@@ -10,6 +10,8 @@
 #                           core, at its defaults or at settings given
 #   warp_bench              an audio clip's playback alone (direct, Re-Pitch,
 #                           time stretched): nanoseconds a frame, load on a core
+#   fft_bench               Signalsmith Linear's FFTs on KFR's against the
+#                           library's own: the transforms alone
 #   vital_bench             the built-in Vital against Vital's VST3 plug-in,
 #                           the same notes held through each
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
@@ -38,6 +40,10 @@ add_executable(warp_bench warp_bench.cpp Json.h)
 target_include_directories(warp_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(warp_bench PRIVATE sub_engine)
 sub_project_warnings(warp_bench)
+
+add_executable(fft_bench fft_bench.cpp)
+target_link_libraries(fft_bench PRIVATE signalsmith_linear)
+sub_project_warnings(fft_bench)
 
 # The built-in Vital against Vital's VST3 plug-in (the engine's VST3 host).
 add_executable(vital_bench vital_bench.cpp Json.h)
