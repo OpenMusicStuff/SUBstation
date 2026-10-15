@@ -35,8 +35,8 @@ namespace sub::app {
 // Which plug-in a device is: enough to load it, to find it again if it moved,
 // and to name it if it is missing.
 struct PluginRef {
-    QString format = QStringLiteral("VST3");
-    QString uid;  // VST3 class id
+    QString format = QStringLiteral("VST3");  // or "VST2"
+    QString uid;  // VST3 class id; VST2 unique id (8 hex digits)
     QString name;
     QString vendor;
     QString path;  // where it was when last loaded

@@ -628,6 +628,17 @@ bool DeviceSelection::saveVst3Preset(const QString& deviceId, const QString& pat
     return true;
 }
 
+QString DeviceSelection::pluginPresetSuffix(const QString& deviceId) const {
+    const Device* device = trackId_.isEmpty() ? nullptr : project_->findDevice(trackId_, deviceId);
+    if (device == nullptr || !device->plugin || device->plugin->format != QStringLiteral("VST2")) {
+        return QStringLiteral("vstpreset");
+    }
+    // "CcnK", a size, then the kind: "FxBk" and "FBCh" are banks.
+    const std::optional<QByteArray> state = bridge_->pluginState(trackId_, deviceId);
+    const QByteArray kind = state && state->size() >= 12 ? state->mid(8, 4) : QByteArray();
+    return kind == "FxBk" || kind == "FBCh" ? QStringLiteral("fxb") : QStringLiteral("fxp");
+}
+
 // --- Vital's presets -----------------------------------------------------------------------------
 
 QString DeviceSelection::vitalPresetFolder() const {

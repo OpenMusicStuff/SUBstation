@@ -509,7 +509,7 @@ public:
     uint32_t processorChain(uint32_t processorId);
     // `index`: where in the chain (-1 or past the end: last).
     uint32_t addBuiltinProcessor(uint32_t chainId, const std::string& type, int index);
-    // Loads a plug-in ("VST3" format) into the chain, where pluginHosting() says:
+    // Loads a plug-in (`format` "VST3" or "VST2") into the chain, where pluginHosting() says:
     // in this process (it has loaded when this returns), or in a sandbox (it is
     // in the chain at once and loads there meanwhile: ProcessorEvent::Loaded or
     // LoadFailed, processorInfo().status). Main thread; throws std::runtime_error
@@ -825,6 +825,7 @@ private:
         // A plug-in: which (reloadProcessor() loads it again), and what last went
         // wrong with one in this process (its state wasn't taken).
         struct Plugin {
+            std::string format;  // "VST3", "VST2"
             std::string path;
             std::string uid;
             PluginIdentity identity;

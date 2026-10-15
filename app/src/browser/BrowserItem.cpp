@@ -48,7 +48,11 @@ QStringList builtinCategoryNames() {
 }
 
 BrowserItem pluginItem(const PluginInfo& plugin) {
-    return {plugin.name, plugin.path, ItemKind::Plugin, plugin.vendor, plugin, pluginToolTip(plugin)};
+    // (A VST2 says so beside its maker: its VST3, if installed too, has the same name.)
+    const QString detail = plugin.format == QStringLiteral("VST2")
+                               ? (plugin.vendor.isEmpty() ? plugin.format : plugin.vendor + QStringLiteral(" · VST2"))
+                               : plugin.vendor;
+    return {plugin.name, plugin.path, ItemKind::Plugin, detail, plugin, pluginToolTip(plugin)};
 }
 
 }  // namespace sub::app

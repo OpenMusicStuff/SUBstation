@@ -12,7 +12,9 @@
 // with {"path": ..., "plugins": [...]} or {"path": ..., "error": ...} on stdout.
 // Whatever plug-ins print goes nowhere: stdout is kept for the answers.
 //
-// Links the engine's VST3 host (sub_engine) and nothing of Qt.
+// Each file is read by its format, which its name says (pluginFormatOfFile: a
+// .vst3 is VST3, a .dll or .so VST2); each plug-in in the answer says its
+// "format". Links the engine's plug-in hosts (sub_engine) and nothing of Qt.
 
 #include <cstdio>
 #include <iostream>
@@ -31,7 +33,7 @@
 #endif
 
 #include "platform/Unicode.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/PluginFormat.h"
 
 namespace {
 
@@ -158,14 +160,17 @@ int main() {
         }
         std::string json = "{\"path\": " + quote(path);
         try {
-            const auto found = sub::vst3::Vst3Format::instance().scanFile(path);
+            sub::PluginFormat* format = sub::pluginFormatOfFile(path);
+            if (!format) throw std::runtime_error("It is not a plug-in file.");
+            const auto found = format->scanFile(path);
             json += ", \"plugins\": [";
             for (size_t i = 0; i < found.size(); ++i) {
                 const auto& d = found[i];
                 if (i) json += ", ";
-                json += "{\"uid\": " + quote(d.uid) + ", \"name\": " + quote(d.name) + ", \"vendor\": " +
-                        quote(d.vendor) + ", \"version\": " + quote(d.version) + ", \"category\": " +
-                        quote(d.category) + ", \"instrument\": " + (d.isInstrument ? "true" : "false") + "}";
+                json += "{\"format\": " + quote(d.format) + ", \"uid\": " + quote(d.uid) + ", \"name\": " +
+                        quote(d.name) + ", \"vendor\": " + quote(d.vendor) + ", \"version\": " + quote(d.version) +
+                        ", \"category\": " + quote(d.category) +
+                        ", \"instrument\": " + (d.isInstrument ? "true" : "false") + "}";
             }
             json += "]}";
         } catch (const std::exception& e) {

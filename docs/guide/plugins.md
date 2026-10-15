@@ -1,17 +1,24 @@
-# VST3 plug-ins
+# Plug-ins (VST3 and VST2)
 
-SUBstation hosts VST3 instruments and effects. This page covers finding them, using
+SUBstation hosts VST3 and VST2 instruments and effects. This page covers finding them, using
 them, their editors and presets, how projects keep them, and their latency. Plug-ins
-sit in the device view beside the built-in devices (see [devices.md](devices.md)).
+sit in the device view beside the built-in devices (see [devices.md](devices.md)). VST2
+plug-ins work as VST3 ones do, with the differences [VST2 plug-ins](#vst2-plug-ins) lists.
 
 ## Finding them
 
 - The browser lists the plug-ins in the standard VST3 folders
   (`C:\Program Files\Common Files\VST3` and `%LOCALAPPDATA%\Programs\Common\VST3`; on
-  Linux `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`)
-  under *Plug-ins › Instruments / Audio Effects*, with their vendor. A module with
-  several plug-ins (an instrument and its FX version) shows each.
-- Besides the standard VST3 folders, plug-ins are looked for in folders of your own:
+  Linux `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`) and VST2 folders (on Windows
+  the folder your VST2 installers registered, `C:\Program Files\VSTPlugins`,
+  `C:\Program Files\Steinberg\VSTPlugins`, `C:\Program Files\Common Files\VST2` and
+  `C:\Program Files\Common Files\Steinberg\VST2`; on Linux the folders in `VST_PATH`, else
+  `~/.vst`, `/usr/lib/vst` and `/usr/local/lib/vst`)
+  under *Plug-ins › Instruments / Audio Effects*, with their vendor (*· VST2* after a VST2's,
+  as a plug-in installed as both shows twice). A module with several plug-ins (an
+  instrument and its FX version, or a VST2 shell such as Waves' WaveShell) shows each.
+- Besides the standard folders, plug-ins are looked for in folders of your own (a
+  folder of VST2 plug-ins, wherever your installers put them):
   add or remove them in *Options › Preferences › Plug-ins* (*Add Folder…*, *Remove*).
   An added folder is scanned at once (only its new files), and a removed folder's
   plug-ins leave the browser. A folder that no longer exists shows in red.
@@ -73,12 +80,14 @@ sit in the device view beside the built-in devices (see [devices.md](devices.md)
 A plug-in's save button saves it as a SUBstation preset, in your preset library (see
 [devices.md](devices.md#presets)). Right-click a plug-in: *Load VST3 Preset…* / *Save
 VST3 Preset…* read and write standard `.vstpreset` files, for sharing settings with
-other hosts (loading one is undoable).
+other hosts (loading one is undoable). A VST2 plug-in's are *Load VST2 Preset…* / *Save
+VST2 Preset…*: `.fxp` (a program) and `.fxb` (a bank) files; a plug-in that keeps its
+settings as a whole saves a bank.
 
 ## Projects
 
-Projects save each plug-in's complete state (as a `.vstpreset`, base64) and which
-plug-in it is. A plug-in that moved is found again by its class id; a missing one keeps
+Projects save each plug-in's complete state (a VST3's as a `.vstpreset`, a VST2's as an
+`.fxb` or `.fxp`, base64) and which plug-in it is. A plug-in that moved is found again by its class id; a missing one keeps
 its place and settings in the project, shows what's wrong in the device view, and loads
 when it's back (after a rescan).
 
@@ -142,12 +151,33 @@ tempo-synced plug-ins stay in time.
 
 - Mono-only plug-ins get the track mixed to mono, and their output goes to both sides.
 - A plug-in's first aux input is its sidechain (stereo if it takes it; see
-  [mixing.md](mixing.md#sidechains)).
+  [mixing.md](mixing.md#sidechains)). A VST2 plug-in has no buses: one with more than two
+  inputs has its sidechain on inputs 3 and 4, as such plug-ins lay it out.
 - Other extra buses get silent inputs, and their extra outputs are not used (no
   multi-output instruments yet).
 
+## VST2 plug-ins
+
+VST2 plug-ins are found, added, edited, automated, saved and sandboxed as VST3 ones are.
+VST 2 is an older interface, and some things work differently:
+
+- **Automation** isn't sample-accurate in VST 2: SUBstation splits the audio where an
+  automated value changes, into pieces of at least 32 samples.
+- **Values' text**: the device view shows the plug-in's own text (`-3.0 dB`) for the value a
+  parameter has; for other values (an automation lane's points) it shows the number.
+  Parameters are continuous, or switches (Off/On) where the plug-in says so.
+- **Their editors** are resized by the plug-in, not by dragging the window's edge.
+- **Per-note pitch** (a note's bend, MIDI 2.0's per-note pitch bend) doesn't reach them: VST 2
+  has no such thing. Pitch bend and controllers reach them as MIDI.
+- A **shell** (one file holding many plug-ins, as Waves' WaveShell) lists each of its
+  plug-ins.
+- A VST2 plug-in installed alongside its VST3 shows as both; the VST2 says *· VST2* beside
+  its maker.
+- Importing an Ableton Live Set, a VST2 plug-in that is installed comes as itself, with its
+  settings ([ableton-import.md](ableton-import.md)).
+
 ---
 
-For developers: [../engine/plugins.md](../engine/plugins.md),
+For developers: [../engine/plugins.md](../engine/plugins.md) (and its [VST2](../engine/plugins.md#vst2) section),
 [../app/plugin-scanner.md](../app/plugin-scanner.md),
 [../ui/device-view.md](../ui/device-view.md).

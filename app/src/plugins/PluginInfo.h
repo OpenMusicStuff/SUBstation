@@ -9,16 +9,16 @@
 
 namespace sub::app {
 
-// One plug-in (a VST3 class) in a file. A module with several plug-ins (an
-// instrument and its FX version) gives one each.
+// One plug-in (a VST3 class, a VST2 plug-in) in a file. A module with several
+// plug-ins (an instrument and its FX version; a VST2 shell) gives one each.
 struct PluginInfo {
     QString name;
-    QString format;    // "VST3"
-    QString path;      // the .vst3 bundle or file
-    QString uid;       // VST3 class id (32 hex digits)
+    QString format;    // "VST3" or "VST2"
+    QString path;      // the .vst3 bundle or file; a VST2's library (.dll, .so)
+    QString uid;       // VST3 class id (32 hex digits); VST2 unique id (8 hex digits)
     QString vendor;
     QString version;
-    QString category;  // VST3 sub-categories, e.g. "Instrument|Synth" or "Fx|EQ"
+    QString category;  // VST3 sub-categories, e.g. "Instrument|Synth" or "Fx|EQ" (a VST2's in the same words)
     bool instrument = false;
 
     bool operator==(const PluginInfo&) const = default;

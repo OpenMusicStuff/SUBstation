@@ -27,7 +27,7 @@ on run; the user's preference sets it (*Preferences › Plug-ins › Plug-in Hos
 
 | Mode | Sandboxes | Key ([PluginSandboxes.cpp](../../engine/src/plugins/sandbox/PluginSandboxes.cpp)) | Label |
 |---|---|---|---|
-| `InProcess` (*Within SUBstation*) | none: `Vst3Processor` in the application, as before | | |
+| `InProcess` (*Within SUBstation*) | none: `Vst3Processor` (or `Vst2Processor`) in the application, as before | | |
 | `Together` (the default) | one for every plug-in | `all` | "All plug-ins" |
 | `ByManufacturer` | one for each maker (the scan's vendor) | `vendor:<vendor, lower case>` | the vendor ("Unknown maker" for none) |
 | `ByPlugin` | one for each plug-in class; its instances share it | `plugin:<class id>` | the plug-in's name |
@@ -102,12 +102,14 @@ stuck in a plug-in. A crash ends it without the system's dialog (Windows: `SetEr
 Each message is a frame on the channel ([SandboxProtocol.h](../../engine/src/plugins/sandbox/SandboxProtocol.h)): its
 size, its kind, the plug-in instance it is about, the request it asks or answers (ids unique across every sandbox: a
 plug-in loaded again elsewhere is never taken for what it was), then its own fields (`ByteWriter`'s, little-endian).
-The host says `Ready` first, with the protocol's version and the block's size; a sandbox that speaks another isn't
-used.
+The host says `Ready` first, with the protocol's version (3: `Create` carries the plug-in's format since VST2) and the
+block's size; a sandbox that speaks another isn't used. The host loads a plug-in with its format's `instantiate()`
+(`pluginFormat()`), and hands the UI's values on through `PluginProcessor` (`setControllerParam`, `queueParamChange`),
+whichever format it is ([plugins.md](plugins.md#pluginformat)).
 
 | Engine → host | | Host → engine | |
 |---|---|---|---|
-| `Create` | path, class id, rate, block size, the block's memory, state, name, its slot on the doorbell | `Attached` | it has the block (its name may go) |
+| `Create` | path, class id, rate, block size, the block's memory, state, name, its slot on the doorbell, its format ("VST3", "VST2") | `Attached` | it has the block (its name may go) |
 | `Destroy`, `Prepare`, `ResetOffline` | | `Loaded` / `LoadFailed` | what it is (`LoadedInfo`) / why not |
 | `SetParam` | its controller (the audio hears it in the block) | `Report` | values, parameters, latency, preset, events |
 | `ParamText`, `GetState`, `SetState` | answered with `Reply` | `Reply` | ok, then the text, state or error |
@@ -134,15 +136,15 @@ workers asleep, and a wake-up on its counter `rung`.
    costs the rendering thread one wait, not one a block. Offline, it is waited for, once: after an offline block that
    didn't make it, the next ones pass by until the host catches up.
 4. It fills the block: the context (`BlockContext`), the notes and MIDI, the automation for this call
-   (`Processor::automation()`), the values the UI set since (a queue the main thread fills, VST3 ids and normalized
-   values), the audio and the sidechain, and a reset if one was asked for; then moves `request` and queues its slot
+   (`Processor::automation()`), the values the UI set since (a queue the main thread fills, the format's ids (VST3's
+   `ParamID`, VST2's index) and normalized values), the audio and the sidechain, and a reset if one was asked for; then moves `request` and queues its slot
    on the doorbell (`Sandbox::ring()`), which wakes a worker only if they all sleep.
 5. It waits for `done` to match: a spin of a few microseconds, then on the wake-up, at most twice as long as the block
    lasts (3 to 50 ms) live, a minute offline (`Engine::setSandboxOfflineWait()`), and never past its sandbox ending.
    Done, it copies the audio back; not, the audio passes through unprocessed (`lateBlocks()` counts those).
 
 A worker takes the slot, applies what the block holds to the plug-in (`Processor::automate()`,
-`Vst3Processor::queueParamChange()`, `setSidechain()`), calls `process()` in place, moves `done` and wakes the
+`PluginProcessor::queueParamChange()`, `setSidechain()`), calls `process()` in place, moves `done` and wakes the
 rendering thread. One worker at a time is in a plug-in's block; one that finds another there leaves it, and that
 one looks again once out, so a block handed over meanwhile is never left behind. A round trip costs about 25-30 µs
 on Linux; on Windows (a 24-core Core Ultra 7, a 138-plug-in project, Together) about 15 µs besides the plug-in's own

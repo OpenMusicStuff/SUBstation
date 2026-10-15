@@ -195,6 +195,11 @@ endif()
 # use the ANSI code page, and plug-ins with non-ASCII paths would not load.
 set_target_properties(vst3_hosting PROPERTIES CXX_STANDARD 17)
 
+# --- VST 2 SDK (BSD-3-Clause; Xaymar's clean-room, header-only vst2sdk in third_party/vst2sdk) ---
+# Included only through src/plugins/Vst2Sdk.h.
+add_library(vst2sdk INTERFACE)
+target_include_directories(vst2sdk SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vst2sdk/include)
+
 # --- ASIO SDK (optional, Windows) ------------------------------------------------
 # Steinberg's ASIO SDK is not part of the repository: its licence doesn't allow
 # passing it on. Unzip it (https://www.steinberg.net/asiosdk) into the project
@@ -295,7 +300,11 @@ add_library(sub_engine STATIC
     ${BUILTIN_DEVICE_SOURCES}
     ${CMAKE_CURRENT_BINARY_DIR}/generated/BuiltinDevices.cpp
     src/plugins/EditorWindow.cpp
+    src/plugins/PluginFormats.cpp
     src/plugins/PresetName.cpp
+    src/plugins/Vst2Format.cpp
+    src/plugins/Vst2Preset.cpp
+    src/plugins/Vst2Processor.cpp
     src/plugins/Vst3Format.cpp
     src/plugins/Vst3Ids.cpp
     src/plugins/Vst3Processor.cpp
@@ -307,9 +316,11 @@ add_library(sub_engine STATIC
 # Each system's audio driver types, MIDI inputs and plug-in editor windows are files of their own.
 if (WIN32)
     target_sources(sub_engine PRIVATE src/backends/AudioBackendsWin32.cpp src/backends/MidiWinMM.cpp
-                                      src/plugins/EditorWindowWin32.cpp src/plugins/Vst3PlatformWin32.cpp)
+                                      src/plugins/EditorWindowWin32.cpp src/plugins/Vst3PlatformWin32.cpp
+                                      src/plugins/Vst2PlatformWin32.cpp)
 else()
-    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/plugins/Vst3PlatformPosix.cpp)
+    target_sources(sub_engine PRIVATE src/backends/AudioBackendsPosix.cpp src/plugins/Vst3PlatformPosix.cpp
+                                      src/plugins/Vst2PlatformPosix.cpp)
 endif()
 # Plug-in editors on Linux: X11 windows through xcb (libxcb1-dev). Without it,
 # or on other systems but Windows, plug-ins show no editor (EditorWindowNone.cpp).
@@ -374,7 +385,7 @@ target_include_directories(sub_engine PUBLIC src)
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
 target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital fastpitch)  # (kfr_fft: Hue's FFTs)
-target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting)
+target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting vst2sdk)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)
     target_compile_definitions(sub_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)

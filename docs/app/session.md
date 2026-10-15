@@ -253,8 +253,8 @@ Clicking a chain (`clickChain`) shows its rack's devices again.
 - **Presets**: `savePreset(id, name)` (after `checkPresetName(id, name)`: an error, or the question before replacing a
   preset of that name), `saveAsDefault`, `clearDefault`, `hasDefault`, `insertPreset`, `loadPresetInto`,
   `presetLoadsInto`, `loadPresetFile` (*Load Preset…*, starting in `presetFolder()`). A plug-in's own `.vstpreset`
-  files are loaded (`loadVst3Preset`: an undoable `SetDeviceStateCommand`) and saved here too, starting in
-  `vst3PresetFolder()`. A Vital's own `.vital` presets load (`loadVitalPreset`: as `loadPresetInto`) and save
+  files (a VST2's `.fxp` and `.fxb`) are loaded (`loadVst3Preset`: an undoable `SetDeviceStateCommand`) and saved here
+  too, starting in `vst3PresetFolder()`; `pluginPresetSuffix()` says what a save is called after. A Vital's own `.vital` presets load (`loadVitalPreset`: as `loadPresetInto`) and save
   (`saveVitalPreset`) here, starting in `vitalPresetFolder()`. The folders last used are remembered
   ([Settings](#settings)).
 - **Drops**: `dropMoved(ids, chain, index)`, `dropDevices(kinds, plugins, chain, index)`,

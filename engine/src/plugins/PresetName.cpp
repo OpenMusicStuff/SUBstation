@@ -1,5 +1,7 @@
 #include "plugins/PresetName.h"
 
+#include "plugins/Vst2Preset.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -99,6 +101,19 @@ std::string presetNameFromPreset(const uint8_t* data, size_t size) {
     // list's offset (int64); the list: "List", a count, then each chunk's id,
     // offset and size (int64s). All little-endian.
     constexpr size_t kHeader = 48;
+    if (data && size >= 4 && std::memcmp(data, "CcnK", 4) == 0) {  // a VST2 plug-in's .fxp or .fxb (Vst2Preset.h)
+        if (const auto preset = vst2::readPreset(data, size)) {
+            if (!isPlaceholderPresetName(preset->name)) return trimmed(preset->name);
+            if (preset->hasChunk()) return presetNameFromState(preset->chunk.data(), preset->chunk.size());
+            if (preset->kind == vst2::Preset::Kind::Bank) {
+                const auto current = static_cast<size_t>(preset->currentProgram);
+                if (current < preset->programs.size() && !isPlaceholderPresetName(preset->programs[current].name)) {
+                    return trimmed(preset->programs[current].name);
+                }
+            }
+            return {};
+        }
+    }
     if (!data || size < kHeader || std::memcmp(data, "VST3", 4) != 0) return presetNameFromState(data, size);
     const auto listAt = readLittle<uint64_t>(data + 40);
     if (listAt > size || size - listAt < 8 || std::memcmp(data + listAt, "List", 4) != 0) {

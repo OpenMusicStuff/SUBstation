@@ -62,6 +62,7 @@ SandboxedProcessor::SandboxedProcessor(PluginSandboxes& sandboxes, PluginOrigin 
     writeBytes(out, state);
     out.str(name_);
     out.u32(link_.slot);
+    out.str(origin_.format);
     link_.sandbox->attach(link_.instance, this);  // (a sandbox already gone says so at once)
     link_.sandbox->send({Kind::Create, link_.instance, 0, std::move(out.bytes)});
 }

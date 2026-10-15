@@ -4,8 +4,8 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import SUBstation
 
-// Preferences › Plug-ins (Session.plugins, the old PluginsPage): where VST3
-// plug-ins are looked for (the standard folders, dimmed and always searched;
+// Preferences › Plug-ins (Session.plugins, the old PluginsPage): where VST3 and
+// VST2 plug-ins are looked for (the standard folders, dimmed and always searched;
 // the user's own, red if they don't exist any more) and rescanning them.
 // Folders added or removed apply at once: only the new files are read, and a
 // removed folder's plug-ins leave the browser. The scan's status shows the
@@ -39,7 +39,7 @@ ColumnLayout {
 
     spacing: 6
 
-    Label { text: qsTr("VST3 Folders") }
+    Label { text: qsTr("Plug-in Folders") }
 
     Rectangle {
         Layout.fillWidth: true
@@ -188,7 +188,7 @@ ColumnLayout {
     FolderDialog {
         id: folderDialog
         objectName: "pluginFolderDialog"
-        title: qsTr("Add VST3 Folder")
+        title: qsTr("Add Plug-in Folder")
         currentFolder: FileUrls.homeUrl()
         onAccepted: page.addFolder(FileUrls.localPath(selectedFolder))
     }

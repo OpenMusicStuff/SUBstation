@@ -21,8 +21,9 @@ namespace sub::vst3 {
 std::string presetNameFromState(const uint8_t* data, size_t size);
 
 // The same in a .vstpreset (Vst3Processor::getState(), a project's saved
-// device): its component's state, then its controller's. Bytes that aren't a
-// .vstpreset are scanned as they are.
+// device): its component's state, then its controller's. In a VST2 plug-in's
+// .fxp or .fxb (Vst2Processor::getState()): its program's name unless a
+// placeholder, else a name in its chunk. Other bytes are scanned as they are.
 std::string presetNameFromPreset(const uint8_t* data, size_t size);
 
 // A program name that says nothing: empty, or a slot number ("Prog 12", "preset 3",

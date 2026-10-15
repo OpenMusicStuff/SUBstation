@@ -17,7 +17,7 @@ code is put together, [../README.md](../README.md).
 | [arrangement.md](arrangement.md) | The timeline, clips and selecting, tracks and their headers, group tracks, folding, the master, the title bar and the transport bar, projects, undo and export |
 | [mixing.md](mixing.md) | Solo and mute, groups in the mix, return tracks and sends, sidechains, delay compensation, freezing and flattening |
 | [devices.md](devices.md) | The device view, the built-in devices (Vital, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, EQ, Sidechain), the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
-| [plugins.md](plugins.md) | VST3 plug-ins: finding them, using them, their editors and presets, projects, latency |
+| [plugins.md](plugins.md) | VST3 and VST2 plug-ins: finding them, using them, their editors and presets, projects, latency |
 | [audio-clips.md](audio-clips.md) | The clip view for audio clips: warping, warp modes, transpose and detune, clip gain and pan, reversing, tempo and key from file names |
 | [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, MIDI input, the computer MIDI keyboard |
 | [recording.md](recording.md) | Arming, inputs, monitoring, the count-in, takes, resampling |
@@ -94,10 +94,12 @@ SUBstation is made for Windows; on Linux it runs with these differences:
   exclusive mode (see [audio-setup.md](audio-setup.md)).
 - MIDI inputs are ALSA's sequencer's ports: hardware, and software such as a virtual
   keyboard (see [midi.md](midi.md#midi-input)).
-- VST3 plug-ins load and play, with their editor windows (X11; on Wayland through
+- VST3 and VST2 plug-ins load and play, with their editor windows (X11; on Wayland through
   XWayland: see [plugins.md](plugins.md#the-plug-ins-editor)). Plug-ins are looked for
-  in `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`; one that has no Linux
-  version (a Windows plug-in) is listed as one that couldn't be read, and why.
+  in `~/.vst3`, `/usr/lib/vst3` and `/usr/local/lib/vst3`, and VST2 ones (`.so` files) in
+  the folders in `VST_PATH`, else `~/.vst`, `/usr/lib/vst` and `/usr/local/lib/vst`; one
+  that has no Linux version (a Windows plug-in) is listed as one that couldn't be read,
+  and why.
 
 ---
 

@@ -129,6 +129,49 @@ private Q_SLOTS:
         QVERIFY(close(studio.engine.processorParam(*bridge.engineDeviceId(track, device), test::kSynthGain), 0.3f));
     }
 
+    // A VST2 plug-in (SUB VST2 Synth, tests/vst2_plugins) as a device: the project
+    // keeps its format and its state (an .fxp of its values) and loads it again.
+    void projectsKeepVst2PluginsAndTheirState() {
+#ifndef SUBSTATION_TEST_VST2_DIR
+        QSKIP("the test VST2 plug-ins are not built");
+#else
+        PluginRef ref;
+        ref.format = QStringLiteral("VST2");
+        ref.uid = QStringLiteral("53755332");  // 'SuS2'
+        ref.name = QStringLiteral("SUB VST2 Synth");
+        ref.vendor = QStringLiteral("SUBstation Tests");
+#ifdef _WIN32
+        ref.path = QStringLiteral(SUBSTATION_TEST_VST2_DIR "/SUBTestVst2Synth.dll");
+#else
+        ref.path = QStringLiteral(SUBSTATION_TEST_VST2_DIR "/SUBTestVst2Synth.so");
+#endif
+        ref.instrument = true;
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        QString track = studio.edit.addMidiTrack(QStringLiteral("Keys"), std::nullopt, ref);
+        QString device = studio.project.track(track).devices.front().id;
+        QVERIFY(bridge.engineDeviceId(track, device));
+        studio.engine.setProcessorParam(*bridge.engineDeviceId(track, device), 0, 0.3f);  // its Level
+        bridge.storePluginStates();
+        const QString path = dir.path("song.gilproj");
+        saveProject(studio.project, path);
+        const QJsonObject saved =
+            readJson(path)["tracks"].toArray()[0].toObject()["devices"].toArray()[0].toObject();
+        QCOMPARE(saved["plugin"].toObject()["format"].toString(), QStringLiteral("VST2"));
+        QCOMPARE(saved["plugin"].toObject()["uid"].toString(), QStringLiteral("53755332"));
+        QVERIFY(QByteArray::fromBase64(saved["state"].toString().toLatin1()).startsWith("CcnK"));  // an .fxp
+
+        studio.project.clear();
+        loadProject(studio.project, path);
+        track = studio.project.tracks().front().id;
+        device = studio.project.track(track).devices.front().id;
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.pluginsPending() == 0, 5000);
+        QCOMPARE(studio.project.track(track).devices.front().plugin->format, QStringLiteral("VST2"));
+        QVERIFY(close(studio.engine.processorParam(*bridge.engineDeviceId(track, device), 0), 0.3f));
+#endif
+    }
+
     void missingAndMovedPlugins() {
         test::TempDir dir;
         Studio studio;

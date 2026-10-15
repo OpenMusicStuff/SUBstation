@@ -423,6 +423,26 @@ private Q_SLOTS:
                  QStringList({root + QStringLiteral("/C/A.vst3"), root + QStringLiteral("/C/b.vst3"), root + QStringLiteral("/C/c.VST3")}));
     }
 
+    // VST2 plug-ins are libraries: listed wherever they are, but inside a VST3 bundle.
+    void findingVst2Files() {
+        const QString root = tmp_->path();
+#ifdef _WIN32
+        const QString library = QStringLiteral(".dll"), other = QStringLiteral(".so");
+#else
+        const QString library = QStringLiteral(".so"), other = QStringLiteral(".dll");
+#endif
+        writeFile(root + QStringLiteral("/V/Vendor/Synth") + library, {});
+        writeFile(root + QStringLiteral("/V/Effect") + library, {});
+        writeFile(root + QStringLiteral("/V/Windows") + other, {});  // (another system's)
+        writeFile(root + QStringLiteral("/V/Bundle.vst3/Contents/x86_64-linux/Bundle.so"), {});
+        writeFile(root + QStringLiteral("/V/Bundle.vst3/Contents/x86_64-win/Bundle.dll"), {});
+        QCOMPARE(findPluginFiles({root + QStringLiteral("/V")}),
+                 QStringList({root + QStringLiteral("/V/Bundle.vst3"), root + QStringLiteral("/V/Effect") + library,
+                              root + QStringLiteral("/V/Vendor/Synth") + library}));
+        QCOMPARE(findPluginFiles({root + QStringLiteral("/V/Effect") + library}),
+                 QStringList{root + QStringLiteral("/V/Effect") + library});  // a root that is one
+    }
+
     void searchPaths() {
         const QString root = tmp_->path();
         const QString a = root + QStringLiteral("/A"), b = root + QStringLiteral("/B"), c = root + QStringLiteral("/C");
@@ -437,6 +457,11 @@ private Q_SLOTS:
 #else
         QCOMPARE(pluginSearchFolders({c, root + QStringLiteral("/a/")}), QStringList({a, b, c, root + QStringLiteral("/a")}));
 #endif
+        // VST2's folders after VST3's: SUBSTATION_VST2_PATH's (without it, SUBSTATION_VST3_PATH stands for all).
+        {
+            const test::ScopedEnv vst2("SUBSTATION_VST2_PATH", c + QDir::listSeparator() + a);
+            QCOMPARE(standardPluginFolders(), QStringList({a, b, c}));
+        }
 #ifndef _WIN32  // (on Windows a variable set to nothing is no variable)
         qputenv("SUBSTATION_VST3_PATH", "");
         QVERIFY(standardPluginFolders().isEmpty());
@@ -520,10 +545,19 @@ private Q_SLOTS:
         const QString home = tmp_->path() + QStringLiteral("/home");
         QDir().mkpath(home);
         const test::ScopedEnv noOverride("SUBSTATION_VST3_PATH", std::nullopt);
+        const test::ScopedEnv noVst2Override("SUBSTATION_VST2_PATH", std::nullopt);
+        const test::ScopedEnv noVstPath("VST_PATH", std::nullopt);
         {
             const test::ScopedEnv env("HOME", home);
-            QCOMPARE(standardPluginFolders(), QStringList({home + QStringLiteral("/.vst3"), QStringLiteral("/usr/lib/vst3"),
-                                                           QStringLiteral("/usr/local/lib/vst3")}));
+            // VST3's, then VST2's.
+            QCOMPARE(standardPluginFolders(),
+                     QStringList({home + QStringLiteral("/.vst3"), QStringLiteral("/usr/lib/vst3"),
+                                  QStringLiteral("/usr/local/lib/vst3"), home + QStringLiteral("/.vst"),
+                                  QStringLiteral("/usr/lib/vst"), QStringLiteral("/usr/local/lib/vst")}));
+            {
+                const test::ScopedEnv vstPath("VST_PATH", QStringLiteral("/opt/a:/opt/b"));  // (as other hosts read it)
+                QCOMPARE(standardPluginFolders().mid(3), QStringList({QStringLiteral("/opt/a"), QStringLiteral("/opt/b")}));
+            }
 #ifdef SUBSTATION_TEST_PLUGINS_BUNDLE
             const QString installed = home + QStringLiteral("/.vst3/SUBstation/SUBTestPlugins.vst3");
             QDir().mkpath(home + QStringLiteral("/.vst3/SUBstation"));
@@ -535,7 +569,8 @@ private Q_SLOTS:
 #endif
         }
         const test::ScopedEnv noHome("HOME", std::nullopt);
-        QCOMPARE(standardPluginFolders(), QStringList({QStringLiteral("/usr/lib/vst3"), QStringLiteral("/usr/local/lib/vst3")}));
+        QCOMPARE(standardPluginFolders(), QStringList({QStringLiteral("/usr/lib/vst3"), QStringLiteral("/usr/local/lib/vst3"),
+                                                       QStringLiteral("/usr/lib/vst"), QStringLiteral("/usr/local/lib/vst")}));
 #endif
     }
 
@@ -586,6 +621,42 @@ private Q_SLOTS:
         Progress all;
         scanner.scan(QStringList{bundle, junk}, true, all.callback());
         QCOMPARE(all.calls.size(), size_t(2));
+#endif
+    }
+
+    void theRealScannerReadsTheVst2Plugins() {
+#ifndef SUBSTATION_TEST_VST2_DIR
+        QSKIP("the test VST2 plug-ins are not built");
+#else
+        for (const QString& name : QDir(QStringLiteral(SUBSTATION_TEST_VST2_DIR)).entryList(QDir::Files)) {
+            if (!name.startsWith(QStringLiteral("SUBTestVst2"))) continue;
+            const QString copy = path(QStringLiteral("VST2/") + name);
+            QDir().mkpath(QFileInfo(copy).absolutePath());
+            QVERIFY(QFile::copy(QStringLiteral(SUBSTATION_TEST_VST2_DIR) + QLatin1Char('/') + name, copy));
+        }
+        const QStringList libraries = findPluginFiles({path(QStringLiteral("VST2"))});
+        QCOMPARE(libraries.size(), qsizetype(3));
+        PluginScanner scanner(QStringLiteral(SUBSTATION_SCANNER), cacheFile());
+        const ScanResult result = scanner.scan(libraries);
+        QVERIFY(result.failures.empty());
+        QStringList found;
+        for (const PluginInfo& p : result.plugins) {
+            found << QStringLiteral("%1|%2|%3|%4|%5|%6")
+                         .arg(p.name, p.vendor, p.category, p.uid, QFileInfo(p.path).completeBaseName())
+                         .arg(p.instrument);
+            QCOMPARE(p.format, QStringLiteral("VST2"));
+            QCOMPARE(p.version, QStringLiteral("1.2.3"));
+        }
+        // Each library's, and the shell's two (by name, then vendor).
+        QCOMPARE(found, QStringList({QStringLiteral("SUB VST2 Gain|SUBstation Tests|Fx|Delay|53754732|SUBTestVst2Gain|0"),
+                                     QStringLiteral("SUB VST2 Gain|SUBstation Tests|Fx|Delay|53754732|SUBTestVst2Shell|0"),
+                                     QStringLiteral("SUB VST2 Synth|SUBstation Tests|Instrument|Synth|53755332|SUBTestVst2Shell|1"),
+                                     QStringLiteral("SUB VST2 Synth|SUBstation Tests|Instrument|Synth|53755332|SUBTestVst2Synth|1")}));
+        // The cache keeps their format.
+        Progress again;
+        const ScanResult cached = scanner.scan(libraries, false, again.callback());
+        QVERIFY(again.calls.empty());
+        QCOMPARE(cached.plugins, result.plugins);
 #endif
     }
 
@@ -738,7 +809,7 @@ private Q_SLOTS:
         QVERIFY(standard.data(PluginFolderModel::StandardRole).toBool());
         QVERIFY(!standard.data(PluginFolderModel::RemovableRole).toBool());
         QVERIFY(standard.data(PluginFolderModel::DisplayRole).toString().endsWith(QStringLiteral("  (standard)")));
-        QCOMPARE(standard.data(PluginFolderModel::ToolTipRole).toString(), QStringLiteral("A standard VST3 folder: always searched."));
+        QCOMPARE(standard.data(PluginFolderModel::ToolTipRole).toString(), QStringLiteral("A standard plug-in folder: always searched."));
 
         // An added folder is kept, and its plug-ins (in folders inside it too) are found.
         QSignalSpy foldersChanged(&index, &PluginIndex::foldersChanged);

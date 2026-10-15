@@ -27,6 +27,7 @@ the licences, not legal advice: for a commercial release, have it checked.
 | [fastpitch](../engine/third_party/fastpitch) 1.0.0 | engine/third_party/fastpitch | MIT | pitch tracking (pYIN): GigaTune | yes |
 | [swift-f0](../engine/third_party/swift-f0) 0.3.0's model | engine/third_party/swift-f0 (its weights in engine/src/builtin/SwiftF0Data.h) | MIT | pitch tracking (SwiftF0): GigaTune's High Quality | yes |
 | [VST 3 SDK](../engine/third_party/vst3sdk) 3.8.1 | engine/third_party | MIT | plug-in hosting | yes |
+| [vst2sdk](../engine/third_party/vst2sdk) (Xaymar's clean-room VST 2.x interface) | engine/third_party | BSD-3-Clause | VST2 plug-in hosting (its header) | yes (ship its [LICENSE](../engine/third_party/vst2sdk/LICENSE)). It is a reimplementation, not Steinberg's VST 2 SDK, which isn't licensed any more; its README notes it grants no trademark rights: see [below](#to-decide) |
 | [puff](../app/third_party/puff) 2.3 (zlib 1.3.1's contrib) | app/third_party/puff | zlib | inflate: reading Ableton Live Sets | yes |
 | [LAME](../engine/third_party/lame) 3.100 (its encoding library only) | engine/third_party/lame | LGPL-2.0-or-later | statically linked: MP3 export | yes (the LGPL's relinking condition is met by shipping the whole program's source, as the AGPL asks anyway; ship its [COPYING](../engine/third_party/lame/COPYING)). MP3's patents have expired. |
 | Qt 6 | not vendored; linked dynamically | LGPL-3.0 (or GPL, or commercial) | the application and its UI | yes (LGPLv3 is compatible; keep Qt dynamically linked and replaceable, and ship its licence) |
@@ -34,7 +35,7 @@ the licences, not legal advice: for a commercial release, have it checked.
 | [velocity.hbm](../intelligence/models) | intelligence/models | none stated; trained on MAESTRO v3, which is CC BY-NC-SA 4.0 | the velocity model | see [below](#to-decide) |
 | [TaggerModel.inc](../intelligence/src/tagging/TaggerModel.inc) | intelligence/src/tagging | none stated (SUBstation's own, trained by [tools/sound_tagger](../tools/sound_tagger)); trained on NSynth, TinySOL, LibriSpeech and VocalSet (CC BY 4.0), Freesound sounds (CC0 and CC BY 3.0 only), and tidal-drum-machines (no licence stated) | the sound tagger's model: weights compiled in, no audio of the corpora | see [below](#to-decide) |
 | Steinberg's ASIO® SDK | not in the repository; used if present at build time (the releases download 2.3.4: [releasing.md](releasing.md#asio)) | proprietary *or* GPLv3 (Steinberg's dual licence, since 2.3.4, October 2025) | ASIO on Windows | under its **GPLv3** option, as the releases take it: see [below](#to-decide) |
-| VST3 plug-ins | loaded at run time | their makers' | hosted | not part of SUBstation: they are separate programs loaded through the VST3 interface |
+| VST3 and VST2 plug-ins | loaded at run time | their makers' | hosted | not part of SUBstation: they are separate programs loaded through the VST3 and VST 2 interfaces |
 
 ## Shipping SUBstation: what the AGPLv3 asks
 
@@ -73,6 +74,14 @@ MIT.
   licence (drum machines' sounds, as collected for TidalCycles); whether a model trained on them may ship is the
   question velocity.hbm's MAESTRO raises, milder. To be certain, train without it (`corpora.py` without `tdm`: the
   Freesound drums then teach the kinds alone) and measure the difference.
+
+- **VST2 hosting.** Steinberg stopped licensing its VST 2 SDK in 2018, so SUBstation hosts VST2 plug-ins through
+  Xaymar's vst2sdk, a clean-room reimplementation of the interface (BSD-3-Clause) whose README argues it is legal as
+  reverse engineering for interoperability and says to have a lawyer confirm that for a commercial product. What
+  SUBstation adds to it (`engine/src/plugins/Vst2Sdk.h`: the time info's and the event list's layouts, a few
+  opcodes' numbers) is the same kind of interface fact, written for interoperability. Neither grants a right to
+  Steinberg's trademarks: the About box's "VST is a registered trademark of Steinberg Media Technologies GmbH" stays.
+  Building without it would mean taking the VST2 files out of `engine/src/plugins` and `pluginFormat()`.
 
 - **Vital's name.** Vital's source is GPLv3, but its name isn't licensed with it: Vital's README asks that "Vital",
   "Vital Audio", "Tytel" and "Matt Tytel" not be used to market or to name a distribution of binaries built from its

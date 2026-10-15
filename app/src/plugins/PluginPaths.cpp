@@ -15,6 +15,7 @@
 #include "Text.h"
 #include "browser/PathKeys.h"
 #include "platform/Paths.h"
+#include "plugins/Vst2Format.h"
 #include "plugins/Vst3Format.h"
 
 namespace sub::app {
@@ -23,10 +24,20 @@ namespace {
 
 std::filesystem::path fsPath(const QString& path) { return platform::toPath(toBackendPath(path)); }
 
-// Whether a file or folder of this name is a plug-in ("Name.vst3"): not Linux's own folder for them,
+// Whether a file or folder of this name is a VST3 plug-in ("Name.vst3"): not Linux's own folder for them,
 // "~/.vst3", which is named like one.
 bool isPluginName(const QString& name) {
     return name.size() > 5 && name.endsWith(QStringLiteral(".vst3"), Qt::CaseInsensitive);
+}
+
+// Whether a file of this name may be a VST2 plug-in: a library (".dll" on Windows, ".so" elsewhere).
+bool isVst2Name(const QString& name) { return vst2::Vst2Format::isPluginFile(name.toStdString()); }
+
+QStringList foldersIn(const char* variable) {
+    QStringList folders;
+    for (const QString& folder : qEnvironmentVariable(variable).split(QDir::listSeparator()))
+        if (!folder.isEmpty()) folders << normalPath(folder);
+    return folders;
 }
 
 // Python's str.lower(), for sorting as it sorted.
@@ -35,16 +46,28 @@ std::string lowerForSort(const QString& s) { return browser::pyLower(s.toStdStri
 }  // namespace
 
 QStringList standardPluginFolders() {
-    if (qEnvironmentVariableIsSet("SUBSTATION_VST3_PATH")) {
-        QStringList folders;
-        for (const QString& folder : qEnvironmentVariable("SUBSTATION_VST3_PATH").split(QDir::listSeparator()))
-            if (!folder.isEmpty()) folders << normalPath(folder);
-        return folders;
-    }
+    const bool vst3Set = qEnvironmentVariableIsSet("SUBSTATION_VST3_PATH");
     QStringList folders;
-    for (const std::string& folder : vst3::Vst3Format::instance().defaultSearchPaths())
-        folders << normalPath(fromBackendPath(folder));
-    return folders;
+    if (vst3Set) {
+        folders = foldersIn("SUBSTATION_VST3_PATH");
+    } else {
+        for (const std::string& folder : vst3::Vst3Format::instance().defaultSearchPaths())
+            folders << normalPath(fromBackendPath(folder));
+    }
+    if (qEnvironmentVariableIsSet("SUBSTATION_VST2_PATH")) {
+        folders << foldersIn("SUBSTATION_VST2_PATH");
+    } else if (!vst3Set) {  // (SUBSTATION_VST3_PATH alone stands for every standard folder: the tests')
+        for (const std::string& folder : vst2::Vst2Format::instance().defaultSearchPaths())
+            folders << normalPath(fromBackendPath(folder));
+    }
+    QStringList unique;
+    QSet<QString> seen;
+    for (const QString& folder : folders) {
+        if (seen.contains(pathKey(folder))) continue;
+        seen.insert(pathKey(folder));
+        unique << folder;
+    }
+    return unique;
 }
 
 QStringList pluginSearchFolders(const QStringList& custom) {
@@ -75,7 +98,8 @@ QStringList findPluginFiles(const QStringList& roots) {
     };
     for (const QString& root : roots) {
         const QFileInfo rootInfo(root);
-        if (isPluginName(rootInfo.fileName()) && rootInfo.exists()) {
+        if ((isPluginName(rootInfo.fileName()) && rootInfo.exists()) ||
+            (isVst2Name(rootInfo.fileName()) && rootInfo.isFile())) {
             add(root);
             continue;
         }
@@ -95,8 +119,10 @@ QStringList findPluginFiles(const QStringList& roots) {
                 const QString path = folder.endsWith(QLatin1Char('/')) ? folder + name : folder + QLatin1Char('/') + name;
                 if (isPluginName(name))
                     add(path);
-                else if (QFileInfo(path).isDir())  // following links
+                else if (const QFileInfo file(path); file.isDir())  // following links
                     stack.push_back(path);
+                else if (isVst2Name(name) && file.isFile())
+                    add(path);
             }
         }
     }

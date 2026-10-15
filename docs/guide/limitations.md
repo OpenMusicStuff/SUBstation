@@ -48,7 +48,11 @@ What SUBstation doesn't do yet, by area.
 - Multi-output instruments: plug-ins get their main buses and a sidechain only.
 - MIDI effect plug-ins.
 - Notes' bends reach VST3 plug-ins as note expression only (VST3's per-note "tuning"):
-  one that doesn't take it plays the notes unbent (there is no MPE fallback).
+  one that doesn't take it plays the notes unbent (there is no MPE fallback). VST2
+  plug-ins don't get them at all.
+- VST2 plug-ins: automation splits the audio (no sample-accurate parameters in VST 2),
+  their own text shows only for a parameter's current value, the user can't resize their
+  editors, and macOS's `.vst` bundles aren't read ([plugins.md](plugins.md#vst2-plug-ins)).
 - Vital: what Vital's own window has that its editor here doesn't yet: the wavetable
   editor (wavetables load from files or take basic shapes), drawing LFO shapes and
   modulation curves, loading a sample into its sample oscillator, loading tunings, and

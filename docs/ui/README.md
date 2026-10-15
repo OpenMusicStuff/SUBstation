@@ -502,7 +502,7 @@ application-layer object that holds the logic. What the preferences mean to the 
   - **MIDI** (`MidiPage` on [MidiPreferences](../../app/src/session/MidiPreferences.h)): a check box per input
     (`inputs`: name, enabled, error: an input that couldn't be opened shows in red, why in its tooltip) →
     `setInputEnabled(name, on)`; Refresh → `refresh()`.
-  - **Plug-ins** (`PluginsPage` on `Session.plugins`, the `PluginIndex`): the standard VST3 folders (dimmed, always
+  - **Plug-ins** (`PluginsPage` on `Session.plugins`, the `PluginIndex`): the standard VST3 and VST2 folders (dimmed, always
     searched) and the user's own (red if missing); Add Folder… and Remove (only new files are read; a removed
     folder's plug-ins leave the browser); Rescan Plug-ins; the scan's status, its failures in the tooltip. See
     [app/plugin-scanner.md](../app/plugin-scanner.md).

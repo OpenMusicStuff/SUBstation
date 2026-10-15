@@ -222,7 +222,7 @@ ScanResult PluginScanner::scan(const std::optional<QStringList>& filesGiven, boo
             PluginInfo info;
             info.name = p.value(QStringLiteral("name")).toString();
             if (info.name.isEmpty()) info.name = QFileInfo(path).completeBaseName();  // named after its file
-            info.format = QStringLiteral("VST3");
+            info.format = p.value(QStringLiteral("format")).toString(QStringLiteral("VST3"));  // (older caches: VST3)
             info.path = path;
             info.uid = p.value(QStringLiteral("uid")).toString();
             info.vendor = p.value(QStringLiteral("vendor")).toString();

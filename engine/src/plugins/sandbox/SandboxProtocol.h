@@ -36,11 +36,12 @@ class Channel;
 
 namespace sub::sandbox {
 
-inline constexpr uint32_t kVersion = 2;
+inline constexpr uint32_t kVersion = 3;
 
 enum class Kind : uint32_t {
     // Engine → host. (Instance: the plug-in it is about; request: answered by a Reply with it.)
-    Create = 1,           // path, uid, sample rate (f64), max block (u32), block's memory name, state, name, slot (u32)
+    Create = 1,           // path, uid, sample rate (f64), max block (u32), block's memory name, state, name, slot (u32),
+                          // format ("VST3", "VST2")
     Destroy,              // -
     Prepare,              // sample rate (f64), max block (u32)
     ResetOffline,         // - (request)
@@ -157,7 +158,7 @@ struct BlockContext {
     ProcessContext context() const noexcept;  // (without events)
 };
 
-// A parameter value the UI set, on its way to the plug-in's audio (VST3's id and normalized value).
+// A parameter value the UI set, on its way to the plug-in's audio (the format's id: VST3's ParamID, VST2's index; and its normalized value).
 struct BlockChange {
     uint32_t id = 0;
     uint32_t pad = 0;

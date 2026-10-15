@@ -1,0 +1,2 @@
+Xaymar/vst2sdk (https://github.com/Xaymar/vst2sdk), commit 339d4f31590bf77c0d0d248e09a380ac6285e069 (2025-08-08), v0.3.x.
+Copied: include/vst.h, LICENSE, README.md; unmodified.

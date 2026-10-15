@@ -372,7 +372,7 @@ void BrowserController::setPluginItems() {
 
 void BrowserController::updatePluginsToolTip() {
     const std::vector<ScanFailure>& failures = plugins_->failures();
-    QStringList lines{QStringLiteral("VST3 plug-ins")};
+    QStringList lines{QStringLiteral("VST3 and VST2 plug-ins")};
     if (!failures.empty()) {
         lines << QString() << QStringLiteral("Could not be read:") << plugins_->failuresText();
         if (failures.size() > 30) lines << QStringLiteral("...and %1 more").arg(failures.size() - 30);
@@ -691,7 +691,7 @@ void BrowserController::updateStatus() {
         if (plugins_->scanning()) {
             setStatusText(scanText_.isEmpty() ? QStringLiteral("Scanning plug-ins…") : scanText_);
         } else if (plugins_->plugins().empty()) {
-            setStatusText(QStringLiteral("No VST3 plug-ins found"));
+            setStatusText(QStringLiteral("No plug-ins found"));
         } else {
             const QString note = failures && !hasWords(searchText_)
                                      ? QStringLiteral(", %1 could not be read").arg(failures)

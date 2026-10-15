@@ -320,7 +320,7 @@ What the application needs besides an `Engine` is plain functions and singletons
 | A file's format and length, without decoding it | `AudioSource::probe(path)` ([AudioSource.h](../../engine/src/AudioSource.h)) |
 | The driver types this build has | `Engine::driverTypes()` |
 | The built-in devices, instruments first, then by name | `BuiltinRegistry::instance().devices()` ([devices.md](devices.md)) |
-| The default VST3 folders | `vst3::Vst3Format::instance().defaultSearchPaths()` ([plugins.md](plugins.md)) |
+| The default VST3 and VST2 folders | `vst3::Vst3Format::instance().defaultSearchPaths()`, `vst2::Vst2Format::instance().defaultSearchPaths()` ([plugins.md](plugins.md)) |
 | The clock MIDI input is stamped with | `hostTimeNs()` ([rt/RtUtils.h](../../engine/src/rt/RtUtils.h)) |
 | The Gate's key EQ curve and gain | `gate::keyFilter()`, `gate::gain()` and `gate::closeDb()` ([builtin/GateDesign.h](../../engine/src/builtin/GateDesign.h); the application's `gateKeyFilterDb()`, `gateGainDb()` and `gateCloseDb()` wrap them, see [devices.md](devices.md)) |
 | The Limiter's line and Soft Clip's band | `limiter::scales()`, `softKneeDb()` and `softTopDb()` ([builtin/LimiterDesign.h](../../engine/src/builtin/LimiterDesign.h); the application's `limiterLine()`, `limiterSoftKneeDb()` and `limiterSoftTopDb()` wrap them, see [devices.md](devices.md)) |

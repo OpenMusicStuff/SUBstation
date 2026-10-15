@@ -1,6 +1,6 @@
 #pragma once
 // The insert-effect / instrument interface. Built-in devices and hosted plug-ins
-// (plugins/Vst3Processor) implement it, so the renderer never needs to know
+// (plugins/Vst3Processor, plugins/Vst2Processor) implement it, so the renderer never needs to know
 // where a processor came from.
 //
 // Threads: process() and reset() run on the rendering thread (the audio thread,
@@ -269,7 +269,7 @@ class Processor {
 public:
     virtual ~Processor() = default;
 
-    // "builtin:utility", "vst3:<class id>".
+    // "builtin:utility", "vst3:<class id>", "vst2:<unique id>".
     virtual std::string typeId() const = 0;
     virtual std::string name() const = 0;
 

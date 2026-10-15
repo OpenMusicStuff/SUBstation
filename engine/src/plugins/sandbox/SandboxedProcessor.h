@@ -65,7 +65,7 @@ public:
                        int maxBlockSize);
     ~SandboxedProcessor() override;
 
-    std::string typeId() const override { return "vst3:" + origin_.uid; }
+    std::string typeId() const override { return (origin_.format == "VST2" ? "vst2:" : "vst3:") + origin_.uid; }
     std::string name() const override;
 
     void prepare(double sampleRate, int maxBlockSize) override;
@@ -177,7 +177,7 @@ private:
     std::atomic<int> latency_{0};
     std::atomic<int> tail_{0};
     std::vector<ParamInfo> params_;
-    std::vector<uint32_t> paramIds_;  // VST3's id of each
+    std::vector<uint32_t> paramIds_;  // the format's id of each (VST3's ParamID, VST2's index)
     mutable std::mutex valuesMutex_;  // values_ against getParam() from other threads; presetName_
     std::unique_ptr<std::atomic<float>[]> values_;
     size_t valueCount_ = 0;

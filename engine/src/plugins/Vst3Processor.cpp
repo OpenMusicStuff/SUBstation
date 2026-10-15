@@ -702,7 +702,7 @@ void Vst3Processor::setParam(int index, float value) {
     if (const auto set = setControllerParam(index, value)) toAudio_.push(set->first, set->second);
 }
 
-std::optional<std::pair<ParamID, ParamValue>> Vst3Processor::setControllerParam(int index, float value) {
+std::optional<std::pair<uint32_t, double>> Vst3Processor::setControllerParam(int index, float value) {
     ParamMeta meta;
     {
         std::lock_guard lock(mutex_);
@@ -715,7 +715,7 @@ std::optional<std::pair<ParamID, ParamValue>> Vst3Processor::setControllerParam(
     return std::pair{meta.id, normalized};
 }
 
-void Vst3Processor::queueParamChange(ParamID id, ParamValue normalized) noexcept { toAudio_.push(id, normalized); }
+void Vst3Processor::queueParamChange(uint32_t id, double normalized) noexcept { toAudio_.push(id, normalized); }
 
 std::string Vst3Processor::paramText(int index, float value) const {
     ParamMeta meta;

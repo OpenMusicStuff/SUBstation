@@ -96,7 +96,10 @@ Plug-ins:
   become a .vstpreset (`vstPreset`): Steinberg's header with `presetClassId` (the words as
   `%08X%08X%08X%08X`, the same on every platform), the `ProcessorState` as the `Comp` chunk, the
   `ControllerState` as `Cont`.
-- A VST2 (`VstPluginInfo`) becomes an installed VST3: one whose class id is Steinberg's VST2
+- A VST2 (`VstPluginInfo`) becomes the VST2 itself when it is installed (a VST2 in the index whose
+  uid is its `UniqueId`, `vst2Uid`), with its chunk as SUBstation keeps a VST2's state: the fxb or
+  fxp `CcnK` block `vst2CompatibleState` makes, without its `VstW` header ([engine/plugins.md](../engine/plugins.md#vst2));
+  without a chunk, at its defaults. Else it becomes an installed VST3: one whose class id is Steinberg's VST2
   replacement id for it (`"VST"`, the VST2's `UniqueId`, its name: `wordsFromClassId` says) takes
   its settings as `vst2CompatibleState` makes them (`VstW`, then an fxb or fxp `CcnK` block of its
   chunk: what Steinberg's VST2 wrapper and JUCE's VST3s read); else one of the same name
@@ -113,5 +116,5 @@ Tracks are named in them as Live shows them ("31-Audio").
 [test_live_import.cpp](../../tests/app/test_live_import.cpp) writes sets as Live does (gzip or
 XML) and checks each part: reading and damage, the song's settings, tracks, groups, returns,
 mixers and routing, MIDI loops, audio clips and warping, plug-ins (.vstpreset chunks, VST2
-replacement states), Live's own devices, Drum Racks, automation, and `Session::importLiveSet`.
+replacement states, a VST2 as itself), Live's own devices, Drum Racks, automation, and `Session::importLiveSet`.
 `test_ui_mainwindow`'s `templatesAndImportingALiveSet` goes through the menu and its dialog.
