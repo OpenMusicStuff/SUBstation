@@ -9,6 +9,8 @@
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontMetricsF>
+#include <QGuiApplication>
+#include <QMouseEvent>
 #include <QQmlComponent>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -19,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -103,6 +106,27 @@ class TestUiDeviceEditorsChorus : public QObject, public sub::app::test::EditorH
 
     void click(QQuickItem* view, const char* name) {
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(button(view, name)));
+    }
+    // The same, without running the events that come after it (QTest's click does): what a change
+    // looks like before any frame of a fade has run.
+    void clickNow(QQuickItem* view, const char* name) {
+        const QPointF at = centerOf(button(view, name));
+        for (const QEvent::Type type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent event(type, at, window_->mapToGlobal(at), Qt::LeftButton,
+                              type == QEvent::MouseButtonPress ? Qt::LeftButton : Qt::NoButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(window_, &event);
+        }
+    }
+    // Watches a fade until `done` (or 5 s), calling `look` as it goes.
+    static bool watchFade(const std::function<bool()>& done, const std::function<void()>& look) {
+        QElapsedTimer waited;
+        waited.start();
+        for (;;) {
+            look();
+            if (done()) return true;
+            if (waited.elapsed() > 5000) return false;
+            QTest::qWait(5);
+        }
     }
 
     // Shown to the eye: visible, and not faded out.
@@ -572,18 +596,15 @@ private Q_SLOTS:
         QQuickItem* vibratoSet = find(view, QStringLiteral("offset"))->parentItem();
         QQuickItem* tapsSet = find(view, QStringLiteral("taps1"))->parentItem();
         QQuickItem* voicesText = find(view, QStringLiteral("voicesText"));
-        click(view, "modeVibrato");
-        QElapsedTimer fading;
-        fading.start();
-        bool sawBoth = false, sawFading = false;
-        while (fading.elapsed() < 300) {
-            sawBoth |= widthSet->opacity() > 0.0 && vibratoSet->opacity() > 0.0;
-            for (QQuickItem* set : {widthSet, vibratoSet})
-                sawFading |= set->opacity() > 0.0 && set->opacity() < 1.0;
-            QTest::qWait(5);
-        }
+        // (A fade: just after the click, before any of its frames, nothing has changed yet. How many frames
+        // show it after that is the machine's: a slow one can draw the end at once.)
+        clickNow(view, "modeVibrato");
+        QCOMPARE(widthSet->opacity(), 1.0);
+        QCOMPARE(vibratoSet->opacity(), 0.0);
+        bool sawBoth = false;
+        QVERIFY(watchFade([&] { return widthSet->opacity() == 0.0 && vibratoSet->opacity() == 1.0; },
+                          [&] { sawBoth |= widthSet->opacity() > 0.0 && vibratoSet->opacity() > 0.0; }));
         QVERIFY(!sawBoth);
-        QVERIFY(sawFading);  // (it did fade)
         QCOMPARE(value("mode"), 2.0);
         QCOMPARE(graph->voiceCount(), 2);
         QTRY_VERIFY(shown(find(view, QStringLiteral("offset"))) && shown(find(view, QStringLiteral("shape"))));
@@ -611,12 +632,9 @@ private Q_SLOTS:
         QCOMPARE(value("mode"), 1.0);
         undo()->undo();
         QCOMPARE(value("mode"), 0.0);
-        fading.restart();
         sawBoth = false;
-        while (fading.elapsed() < 300) {
-            sawBoth |= tapsSet->opacity() > 0.0 && voicesText->opacity() > 0.0;
-            QTest::qWait(5);
-        }
+        QVERIFY(watchFade([&] { return voicesText->opacity() == 0.0 && tapsSet->opacity() == 1.0; },
+                          [&] { sawBoth |= tapsSet->opacity() > 0.0 && voicesText->opacity() > 0.0; }));
         QVERIFY(!sawBoth);
         QCOMPARE(graph->voiceCount(), 4);
         QVERIFY(lit(view, "modeChorus"));
@@ -636,16 +654,13 @@ private Q_SLOTS:
         QCOMPARE(voicesText->property("text").toString(), QStringLiteral("1 voice a side"));
         QCOMPARE(chorusVoices({2, 1, 0}), 1);
         set("mode", 0.0);
-        fading.restart();
-        bool sawText = false;
-        while (fading.elapsed() < 300) {
-            if (voicesText->isVisible() && voicesText->opacity() > 0.0) {
-                sawText = true;
-                QCOMPARE(voicesText->property("text").toString(), QStringLiteral("1 voice a side"));
-            }
-            QTest::qWait(5);
-        }
-        QVERIFY(sawText);  // (it did fade)
+        QVERIFY(voicesText->isVisible() && voicesText->opacity() == 1.0);  // (it fades: still shown)
+        QStringList texts;
+        QVERIFY(watchFade([&] { return !voicesText->isVisible() || voicesText->opacity() == 0.0; }, [&] {
+            if (voicesText->isVisible() && voicesText->opacity() > 0.0) texts << voicesText->property("text").toString();
+        }));
+        texts.removeDuplicates();
+        QCOMPARE(texts, QStringList{QStringLiteral("1 voice a side")});
     }
 
     void tapsTimeHpInvert() {

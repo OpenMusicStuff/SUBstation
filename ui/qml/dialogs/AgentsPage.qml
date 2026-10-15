@@ -27,6 +27,7 @@ ColumnLayout {
 
     Label {
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         wrapMode: Text.WordWrap
         color: Theme.textDim
         text: qsTr("Agents such as Claude Code connect to it on this computer only. They can read the tracks, " +
@@ -45,6 +46,7 @@ ColumnLayout {
 
     Label {
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         wrapMode: Text.WordWrap
         color: Theme.textDim
         text: qsTr("Their edits (parameters, mixer, notes...) aren't in Edit › Undo: each is a change listed in " +
@@ -105,6 +107,7 @@ ColumnLayout {
     Label {
         objectName: "mcpStatus"
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         wrapMode: Text.WordWrap
         color: page.mcp.error !== "" ? "#ff6b5e" : Theme.textDim
         text: page.mcp.error !== "" ? qsTr("Couldn't start on this port: %1").arg(page.mcp.error)

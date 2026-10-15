@@ -27,7 +27,8 @@ Dialog {
     focus: true
     closePolicy: Popup.CloseOnEscape
     standardButtons: Dialog.Close
-    width: Math.max(500, implicitWidth)
+    // (Never wider than the window: its wrapped texts take the width they are given.)
+    width: Math.min(Math.max(500, implicitWidth), parent ? parent.width - 24 : implicitWidth)
 
     onAboutToShow: {
         Session.audioPreferences.open()

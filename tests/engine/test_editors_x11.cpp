@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <set>
@@ -250,6 +251,72 @@ TEST_CASE("x11 editor: the keys a shortcut can be go to the key filter") {
     // Nothing is held for the filter once the editor is gone.
     engine.closeEditor(effect);
     x.sync();
+}
+
+TEST_CASE("x11 editor: the keyboard changing, Space's grab goes where Space is") {
+    EditorTest t;
+    auto& engine = t.engine;
+    std::vector<sub::EditorKey> asked;
+    sub::setEditorKeyFilter([&](const sub::EditorKey& key) {
+        asked.push_back(key);
+        return key.keysym == XK_space && key.modifiers == 0;
+    });
+    const uint32_t effect = addTestPlugin(engine, engine.trackChain(engine.addTrack()), "SUB Test Effect");
+    XClient x;
+    REQUIRE(x.ok());
+    REQUIRE(engine.openEditor(effect, 0, "Keys"));
+    const Editor editor = findEditor(engine, x, "Keys");
+    REQUIRE(editor.view);
+    x.focus(editor.view);
+    xcb_connection_t* c = xcb_connect(nullptr, nullptr);
+    REQUIRE(!xcb_connection_has_error(c));
+    // A key typed, again and again until `done` (the window may not have read the keyboard yet).
+    const auto typeUntil = [&](xcb_keycode_t keycode, const std::function<bool()>& done) {
+        return pumpUntil(engine, [&] {
+            xcb_test_fake_input(c, XCB_KEY_PRESS, keycode, XCB_CURRENT_TIME, XCB_WINDOW_NONE, 0, 0, 0);
+            xcb_test_fake_input(c, XCB_KEY_RELEASE, keycode, XCB_CURRENT_TIME, XCB_WINDOW_NONE, 0, 0, 0);
+            xcb_flush(c);
+            pumpUntil(engine, [] { return false; }, 0.05);
+            return done();
+        });
+    };
+
+    // Another layout: Space on a key that had nothing. Its grab follows (the window reads the keyboard again).
+    const xcb_setup_t* setup = xcb_get_setup(c);
+    const int count = setup->max_keycode - setup->min_keycode + 1;
+    auto* mapping = xcb_get_keyboard_mapping_reply(
+        c, xcb_get_keyboard_mapping(c, setup->min_keycode, uint8_t(count)), nullptr);
+    REQUIRE(mapping);
+    const int per = mapping->keysyms_per_keycode;
+    const xcb_keysym_t* syms = xcb_get_keyboard_mapping_keysyms(mapping);
+    xcb_keycode_t spare = 0;
+    for (int i = count - 1; i >= 0 && !spare; --i)
+        if (std::all_of(syms + i * per, syms + (i + 1) * per, [](xcb_keysym_t sym) { return sym == 0; }))
+            spare = xcb_keycode_t(setup->min_keycode + i);
+    std::free(mapping);
+    REQUIRE(spare != 0);
+    std::vector<xcb_keysym_t> spaceThere(size_t(per), 0);
+    spaceThere[0] = XK_space;
+    xcb_change_keyboard_mapping(c, 1, spare, uint8_t(per), spaceThere.data());
+    xcb_flush(c);
+    CHECK(typeUntil(spare, [&] { return !asked.empty(); }));
+    REQUIRE(!asked.empty());
+    CHECK_EQ(asked[0].keysym, XK_space);
+    CHECK_EQ(asked[0].modifiers, 0);
+
+    // Taken away again: so is its grab (the plug-in gets the key), and Space's own key stays grabbed.
+    const std::vector<xcb_keysym_t> nothing(size_t(per), 0);
+    xcb_change_keyboard_mapping(c, 1, spare, uint8_t(per), nothing.data());
+    xcb_flush(c);
+    CHECK(typeUntil(spare, [&] {
+        x.sync();
+        return keysOf(x, editor).find(std::to_string(spare) + ":") != std::string::npos;
+    }));
+    asked.clear();
+    x.type(XK_space);
+    CHECK(pumpUntil(engine, [&] { return asked.size() == 1; }));
+    xcb_disconnect(c);
+    engine.closeEditor(effect);
 }
 
 TEST_CASE("x11 editor: the foremost editor closed") {

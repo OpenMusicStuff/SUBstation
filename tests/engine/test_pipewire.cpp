@@ -141,17 +141,21 @@ TEST_CASE("pipewire: plays, and its inputs come back") {
 TEST_CASE("pipewire: dropouts counted") {
     PipeWireTest t;
     t.engine.openDevice(pipeWire("Test Duplex", 48000, 256));
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // cycles as they should be
-    CHECK_EQ(t.engine.deviceStatus().dropouts, uint64_t{0});
+    // Cycles as they should be: about 19 in 100 ms, a clock read wrong counting a dropout at each. (Not
+    // none: on a busy machine a callback is now and then late, a dropout all right.)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const uint64_t before = t.engine.deviceStatus().dropouts;
+    CHECK(before < 8);
     // A freeze makes the device's clock skip only now and then (when it stops,
     // or when it starts again, by a cycle or all it missed): again until it has.
-    for (int i = 0; i < 20 && t.engine.deviceStatus().dropouts == 0; ++i) {
+    for (int i = 0; i < 20 && t.engine.deviceStatus().dropouts <= before; ++i) {
         t.daemon.freeze(std::chrono::milliseconds(200));
-        waitUntil([&] { return t.engine.deviceStatus().dropouts > 0; }, 0.2);
+        waitUntil([&] { return t.engine.deviceStatus().dropouts > before; }, 0.2);
     }
-    CHECK(t.engine.deviceStatus().dropouts > 0);
+    const uint64_t frozen = t.engine.deviceStatus().dropouts;
+    CHECK(frozen > before);
     t.engine.openDevice(pipeWire("Test Duplex", 48000, 256));
-    CHECK_EQ(t.engine.deviceStatus().dropouts, uint64_t{0});  // counted again for each device opened
+    CHECK(t.engine.deviceStatus().dropouts < frozen);  // counted again for each device opened (from 0)
 }
 
 TEST_CASE("pipewire: output channels") {

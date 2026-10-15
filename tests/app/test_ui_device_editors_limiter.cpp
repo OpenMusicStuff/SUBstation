@@ -326,18 +326,17 @@ private Q_SLOTS:
         // Maximize: the Gain knob gives way to Output, the line becomes the Threshold (box and graph).
         click(view, "maximize");
         QCOMPARE(value("maximize"), 1.0);
-        QTest::qWait(200);  // (the 120 ms crossfade)
-        QVERIFY(!find(view, QStringLiteral("gain"))->isVisible());
-        QVERIFY(find(view, QStringLiteral("output"))->isVisible());
+        // (A 120 ms crossfade: on a busy machine its frames come late, so its end is waited for, not 200 ms.)
+        QTRY_VERIFY(!find(view, QStringLiteral("gain"))->isVisible());
+        QTRY_VERIFY(find(view, QStringLiteral("output"))->isVisible());
         QCOMPARE(paramOf(find(view, QStringLiteral("lineBox")))->paramId(), QStringLiteral("threshold"));
         QCOMPARE(box(view, "lineBox")->text(), QStringLiteral("-0.3 dB"));  // (at the ceiling's: nothing changes)
         QVERIFY(graph->maximize());
         QVERIFY(std::abs(graph->lineDb() + 0.3) < 1e-6);
         undo()->undo();
         QCOMPARE(value("maximize"), 0.0);
-        QTest::qWait(200);
-        QVERIFY(find(view, QStringLiteral("gain"))->isVisible());
-        QVERIFY(!find(view, QStringLiteral("output"))->isVisible());
+        QTRY_VERIFY(find(view, QStringLiteral("gain"))->isVisible());
+        QTRY_VERIFY(!find(view, QStringLiteral("output"))->isVisible());
         QCOMPARE(paramOf(find(view, QStringLiteral("lineBox")))->paramId(), QStringLiteral("ceiling"));
         QVERIFY(std::abs(graph->lineDb() + 0.3) < 1e-6);
 

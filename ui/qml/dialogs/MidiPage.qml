@@ -85,6 +85,7 @@ ColumnLayout {
         Label {
             objectName: "midiStatus"
             Layout.fillWidth: true
+            Layout.maximumWidth: 520
             text: page.prefs.status
             wrapMode: Text.Wrap
             color: Theme.textDim
@@ -111,6 +112,7 @@ ColumnLayout {
         id: delivery
         objectName: "midiDelivery"
         Layout.fillWidth: true
+        Layout.maximumWidth: 520
         text: qsTr("Play a few notes: how late the system hands them over shows here.")
         wrapMode: Text.Wrap
         color: Theme.textDim

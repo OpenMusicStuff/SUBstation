@@ -352,6 +352,9 @@ private Q_SLOTS:
         QCOMPARE(undo()->index(), before + 1);
         QCOMPARE(undo()->text(undo()->index() - 1), QStringLiteral("Add A"));
         QCOMPARE(view->property("keyText").toString(), QStringLiteral("A Root Only"));
+        // Off the wheel, or its tooltip opens over it (after its delay: a busy machine's tick(30) is longer) and
+        // takes the next click.
+        QTest::mouseMove(window_, QPoint(1, 1));
         tick(30);  // (no double-click)
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, onNote(shown.wheel, 4));
         QCOMPARE(notes(shown), bitsOf({4, 9}));

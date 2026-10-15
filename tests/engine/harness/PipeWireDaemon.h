@@ -18,11 +18,14 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -106,8 +109,10 @@ private:
             whyNot_ = "the pipewire program isn't installed";
             return;
         }
+        // Its socket listening (it shows before then: bind() makes the file, listen() comes after, and
+        // until then a client is refused: "PipeWire isn't running").
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (!std::filesystem::exists(dir_ / "pipewire-0")) {
+        while (!accepts((dir_ / "pipewire-0").string())) {
             int status = 0;
             if (::waitpid(pid_, &status, WNOHANG) == pid_ || std::chrono::steady_clock::now() > deadline) {
                 stop();
@@ -116,6 +121,19 @@ private:
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+    }
+
+    // Whether a client connecting to the socket at `path` is let in.
+    static bool accepts(const std::string& path) {
+        sockaddr_un address{};
+        address.sun_family = AF_UNIX;
+        if (path.size() >= sizeof address.sun_path) return false;
+        std::memcpy(address.sun_path, path.c_str(), path.size() + 1);
+        const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+        if (fd < 0) return false;
+        const bool connected = ::connect(fd, reinterpret_cast<const sockaddr*>(&address), sizeof address) == 0;
+        ::close(fd);
+        return connected;
     }
 
     static int& count() {

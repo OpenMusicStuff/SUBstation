@@ -24,6 +24,7 @@
 #include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
+#include <QtQuickTest/quicktest.h>
 
 #include <memory>
 
@@ -255,10 +256,23 @@ public:
         QObject* m = menu();
         QQuickItem* item = menuItem(m, text);
         if (!item || !item->isEnabled()) return false;
-        QTest::qWait(50);  // (placed where it fits in the window: on the next frame)
-        moveTo(window_, centerOf(item), {}, Qt::NoButton);
-        click(window_, centerOf(item));
+        const QPoint at = placed(item);
+        moveTo(window_, at, {}, Qt::NoButton);
+        click(window_, at);
         return QTest::qWaitFor([m] { return !m->property("visible").toBool(); }, 3000);
+    }
+    // Where an item of a menu is once the menu has been placed where it fits in the window (as it is laid
+    // out: a frame or so after it opens; on a busy machine later than any fixed wait): the same a frame later.
+    QPoint placed(QQuickItem* item) {
+        QPoint at = centerOf(item);
+        for (int i = 0; i < 50; ++i) {
+            QQuickTest::qWaitForPolish(window_);
+            at = centerOf(item);
+            QSignalSpy frame(window_, &QQuickWindow::frameSwapped);
+            window_->update();
+            if (!frame.wait(1000) || centerOf(item) == at) break;
+        }
+        return centerOf(item);
     }
     bool closeMenu() {
         QObject* m = menu();
