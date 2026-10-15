@@ -375,6 +375,13 @@ private Q_SLOTS:
         QCOMPARE(padSample(kickPad), kick);
         QCOMPARE(padSample(snarePad), snare);
         QVERIFY(!similar.rackCanReturn(track, rack));
+        // Their samples saved as their references: one undo step for them all (none when they are already).
+        const int before = f.stack.count();
+        similar.saveRackReferences(track, rack);
+        QCOMPARE(f.stack.count(), before + 1);
+        QCOMPARE(samplerState::reference(deviceState::fromModel(padSampler(f.project.chain(track, kickPad))->state)), kick);
+        similar.saveRackReferences(track, rack);
+        QCOMPARE(f.stack.count(), before + 1);
         // Every pad locked: nothing to step.
         for (const QString& pad : {kickPad, snarePad}) f.editor.setChainParam(track, pad, QStringLiteral("locked"), 1.0);
         QSignalSpy messages(&similar, &SimilarSamples::statusMessage);

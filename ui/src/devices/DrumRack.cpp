@@ -147,7 +147,7 @@ void DrumRack::refresh() {
     for (int note = 0; note < 128; ++note) filled.append(false);
     if (drums) {
         for (const sub::app::Chain& chain : drums->chains) {
-            if (chain.receiveNote < 0)
+            if (chain.receiveNote < 0 || chain.receiveNote > 127)
                 continue;
             filled[chain.receiveNote] = true;
             if (sub::app::padSampler(chain) != nullptr) {

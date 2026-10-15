@@ -359,10 +359,11 @@ void Session::soloSelectedTracks() {
 void Session::armSelectedTracks() {
     QStringList tracks;
     for (const QString& id : ownersAmong(*project_, selection_->trackIds())) {
-        if (project_->hasTrack(id) && project_->track(id).hasClips()) tracks.append(id);  // (groups record nothing)
+        // (Groups record nothing; nor do frozen tracks, and the others stay as they are for them.)
+        if (project_->hasTrack(id) && project_->track(id).hasClips() && !project_->isFrozen(id)) tracks.append(id);
     }
     if (tracks.isEmpty()) {
-        Q_EMIT statusMessage(QStringLiteral("Select a track to arm."));
+        Q_EMIT statusMessage(QStringLiteral("Select a track to arm (a frozen track doesn't record: unfreeze it first)."));
         return;
     }
     const bool arm = !std::all_of(tracks.begin(), tracks.end(), [this](const QString& id) { return project_->track(id).armed; });

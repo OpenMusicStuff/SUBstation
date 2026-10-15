@@ -203,6 +203,7 @@ void ProjectEditor::setChainParam(const QString& trackId, const QString& chainId
         const std::vector<Device> before = project_->track(trackId).devices;
         std::vector<Device> after = before;
         Device* rack = findChain(after, chainId).rack;
+        if (rack == nullptr || !rack->isDrumRack()) return;
         for (Chain& pad : rack->chains) {
             if (pad.id == chainId) {
                 pad.receiveNote = static_cast<int>(value);

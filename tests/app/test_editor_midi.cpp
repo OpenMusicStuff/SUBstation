@@ -212,6 +212,9 @@ private Q_SLOTS:
         got.clear();
         for (const Note& n : clip.notes) got.push_back({n.pitch, round6(clip.startBeat + n.start), round6(n.length)});
         QVERIFY((got == std::vector<Got>{{C, 1.1, 0.4}, {E, 1.5, 0.5}, {G, 4.0, 0.5}}));
+        // The clip reaches the last note's end (put on the grid past the take's), so all of it plays.
+        QVERIFY(round6(clip.startBeat + clip.durationBeats) >= 4.5);
+        QCOMPARE(clip.playedNotes().back().end - clip.playedNotes().back().start, 0.5);
     }
 
     // --- More of the clip editor on MIDI clips ---

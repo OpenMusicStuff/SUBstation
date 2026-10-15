@@ -996,7 +996,10 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
         for (const BendPoint& point : notes::simplifiedBend(bend)) note = notes::withBendPoint(note, point);
         clipNotes.push_back(std::move(note));
     }
-    return Clip::midi(newId(), QString(), start, end - start, 0.0, notes::normalize(clipNotes));
+    // (Long enough for the notes' ends: one put on the grid may end after the take.)
+    double length = end - start;
+    for (const Note& note : clipNotes) length = std::max(length, note.start + note.length);
+    return Clip::midi(newId(), QString(), start, length, 0.0, notes::normalize(clipNotes));
 }
 
 }  // namespace sub::app

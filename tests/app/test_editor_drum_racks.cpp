@@ -180,6 +180,31 @@ private Q_SLOTS:
         loadInto(fixed, edited);
         QCOMPARE(fixed.device(track, rackId).chains[0].receiveNote, 36);
         QCOMPARE(fixed.device(track, rackId).chains[1].receiveNote, 37);
+        // A pad with a key of its own keeps it: the one taking another's gets a key no pad has.
+        {
+            QJsonArray three = chains;
+            QJsonObject a = chains[0].toObject(), b = chains[1].toObject(), c = chains[0].toObject();
+            b[QStringLiteral("receive_note")] = 36;
+            c[QStringLiteral("id")] = QStringLiteral("third");
+            c[QStringLiteral("receive_note")] = 37;
+            three = QJsonArray{a, b, c};
+            QJsonObject r = rack;
+            r[QStringLiteral("chains")] = three;
+            QJsonArray d = devices;
+            d[0] = r;
+            QJsonObject tt = t;
+            tt[QStringLiteral("devices")] = d;
+            QJsonArray ts = tracks;
+            ts[0] = tt;
+            QJsonObject e = edited;
+            e[QStringLiteral("tracks")] = ts;
+            Project kept;
+            loadInto(kept, e);
+            const auto& pads = kept.device(track, rackId).chains;
+            QCOMPARE(pads[0].receiveNote, 36);
+            QCOMPARE(pads[1].receiveNote, 38);
+            QCOMPARE(pads[2].receiveNote, 37);
+        }
         rack.remove(QStringLiteral("drum"));
         devices[0] = rack;
         t[QStringLiteral("devices")] = devices;

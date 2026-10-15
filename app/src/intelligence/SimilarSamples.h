@@ -52,7 +52,7 @@ public:
     Q_INVOKABLE void saveReference(const QString& trackId, const QString& deviceId);
     // The Sampler plays its reference again (Return to Reference). One undo step.
     Q_INVOKABLE void returnToReference(const QString& trackId, const QString& deviceId);
-    // The same for every pad of a Drum Rack but the locked ones (one undo step each).
+    // The same for every pad of a Drum Rack but the locked ones (one undo step for them all).
     Q_INVOKABLE void saveRackReferences(const QString& trackId, const QString& rackId);
     Q_INVOKABLE void returnRackToReferences(const QString& trackId, const QString& rackId);
     // Whether the Sampler has a reference other than the sample it plays (Return to Reference is enabled).

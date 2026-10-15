@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include "editor/EditorSupport.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/SoundSimilarity.h"
 #include "model/DeviceState.h"
@@ -78,7 +79,14 @@ void SimilarSamples::returnToReference(const QString& trackId, const QString& de
 }
 
 void SimilarSamples::saveRackReferences(const QString& trackId, const QString& rackId) {
-    const QStringList samplers = rackSamplers(trackId, rackId);
+    QStringList samplers;  // (those whose sample isn't their saved reference already)
+    for (const QString& sampler : rackSamplers(trackId, rackId)) {
+        const deviceState::Values values = deviceState::fromModel(project_->device(trackId, sampler).state);
+        if (!samplerState::referenceSaved(values) || key(samplerState::reference(values)) != key(samplerState::sample(values)))
+            samplers.append(sampler);
+    }
+    if (samplers.isEmpty()) return;
+    const editing::Macro step(editor_->undoStack(), QStringLiteral("Save as Similar References"));  // (one undo step)
     for (const QString& sampler : samplers) editor_->setSimilarReference(trackId, sampler);
 }
 

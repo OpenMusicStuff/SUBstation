@@ -870,22 +870,27 @@ Device deviceFromJson(const QJsonValue& value) {
     if (device.isRack()) {
         device.drum = truthy(d.value(QStringLiteral("drum")));
         for (const QJsonValue& c : listOr(d, QStringLiteral("chains"))) device.chains.push_back(chainFromJson(c));
-        // A Drum Rack's pads: a key each (one without, or a key taken twice, gets the first free one).
+        // A Drum Rack's pads: a key each. The first pad of each key keeps it; one
+        // without a key, or a key taken already, gets the first key no pad has.
         QSet<int> keys;
+        std::vector<Chain*> keyless;
         for (Chain& chain : device.chains) {
             if (!device.drum) {
                 chain.receiveNote = -1;
                 chain.locked = false;
-                continue;
+            } else if (chain.receiveNote < 0 || keys.contains(chain.receiveNote)) {
+                keyless.push_back(&chain);
+            } else {
+                keys.insert(chain.receiveNote);
             }
-            if (chain.receiveNote < 0 || keys.contains(chain.receiveNote)) {
-                int note = kDrumFirstPadNote;
-                while (note <= 127 && keys.contains(note)) ++note;
-                if (note > 127) note = 0;
-                while (note < kDrumFirstPadNote && keys.contains(note)) ++note;
-                chain.receiveNote = note;
-            }
-            keys.insert(chain.receiveNote);
+        }
+        for (Chain* chain : keyless) {
+            int note = kDrumFirstPadNote;
+            while (note <= 127 && keys.contains(note)) ++note;
+            if (note > 127) note = 0;
+            while (note < kDrumFirstPadNote && keys.contains(note)) ++note;
+            chain->receiveNote = note;
+            keys.insert(note);
         }
         const QSet<QString> inside = innerDeviceIds(device);
         std::vector<MacroMapping> mappings;

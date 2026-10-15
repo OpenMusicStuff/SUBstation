@@ -867,6 +867,12 @@ private Q_SLOTS:
         f.selection().selectTrack(c, true);
         s.armSelectedTracks();
         QVERIFY(f.project().track(c).armed && !f.project().track(a).armed);
+        // A frozen track doesn't record: selected alone, nothing is disarmed for it.
+        f.editor().freezeTracks({{a, Freeze{QStringLiteral("C:/frozen/a.wav"), 4.0}}});
+        QVERIFY(f.project().isFrozen(a));
+        f.selection().selectTrack(a, true);
+        s.armSelectedTracks();
+        QVERIFY(!f.project().track(a).armed && f.project().track(c).armed);
     }
 
     // --- Duplicating tracks, copying automation ---
