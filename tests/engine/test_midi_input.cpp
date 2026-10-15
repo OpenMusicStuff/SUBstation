@@ -76,6 +76,52 @@ TEST_CASE("live notes reach the instrument at their offsets") {
     live::liveNotesReachTheInstrument(t);
 }
 
+TEST_CASE("an instrument resting in silence plays the next note at its offset") {
+    // Silent for longer than a device takes to rest (Renderer::kRestAfter) and
+    // to be looked at again (kLookEvery): the note wakes it, from its first sample.
+    RecordingTest t;
+    auto& driver = t.driver;
+    auto& engine = t.engine;
+    keys(engine, driver);
+    CHECK(allAre(heard(driver, 3 * kRate / kBuffer), 0.0));
+    send(engine, {kNoteOn, 60, 127}, 37);
+    CHECK_ALLCLOSE(heard(driver), held({{37, kBuffer, 127}}), 1e-7, 1e-6);
+    send(engine, {kNoteOff, 60, 0}, 10);
+    CHECK_ALLCLOSE(heard(driver), held({{0, 10, 127}}), 1e-7, 1e-6);
+}
+
+TEST_CASE("the time each track and device takes, while measured") {
+    RecordingTest t;
+    auto& driver = t.driver;
+    auto& engine = t.engine;
+    const uint32_t track = keys(engine, driver);
+    const uint32_t synth = engine.chainProcessors(engine.trackChain(track)).front();
+    const auto timeOf = [](const auto& entries, uint32_t id) {
+        for (const auto& [key, ns] : entries)
+            if (key == id) return ns;
+        return uint64_t{0};
+    };
+    send(engine, {kNoteOn, 60, 127}, 0);  // (sounding: not resting)
+    driver.process(4);
+    const sub::CpuReading unmeasured = engine.takeCpu();
+    CHECK_EQ(timeOf(unmeasured.tracks, track), uint64_t{0});
+    CHECK_EQ(timeOf(unmeasured.processors, synth), uint64_t{0});
+    engine.setMeasuringCpu(true);
+    engine.takeCpu();
+    driver.process(8);
+    const sub::CpuReading reading = engine.takeCpu();
+    CHECK(reading.wallNs > 0);
+    const uint64_t trackNs = timeOf(reading.tracks, track);
+    const uint64_t synthNs = timeOf(reading.processors, synth);
+    CHECK(synthNs > 0);
+    CHECK(trackNs >= synthNs);  // (the track's time takes its devices' in)
+    CHECK(timeOf(reading.tracks, sub::Engine::kMaster) > 0);
+    engine.setMeasuringCpu(false);
+    engine.takeCpu();
+    driver.process(4);
+    CHECK_EQ(timeOf(engine.takeCpu().processors, synth), uint64_t{0});
+}
+
 void subtest::live::aNoteReleasedAsItIsPlayedStillSounds(RecordingTest& t) {
     auto& driver = t.driver;
     auto& engine = t.engine;

@@ -1,7 +1,7 @@
 #pragma once
 // VST3 hosting: the host context plug-ins see ("SUBstation"), loaded modules
-// (shared by all instances from the same file and unloaded with the last one),
-// scanning and instantiation.
+// (shared by all instances from the same file; one that has made an instance
+// stays loaded until the process ends), scanning and instantiation.
 
 #include <map>
 #include <memory>
@@ -30,10 +30,14 @@ public:
 
 private:
     Vst3Format() = default;
-    VST3::Hosting::Module::Ptr loadModule(const std::string& path);
+    // `keepLoaded`: never unloaded after this (an instance is made from it). Plug-ins
+    // leave threads and timers running past terminate() and ExitDll (Splice Sounds'),
+    // which crash once their code is unmapped; hosts keep plug-ins' modules loaded.
+    VST3::Hosting::Module::Ptr loadModule(const std::string& path, bool keepLoaded);
 
     std::mutex mutex_;
     std::map<std::string, std::weak_ptr<VST3::Hosting::Module>> modules_;  // by normalised path
+    std::vector<VST3::Hosting::Module::Ptr> kept_;                         // (never freed: see instance())
 };
 
 }  // namespace sub::vst3

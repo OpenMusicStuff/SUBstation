@@ -91,6 +91,7 @@ class Project;
 class ProjectEditor;
 class Render;
 class RenderProgress;
+class CpuUsage;
 class Selection;
 class SoundSimilarity;
 class SimilarSamples;
@@ -120,6 +121,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::ArrangementActions* arrangement READ arrangement CONSTANT)
     Q_PROPERTY(sub::app::DeviceSelection* deviceSelection READ deviceSelection CONSTANT)
     Q_PROPERTY(sub::app::RenderProgress* render READ render CONSTANT)
+    Q_PROPERTY(sub::app::CpuUsage* cpuUsage READ cpuUsage CONSTANT)
     Q_PROPERTY(sub::app::ComputerKeyboard* computerKeyboard READ computerKeyboard CONSTANT)
     Q_PROPERTY(sub::app::ModulationLearn* modulationLearn READ modulationLearn CONSTANT)
     Q_PROPERTY(sub::app::FileManager* files READ files CONSTANT)
@@ -224,6 +226,7 @@ public:
     ArrangementActions* arrangement() const { return arrangement_; }
     DeviceSelection* deviceSelection() const { return devices_; }
     RenderProgress* render() const { return render_; }
+    CpuUsage* cpuUsage() const { return cpuUsage_; }
     ComputerKeyboard* computerKeyboard() const { return keyboard_; }
     ModulationLearn* modulationLearn() const { return learn_; }
     FileManager* files() const { return files_; }
@@ -528,6 +531,7 @@ private:
     BrowserController* browser_ = nullptr;
     PresetIndex* presets_ = nullptr;
     RenderProgress* render_ = nullptr;
+    CpuUsage* cpuUsage_ = nullptr;
     ArrangementActions* arrangement_ = nullptr;
     DeviceSelection* devices_ = nullptr;
     ComputerKeyboard* keyboard_ = nullptr;

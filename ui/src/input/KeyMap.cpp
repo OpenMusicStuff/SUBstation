@@ -94,6 +94,7 @@ const std::vector<KeyMap::Command>& KeyMap::allCommands() {
         {"browser", "View", "Browser"},
         {"fileManager", "View", "File Manager"},
         {"agentChangesView", "View", "Agent Changes"},
+        {"cpuUsage", "View", "CPU Usage"},
         {"deviceView", "View", "Device View"},
         {"infoView", "View", "Info View"},
         {"clipView", "View", "Clip View"},

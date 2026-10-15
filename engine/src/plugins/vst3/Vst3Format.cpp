@@ -35,29 +35,32 @@ bool isInstrument(const VST3::Hosting::ClassInfo& info) {
 }  // namespace
 
 Vst3Format& Vst3Format::instance() {
-    static Vst3Format format;
-    return format;
+    static auto* format = new Vst3Format;  // never freed: its kept modules aren't unloaded at exit either
+    return *format;
 }
 
 std::vector<std::string> Vst3Format::defaultSearchPaths() const { return systemPluginFolders(); }
 
 std::string Vst3Format::binaryInBundle(const std::string& bundleName) { return vst3::binaryInBundle(bundleName); }
 
-VST3::Hosting::Module::Ptr Vst3Format::loadModule(const std::string& path) {
+VST3::Hosting::Module::Ptr Vst3Format::loadModule(const std::string& path, bool keepLoaded) {
     std::lock_guard lock(mutex_);
     auto& slot = modules_[platform::fileKey(path)];  // one module per file
-    if (auto module = slot.lock()) return module;
-    std::string error;
-    auto module = VST3::Hosting::Module::create(path, error);
-    if (!module) throw std::runtime_error(error.empty() ? "Could not load " + path : error);
-    module->getFactory().setHostContext(hostContext());
-    slot = module;
+    auto module = slot.lock();
+    if (!module) {
+        std::string error;
+        module = VST3::Hosting::Module::create(path, error);
+        if (!module) throw std::runtime_error(error.empty() ? "Could not load " + path : error);
+        module->getFactory().setHostContext(hostContext());
+        slot = module;
+    }
+    if (keepLoaded && std::find(kept_.begin(), kept_.end(), module) == kept_.end()) kept_.push_back(module);
     return module;
 }
 
 std::vector<PluginDescription> Vst3Format::scanFile(const std::string& path) {
     prepareThreadForModules();
-    const auto module = loadModule(path);
+    const auto module = loadModule(path, false);
     const auto& factory = module->getFactory();
     const std::string factoryVendor = factory.info().vendor();
     std::vector<PluginDescription> found;
@@ -82,7 +85,7 @@ std::shared_ptr<Processor> Vst3Format::instantiate(const std::string& path, cons
     prepareThreadForModules();
     const auto id = VST3::UID::fromString(uid, false);
     if (!id) throw std::invalid_argument("Not a VST3 class id: " + uid);
-    const auto module = loadModule(path);
+    const auto module = loadModule(path, true);
     for (const auto& info : module->getFactory().classInfos()) {
         if (info.ID() == *id && info.category() == kVstAudioEffectClass) {
             auto processor = std::make_shared<Vst3Processor>(module, info, hostContext());

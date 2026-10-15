@@ -15,6 +15,7 @@
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
 #include "intelligence/Harmony.h"
+#include "session/CpuUsage.h"
 #include "intelligence/Humanizer.h"
 #include "intelligence/SimilarSamples.h"
 #include "intelligence/SoundSimilarity.h"
@@ -79,6 +80,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     browser_ = new BrowserController(plugins_, browserOptions, this);
     presets_ = new PresetIndex(this);
     render_ = new RenderProgress(this);
+    cpuUsage_ = new CpuUsage(project_, bridge_, this);
     arrangement_ = new ArrangementActions(editor_, selection_, bridge_, render_, this);
     devices_ = new DeviceSelection(editor_, selection_, bridge_, this);
     keyboard_ = new ComputerKeyboard(bridge_, this);

@@ -145,6 +145,7 @@
 #include "model/Track.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QList>
 #include <QMap>
 #include <QObject>
@@ -306,6 +307,15 @@ public:
     // The newest `frames` samples of the master output (mono, oldest first; fewer if there aren't as many).
     Q_INVOKABLE QList<float> scopeSamples(int frames) const;
     double cpuLoad() const;  // the audio callback's time over its budget (0..1, more when late)
+    // The time spent on each track and device (CpuUsage, View › CPU Usage): measured
+    // only while asked for (setMeasuringCpu), as the engine's takeCpu() reads it.
+    struct CpuTimes {
+        qint64 wallNs = 0;                 // over this much wall-clock time (0: the first reading)
+        QHash<QString, quint64> tracks;    // track id (or kMaster) -> ns
+        QHash<QString, quint64> devices;   // device id -> ns
+    };
+    void setMeasuringCpu(bool on);
+    CpuTimes takeCpu();
     double sampleRate() const;  // the engine's
 
     // --- Sources and waveforms ------------------------------------------------------------

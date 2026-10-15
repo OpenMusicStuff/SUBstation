@@ -9,8 +9,9 @@
 namespace sub {
 namespace {
 
-// How long an idle worker waits for the next run before it sleeps: consecutive
-// chunks of one callback come within microseconds, the next callback a buffer later.
+// How long a worker waits for the next run before it sleeps, when one follows
+// (Scheduler::run's runFollows): consecutive chunks of one callback come within
+// microseconds. (The next callback comes a buffer later: not spun for.)
 constexpr auto kSpinBeforeSleep = std::chrono::microseconds(50);
 // Inside a run, waiting for a node to become ready: pause, then give way.
 constexpr int kPausesBeforeYield = 2000;
@@ -113,13 +114,14 @@ void TaskGraph::push(int node) noexcept {
 
 Scheduler::Scheduler(int threads) {
     const int workers = std::max(0, threads - 1);
+    sleeps_ = std::make_unique<Sleep[]>(static_cast<size_t>(workers));
     workers_.reserve(static_cast<size_t>(workers));
     try {
         for (int w = 1; w <= workers; ++w) workers_.emplace_back([this, w] { workerMain(w); });
         for (int started = started_.load(); started < workers; started = started_.load()) started_.wait(started);
     } catch (...) {  // a thread couldn't start: those that did end (the destructor won't run)
         state_.store(kQuit, std::memory_order_seq_cst);
-        state_.notify_all();
+        for (int w = 1; w <= static_cast<int>(workers_.size()); ++w) wake(w);
         for (auto& worker : workers_) worker.join();
         throw;
     }
@@ -127,8 +129,16 @@ Scheduler::Scheduler(int threads) {
 
 Scheduler::~Scheduler() {
     state_.store(kQuit, std::memory_order_seq_cst);
-    state_.notify_all();
+    for (int w = 1; w <= static_cast<int>(workers_.size()); ++w) wake(w);
     for (auto& worker : workers_) worker.join();
+}
+
+void Scheduler::wake(int worker) noexcept {
+    Sleep& sleep = sleeps_[static_cast<size_t>(worker) - 1];
+    // (After state_'s store: the worker either sees it before it sleeps, or is asleep here.)
+    if (!sleep.asleep.load(std::memory_order_seq_cst)) return;
+    sleep.wakes.fetch_add(1, std::memory_order_seq_cst);
+    sleep.wakes.notify_one();
 }
 
 void Scheduler::setWorkgroup(const platform::AudioWorkgroup& workgroup) {
@@ -138,21 +148,24 @@ void Scheduler::setWorkgroup(const platform::AudioWorkgroup& workgroup) {
     workgroupVersion_.fetch_add(1, std::memory_order_release);
 }
 
-void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel) noexcept {
+void Scheduler::run(TaskGraph& graph, Job job, void* context, bool parallel, int helpers,
+                    bool runFollows) noexcept {
     const int size = graph.size();
     if (!parallel || workers_.empty() || size < 2) {
         for (int node = 0; node < size; ++node) job(context, node, 0);  // the graph's order: inputs first
         return;
     }
+    const int workers = static_cast<int>(workers_.size());
     graph.reset();
     graph_ = &graph;
     job_ = job;
     context_ = context;
-    // Open the run (publishing the above), and wake the workers that sleep. A
-    // worker either sees the new state before it sleeps, or is counted here.
+    helpers_ = helpers < 0 ? workers : std::clamp(helpers, 1, workers);
+    runFollows_ = runFollows;
+    // Open the run (publishing the above), and wake the workers it takes that sleep.
     const uint64_t open = (++runs_ << 1) | 1;
     state_.store(open, std::memory_order_seq_cst);
-    if (sleepers_.load(std::memory_order_seq_cst) > 0) state_.notify_all();
+    for (int w = 1; w <= helpers_; ++w) wake(w);
 
     work(0);
     while (graph.done_.load(std::memory_order_acquire) < size) cpuRelax();  // the last nodes on the workers
@@ -204,7 +217,9 @@ void Scheduler::workerMain(int worker) noexcept {
     std::optional<platform::ScopedWorkgroupMembership> membership;  // (left before the priority goes back)
     uint32_t joinedWorkgroup = 0;  // the version of the workgroup it is a member of (0: none)
     auto lastSlept = std::chrono::steady_clock::now();
-    uint64_t joined = 0;  // the last run it took part in
+    uint64_t joined = 0;  // the last run it took part in (or was left out of)
+    bool spin = false;    // the last run it took part in has another right after it
+    Sleep& sleep = sleeps_[static_cast<size_t>(worker) - 1];
     for (;;) {
         if (workgroupVersion_.load(std::memory_order_acquire) != joinedWorkgroup) {
             const std::unique_lock lock(workgroupMutex_, std::try_to_lock);
@@ -220,27 +235,41 @@ void Scheduler::workerMain(int worker) noexcept {
             napIfAwakeTooLong(lastSlept);
             state = state_.load(std::memory_order_seq_cst);
         }
-        const auto deadline = std::chrono::steady_clock::now() + kSpinBeforeSleep;
-        for (int spins = 1; state != kQuit && (!(state & 1) || state == joined); ++spins) {
-            if (spins % 64 == 0 && std::chrono::steady_clock::now() > deadline) break;
-            cpuRelax();
-            state = state_.load(std::memory_order_seq_cst);
+        if (spin) {
+            const auto deadline = std::chrono::steady_clock::now() + kSpinBeforeSleep;
+            for (int spins = 1; state != kQuit && (!(state & 1) || state == joined); ++spins) {
+                if (spins % 64 == 0 && std::chrono::steady_clock::now() > deadline) break;
+                cpuRelax();
+                state = state_.load(std::memory_order_seq_cst);
+            }
+            spin = false;
         }
         if (state == kQuit) break;
         if ((state & 1) && state != joined) {
             active_.fetch_add(1, std::memory_order_seq_cst);
-            if (state_.load(std::memory_order_seq_cst) == state) {  // still open: the run's data is valid
+            // Still open: the run's data (and helpers_) is valid. A worker the run
+            // doesn't take sleeps through it.
+            if (state_.load(std::memory_order_seq_cst) == state && worker <= helpers_) {
                 ScopedNoDenormals noDenormals;
                 work(worker, &lastSlept);
+                spin = runFollows_;
             }
             active_.fetch_sub(1, std::memory_order_seq_cst);
             joined = state;
             continue;
         }
-        sleepers_.fetch_add(1, std::memory_order_seq_cst);
+        // Asleep before looking once more: run() either sees it asleep (and
+        // wakes it) or opened its run before this looks.
+        const uint32_t wakes = sleep.wakes.load(std::memory_order_seq_cst);
+        sleep.asleep.store(true, std::memory_order_seq_cst);
+        state = state_.load(std::memory_order_seq_cst);
+        if (state == kQuit || ((state & 1) && state != joined)) {
+            sleep.asleep.store(false, std::memory_order_seq_cst);
+            continue;
+        }
         const auto waitFrom = std::chrono::steady_clock::now();
-        state_.wait(state, std::memory_order_seq_cst);  // returns at once if a run opened meanwhile
-        sleepers_.fetch_sub(1, std::memory_order_seq_cst);
+        sleep.wakes.wait(wakes, std::memory_order_seq_cst);  // returns at once if woken meanwhile
+        sleep.asleep.store(false, std::memory_order_seq_cst);
         // Slept only if it waited for a wake-up: a wait that returned at once took under a microsecond.
         const auto woke = std::chrono::steady_clock::now();
         if (woke - waitFrom > kSleptAtLeast) lastSlept = woke;

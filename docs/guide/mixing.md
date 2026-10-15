@@ -171,6 +171,28 @@ Hi-Quality on, the Sidechain's and the Transient Shaper's lookahead) is compensa
 A device's tooltip shows its latency. A track you monitor live isn't delayed to line up
 with others (see [recording.md](recording.md#monitoring)).
 
+## Finding what costs CPU
+
+**View › CPU Usage** (Ctrl+Alt+U) opens a window listing every track, then the returns
+and the master, each followed by its devices, with how much of one CPU core each takes.
+It updates twice a second; each row shows the average lately and its peak, and a bar
+that turns yellow from 5% of a core and red from 15%. **Costliest first** puts the
+heaviest tracks at the top, each with its heaviest devices first. Clicking a row selects
+its track.
+
+- A track's number includes its clips and devices; a group's is only what it adds to the
+  tracks in it. A rack's is what the devices in it add up to; they follow it, named after
+  their chain.
+- A plug-in in a sandbox (see [plugins.md](plugins.md#plug-in-hosting)) counts the time
+  the audio thread waits for it.
+- A device whose input has been silent for a while (no audio, no notes) rests and costs
+  nothing until sound comes again: an instrument or an effect on a track that isn't
+  playing shows 0.
+- The top line also shows the audio thread's load, as the transport bar's CPU meter does.
+  Nothing is measured while the window is closed.
+
+The costliest tracks are the ones to freeze (below).
+
 ## Freezing and flattening
 
 Freezing a track renders what its devices put out into an audio file, and the track

@@ -17,7 +17,9 @@
 // one restored it, so it flickered, most visibly in silence (a bright flat
 // line blinking against the axis). Audio that comes, however quiet, always
 // shows (silence as a flat line): a threshold there would blink the trace on
-// and off as a dying tail hovers around it. It skips its work while hidden.
+// and off as a dying tail hovers around it. New samples the same as those
+// shown (the engine writes silence on every buffer while stopped) don't
+// repaint: a repaint redraws the window. It skips its work while hidden.
 //
 // kWindow is a fixed number of samples (about 21 ms at 48 kHz) because the
 // engine's sample rate is behind its edit lock, which the scope shouldn't take

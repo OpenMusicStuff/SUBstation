@@ -561,6 +561,8 @@ ApplicationWindow {
                 Action { id: fileManagerAction; objectName: "fileManager"; text: qsTr("&File Manager"); shortcut: window.keyOf(objectName); checkable: true; checked: false }
                 // What agents changed through the MCP server, apart from Undo: each to rewind on its own.
                 Action { id: agentChangesAction; objectName: "agentChangesView"; text: qsTr("A&gent Changes"); shortcut: window.keyOf(objectName); checkable: true; checked: false }
+                // What each track and device costs the audio thread, in a window of its own (measured while open).
+                Action { id: cpuUsageAction; objectName: "cpuUsage"; text: qsTr("CPU &Usage"); shortcut: window.keyOf(objectName); checkable: true; checked: false }
                 Action { id: deviceViewAction; objectName: "deviceView"; text: qsTr("&Device View"); shortcut: window.keyOf(objectName); checkable: true; checked: true }
                 // (Hidden, or with the device view hidden, the tooltips pop up again.)
                 Action { id: infoViewAction; objectName: "infoView"; shortcut: window.keyOf(objectName); text: qsTr("&Info View"); checkable: true; checked: true }
@@ -923,6 +925,11 @@ ApplicationWindow {
 
     RenderDialog {
         id: renderDialog
+    }
+
+    CpuUsageWindow {
+        visible: cpuUsageAction.checked
+        onClosing: cpuUsageAction.checked = false
     }
 
     FileDialog {

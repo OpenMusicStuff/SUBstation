@@ -2,6 +2,7 @@
 #include "Engine.h"
 
 #include <algorithm>
+#include <chrono>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -397,6 +398,32 @@ std::vector<DeviceMeterReading> Engine::takeDeviceMeters() {
         meters.push_back({id, left, right});
     }
     return meters;
+}
+
+void Engine::setMeasuringCpu(bool on) {
+    renderer_.setMeasuringCpu(on);
+    std::lock_guard lock(mutex_);
+    cpuTakenNs_ = 0;  // (the next reading starts the measurement)
+}
+
+CpuReading Engine::takeCpu() {
+    std::lock_guard lock(mutex_);
+    CpuReading reading;
+    const int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    reading.wallNs = cpuTakenNs_ > 0 ? now - cpuTakenNs_ : 0;
+    cpuTakenNs_ = now;
+    reading.tracks.reserve(tracks_.size() + 1);
+    reading.tracks.emplace_back(kMaster, master_.params->cpuNs.exchange(0, std::memory_order_relaxed));
+    for (const auto& track : tracks_) {
+        reading.tracks.emplace_back(track.id, track.params->cpuNs.exchange(0, std::memory_order_relaxed));
+    }
+    reading.processors.reserve(processors_.size());
+    for (auto& [id, entry] : processors_) {
+        if (entry.processor) reading.processors.emplace_back(id, entry.processor->takeCpu());
+    }
+    return reading;
 }
 
 int Engine::trackLatency(uint32_t trackId) {

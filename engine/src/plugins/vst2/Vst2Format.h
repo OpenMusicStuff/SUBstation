@@ -1,7 +1,7 @@
 #pragma once
 // VST2 hosting, through Xaymar's clean-room vst2sdk (Vst2Sdk.h): loaded
-// libraries (shared by all instances from the same file and unloaded with the
-// last one), what the host answers plug-ins (the host callback), scanning and
+// libraries (shared by all instances from the same file; one that has made an
+// instance stays loaded until the process ends), what the host answers plug-ins (the host callback), scanning and
 // instantiation. A VST2 plug-in is known by its unique id (8 hex digits:
 // vst2Uid); a "shell" library holds several (Waves'), each made by answering
 // its id when the library asks which one to make.
@@ -65,10 +65,12 @@ public:
 
 private:
     Vst2Format() = default;
-    std::shared_ptr<Module> loadModule(const std::string& path);
+    // `keepLoaded`: never unloaded after this, as VST3 modules (Vst3Format::loadModule).
+    std::shared_ptr<Module> loadModule(const std::string& path, bool keepLoaded);
 
     std::mutex mutex_;
     std::map<std::string, std::weak_ptr<Module>> modules_;  // by normalised path
+    std::vector<std::shared_ptr<Module>> kept_;             // (never freed: see instance())
 };
 
 // Asks an instance (any opcode); `ptr` as the call takes it.

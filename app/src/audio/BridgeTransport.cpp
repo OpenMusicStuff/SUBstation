@@ -162,6 +162,30 @@ QList<float> EngineBridge::scopeSamples(int frames) const {
 
 double EngineBridge::cpuLoad() const { return engine_.cpuLoad(); }
 
+void EngineBridge::setMeasuringCpu(bool on) { engine_.setMeasuringCpu(on); }
+
+EngineBridge::CpuTimes EngineBridge::takeCpu() {
+    const Private& d = *d_;
+    const sub::CpuReading reading = engine_.takeCpu();
+    CpuTimes times;
+    times.wallNs = reading.wallNs;
+    QHash<quint32, QString> byEngineId;
+    for (auto it = d.trackIds.constBegin(); it != d.trackIds.constEnd(); ++it) byEngineId.insert(it.value(), it.key());
+    for (const auto& [engineId, ns] : reading.tracks) {
+        const auto key = byEngineId.constFind(engineId);
+        if (key != byEngineId.constEnd()) times.tracks.insert(*key, ns);
+    }
+    QHash<quint32, QString> byProcessor;
+    for (auto it = d.pids.constBegin(); it != d.pids.constEnd(); ++it) {
+        if (it.value()) byProcessor.insert(*it.value(), it.key());
+    }
+    for (const auto& [processor, ns] : reading.processors) {
+        const auto device = byProcessor.constFind(processor);
+        if (device != byProcessor.constEnd()) times.devices.insert(*device, ns);
+    }
+    return times;
+}
+
 double EngineBridge::sampleRate() const { return engine_.sampleRate(); }
 
 }  // namespace sub::app
