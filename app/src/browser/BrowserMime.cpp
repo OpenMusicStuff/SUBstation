@@ -146,6 +146,21 @@ std::optional<MovedDevices> movedDevices(const QMimeData* mime) {
     return movedDevices(mime->data(QString::fromLatin1(kDeviceMoveMime)));
 }
 
+QByteArray movedPadData(const QString& trackId, const QString& chainId) {
+    return (trackId + u'\n' + chainId).toUtf8();
+}
+
+std::optional<MovedPad> movedPad(const QByteArray& data) {
+    const QStringList lines = QString::fromUtf8(data).split(u'\n');
+    if (lines.size() != 2 || lines[0].isEmpty() || lines[1].isEmpty()) return std::nullopt;
+    return MovedPad{lines[0], lines[1]};
+}
+
+std::optional<MovedPad> movedPad(const QMimeData* mime) {
+    if (mime == nullptr || !mime->hasFormat(QString::fromLatin1(kPadMoveMime))) return std::nullopt;
+    return movedPad(mime->data(QString::fromLatin1(kPadMoveMime)));
+}
+
 std::optional<DroppedAudio> droppedAudio(const QMimeData* mime) {
     if (mime == nullptr) return std::nullopt;
     if (mime->hasFormat(QLatin1String(kClipMime))) {  // a clip's part of its file

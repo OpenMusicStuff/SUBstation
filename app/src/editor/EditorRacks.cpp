@@ -294,7 +294,7 @@ void ProjectEditor::setMacro(const QString& trackId, const QString& rackId, int 
 void ProjectEditor::setMacroCount(const QString& trackId, const QString& rackId, int count) {
     const Track* track = project_->findTrack(trackId);
     const Device* rack = track != nullptr ? findDevice(track->devices, rackId) : nullptr;
-    if (rack == nullptr || !rack->isRack()) return;
+    if (rack == nullptr || !rack->isRack() || rack->isDrumRack()) return;  // (a Drum Rack has no macros)
     count = std::clamp(count, 1, kMaxMacroCount);
     const int had = macroCount(*rack);
     if (count == had) return;

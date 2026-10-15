@@ -7,7 +7,8 @@ import SUBstation
 // rack (and while an audio drag is over it). Drop an audio file or a clip from
 // the arrangement on it to load it (DrumPadItem); a pad with a chain takes
 // devices dropped on it into its chain, as a chain's row does. A click shows
-// its devices and plays its key while held; right-click for its menu (the
+// its devices and plays its key while held; dragged into the arrangement, a
+// pad with a chain becomes a track of its own; right-click for its menu (the
 // body's). Its lock (similar sounds leave its sample be) is at its top right,
 // its mute (the activator) and solo along its bottom. Renamed in place
 // (startRename(): Ctrl+R).
@@ -16,7 +17,7 @@ DrumPadItem {
 
     required property var modelData  // DrumRack.pads' entry
     required property DrumRack rack
-    required property var body
+    required property var rackBody  // its DrumRackBody (for the pad menu)
     property string trackId
     property string rackId
     readonly property string chainId: modelData.chainId
@@ -66,14 +67,27 @@ DrumPadItem {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         property bool playing: false
+        property point pressedAt
         onPressed: event => {
             if (event.button === Qt.RightButton) {
-                pad.body.showPadMenu(pad, event.x, event.y)
+                pad.rackBody.showPadMenu(pad, event.x, event.y)
                 return
             }
             pad.rack.select(pad.note)
             pad.rack.play(pad.note, 100)
             playing = true
+            pressedAt = Qt.point(event.x, event.y)
+        }
+        // Moved far enough while held: a drag (into the arrangement: a track of its own).
+        onPositionChanged: event => {
+            if (!playing || !pad.filled)
+                return
+            if (Math.abs(event.x - pressedAt.x) < Qt.styleHints.startDragDistance
+                    && Math.abs(event.y - pressedAt.y) < Qt.styleHints.startDragDistance)
+                return
+            pad.rack.play(pad.note, 0)
+            playing = false
+            pad.startDrag()
         }
         onReleased: {
             if (playing)

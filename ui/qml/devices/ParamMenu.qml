@@ -23,7 +23,7 @@ DynamicMenu {
         const p = param
         automationEntries(p)
         const rack = p.rackId()
-        if (rack !== "") {  // its rack's macros can move it
+        if (rack !== "" && (p.macroNames().length > 0 || p.macro() >= 0)) {  // its rack's macros can move it (a Drum Rack has none)
             separator()
             const mapped = p.macro()
             const mappedRack = p.macroRack()

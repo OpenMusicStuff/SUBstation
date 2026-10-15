@@ -102,6 +102,8 @@ private:
 // clip dragged out of the arrangement dropped on it loads onto its key. Other
 // drags (devices, presets) go on to the device view (onto a pad with a chain:
 // into its chain, as onto a chain's row: QML gives it the "chainRow" role then).
+// And a drag source: a pad with a chain dragged into the arrangement becomes a
+// track of its own there (startDrag(), kPadMoveMime; ArrangementLanes).
 class DrumPadItem : public QQuickItem {
     Q_OBJECT
     QML_ELEMENT
@@ -118,6 +120,10 @@ public:
     void setNote(int note);
     bool dropping() const { return dropping_; }
 
+    // Drags the pad (if it has a chain) with a picture of it, once the press
+    // that began it has been handled; nothing if the button is up by then.
+    Q_INVOKABLE void startDrag();
+
 Q_SIGNALS:
     void drumRackChanged();
     void noteChanged();
@@ -131,6 +137,7 @@ protected:
 
 private:
     void setDropping(bool dropping);
+    void runDrag(const QString& trackId, const QString& chainId, const QImage& picture);
 
     QPointer<DrumRack> drumRack_;
     int note_ = 0;

@@ -503,4 +503,9 @@ bool ArrangementActions::dropMovedDevices(const QString& fromTrackId, const QStr
     return true;
 }
 
+bool ArrangementActions::dropPad(const QString& fromTrackId, const QString& chainId, const QString& ontoTrackId) {
+    if (!project_->hasTrack(fromTrackId)) return false;
+    return !editor_->padToTrack(fromTrackId, chainId, project_->hasTrack(ontoTrackId) ? ontoTrackId : QString()).isEmpty();
+}
+
 }  // namespace sub::app

@@ -918,7 +918,11 @@ Device deviceFromJson(const QJsonValue& value) {
             }
             device.macroNames.resize(static_cast<size_t>(used));
         }
-        if (device.macroNames.empty()) device.macroNames.resize(kDefaultMacroCount);
+        if (device.drum) {
+            device.macroNames.clear();  // a Drum Rack has none (files from before had four: dropped)
+        } else if (device.macroNames.empty()) {
+            device.macroNames.resize(kDefaultMacroCount);
+        }
         if (device.macroNames.size() > static_cast<size_t>(kMaxMacroCount)) device.macroNames.resize(kMaxMacroCount);
         const int count = macroCount(device);
         for (const MacroMapping& mapping : mappings) {
@@ -1076,7 +1080,6 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
             {QStringLiteral("folded_devices"), present(project.foldedDevices())},
             {QStringLiteral("chain_lists_shown"), present(project.shownChainLists())},
             {QStringLiteral("rack_devices_hidden"), present(project.hiddenRackDevices())},
-            {QStringLiteral("rack_macros_hidden"), present(project.hiddenRackMacros())},
             {QStringLiteral("tracks"), tracks},
             {QStringLiteral("returns"), returns}};
 }
@@ -1176,9 +1179,6 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     for (const QJsonValue& id : listOr(data, QStringLiteral("chain_lists_shown"))) contents.shownChainLists.insert(toStr(id));
     for (const QJsonValue& id : listOr(data, QStringLiteral("rack_devices_hidden"))) {
         contents.hiddenRackDevices.insert(toStr(id));
-    }
-    for (const QJsonValue& id : listOr(data, QStringLiteral("rack_macros_hidden"))) {
-        contents.hiddenRackMacros.insert(toStr(id));
     }
     contents.path = projectFile;
     return contents;

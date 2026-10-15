@@ -9,8 +9,15 @@
 #include "model/SamplerState.h"
 #include "session/DeviceSelection.h"
 
+#include <QDrag>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QGuiApplication>
+#include <QImage>
+#include <QMimeData>
+#include <QPixmap>
+#include <QQuickWindow>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -245,6 +252,44 @@ void DrumPadItem::dropEvent(QDropEvent* event) {
     }
     event->acceptProposedAction();
     drumRack_->loadSample(note_, audio->path, audio->start, audio->end);
+}
+
+void DrumPadItem::startDrag() {
+    const QString chainId = drumRack_ ? drumRack_->chainOf(note_) : QString();
+    if (chainId.isEmpty())
+        return;
+    const QString trackId = drumRack_->trackId();
+    // After the press's handler has returned (the drag runs its own loop).
+    QPointer<DrumPadItem> self(this);
+    QTimer::singleShot(0, this, [self, trackId, chainId] {
+        if (!self)
+            return;
+        QImage picture;
+        if (self->window()) {
+            const QImage shot = self->window()->grabWindow();
+            const qreal dpr = shot.devicePixelRatio();
+            const QRectF r = self->mapRectToScene(QRectF(0, 0, self->width(), self->height()));
+            picture = shot.copy(QRect(QPoint(int(r.x() * dpr), int(r.y() * dpr)),
+                                      QSize(int(r.width() * dpr), int(r.height() * dpr))));
+            picture.setDevicePixelRatio(dpr);
+        }
+        self->runDrag(trackId, chainId, picture);
+    });
+}
+
+void DrumPadItem::runDrag(const QString& trackId, const QString& chainId, const QImage& picture) {
+    // (Not if the button went up meanwhile: the drag would wait for a release that came already.)
+    if (!(QGuiApplication::mouseButtons() & Qt::LeftButton))
+        return;
+    auto* mime = new QMimeData;
+    mime->setData(QString::fromLatin1(sub::app::kPadMoveMime), sub::app::movedPadData(trackId, chainId));
+    QPointer<QDrag> drag = new QDrag(this);
+    drag->setMimeData(mime);
+    if (!picture.isNull())
+        drag->setPixmap(QPixmap::fromImage(picture));
+    drag->exec(Qt::MoveAction);
+    if (drag)
+        drag->deleteLater();
 }
 
 }  // namespace sub::ui

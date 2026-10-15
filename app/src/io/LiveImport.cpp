@@ -1,7 +1,6 @@
 // Ableton Live Set -> SUBstation project (see LiveImport.h for what comes
-// across). Two passes over the set's tracks: the first gives every track (and
-// every Drum Rack pad that will be a track) its id, so routing to tracks further
-// down resolves; the second translates them. Automation comes last: every
+// across). Two passes over the set's tracks: the first gives every track its
+// id, so routing to tracks further down resolves; the second translates them. Automation comes last: every
 // parameter translated says which of Live's automation targets it is
 // (`targets_`), and each envelope goes to the track holding its target.
 
@@ -327,14 +326,6 @@ public:
     ImportResult run();
 
 private:
-    // A Live track's pads that become tracks: (branch index, receiving note, sending note, id).
-    struct Pad {
-        int branch = 0;
-        int note = 0;
-        int sends = 60;
-        QString id;
-        const Element* element = nullptr;
-    };
     // An automation target of Live's: whose automation it goes in, as which key, and its values' mapping.
     struct Target {
         QString owner;
@@ -345,8 +336,6 @@ private:
     void readSettings();
     void assignIds();
     QJsonObject translateTrack(const Element& track, const QString& id, const std::optional<QString>& parent);
-    void translateDrumTrack(const Element& track, const Element& drums, const QString& id,
-                            const std::optional<QString>& parent);
     QJsonObject translateReturn(const Element& track, const QString& id);
     QJsonObject translateMaster(const Element& track);
     void translateMixer(const Element& mixer, const QString& owner, QJsonObject& data, bool master = false);
@@ -388,7 +377,6 @@ private:
     int numerator_ = 4;
     int denominator_ = 4;
     QHash<QString, QString> ids_;             // a Live track's Id -> its id here
-    QHash<QString, std::vector<Pad>> pads_;   // a Live track's Id -> its Drum Rack's pads that are tracks
     QStringList returnIds_;                   // the return tracks' ids, in order
     QHash<QString, Target> targets_;          // Live's AutomationTarget Id -> where its automation goes
     QSet<QString> settingTargets_;            // the tempo's and the time signature's (readSettings)
@@ -491,32 +479,6 @@ QString Importer::trackName(const Element& track, const QString& fallback) const
 
 // --- Ids, before anything else ------------------------------------------------------------------
 
-const Element* drumRackOf(const Element& track) {
-    if (track.tag != u"MidiTrack") return nullptr;
-    const Element* devices = track.at(u"DeviceChain/DeviceChain/Devices");
-    if (!devices) return nullptr;
-    for (const Element* device : devices->all()) {
-        if (device->tag == u"DrumGroupDevice") return device;
-    }
-    return nullptr;
-}
-
-// The notes the arrangement's clips play on a MIDI track.
-QSet<int> playedKeys(const Element& track) {
-    QSet<int> keys;
-    if (const Element* events = track.at(u"DeviceChain/MainSequencer/ClipTimeable/ArrangerAutomation/Events")) {
-        for (const Element* clip : events->all(u"MidiClip")) {
-            if (const Element* keyTracks = clip->at(u"Notes/KeyTracks")) {
-                for (const Element* keyTrack : keyTracks->all(u"KeyTrack")) {
-                    const Element* notes = keyTrack->child(u"Notes");
-                    if (notes && !notes->children.empty()) keys.insert(keyTrack->integer(u"MidiKey"));
-                }
-            }
-        }
-    }
-    return keys;
-}
-
 void Importer::assignIds() {
     const Element* tracks = set_.child(u"Tracks");
     if (!tracks) return;
@@ -529,25 +491,6 @@ void Importer::assignIds() {
             continue;
         }
         ids_.insert(liveId, id);
-        if (const Element* drums = drumRackOf(*track)) {
-            // Each pad the clips play becomes a track (the lowest note first).
-            const QSet<int> played = playedKeys(*track);
-            std::vector<Pad> pads;
-            int branchIndex = 0;
-            if (const Element* branches = drums->child(u"Branches")) {
-                for (const Element* branch : branches->all(u"DrumBranch")) {
-                    const int receiving = branch->integer(u"BranchInfo/ReceivingNote", -1);
-                    const int note = 128 - receiving;  // (Live keeps it upside down)
-                    if (receiving > 0 && played.contains(note)) {
-                        pads.push_back(
-                            {branchIndex, note, branch->integer(u"BranchInfo/SendingNote", 60), newId(), branch});
-                    }
-                    ++branchIndex;
-                }
-            }
-            std::stable_sort(pads.begin(), pads.end(), [](const Pad& a, const Pad& b) { return a.note < b.note; });
-            pads_.insert(liveId, pads);
-        }
     }
 }
 
@@ -574,11 +517,7 @@ ImportResult Importer::run() {
             if (track->flag(u"Freeze"))
                 notes_.listed(QStringLiteral("Frozen in Live, imported unfrozen"), liveName(*track));
             noteClipEnvelopes(*track);
-            if (const Element* drums = drumRackOf(*track)) {
-                translateDrumTrack(*track, *drums, id, parent);
-            } else {
-                tracks_.push_back(translateTrack(*track, id, parent));
-            }
+            tracks_.push_back(translateTrack(*track, id, parent));
             readAutomation(*track);
         }
         for (const Element* track : tracks->all(u"ReturnTrack")) readAutomation(*track);
@@ -701,73 +640,6 @@ QJsonObject Importer::translateTrack(const Element& track, const QString& id, co
     return data;
 }
 
-// A MIDI track playing a Drum Rack: a group (its mixer, its effects after the
-// rack) with a MIDI track for each pad the clips play, each with that pad's notes.
-void Importer::translateDrumTrack(const Element& track, const Element& drums, const QString& id,
-                                  const std::optional<QString>& parent) {
-    QJsonObject group = trackBase(id, kGroupKind, trackName(track, QStringLiteral("Drums")), liveColor(colorOf(track)));
-    group[QStringLiteral("parent")] = optionalString(parent);
-    group[QStringLiteral("folded")] = !track.flag(u"TrackUnfolded", true);
-    if (const Element* mixer = track.at(u"DeviceChain/Mixer")) {
-        translateMixer(*mixer, id, group);
-        addSends(*mixer, id, group);
-    }
-    addRouting(track, group, parent.has_value());
-    // Its devices after the rack are the group's; MIDI effects before it can't be.
-    QJsonArray after;
-    bool past = false;
-    if (const Element* devices = track.at(u"DeviceChain/DeviceChain/Devices")) {
-        for (const Element* device : devices->all()) {
-            if (device == &drums) {
-                past = true;
-                continue;
-            }
-            if (!past) {
-                notes_.listed(kMidiEffects, liveDeviceName(device->tag));
-                continue;
-            }
-            if (auto translated = translateDevice(*device, id)) after.append(*translated);
-        }
-    }
-    group[QStringLiteral("devices")] = after;
-    tracks_.push_back(group);
-
-    if (drums.child(u"ReturnBranches") && !drums.child(u"ReturnBranches")->children.empty()) {
-        notes_.listed(QStringLiteral("Left out (Drum Racks' return chains)"), liveName(track));
-    }
-    for (const Pad& pad : pads_.value(track.attribute(u"Id"))) {
-        // Its clips first: one whose notes are all outside the clips' windows makes
-        // no track (nor notes on its devices; a sidechain from it goes, its automation is noted).
-        const int note = pad.note;
-        const int sends = std::clamp(pad.sends, 0, 127);
-        const QJsonArray padClips = clips(
-            track, true, [note, sends](int key) { return key == note ? std::optional<int>(sends) : std::nullopt; });
-        if (padClips.isEmpty()) continue;
-        const Element& branch = *pad.element;
-        QString name = branch.value(u"Name/UserName").value_or(QString()).trimmed();
-        if (name.isEmpty()) name = branch.value(u"Name/EffectiveName").value_or(QString()).trimmed();
-        if (name.isEmpty()) name = branch.value(u"Name").value_or(QStringLiteral("Pad"));
-        QJsonObject padTrack = trackBase(pad.id, kMidiKind, name, liveColor(colorOf(track)));
-        padTrack[QStringLiteral("parent")] = id;
-        padTrack[QStringLiteral("folded")] = true;
-        padTrack[QStringLiteral("midi_input")] =
-            QJsonObject{{QStringLiteral("device"), QString()}, {QStringLiteral("channel"), 0}};
-        if (const Element* mixer = branch.child(u"MixerDevice")) {
-            padTrack[QStringLiteral("volume_db")] = faderDb(mixer->number(u"Volume/Manual", 1.0));
-            padTrack[QStringLiteral("pan")] = std::clamp(mixer->number(u"Panorama/Manual"), -1.0, 1.0);
-            padTrack[QStringLiteral("mute")] = !mixer->flag(u"Speaker/Manual", true);
-            addTarget(mixer->child(u"Volume"), pad.id, automation::kMixerVolume, volumeNormalized);
-            addTarget(mixer->child(u"Panorama"), pad.id, automation::kMixerPan, panNormalized);
-            addTarget(mixer->child(u"Speaker"), pad.id, automation::kMixerOn, switchNormalized);
-        }
-        padTrack[QStringLiteral("solo")] = branch.flag(u"IsSoloed");
-        padTrack[QStringLiteral("devices")] =
-            translateDevices(branch.at(u"DeviceChain/MidiToAudioDeviceChain/Devices"), pad.id);
-        padTrack[QStringLiteral("clips")] = padClips;
-        tracks_.push_back(padTrack);
-    }
-}
-
 QJsonObject Importer::translateReturn(const Element& track, const QString& id) {
     QJsonObject data{{QStringLiteral("id"), id},
                      {QStringLiteral("kind"), kReturnKind},
@@ -837,19 +709,20 @@ std::optional<QString> Importer::routedTrack(const QString& target, QString* tap
     if (!match.hasMatch()) return std::nullopt;
     const QString liveId = match.captured(1);
     const QString where = match.captured(2);
+    if (!ids_.contains(liveId)) return std::nullopt;
     if (tap) *tap = where.contains(u"PreFx") ? kPreFx : where.contains(u"PostFx") ? kPreFader : kPostFader;
-    static const QRegularExpression pad(QStringLiteral("DeviceOut\\.\\d+\\.B(\\d+)"));
-    if (const QRegularExpressionMatch padMatch = pad.match(where); padMatch.hasMatch()) {
-        const int branch = padMatch.captured(1).toInt();
-        for (const Pad& p : pads_.value(liveId)) {
-            if (p.branch == branch) {
-                if (tap) *tap = kPreFader;  // (the pad's chain, after its devices)
-                return p.id;
+    // A Drum Rack pad's ("DeviceOut.0.B2"): its whole track, after the rack.
+    static const QRegularExpression pad(QStringLiteral("DeviceOut\\.\\d+\\.B\\d+"));
+    if (pad.match(where).hasMatch() && tap) {
+        *tap = kPreFx;
+        QString name = liveId;
+        if (const Element* tracks = set_.child(u"Tracks")) {
+            for (const Element* track : tracks->all()) {
+                if (track->attribute(u"Id") == liveId) name = liveName(*track);
             }
         }
-        return std::nullopt;
+        notes_.listed(QStringLiteral("Sidechains from a Drum Rack's pad hear the whole rack"), name);
     }
-    if (!ids_.contains(liveId)) return std::nullopt;
     return ids_.value(liveId);
 }
 
@@ -921,7 +794,7 @@ std::optional<QJsonObject> Importer::translateDevice(const Element& device, cons
     std::optional<QJsonObject> translated;
     if (tag == u"PluginDevice") {
         translated = plugin(device, owner, id);
-    } else if (tag == u"AudioEffectGroupDevice" || tag == u"InstrumentGroupDevice") {
+    } else if (tag == u"AudioEffectGroupDevice" || tag == u"InstrumentGroupDevice" || tag == u"DrumGroupDevice") {
         translated = rack(device, owner, id);
     } else if (tag == u"StereoGain") {
         translated = utility(device, owner, id);
@@ -935,9 +808,6 @@ std::optional<QJsonObject> Importer::translateDevice(const Element& device, cons
         translated = sampler(device, owner, id);
     } else if (tag.startsWith(u"Midi") || tag == u"MxDeviceMidiEffect") {
         notes_.listed(kMidiEffects, liveDeviceName(tag));
-        return std::nullopt;
-    } else if (tag == u"DrumGroupDevice") {
-        notes_.listed(kNoDevice, QStringLiteral("Drum Rack (inside a rack)"));
         return std::nullopt;
     } else {
         notes_.listed(kNoDevice, liveDeviceName(tag));
@@ -1061,8 +931,11 @@ std::optional<QJsonObject> Importer::plugin(const Element& device, const QString
 }
 
 std::optional<QJsonObject> Importer::rack(const Element& device, const QString& owner, const QString& id) {
-    const bool instrument = device.tag == u"InstrumentGroupDevice";
-    const QString branchTag = instrument ? QStringLiteral("InstrumentBranch") : QStringLiteral("AudioEffectBranch");
+    const bool drum = device.tag == u"DrumGroupDevice";
+    const bool instrument = drum || device.tag == u"InstrumentGroupDevice";
+    const QString branchTag = drum         ? QStringLiteral("DrumBranch")
+                              : instrument ? QStringLiteral("InstrumentBranch")
+                                           : QStringLiteral("AudioEffectBranch");
     const QString chainPath = instrument ? QStringLiteral("DeviceChain/MidiToAudioDeviceChain/Devices")
                                          : QStringLiteral("DeviceChain/AudioToAudioDeviceChain/Devices");
     QJsonArray chains;
@@ -1071,6 +944,10 @@ std::optional<QJsonObject> Importer::rack(const Element& device, const QString& 
             const QString chainId = newId();
             QString name = branch->value(u"Name/UserName").value_or(QString()).trimmed();
             if (name.isEmpty()) name = branch->value(u"Name/EffectiveName").value_or(QString()).trimmed();
+            // A pad's key (Live keeps it upside down: 128 - the note; none: the loader gives it a free one).
+            const int receiving = branch->integer(u"BranchInfo/ReceivingNote", -1);
+            const int note = drum && receiving > 0 && receiving <= 128 ? 128 - receiving : -1;
+            if (drum && name.isEmpty()) name = note >= 0 ? drumNoteName(note) : QStringLiteral("Pad");
             QJsonObject chain{{QStringLiteral("id"), chainId},
                               {QStringLiteral("name"), name.isEmpty() ? QStringLiteral("Chain") : name},
                               {QStringLiteral("volume_db"), 0.0},
@@ -1087,13 +964,25 @@ std::optional<QJsonObject> Importer::rack(const Element& device, const QString& 
                           panNormalized);
             }
             chain[QStringLiteral("devices")] = translateDevices(branch->at(chainPath), owner);
+            if (drum) {
+                if (note >= 0) chain[QStringLiteral("receive_note")] = note;
+                // Its devices hear C3 here, whatever note Live's pad sent them.
+                if (branch->integer(u"BranchInfo/SendingNote", kDrumPadNote) != kDrumPadNote)
+                    notes_.listed(QStringLiteral("Drum Rack pads that sent another note than C3 play C3"), name);
+            }
             chains.append(chain);
         }
     }
-    notes_.listed(QStringLiteral("Racks came without their macros"),
-                  instrument ? QStringLiteral("Instrument Racks") : QStringLiteral("Audio Effect Racks"));
     QJsonObject data{
         {QStringLiteral("id"), id}, {QStringLiteral("kind"), kRackKind}, {QStringLiteral("chains"), chains}};
+    if (drum) {
+        data[QStringLiteral("drum")] = true;  // (no macros: a Drum Rack has none)
+        if (device.child(u"ReturnBranches") && !device.child(u"ReturnBranches")->children.empty())
+            notes_.listed(QStringLiteral("Left out (Drum Racks' return chains)"), QStringLiteral("Drum Rack"));
+    } else {
+        notes_.listed(QStringLiteral("Racks came without their macros"),
+                      instrument ? QStringLiteral("Instrument Racks") : QStringLiteral("Audio Effect Racks"));
+    }
     const QString name = device.value(u"UserName").value_or(QString()).trimmed();
     if (!name.isEmpty()) data[QStringLiteral("name")] = name;
     return data;

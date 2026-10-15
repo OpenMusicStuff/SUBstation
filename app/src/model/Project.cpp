@@ -712,16 +712,6 @@ void Project::setRackDevicesShown(const QString& trackId, const QString& rackId,
     Q_EMIT rackViewChanged(trackId);
 }
 
-void Project::setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown) {
-    if (shown != hiddenRackMacros_.contains(rackId)) return;
-    if (shown) {
-        hiddenRackMacros_.remove(rackId);
-    } else {
-        hiddenRackMacros_.insert(rackId);
-    }
-    Q_EMIT rackViewChanged(trackId);
-}
-
 void Project::updateSettings(const SettingsValues& values) {
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
         const SettingsValue& value = it.value();
@@ -768,7 +758,6 @@ void Project::replaceContents(ProjectContents contents) {
     foldedDevices_ = std::move(contents.foldedDevices);
     shownChainLists_ = std::move(contents.shownChainLists);
     hiddenRackDevices_ = std::move(contents.hiddenRackDevices);
-    hiddenRackMacros_ = std::move(contents.hiddenRackMacros);
     const bool pathChange = path_ != contents.path;
     path_ = contents.path;
     Q_EMIT reset();

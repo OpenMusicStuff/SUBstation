@@ -449,11 +449,10 @@ public:
                              const QString& chain = {}, const QSet<QString>& folded = {}, const QString& text = {});
     // Fold or unfold devices in the device view. View state: saved, not undone.
     Q_INVOKABLE void setDevicesFolded(const QString& trackId, const QStringList& deviceIds, bool folded);
-    // Show or hide a rack's chain list, its chain's devices beside it, or its
-    // macros (collapsed), in the device view. View state: saved, not undone.
+    // Show or hide a rack's chain list, or its chain's devices beside it, in
+    // the device view. View state: saved, not undone.
     Q_INVOKABLE void setChainListShown(const QString& trackId, const QString& rackId, bool shown);
     Q_INVOKABLE void setRackDevicesShown(const QString& trackId, const QString& rackId, bool shown);
-    Q_INVOKABLE void setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown);
     // Move a device to position `index` in its chain (an instrument stays first).
     Q_INVOKABLE void moveDevice(const QString& trackId, const QString& deviceId, int index);
     // Move devices together (in their order on the track) to before the device
@@ -537,6 +536,19 @@ public:
     Q_INVOKABLE void setSimilarReference(const QString& trackId, const QString& deviceId);
     // A Drum Rack's first key without a pad, from `from` up (then down from it); -1: none.
     static int freePadNote(const Device& rack, int from = kDrumFirstPadNote);
+    // A Drum Rack's pads as tracks: the track it is on becomes a group (of the
+    // same id: its mixer, sends, routing and the effects after the rack stay
+    // its), with a MIDI track in it for each pad: the pad's devices, its fader,
+    // its automation, and the notes of its key on the track's clips, at C3 (as
+    // the pad's devices heard them); the track's MIDI effects play on each.
+    // Only a Drum Rack of the track's own chain (not in a rack). One undo step;
+    // the new tracks' ids (none if refused).
+    Q_INVOKABLE QStringList separatePads(const QString& trackId, const QString& rackId);
+    // One pad as a MIDI track of its own (as separatePads makes them), after
+    // `afterTrackId` and what is in it, in its group (""): last, in no group):
+    // the pad leaves the rack, and the notes of its key the track's clips. One
+    // undo step; the new track's id ("" if refused).
+    Q_INVOKABLE QString padToTrack(const QString& trackId, const QString& chainId, const QString& afterTrackId = {});
 
     // Macros: a rack's parameters, each moving the parameters mapped to it.
     // Their values are normalized. paramInfo() describes a device's parameter;

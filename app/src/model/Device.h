@@ -13,7 +13,9 @@
 // parameters ("macro1"..): each can be mapped to parameters of devices in it
 // (MacroMapping), which follow it across their range (all of it, part of it, or
 // the other way round). A rack has 1 to kMaxMacroCount of them (a new one
-// kDefaultMacroCount), each with a name of its own if given one (macroNames).
+// kDefaultMacroCount), each with a name of its own if given one (macroNames). A
+// Drum Rack has none: what its pads' devices should move together goes in a
+// rack of their own (Ctrl+G).
 // A modulator (a built-in LFO or envelope: isModulator() in Devices.h) moves
 // parameters of other devices on its track, wherever they sit
 // (ModulationMapping, in its `modulations`), as the engine plays it.

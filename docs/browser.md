@@ -441,6 +441,7 @@ failed save is ignored. An item's tooltip shows how often it was used.
 | `application/x-substation-device` | a JSON list of built-in device kinds | `deviceKinds()` |
 | `application/x-substation-preset` | a JSON list of preset files | `presetPaths()` |
 | `application/x-substation-device-move` | not the browser's: devices dragged from a track's chain in the device view, as plain text: the track's id, then the devices' ids, a line each | `movedDevices()` (written by `movedDevicesData()`) |
+| `application/x-substation-pad-move` | not the browser's: a Drum Rack's pad dragged into the arrangement (to be a track of its own), as plain text: the track's id, then the pad's chain id | `movedPad()` (written by `movedPadData()`) |
 | `application/x-substation-clip` | not the browser's: an audio clip dragged down out of the arrangement (`ArrangementLanes::dragClipOut`), with its file's URL: JSON `{path, offset_sec, duration_sec, source_sec}` | `droppedAudio()` (a Sampler's display, a Drum Rack's pad: the first audio file's URL otherwise; written by `clipMimeData()`) |
 
 The arrangement and the device view read them on a drop ([ui/arrangement.md](ui/arrangement.md#drag-and-drop),

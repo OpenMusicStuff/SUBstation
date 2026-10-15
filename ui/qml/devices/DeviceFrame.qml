@@ -341,20 +341,8 @@ Item {
                 Layout.preferredHeight: 16
                 onClicked: frame.setPage(frame.page + 1)
             }
-            // A Drum Rack's: its macros collapsed or shown, and every unlocked
-            // pad's sample swapped for the previous or next sound like it.
-            DeviceHeaderButton {
-                id: macrosButton
-                objectName: "macrosButton"
-                visible: deviceInfo.isDrumRack
-                text: deviceInfo.rackMacrosShown ? "▾" : "▸"
-                checkable: false
-                lit: false
-                tooltip: deviceInfo.rackMacrosShown ? qsTr("Collapse the macros") : qsTr("Show the macros")
-                Layout.preferredWidth: 16
-                Layout.preferredHeight: 16
-                onClicked: Session.deviceSelection.toggleRackMacros(frame.deviceId)
-            }
+            // A Drum Rack's: every unlocked pad's sample swapped for the previous
+            // or next sound like it.
             Repeater {
                 model: deviceInfo.isDrumRack ? [["previousSimilar", "‹", -1], ["nextSimilar", "›", 1]] : []
                 DeviceHeaderButton {

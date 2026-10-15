@@ -9,6 +9,7 @@
 #include "TestSupport.h"
 
 #include "io/Serialization.h"
+#include "model/Automation.h"
 #include "model/DeviceState.h"
 #include "model/Devices.h"
 #include "model/SamplerState.h"
@@ -50,7 +51,11 @@ private Q_SLOTS:
         QVERIFY(isDeviceKind(kDrumRackKind));
         QCOMPARE(kindName(rack), QStringLiteral("Drum Rack"));
         QCOMPARE(deviceName(rack), QStringLiteral("Drum Rack"));
-        QCOMPARE(macroCount(rack), kDefaultMacroCount);
+        // No macros (a rack of a pad's devices has them), and none to add.
+        QCOMPARE(macroCount(rack), 0);
+        QVERIFY(rack.params.isEmpty());
+        f.editor.setMacroCount(track, rackId, 4);
+        QCOMPARE(macroCount(f.project.device(track, rackId)), 0);
         // Added to a MIDI track, it goes first (and replaces the instrument there), as instruments do.
         const QString keys = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString added = f.editor.addDevice(keys, kDrumRackKind);
@@ -161,8 +166,6 @@ private Q_SLOTS:
         const QString kick = f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/s/Kick.wav"));
         f.editor.loadDrumPad(track, rackId, 42, QStringLiteral("/s/Hat.wav"));
         f.editor.setChainParam(track, kick, QStringLiteral("locked"), 1.0);
-        f.editor.setRackMacrosShown(track, rackId, false);  // (view state, saved too)
-        QVERIFY(!f.project.areRackMacrosShown(rackId));
         const QJsonObject data = projectToJson(f.project);
         QCOMPARE(data.value(QStringLiteral("version")).toInt(), kProjectVersion);
         Project loaded;
@@ -170,7 +173,6 @@ private Q_SLOTS:
         QCOMPARE(projectToJson(loaded), data);
         const Device& again = loaded.device(track, rackId);
         QVERIFY(again.isDrumRack());
-        QVERIFY(!loaded.areRackMacrosShown(rackId));
         QCOMPARE(again.chains.size(), size_t(2));
         QCOMPARE(again.chains[0].receiveNote, 36);
         QVERIFY(again.chains[0].locked);
@@ -187,6 +189,9 @@ private Q_SLOTS:
         second[QStringLiteral("receive_note")] = 36;
         chains[1] = second;
         rack[QStringLiteral("chains")] = chains;
+        // (Saved with macros, as Drum Racks were at first: they go.)
+        rack[QStringLiteral("macro_names")] = QJsonArray{QString(), QStringLiteral("Punch"), QString(), QString()};
+        rack[QStringLiteral("params")] = QJsonObject{{QStringLiteral("macro1"), 0.5}, {QStringLiteral("macro2"), 0.0}};
         devices[0] = rack;
         t[QStringLiteral("devices")] = devices;
         tracks[0] = t;
@@ -195,6 +200,8 @@ private Q_SLOTS:
         loadInto(fixed, edited);
         QCOMPARE(fixed.device(track, rackId).chains[0].receiveNote, 36);
         QCOMPARE(fixed.device(track, rackId).chains[1].receiveNote, 37);
+        QCOMPARE(macroCount(fixed.device(track, rackId)), 0);
+        QVERIFY(!fixed.device(track, rackId).params.contains(QStringLiteral("macro1")));
         // A pad with a key of its own keeps it: the one taking another's gets a key no pad has.
         {
             QJsonArray three = chains;
@@ -299,6 +306,97 @@ private Q_SLOTS:
         QCOMPARE(step(best, reference, reference, -1), QString());
         QCOMPARE(step(best, reference, QStringLiteral("/s/Other.wav"), 1), best[0]);  // a sound not among them
         QCOMPARE(step({}, reference, reference, 1), QString());
+    }
+
+    // Every pad a track: the track a group (of the same id) with the effects
+    // after the rack and its mixer; each pad's track has its devices, fader,
+    // automation and the notes of its key, at C3. One undo step.
+    void padsSeparateIntoTracks() {
+        EditorFixture f;
+        const auto [track, rackId] = drums(f);
+        const QString kick = f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/s/Kick.wav"));
+        const QString snare = f.editor.loadDrumPad(track, rackId, 38, QStringLiteral("/s/Snare.wav"));
+        const QString utility = f.editor.addDevice(track, QStringLiteral("utility"));
+        f.editor.setChainParam(track, snare, ChainField::VolumeDb, -6.0);
+        f.editor.setTrackParam(track, TrackField::VolumeDb, -3.0);
+        const QString snareSampler = padSampler(*findChain(f.track(track).devices, snare).chain)->id;
+        const Envelope ramp{{0.0, 0.2}, {4.0, 0.8}};
+        f.editor.setEnvelope(track, automation::chainKey(rackId, snare, automation::kChainVolume), ramp);
+        f.editor.setEnvelope(track, automation::deviceKey(snareSampler, QStringLiteral("volume")), ramp);
+        f.editor.setEnvelope(track, automation::deviceKey(utility, QStringLiteral("gain")), ramp);
+        const auto clip = f.editor.addMidiClip(track, 0.0, 4.0);
+        QVERIFY(clip);
+        Clip played = f.track(track).clips.at(0);
+        played.notes = {{36, 0.0, 0.25, 100}, {38, 1.0, 0.25, 90}, {36, 2.0, 0.25, 110}, {50, 3.0, 0.25, 100}};
+        f.editor.replaceClip(track, played, QStringLiteral("Notes"));
+        const std::vector<Track> before = f.project.tracks();
+        const int steps = f.stack.count();
+
+        const QStringList made = f.editor.separatePads(track, rackId);
+        QCOMPARE(made.size(), 2);
+        QCOMPARE(f.stack.count(), steps + 1);
+        const Track& group = f.track(track);
+        QVERIFY(group.isGroup());
+        QCOMPARE(group.volumeDb, -3.0);
+        QCOMPARE(group.devices.size(), size_t(1));
+        QCOMPARE(group.devices[0].id, utility);
+        QVERIFY(group.automation.contains(automation::deviceKey(utility, QStringLiteral("gain"))));
+        QCOMPARE(group.automation.size(), 1);
+        const Track& kickTrack = f.track(made[0]);
+        const Track& snareTrack = f.track(made[1]);
+        QCOMPARE(kickTrack.name, QStringLiteral("Kick"));
+        QCOMPARE(snareTrack.name, QStringLiteral("Snare"));
+        for (const Track* t : {&kickTrack, &snareTrack}) {
+            QVERIFY(t->isMidi());
+            QCOMPARE(t->parent, std::optional<QString>(track));
+            QCOMPARE(t->devices.size(), size_t(1));
+            QCOMPARE(t->devices[0].kind, QString(kSamplerKind));
+            QCOMPARE(t->clips.size(), size_t(1));
+        }
+        QCOMPARE(f.project.trackIndex(made[0]), f.project.trackIndex(track) + 1);
+        QCOMPARE(kickTrack.clips[0].notes, (std::vector<Note>{{60, 0.0, 0.25, 100}, {60, 2.0, 0.25, 110}}));
+        QCOMPARE(snareTrack.clips[0].notes, (std::vector<Note>{{60, 1.0, 0.25, 90}}));
+        QCOMPARE(snareTrack.devices[0].id, snareSampler);
+        QCOMPARE(snareTrack.volumeDb, -6.0);
+        QCOMPARE(snareTrack.automation.value(automation::kMixerVolume), ramp);
+        QCOMPARE(snareTrack.automation.value(automation::deviceKey(snareSampler, QStringLiteral("volume"))), ramp);
+        QVERIFY(kickTrack.automation.isEmpty());
+        f.stack.undo();
+        QCOMPARE(f.project.tracks(), before);
+        // A track's own Drum Rack only.
+        QVERIFY(f.editor.separatePads(track, QStringLiteral("nothing")).isEmpty());
+    }
+
+    // One pad a track of its own, where it was dropped: the pad leaves the
+    // rack, its notes the clips.
+    void aPadBecomesATrack() {
+        EditorFixture f;
+        const auto [track, rackId] = drums(f);
+        f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/s/Kick.wav"));
+        const QString snare = f.editor.loadDrumPad(track, rackId, 38, QStringLiteral("/s/Snare.wav"));
+        const QString other = f.editor.addAudioTrack();
+        f.editor.addMidiClip(track, 0.0, 4.0);
+        Clip played = f.track(track).clips.at(0);
+        played.notes = {{36, 0.0, 0.25, 100}, {38, 1.0, 0.25, 90}};
+        f.editor.replaceClip(track, played, QStringLiteral("Notes"));
+        const std::vector<Track> before = f.project.tracks();
+
+        const QString made = f.editor.padToTrack(track, snare, other);
+        QVERIFY(!made.isEmpty());
+        QCOMPARE(f.project.trackIndex(made), f.project.trackIndex(other) + 1);
+        const Track& snareTrack = f.track(made);
+        QCOMPARE(snareTrack.name, QStringLiteral("Snare"));
+        QCOMPARE(snareTrack.clips.size(), size_t(1));
+        QCOMPARE(snareTrack.clips[0].notes, (std::vector<Note>{{60, 1.0, 0.25, 90}}));
+        const Device& rack = f.project.device(track, rackId);
+        QCOMPARE(rack.chains.size(), size_t(1));
+        QVERIFY(drumPad(rack, 38) == nullptr);
+        QCOMPARE(f.track(track).clips[0].notes, (std::vector<Note>{{36, 0.0, 0.25, 100}}));
+        f.stack.undo();
+        QCOMPARE(f.project.tracks(), before);
+        // Without a track to go after: last.
+        const QString last = f.editor.padToTrack(track, snare);
+        QCOMPARE(f.project.trackIndex(last), int(f.project.tracks().size()) - 1);
     }
 };
 

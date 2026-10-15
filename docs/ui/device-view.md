@@ -339,17 +339,22 @@ A **Drum Rack** (`DeviceInfo.isDrumRack`: a rack with `drum` set) loads
   where `DrumRack.filled`; the pads shown framed; a press or a drag sets `firstNote`); **the pads** (`padGrid`: a
   `Repeater` over `DrumRack.pads`, sixteen `DrumPad`s from `firstNote`, top row first, so the lowest key is at the
   bottom left; 50 px wide, a quarter of the height each); **the arrows** (`padsUp`, `padsDown`: `DrumRack.scroll(±1)`,
-  a row of four keys; the wheel over a pad too) and `lockedCount`; its macros (and their + and −) unless collapsed
-  (`DeviceInfo.rackMacrosShown`: the project's `hiddenRackMacros`, view state) and chain list as a rack's (a pad's
-  row each).
-- **Its title bar** (DeviceFrame, for `isDrumRack`): `macrosButton` (▾/▸: `deviceSelection.toggleRackMacros`) and
+  a row of four keys; the wheel over a pad too) and `lockedCount`; and its chain list as a rack's (a pad's row each).
+  It has no macros (none in the model either: `newDrumRack()`, and a file's are dropped on load; the strip has no
+  + and −, and a parameter's menu in a pad has no *Map to Macro*). A pad's delegate passes the body as `rackBody`
+  and the rack as `body.drums`: a delegate's own property names come first (`body`, DrumPadItem's `drumRack`).
+- **Its menu** (`menuActions`): Save Pads as Similar References, Return Pads to References, and `separatePads`
+  (*Separate Pads into Tracks*: `editor.separatePads`; only the track's own Drum Rack, `chainId` "", with pads).
+- **Its title bar** (DeviceFrame, for `isDrumRack`):
   the similar sounds (`previousSimilar`, `nextSimilar`: `similarSamples.stepRack(track, rack, ±1)`; disabled with no
   unlocked pad with a sample, or while it searches), before the save button.
 - **A pad** ([DrumPad.qml](../../ui/qml/devices/DrumPad.qml)) is a `DrumPadItem`: an audio drag over it
   (`droppedAudio()`) lights it (`dropping`) and its drop calls `DrumRack::loadSample(note, path, start, end)`
   (`editor.loadDrumPad`, then the pad shows beside the rack); other drags it ignores, so they go on to the
   `DeviceChainArea`, which takes a pad with a chain as a chain row (`panelRole` "chainRow" while it has one: devices
-  dropped there go into it). It shows its name and key name, lit while shown beside the rack; a press shows it
+  dropped there go into it). Dragged (past the drag distance, while held: `DrumPadItem::startDrag()`, a
+  picture of it under `app::kPadMoveMime`), a pad with a chain goes into the arrangement as a track of its own
+  (`ArrangementActions::dropPad` → `editor.padToTrack`). It shows its name and key name, lit while shown beside the rack; a press shows it
   (`DrumRack::select`) and plays its key until released (`bridge.previewNote`); its lock (`lock_envelopes`) at its
   top right, its activator and solo along its bottom (`DrumRack::toggleLock`, `toggleMute`, `toggleSolo`: `editor.setChainParam`); a
   double-click (or Ctrl+R: `startRename()`, as a chain row's) renames it in place.
@@ -1392,8 +1397,8 @@ The editors:
   - Lists are [ParamChoice](../../ui/qml/devices/ParamChoice.qml)s (a small button with the value's name or icon and
     an arrow, its list a menu, filled when it opens); value boxes' texts are made again when their parameter comes
     (`formatOf(param)`: a box whose value doesn't change would keep the empty text it had without one).
-  - The display ([SampleView](../../ui/src/devices/SampleView.h)): the waveform from its peaks
-    (`waveformColumns()`), flipped while it plays reversed, so what is drawn is what plays left to right; the sample's
+  - The display ([SampleView](../../ui/src/devices/SampleView.h)): the waveform from its peaks, drawn as
+    the arrangement draws a clip's (`arrangement::waveformOutline()`, antialiased with `fillBand`), flipped while it plays reversed, so what is drawn is what plays left to right; the sample's
     name in its top left corner; Start and End as accent lines flagged at the top, the rest dimmed; by mode, the loop
     (bracketed over the top from Loop Start, its handle at the bottom, its crossfade shaded at its end and where it
     fades from), the fades (a line), or the slices (a line where each starts, numbered at the bottom while there is room, the one the playhead

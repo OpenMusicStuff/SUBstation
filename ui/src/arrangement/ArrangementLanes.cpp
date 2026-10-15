@@ -1376,6 +1376,8 @@ bool ArrangementLanes::dragOver(const QMimeData* mime, const QPointF& pos) {
         const auto index = rowIndexAt(pos.y());
         return index && rows[static_cast<size_t>(*index)].trackId != moved->trackId;
     }
+    if (app::movedPad(mime))
+        return true;  // (a Drum Rack's pad: a track of its own, after the one under the mouse, or last)
     const QStringList paths = audioPaths(mime);
     if (paths.isEmpty()) {
         // Devices (and presets) drop onto the track under the mouse; an
@@ -1428,6 +1430,8 @@ bool ArrangementLanes::drop(const QMimeData* mime, const QPointF& pos) {
     if (const auto moved = app::movedDevices(mime)) {
         return !trackId.isEmpty() && actions.dropMovedDevices(moved->trackId, moved->deviceIds, trackId);
     }
+    if (const auto pad = app::movedPad(mime))
+        return actions.dropPad(pad->trackId, pad->chainId, trackId);
     const DroppedDevices devices = droppedDevices(mime);
     if (!devices.empty()) return actions.dropDevices(devices.kinds, devices.plugins, trackId);
     const QStringList presets = app::presetPaths(mime);
@@ -1455,6 +1459,7 @@ void ArrangementLanes::dragEnterEvent(QDragEnterEvent* event) {
     const QMimeData* mime = event->mimeData();
     const bool wanted = !audioPaths(mime).isEmpty() || !droppedDevices(mime).empty() ||
                         !app::presetPaths(mime).isEmpty() || app::movedDevices(mime).has_value() ||
+                        app::movedPad(mime).has_value() ||
                         (mime && mime->hasFormat(QString::fromLatin1(app::kPluginMime)));
     if (!wanted) {
         event->ignore();
