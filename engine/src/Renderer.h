@@ -448,8 +448,9 @@ private:
     // late (on the timeline as it was played that long ago: before a loop wrap,
     // its end); into `out`, returning how many.
     int delayedSegments(int64_t delay, Segment* out) const noexcept;
+    // `chaseClips`: its clips' notes underway sound from the chunk's start (its clips play again).
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
-                         MidiRecordingTake* take) noexcept;
+                         MidiRecordingTake* take, bool chaseClips = false) noexcept;
     void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept;
     // A note-on for a note of the track's clips (and its bend where it starts
     // sounding, `from` samples into it), remembered as an active note.

@@ -168,6 +168,23 @@ private Q_SLOTS:
         QCOMPARE(f.track(track).takes.size(), size_t(1));
     }
 
+    void quantizedEndsStopAtPunchOut() {
+        // Punch Out at 1.8 s (beat 3.6); a note held over it, its end put on a beat's grid,
+        // would end at beat 4: it stops at Punch Out, and so does the clip, leaving what follows.
+        EditorFixture f;
+        const QString track = f.editor.addMidiTrack();
+        f.editor.addMidiClip(track, 3.6, 4.0);  // beats 3.6..7.6, after Punch Out
+        RecordedTake take{track, {}, 0.0, 3.0, {{1.0, 2.5, 60, 100, {}}}, true};
+        take.punchOutSec = 1.8;
+        f.editor.addRecordings({take}, 1.0, true);
+        const auto& clips = f.track(track).clips;
+        QCOMPARE(clips.size(), size_t(2));
+        QCOMPARE(clips[0].startBeat + clips[0].durationBeats, 3.6);
+        QCOMPARE(clips[0].notes.at(0).start + clips[0].notes.at(0).length, 3.6);
+        QCOMPARE(clips[1].startBeat, 3.6);  // as it was
+        QCOMPARE(clips[1].durationBeats, 4.0);
+    }
+
     void recordingRoundTheLoopMakesALaneForEachPass() {
         EditorFixture f;
         const QString track = f.editor.addAudioTrack();

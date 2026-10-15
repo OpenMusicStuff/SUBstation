@@ -56,6 +56,8 @@ struct RecordedTake {
     double fileSec = 0.0;
     // Punch In and Out as they were (timeline seconds): what was played before
     // `punchInSec` or from `punchOutSec` is left out of its passes (loopPasses).
+    // A pass cut at Punch Out keeps `punchOutSec`: a note's end put on the grid
+    // stops there (ProjectEditor::recordedMidiClip).
     std::optional<double> punchInSec;
     std::optional<double> punchOutSec;
 

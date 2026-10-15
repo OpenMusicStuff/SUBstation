@@ -96,9 +96,15 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
             for (const Clip& clip : track.clips) {
                 if (clip.isAudio() && !clip.path.isEmpty()) audioAnalysis_->request(clip.path);
             }
+            for (const TakeLane& lane : track.takes) {  // (drawn too: their chords)
+                for (const Clip& clip : lane.clips) {
+                    if (clip.isAudio() && !clip.path.isEmpty()) audioAnalysis_->request(clip.path);
+                }
+            }
         }
     });
     connect(project_, &Project::clipsChanged, analyseFiles_, qOverload<>(&QTimer::start));
+    connect(project_, &Project::takesChanged, analyseFiles_, qOverload<>(&QTimer::start));
     connect(project_, &Project::reset, analyseFiles_, qOverload<>(&QTimer::start));
     devices_ = new DeviceSelection(editor_, selection_, bridge_, this);
     keyboard_ = new ComputerKeyboard(bridge_, this);

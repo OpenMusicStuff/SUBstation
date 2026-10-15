@@ -35,6 +35,7 @@ std::vector<RecordedTake> loopPasses(const RecordedTake& take) {
         pass.durationSec = to - from;
         pass.offsetSec = take.offsetSec + (from - begin);
         pass.fileSec = take.fileSec > 0 ? take.fileSec : take.offsetSec + take.durationSec;
+        if (to - back >= punchOut) pass.punchOutSec = punchOut;  // (cut there: nothing of it goes past)
         for (const RecordedTakeNote& note : take.notes) {
             if (note.start < from || note.start >= to) continue;
             RecordedTakeNote played = note;

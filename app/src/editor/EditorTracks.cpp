@@ -19,6 +19,7 @@
 #include <QUndoStack>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -1016,6 +1017,9 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
     const double tempo = project_->tempo();
     const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
     const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
+    // Cut at Punch Out: nothing goes past it, not even an end put on the grid.
+    const double limit = take.punchOutSec ? secondsToBeats(*take.punchOutSec, tempo) - start
+                                          : std::numeric_limits<double>::infinity();
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
         double begin = secondsToBeats(played.start, tempo) - start;
@@ -1027,6 +1031,7 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
             if (quantizeEnds) {  // its end on the grid too (a step long, if that would be where it starts)
                 const double snappedEnd = roundHalfEven((start + playedEnd) / quantize) * quantize - start;
                 length = snappedEnd - begin > 1e-9 ? snappedEnd - begin : quantize;
+                length = std::min(length, limit - begin);
             }
         }
         if (begin < 0 || begin >= end - start || length <= 0) continue;
