@@ -113,7 +113,7 @@ chunk (slice by slice) before the next device starts, so a rack can run its chai
 whole chunk too.
 
 `ProcessContext` carries the sample rate, sample and beat position, tempo, time signature,
-playing, looping (off while recording), the loop in beats, whether the render is offline, and
+playing, looping (recording too), the loop in beats, whether the render is offline, and
 the slice's events. See [devices.md](devices.md) for how processors use it.
 
 ### Transport in the renderer
