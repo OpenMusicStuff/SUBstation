@@ -69,8 +69,10 @@ is bypassed: on the track itself, on the groups and returns it goes into, and on
 master. Those devices stay switched on; their titles are dimmed and their tooltips say
 why, and they play again once nothing is monitored or the stopwatch is off. The armed
 track, and the groups it goes through, also stop waiting for the other tracks' delay
-compensation, whether the song plays or not (what plays back on them then comes that much
-early). Exports and freezing always hear every device.
+compensation, whether the song plays or not: what you play into it is heard at once. The
+armed track's own MIDI clips still play in time with the rest of the song (their notes are
+held back by as much as the track's sound comes early), so only what you play comes early.
+Exports and freezing always hear every device.
 
 A MIDI track's name tooltip shows what a note you play on it is heard after, and why:
 *Played live: 9.3 ms = MIDI input 1.3 + devices 2.0 + delay compensation 0.0 + output 6.0*.

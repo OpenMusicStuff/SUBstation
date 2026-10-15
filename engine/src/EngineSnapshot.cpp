@@ -742,6 +742,22 @@ void Engine::rebuildSnapshotLocked() {
         if (enabledDevice || warping) ++snap->parallelWork;
         snap->tracks.push_back(std::move(render));
     }
+    // Constrained, a live track's way out isn't delayed, so what is played into
+    // it is heard at once; its own clips' notes would come early with it. They
+    // are delayed instead, by what that way out would have been delayed (its
+    // output, then each strip it goes on into, all of them live too), so they
+    // stay in time with the other tracks.
+    for (size_t i = snap->tracks.size(); i-- > 0;) {
+        TrackRender& render = snap->tracks[i];
+        if (!render.live) continue;
+        for (const int e : render.outgoing) {
+            const EdgeRender& edge = snap->edges[static_cast<size_t>(e)];
+            if (!edge.sums()) continue;
+            const int after = edge.to >= 0 ? snap->tracks[static_cast<size_t>(edge.to)].clipDelay : 0;
+            render.clipDelay = edge.compensation + after;
+            break;
+        }
+    }
     warpCache_.endBuild();
     ensureWarpVoicesLocked(voicesNeeded);
     snap->warpVoices = warpVoices_;

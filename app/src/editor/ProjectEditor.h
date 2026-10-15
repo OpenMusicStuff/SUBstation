@@ -225,7 +225,7 @@ public:
     // the notes played (their starts on the grid of `quantize` beats, if given:
     // record quantization). As in Ableton's Arrangement recording, a take
     // replaces what was under it. The clips made.
-    ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0);
+    ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0, bool quantizeEnds = false);
 
     // --- Settings (EditorSettings.cpp) ---
 
@@ -812,7 +812,7 @@ private:
     void dropSidechains(const QSet<QString>& sourceIds, const QString& text);
     // Devices taking these tracks' notes take their own track's again.
     void dropMidiInputs(const QSet<QString>& sourceIds, const QString& text);
-    Clip recordedMidiClip(const RecordedTake& take, double quantize) const;
+    Clip recordedMidiClip(const RecordedTake& take, double quantize, bool quantizeEnds) const;
 
     // Settings.
     void setSettings(const QString& text, const SettingsValues& values, const QString& mergeKey = {});

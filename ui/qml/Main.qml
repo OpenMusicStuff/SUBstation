@@ -468,6 +468,7 @@ ApplicationWindow {
                     onTriggered: Session.bridge.reEnableAutomation()
                 }
                 Action { objectName: "soloSelectedTracks"; text: qsTr("Solo Selected Tracks"); shortcut: window.keyOf(objectName); onTriggered: Session.soloSelectedTracks() }
+                Action { objectName: "armSelectedTracks"; text: qsTr("Arm Selected Tracks"); shortcut: window.keyOf(objectName); onTriggered: Session.armSelectedTracks() }
                 MenuSeparator {}
                 Action { objectName: "playStop"; text: qsTr("Play / Stop"); shortcut: window.keyOf(objectName); onTriggered: Session.togglePlay() }
                 Action { objectName: "record"; text: qsTr("Record"); shortcut: window.keyOf(objectName); onTriggered: Session.toggleRecord() }
@@ -505,6 +506,18 @@ ApplicationWindow {
                         }
                         onObjectAdded: (index, object) => quantizeMenu.insertAction(index, object)
                         onObjectRemoved: (index, object) => quantizeMenu.removeAction(object)
+                    }
+                    MenuSeparator {}
+                    Action {
+                        objectName: "quantize_ends"
+                        text: qsTr("Quantize Note Ends")
+                        checkable: true
+                        checked: Session.recordQuantizeEnds
+                        enabled: Session.recordQuantize > 0
+                        onTriggered: {
+                            Session.recordQuantizeEnds = checked
+                            checked = Qt.binding(() => Session.recordQuantizeEnds)  // (the click broke it)
+                        }
                     }
                 }
                 Action { objectName: "goToStart"; text: qsTr("Go to Start"); shortcut: window.keyOf(objectName); onTriggered: Session.locate(0) }

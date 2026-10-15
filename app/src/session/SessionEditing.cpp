@@ -356,6 +356,28 @@ void Session::soloSelectedTracks() {
     editor_->soloTracks(tracks, solo, true);
 }
 
+void Session::armSelectedTracks() {
+    QStringList tracks;
+    for (const QString& id : ownersAmong(*project_, selection_->trackIds())) {
+        if (project_->hasTrack(id) && project_->track(id).hasClips()) tracks.append(id);  // (groups record nothing)
+    }
+    if (tracks.isEmpty()) {
+        Q_EMIT statusMessage(QStringLiteral("Select a track to arm."));
+        return;
+    }
+    const bool arm = !std::all_of(tracks.begin(), tracks.end(), [this](const QString& id) { return project_->track(id).armed; });
+    editor_->armTracks(tracks, arm, true);
+    if (!arm) return;
+    for (const QString& id : tracks) {
+        const Track& track = project_->track(id);
+        if (track.armed && !track.hasInput()) {
+            const QString what = track.isMidi() ? QStringLiteral("MIDI input") : QStringLiteral("input");
+            Q_EMIT statusMessage(QStringLiteral("%1 has no %2: choose one to record.").arg(track.name, what));
+            break;
+        }
+    }
+}
+
 // --- Freezing -----------------------------------------------------------------------------------
 
 void Session::toggleFreeze() {

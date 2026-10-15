@@ -421,6 +421,7 @@ struct TrackBuffers {
     // Heard as it is played, without delay compensation: monitored, or live
     // while compensation is constrained (TrackRender::live).
     bool uncompensated = false;
+    int clipDelay = 0;       // its clips' notes' delay in the chunk before (TrackRender::clipDelay)
     bool recorded = false;   // being recorded: its clips are silent (the take replaces them)
     bool audible = true;     // not muted, and solo lets one of its edges through
     // Solo, per chunk: it is soloed; it is soloed or fed by something soloed
@@ -469,6 +470,10 @@ struct TrackRender : StripRender {
     // Constrained: a monitored track (In, or Auto and armed), or a strip one is
     // heard through. Its edges aren't delay-compensated, playing back or not.
     bool live = false;
+    // Live, how late its own clips' notes play (samples): what its way out
+    // would have been delayed, so they stay in time while only what is played
+    // into it comes early.
+    int clipDelay = 0;
     std::vector<ClipRender> clips;  // sorted by start
     int64_t maxClipLength = 0;      // bounds the binary search window
     std::vector<NoteRender> notes;  // sorted by start

@@ -167,8 +167,12 @@ compensation  = heard(point) - arrival(edge)                  per edge
   still switched on (`isEnabled()`), but renders and delay compensation go by `isActive()`, so it
   isn't processed and adds no latency. `ProcessorEntry::alignedLatency` keeps the latency it
   would have (`ownLatency()`), so `idle()` still sees it change. With the snapshot's
-  `constrained`, a track hearing its MIDI input (In, or Auto and armed; playing back too, its
-  own clips' notes then early) is `TrackBuffers::uncompensated` like a monitored one. Offline renders hold it off
+  `constrained`, a track hearing its MIDI input (In, or Auto and armed; playing back too) is
+  `TrackBuffers::uncompensated` like a monitored one. Its own clips' notes then play
+  `TrackRender::clipDelay` late (the sum of the compensations its way out skips, worked out
+  with the snapshot), so only its input comes early: `Renderer::delayedSegments()` gives the
+  chunk's segments that long ago (just after a loop wrap, the loop's end), and a change in
+  the delay counts as a jump. Offline renders hold it off
   (`constrainHeld_`, from `suspendLiveLocked()` to `endOfflineLocked()`), so exports and
   freezing hear every device.
 

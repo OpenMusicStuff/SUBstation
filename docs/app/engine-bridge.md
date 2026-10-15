@@ -602,6 +602,7 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 | `audio/threads` | render threads; 0: the engine's default (one per core but one) | `audioThreads()` |
 | `midi/disabled_inputs` | MIDI inputs turned off (every other input is used, so a new one just plays) | `disabledMidiInputs()` |
 | `record/quantize` | record quantization grid in beats; 0: as played (`recordQuantizeChoices()` lists the choices) | `recordQuantize()` |
+| `record/quantize_ends` | record quantization puts notes' ends on the grid too (off by default) | `recordQuantizeEnds()` |
 
 `AudioSettings::load()` falls back to the default driver for an unknown one; `save()` writes them all. The audio
 preferences ([session.md](session.md#preferences)) save them when a change opens successfully, so the program opens the

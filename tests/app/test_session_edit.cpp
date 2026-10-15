@@ -851,6 +851,24 @@ private Q_SLOTS:
         QVERIFY(!f.project().track(a).solo && !f.project().track(b).solo && !f.project().track(ret).solo);
     }
 
+    void armSelectedTracks() {
+        SessionFixture f;
+        Session& s = f.s();
+        const QString a = f.editor().addAudioTrack();
+        const QString b = f.editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
+        const QString c = f.editor().addAudioTrack();
+        f.editor().armTracks({c}, true);
+        f.selection().selectTrack(a, true);
+        f.selection().selectTrack(b, true, Selection::Mode::Toggle);
+        s.armSelectedTracks();  // Ctrl+Shift+A: those, and only those
+        QVERIFY(f.project().track(a).armed && f.project().track(b).armed && !f.project().track(c).armed);
+        s.armSelectedTracks();  // all of them armed already: disarmed
+        QVERIFY(!f.project().track(a).armed && !f.project().track(b).armed && !f.project().track(c).armed);
+        f.selection().selectTrack(c, true);
+        s.armSelectedTracks();
+        QVERIFY(f.project().track(c).armed && !f.project().track(a).armed);
+    }
+
     // --- Duplicating tracks, copying automation ---
 
     void ctrlDDuplicatesTheSelectedTracks() {

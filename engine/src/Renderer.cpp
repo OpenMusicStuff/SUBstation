@@ -243,20 +243,35 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         if (done < frames) chasePending_ = false;
         // Recording goes straight on: the loop doesn't wrap (punching in and out of it comes later).
         const bool loop = flags.loop && !recording_;
+        chunkLoop_ = loop;
+        chunkLoopStart_ = snap.loopStart;
+        chunkLoopEnd_ = snap.loopEnd;
+        if (!loop) looped_ = false;
+        loopedAtChunk_ = looped_;
         while (done < frames) {
             int length = frames - done;
             const bool looping = loop && numSegments_ < kMaxSegments - 1;
             if (looping && position_ < snap.loopEnd && position_ + length > snap.loopEnd) {
                 length = static_cast<int>(snap.loopEnd - position_);
             }
-            segments_[numSegments_++] = {position_, length, done, position_ != expectedPosition_, chase};
+            const bool jump = position_ != expectedPosition_;
+            const bool wrap = jump && wrapNext_ && loop && position_ == snap.loopStart;
+            if (jump) looped_ = wrap;
+            segments_[numSegments_++] = {position_, length, done, jump, chase, wrap};
             chase = false;
             if (flags.metronome) scheduleTicks(snap, position_, length, done);
             position_ += length;
             expectedPosition_ = position_;
             done += length;
-            if (looping && position_ == snap.loopEnd) position_ = snap.loopStart;
+            wrapNext_ = false;
+            if (looping && position_ == snap.loopEnd) {
+                position_ = snap.loopStart;
+                wrapNext_ = true;
+            }
         }
+    } else {
+        wrapNext_ = false;
+        looped_ = false;
     }
 
     const double spb = snap.samplesPerBeat();
@@ -1744,6 +1759,32 @@ void Renderer::bendNotes(const TrackRender& track, const Segment& segment, Track
     }
 }
 
+int Renderer::delayedSegments(int64_t delay, Segment* out) const noexcept {
+    int count = 0;
+    bool looped = loopedAtChunk_;
+    for (int s = 0; s < numSegments_; ++s) {
+        const Segment& segment = segments_[s];
+        if (segment.jump) looped = segment.wrap;
+        const int64_t position = segment.position - delay;
+        // Within `delay` of the loop's start after a wrap: that long ago the
+        // playhead was still before the loop's end.
+        const bool beforeWrap = chunkLoop_ && looped && segment.position >= chunkLoopStart_ &&
+                                position < chunkLoopStart_ && chunkLoopEnd_ - chunkLoopStart_ >= delay;
+        if (!beforeWrap) {
+            out[count++] = {position, segment.length, segment.offset, segment.jump, segment.chase};
+            continue;
+        }
+        const int64_t early = chunkLoopStart_ - position;
+        const int first = static_cast<int>(std::min<int64_t>(segment.length, early));
+        // At the wrap itself the timeline played late goes straight on (to the loop's end).
+        out[count++] = {chunkLoopEnd_ - early, first, segment.offset, segment.jump && !segment.wrap, segment.chase};
+        if (first < segment.length) {
+            out[count++] = {chunkLoopStart_, segment.length - first, segment.offset + first, true, false, true};
+        }
+    }
+    return count;
+}
+
 void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
                                MidiRecordingTake* take) noexcept {
     // Notes played by hand come first, all at the block start and in the order
@@ -1782,8 +1823,23 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
     routeMidiInput(track, hearsInput, take, out);
     if (!playing_ || !clipNotes) releaseNotes(track.id, 0, out);
 
-    for (int s = 0; s < numSegments_ && clipNotes; ++s) {
-        const Segment& segment = segments_[s];
+    // Played live while compensation is constrained, the track is heard early:
+    // its clips' notes play late by as much, in time with the other tracks.
+    std::array<Segment, 2 * kMaxSegments> delayed;
+    const Segment* segments = segments_.data();
+    int numSegments = numSegments_;
+    if (track.clipDelay > 0 || out.clipDelay > 0) {
+        numSegments = delayedSegments(track.clipDelay, delayed.data());
+        segments = delayed.data();
+        if (out.clipDelay != track.clipDelay && numSegments > 0) {  // (a jump in what they play)
+            delayed[0].jump = true;
+            delayed[0].chase = true;
+        }
+    }
+    if (playing_) out.clipDelay = track.clipDelay;
+
+    for (int s = 0; s < numSegments && clipNotes; ++s) {
+        const Segment& segment = segments[s];
         if (segment.jump) releaseNotes(track.id, segment.offset, out);
         const int64_t segEnd = segment.position + segment.length;
 

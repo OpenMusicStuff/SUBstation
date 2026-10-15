@@ -205,7 +205,7 @@ void Session::wire() {
     connect(bridge_, &EngineBridge::pluginStateDirty, undoStack_, &QUndoStack::resetClean);
     // A recording ended: its takes become clips, one undo step, and are selected.
     connect(bridge_, &EngineBridge::takesRecorded, this, [this](const std::vector<RecordedTake>& takes) {
-        const ClipRefs refs = editor_->addRecordings(takes, sub::app::recordQuantize());
+        const ClipRefs refs = editor_->addRecordings(takes, sub::app::recordQuantize(), sub::app::recordQuantizeEnds());
         if (!refs.isEmpty()) selection_->selectClips(*editor_, refs);
     });
     // Re-Enable Automation: lit while automation is overridden somewhere.
@@ -337,6 +337,14 @@ void Session::setRecordQuantize(double grid) {
     if (std::abs(grid - sub::app::recordQuantize()) < 1e-9) return;
     sub::app::setRecordQuantize(grid);
     Q_EMIT recordQuantizeChanged();
+}
+
+bool Session::recordQuantizeEnds() const { return sub::app::recordQuantizeEnds(); }
+
+void Session::setRecordQuantizeEnds(bool ends) {
+    if (ends == sub::app::recordQuantizeEnds()) return;
+    sub::app::setRecordQuantizeEnds(ends);
+    Q_EMIT recordQuantizeEndsChanged();
 }
 
 QVariantList Session::recordQuantizeChoices() const {

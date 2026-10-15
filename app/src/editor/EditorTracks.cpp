@@ -932,7 +932,7 @@ void ProjectEditor::setTrackMidiInput(const QString& trackId, const std::optiona
 
 // --- Recording ---
 
-ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize) {
+ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize, bool quantizeEnds) {
     const Project& p = *project_;
     const double tempo = p.tempo();
     OrderedMap<QString, std::vector<Clip>> byTrack;
@@ -941,7 +941,7 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
         const Track& track = p.track(take.trackId);
         if (track.isMidi() != take.midi) continue;
         if (take.midi) {
-            byTrack[take.trackId].push_back(recordedMidiClip(take, quantize));
+            byTrack[take.trackId].push_back(recordedMidiClip(take, quantize, quantizeEnds));
             continue;
         }
         double startBeat = secondsToBeats(take.startSec, tempo);
@@ -971,17 +971,22 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
     return refs;
 }
 
-Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize) const {
+Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, bool quantizeEnds) const {
     const double tempo = project_->tempo();
     const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
     const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
         double begin = secondsToBeats(played.start, tempo) - start;
-        const double length = secondsToBeats(played.end, tempo) - start - begin;
+        double length = secondsToBeats(played.end, tempo) - start - begin;
+        const double playedEnd = begin + length;
         if (quantize > 0) {  // on the arrangement's grid, unless that is outside the clip
             const double snapped = roundHalfEven((start + begin) / quantize) * quantize - start;
             if (snapped >= 0 && snapped < end - start) begin = snapped;
+            if (quantizeEnds) {  // its end on the grid too, a step long at least
+                const double snappedEnd = roundHalfEven((start + playedEnd) / quantize) * quantize - start;
+                length = std::max(snappedEnd - begin, quantize);
+            }
         }
         if (begin < 0 || begin >= end - start || length <= 0) continue;
         Note note{std::clamp(played.pitch, 0, 127), begin, length, std::clamp(played.velocity, 1, 127)};

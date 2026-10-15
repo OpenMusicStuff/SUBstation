@@ -246,6 +246,7 @@ private:
         int offset;
         bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
         bool chase;  // playback starts here: notes already underway sound
+        bool wrap = false;  // the jump is the loop's, from its end back to its start
     };
     struct Tick {
         int offset;
@@ -434,6 +435,10 @@ private:
     void mixPreview(SharedState& shared, int frames) noexcept;
     // A track's note events for this chunk, into `out`: preview notes, its MIDI
     // input (if `hearsInput`, or to `take`), then (if `clipNotes`) its clips' notes.
+    // The chunk's segments as a track's clips' notes play them, `delay` samples
+    // late (on the timeline as it was played that long ago: before a loop wrap,
+    // its end); into `out`, returning how many.
+    int delayedSegments(int64_t delay, Segment* out) const noexcept;
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
                          MidiRecordingTake* take) noexcept;
     void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept;
@@ -501,6 +506,13 @@ private:
     uint64_t blockCounter_ = 1;  // stamps voice use; 0 means "never used"
     std::array<Segment, kMaxSegments> segments_{};
     int numSegments_ = 0;
+    // The loop as this chunk plays it, for clips' notes played late (TrackRender::clipDelay).
+    bool chunkLoop_ = false;
+    int64_t chunkLoopStart_ = 0;
+    int64_t chunkLoopEnd_ = 0;
+    bool wrapNext_ = false;   // the last segment ended at the loop's end: the next starts it again
+    bool looped_ = false;     // the playhead wrapped since playback started or it jumped (at the chunk's start)
+    bool loopedAtChunk_ = false;
     std::array<Tick, kMaxTicks> ticks_{};  // this chunk's, from pendingTicks_
     int numTicks_ = 0;
     std::array<PendingTick, kMaxPendingTicks> pendingTicks_{};  // ring, in time order

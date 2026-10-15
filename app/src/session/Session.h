@@ -157,6 +157,8 @@ class Session : public QObject {
     Q_PROPERTY(double recordQuantize READ recordQuantize WRITE setRecordQuantize NOTIFY recordQuantizeChanged)
     // [{label ("No Quantization", "1/16"...), value: beats}]
     Q_PROPERTY(QVariantList recordQuantizeChoices READ recordQuantizeChoices CONSTANT)
+    // And their ends on the grid too (saved with the preferences).
+    Q_PROPERTY(bool recordQuantizeEnds READ recordQuantizeEnds WRITE setRecordQuantizeEnds NOTIFY recordQuantizeEndsChanged)
     // Whether automation was overridden somewhere (Re-Enable Automation is enabled, its button lit).
     Q_PROPERTY(bool automationOverridden READ automationOverridden NOTIFY automationOverriddenChanged)
 
@@ -249,6 +251,8 @@ public:
     double recordQuantize() const;
     void setRecordQuantize(double grid);
     QVariantList recordQuantizeChoices() const;
+    bool recordQuantizeEnds() const;
+    void setRecordQuantizeEnds(bool ends);
     bool automationOverridden() const { return automationOverridden_; }
     int pluginsLoaded() const { return pluginsLoaded_; }
     int pluginsTotal() const { return pluginsTotal_; }
@@ -366,6 +370,9 @@ public:
     Q_INVOKABLE QVariantMap renameTarget(bool browserListFocused = false);
     // S: solo the selected tracks (and unsolo the rest); if they all are already, unsolo every track.
     Q_INVOKABLE void soloSelectedTracks();
+    // Arms the selected tracks for recording, disarming the others (as clicking
+    // one's arm does); with all of them armed already, disarms them.
+    Q_INVOKABLE void armSelectedTracks();
     // Ctrl+Shift+F: freezes the selected tracks (and returns), or unfreezes them if they all are.
     Q_INVOKABLE void toggleFreeze();
     // Flatten Track: the selected frozen tracks become audio tracks playing their frozen audio.
@@ -467,6 +474,7 @@ Q_SIGNALS:
     void templateChanged();
     void countInBarsChanged();
     void recordQuantizeChanged();
+    void recordQuantizeEndsChanged();
     void automationOverriddenChanged();
     void pluginsLoadingChanged();
 
