@@ -545,7 +545,7 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   clips, devices and rack chains; automation keys, automation view, sidechains, inputs and MIDI inputs among the
   copied tracks renamed to the copies; not armed), `copyTracks`, `cutTracks`, `pasteTracks` (`CopiedTracks`; a copy's name without a `#` is made unique),
   `renameTrack` [Q] (its name template: `"# Lead"`),
-  `setTrackColor` [Q], `setTrackParam` / `setTracksParam` (mixer; the master only volume and pan), `soloTracks` [Q],
+  `setTrackColor` [Q], `setTracksColor` [Q] (one colour on several tracks, one undo step), `setTrackParam` / `setTracksParam` (mixer; the master only volume and pan), `soloTracks` [Q],
   `armTracks` [Q], `setTrackHeight` [Q], `setFolded` [Q].
 - **Inputs**: `setTrackInput` (device channels), `setTrackInputTrack` (`EditError` for a cycle or a non-audio track),
   `setTrackMonitor`, `setTrackMidiInput`.

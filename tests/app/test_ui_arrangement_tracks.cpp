@@ -795,8 +795,7 @@ private Q_SLOTS:
             auto* submenu = colorItem->property("subMenu").value<QObject*>();
             QVERIFY(submenu);
             const QPointF middle(colorItem->width() / 2, colorItem->height() / 2);
-            test::moveTo(window(), test::at(colorItem, middle));
-            QTest::mouseClick(window(), Qt::LeftButton, {}, test::at(colorItem, middle));
+            test::moveTo(window(), test::at(colorItem, middle));  // (it opens as the mouse comes over it)
             QTRY_VERIFY(submenu->property("visible").toBool());
             QCOMPARE(submenu->property("count").toInt(), int(sub::app::kTrackColors.size()));
             QQuickItem* swatch = nullptr;
