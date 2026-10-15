@@ -16,7 +16,10 @@
 #include <QTcpServer>
 #include <QTest>
 #include <QUndoStack>
+#include <QtQuickTest/quicktest.h>
 
+#include <algorithm>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -86,6 +89,45 @@ class TestUiDialogs : public QObject {
         return nullptr;
     }
     QQuickItem* shown(const QString& name) { return shownItem(window_->contentItem(), name); }
+    // Where to click an item that a change has just made again (a key's buttons, a list's rows: the old ones
+    // wait to be deleted, the new ones to be laid out): once both are done, the same item at the same place a
+    // frame later.
+    QPoint settled(const QString& name) {
+        QPoint at;
+        for (int i = 0; i < 50; ++i) {
+            QTest::qWait(0);  // (the deletions waiting run)
+            QQuickTest::qWaitForPolish(window_);
+            QQuickItem* item = shown(name);
+            if (!item) {
+                QTest::qWait(10);
+                continue;
+            }
+            at = test::centerOf(item);
+            QSignalSpy frame(window_, &QQuickWindow::frameSwapped);
+            window_->update();
+            const bool swapped = frame.wait(1000);
+            if (shown(name) == item && test::centerOf(item) == at) break;
+            if (!swapped) break;
+        }
+        return at;
+    }
+    // What lies under a point of the window, topmost first, by name (or type): a failed click's message.
+    QString under(QPoint at) {
+        QStringList names;
+        std::function<bool(QQuickItem*)> walk = [&](QQuickItem* item) {
+            QList<QQuickItem*> children = item->childItems();  // (painted last first: by z, then in order)
+            std::reverse(children.begin(), children.end());
+            std::stable_sort(children.begin(), children.end(), [](QQuickItem* a, QQuickItem* b) { return a->z() > b->z(); });
+            for (auto it = children.begin(); it != children.end(); ++it)
+                if ((*it)->isVisible() && (*it)->contains((*it)->mapFromScene(QPointF(at))) && walk(*it)) return true;
+            if (!item->contains(item->mapFromScene(QPointF(at)))) return false;
+            for (QQuickItem* up = item; up && names.size() < 4; up = up->parentItem())
+                names << (up->objectName().isEmpty() ? QString::fromLatin1(up->metaObject()->className()) : up->objectName());
+            return true;
+        };
+        walk(window_->contentItem());
+        return QStringLiteral("at %1, %2: %3").arg(at.x()).arg(at.y()).arg(names.join(QStringLiteral(" < ")));
+    }
     bool visible(const QString& dialog) { return object(dialog)->property("visible").toBool(); }
     // Opened, and inside the window (a click on what lies outside it is lost).
     void open(const QString& dialog) {
@@ -248,11 +290,12 @@ private Q_SLOTS:
         QTRY_COMPARE(list->property("count").toInt(), 1);
 
         const int spaces = window_->property("spaces").toInt();
+        // (Each change of the keys or the search makes the list's rows and their buttons again: clicked where
+        // they are once that is done.)
         auto record = [&] {
-            QQuickItem* add = nullptr;
-            QTRY_VERIFY((add = shown(QStringLiteral("addKey_split"))) != nullptr);
-            test::click(window_, test::centerOf(add));
-            QTRY_COMPARE(page->property("recording").toString(), QStringLiteral("split"));
+            const QPoint add = settled(QStringLiteral("addKey_split"));
+            test::click(window_, add);
+            QTRY_VERIFY2(page->property("recording").toString() == QStringLiteral("split"), qPrintable(under(add)));
             QTRY_VERIFY(shown(QStringLiteral("keyRecorder"))->hasActiveFocus());
         };
         record();
@@ -282,15 +325,15 @@ private Q_SLOTS:
         QCOMPARE(window_->property("spaces").toInt(), spaces);
 
         // A key's ×: taken back.
-        QQuickItem* remove = nullptr;
-        QTRY_VERIFY((remove = shown(QStringLiteral("key_split_Ctrl+D"))) != nullptr);
-        test::click(window_, test::centerOf(remove));
-        QTRY_COMPARE(keyMap.keys(QStringLiteral("split")), (QStringList{"Ctrl+E", "Space"}));
+        const QPoint remove = settled(QStringLiteral("key_split_Ctrl+D"));
+        test::click(window_, remove);
+        QTRY_VERIFY2(keyMap.keys(QStringLiteral("split")) == (QStringList{"Ctrl+E", "Space"}),
+                     qPrintable(keyMap.keys(QStringLiteral("split")).join(QLatin1Char(' ')) + QStringLiteral("; ") +
+                                under(remove)));
 
         // Reset: the profile's keys for Split; Reset All, for every command.
-        QQuickItem* reset = shown(QStringLiteral("resetKeys_split"));
-        QVERIFY(reset);
-        test::click(window_, test::centerOf(reset));
+        QVERIFY(shown(QStringLiteral("resetKeys_split")));
+        test::click(window_, settled(QStringLiteral("resetKeys_split")));
         QTRY_COMPARE(keyMap.keys(QStringLiteral("split")), QStringList{"Ctrl+E"});
         QVERIFY(!keyMap.customizedCommands().isEmpty());  // (Duplicate's and Play / Stop's)
         test::click(window_, test::centerOf(shown(QStringLiteral("resetAllKeys"))));
