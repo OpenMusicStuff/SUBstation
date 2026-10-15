@@ -40,6 +40,14 @@ OrderedMap<QString, double> partParams(double start, double end) {
     return params;
 }
 
+// A new pad's Sampler playing `path`: in 1-Shot (a drum hit plays whole,
+// however short the note), as Ableton's Drum Rack makes its Simplers.
+Device padSamplerOf(Device sampler, const QString& path) {
+    sampler.state = deviceState::toModel(samplerState::loaded(deviceState::fromModel(sampler.state), path));
+    sampler.params.insert(QStringLiteral("mode"), kSamplerOneShot);
+    return sampler;
+}
+
 }  // namespace
 
 int ProjectEditor::freePadNote(const Device& rack, int from) {
@@ -85,8 +93,7 @@ QString ProjectEditor::loadDrumPad(const QString& trackId, const QString& rackId
         // A pad without a Sampler: one goes first in it.
         const std::vector<Device> before = track->devices;
         std::vector<Device> after = before;
-        Device sampler = newDeviceOf(kSamplerKind);
-        sampler.state = deviceState::toModel(samplerState::loaded(deviceState::fromModel(sampler.state), path));
+        Device sampler = padSamplerOf(newDeviceOf(kSamplerKind), path);
         for (const auto& [param, value] : partParams(start, end)) sampler.params.insert(param, value);
         Chain& into = *findChain(after, padId).chain;
         into.devices.insert(into.devices.begin(), std::move(sampler));
@@ -96,8 +103,7 @@ QString ProjectEditor::loadDrumPad(const QString& trackId, const QString& rackId
     }
     const std::vector<Device> before = track->devices;
     std::vector<Device> after = before;
-    Device sampler = newDeviceOf(kSamplerKind);
-    sampler.state = deviceState::toModel(samplerState::loaded(deviceState::fromModel(sampler.state), path));
+    Device sampler = padSamplerOf(newDeviceOf(kSamplerKind), path);
     for (const auto& [param, value] : partParams(start, end)) sampler.params.insert(param, value);
     std::vector<Device> devices;
     devices.push_back(std::move(sampler));

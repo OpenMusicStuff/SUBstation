@@ -8,8 +8,9 @@ import SUBstation
 // the arrangement on it to load it (DrumPadItem); a pad with a chain takes
 // devices dropped on it into its chain, as a chain's row does. A click shows
 // its devices and plays its key while held; right-click for its menu (the
-// body's). Its mute (the activator), solo and lock (similar sounds leave its
-// sample be) are along its bottom. Renamed in place (startRename(): Ctrl+R).
+// body's). Its lock (similar sounds leave its sample be) is at its top right,
+// its mute (the activator) and solo along its bottom. Renamed in place
+// (startRename(): Ctrl+R).
 DrumPadItem {
     id: pad
 
@@ -97,7 +98,7 @@ DrumPadItem {
         objectName: "name"
         x: 3
         y: 2
-        width: parent.width - 6
+        width: (lock.visible ? lock.x - 2 : parent.width - 3) - x
         text: pad.modelData.name
         elide: Text.ElideRight
         color: Theme.text
@@ -123,20 +124,6 @@ DrumPadItem {
         visible: pad.filled && pad.height >= 22
 
         ToggleButton {
-            id: lock
-            objectName: "lock"
-            width: 11
-            height: 11
-            role: "small"
-            checkable: false
-            checked: pad.modelData.locked
-            iconName: "lock_envelopes"
-            iconSize: 8
-            tooltip: pad.modelData.locked ? qsTr("Locked: the rack's similar sounds leave its sample be (click to unlock)")
-                                          : qsTr("Lock its sample: the rack's similar sounds leave it be")
-            onClicked: pad.rack.toggleLock(pad.note)
-        }
-        ToggleButton {
             id: activator
             objectName: "activator"
             width: 11
@@ -160,6 +147,26 @@ DrumPadItem {
             tooltip: qsTr("Solo: only the soloed pads are heard")
             onClicked: pad.rack.toggleSolo(pad.note)
         }
+    }
+
+    // Locked, similar sounds leave its sample be (lit while locked).
+    ToggleButton {
+        id: lock
+        objectName: "lock"
+        anchors.right: parent.right
+        anchors.rightMargin: 2
+        y: 2
+        width: 11
+        height: 11
+        visible: pad.filled
+        role: "small"
+        checkable: false
+        checked: pad.modelData.locked
+        iconName: "lock_envelopes"
+        iconSize: 8
+        tooltip: pad.modelData.locked ? qsTr("Locked: the rack's similar sounds leave its sample be (click to unlock)")
+                                      : qsTr("Lock its sample: the rack's similar sounds leave it be")
+        onClicked: pad.rack.toggleLock(pad.note)
     }
 
     TextField {

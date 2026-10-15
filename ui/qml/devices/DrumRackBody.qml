@@ -7,10 +7,10 @@ import SUBstation
 // chain list, show the selected pad's devices beside the rack, add a macro,
 // take the last away), an overview of all 128 keys (lit where a pad is; click
 // it to show those pads), sixteen pads, four by four (DrumPad; the arrows
-// beside them or the wheel move them a row of keys), the similar sounds (the
-// arrows step every pad's sample but the locked ones to the next sound like
-// its reference: Session.similarSamples), its macros, and, while shown, its
-// chain list (RackDeviceBody's rows: a pad each). The device's menu has
+// beside them or the wheel move them a row of keys), its macros unless
+// collapsed (the ▾ in the device's title bar, beside the similar sounds'
+// arrows: DeviceFrame), and, while shown, its chain list (RackDeviceBody's
+// rows: a pad each). The device's menu has
 // Save Pads as Similar References and Return Pads to References (menuActions);
 // a pad's own menu locks it, saves or returns to its reference, renames,
 // duplicates or deletes it.
@@ -28,9 +28,8 @@ Item {
     readonly property alias overview: overview
     readonly property alias rows: rowRepeater
     readonly property alias chainList: list
-    readonly property alias previousSimilar: previousSimilar
-    readonly property alias nextSimilar: nextSimilar
     readonly property bool chainListShown: info.chainListShown
+    readonly property bool macrosShown: info.rackMacrosShown
     readonly property real padWidth: 50
     readonly property real padSpacing: 2
 
@@ -54,7 +53,7 @@ Item {
     ]
 
     readonly property real macrosLeft: similar.x + similar.width + 8
-    readonly property real macrosRight: macrosLeft + macroGrid.width
+    readonly property real macrosRight: macrosShown ? macrosLeft + macroGrid.width : similar.x + similar.width
     implicitWidth: (chainListShown ? macrosRight + 12 + 214 : macrosRight) + 8
     implicitHeight: 6 + Math.max(macroGrid.implicitHeight, strip.implicitHeight, 100) + 6
 
@@ -134,6 +133,7 @@ Item {
         }
         DeviceHeaderButton {
             objectName: "addMacroButton"
+            visible: body.macrosShown
             checkable: false
             text: "+"
             enabled: rackMacros.count < rackMacros.maximum
@@ -142,6 +142,7 @@ Item {
         }
         DeviceHeaderButton {
             objectName: "removeMacroButton"
+            visible: body.macrosShown
             checkable: false
             text: "−"
             enabled: rackMacros.count > 1
@@ -231,7 +232,7 @@ Item {
         }
     }
 
-    // The rows of keys up and down, and the similar sounds.
+    // The rows of keys up and down, and how many pads are locked.
     Column {
         id: similar
         objectName: "similar"
@@ -255,36 +256,6 @@ Item {
             tooltip: qsTr("The pads a row of keys down")
             onClicked: drumRack.scroll(-1)
         }
-        Item {
-            width: 1
-            height: 6
-        }
-        Text {
-            text: qsTr("Similar")
-            color: Theme.textDim
-            font: Theme.uiFont(7)
-        }
-        Row {
-            spacing: 1
-            DeviceHeaderButton {
-                id: previousSimilar
-                objectName: "previousSimilar"
-                text: "‹"
-                checkable: false
-                enabled: drumRack.padCount > drumRack.lockedCount && !Session.similarSamples.searching
-                tooltip: qsTr("Every pad but the locked ones back a similar sound (back to its reference)")
-                onClicked: Session.similarSamples.stepRack(body.trackId, body.deviceId, -1)
-            }
-            DeviceHeaderButton {
-                id: nextSimilar
-                objectName: "nextSimilar"
-                text: "›"
-                checkable: false
-                enabled: drumRack.padCount > drumRack.lockedCount && !Session.similarSamples.searching
-                tooltip: qsTr("Every pad but the locked ones to its next similar sound: the sounds most like its reference")
-                onClicked: Session.similarSamples.stepRack(body.trackId, body.deviceId, 1)
-            }
-        }
         Text {
             objectName: "lockedCount"
             visible: drumRack.lockedCount > 0
@@ -297,6 +268,7 @@ Item {
     Grid {
         id: macroGrid
         objectName: "macroGrid"
+        visible: body.macrosShown
         x: body.macrosLeft
         y: Math.max(6, Math.round((body.height - height) / 2))
         columns: Math.max(1, Math.ceil(rackMacros.count / 2))

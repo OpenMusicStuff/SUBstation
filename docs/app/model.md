@@ -423,8 +423,9 @@ Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: 
 
 `Project` ([Project.h](../../app/src/model/Project.h)) holds `tempo`, `timeSignature`, `key`, the loop
 (`loopEnabled`, `loopStart`, `loopEnd`, beats), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
-`shownChainLists` (the racks whose chain list shows: hidden by default) and `hiddenRackDevices` (the racks whose
-chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
+`shownChainLists` (the racks whose chain list shows: hidden by default), `hiddenRackDevices` (the racks whose
+chain's devices don't show beside them: shown by default) and `hiddenRackMacros` (the racks whose macros are
+collapsed: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
 `automationLocked`, `timeSignatureText`, `keyName`, `path`).
 
 | Signal | When |
@@ -610,7 +611,7 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   `receive_note` moves a pad to another key (the pad there takes this one's: "Move Pad"), `locked` locks it.
 - **Samplers and Drum Racks** (EditorDrumRacks.cpp): `loadSample` [Q] (a sample, or a part of a file as Start and
   End, loaded by hand: one step, the reference rules of `samplerState::loaded`), `loadDrumPad` [Q] (onto a pad's key:
-  into its Sampler, or a new pad with one, named after the sample; -1: the first free key), `swapSamples` (Samplers
+  into its Sampler, or a new pad with one in 1-Shot (`kSamplerOneShot`), named after the sample; -1: the first free key), `swapSamples` (Samplers
   stepped to similar sounds, one step for them all), `setSimilarReference` [Q]; a pad named after the sample its
   Sampler played follows it (`renamePadsFollowing`).
 - **Modulation** (EditorModulation.cpp): `mapModulation` (a parameter of another device on the modulator's track,

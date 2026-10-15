@@ -446,10 +446,11 @@ public:
                              const QString& chain = {}, const QSet<QString>& folded = {}, const QString& text = {});
     // Fold or unfold devices in the device view. View state: saved, not undone.
     Q_INVOKABLE void setDevicesFolded(const QString& trackId, const QStringList& deviceIds, bool folded);
-    // Show or hide a rack's chain list, or its chain's devices beside it, in
-    // the device view. View state: saved, not undone.
+    // Show or hide a rack's chain list, its chain's devices beside it, or its
+    // macros (collapsed), in the device view. View state: saved, not undone.
     Q_INVOKABLE void setChainListShown(const QString& trackId, const QString& rackId, bool shown);
     Q_INVOKABLE void setRackDevicesShown(const QString& trackId, const QString& rackId, bool shown);
+    Q_INVOKABLE void setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown);
     // Move a device to position `index` in its chain (an instrument stays first).
     Q_INVOKABLE void moveDevice(const QString& trackId, const QString& deviceId, int index);
     // Move devices together (in their order on the track) to before the device

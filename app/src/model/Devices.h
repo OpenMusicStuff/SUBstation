@@ -78,6 +78,7 @@ Device* padSampler(Chain& pad);
 const Device* padSampler(const Chain& pad);
 
 inline const QString kSamplerKind = QStringLiteral("sampler");
+inline constexpr double kSamplerOneShot = 1.0;  // the Sampler's "mode": 0 Classic, 1 1-Shot, 2 Slice
 
 // A built-in device's parameter as the engine describes it (null: no such one).
 const sub::ParamInfo* builtinParamInfo(const QString& kind, const QString& paramId);

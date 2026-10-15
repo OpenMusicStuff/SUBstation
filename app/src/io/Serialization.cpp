@@ -1076,6 +1076,7 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
             {QStringLiteral("folded_devices"), present(project.foldedDevices())},
             {QStringLiteral("chain_lists_shown"), present(project.shownChainLists())},
             {QStringLiteral("rack_devices_hidden"), present(project.hiddenRackDevices())},
+            {QStringLiteral("rack_macros_hidden"), present(project.hiddenRackMacros())},
             {QStringLiteral("tracks"), tracks},
             {QStringLiteral("returns"), returns}};
 }
@@ -1175,6 +1176,9 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     for (const QJsonValue& id : listOr(data, QStringLiteral("chain_lists_shown"))) contents.shownChainLists.insert(toStr(id));
     for (const QJsonValue& id : listOr(data, QStringLiteral("rack_devices_hidden"))) {
         contents.hiddenRackDevices.insert(toStr(id));
+    }
+    for (const QJsonValue& id : listOr(data, QStringLiteral("rack_macros_hidden"))) {
+        contents.hiddenRackMacros.insert(toStr(id));
     }
     contents.path = projectFile;
     return contents;

@@ -1563,23 +1563,25 @@ key, which its devices hear as C3: a Sampler on a pad plays its sample at its ow
   there shows those pads.
 - **Loading samples**: drop an audio file on a pad (from the browser or the desktop), or
   an audio clip dragged down out of the arrangement (its part of its file), or right-click
-  › *Load Sample…*. The pad gets a Sampler with the sample, and the sample's name. Onto a
+  › *Load Sample…*. The pad gets a Sampler with the sample, in **1-Shot** (a hit plays
+  whole however short the note), and the sample's name. Onto a
   pad with a sample, the new one replaces it (and a pad named after its sample takes the
   new name; one you named keeps its name).
 - Click a pad to play its key and show its devices beside the rack (its Sampler); drop
-  devices on a pad with a sample to add them to it. Each pad has its activator (mute),
-  solo and a **lock** along its bottom; double-click its name (or right-click › *Rename*,
+  devices on a pad with a sample to add them to it. Each pad has a **lock** at its top
+  right, and its activator (mute) and solo along its bottom; double-click its name (or right-click › *Rename*,
   or Ctrl+R) to rename it. Its right-click menu also duplicates (onto the next free key)
   and deletes it.
-- **Similar sounds**: the **‹** and **›** arrows beside the pads (under *Similar*) swap
+- **Similar sounds**: the **‹** and **›** arrows in the Drum Rack's title bar swap
   every pad's sample for the next (or previous) sound like it, each pad from its own
   reference, as the Sampler's arrows do, in one undo step. **Locked** pads keep their
   samples. A pad's menu steps it alone, saves its sample as its reference or returns to
   it; the rack's menu has *Save Pads as Similar References* and *Return Pads to
   References* for every pad but the locked ones.
 - Its chain list (the rows button) lists the pads, as a rack's chains, with their mixers;
-  *Add Chain* (or **+ Chain**) adds an empty pad on the first free key. Its macros work as
-  any rack's.
+  *Add Pad* (or **+ Chain**) adds an empty pad on the first free key. Its macros work as
+  any rack's; the **▾** in its title bar collapses them (and **▸** shows them again), which
+  is saved with the project.
 - A Drum Rack is an instrument even while empty: it goes first on a MIDI track. Its
   presets load into Drum Racks only.
 

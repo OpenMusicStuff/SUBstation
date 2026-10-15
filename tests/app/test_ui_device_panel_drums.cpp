@@ -124,6 +124,7 @@ private Q_SLOTS:
         QCOMPARE(chain->name, QStringLiteral("Kick"));
         QCOMPARE(chain->devices.size(), size_t(1));
         QCOMPARE(chain->devices[0].kind, sub::app::kSamplerKind);
+        QCOMPARE(chain->devices[0].params.value(QStringLiteral("mode")), sub::app::kSamplerOneShot);
         QCOMPARE(sub::app::samplerState::sample(sub::app::deviceState::fromModel(chain->devices[0].state)), kick);
         QCOMPARE(undo().undoText(), QStringLiteral("Load Pad"));
         QVERIFY(!pad(rack, 38)->property("dropping").toBool());
@@ -152,7 +153,12 @@ private Q_SLOTS:
         editor().loadDrumPad(track, rack, 36, wav(QStringLiteral("Kick.wav")));
         editor().loadDrumPad(track, rack, 37, wav(QStringLiteral("Snare.wav")));
         QQuickItem* kick = pad(rack, 36);
-        test::click(window(), test::centerOf(test::part(kick, "lock")));
+        // The lock at its top right corner.
+        QQuickItem* lock = test::part(kick, "lock");
+        const QRectF lockRect = lock->mapRectToItem(kick, QRectF(0, 0, lock->width(), lock->height()));
+        QVERIFY(lockRect.right() <= kick->width() && lockRect.right() >= kick->width() - 4);
+        QVERIFY(lockRect.top() >= 0 && lockRect.top() <= 4);
+        test::click(window(), test::centerOf(lock));
         QVERIFY(padChain(track, rack, 36)->locked);
         QCOMPARE(bodyPart(rack, QStringLiteral("lockedCount"))->property("text").toString(), QStringLiteral("1 locked"));
         test::click(window(), test::centerOf(test::part(pad(rack, 36), "activator")));
@@ -188,6 +194,15 @@ private Q_SLOTS:
         const auto [track, rack] = drums();
         QQuickItem* next = bodyPart(rack, QStringLiteral("nextSimilar"));
         QVERIFY(next);
+        // In the device's title bar, with the macros' collapse arrow.
+        QQuickItem* header = test::part(ui_.frame(rack), "header");
+        QVERIFY(header);
+        const QPointF inHeader = next->mapToItem(header, QPointF(next->width() / 2, next->height() / 2));
+        QVERIFY(header->contains(inHeader));
+        QVERIFY(bodyPart(rack, QStringLiteral("previousSimilar"))->isVisible());
+        QQuickItem* collapse = bodyPart(rack, QStringLiteral("macrosButton"));
+        QVERIFY(collapse && collapse->isVisible());
+        QVERIFY(header->contains(collapse->mapToItem(header, QPointF(collapse->width() / 2, collapse->height() / 2))));
         QVERIFY(!next->isEnabled());  // no pad yet
         const QString kick = editor().loadDrumPad(track, rack, 36, wav(QStringLiteral("Kick.wav")));
         ui_.polish();
@@ -198,6 +213,26 @@ private Q_SLOTS:
         editor().setChainParam(track, kick, QStringLiteral("locked"), 1.0);
         ui_.polish();
         QVERIFY(!next->isEnabled());  // every pad locked
+    }
+
+    void theMacrosCollapse() {
+        const auto [track, rack] = drums();
+        QQuickItem* frame = ui_.frame(rack);
+        QQuickItem* macros = bodyPart(rack, QStringLiteral("macroGrid"));
+        QVERIFY(macros && macros->isVisible());
+        const qreal wide = frame->width();
+        test::click(window(), test::centerOf(bodyPart(rack, QStringLiteral("macrosButton"))));
+        QVERIFY(!project().areRackMacrosShown(rack));
+        ui_.polish();
+        QVERIFY(!macros->isVisible());
+        QVERIFY(!bodyPart(rack, QStringLiteral("addMacroButton")));  // (no visible one: + and − go with them)
+        QVERIFY(ui_.frame(rack)->width() < wide);  // narrower without them
+        ui_.screenshot(QStringLiteral("drum-rack-macros-collapsed"));
+        test::click(window(), test::centerOf(bodyPart(rack, QStringLiteral("macrosButton"))));
+        QVERIFY(project().areRackMacrosShown(rack));
+        ui_.polish();
+        QVERIFY(macros->isVisible());
+        QCOMPARE(ui_.frame(rack)->width(), wide);
     }
 };
 

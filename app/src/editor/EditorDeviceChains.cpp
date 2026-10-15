@@ -222,6 +222,11 @@ void ProjectEditor::setRackDevicesShown(const QString& trackId, const QString& r
     if (rack != nullptr && rack->isRack()) project_->setRackDevicesShown(trackId, rackId, shown);
 }
 
+void ProjectEditor::setRackMacrosShown(const QString& trackId, const QString& rackId, bool shown) {
+    const Device* rack = project_->findDevice(trackId, rackId);
+    if (rack != nullptr && rack->isRack()) project_->setRackMacrosShown(trackId, rackId, shown);
+}
+
 void ProjectEditor::moveDevice(const QString& trackId, const QString& deviceId, int index) {
     if (!project_->hasDevice(trackId, deviceId)) return;
     const auto& devices = project_->track(trackId).devices;

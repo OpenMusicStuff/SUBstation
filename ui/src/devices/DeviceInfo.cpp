@@ -214,6 +214,7 @@ void DeviceInfo::refresh() {
         s.folded = project->isDeviceFolded(deviceId_);
         s.chainListShown = s.isRack && project->isChainListShown(deviceId_);
         s.rackDevicesShown = project->areRackDevicesShown(deviceId_);
+        s.rackMacrosShown = project->areRackMacrosShown(deviceId_);
         const std::optional<QString> chain = sub::app::containerOf(track->devices, deviceId_);
         s.chainId = chain.value_or(QString());
         if (const auto* siblings = sub::app::chainDevices(track->devices, chain); siblings && !s.instrument) {

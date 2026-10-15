@@ -357,6 +357,10 @@ void DeviceSelection::toggleChainList(const QString& rackId) {
     if (!trackId_.isEmpty()) editor_->setChainListShown(trackId_, rackId, !project_->isChainListShown(rackId));
 }
 
+void DeviceSelection::toggleRackMacros(const QString& rackId) {
+    if (!trackId_.isEmpty()) editor_->setRackMacrosShown(trackId_, rackId, !project_->areRackMacrosShown(rackId));
+}
+
 void DeviceSelection::toggleRackDevices(const QString& rackId) {
     if (!trackId_.isEmpty()) editor_->setRackDevicesShown(trackId_, rackId, !project_->areRackDevicesShown(rackId));
 }

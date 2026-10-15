@@ -337,16 +337,19 @@ A **Drum Rack** (`DeviceInfo.isDrumRack`: a rack with `drum` set) loads
   where `DrumRack.filled`; the pads shown framed; a press or a drag sets `firstNote`); **the pads** (`padGrid`: a
   `Repeater` over `DrumRack.pads`, sixteen `DrumPad`s from `firstNote`, top row first, so the lowest key is at the
   bottom left; 50 px wide, a quarter of the height each); **the arrows** (`padsUp`, `padsDown`: `DrumRack.scroll(±1)`,
-  a row of four keys; the wheel over a pad too) and **the similar sounds** (`previousSimilar`, `nextSimilar`:
-  `similarSamples.stepRack(track, rack, ±1)`; disabled with no unlocked pad with a sample, or while it searches;
-  `lockedCount`); its macros and chain list as a rack's (a pad's row each).
+  a row of four keys; the wheel over a pad too) and `lockedCount`; its macros (and their + and −) unless collapsed
+  (`DeviceInfo.rackMacrosShown`: the project's `hiddenRackMacros`, view state) and chain list as a rack's (a pad's
+  row each).
+- **Its title bar** (DeviceFrame, for `isDrumRack`): `macrosButton` (▾/▸: `deviceSelection.toggleRackMacros`) and
+  the similar sounds (`previousSimilar`, `nextSimilar`: `similarSamples.stepRack(track, rack, ±1)`; disabled with no
+  unlocked pad with a sample, or while it searches), before the save button.
 - **A pad** ([DrumPad.qml](../../ui/qml/devices/DrumPad.qml)) is a `DrumPadItem`: an audio drag over it
   (`droppedAudio()`) lights it (`dropping`) and its drop calls `DrumRack::loadSample(note, path, start, end)`
   (`editor.loadDrumPad`, then the pad shows beside the rack); other drags it ignores, so they go on to the
   `DeviceChainArea`, which takes a pad with a chain as a chain row (`panelRole` "chainRow" while it has one: devices
   dropped there go into it). It shows its name and key name, lit while shown beside the rack; a press shows it
-  (`DrumRack::select`) and plays its key until released (`bridge.previewNote`); its lock (`lock_envelopes`), activator
-  and solo along its bottom (`DrumRack::toggleLock`, `toggleMute`, `toggleSolo`: `editor.setChainParam`); a
+  (`DrumRack::select`) and plays its key until released (`bridge.previewNote`); its lock (`lock_envelopes`) at its
+  top right, its activator and solo along its bottom (`DrumRack::toggleLock`, `toggleMute`, `toggleSolo`: `editor.setChainParam`); a
   double-click (or Ctrl+R: `startRename()`, as a chain row's) renames it in place.
 - **A pad's menu** (`DrumRackBody.showPadMenu(pad, x, y)`, in the panel's menu): Load Sample… (a file dialog onto its
   key), Lock/Unlock Pad, Save as Similar Reference, Return to Reference, Previous and Next Similar Sound (its Sampler),

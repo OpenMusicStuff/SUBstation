@@ -80,6 +80,7 @@ private Q_SLOTS:
         QCOMPARE(pad.devices.size(), size_t(1));
         QCOMPARE(pad.devices[0].kind, kSamplerKind);
         QCOMPARE(sampleOf(pad.devices[0]), QStringLiteral("/samples/Kick 1.wav"));
+        QCOMPARE(pad.devices[0].params.value(QStringLiteral("mode")), kSamplerOneShot);  // drums: 1-Shot
         QVERIFY(!pad.devices[0].params.contains(QStringLiteral("start")) ||
                 pad.devices[0].params.value(QStringLiteral("start")) == 0.0);
         // -1: the first key without a pad from C1 up; a part of a file sets Start and End.
@@ -149,6 +150,8 @@ private Q_SLOTS:
         const QString kick = f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/s/Kick.wav"));
         f.editor.loadDrumPad(track, rackId, 42, QStringLiteral("/s/Hat.wav"));
         f.editor.setChainParam(track, kick, QStringLiteral("locked"), 1.0);
+        f.editor.setRackMacrosShown(track, rackId, false);  // (view state, saved too)
+        QVERIFY(!f.project.areRackMacrosShown(rackId));
         const QJsonObject data = projectToJson(f.project);
         QCOMPARE(data.value(QStringLiteral("version")).toInt(), kProjectVersion);
         Project loaded;
@@ -156,6 +159,7 @@ private Q_SLOTS:
         QCOMPARE(projectToJson(loaded), data);
         const Device& again = loaded.device(track, rackId);
         QVERIFY(again.isDrumRack());
+        QVERIFY(!loaded.areRackMacrosShown(rackId));
         QCOMPARE(again.chains.size(), size_t(2));
         QCOMPARE(again.chains[0].receiveNote, 36);
         QVERIFY(again.chains[0].locked);
