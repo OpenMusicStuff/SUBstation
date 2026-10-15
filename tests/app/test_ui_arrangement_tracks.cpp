@@ -10,6 +10,7 @@
 // here). With $SUBSTATION_SCREENS set, it saves screenshots there.
 
 #include <QFileInfo>
+#include <QFontMetricsF>
 #include <QJSValue>
 #include <QMouseEvent>
 #include <QQuickItem>
@@ -1107,6 +1108,13 @@ private Q_SLOTS:
         QVERIFY(arrangement()->renameTrack(track));
         h_->settle();
         QVERIFY(field->isVisible() && field->hasActiveFocus());
+        // Its text whole, not cut off at the top: the room inside its padding is a line's height at least,
+        // and the field is inside the header.
+        const qreal inside = field->height() - field->property("topPadding").toReal() -
+                             field->property("bottomPadding").toReal();
+        QVERIFY2(inside >= QFontMetricsF(field->property("font").value<QFont>()).height(),
+                 qPrintable(QString::number(inside)));
+        QVERIFY(field->y() >= 0 && field->y() + field->height() <= header(track)->height());
         QCOMPARE(field->property("text").toString(), project().track(track).nameTemplate);
         QVERIFY(field->property("text").toString().startsWith(QStringLiteral("# ")));
         QCOMPARE(field->property("selectedText").toString(), field->property("text").toString());
