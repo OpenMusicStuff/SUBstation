@@ -1827,30 +1827,54 @@ void Renderer::bendNotes(const TrackRender& track, const Segment& segment, Track
     }
 }
 
-int Renderer::delayedSegments(int64_t delay, Segment* out) const noexcept {
-    int count = 0;
-    bool looped = loopedAtChunk_;
-    for (int s = 0; s < numSegments_; ++s) {
-        const Segment& segment = segments_[s];
+int Renderer::delaySegments(const Segment* in, int count, int64_t delay, const ChunkLoop& loop,
+                            Segment* out) noexcept {
+    constexpr int kRoom = 2 * kMaxSegments;
+    const int64_t loopLength = loop.end - loop.start;
+    int n = 0;
+    bool looped = loop.looped;
+    for (int s = 0; s < count && n < kRoom; ++s) {
+        const Segment& segment = in[s];
+        const bool loopedBefore = looped;
         if (segment.jump) looped = segment.wrap;
         const int64_t position = segment.position - delay;
         // Within `delay` of the loop's start after a wrap: that long ago the
-        // playhead was still before the loop's end.
-        const bool beforeWrap = chunkLoop_ && looped && segment.position >= chunkLoopStart_ &&
-                                position < chunkLoopStart_ && chunkLoopEnd_ - chunkLoopStart_ >= delay;
-        if (!beforeWrap) {
-            out[count++] = {position, segment.length, segment.offset, segment.jump, segment.chase};
+        // playhead was still going round the loop.
+        const bool roundTheLoop = loop.on && loopLength > 0 && looped && segment.position >= loop.start &&
+                                  position < loop.start;
+        if (!roundTheLoop) {
+            out[n++] = {position, segment.length, segment.offset, segment.jump, segment.chase};
             continue;
         }
-        const int64_t early = chunkLoopStart_ - position;
-        const int first = static_cast<int>(std::min<int64_t>(segment.length, early));
-        // At the wrap itself the timeline played late goes straight on (to the loop's end).
-        out[count++] = {chunkLoopEnd_ - early, first, segment.offset, segment.jump && !segment.wrap, segment.chase};
-        if (first < segment.length) {
-            out[count++] = {chunkLoopStart_, segment.length - first, segment.offset + first, true, false, true};
+        // At the wrap itself the timeline played late goes straight on (round the
+        // loop), unless that long ago the playhead hadn't come round it yet (the
+        // first wrap, with a delay longer than the loop): then it jumps in.
+        const bool goesOn = segment.wrap && (loopedBefore || delay <= loopLength);
+        int done = 0;
+        while (done < segment.length && n < kRoom) {
+            const int64_t at = position + done;
+            if (at >= loop.start) {  // caught up with the loop's start: from there as it is
+                out[n++] = {at, segment.length - done, segment.offset + done, true, false, true};
+                break;
+            }
+            // As many loop lengths later as bring it inside the loop, up to its end.
+            const int64_t inLoop = loop.end - 1 - (loop.start - 1 - at) % loopLength;
+            const int length = static_cast<int>(std::min<int64_t>(segment.length - done, loop.end - inLoop));
+            if (done == 0) {
+                const bool jumps = segment.jump && !goesOn;
+                out[n++] = {inLoop, length, segment.offset, jumps, segment.chase || jumps};
+            } else {
+                out[n++] = {inLoop, length, segment.offset + done, true, false, true};
+            }
+            done += length;
         }
     }
-    return count;
+    return n;
+}
+
+int Renderer::delayedSegments(int64_t delay, Segment* out) const noexcept {
+    return delaySegments(segments_.data(), numSegments_, delay,
+                         {chunkLoop_, chunkLoopStart_, chunkLoopEnd_, loopedAtChunk_}, out);
 }
 
 void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,

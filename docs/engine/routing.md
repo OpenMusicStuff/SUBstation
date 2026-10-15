@@ -171,8 +171,10 @@ compensation  = heard(point) - arrival(edge)                  per edge
   `TrackBuffers::uncompensated` like a monitored one. Its own clips' notes then play
   `TrackRender::clipDelay` late (the sum of the compensations its way out skips, worked out
   with the snapshot), so only its input comes early: `Renderer::delayedSegments()` gives the
-  chunk's segments that long ago (just after a loop wrap, the loop's end), and a change in
-  the delay counts as a jump. Offline renders hold it off
+  chunk's segments that long ago (`Renderer::delaySegments()`: just after a loop wrap, as
+  many loop lengths later as bring it back inside the loop, so a delay longer than the loop
+  goes round it more than once; the first time round, such a delay jumps in at the wrap,
+  chasing what is underway), and a change in the delay counts as a jump. Offline renders hold it off
   (`constrainHeld_`, from `suspendLiveLocked()` to `endOfflineLocked()`), so exports and
   freezing hear every device.
 
