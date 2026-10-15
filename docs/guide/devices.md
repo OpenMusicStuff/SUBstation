@@ -1579,9 +1579,16 @@ key, which its devices hear as C3: a Sampler on a pad plays its sample at its ow
   it; the rack's menu has *Save Pads as Similar References* and *Return Pads to
   References* for every pad but the locked ones.
 - Its chain list (the rows button) lists the pads, as a rack's chains, with their mixers;
-  *Add Pad* (or **+ Chain**) adds an empty pad on the first free key. Its macros work as
-  any rack's; the **▾** in its title bar collapses them (and **▸** shows them again), which
-  is saved with the project.
+  *Add Pad* (or **+ Chain**) adds an empty pad on the first free key.
+- It has no macros: to turn several of a pad's devices with one knob, select them and
+  group them into a rack (Ctrl+G), whose macros do it.
+- **Pads as tracks**: right-click the Drum Rack's title › *Separate Pads into Tracks*
+  makes every pad a MIDI track of its own, with its devices, volume, pan and automation,
+  and the notes of its key from the track's clips (at C3, so its Sampler plays as before).
+  The Drum Rack's track becomes their group, keeping its mixer, sends and the effects
+  after the rack, so the drums sound as they did. Or drag one pad out into the arrangement:
+  it becomes a track after the one you drop it on (or last, below the tracks), and leaves
+  the rack, taking its notes with it. Both undo in one step.
 - A Drum Rack is an instrument even while empty: it goes first on a MIDI track. Its
   presets load into Drum Racks only.
 

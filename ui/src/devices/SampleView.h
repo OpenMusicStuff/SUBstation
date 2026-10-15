@@ -31,10 +31,6 @@
 
 namespace sub::ui {
 
-// The waveform's lowest and highest value under each of `width` columns (all
-// channels together), from the source's peaks.
-std::pair<std::vector<float>, std::vector<float>> waveformColumns(const sub::app::Waveform& waveform, int width);
-
 class SampleView : public DeviceCanvas {
     Q_OBJECT
     QML_ELEMENT

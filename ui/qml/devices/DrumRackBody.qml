@@ -4,16 +4,16 @@ import QtQuick.Dialogs
 import SUBstation
 
 // The body of a Drum Rack, laid out as Ableton's: a strip of buttons (show the
-// chain list, show the selected pad's devices beside the rack, add a macro,
-// take the last away), an overview of all 128 keys (lit where a pad is; click
-// it to show those pads), sixteen pads, four by four (DrumPad; the arrows
-// beside them or the wheel move them a row of keys), its macros unless
-// collapsed (the ▾ in the device's title bar, beside the similar sounds'
-// arrows: DeviceFrame), and, while shown, its chain list (RackDeviceBody's
-// rows: a pad each). The device's menu has
-// Save Pads as Similar References and Return Pads to References (menuActions);
-// a pad's own menu locks it, saves or returns to its reference, renames,
-// duplicates or deletes it.
+// chain list, show the selected pad's devices beside the rack), an overview of
+// all 128 keys (lit where a pad is; click it to show those pads), sixteen pads,
+// four by four (DrumPad; the arrows beside them or the wheel move them a row of
+// keys), and, while shown, its chain list (RackDeviceBody's rows: a pad each).
+// It has no macros (a rack of a pad's devices, Ctrl+G, has); the similar
+// sounds' arrows are in the device's title bar (DeviceFrame). The device's menu has
+// Save Pads as Similar References, Return Pads to References and Separate Pads
+// into Tracks (menuActions); a pad's own menu locks it, saves or returns to its
+// reference, renames, duplicates or deletes it. A pad dragged into the
+// arrangement becomes a track of its own (DrumPadItem).
 Item {
     id: body
 
@@ -23,13 +23,11 @@ Item {
     required property DeviceInfo info
     readonly property DrumRack drums: drumRack
     readonly property RackChains chains: rackChains
-    readonly property RackMacros macroCount: rackMacros
     readonly property alias pads: padRepeater
     readonly property alias overview: overview
     readonly property alias rows: rowRepeater
     readonly property alias chainList: list
     readonly property bool chainListShown: info.chainListShown
-    readonly property bool macrosShown: info.rackMacrosShown
     readonly property real padWidth: 50
     readonly property real padSpacing: 2
 
@@ -49,13 +47,19 @@ Item {
                 return Session.similarSamples.rackCanReturn(body.trackId, body.deviceId)
             }
             onTriggered: Session.similarSamples.returnRackToReferences(body.trackId, body.deviceId)
+        },
+        Action {
+            objectName: "separatePads"
+            text: qsTr("Separate Pads into Tracks")
+            // (The track's own Drum Rack: the track becomes their group.)
+            enabled: body.info.chainId === "" && rackChains.count > 0
+            onTriggered: Session.editor.separatePads(body.trackId, body.deviceId)
         }
     ]
 
-    readonly property real macrosLeft: similar.x + similar.width + 8
-    readonly property real macrosRight: macrosShown ? macrosLeft + macroGrid.width : similar.x + similar.width
-    implicitWidth: (chainListShown ? macrosRight + 12 + 214 : macrosRight) + 8
-    implicitHeight: 6 + Math.max(macroGrid.implicitHeight, strip.implicitHeight, 100) + 6
+    readonly property real padsRight: similar.x + similar.width
+    implicitWidth: (chainListShown ? padsRight + 12 + 214 : padsRight) + 8
+    implicitHeight: 6 + Math.max(strip.implicitHeight, 100) + 6
 
     // A pad's menu.
     function showPadMenu(pad, x, y) {
@@ -102,12 +106,6 @@ Item {
         trackId: body.trackId
         rackId: body.deviceId
     }
-    RackMacros {
-        id: rackMacros
-        session: Session
-        trackId: body.trackId
-        rackId: body.deviceId
-    }
 
     Column {
         id: strip
@@ -130,24 +128,6 @@ Item {
             checked: body.info.rackDevicesShown
             tooltip: body.info.rackDevicesShown ? qsTr("Hide the pad's devices") : qsTr("Show the pad's devices")
             onClicked: Session.deviceSelection.toggleRackDevices(body.deviceId)
-        }
-        DeviceHeaderButton {
-            objectName: "addMacroButton"
-            visible: body.macrosShown
-            checkable: false
-            text: "+"
-            enabled: rackMacros.count < rackMacros.maximum
-            tooltip: qsTr("Add a macro")
-            onClicked: rackMacros.add()
-        }
-        DeviceHeaderButton {
-            objectName: "removeMacroButton"
-            visible: body.macrosShown
-            checkable: false
-            text: "−"
-            enabled: rackMacros.count > 1
-            tooltip: qsTr("Take the last macro away (with its mappings and automation)")
-            onClicked: rackMacros.remove()
         }
     }
 
@@ -224,8 +204,10 @@ Item {
             DrumPad {
                 width: body.padWidth
                 height: (body.height - 12 - 3 * body.padSpacing) / 4
-                rack: drumRack
-                body: body
+                // (Through the body: a name the pad has itself, as DrumPadItem's drumRack, is
+                // the pad's own property in a delegate, not the id, on newer Qt.)
+                rack: body.drums
+                rackBody: body
                 trackId: body.trackId
                 rackId: body.deviceId
             }
@@ -265,35 +247,12 @@ Item {
         }
     }
 
-    Grid {
-        id: macroGrid
-        objectName: "macroGrid"
-        visible: body.macrosShown
-        x: body.macrosLeft
-        y: Math.max(6, Math.round((body.height - height) / 2))
-        columns: Math.max(1, Math.ceil(rackMacros.count / 2))
-        columnSpacing: 4
-        rowSpacing: 4
-
-        Repeater {
-            model: rackMacros.count
-            RackMacroKnob {
-                required property int index
-                objectName: "macro" + index
-                trackId: body.trackId
-                rackId: body.deviceId
-                macroIndex: index
-                panel: body.panel
-            }
-        }
-    }
-
     // The chain list: a row a pad.
     Rectangle {
         id: list
         objectName: "chainList"
         visible: body.chainListShown
-        x: body.macrosRight + 12
+        x: body.padsRight + 12
         y: 6
         width: body.width - x - 8
         height: body.height - y - 6

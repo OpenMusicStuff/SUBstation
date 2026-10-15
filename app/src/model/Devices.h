@@ -65,7 +65,7 @@ Device newDevice(const QString& kind, const std::optional<PluginRef>& plugin = s
 // A rack with these chains and kDefaultMacroCount macros, at 0.
 Device newRack(std::vector<Chain> chains);
 Chain newChain(const QString& name, std::vector<Device> devices = {});
-// An empty Drum Rack (a rack with `drum` set), with its macros.
+// An empty Drum Rack (a rack with `drum` set), without macros.
 Device newDrumRack();
 // A Drum Rack's pad for a key, named so (empty: after its key, "C1").
 Chain newDrumPad(int note, const QString& name = {}, std::vector<Device> devices = {});

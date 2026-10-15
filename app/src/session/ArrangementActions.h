@@ -151,6 +151,10 @@ public:
     // Devices dragged from a track's chain (the device view) onto another
     // track: moved there (with their automation), and that track selected.
     Q_INVOKABLE bool dropMovedDevices(const QString& fromTrackId, const QStringList& deviceIds, const QString& toTrackId);
+    // A Drum Rack's pad dragged into the arrangement: a track of its own after
+    // the track it was dropped on ("": below the tracks, last). The Drum
+    // Rack's track stays selected (more pads may follow). Whether it went.
+    Q_INVOKABLE bool dropPad(const QString& fromTrackId, const QString& chainId, const QString& ontoTrackId);
 
     // Asks the arrangement to open clips in the clip view (or piano roll),
     // `lead` first (clipViewRequested).

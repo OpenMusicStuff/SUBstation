@@ -13,6 +13,9 @@
 // plain text under a type of their own:
 //   application/x-substation-device-move  the track's id, then the devices' ids, a line each
 //
+// A Drum Rack's pad dragged into the arrangement, to be a track of its own:
+//   application/x-substation-pad-move  the track's id, then the pad's (its chain's), a line each
+//
 // An audio clip dragged out of the arrangement (onto a Sampler, a Drum Rack's
 // pad, the desktop) goes as its file's URL, and its part of the file as JSON:
 //   application/x-substation-clip  {"path", "offset_sec", "duration_sec", "source_sec"}
@@ -36,6 +39,7 @@ inline constexpr const char* kDeviceMime = "application/x-substation-device";
 inline constexpr const char* kPresetMime = "application/x-substation-preset";
 inline constexpr const char* kDeviceMoveMime = "application/x-substation-device-move";
 inline constexpr const char* kClipMime = "application/x-substation-clip";
+inline constexpr const char* kPadMoveMime = "application/x-substation-pad-move";
 
 // The types a drag from the browser may carry.
 QStringList browserMimeTypes();
@@ -68,6 +72,18 @@ QByteArray movedDevicesData(const QString& trackId, const QStringList& deviceIds
 // Devices dragged from a track's chain, if the drag is of those.
 std::optional<MovedDevices> movedDevices(const QMimeData* mime);
 std::optional<MovedDevices> movedDevices(const QByteArray& data);
+
+// A Drum Rack's pad dragged out of its rack: its track and its chain.
+struct MovedPad {
+    QString trackId;
+    QString chainId;
+
+    friend bool operator==(const MovedPad&, const MovedPad&) = default;
+};
+QByteArray movedPadData(const QString& trackId, const QString& chainId);
+// A pad dragged out of a Drum Rack, if the drag is of one.
+std::optional<MovedPad> movedPad(const QMimeData* mime);
+std::optional<MovedPad> movedPad(const QByteArray& data);
 
 // A sound dropped where samples go (a Sampler, a Drum Rack's pad): an audio
 // file, the first dragged (from the browser, the desktop), or a clip's part of

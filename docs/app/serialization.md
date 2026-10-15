@@ -73,7 +73,6 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | `folded_devices` | list of device ids | devices shown folded; only ids of devices that exist are saved |
 | `chain_lists_shown` | list of rack ids | racks whose chain list shows (hidden by default); only ids of devices that exist are saved |
 | `rack_devices_hidden` | list of rack ids | racks whose chain's devices don't show beside them (shown by default); only ids of devices that exist are saved |
-| `rack_macros_hidden` | list of rack ids | racks whose macros are collapsed (a Drum Rack's ▾; shown by default) |
 | `tracks` | list | the arrangement's tracks, in order, flat (below) |
 | `returns` | list | the return tracks, in order (below) |
 
@@ -233,8 +232,8 @@ that makes an older file load as it was, and saving writes the current version.
 | 24 | Drum Racks (`drum` on a rack, `receive_note` and `locked` on its chains) | none: every rack an Instrument or Audio Effect Rack |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
-`chain_lists_shown`, `rack_devices_hidden` and `rack_macros_hidden`: files without them show no chain list, and
-every rack's devices and macros. The
+`chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and
+every rack's devices. The
 project key, `automation_locked` and the clip fields default the same way.
 
 **Legacy warp mode names.** Projects saved with the earlier Ableton-style names load into the mode that plays the same

@@ -135,6 +135,8 @@ Device newRack(std::vector<Chain> chains) {
 Device newDrumRack() {
     Device rack = newRack({});
     rack.drum = true;
+    rack.params.clear();  // (no macros)
+    rack.macroNames.clear();
     return rack;
 }
 

@@ -1,5 +1,6 @@
 #include "devices/SampleView.h"
 
+#include "arrangement/WaveformCache.h"
 #include "audio/AudioFiles.h"
 #include "audio/EngineBridge.h"
 #include "browser/BrowserMime.h"
@@ -46,52 +47,6 @@ QString timeText(double seconds) {
 }
 
 }  // namespace
-
-std::pair<std::vector<float>, std::vector<float>> waveformColumns(const sub::app::Waveform& waveform, int width) {
-    width = std::max(1, width);
-    std::vector<float> lows(std::size_t(width), 0.0f), highs(std::size_t(width), 0.0f);
-    if (waveform.isNull())
-        return {lows, highs};
-    int level = 0;
-    const double perColumn = double(waveform.frames()) / width;
-    while (level + 1 < waveform.peakLevels() && sub::app::Waveform::samplesPerPeak(level + 1) <= perColumn)
-        ++level;
-    const qint64 count = waveform.peakCount(level);
-    const float* peaks = waveform.peaks(level);
-    const int channels = waveform.channels();
-    if (count <= 0 || peaks == nullptr || channels <= 0)
-        return {lows, highs};
-    // Each peak's lowest and highest over the channels.
-    std::vector<float> lo(static_cast<std::size_t>(count)), hi(static_cast<std::size_t>(count));
-    for (qint64 i = 0; i < count; ++i) {
-        float a = peaks[(i * channels) * 2], b = peaks[(i * channels) * 2 + 1];
-        for (int c = 1; c < channels; ++c) {
-            a = std::min(a, peaks[(i * channels + c) * 2]);
-            b = std::max(b, peaks[(i * channels + c) * 2 + 1]);
-        }
-        lo[std::size_t(i)] = a;
-        hi[std::size_t(i)] = b;
-    }
-    // numpy's minimum/maximum.reduceat over each column's first peak (never going back): to the
-    // next column's first, the last to the end; where the next starts no later, just its first.
-    std::vector<qint64> starts(static_cast<std::size_t>(width));
-    for (int i = 0; i < width; ++i) {
-        const qint64 edge = std::min(static_cast<qint64>(i * (double(count) / width)), count - 1);
-        starts[std::size_t(i)] = i > 0 ? std::max(edge, starts[std::size_t(i) - 1]) : edge;
-    }
-    for (int i = 0; i < width; ++i) {
-        const qint64 from = starts[std::size_t(i)];
-        const qint64 to = i + 1 < width ? starts[std::size_t(i) + 1] : count;
-        float a = lo[std::size_t(from)], b = hi[std::size_t(from)];
-        for (qint64 k = from + 1; k < to; ++k) {
-            a = std::min(a, lo[std::size_t(k)]);
-            b = std::max(b, hi[std::size_t(k)]);
-        }
-        lows[std::size_t(i)] = a;
-        highs[std::size_t(i)] = b;
-    }
-    return {lows, highs};
-}
 
 SampleView::SampleView(QQuickItem* parent) : DeviceCanvas(parent) {
     setImplicitSize(kWidth, kMinimumHeight);
@@ -314,20 +269,25 @@ void SampleView::updateColumns() {
     if (key == columnsKey_)
         return;
     columnsKey_ = key;
-    auto [lo, hi] = waveformColumns(waveform_, columns);
-    if (reverse_) {  // drawn as it plays
-        std::reverse(lo.begin(), lo.end());
-        std::reverse(hi.begin(), hi.end());
-    }
+    // As the arrangement draws a clip's: each point the lowest to the highest of two columns'
+    // worth about it, antialiased (fillBand), silence a thin line.
     const QRectF r = plot();
-    const double middle = r.center().y(), half = r.height() / 2;
-    top_.resize(lo.size());
-    bottom_.resize(lo.size());
-    for (std::size_t x = 0; x < lo.size(); ++x) {
-        const double top = middle - std::min(1.0, double(hi[x])) * half;
-        const double bottom = middle - std::max(-1.0, double(lo[x])) * half;
-        top_[x] = float(top);
-        bottom_[x] = float(std::max(bottom, top + 1));
+    const auto outline = arrangement::waveformOutline(waveform_, double(waveform_.frames()) / columns, 0, columns,
+                                                      int(r.height()), false);
+    if (outline.tops.empty()) {
+        top_.clear();
+        bottom_.clear();
+        return;
+    }
+    top_ = outline.tops[0];
+    bottom_ = outline.bottoms[0];
+    for (std::size_t x = 0; x < top_.size(); ++x) {
+        top_[x] += float(r.top());
+        bottom_[x] += float(r.top());
+    }
+    if (reverse_) {  // drawn as it plays
+        std::reverse(top_.begin(), top_.end());
+        std::reverse(bottom_.begin(), bottom_.end());
     }
 }
 
@@ -462,7 +422,7 @@ void SampleView::paint(SgPainter& p) {
     const double middle = r.center().y();
     p.drawLine(QPointF(r.left(), middle), QPointF(r.right(), middle), Theme::gridBar(), 1);
     if (!top_.empty())
-        p.fillColumns(r.left(), 1.0, top_.data(), bottom_.data(), int(top_.size()), Theme::accent(), 1.0);
+        p.fillBand(r.left(), 1.0, top_.data(), bottom_.data(), int(top_.size()), Theme::accent());
     paintRuler(p, QRectF(r.left(), r.bottom() + 1, r.width(), kRulerHeight));
 
     const double start = xOfFrame(double(startFrame_)), end = xOfFrame(double(endFrame_));

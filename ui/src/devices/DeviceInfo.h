@@ -62,7 +62,6 @@ class DeviceInfo : public QObject {
     // A rack's chain list shows (hidden by default); its chain's devices show beside it (shown by default).
     Q_PROPERTY(bool chainListShown READ chainListShown NOTIFY changed)
     Q_PROPERTY(bool rackDevicesShown READ rackDevicesShown NOTIFY changed)
-    Q_PROPERTY(bool rackMacrosShown READ rackMacrosShown NOTIFY changed)  // a rack's macros, unless collapsed
     Q_PROPERTY(QString chainId READ chainId NOTIFY changed)  // the chain it is in ("": the track's own)
     Q_PROPERTY(bool canMoveLeft READ canMoveLeft NOTIFY changed)
     Q_PROPERTY(bool canMoveRight READ canMoveRight NOTIFY changed)
@@ -109,7 +108,6 @@ public:
     bool folded() const { return state_.folded; }
     bool chainListShown() const { return state_.chainListShown; }
     bool rackDevicesShown() const { return state_.rackDevicesShown; }
-    bool rackMacrosShown() const { return state_.rackMacrosShown; }
     QString chainId() const { return state_.chainId; }
     bool canMoveLeft() const { return state_.canMoveLeft; }
     bool canMoveRight() const { return state_.canMoveRight; }
@@ -187,7 +185,6 @@ private:
         bool folded = false;
         bool chainListShown = false;
         bool rackDevicesShown = true;
-        bool rackMacrosShown = true;
         QString chainId;
         bool canMoveLeft = false;
         bool canMoveRight = false;

@@ -4,7 +4,7 @@
 // returns, the main track, their mixers and routing; MIDI clips (loops written
 // out); audio clips (found where the set moved, warped as their markers say);
 // devices (VST3 plug-ins with their settings, VST2 ones as their VST3, Live's
-// own that SUBstation has, racks); Drum Racks as a track a pad; automation; and
+// own that SUBstation has, racks); Drum Racks as Drum Racks; automation; and
 // the notes on what didn't come across.
 
 #include "BridgeTestSupport.h"
@@ -1031,9 +1031,9 @@ private Q_SLOTS:
         QCOMPARE(wide.chains[0].devices[0].kind, QStringLiteral("utility"));
     }
 
-    // A Drum Rack: a group (its mixer, the effects after the rack) with a MIDI
-    // track for each pad the clips play, its notes as the pad sends them on; a
-    // sidechain from a pad comes from its track.
+    // A Drum Rack as a Drum Rack: a pad for each of Live's (its key, name,
+    // mixer and devices, its fader's automation), the clips as they are; a
+    // sidechain from a pad hears the whole rack (its track, after the rack).
     void drumRacks() {
         TempDir dir;
         const QString kick = test::writeWav(dir.path(QStringLiteral("kick.wav")), std::vector<float>(4800, 0.5f), 1);
@@ -1100,41 +1100,43 @@ private Q_SLOTS:
         song.tracks = track(drums) + track(bass);
         auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
         const Project& p = imported->project;
-        QCOMPARE(p.tracks().size(), size_t{4});
-        const Track& group = p.tracks()[0];
-        QVERIFY(group.isGroup());
-        QCOMPARE(group.name, QStringLiteral("1 Drum Rack"));
-        QVERIFY(std::abs(group.volumeDb - 20.0 * std::log10(0.5)) < 1e-9);
-        QCOMPARE(group.devices.size(), size_t{1});
-        QCOMPARE(group.devices[0].kind, QStringLiteral("utility"));
-        const Track& kickTrack = p.tracks()[1];
-        const Track& snareTrack = p.tracks()[2];
-        QCOMPARE(kickTrack.name, QStringLiteral("Kick"));
-        QCOMPARE(snareTrack.name, QStringLiteral("Snare"));
-        for (const Track* t : {&kickTrack, &snareTrack}) {
-            QCOMPARE(t->parent, std::optional<QString>(group.id));
-            QVERIFY(t->isMidi());
-            QCOMPARE(t->devices.size(), size_t{1});
-            QCOMPARE(t->devices[0].kind, QStringLiteral("sampler"));
-            QCOMPARE(t->clips.size(), size_t{1});
+        QCOMPARE(p.tracks().size(), size_t{2});
+        const Track& drumTrack = p.tracks()[0];
+        QVERIFY(drumTrack.isMidi());
+        QCOMPARE(drumTrack.name, QStringLiteral("1 Drum Rack"));
+        QVERIFY(std::abs(drumTrack.volumeDb - 20.0 * std::log10(0.5)) < 1e-9);
+        QCOMPARE(drumTrack.devices.size(), size_t{2});
+        const Device& rack = drumTrack.devices[0];
+        QVERIFY(rack.isDrumRack());
+        QCOMPARE(macroCount(rack), 0);
+        QCOMPARE(drumTrack.devices[1].kind, QStringLiteral("utility"));
+        QCOMPARE(rack.chains.size(), size_t{4});
+        const Chain* kickPad = drumPad(rack, 36);
+        const Chain* snarePad = drumPad(rack, 38);
+        QVERIFY(kickPad && snarePad && drumPad(rack, 40) && drumPad(rack, 41));
+        QCOMPARE(kickPad->name, QStringLiteral("Kick"));
+        QCOMPARE(snarePad->name, QStringLiteral("Snare"));
+        for (const Chain* pad : {kickPad, snarePad}) {
+            QCOMPARE(pad->devices.size(), size_t{1});
+            QCOMPARE(pad->devices[0].kind, QStringLiteral("sampler"));
         }
-        QCOMPARE(kickTrack.clips[0].notes, (std::vector<Note>{{60, 0.0, 0.25, 100}, {60, 2.0, 0.25, 100}}));
-        QCOMPARE(snareTrack.clips[0].notes, (std::vector<Note>{{60, 1.0, 0.25, 80}}));
-        QCOMPARE(QFileInfo(deviceState::fromModel(snareTrack.devices[0].state).value(QStringLiteral("sample")))
+        QCOMPARE(QFileInfo(deviceState::fromModel(snarePad->devices[0].state).value(QStringLiteral("sample")))
                      .canonicalFilePath(),
                  QFileInfo(snare).canonicalFilePath());
-        QVERIFY(std::abs(snareTrack.volumeDb - 20.0 * std::log10(0.5)) < 1e-9);
-        QCOMPARE(snareTrack.automation.value(automation::kMixerVolume).size(),
+        QVERIFY(std::abs(snarePad->volumeDb - 20.0 * std::log10(0.5)) < 1e-9);
+        QCOMPARE(drumTrack.automation.value(automation::chainKey(rack.id, snarePad->id, automation::kChainVolume)).size(),
                  size_t{2});  // (its pad's volume, automated)
-        QVERIFY(!named(p, QStringLiteral("Unplayed")) && !named(p, QStringLiteral("Outside")));
+        // The clip keeps its notes, each on its pad's key.
+        QCOMPARE(drumTrack.clips.size(), size_t{1});
+        const std::vector<Note>& notes = drumTrack.clips[0].notes;
+        QCOMPARE(std::count_if(notes.begin(), notes.end(), [](const Note& n) { return n.pitch == 36; }), 2);
+        QCOMPARE(std::count_if(notes.begin(), notes.end(), [](const Note& n) { return n.pitch == 38; }), 1);
         QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (clip envelopes): 5-Drum Rack.")));
-        QVERIFY(
-            !noteSays(imported->notes, QStringLiteral("Glitch2")));  // (the pad made no track: nothing of it is said)
-        QVERIFY(noteSays(imported->notes,
-                         QStringLiteral("Automation left out (of what didn't come across): 5-Drum Rack.")));
-        const Device& ducking = p.tracks()[3].devices[0];
+        const Device& ducking = p.tracks()[1].devices[0];
         QVERIFY(ducking.sidechain);
-        QCOMPARE(ducking.sidechain->trackId, kickTrack.id);
+        QCOMPARE(ducking.sidechain->trackId, drumTrack.id);
+        QCOMPARE(ducking.sidechain->tap, kPreFx);
+        QVERIFY(noteSays(imported->notes, QStringLiteral("Sidechains from a Drum Rack's pad hear the whole rack: 5-Drum Rack.")));
     }
 
     // Mixer automation: volume and pan as the faders map them, the activator as a switch.

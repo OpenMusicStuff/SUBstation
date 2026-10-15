@@ -74,11 +74,12 @@ and fades, and whether they are deactivated.
 | Simpler, and a Sampler of one sample | Sampler: its sample, mode (Classic, One-Shot, Slicing), root key, transpose, detune, start and end, volume, envelope |
 | Audio Effect Rack, Instrument Rack | a rack, its chains with their devices, volume, pan and activator (not its macros) |
 
-A **Drum Rack** becomes a group track (with the Drum Rack track's mixer, and the devices
-after the rack) holding a MIDI track for each pad the arrangement plays, named after the
-pad: its devices (its Simpler a Sampler), its volume, pan and activator, and the clips'
-notes for that pad, at the note the pad sends on (so the Sampler plays its sample at its
-own pitch). A compressor sidechained from a pad listens to that pad's track.
+A **Drum Rack** becomes a Drum Rack on its track, with a pad for each of Live's on the
+same key, named as in Live: its devices (its Simpler a Sampler), its volume, pan and
+activator, and their automation; the clips keep their notes. A pad plays its devices at
+C3, so one that sent Live's devices another note is listed in the message. A compressor
+sidechained from a pad listens to the whole Drum Rack (its track, after the rack). To
+mix the pads on tracks of their own, *Separate Pads into Tracks* ([devices.md](devices.md#drum-rack)).
 
 Other Live devices, MIDI effects and Max for Live devices are left out; the message
 lists them.

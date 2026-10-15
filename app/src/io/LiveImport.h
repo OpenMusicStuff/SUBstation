@@ -30,10 +30,9 @@
 //   its sidechain), Delay, Simpler and a Sampler of one sample as SUBstation's
 //   Utility, EQ, Compressor, Delay and Sampler. Audio Effect and Instrument
 //   Racks as racks, their chains with their mixers (not their macros). A Drum
-//   Rack as a group track with a MIDI track for each pad the clips play (named
-//   after the pad, its devices: its Simpler a Sampler), each holding the clips'
-//   notes of its pad, as the pad sends them on (a sidechain from a pad comes
-//   from its track);
+//   Rack as a Drum Rack: a pad for each of its pads (its key, its name, its
+//   mixer, its devices: its Simpler a Sampler; it plays C3, whatever note the
+//   pad sent on; a sidechain from a pad hears its whole track, after the rack);
 // - automation of the mixers (volume, pan, activator, sends), of devices'
 //   on/off, of plug-ins' parameters and of the built-in devices' parameters
 //   that came across.

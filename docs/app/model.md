@@ -424,8 +424,7 @@ Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: 
 `Project` ([Project.h](../../app/src/model/Project.h)) holds `tempo`, `timeSignature`, `key`, the loop
 (`loopEnabled`, `loopStart`, `loopEnd`, beats), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
 `shownChainLists` (the racks whose chain list shows: hidden by default), `hiddenRackDevices` (the racks whose
-chain's devices don't show beside them: shown by default) and `hiddenRackMacros` (the racks whose macros are
-collapsed: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
+chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
 `automationLocked`, `timeSignatureText`, `keyName`, `path`).
 
 | Signal | When |
@@ -613,7 +612,13 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   End, loaded by hand: one step, the reference rules of `samplerState::loaded`), `loadDrumPad` [Q] (onto a pad's key:
   into its Sampler, or a new pad with one in 1-Shot (`kSamplerOneShot`), named after the sample; -1: the first free key), `swapSamples` (Samplers
   stepped to similar sounds, one step for them all), `setSimilarReference` [Q]; a pad named after the sample its
-  Sampler played follows it (`renamePadsFollowing`).
+  Sampler played follows it (`renamePadsFollowing`). Pads as tracks: `separatePads` [Q] (a track's own Drum Rack:
+  the track becomes a group of the same id by `ReplaceTrackCommand`, keeping its mixer, sends, output and the devices
+  after the rack but its MIDI effects, with their automation; a MIDI track in it for each pad by `padTrack()`: the
+  pad's devices, copies of the track's MIDI effects, its fader, its automation (its chain's faders as the track's
+  volume and pan) and its key's notes at `kDrumPadNote`; devices taking the track's notes take their own again) and
+  `padToTrack` [Q] (one pad so, after a track (`insertionPoint`), the pad and its notes leaving the Drum Rack's
+  track); one step each.
 - **Modulation** (EditorModulation.cpp): `mapModulation` (a parameter of another device on the modulator's track,
   over `low`..`high`, which way up; it moves over from another modulator in the same step, "Map Modulation" through
   `setDevices`; `EditError` for a device that isn't a modulator, the modulator itself, another track's device, a

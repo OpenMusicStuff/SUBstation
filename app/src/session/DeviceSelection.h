@@ -137,8 +137,6 @@ public:
     // Show or hide a rack's chain list; its chain's devices beside it (view state).
     Q_INVOKABLE void toggleChainList(const QString& rackId);
     Q_INVOKABLE void toggleRackDevices(const QString& rackId);
-    // Collapse or expand a rack's macros (view state).
-    Q_INVOKABLE void toggleRackMacros(const QString& rackId);
     // Ctrl+C: the selected devices (plug-ins as they are now). False if none were selected.
     Q_INVOKABLE bool copySelected();
     // Ctrl+X: copied, then deleted. False if none were selected.

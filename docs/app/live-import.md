@@ -45,11 +45,10 @@ and takes about 330 MB.
 
 `Importer` makes two passes over `LiveSet/Tracks`:
 
-1. `assignIds()`: an id for every track and return, and for each Drum Rack pad the arrangement
-   plays (`pads_`), so routing to a track further down (outputs, inputs, sidechains, a pad's
-   output) resolves in the second pass.
+1. `assignIds()`: an id for every track and return, so routing to a track further down
+   (outputs, inputs, sidechains) resolves in the second pass.
 2. `run()`: each track, return and the main track translated (`translateTrack`,
-   `translateDrumTrack`, `translateReturn`, `translateMaster`), then their automation.
+   `translateReturn`, `translateMaster`), then their automation.
 
 Every parameter translated that Live can automate is entered in `targets_`: its
 `AutomationTarget Id` → (owner track, automation key, a function mapping Live's value to
@@ -64,7 +63,7 @@ Values Live writes, and what they become:
 | Mixer and rack chain volume, send level: linear gain (1 is 0 dB, 1.995 is +6 dB) | dB, in the faders' range; automation through `volumeToNormalized` |
 | Time signature: `numerator - 1 + 99 * log2(denominator)` | numerator, denominator |
 | Colour: an index into Live's 70 colours | `kLiveColors` (its first 13 are `kTrackColors`) |
-| Drum Rack pad `ReceivingNote`: `128 - note` | the MIDI note |
+| Drum Rack pad `ReceivingNote`: `128 - note` | the pad's key (`receive_note`; none: the loader gives it a free one) |
 | 32-bit words (class id fields, VST3 `ParameterId`, a VST2's id): signed or unsigned | `liveWord()`: unsigned; a `ParameterId` of -1 is a slot with none |
 | Colour: `Color` (Live 11, 12) or `ColorIndex` (Live 10) | `colorOf()` |
 | Utility gain, Compressor threshold: linear amplitude | dB |
@@ -76,10 +75,7 @@ Clips:
 - `clipSpans()` turns a clip's markers into what it plays: from its start marker (`LoopStart +
   StartRelative`) for its length, and round its loop (`LoopStart..LoopEnd`) when `LoopOn`. Warped
   and MIDI clips' markers are in beats, unwarped audio clips' in seconds.
-- MIDI notes are written out span by span, cut at a span's end; a Drum Rack pad's clips keep its
-  note only, at its `SendingNote` (a pad track's clip with none of them is left out). A pad whose
-  notes are all outside the clips' windows makes no track, and nothing of it (its devices, its
-  automation targets) is translated. Clip envelopes are noted once per Live track
+- MIDI notes are written out span by span, cut at a span's end. Clip envelopes are noted once per Live track
   (`noteClipEnvelopes`), not once per pad.
 - Samples are looked for once each (`resolvedPaths_`): where the set says, beside it, a folder up.
 - Warped audio: `WarpMap` maps content beats to file seconds through the warp markers (straight

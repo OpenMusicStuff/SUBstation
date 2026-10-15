@@ -61,8 +61,8 @@ What SUBstation doesn't do yet, by area.
   takes the whole sample as so many beats), filter and pitch envelopes, the filter's
   analog-modelled circuits, or Spread.
 - The Drum Rack has no return chains, choke groups or per-pad send levels, and a pad
-  plays its key as C3 (there is no separate "play" key, nor key or velocity zones). Live
-  Sets' Drum Racks still import as a group of tracks, a pad each.
+  plays its key as C3 (there is no separate "play" key, nor key or velocity zones). A
+  sidechain can't hear one pad alone: it hears the whole rack.
 
 ## Audio clips
 

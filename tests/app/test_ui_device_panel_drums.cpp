@@ -23,6 +23,7 @@
 #include "model/Devices.h"
 #include "model/Project.h"
 #include "model/SamplerState.h"
+#include "session/ArrangementActions.h"
 #include "session/DeviceSelection.h"
 #include "session/Selection.h"
 
@@ -194,15 +195,12 @@ private Q_SLOTS:
         const auto [track, rack] = drums();
         QQuickItem* next = bodyPart(rack, QStringLiteral("nextSimilar"));
         QVERIFY(next);
-        // In the device's title bar, with the macros' collapse arrow.
+        // In the device's title bar.
         QQuickItem* header = test::part(ui_.frame(rack), "header");
         QVERIFY(header);
         const QPointF inHeader = next->mapToItem(header, QPointF(next->width() / 2, next->height() / 2));
         QVERIFY(header->contains(inHeader));
         QVERIFY(bodyPart(rack, QStringLiteral("previousSimilar"))->isVisible());
-        QQuickItem* collapse = bodyPart(rack, QStringLiteral("macrosButton"));
-        QVERIFY(collapse && collapse->isVisible());
-        QVERIFY(header->contains(collapse->mapToItem(header, QPointF(collapse->width() / 2, collapse->height() / 2))));
         QVERIFY(!next->isEnabled());  // no pad yet
         const QString kick = editor().loadDrumPad(track, rack, 36, wav(QStringLiteral("Kick.wav")));
         ui_.polish();
@@ -215,24 +213,46 @@ private Q_SLOTS:
         QVERIFY(!next->isEnabled());  // every pad locked
     }
 
-    void theMacrosCollapse() {
+    void itsMenuSeparatesThePads() {
         const auto [track, rack] = drums();
-        QQuickItem* frame = ui_.frame(rack);
-        QQuickItem* macros = bodyPart(rack, QStringLiteral("macroGrid"));
-        QVERIFY(macros && macros->isVisible());
-        const qreal wide = frame->width();
-        test::click(window(), test::centerOf(bodyPart(rack, QStringLiteral("macrosButton"))));
-        QVERIFY(!project().areRackMacrosShown(rack));
+        editor().loadDrumPad(track, rack, 36, wav(QStringLiteral("Kick.wav")));
+        editor().loadDrumPad(track, rack, 38, wav(QStringLiteral("Snare.wav")));
         ui_.polish();
-        QVERIFY(!macros->isVisible());
-        QVERIFY(!bodyPart(rack, QStringLiteral("addMacroButton")));  // (no visible one: + and − go with them)
-        QVERIFY(ui_.frame(rack)->width() < wide);  // narrower without them
-        ui_.screenshot(QStringLiteral("drum-rack-macros-collapsed"));
-        test::click(window(), test::centerOf(bodyPart(rack, QStringLiteral("macrosButton"))));
-        QVERIFY(project().areRackMacrosShown(rack));
-        ui_.polish();
-        QVERIFY(macros->isVisible());
-        QCOMPARE(ui_.frame(rack)->width(), wide);
+        ui_.rightClick(test::centerOf(test::part(ui_.frame(rack), "title")));
+        QVERIFY(ui_.choose(QStringLiteral("Separate Pads into Tracks")));
+        QVERIFY(project().track(track).isGroup());
+        int pads = 0;
+        for (const sub::app::Track& t : project().tracks())
+            pads += t.parent == std::optional<QString>(track) ? 1 : 0;
+        QCOMPARE(pads, 2);
+        undo().undo();
+        QVERIFY(project().track(track).isMidi());
+    }
+
+    // A pad dragged into the arrangement: a track of its own, after the one it is dropped on.
+    void aPadDropsIntoTheArrangement() {
+        const auto [track, rack] = drums();
+        const QString kick = editor().loadDrumPad(track, rack, 36, wav(QStringLiteral("Kick.wav")));
+        QMimeData mime;
+        mime.setData(QString::fromLatin1(sub::app::kPadMoveMime), sub::app::movedPadData(track, kick));
+        QCOMPARE(sub::app::movedPad(&mime), (std::optional<sub::app::MovedPad>{{track, kick}}));
+        QVERIFY(session().arrangement()->dropPad(track, kick, track));
+        QCOMPARE(project().tracks().size(), size_t(2));
+        QCOMPARE(project().tracks()[1].name, QStringLiteral("Kick"));
+        QVERIFY(project().device(track, rack).chains.empty());
+        QCOMPARE(session().selection()->trackId(), track);  // (the Drum Rack still shows)
+    }
+
+    void itHasPadsAndNoMacros() {
+        const auto [track, rack] = drums();
+        // The pads have their width (a Repeater delegate's names are its own first: rackBody, not body).
+        QQuickItem* kick = pad(rack, 36);
+        QVERIFY(kick && kick->isVisible());
+        QCOMPARE(kick->width(), 50.0);
+        QVERIFY(kick->height() > 0);
+        QVERIFY(!bodyPart(rack, QStringLiteral("macroGrid")));
+        QVERIFY(!bodyPart(rack, QStringLiteral("addMacroButton")));
+        QVERIFY(!bodyPart(rack, QStringLiteral("macrosButton")));
     }
 };
 

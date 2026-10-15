@@ -62,8 +62,10 @@
 // selection's menu (menuRequested; ArrangementMenu.qml shows it).
 //
 // Drops: audio files (from the browser or the file manager; dashed boxes show
-// where they would go), devices, plug-ins and presets from the browser, and
-// devices dragged from a track's chain (app::kDeviceMoveMime, browser/BrowserMime.h).
+// where they would go), devices, plug-ins and presets from the browser,
+// devices dragged from a track's chain (app::kDeviceMoveMime,
+// browser/BrowserMime.h), and a Drum Rack's pads (app::kPadMoveMime: a track
+// of its own, after the one dropped on).
 
 #include "arrangement/ArrangementItem.h"
 #include "arrangement/Envelopes.h"
