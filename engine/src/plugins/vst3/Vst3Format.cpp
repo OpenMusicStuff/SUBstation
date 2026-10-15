@@ -1,11 +1,11 @@
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 #include <algorithm>
 #include <stdexcept>
 
 #include "platform/Paths.h"
-#include "plugins/Vst3Platform.h"
-#include "plugins/Vst3Processor.h"
+#include "plugins/vst3/Vst3Platform.h"
+#include "plugins/vst3/Vst3Processor.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/utility/stringconvert.h"

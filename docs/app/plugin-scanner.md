@@ -1,6 +1,6 @@
 # Plug-in scanner
 
-Finds the VST3 plug-ins installed on this computer and what each file contains, without letting a broken plug-in take
+Finds the VST3 and VST2 plug-ins installed on this computer and what each file contains, without letting a broken plug-in take
 the program down. It lives in [app/src/plugins](../../app/src/plugins): the scanner
 ([PluginScanner.h](../../app/src/plugins/PluginScanner.h)), where it looks and its cache
 ([PluginPaths.h](../../app/src/plugins/PluginPaths.h)), the index the browser and the preferences show
@@ -21,10 +21,11 @@ How the user sees it (the browser's *Plug-ins* category, *Rescan Plug-ins*, the 
   `~/.local/share/SUBstation` on Linux), so a file is read again only when it changes (or on a rescan). The scan runs
   in the background at start-up and reads only new or changed files.
 - Plug-ins are looked for in the standard VST3 folders (on Windows `C:\Program Files\Common Files\VST3` and
-  `%LOCALAPPDATA%\Programs\Common\VST3`; on Linux `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`) and in folders of
-  the user's own.
+  `%LOCALAPPDATA%\Programs\Common\VST3`; on Linux `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`), the standard
+  VST2 folders (see below), and in folders of the user's own. `.vst3` bundles and files are VST3 plug-ins; libraries
+  (`.dll` on Windows, `.so` on Linux) VST2 ones.
 - `PluginScanner` needs no event loop and touches no UI: the plug-in index runs it on a thread of its own.
-- `substation-scan` links the engine's VST3 host (`sub_engine`'s `Vst3Format`) and nothing of Qt.
+- `substation-scan` links the engine's plug-in hosts (`sub_engine`'s `Vst3Format` and `Vst2Format`) and nothing of Qt.
 
 ## Files
 
@@ -33,7 +34,7 @@ How the user sees it (the browser's *Plug-ins* category, *Rescan Plug-ins*, the 
 | [PluginInfo.h](../../app/src/plugins/PluginInfo.h) | `PluginInfo`, `ScanFailure`, `ScanResult`; `pluginToolTip` |
 | [PluginPaths.h](../../app/src/plugins/PluginPaths.h) | `standardPluginFolders()`, `pluginSearchFolders()`, `findPluginFiles()`, `pluginCachePath()`, `pluginBinary()`, `pluginSignature()`, `friendlyScanReason()`; `kPluginCacheVersion`, `kPluginScanTimeout` |
 | [PluginScanner.h](../../app/src/plugins/PluginScanner.h) | `PluginScanner`: the cache, the child processes, `scan()`; its header comment is the protocol and the cache's format |
-| [PluginSettings.h](../../app/src/plugins/PluginSettings.h) | The user's VST3 folders in `QSettings` (`plugins/vst3_folders`): `customPluginFolders()`, `setCustomPluginFolders()`, `pluginFolders()` |
+| [PluginSettings.h](../../app/src/plugins/PluginSettings.h) | The user's plug-in folders (VST3's and VST2's alike) in `QSettings` (`plugins/vst3_folders`, its name from before VST2): `customPluginFolders()`, `setCustomPluginFolders()`, `pluginFolders()` |
 | [PluginIndex.h](../../app/src/plugins/PluginIndex.h) | `PluginIndex` (`Session.plugins`): runs scans in the background, one at a time; holds the plug-ins and failures; the folders; Preferences › Plug-ins binds to it |
 | [PluginListModel.h](../../app/src/plugins/PluginListModel.h), [PluginFolderModel.h](../../app/src/plugins/PluginFolderModel.h) | The plug-ins and the folders as list models, for QML |
 | [tools/scanner/main.cpp](../../tools/scanner/main.cpp) | `substation-scan`: answers one JSON line per plug-in file, using the engine's `Vst3Format::scanFile()` |
@@ -42,11 +43,11 @@ How the user sees it (the browser's *Plug-ins* category, *Rescan Plug-ins*, the 
 ## Key types
 
 ```cpp
-struct PluginInfo {        // one plug-in (a VST3 class) in a file
+struct PluginInfo {        // one plug-in (a VST3 class, a VST2 plug-in) in a file
     QString name;
-    QString format;        // "VST3"
+    QString format;        // "VST3" or "VST2"
     QString path;          // the .vst3 bundle or file
-    QString uid;           // VST3 class id (32 hex digits)
+    QString uid;           // VST3 class id (32 hex digits); VST2 unique id (8 hex digits)
     QString vendor;
     QString version;
     QString category;      // VST3 sub-categories, e.g. "Instrument|Synth" or "Fx|EQ"
@@ -73,17 +74,23 @@ file.
 
 - `standardPluginFolders()`: the system's VST3 folders, as the engine knows them (`Vst3Format::defaultSearchPaths()`:
   `C:\Program Files\Common Files\VST3` and `%LOCALAPPDATA%\Programs\Common\VST3` on Windows; `~/.vst3`,
-  `/usr/lib/vst3`, `/usr/local/lib/vst3` on Linux; [engine/plugins.md](../engine/plugins.md)). If
-  `SUBSTATION_VST3_PATH` is set, those folders instead
-  (separated by the system's list separator, `;` on Windows and `:` elsewhere; empty for none). The tests set it, so
-  they never see the installed plug-ins.
+  `/usr/lib/vst3`, `/usr/local/lib/vst3` on Linux; [engine/plugins.md](../engine/plugins.md)), then its VST2 folders
+  (`Vst2Format::defaultSearchPaths()`: on Windows the folder `HKLM\SOFTWARE\VST\VSTPluginsPath` names,
+  `C:\Program Files\VSTPlugins`, `C:\Program Files\Steinberg\VSTPlugins`, `C:\Program Files\Common Files\VST2` and
+  `...\Common Files\Steinberg\VST2`; on Linux those in `VST_PATH`, else `~/.vst`, `/usr/lib/vst`,
+  `/usr/local/lib/vst`; [engine/plugins.md](../engine/plugins.md#vst2)), each once. If `SUBSTATION_VST3_PATH` is
+  set, its folders instead of the VST3 ones (separated by the system's list separator, `;` on Windows and `:`
+  elsewhere; empty for none); if `SUBSTATION_VST2_PATH` is set, its folders instead of the VST2 ones; and with
+  `SUBSTATION_VST3_PATH` alone, none for VST2: it stands for all the standard folders. The tests set it, so they never
+  see the installed plug-ins.
 - `pluginSearchFolders(custom)`: the standard folders, then the user's own, each once (compared by `pathKey()`: the
   path cleaned up (`QDir::cleanPath`), and on Windows with backslashes and in lower case; elsewhere case counts).
 - `pluginFolders()`: `pluginSearchFolders(customPluginFolders())`, what a scan looks in.
-- `findPluginFiles(roots)`: every `.vst3` bundle (a folder) or file under the roots. Nothing inside a bundle is listed.
+- `findPluginFiles(roots)`: every `.vst3` bundle (a folder) or file under the roots, and every library that may be a
+  VST2 plug-in (`.dll` on Windows, `.so` elsewhere: `Vst2Format::isPluginFile()`). Nothing inside a bundle is listed.
   A name that is only ".vst3" is no plug-in: Linux's own folder for them, `~/.vst3`, is looked in.
   Linked folders (symbolic links, junctions) are followed, each real folder once (by its canonical path), so a link
-  back up can't loop. A root that is itself a `.vst3` is listed as it is. Unreadable folders are skipped. Sorted
+  back up can't loop. A root that is itself a `.vst3` (or a VST2's library) is listed as it is. Unreadable folders are skipped. Sorted
   ignoring case, one entry per `caseKey()` path.
 
 ## How a scan works
@@ -96,7 +103,7 @@ file.
    read(to read):                                         child process (substation-scan)
      start it; every path written to its input,
      then its input closed  ────────────────────────────► {"ready": true}
-                                                           for each line: Vst3Format::scanFile(path)
+                                                           for each line: its format's scanFile(path)
      its output read line by line  ◄───────────────────── {"path", "plugins": [...]} or {"path", "error"}
      per file: wait up to `timeout` for its answer
        no answer, process ended → "The plug-in crashed while loading."  \  note the failure,
@@ -129,9 +136,11 @@ flashing up).
    "program stopped working" or "insert a disk" dialogs if a plug-in misbehaves.
 3. Says `{"ready": true}`.
 4. For each JSON-encoded path on its input (one a line; a line that isn't a JSON string is skipped), answers one JSON
-   line: `{"path": ..., "plugins": [{"uid", "name", "vendor", "version", "category", "instrument"}, ...]}` from
-   `Vst3Format::scanFile(path)`, or `{"path": ..., "error": ...}` if it throws. Loading the module is the engine's (see
-   [engine/plugins.md](../engine/plugins.md#vst3format)).
+   line: `{"path": ..., "plugins": [{"format", "uid", "name", "vendor", "version", "category", "instrument"}, ...]}`
+   from the file's format's `scanFile(path)` (`pluginFormatOfFile()`: `Vst3Format` for a `.vst3`, `Vst2Format` for a
+   library), or `{"path": ..., "error": ...}` if it throws. A library that isn't a VST2 plug-in (no entry point)
+   answers no plug-ins, no error. Loading the module is the engine's (see
+   [engine/plugins.md](../engine/plugins.md#vst3format) and [its VST2 section](../engine/plugins.md#vst2)).
 5. Ends when its input ends.
 
 The parent (`PluginScanner::read`):
@@ -167,7 +176,7 @@ versions of SUBstation are read as they are.
   "c:\\program files\\common files\\vst3\\foo.vst3": {
    "path": "C:\\Program Files\\Common Files\\VST3\\Foo.vst3",
    "signature": [1712345678901234567, 1048576],
-   "plugins": [{"uid": "...", "name": "Foo", "vendor": "...", "version": "1.0.0",
+   "plugins": [{"format": "VST3", "uid": "...", "name": "Foo", "vendor": "...", "version": "1.0.0",
                 "category": "Fx|EQ", "instrument": false}],
    "error": null
   }
@@ -231,10 +240,10 @@ dlopen's error as "Linux could not load it: ...": a library it needs missing (na
 
 ## Extending it
 
-- **Another format** (CLAP): `substation-scan` would call that format's scanner by file extension and answer with a
-  format field; `PluginInfo::format` already exists, and `findPluginFiles()` would look for the format's extension.
-  Bump `kPluginCacheVersion` if the cache's shape changes. See
-  [engine/plugins.md](../engine/plugins.md#clap-not-implemented).
+- **Another format** (CLAP): `substation-scan` reads a file with the format `pluginFormatOfFile()` says (it would know
+  ".clap"), and each plug-in in its answer says its format; `findPluginFiles()` would look for the format's
+  extension. See [engine/plugins.md](../engine/plugins.md#clap-not-implemented). (A cache entry without a format, from
+  before VST2, is VST3: the cache's version stayed 1.)
 - **More metadata**: add it to the scanner's answer, to `PluginInfo`, and to the reading in `PluginScanner::scan()`.
   Old cache entries lack it; bump `kPluginCacheVersion` to read every file again.
 
@@ -249,11 +258,12 @@ dlopen's error as "Linux could not load it: ...": a library it needs missing (na
 ## Tests
 
 - [test_plugin_index.cpp](../../tests/app/test_plugin_index.cpp): reading the test bundle (four plug-ins, names,
-  vendors, categories, class ids) and a junk file with the real scanner; with itself as a fake scanner
+  vendors, categories, class ids) and a junk file with the real scanner, and the test VST2 libraries (a shell's two
+  plug-ins too, their format, ids, versions; cached); with itself as a fake scanner
   ([testing.md](../testing.md#the-fake-scanner)): caching (unchanged files not read again, changed ones are, a rescan
   reads everything), a plug-in that crashes while loading costing only itself (the files after it read by a new
-  process), a hanging plug-in timing out, stray lines, cancelling; finding files (links, nested folders,
-  `SUBSTATION_VST3_PATH`); the friendly messages; the index (one scan at a time, folders added and removed). The test
+  process), a hanging plug-in timing out, stray lines, cancelling; finding files (links, nested folders, VST2
+  libraries, `SUBSTATION_VST3_PATH` and `SUBSTATION_VST2_PATH`, Linux's VST2 folders and `VST_PATH`); the friendly messages; the index (one scan at a time, folders added and removed). The test
   plug-ins crash or hang on purpose when `SUB_TEST_PLUGIN_CRASH` or `SUB_TEST_PLUGIN_HANG` is set.
 - [test_browser_controller.cpp](../../tests/app/test_browser_controller.cpp): plug-ins and their failures in the
   browser. [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp): plug-in folders in the preferences.

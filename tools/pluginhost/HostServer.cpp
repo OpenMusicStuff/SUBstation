@@ -7,8 +7,7 @@
 
 #include "EditorHost.h"
 #include "platform/Threads.h"
-#include "plugins/Vst3Format.h"
-#include "plugins/Vst3Processor.h"
+#include "plugins/PluginFormat.h"
 #include "rt/RtUtils.h"
 
 namespace sub::pluginhost {
@@ -223,7 +222,7 @@ void HostServer::handleForInstance(Instance& instance, const Message& message) {
         case Kind::SetParam: {
             const auto index = static_cast<int>(in.u32());
             const float value = in.f32();
-            if (instance.vst3) instance.vst3->setControllerParam(index, value);  // (its audio has it from the block)
+            if (instance.plugin) instance.plugin->setControllerParam(index, value);  // (its audio has it from the block)
             else processor.setParam(index, value);
             // The engine knows this value: only a change from it is news.
             if (index >= 0 && static_cast<size_t>(index) < instance.sentValues.size()) {
@@ -275,6 +274,7 @@ void HostServer::create(const Message& message) {
     instance->state = sandbox::readBytes(in);
     instance->name = in.str();
     instance->slot = in.u32();
+    instance->format = in.str();
     try {
         if (!in.ok()) throw std::runtime_error("The engine's request was garbled.");
         if (instance->slot >= sandbox::kMaxSlots) throw std::runtime_error("The engine's slot for it isn't one.");
@@ -338,9 +338,10 @@ void HostServer::loadNext() {
     }
     std::deque<Message> waiting;
     try {
-        instance.processor =
-            vst3::Vst3Format::instance().instantiate(instance.path, instance.uid, instance.sampleRate, instance.maxBlock);
-        instance.vst3 = dynamic_cast<vst3::Vst3Processor*>(instance.processor.get());
+        PluginFormat* format = pluginFormat(instance.format);
+        if (!format) throw std::runtime_error("Plug-ins of the format " + instance.format + " can't be loaded here.");
+        instance.processor = format->instantiate(instance.path, instance.uid, instance.sampleRate, instance.maxBlock);
+        instance.plugin = dynamic_cast<PluginProcessor*>(instance.processor.get());
         sandbox::LoadedInfo info;
         if (!instance.state.empty()) {
             try {
@@ -385,7 +386,7 @@ void HostServer::loadNext() {
     if (!instance.failure.empty()) {
         instance.loaded = false;
         instance.processor.reset();
-        instance.vst3 = nullptr;
+        instance.plugin = nullptr;
         platform::ByteWriter out;
         out.str(instance.failure);
         send({Kind::LoadFailed, id, 0, std::move(out.bytes)});
@@ -596,9 +597,9 @@ void HostServer::processBlock(Instance& instance) {
         const ParamAutomation& a = block.automation[i];
         processor.automate(a.index, a.value, a.sampleOffset);
     }
-    if (instance.vst3) {
+    if (instance.plugin) {
         const size_t changes = std::min<size_t>(block.numChanges, sandbox::kMaxChanges);
-        for (size_t i = 0; i < changes; ++i) instance.vst3->queueParamChange(block.changes[i].id, block.changes[i].normalized);
+        for (size_t i = 0; i < changes; ++i) instance.plugin->queueParamChange(block.changes[i].id, block.changes[i].normalized);
     }
     processor.setSidechainConnected((block.flags & sandbox::kBlockSidechainConnected) != 0);
     if (block.flags & sandbox::kBlockSidechain) processor.setSidechain(block.sidechain[0], block.sidechain[1]);

@@ -86,8 +86,8 @@ Rectangle {
 
     // --- Menus ---------------------------------------------------------------------------------
 
-    // A device's right-click menu: its own entries (a plug-in's editor and VST3
-    // presets, a rack's Add Chain and what it shows, an editor's), Fold, the
+    // A device's right-click menu: its own entries (a plug-in's editor and its
+    // format's presets, a rack's Add Chain and what it shows, an editor's), Fold, the
     // clipboard's (for the selected devices), Move Left and Right, presets,
     // Group and Ungroup, Delete.
     function showDeviceMenu(frame, at, x, y) {
@@ -98,8 +98,13 @@ Rectangle {
         menu.reset()
         if (info.isPlugin) {
             menu.entry(qsTr("Show Editor"), () => Session.bridge.openPluginEditor(trackId, id), undefined, info.loaded)
-            menu.entry(qsTr("Load VST3 Preset…"), () => panel.loadVst3Preset(id), undefined, info.loaded)
-            menu.entry(qsTr("Save VST3 Preset…"), () => panel.saveVst3Preset(id, info.name), undefined, info.loaded)
+            if (info.pluginFormat === "VST2") {
+                menu.entry(qsTr("Load VST2 Preset…"), () => panel.loadVst2Preset(id), undefined, info.loaded)
+                menu.entry(qsTr("Save VST2 Preset…"), () => panel.saveVst2Preset(id, info.name), undefined, info.loaded)
+            } else {
+                menu.entry(qsTr("Load VST3 Preset…"), () => panel.loadVst3Preset(id), undefined, info.loaded)
+                menu.entry(qsTr("Save VST3 Preset…"), () => panel.saveVst3Preset(id, info.name), undefined, info.loaded)
+            }
             menu.entry(qsTr("Reload Plug-in"), () => Session.bridge.reloadPlugin(trackId, id), undefined,
                        info.loaded || info.reloadable)
             menu.separator()
@@ -317,6 +322,24 @@ Rectangle {
         vst3SaveDialog.open()
     }
 
+    // A VST2 plug-in's: an .fxp (a program) or .fxb (a bank), as its state is
+    // (a plug-in that keeps a chunk saves a bank).
+    function loadVst2Preset(deviceId) {
+        vst2LoadDialog.deviceId = deviceId
+        vst2LoadDialog.currentFolder = FileUrls.fileUrl(Session.deviceSelection.vst3PresetFolder(deviceId))
+        vst2LoadDialog.open()
+    }
+
+    function saveVst2Preset(deviceId, name) {
+        const folder = Session.deviceSelection.vst3PresetFolder(deviceId)
+        const suffix = Session.deviceSelection.pluginPresetSuffix(deviceId)
+        vst2SaveDialog.deviceId = deviceId
+        vst2SaveDialog.nameFilters = suffix === "fxb" ? [qsTr("VST2 Bank (*.fxb)")] : [qsTr("VST2 Preset (*.fxp)")]
+        vst2SaveDialog.currentFolder = FileUrls.fileUrl(folder)
+        vst2SaveDialog.selectedFile = FileUrls.fileUrl(folder + "/" + name + "." + suffix)
+        vst2SaveDialog.open()
+    }
+
     function loadVitalPreset(deviceId) {
         vitalLoadDialog.deviceId = deviceId
         vitalLoadDialog.currentFolder = FileUrls.fileUrl(Session.deviceSelection.vitalPresetFolder())
@@ -529,6 +552,28 @@ Rectangle {
         title: qsTr("Save VST3 Preset")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("VST3 Preset (*.vstpreset)")]
+        onAccepted: Session.deviceSelection.saveVst3Preset(deviceId, FileUrls.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: vst2LoadDialog
+        objectName: "vst2LoadDialog"
+
+        property string deviceId
+
+        title: qsTr("Load VST2 Preset")
+        nameFilters: [qsTr("VST2 Preset or Bank (*.fxp *.fxb)")]
+        onAccepted: Session.deviceSelection.loadVst3Preset(deviceId, FileUrls.localPath(selectedFile))
+    }
+
+    FileDialog {
+        id: vst2SaveDialog
+        objectName: "vst2SaveDialog"
+
+        property string deviceId
+
+        title: qsTr("Save VST2 Preset")
+        fileMode: FileDialog.SaveFile
         onAccepted: Session.deviceSelection.saveVst3Preset(deviceId, FileUrls.localPath(selectedFile))
     }
 

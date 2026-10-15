@@ -1,4 +1,4 @@
-// Plug-in editors on Linux (plugins/EditorWindowX11.cpp), on an X server of
+// Plug-in editors on Linux (plugins/editor/EditorWindowX11.cpp), on an X server of
 // the test's own (harness/XDisplay.h): SUB Test Effect's editor (an X11
 // window of the plug-in's own connection, run by the host's IRunLoop) asked
 // to edit, resize and mark its state dirty with client messages, as a user's
@@ -161,6 +161,57 @@ TEST_CASE("x11 editor: edits, resizes and closes") {
     CHECK(engine.openEditor(effect, 0, "Again"));
     CHECK(findEditor(engine, x, "Again").frame != 0);
     engine.removeProcessor(effect);
+    CHECK(pumpUntil(engine, [&] { return x.topLevel("Again") == 0; }));
+}
+
+// A VST2 plug-in's editor (SUB VST2 Gain, tests/vst2_plugins): held by the same
+// window, through a view standing in for it; opened into the window, run by the
+// engine's idle calls (effEditIdle); its edits one gesture; its resize requests
+// followed; closed with the window.
+TEST_CASE("x11 editor: a VST2 plug-in's") {
+    EditorTest t;
+    auto& engine = t.engine;
+    requireTestVst2();
+    const uint32_t track = clipTrack(engine, dcWav());
+    const uint32_t gain = addTestVst2(engine, engine.trackChain(track), "Gain");
+    CHECK(engine.processorInfo(gain).hasEditor);
+    XClient x;
+    REQUIRE(x.ok());
+    REQUIRE(engine.openEditor(gain, 0, "SUB VST2 Gain - Audio"));
+    const Editor editor = findEditor(engine, x, "SUB VST2 Gain - Audio");
+    REQUIRE(editor.frame && editor.view);
+    CHECK(x.size(editor.frame) == std::make_pair(300, 200));  // the size it says (effEditGetRect)
+
+    engine.takeProcessorEvents();
+    x.send(editor.view, x.atom("SUB_TEST_EDIT_GAIN"));
+    std::vector<sub::ProcessorEventRecord> all;
+    REQUIRE(pumpUntil(engine, [&] {
+        for (auto& e : engine.takeProcessorEvents()) all.push_back(e);
+        return eventsOf(all, EventType::ParamEdited).size() >= 2;
+    }));
+    const auto edits = eventsOf(all, EventType::ParamEdited);
+    REQUIRE(edits.size() == 2);
+    CHECK_EQ(edits[0].paramIndex, 0);
+    CHECK_EQ(std::round(edits[1].value * 1e6) / 1e6, 0.3);
+    CHECK_EQ(std::round(edits[1].oldValue * 1e6) / 1e6, 0.5);  // (the value before the gesture)
+    CHECK(edits[0].gesture == edits[1].gesture && edits[1].gesture != 0);
+    CHECK(!eventsOf(all, EventType::ParamTouched).empty());
+    CHECK_APPROX(engine.processorParam(gain, 0), 0.3);
+    CHECK_ALLCLOSE(engine.renderOffline(0.0, 100), 0.3, 1e-7, 1e-6);  // 0.5 * 2 * 0.3
+
+    x.send(editor.view, x.atom("SUB_TEST_RESIZE"), 420, 260);
+    CHECK(pumpUntil(engine, [&] { return x.size(editor.frame) == std::make_pair(420, 260); }));
+    // Asked from the plug-in's own thread: the window follows on the main thread, in idle().
+    x.send(editor.view, x.atom("SUB_TEST_RESIZE_ELSEWHERE"), 380, 240);
+    CHECK(pumpUntil(engine, [&] { return x.size(editor.frame) == std::make_pair(380, 240); }));
+
+    x.close(editor.frame);
+    CHECK(pumpUntil(engine, [&] { return !engine.isEditorOpen(gain); }));
+    auto events = engine.takeProcessorEvents();
+    CHECK(!eventsOf(events, EventType::EditorClosed).empty());
+    CHECK(engine.openEditor(gain, 0, "Again"));  // (it opens again)
+    CHECK(findEditor(engine, x, "Again").frame != 0);
+    engine.removeProcessor(gain);
     CHECK(pumpUntil(engine, [&] { return x.topLevel("Again") == 0; }));
 }
 

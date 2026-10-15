@@ -363,7 +363,7 @@ the engine's [VitalPatch.h](../../engine/src/builtin/VitalPatch.h) reads and wri
   `saveVitalPreset`; their dialogs start where the last was, else Vital's own presets folder: `Documents/Vital`,
   `~/.local/share/vital`, `vitalPresetFolder()`).
 
-Plug-ins' own `.vstpreset` files (*Load VST3 Preset…* / *Save VST3 Preset…* on a plug-in) are a different thing: the
+Plug-ins' own `.vstpreset` files (*Load VST3 Preset…* / *Save VST3 Preset…* on a plug-in; a VST2's `.fxp` and `.fxb`, *Load/Save VST2 Preset…*) are a different thing: the
 engine reads and writes them (`EngineBridge::applyPluginState`, `pluginState`), and loading one is an undoable
 `SetDeviceStateCommand` (`DeviceSelection`, [session.md](session.md#the-device-view-deviceselection)).
 

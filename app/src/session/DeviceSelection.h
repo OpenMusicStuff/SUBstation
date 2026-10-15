@@ -187,7 +187,8 @@ public:
     Q_INVOKABLE void clearDefault(const QString& deviceId);
     Q_INVOKABLE bool hasDefault(const QString& deviceId) const;
 
-    // --- A plug-in's own presets (.vstpreset files, to share settings with other hosts) ---
+    // --- A plug-in's own presets (to share settings with other hosts): a VST3's .vstpreset ---
+    // files; a VST2's .fxp (a program) and .fxb (a bank) files, through the same calls.
     // Where their file dialogs start: where the last one was, else Documents/VST3
     // Presets/<vendor>/<plug-in> (where VST3 presets usually live), else Documents.
     Q_INVOKABLE QString vst3PresetFolder(const QString& deviceId) const;
@@ -199,6 +200,9 @@ public:
     // Save VST3 Preset…: the plug-in's state as a .vstpreset (the save button
     // saves a SUBstation preset). The folder is remembered. Whether it was saved.
     Q_INVOKABLE bool saveVst3Preset(const QString& deviceId, const QString& path);
+    // What a plug-in's preset file is called after: "vstpreset" for a VST3; for a VST2,
+    // "fxb" if its state is a bank (a plug-in that keeps a chunk), else "fxp".
+    Q_INVOKABLE QString pluginPresetSuffix(const QString& deviceId) const;
 
     // --- Vital's own presets (.vital files: Vital's, and to share patches with it) ---
     // Where their file dialogs start: where the last one was, else Vital's

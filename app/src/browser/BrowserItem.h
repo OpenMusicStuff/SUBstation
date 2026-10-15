@@ -20,11 +20,11 @@ QString kindName(ItemKind kind);
 
 struct BrowserItem {
     QString name;
-    // An audio file or a preset: its file. A plug-in: its .vst3. A built-in
+    // An audio file or a preset: its file. A plug-in: its .vst3 (a VST2: its library). A built-in
     // device: the device's kind ("utility").
     QString path;
     ItemKind kind = ItemKind::Audio;
-    // The parent folder, the plug-in's vendor, the device's category, or the
+    // The parent folder, the plug-in's vendor (" · VST2" after it for one), the device's category, or the
     // device a preset is for.
     QString detail;
     std::optional<PluginInfo> plugin;

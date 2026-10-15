@@ -209,6 +209,7 @@ void DeviceInfo::refresh() {
         s.isDrumRack = device->isDrumRack();
         s.isPlugin = device->isPlugin();
         s.name = s.isPlugin && device->plugin ? device->plugin->name : sub::app::deviceName(*device);
+        s.pluginFormat = s.isPlugin && device->plugin ? device->plugin->format : QString();
         s.instrument = sub::app::deviceIsInstrument(*device);
         std::tie(s.enabled, s.enabledAutomation) = switchState(device->enabled);
         s.folded = project->isDeviceFolded(deviceId_);

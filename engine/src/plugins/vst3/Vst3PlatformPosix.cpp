@@ -1,7 +1,7 @@
 // VST3 hosting elsewhere than Windows (see Vst3Platform.h): Linux, and macOS's
 // folders and bundles.
 
-#include "plugins/Vst3Platform.h"
+#include "plugins/vst3/Vst3Platform.h"
 
 #include <cstdlib>
 

@@ -32,7 +32,7 @@ _check(browser/src "Q[A-Za-z]+|qt|app/|ui/" "Qt or the application")
 _check(intelligence/src "Q[A-Za-z]+|qt|app/|ui/" "Qt or the application")
 _check(app/src "QtQuick|QtQml|QQuick|QQml|QJSValue|QJSEngine|ui/" "Qt Quick, QML or the UI")
 
-# The engine's headers, by name (as the engine includes them: "Engine.h", "plugins/Vst3Format.h"...).
+# The engine's headers, by name (as the engine includes them: "Engine.h", "plugins/vst3/Vst3Format.h"...).
 file(GLOB_RECURSE _engine_headers RELATIVE "${ROOT}/engine/src" "${ROOT}/engine/src/*.h")
 set(_engine_names "")
 foreach (_header IN LISTS _engine_headers)

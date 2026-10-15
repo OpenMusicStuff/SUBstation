@@ -52,6 +52,7 @@ class DeviceInfo : public QObject {
     Q_PROPERTY(bool isRack READ isRack NOTIFY changed)
     Q_PROPERTY(bool isDrumRack READ isDrumRack NOTIFY changed)  // a rack whose chains are pads
     Q_PROPERTY(bool isPlugin READ isPlugin NOTIFY changed)
+    Q_PROPERTY(QString pluginFormat READ pluginFormat NOTIFY changed)  // a plug-in's: "VST3", "VST2" ("": none)
     Q_PROPERTY(bool instrument READ instrument NOTIFY changed)
     Q_PROPERTY(bool enabled READ enabled NOTIFY changed)  // as heard: following its automation while it plays
     // Bypassed by Constrain Delay Compensation (on all the same): its title is dimmed.
@@ -101,6 +102,7 @@ public:
     bool isRack() const { return state_.isRack; }
     bool isDrumRack() const { return state_.isDrumRack; }
     bool isPlugin() const { return state_.isPlugin; }
+    QString pluginFormat() const { return state_.pluginFormat; }
     bool instrument() const { return state_.instrument; }
     bool enabled() const { return state_.enabled; }
     bool constrained() const { return state_.constrained; }
@@ -178,6 +180,7 @@ private:
         bool isRack = false;
         bool isDrumRack = false;
         bool isPlugin = false;
+        QString pluginFormat;
         bool instrument = false;
         bool enabled = true;
         bool constrained = false;

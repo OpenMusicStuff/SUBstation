@@ -43,7 +43,7 @@ QVariant PluginFolderModel::data(const QModelIndex& index, int role) const {
         case RemovableRole: return !row.standard;
         case Qt::ToolTipRole:
         case ToolTipRole:
-            if (row.standard) return QStringLiteral("A standard VST3 folder: always searched.");
+            if (row.standard) return QStringLiteral("A standard plug-in folder: always searched.");
             return row.exists ? shown : shown + QStringLiteral("\nThis folder doesn't exist (any more).");
         default: return {};
     }

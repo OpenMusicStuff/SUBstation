@@ -34,8 +34,9 @@
 #include <vector>
 
 #include "Processor.h"
-#include "plugins/EditorWindow.h"
-#include "plugins/Vst3Support.h"
+#include "plugins/editor/EditorWindow.h"
+#include "plugins/PluginFormat.h"
+#include "plugins/vst3/Vst3Support.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -46,7 +47,7 @@
 
 namespace sub::vst3 {
 
-class Vst3Processor final : public Processor {
+class Vst3Processor final : public PluginProcessor {
 public:
     // Creates, initialises and connects the plug-in. Throws std::runtime_error.
     Vst3Processor(VST3::Hosting::Module::Ptr module, const VST3::Hosting::ClassInfo& classInfo,
@@ -74,9 +75,8 @@ public:
     // UI's changes reach the audio with the block and the controller in a message:
     // the controller and the value (main thread; the id and normalized value set,
     // none for a read-only parameter), and the audio (any thread: the rendering one).
-    std::optional<std::pair<Steinberg::Vst::ParamID, Steinberg::Vst::ParamValue>> setControllerParam(int index,
-                                                                                                      float value);
-    void queueParamChange(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue normalized) noexcept;
+    std::optional<std::pair<uint32_t, double>> setControllerParam(int index, float value) override;
+    void queueParamChange(uint32_t id, double normalized) noexcept override;
 
     std::vector<uint8_t> getState() override;
     void setState(const std::vector<uint8_t>& state) override;

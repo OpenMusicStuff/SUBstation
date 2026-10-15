@@ -1,5 +1,6 @@
 #pragma once
-// The user's own VST3 folders, kept in QSettings (plugins/vst3_folders).
+// The user's own plug-in folders (VST3's and VST2's alike), kept in QSettings
+// (plugins/vst3_folders, named so from before VST2).
 
 #include <QString>
 #include <QStringList>

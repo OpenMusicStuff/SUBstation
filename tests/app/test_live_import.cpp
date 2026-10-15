@@ -20,7 +20,8 @@
 #include "model/Errors.h"
 #include "model/ParamSpec.h"
 #include "model/Project.h"
-#include "plugins/Vst3Ids.h"
+#include "plugins/vst2/Vst2Preset.h"
+#include "plugins/vst3/Vst3Ids.h"
 
 #include <QDir>
 #include <QFile>
@@ -807,6 +808,50 @@ private Q_SLOTS:
         QCOMPARE(devices[3].plugin->name, QStringLiteral("Unknown Thing"));
         QVERIFY(noteSays(imported->notes, QStringLiteral("Not installed here")));
         QVERIFY(noteSays(imported->notes, QStringLiteral("Glitch2")));
+    }
+
+    // A VST2 that is installed comes as itself, before a VST3 replacing it, with
+    // its settings as SUBstation keeps a VST2's (the fxb of its chunk).
+    void aVst2ComesAsItselfWhenInstalled() {
+        const std::array<quint32, 4> vintage = wordsOf("VSTVlvvvalhallav");
+        live::ImportOptions options;
+        options.plugins = {
+            PluginInfo{QStringLiteral("ValhallaVintageVerb"), QStringLiteral("VST3"),
+                       QStringLiteral("C:/VST3/Vintage.vst3"), classId(vintage), QStringLiteral("Valhalla DSP"),
+                       QStringLiteral("2.0"), QStringLiteral("Fx|Reverb"), false},
+            PluginInfo{QStringLiteral("ValhallaVintageVerb"), QStringLiteral("VST2"),
+                       QStringLiteral("C:/VSTPlugins/ValhallaVintageVerb_x64.dll"), QStringLiteral("566C7676"),
+                       QStringLiteral("Valhalla DSP"), QStringLiteral("2.0"), QStringLiteral("Fx|Reverb"), false}};
+        Song song;
+        LiveTrack t{QStringLiteral("AudioTrack"), 1, QStringLiteral("1-Verb")};
+        t.devices = vst2Device(QStringLiteral("ValhallaVintageVerb_x64"), 0x566C7676, QByteArray("VC2!vintage", 11));
+        song.tracks = track(t);
+        auto imported = load(liveSet(song), QStringLiteral("/nowhere/song.als"), options);
+        const std::vector<Device>& devices = imported->project.tracks()[0].devices;
+        QCOMPARE(devices.size(), size_t{1});
+        QCOMPARE(devices[0].plugin->format, QStringLiteral("VST2"));
+        QCOMPARE(devices[0].plugin->uid, QStringLiteral("566C7676"));
+        QCOMPARE(devices[0].plugin->path, QStringLiteral("C:/VSTPlugins/ValhallaVintageVerb_x64.dll"));
+        const QByteArray state = QByteArray::fromBase64(devices[0].state->toLatin1());
+        const auto preset = sub::vst2::readPreset(reinterpret_cast<const uint8_t*>(state.constData()),
+                                                  static_cast<size_t>(state.size()));
+        QVERIFY(preset.has_value());
+        QVERIFY(preset->kind == sub::vst2::Preset::Kind::BankChunk);
+        QCOMPARE(preset->pluginId, 0x566C7676);
+        QCOMPARE(QByteArray(reinterpret_cast<const char*>(preset->chunk.data()), qsizetype(preset->chunk.size())),
+                 QByteArray("VC2!vintage"));
+
+        // A VST2 of its name but another id is another plug-in: not taken for it (its VST3 is, by name).
+        options.plugins[1].uid = QStringLiteral("01020304");
+        options.plugins[0].uid = classId(wordsOf("NotTheVST2sReplm"));
+        imported = load(liveSet(song), QStringLiteral("/nowhere/song.als"), options);
+        const std::vector<Device>& others = imported->project.tracks()[0].devices;
+        QCOMPARE(others.size(), size_t{1});
+        QCOMPARE(others[0].plugin->format, QStringLiteral("VST3"));
+        QVERIFY(!others[0].state);
+        options.plugins.erase(options.plugins.begin());  // the VST2 of another id alone: left out
+        imported = load(liveSet(song), QStringLiteral("/nowhere/song.als"), options);
+        QVERIFY(imported->project.tracks()[0].devices.empty());
     }
 
     // A real VST3 plug-in's settings as Live keeps them (its processor's and

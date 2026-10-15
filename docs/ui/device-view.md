@@ -152,7 +152,7 @@ chain order, all of one chain (the track's own or a rack's).
 | `loadPresetInto(id, path)` | `bridge.storePluginStates({device})`, then `editor.loadPresetInto` | only into a device of the preset's kind (`presetLoadsInto`) |
 | `savePreset(id, name)` | `saveToLibrary` | stores the plug-in states of it and everything in it first; a rack is renamed after the preset (`editor.renameRack`), so its title is the preset's name; `presetSaved(path)` lets the browser list it |
 | `saveAsDefault(id)`, `clearDefault(id)` | the preset library's default presets | not racks |
-| `loadVst3Preset(id, path)`, `saveVst3Preset(id, path)` | `setDeviceState` with the states before and after (undoable) | a plug-in's own `.vstpreset`; the folder remembered (`plugins/preset_dir`), else `Documents/VST3 Presets/<vendor>/<name>` |
+| `loadVst3Preset(id, path)`, `saveVst3Preset(id, path)` | `setDeviceState` with the states before and after (undoable) | a plug-in's own `.vstpreset` (a VST2's `.fxp` or `.fxb`: the same calls; `pluginPresetSuffix(id)` says which a save is); the folder remembered (`plugins/preset_dir`), else `Documents/VST3 Presets/<vendor>/<name>` |
 
 The device view's clipboard is its own: the arrangement's clips, automation and tracks have theirs.
 
@@ -206,7 +206,7 @@ and editor, its sidechain, its MIDI input) reading the project again whenever th
   `release`; a drag past the start distance starts a drag of the devices; a double-click folds or unfolds a folded
   device (or any, with Ctrl), else opens a plug-in's own editor; a right press selects it (unless it is) and asks
   the panel for its menu.
-- **Context menu** (`DevicePanel.showDeviceMenu`): a plug-in's Show Editor, Load VST3 Preset…, Save VST3 Preset…; a
+- **Context menu** (`DevicePanel.showDeviceMenu`): a plug-in's Show Editor, Load VST3 Preset…, Save VST3 Preset… (a VST2's: Load VST2 Preset…, Save VST2 Preset…, with `.fxp`/`.fxb` dialogs, by `DeviceInfo.pluginFormat`); a
   rack's Add Chain (which shows its chain list), Show/Hide Chain List, Show/Hide Devices; the body's own `menuActions`
   (the Sampler's); Fold/Unfold; Cut, Copy, Paste (after it),
   Duplicate; Move Left/Right (not an instrument: nothing goes before it); Save Preset…, Save as Default Preset /

@@ -1,4 +1,4 @@
-#include "plugins/Vst3RunLoop.h"
+#include "plugins/editor/Vst3RunLoop.h"
 
 namespace sub::vst3 {
 

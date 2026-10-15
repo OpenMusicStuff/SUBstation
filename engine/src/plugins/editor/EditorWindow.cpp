@@ -1,12 +1,12 @@
 // What every system's editor window does with the plug-in's view (see
 // EditorWindow.h; the windows themselves are EditorWindowWin32.cpp's...).
 
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 
 #if SMTG_OS_LINUX
-#include "plugins/Vst3RunLoop.h"
+#include "plugins/editor/Vst3RunLoop.h"
 #endif
 
 namespace sub::vst3 {

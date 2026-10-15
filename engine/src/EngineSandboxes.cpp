@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <thread>
 
-#include "plugins/Vst3Format.h"
+#include "plugins/PluginFormat.h"
 #include "plugins/sandbox/PluginSandboxes.h"
 #include "plugins/sandbox/SandboxedProcessor.h"
 
@@ -30,7 +30,9 @@ ProcessorEventRecord engineEvent(ProcessorEvent::Type type, uint32_t processorId
 std::shared_ptr<Processor> Engine::makePlugin(const ProcessorEntry::Plugin& plugin, const std::vector<uint8_t>& state,
                                               double sampleRate, std::string& problem) {
     if (pluginHosting() == PluginHosting::InProcess) {
-        auto processor = vst3::Vst3Format::instance().instantiate(plugin.path, plugin.uid, sampleRate, Renderer::kMaxBlock);
+        PluginFormat* format = pluginFormat(plugin.format);
+        if (!format) throw std::invalid_argument("Unsupported plug-in format: " + plugin.format);
+        auto processor = format->instantiate(plugin.path, plugin.uid, sampleRate, Renderer::kMaxBlock);
         if (!state.empty()) {
             try {
                 processor->setState(state);
@@ -41,7 +43,8 @@ std::shared_ptr<Processor> Engine::makePlugin(const ProcessorEntry::Plugin& plug
         return processor;
     }
     return std::make_shared<sandbox::SandboxedProcessor>(
-        *sandboxes_, sandbox::PluginOrigin{plugin.path, plugin.uid, plugin.identity.name, plugin.identity.vendor},
+        *sandboxes_, sandbox::PluginOrigin{plugin.path, plugin.uid, plugin.identity.name, plugin.identity.vendor,
+                                                      plugin.format},
         state, sampleRate, Renderer::kMaxBlock);
 }
 

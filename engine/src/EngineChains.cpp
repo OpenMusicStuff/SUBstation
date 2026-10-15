@@ -7,7 +7,7 @@
 #include "Rack.h"
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/PluginFormat.h"
 #include "plugins/sandbox/SandboxedProcessor.h"
 
 namespace sub {
@@ -285,7 +285,7 @@ uint32_t Engine::addBuiltinProcessor(uint32_t chainId, const std::string& type, 
 uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format, const std::string& path,
                                     const std::string& uid, int index, const PluginIdentity& identity,
                                     const std::vector<uint8_t>& state) {
-    if (format != "VST3") throw std::invalid_argument("Unsupported plug-in format: " + format);
+    if (!pluginFormat(format)) throw std::invalid_argument("Unsupported plug-in format: " + format);
     double rate = 0.0;
     {
         std::lock_guard lock(mutex_);
@@ -294,7 +294,7 @@ uint32_t Engine::addPluginProcessor(uint32_t chainId, const std::string& format,
     }
     // Loading can take a while (and show dialogs), so it doesn't hold the lock. (In a
     // sandbox it doesn't take the time here: the plug-in loads there meanwhile.)
-    ProcessorEntry::Plugin plugin{path, uid, identity, {}};
+    ProcessorEntry::Plugin plugin{format, path, uid, identity, {}};
     auto processor = makePlugin(plugin, state, rate, plugin.problem);
     std::lock_guard lock(mutex_);
     if (sampleRate_ != rate) processor->prepare(sampleRate_, Renderer::kMaxBlock);  // the device changed meanwhile

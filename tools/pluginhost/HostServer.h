@@ -39,11 +39,8 @@
 #include "HostLoop.h"
 #include "Processor.h"
 #include "platform/Ipc.h"
+#include "plugins/PluginFormat.h"
 #include "plugins/sandbox/SandboxProtocol.h"
-
-namespace sub::vst3 {
-class Vst3Processor;
-}
 
 namespace sub::pluginhost {
 
@@ -62,6 +59,7 @@ public:
 private:
     struct Instance {
         uint32_t id = 0;
+        std::string format;  // "VST3", "VST2"
         std::string path;
         std::string uid;
         std::string name;
@@ -73,7 +71,7 @@ private:
         sandbox::Block* block = nullptr;
         std::unique_ptr<platform::IpcSignal> doneSignal;
         std::shared_ptr<Processor> processor;
-        vst3::Vst3Processor* vst3 = nullptr;
+        PluginProcessor* plugin = nullptr;  // processor, as a plug-in
         std::atomic<bool> processing{false};  // a worker is in its block (one at a time)
         bool inSlot = false;                  // the workers find it (slots_)
         bool loaded = false;

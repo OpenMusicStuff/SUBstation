@@ -38,7 +38,7 @@ is in [app/model.md](../app/model.md); overrides are the engine bridge's ([below
 | [Automation.h](../../engine/src/Automation.h) | `AutomationPoint` (beats, as the UI sends it), `AutomationLaneDesc` (one envelope of a target), `AutomationNode` (samples, for the renderer); curve shape, segment value, index search, `fillAutomation`, `automationQuantize`; the mixer's mappings `automationVolumeGain` and `automationPan` |
 | [Processor.h](../../engine/src/Processor.h) | `ParamInfo` and its normalized mapping; `ParamAutomation`; `Processor::automate()`, `clearAutomation()`, `automation()`, `numAutomation()` |
 | [builtin/BuiltinProcessor.cpp](../../engine/src/builtin/BuiltinProcessor.cpp) | Built-in devices apply automation by rendering their block in pieces between changes |
-| [plugins/Vst3Processor.cpp](../../engine/src/plugins/Vst3Processor.cpp) | Plug-ins get automation as sample-accurate VST3 parameter changes; the controller hears the last values in `idle()` |
+| [plugins/vst3/Vst3Processor.cpp](../../engine/src/plugins/vst3/Vst3Processor.cpp) | Plug-ins get automation as sample-accurate VST3 parameter changes; the controller hears the last values in `idle()` |
 | [Snapshot.h](../../engine/src/Snapshot.h) | `AutomationRender` (an envelope as the renderer plays it), `TrackParams` (fader atomics and smoothing), `EdgeRender::level` (a send's envelope), `StripRender::automation`, `volume`, `pan` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | `automationNodes()`, `buildAutomationLocked()` (faders), `buildChainLocked()` (device parameters and rack chain faders), send levels on edges |
 | [EngineTracks.cpp](../../engine/src/EngineTracks.cpp) | `Engine::setTrackAutomation()` |

@@ -368,7 +368,7 @@ private Q_SLOTS:
         QCOMPARE(messages->at(0).at(0).toString(),
                  QStringLiteral("1 plug-in file could not be read (hover over Plug-ins in the browser for details)."));
         QCOMPARE(browser->pluginsToolTip(),
-                 QStringLiteral("VST3 plug-ins\n\nCould not be read:\nBroken.vst3: Windows could not load it: it is not a "
+                 QStringLiteral("VST3 and VST2 plug-ins\n\nCould not be read:\nBroken.vst3: Windows could not load it: it is not a "
                                 "64-bit Windows plug-in."));
         const int entry = browser->sidebar()->find(QStringList{QStringLiteral("plugins")});
         QCOMPARE(browser->sidebar()->entries()[size_t(entry)].toolTip, browser->pluginsToolTip());

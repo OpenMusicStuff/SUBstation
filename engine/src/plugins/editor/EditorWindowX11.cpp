@@ -18,7 +18,7 @@
 // a reply stay in its queue with nothing left to read on the connection, so
 // the window also looks at its queue every 50 ms.
 
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 
 #include <unistd.h>
 #include <xcb/xcb.h>
@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "EditorHost.h"
-#include "plugins/Vst3RunLoop.h"
+#include "plugins/editor/Vst3RunLoop.h"
 
 namespace sub::vst3 {
 

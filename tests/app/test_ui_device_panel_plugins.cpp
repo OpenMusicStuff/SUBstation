@@ -358,6 +358,57 @@ private Q_SLOTS:
         QVERIFY2(ui_.lastMessage().contains(QStringLiteral("not for SUB Test Synth")), qPrintable(ui_.lastMessage()));
     }
 
+    // A VST2 plug-in's presets: .fxp and .fxb files (SUB VST2 Gain keeps a chunk: a bank).
+    void vst2Presets() {
+#ifndef SUBSTATION_TEST_VST2_DIR
+        QSKIP("the test VST2 plug-ins are not built");
+#else
+        const auto [track, synth] = synthTrack();
+        Q_UNUSED(synth);
+        PluginRef ref;
+        ref.format = QStringLiteral("VST2");
+        ref.uid = QStringLiteral("53754732");  // 'SuG2'
+        ref.name = QStringLiteral("SUB VST2 Gain");
+        ref.vendor = QStringLiteral("SUBstation Tests");
+#ifdef _WIN32
+        ref.path = QStringLiteral(SUBSTATION_TEST_VST2_DIR "/SUBTestVst2Gain.dll");
+#else
+        ref.path = QStringLiteral(SUBSTATION_TEST_VST2_DIR "/SUBTestVst2Gain.so");
+#endif
+        const QString gain = editor().addDevice(track, sub::app::kPluginKind, -1, ref);
+        ui_.polish();
+        QTRY_VERIFY(frame(gain));
+        const quint32 processor = *bridge().engineDeviceId(track, gain);
+        ui_.engine().setProcessorParam(processor, 0, 0.25f);
+        ui_.rightClick(test::centerOf(test::part(frame(gain), "title")));
+        QVERIFY(ui_.menuOpened());
+        QCOMPARE(test::menuTexts(ui_.menu()).mid(1, 2), (QStringList{"Load VST2 Preset…", "Save VST2 Preset…"}));
+        QVERIFY(ui_.choose(QStringLiteral("Save VST2 Preset…")));
+        auto* saveDialog = ui_.panel()->findChild<QObject*>(QStringLiteral("vst2SaveDialog"));
+        QTRY_VERIFY(saveDialog->property("visible").toBool());
+        QCOMPARE(saveDialog->property("deviceId").toString(), gain);
+        QVERIFY(saveDialog->property("selectedFile").toUrl().toLocalFile().endsWith(QStringLiteral("/SUB VST2 Gain.fxb")));
+        QCOMPARE(saveDialog->property("nameFilters").toStringList(), QStringList{QStringLiteral("VST2 Bank (*.fxb)")});
+        QMetaObject::invokeMethod(saveDialog, "reject");
+        const QString preset = dir_->path(QStringLiteral("Quiet.fxb"));
+        QVERIFY(devices().saveVst3Preset(gain, preset));
+        QFile file(preset);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.read(4), QByteArray("CcnK"));
+        file.close();
+
+        ui_.engine().setProcessorParam(processor, 0, 0.8f);
+        ui_.rightClick(test::centerOf(test::part(frame(gain), "title")));
+        QVERIFY(ui_.choose(QStringLiteral("Load VST2 Preset…")));
+        auto* loadDialog = ui_.panel()->findChild<QObject*>(QStringLiteral("vst2LoadDialog"));
+        QTRY_VERIFY(loadDialog->property("visible").toBool());
+        QMetaObject::invokeMethod(loadDialog, "reject");
+        QVERIFY(devices().loadVst3Preset(gain, preset));
+        QVERIFY(std::abs(value(track, gain, 0) - 0.25) < 1e-3);
+        QCOMPARE(undo().undoText(), QStringLiteral("Load Preset Quiet"));
+#endif
+    }
+
     void pluginsLoadingAfterAProjectOpensAndMissingOnes() {
         const auto [track, synth] = synthTrack();
         Q_UNUSED(track);

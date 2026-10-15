@@ -728,7 +728,7 @@ stages above.
       hot-plug, host-time timestamps converted to the engine's clock.
 - [ ] Plug-ins: the VST3 SDK's `module_mac.mm` as the module loader; the
       scanner loads `.vst3` bundles. (Their code's place, `Contents/MacOS`,
-      and the folders are `plugins/Vst3PlatformPosix.cpp`'s already.)
+      and the folders are `plugins/vst3/Vst3PlatformPosix.cpp`'s already.)
       Universal or arm64 plug-ins only; x86_64-only bundles listed as
       unsupported (no Rosetta host).
 - [ ] Editors: `EditorWindowMac.mm` (its `EditorWindow::Native`, beside

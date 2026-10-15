@@ -4,7 +4,7 @@ The tests are run by CTest. There are four kinds: the engine's tests, one Qt-fre
 ([tests/engine](../tests/engine)); the intelligence module's, another ([tests/intelligence](../tests/intelligence));
 the application layer's and the UI's tests, Qt Test, one executable per file ([tests/app](../tests/app)); and the check
 of the layers' boundaries. They need no sound card and no installed
-plug-ins: the engine renders offline, small VST3 plug-ins (and, with the ASIO SDK, a fake ASIO driver) are built
+plug-ins: the engine renders offline, small VST3 and VST2 plug-ins (and, with the ASIO SDK, a fake ASIO driver) are built
 with the tests, and the UI tests drive the real QML views. Benchmarks live apart, in [benchmarks/](../benchmarks),
 and are not run by CTest.
 
@@ -120,6 +120,7 @@ tests/
     support/            what the application layer's and the UI's tests share (sub_app_test_support)
     test_*.cpp          a Qt Test program each; test_ui_* link the UI too
   vst3_plugins/         the test VST3 plug-ins (C++)
+  vst2_plugins/         the test VST2 plug-ins (C++)
   asio_driver/          the fake ASIO driver (C++; Windows, with the ASIO SDK)
 ```
 
@@ -134,7 +135,7 @@ The engine's tests link `sub_engine` and nothing else, which also shows that the
 | File | What it holds |
 |---|---|
 | [Test.h](../tests/engine/harness/Test.h), [Main.cpp](../tests/engine/harness/Main.cpp) | `TEST_CASE("name") { ... }`; `CHECK` (records a failure, goes on), `REQUIRE` (ends the test), `CHECK_EQ`, `CHECK_NEAR` (absolute), `CHECK_APPROX` (relative 1e-6), `CHECK_APPROX_REL`, `CHECK_APPROX_TOL`, `CHECK_THROWS_AS`, `CHECK_THROWS_MATCHING` (the message searched with a regular expression), `CHECK_NOTHROW`; `INFO(text)` adds what a failure in its scope was about (a seed, a parameter); `SKIP(reason)`; `tempDir()`, a fresh folder for the running test, removed after it. `Main.cpp` runs them (filters, `--list`). |
-| [Fixtures.h](../tests/engine/harness/Fixtures.h) | `kSampleRate` (48000: the engine's rate without a device), `kSpb`, `kBeat`; WAV files to play (`writeWav`, `makeWav`, `dcWav`: a second of 0.5 in both channels; `rampWav`: sample i is (i % 32768) / 32768, exact in 16-bit PCM; `clickWav`: one sample at a level in silence); the test plug-ins (`testPluginsBundle`, `requireTestPlugins`, `testPluginUids`, `addTestPlugin`; SUB Test Effect's parameters `FX_GAIN`, `FX_LATENCY`, `FX_BYPASS`, and `latentEffect`: it on a track, so many samples late; `keyed`: SUB Test Sidechain on a track); `clip`, `clipTrack`, `stereoClickTrack`, `setParam`, `paramInfo`, `utilityOn`, `utility` (on a track), `builtinInfo`. |
+| [Fixtures.h](../tests/engine/harness/Fixtures.h) | `kSampleRate` (48000: the engine's rate without a device), `kSpb`, `kBeat`; WAV files to play (`writeWav`, `makeWav`, `dcWav`: a second of 0.5 in both channels; `rampWav`: sample i is (i % 32768) / 32768, exact in 16-bit PCM; `clickWav`: one sample at a level in silence); the test plug-ins (`testPluginsBundle`, `requireTestPlugins`, `testPluginUids`, `addTestPlugin`; the test VST2 ones: `testVst2Dir`, `testVst2Path`, `requireTestVst2`, `kVst2GainUid`, `kVst2SynthUid`, `addTestVst2`; SUB Test Effect's parameters `FX_GAIN`, `FX_LATENCY`, `FX_BYPASS`, and `latentEffect`: it on a track, so many samples late; `keyed`: SUB Test Sidechain on a track); `clip`, `clipTrack`, `stereoClickTrack`, `setParam`, `paramInfo`, `utilityOn`, `utility` (on a track), `builtinInfo`. |
 | [Signal.h](../tests/engine/harness/Signal.h) | What renders are checked with: channels and ranges of interleaved audio, levels (peak, RMS, `energy`, in dB: `db`, `rmsDb`), where a signal is non-zero, comparisons sample by sample, spectra of any length and what is at one frequency (`transformAt`; a steady tone's `toneAmplitude`, through a Hann window `windowedAmplitude`; `bandDb`), envelopes, correlation, random numbers, reading WAV files back. And what the devices' own tests play and measure: `sine`, `smoothSine` (faded in, so its start is no click of its own), `noise`, `impulse`, `delayed`; a click, as `clickiness` (the largest 6th difference: a steep high-pass, a step of d showing as 10 d) and `largestStep`. |
 | [AsioDriver.h](../tests/engine/harness/AsioDriver.h) | The fake ASIO driver: `AsioDriver` (its hooks, below; making one skips the test where there is no driver), the sample types and `decode()` (a driver buffer's bytes as samples, decoded independently of the engine), `asioConfig`, `openAsio`, `haveTestAsio`, `requireTestAsio`. |
 | [XDisplay.h](../tests/engine/harness/XDisplay.h) | An X server of the test's own (Linux): Xvfb on a display it picks (`-displayfd`), `DISPLAY` pointed at it while it runs (and put back); `running()`/`whyNot()` (the tests skip). And `XClient`, a client of it: top-level windows by title, children, sizes, properties, client messages, closing as a window manager would (`WM_DELETE_WINDOW`), the focus, keys typed through XTEST. No window manager: the tests do what one would. No test harness of its own: the application's tests use it too. |
@@ -259,6 +260,21 @@ The single-component plug-ins have their own translation units because the SDK's
 `IEditController::setState` with a macro, which only works if `vstsinglecomponenteffect.h` comes first
 ([test_plugins.h](../tests/vst3_plugins/test_plugins.h)).
 
+## The test VST2 plug-ins
+
+[tests/vst2_plugins/test_vst2.cpp](../tests/vst2_plugins/test_vst2.cpp) is built, with the same VST 2 interface the
+engine hosts them with (`Vst2Sdk.h`), into three libraries in `build/testplugins/vst2` (`.so` on Linux, `.dll` on
+Windows), as VST2 plug-ins lie in their folders:
+
+| Library | What it is |
+|---|---|
+| `SUBTestVst2Gain` | **SUB VST2 Gain** ('SuG2'), an effect: its output is (input + sidechain) times 2 × *Gain*, inverted by *Invert* (a switch), *Latency* late (0..1 is 0..1000 samples, reported as its I/O changing). Four inputs (the last two its sidechain), two outputs; its state a chunk (text, with `presetName="..."` when it has one); where the engine has X11 editors, an editor (an X11 window of its own connection, run by the host's editor idle calls) that client messages ask to edit *Gain* in one gesture or to ask for another size. |
+| `SUBTestVst2Synth` | **SUB VST2 Synth** ('SuS2'), an instrument: DC, each held note's velocity/127 times 2 × *Level*, at its events' offsets; it sets *Tempo*, *Playing* and *Beat* itself from `process()` (the host's time info, through automate); its state its values; programs *Init* and *Bright*. |
+| `SUBTestVst2Shell` | **SUB VST2 Shell**: a shell holding both, made by the id the host answers. |
+
+The tests get the folder as the compile definition `SUBSTATION_TEST_VST2_DIR` (`testVst2Path("Gain")` in the
+engine's tests).
+
 ### The fake scanner
 
 Most of the scanner's tests need no plug-ins: [test_plugin_index.cpp](../tests/app/test_plugin_index.cpp) is also a
@@ -324,6 +340,7 @@ Rendered offline unless the file says otherwise; the live tests play through the
 | [test_parallel_engine.cpp](../tests/engine/test_parallel_engine.cpp) | Rendering on several threads, bit-identical to one thread on random routing graphs; cost ordering on a hand-made graph. |
 | [test_plugin_sandboxes.cpp](../tests/engine/test_plugin_sandboxes.cpp), [test_plugin_sandboxes_x11.cpp](../tests/engine/test_plugin_sandboxes_x11.cpp) | Plug-ins in sandboxes ([engine/sandboxes.md](engine/sandboxes.md#tests)): rendering as in the application, reports, states, loads that don't wait, the hosting modes' sandboxes, crashes and reloads, a hung plug-in, editors and their keys on Xvfb. |
 | [test_vst3_engine.cpp](../tests/engine/test_vst3_engine.cpp) | VST3 hosting with the test plug-ins: instruments and effects, parameters, transport and loop splitting, latency, mono buses, state, editors (Windows). |
+| [test_vst2_engine.cpp](../tests/engine/test_vst2_engine.cpp) | VST2 hosting with the test VST2 plug-ins: scanning (shells too), notes, parameters, transport, automation splitting blocks, sidechain, latency, `.fxp`/`.fxb` state, preset names, programs, load errors, one in a sandbox; `.fxp`/`.fxb` files on their own. (Its editor: `test_editors_x11.cpp`.) |
 | [test_editors_x11.cpp](../tests/engine/test_editors_x11.cpp) | Plug-in editors on Linux, on an X server of the test's own: SUB Test Effect's X11 editor edited, resized (by the plug-in, and by the user within its limits), its timer run by the host's run loop, its state dirty, hidden, closed by its close button and with its device; the content scale from `Xft.dpi`; the keys a shortcut can be asked of the key filter (taken, or replayed to the plug-in), others the plug-in's, repeats; the keyboard changing (Space on another key: its grab follows); the foremost editor closed. |
 | [test_asio.cpp](../tests/engine/test_asio.cpp) | ASIO with the fake driver: finding and opening it, rates and buffer sizes, channels, every sample format, inputs, the driver's requests (resets, new latencies, another clock), its control panel, errors, playing on the driver's thread. |
 | [test_recording.cpp](../tests/engine/test_recording.cpp) | Audio input and recording: inputs, monitoring, takes lined up with the timeline through a loopback (with latent plug-ins on a track or the master), count-in, what ends a recording. |
@@ -481,7 +498,7 @@ and canary) without running the tests: [releasing.md](releasing.md).
   anything that needs the audio callback (inputs, recording, MIDI input, live behaviour), use `RecordingTest` (the
   fake driver in manual mode) and step it with `driver.process(n)`.
 - **Plug-in behaviour**: use the test plug-ins (`addTestPlugin` skips the test without them; or
-  `requireTestPlugins()`).
+  `requireTestPlugins()`; for VST2, `addTestVst2` and `requireTestVst2()`).
 - **Application-layer behaviour** goes into `tests/app/test_<area>.cpp`, a Qt Test class: call `prepareApplication()`
   in `initTestCase`, end the file with `QTEST_GUILESS_MAIN(TestClass)` (`QTEST_MAIN` if it needs a
   `QGuiApplication`) and `#include "test_<area>.moc"`. Use the fixtures above (`EditorFixture` for the editor's rules,
@@ -519,7 +536,8 @@ and canary) without running the tests: [releasing.md](releasing.md).
   - Run a test you change many times, several at once, under load (`stress -c 8`, `xargs -P 8`) before trusting it.
 - Shared helpers go into `tests/app/support` (header-only if they need Qt Quick), not into a test file.
 - A new test plug-in goes into `tests/vst3_plugins` and the `sub_test_plugins` target in
-  [TestPlugins.cmake](../tests/TestPlugins.cmake); a new driver hook into `test_asio_driver.cpp`, its `.def` and
+  [TestPlugins.cmake](../tests/TestPlugins.cmake) (a VST2 one into `tests/vst2_plugins/test_vst2.cpp`, a kind of
+  `SUB_TEST_VST2_KIND`, and the loop over the kinds there); a new driver hook into `test_asio_driver.cpp`, its `.def` and
   `AsioDriver.h`.
 
 ## Benchmarks

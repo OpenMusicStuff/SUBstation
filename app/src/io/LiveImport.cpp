@@ -19,7 +19,8 @@
 #include "model/Keys.h"
 #include "model/ParamSpec.h"
 #include "model/Track.h"
-#include "plugins/Vst3Ids.h"
+#include "plugins/vst2/Vst2Preset.h"
+#include "plugins/vst3/Vst3Ids.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -315,7 +316,8 @@ const QString kNoDevice = QStringLiteral("Left out (SUBstation has no device lik
 const QString kMidiEffects = QStringLiteral("Left out (MIDI effects aren't imported)");
 const QString kVst2Defaults =
     QStringLiteral("VST2 plug-ins became their installed VST3, at its default settings (set them up again)");
-const QString kVst2Missing = QStringLiteral("Left out (VST2 plug-ins, and no VST3 of them is installed)");
+const QString kVst2Missing = QStringLiteral("Left out (VST2 plug-ins, and neither they nor a VST3 of them is installed)");
+const QString kVst2OwnDefaults = QStringLiteral("VST2 plug-ins at their default settings (set them up again)");
 const QString kNotInstalled = QStringLiteral("Not installed here (they load once installed: rescan the plug-ins)");
 
 class Importer {
@@ -879,11 +881,21 @@ std::optional<QJsonObject> Importer::plugin(const Element& device, const QString
     if (const Element* vst2 = desc->child(u"VstPluginInfo")) {
         const QString name = vst2->value(u"PlugName").value_or(QStringLiteral("Plug-in"));
         const quint32 vst2Id = liveWord(*vst2, u"UniqueId").value_or(0);
-        // The installed VST3 made to replace it (its class id "VST" + its id), else one of its name.
+        // The VST2 itself, installed; else the installed VST3 made to replace it (its class id
+        // "VST" + its id); else one of its name.
+        const PluginInfo* itself = nullptr;
         const PluginInfo* replacement = nullptr;
         const PluginInfo* sameName = nullptr;
         const QString plain = plainPluginName(name);
+        const QString uid = QString::fromStdString(sub::vst2::vst2Uid(static_cast<int32_t>(vst2Id)));
         for (const PluginInfo& info : options_.plugins) {
+            if (info.format == QStringLiteral("VST2") && info.uid.compare(uid, Qt::CaseInsensitive) == 0) {
+                itself = &info;
+                break;
+            }
+        }
+        for (const PluginInfo& info : options_.plugins) {
+            if (itself) break;
             if (const auto words = sub::vst3::wordsFromClassId(info.uid.toStdString())) {
                 const quint32 l1 = (*words)[0], l2 = (*words)[1];
                 if ((l1 >> 8) == 0x565354u && (((l1 & 0xFFu) << 24) | (l2 >> 8)) == vst2Id) {
@@ -891,9 +903,13 @@ std::optional<QJsonObject> Importer::plugin(const Element& device, const QString
                     break;
                 }
             }
-            if (!sameName && !plain.isEmpty() && plainPluginName(info.name) == plain) sameName = &info;
+            // (Of its name: a VST3 only. A VST2 of another id is another plug-in, and its own was looked for.)
+            if (!sameName && !plain.isEmpty() && info.format != QStringLiteral("VST2") &&
+                plainPluginName(info.name) == plain) {
+                sameName = &info;
+            }
         }
-        const PluginInfo* chosen = replacement ? replacement : sameName;
+        const PluginInfo* chosen = itself ? itself : replacement ? replacement : sameName;
         if (!chosen) {
             notes_.listed(kVst2Missing, name);
             return std::nullopt;
@@ -911,7 +927,17 @@ std::optional<QJsonObject> Importer::plugin(const Element& device, const QString
         const Element* preset = vst2->at(u"Preset/VstPreset");
         const QByteArray chunk =
             preset && preset->child(u"Buffer") ? hexBytes(preset->child(u"Buffer")->text) : QByteArray();
-        if (replacement && !chunk.isEmpty()) {
+        if (itself && !chunk.isEmpty()) {
+            // Its own: the fxb or fxp of its chunk, as SUBstation keeps a VST2's (Vst2Preset.h).
+            const quint32 type = liveWord(*preset, u"Type").value_or(0);
+            const bool bank = type == 0x46424368u;  // 'FBCh' ('FPCh': a program)
+            const quint32 version = liveWord(*vst2, u"Version").value_or(0);
+            const QByteArray state =
+                vst2CompatibleState(chunk, vst2Id, version, bank, preset->integer(u"ProgramCount", 1)).mid(16);
+            data[QStringLiteral("state")] = QString::fromLatin1(state.toBase64());
+        } else if (itself) {
+            notes_.listed(kVst2OwnDefaults, name);
+        } else if (replacement && !chunk.isEmpty()) {
             const quint32 type = liveWord(*preset, u"Type").value_or(0);
             const bool bank = type == 0x46424368u;  // 'FBCh' ('FPCh': a program)
             const quint32 version = liveWord(*vst2, u"Version").value_or(0);

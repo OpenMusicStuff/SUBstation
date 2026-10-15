@@ -17,7 +17,7 @@
 #include "Engine.h"
 #include "Test.h"
 #include "builtin/BuiltinRegistry.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 namespace subtest {
 
@@ -113,6 +113,44 @@ inline const std::map<std::string, std::string>& testPluginUids() {
 // One of the test plug-ins ("SUB Test Effect"...) in a chain.
 inline uint32_t addTestPlugin(sub::Engine& engine, uint32_t chain, const std::string& name, int index = -1) {
     return engine.addPluginProcessor(chain, "VST3", testPluginsBundle(), testPluginUids().at(name), index);
+}
+
+// The test VST2 plug-ins' folder (tests/vst2_plugins), built with the tests; empty if they weren't.
+inline std::string testVst2Dir() {
+#ifdef SUBSTATION_TEST_VST2_DIR
+    return SUBSTATION_TEST_VST2_DIR;
+#else
+    return {};
+#endif
+}
+
+// One of them by its kind ("Gain", "Synth", "Shell"): SUBTestVst2Gain.so (.dll on Windows).
+inline std::string testVst2Path(const std::string& kind) {
+#ifdef _WIN32
+    const char* suffix = ".dll";
+#else
+    const char* suffix = ".so";
+#endif
+    return (std::filesystem::path(testVst2Dir()) / ("SUBTestVst2" + kind + suffix)).string();
+}
+
+// Skips the test unless the test VST2 plug-ins were built.
+inline void requireTestVst2() {
+    std::error_code ignored;
+    if (testVst2Dir().empty() || !std::filesystem::exists(testVst2Path("Gain"), ignored)) {
+        SKIP("test VST2 plug-ins not built");
+    }
+}
+
+// Their unique ids, as SUBstation spells them (8 hex digits): 'SuG2', 'SuS2'.
+inline const std::string kVst2GainUid = "53754732";
+inline const std::string kVst2SynthUid = "53755332";
+
+// SUB VST2 Gain or Synth ("Gain", "Synth") in a chain, from its own library.
+inline uint32_t addTestVst2(sub::Engine& engine, uint32_t chain, const std::string& kind, int index = -1) {
+    requireTestVst2();
+    return engine.addPluginProcessor(chain, "VST2", testVst2Path(kind), kind == "Gain" ? kVst2GainUid : kVst2SynthUid,
+                                     index);
 }
 
 // SUB Test Effect's parameters (tests/vst3_plugins/test_effect.cpp): its gain

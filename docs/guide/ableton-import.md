@@ -57,11 +57,13 @@ and fades, and whether they are deactivated.
 - VST3 plug-ins come with their settings (what Live saved of them). One that isn't
   installed stays in its place and loads once it is (rescan the plug-ins), as in any
   project; the message lists them.
-- SUBstation hosts VST3 plug-ins only. A VST2 plug-in becomes the VST3 of it that is
-  installed: with its settings if that VST3 is made to replace the VST2 (most
-  plug-ins whose VST2 and VST3 share a maker's ID are), else at its default settings
-  (the message lists those: set them up again). A VST2 plug-in with no VST3 installed
-  is left out. Their automation comes along only with a VST3's own.
+- A VST2 plug-in that is installed comes as itself, with its settings (those Live kept as
+  a whole; one whose settings Live kept as values comes at its default settings, and the
+  message says so). One that isn't becomes the VST3 of it that is installed: with its
+  settings if that VST3 is made to replace the VST2 (most plug-ins whose VST2 and VST3
+  share a maker's ID are), else at its default settings (the message lists those: set
+  them up again). A VST2 plug-in with neither installed is left out. Their automation
+  comes along only with a VST3's own.
 
 **Live's own devices.** These come across, each as the SUBstation device like it:
 

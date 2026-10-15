@@ -240,7 +240,7 @@ private Q_SLOTS:
         test::screenshot(window_, QStringLiteral("browser-builtin"), QRect(0, 0, 400, window_->height()));
 
         // The Plug-ins entry's tooltip lists what couldn't be read.
-        QVERIFY(browser().pluginsToolTip().startsWith(QStringLiteral("VST3 plug-ins")));
+        QVERIFY(browser().pluginsToolTip().startsWith(QStringLiteral("VST3 and VST2 plug-ins")));
     }
 
     // Searching (test_browser_indexes_and_searches): words in the name or its

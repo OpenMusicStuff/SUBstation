@@ -3,7 +3,7 @@
 // Processor::openEditor() returns false.
 
 #include "EditorHost.h"
-#include "plugins/EditorWindow.h"
+#include "plugins/editor/EditorWindow.h"
 
 namespace sub::vst3 {
 

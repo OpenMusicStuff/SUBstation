@@ -65,3 +65,38 @@ if (SUBSTATION_ASIO_SDK_DIR)
         target_compile_options(sub_test_asio PRIVATE /W3 /utf-8)
     endif()
 endif()
+
+# The test VST2 plug-ins (vst2_plugins/): one source, three libraries in one
+# folder, as VST2 plug-ins lie in theirs (a .dll each on Windows, a .so on Linux):
+# SUBTestVst2Gain, SUBTestVst2Synth, and SUBTestVst2Shell holding both. Sets
+# SUBSTATION_TEST_VST2_DIR to the folder.
+set(SUBSTATION_TEST_VST2_DIR ${CMAKE_BINARY_DIR}/testplugins/vst2)
+foreach (_kind IN ITEMS Gain Synth Shell)
+    set(_target sub_test_vst2_${_kind})
+    add_library(${_target} MODULE vst2_plugins/test_vst2.cpp)
+    target_link_libraries(${_target} PRIVATE vst2sdk)
+    target_include_directories(${_target} PRIVATE ${PROJECT_SOURCE_DIR}/engine/src)  # (plugins/vst2/Vst2Sdk.h only)
+    if (_kind STREQUAL "Gain")
+        target_compile_definitions(${_target} PRIVATE SUB_TEST_VST2_KIND=1)
+    elseif (_kind STREQUAL "Synth")
+        target_compile_definitions(${_target} PRIVATE SUB_TEST_VST2_KIND=2)
+    else()
+        target_compile_definitions(${_target} PRIVATE SUB_TEST_VST2_KIND=3)
+    endif()
+    set_target_properties(${_target} PROPERTIES
+        OUTPUT_NAME "SUBTestVst2${_kind}" PREFIX ""
+        LIBRARY_OUTPUT_DIRECTORY ${SUBSTATION_TEST_VST2_DIR}
+        CXX_VISIBILITY_PRESET hidden)
+    foreach (_config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+        set_target_properties(${_target} PROPERTIES LIBRARY_OUTPUT_DIRECTORY_${_config} ${SUBSTATION_TEST_VST2_DIR})
+    endforeach()
+    if (MSVC)
+        target_compile_options(${_target} PRIVATE /W3 /utf-8 /Zc:__cplusplus)
+        target_compile_definitions(${_target} PRIVATE _CRT_SECURE_NO_WARNINGS)  # (sscanf, as a plug-in would)
+    endif()
+    if (NOT WIN32 AND TARGET PkgConfig::XCB)  # (its editor: an X11 window, where the engine has X11 editors)
+        target_link_libraries(${_target} PRIVATE PkgConfig::XCB)
+        target_compile_definitions(${_target} PRIVATE SUB_TEST_X11=1)
+    endif()
+    list(APPEND SUBSTATION_TEST_VST2_TARGETS ${_target})
+endforeach()

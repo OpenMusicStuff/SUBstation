@@ -6,7 +6,7 @@
 #include "model/Routing.h"
 #include "model/Timebase.h"
 
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 #include <QFileInfo>
 

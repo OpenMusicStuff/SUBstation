@@ -1,6 +1,6 @@
 // VST3 hosting on Windows (see Vst3Platform.h).
 
-#include "plugins/Vst3Platform.h"
+#include "plugins/vst3/Vst3Platform.h"
 
 #include <windows.h>
 #include <objbase.h>

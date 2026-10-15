@@ -400,7 +400,7 @@ list is a search:
   `fileActivated(path)`, `deviceActivated(kind)`, `pluginActivated(ref)` or `presetActivated(path)`, which the session
   turns into adding it to the selected track ([app/session.md](app/session.md)).
 - `focusSearch()` (Ctrl+F) shows *All* and asks the panel to focus the search field (`searchFocusRequested`).
-- `statusText` is the footer: how many items the list has ("No presets yet…", "No VST3 plug-ins found"), whether
+- `statusText` is the footer: how many items the list has ("No presets yet…", "No plug-ins found"), whether
   indexing or a plug-in scan runs, the scan's progress, how many plug-in files could not be read.
 
 **Paging.** Results cross into the model a page at a time: [ItemListModel](../app/src/browser/ItemListModel.h) shows

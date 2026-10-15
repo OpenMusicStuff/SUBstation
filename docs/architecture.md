@@ -35,7 +35,7 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
   (sub_engine)  │   └─ builds an immutable RenderSnapshot ─► one atomic pointer swap  │
                 │ Renderer + Scheduler (audio thread + workers) read it               │
                 │ audio devices (WASAPI, ASIO; PipeWire, System), MIDI input,         │
-                │ Recorder, processors: built-in devices, VST3 plug-ins               │
+                │ Recorder, processors: built-in devices, VST3 and VST2 plug-ins      │
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐
   browser       │ sub_browser: indexer thread + search thread; their wake callback    │
@@ -96,8 +96,8 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
   `builtin/ReverbDesign.h` (the Reverb's decay curve, input filter, reflections and Spin's swing),
   `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/TransientDesign.h` (the Transient Shaper's
   detector, gain law and the hit its editor draws), `builtin/EqDesign.h` (the EQ's curves),
-  `builtin/SampleSlicing.h` (the Sampler's slices and Snap), `plugins/Vst3Format.h` (the default VST3 folders) and
-  `plugins/Vst3Ids.h` (VST3 class ids, for Live Sets). Only the engine bridge talks to the engine about the
+  `builtin/SampleSlicing.h` (the Sampler's slices and Snap), `plugins/vst3/Vst3Format.h` and `plugins/vst2/Vst2Format.h` (the default VST3 and VST2 folders) and
+  `plugins/vst3/Vst3Ids.h` (VST3 class ids, for Live Sets). Only the engine bridge talks to the engine about the
   project. What the UI shows of the engine (waveform peaks, meters, the scope, device status, plug-in parameter
   texts, devices' displays) comes through application-layer types whose headers include no engine header
   (`Waveform`, `MeterLevel`, `ProcessorParam`...: see [app/engine-bridge.md](app/engine-bridge.md)).

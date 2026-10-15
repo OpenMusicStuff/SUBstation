@@ -24,9 +24,10 @@ namespace sub::sandbox {
 // Which plug-in, and who made it: what decides its sandbox.
 struct PluginOrigin {
     std::string path;
-    std::string uid;     // its class id (32 hex digits)
+    std::string uid;     // its class id (VST3: 32 hex digits; VST2: its unique id, 8)
     std::string name;    // as the scan found it (what it is called until it has loaded)
     std::string vendor;  // its maker, as the scan found it
+    std::string format = "VST3";  // or "VST2"
 };
 
 struct SandboxInfo {

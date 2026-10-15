@@ -7,10 +7,10 @@ are is in [architecture.md](architecture.md).
 
 ## Requirements
 
-- **Windows 10/11** is the target: WASAPI and ASIO audio, WinMM MIDI input, VST3 plug-ins with their editors. It
+- **Windows 10/11** is the target: WASAPI and ASIO audio, WinMM MIDI input, VST3 and VST2 plug-ins with their editors. It
   also builds and runs on **Linux** (the tests run there in CI-like containers): audio through PipeWire, or the
   system's default backend (PulseAudio, ALSA, JACK... via miniaudio, as the *System* driver) where PipeWire doesn't
-  run, MIDI input through ALSA's sequencer, VST3 plug-ins with their editors (X11 windows; on Wayland through
+  run, MIDI input through ALSA's sequencer, VST3 and VST2 plug-ins with their editors (X11 windows; on Wayland through
   XWayland).
 - A C++20 compiler: Visual Studio 2022 or newer (*Desktop development with C++*), MinGW-w64 GCC 13 or newer on
   Windows (the one Qt's installer ships), or GCC 13 / Clang 16 or newer.
@@ -21,7 +21,7 @@ are is in [architecture.md](architecture.md).
     with VS 2022), or its *MinGW 64-bit* build with the matching MinGW toolchain.
   - Debian/Ubuntu: `qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls
     qml6-module-qtquick-layouts qml6-module-qtquick-window qml6-module-qtquick-templates
-    qml6-module-qtquick-dialogs qml6-module-qtqml-workerscript qml6-module-qt-labs-settings
+    qml6-module-qtquick-dialogs qml6-module-qt-labs-folderlistmodel qml6-module-qtqml-workerscript qml6-module-qt-labs-settings
     qml6-module-qtquick-shapes libgl-dev libxkbcommon-dev` (and `xvfb` to run the UI's tests headless).
 - Linux: `libpipewire-0.3-dev` (and pkg-config), for the PipeWire driver (without it, *System* only); `pipewire`
   to run its tests (they start a daemon of their own; skipped without it). `libasound2-dev`, for MIDI input
@@ -88,7 +88,7 @@ Sources are globbed per library (`file(GLOB_RECURSE ... CONFIGURE_DEPENDS)`): a 
 |---|---|---|
 | `SUBSTATION_BUILD_APP` | `ON` | The application layer and the UI (needs Qt). `OFF` builds the engine, the browser backend, the scanner and the engine's tests only: no Qt needed. |
 | `SUBSTATION_BUILD_TESTS` | `ON` | The tests ([testing.md](testing.md)). |
-| `SUBSTATION_TEST_PLUGINS` | `ON` | The VST3 plug-ins (and, with the ASIO SDK, the fake ASIO driver) the tests use. |
+| `SUBSTATION_TEST_PLUGINS` | `ON` | The VST3 and VST2 plug-ins (and, with the ASIO SDK, the fake ASIO driver) the tests use. |
 | `SUBSTATION_ASIO` | `ON` | ASIO support, if the SDK is found (Windows). `OFF` doesn't look for it. |
 | `SUBSTATION_ASIO_SDK` | `$ENV{SUBSTATION_ASIO_SDK}` | The ASIO SDK's folder (the one containing `common/iasiodrv.h`). |
 | `SUBSTATION_PIPEWIRE` | `ON` | PipeWire support on Linux, if pkg-config finds `libpipewire-0.3` (Debian, Ubuntu: `libpipewire-0.3-dev`). Without it the engine has the *System* driver only. |
@@ -109,20 +109,21 @@ Pass them at configure time: `cmake -B build -DSUBSTATION_TEST_PLUGINS=OFF`.
 | `signalsmith_linear` | interface library | engine | [Signalsmith Linear](../engine/third_party/signalsmith-linear)'s headers: the FFTs of Signalsmith Stretch. |
 | `fastpitch` | interface library | engine | [fastpitch](../engine/third_party/fastpitch)'s header: pYIN for GigaTune. Its SIMD follows the compiler's flags, so only `sub_engine` (with AVX2) includes it, in one file (`builtin/GigaTuneDesign.cpp`); tests reach it through that file's functions. No fast math: it needs IEEE arithmetic. |
 | `vst3_base`, `vst3_hosting` | static libraries | engine | The VST 3 SDK's interfaces and base library, and its host side (module loading: `module_win32.cpp` or `module_linux.cpp`). `vst3_hosting` is C++17 on purpose: as C++17 the module loader reads paths as UTF-8 (`u8path`); as C++20 it would use the ANSI code page on Windows, and plug-ins with non-ASCII paths would not load. |
+| `vst2sdk` | interface library | engine | [vst2sdk](../engine/third_party/vst2sdk)'s header (`include/vst.h`), included only through `src/plugins/vst2/Vst2Sdk.h` ([engine/plugins.md](engine/plugins.md#vst2)). |
 | `mp3lame` | static library (C) | engine | [LAME](../engine/third_party/lame)'s encoding library (`libmp3lame`, its SSE quantizer on x86-64), with a `config.h` of ours; MP3 export (`Mp3Writer.cpp`). |
 | `vital` | static library | engine | [Vital](../engine/third_party/vital)'s synthesis engine, built as Vital builds it (two unity files), without JUCE (a stand-in `JuceHeader.h` in `compat/`), with the engine's SIMD flags, no fast math, its warnings not shown (`/bigobj` with MSVC); linked privately into `sub_engine` (the built-in Vital, [engine/devices.md](engine/devices.md#vital-builtinvital-instrument)). GPLv3: [licensing.md](licensing.md). |
 | `sub_platform` | static library | platform | What every layer needs from the operating system ([platform/](../platform/CMakeLists.txt), [platform.md](platform.md)): paths and their keys, files, binary fields, threads' priorities; no Qt, nothing of the other layers. `PlatformWin32.cpp` on Windows, `PlatformPosix.cpp` elsewhere. |
-| `sub_engine` | static library | engine | The real-time engine ([engine/](../engine/CMakeLists.txt)): no Qt; on `sub_platform`. Each system's audio drivers, MIDI inputs, plug-in editor windows and VST3 folders are files of their own ([engine/README.md](engine/README.md#platforms)): on Windows WASAPI and, with the SDK, ASIO, WinMM MIDI, Win32 editor windows; on Linux PipeWire (with libpipewire's headers) and elsewhere miniaudio's "System", ALSA's sequencer for MIDI (with its headers; elsewhere a MIDI backend without devices), and X11 editor windows (with xcb's headers; elsewhere none). |
+| `sub_engine` | static library | engine | The real-time engine ([engine/](../engine/CMakeLists.txt)): no Qt; on `sub_platform`. Each system's audio drivers, MIDI inputs, plug-in editor windows and VST3 and VST2 folders are files of their own ([engine/README.md](engine/README.md#platforms)): on Windows WASAPI and, with the SDK, ASIO, WinMM MIDI, Win32 editor windows; on Linux PipeWire (with libpipewire's headers) and elsewhere miniaudio's "System", ALSA's sequencer for MIDI (with its headers; elsewhere a MIDI backend without devices), and X11 editor windows (with xcb's headers; elsewhere none). |
 | `sub_browser` | static library | browser | The browser's file index and search ([browser/](../browser/CMakeLists.txt)): no Qt; `sub_platform`, and a Win32 or POSIX layer of its own for listing and watching folders (inotify's watcher on Linux). |
 | `essentia` | static library | intelligence | [Essentia](../intelligence/third_party/essentia) 2.1-beta5's core and the 29 algorithms the sound similarity uses, with KISS FFT: no other dependency. Built as C++17, its warnings not shown, with `ESSENTIA_STATIC` and `DEBUGGING_ENABLED=0` (public: they shape its headers). AGPLv3: [licensing.md](licensing.md). |
 | `humanbro` | static library | intelligence | [HUMANBRO](../intelligence/third_party/humanbro)'s C++ runtime: MIDI features and the tree ensemble that predicts velocities. Built with its own strict floating-point flags (`/fp:precise`; `-ffp-contract=off -fno-fast-math`). |
 | `sub_intelligence` | static library | intelligence | Sound similarity, harmony, humanizing, and later more ([intelligence/](../intelligence/CMakeLists.txt)): no Qt, nothing of the engine or the browser; decodes through `miniaudio`, describes sounds with `essentia`, predicts velocities with `humanbro`; the operating system through `sub_platform`. Configuring copies its models ([intelligence/models](../intelligence/models)) into `bin/models`, beside the executables. |
-| `substation-scan` | executable | tools | The VST3 scanner's child process ([tools/scanner](../tools/scanner/main.cpp)): links `sub_engine`, no Qt. |
+| `substation-scan` | executable | tools | The plug-in scanner's child process (VST3 and VST2) ([tools/scanner](../tools/scanner/main.cpp)): links `sub_engine`, no Qt. |
 | `substation-plugin-host` | executable | tools | The plug-in sandboxes' process ([tools/pluginhost](../tools/pluginhost/main.cpp), [engine/sandboxes.md](engine/sandboxes.md)): links `sub_engine`, no Qt; its main loop a file per system. |
 | `sub_app` | static library | app | The application layer ([app/](../app/CMakeLists.txt)): Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence`. Built with `QT_NO_KEYWORDS` (public): it and everything on it write `Q_SIGNALS`, `Q_SLOTS`, `Q_EMIT`. |
 | `sub_ui`, `sub_uiplugin` | static library + its QML plugin | ui | The QML module `SUBstation` ([ui/](../ui/CMakeLists.txt)): the QML files, the C++ Qt Quick items, the icons; and `SUBstation.Style`, the Qt Quick Controls style (`ui/style`). |
 | `substation` | executable | ui | [ui/main.cpp](../ui/main.cpp): makes the engine, the application's session on it, and the UI on that. |
-| `sub_test_plugins`, `sub_test_asio` | modules | tests | The test VST3 bundle and the fake ASIO driver ([testing.md](testing.md)). |
+| `sub_test_plugins`, `sub_test_vst2_Gain`, `sub_test_vst2_Synth`, `sub_test_vst2_Shell`, `sub_test_asio` | modules | tests | The test VST3 bundle, the test VST2 libraries and the fake ASIO driver ([testing.md](testing.md)). |
 | `engine_tests`, `intelligence_tests`, `test_*` | executables | tests | The tests. |
 
 With MSVC the project's own code builds with `/W4 /permissive- /utf-8 /Zc:__cplusplus`, with GCC and Clang with
@@ -179,6 +180,7 @@ Vendored in [engine/third_party](../engine/third_party), so nothing else needs i
 | [swift-f0](../engine/third_party/swift-f0) | 0.3.0 (commit d1ba77f) | MIT | its model (`model.onnx`) and licence, unmodified; the engine runs the network itself from the weights `make_data.py` writes into `builtin/SwiftF0Data.h` (no ONNX Runtime): GigaTune's High Quality |
 | [fastpitch](../engine/third_party/fastpitch) | 1.0.0 (commit 6dbbc79) | MIT | `include/fastpitch/pyin.hpp`, unmodified: pYIN as librosa has it (its YIN stage and observation model, frame by frame): GigaTune's pitch tracking |
 | [VST 3 SDK](../engine/third_party/vst3sdk) | 3.8.1 | MIT (since SDK 3.8) | `pluginterfaces`, `base`, `public.sdk/source/{common,main}` and `public.sdk/source/vst`, with the Windows and Linux module loaders; without VSTGUI, the SDK's tests and the wrappers |
+| [vst2sdk](../engine/third_party/vst2sdk) | commit 339d4f3 (August 2025; [VERSION.txt](../engine/third_party/vst2sdk/VERSION.txt)) | BSD-3-Clause | `include/vst.h`, unmodified: Xaymar's clean-room, header-only VST 2.x interface, for hosting VST2 plug-ins |
 | [LAME](../engine/third_party/lame) | 3.100 | LGPL-2.0-or-later | its encoding library (`include/lame.h`, `libmp3lame/` without the decoder's glue): MP3 export |
 | [Vital](../engine/third_party/vital) | 1.0.6's source (commit 636ca0e) | **GPL-3.0-or-later**; its nlohmann JSON MIT, its KISS FFT BSD-3-Clause | its synthesis engine (`src/synthesis` without VitalFX's), the parts of `src/common` it and its presets need, `synth_strings.h`, its unity build files; with two local changes (`load_save` trimmed, the common unity file without Vital's application: [local-changes.patch](../engine/third_party/vital/local-changes.patch), [VERSION.txt](../engine/third_party/vital/VERSION.txt)) and a stand-in for JUCE's header: the built-in Vital |
 

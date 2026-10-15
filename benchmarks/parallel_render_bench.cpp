@@ -40,7 +40,7 @@
 #include "harness/Fixtures.h"
 #include "Json.h"
 #include "harness/Signal.h"
-#include "plugins/Vst3Format.h"
+#include "plugins/vst3/Vst3Format.h"
 
 // The harness's failure report (its Main.cpp is the tests' own): the fake
 // driver's hooks REQUIRE their functions, and a REQUIRE that fails stops the

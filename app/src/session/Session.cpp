@@ -328,7 +328,7 @@ QString Session::aboutTitle() const { return QStringLiteral("About %1").arg(QStr
 QString Session::aboutText() const {
     const QString asio = AudioPreferences::trademarkNotice();
     return QStringLiteral("<b>%1</b> %2<br>A basic DAW: Qt interface, C++ audio engine (miniaudio, WASAPI%3).<br><br>"
-                          "Hosts VST3 instruments and effects.<br>"
+                          "Hosts VST3 and VST2 instruments and effects.<br>"
                           "VST is a registered trademark of Steinberg Media Technologies GmbH.%4")
         .arg(QString::fromLatin1(kAppName), version(), asio.isEmpty() ? QString() : QStringLiteral(", ASIO®"),
              asio.isEmpty() ? QString() : QStringLiteral("<br>") + asio);
