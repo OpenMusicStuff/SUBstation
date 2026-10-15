@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <set>
 #include <thread>
 
@@ -224,6 +225,37 @@ TEST_CASE("VST2: automation splits the block where values change") {
     CHECK(std::is_sorted(out.begin(), out.end()));
 }
 
+// A short block (a loop's end cuts one), or a change in a block's last kMinSegment frames: the
+// calls never go past the block. SUB VST2 Gain 16 samples late shows how many frames it processed:
+// its input comes out exactly 16 frames later, block after block.
+TEST_CASE("VST2: automation in short blocks never processes past them") {
+    requireTestVst2();
+    auto processor = sub::vst2::Vst2Format::instance().instantiate(testVst2Path("Gain"), kVst2GainUid, kSampleRate, 1024);
+    processor->setParam(V2_LATENCY, 0.016f);  // 16 samples
+    processor->idle();
+    REQUIRE(processor->latencySamples() == 16);
+    sub::ProcessContext ctx;
+    ctx.sampleRate = kSampleRate;
+    std::vector<float> input, output;
+    std::vector<float> left(64), right(64);
+    float* channels[] = {left.data(), right.data()};
+    int64_t at = 0;
+    for (const int frames : {16, 16, 16, 64, 16, 64}) {
+        for (int i = 0; i < frames; ++i) left[i] = right[i] = static_cast<float>(at + i + 1) / 1000.f;
+        input.insert(input.end(), left.begin(), left.begin() + frames);
+        processor->automate(V2_GAIN, 0.5f, 0);       // (unity)
+        processor->automate(V2_GAIN, 0.5f, frames - 8);  // a change near the end
+        processor->process(ctx, channels, 2, frames);
+        processor->clearAutomation();
+        output.insert(output.end(), left.begin(), left.begin() + frames);
+        at += frames;
+    }
+    for (size_t i = 0; i < output.size(); ++i) {
+        INFO("frame " + std::to_string(i));
+        CHECK_NEAR(output[i], i < 16 ? 0.0 : input[i - 16], 1e-6);
+    }
+}
+
 TEST_CASE("VST2: a device hears its sidechain") {
     Vst2Engine e;
     auto& engine = e.engine;
@@ -422,6 +454,23 @@ TEST_CASE("VST2 presets: programs and banks round-trip") {
     CHECK(!sub::vst2::readPreset(nullptr, 0).has_value());
     const std::string text = "VST3 is not this";
     CHECK(!sub::vst2::readPreset(reinterpret_cast<const uint8_t*>(text.data()), text.size()).has_value());
+}
+
+// A bank's entries are programs: a bank in a bank is no preset, however deep (not read until the stack runs out).
+TEST_CASE("VST2 presets: banks in banks aren't read") {
+    using sub::vst2::Preset;
+    Preset bank;
+    bank.kind = Preset::Kind::Bank;
+    bank.programs = {Preset{}};
+    const std::vector<uint8_t> one = sub::vst2::writePreset(bank);
+    const size_t header = one.size() - sub::vst2::writePreset(Preset{}).size();  // a bank's own bytes
+    std::vector<uint8_t> nested;
+    for (int level = 0; level < 200000; ++level) nested.insert(nested.end(), one.begin(), one.begin() + header);
+    CHECK(!sub::vst2::readPreset(nested).has_value());
+    std::vector<uint8_t> wrong = one;
+    std::memcpy(wrong.data() + header + 8, "FBCh", 4);  // its program a bank's chunk
+    CHECK(!sub::vst2::readPreset(wrong).has_value());
+    CHECK(sub::vst2::readPreset(one).has_value());
 }
 
 TEST_CASE("VST2 presets: ids and names") {

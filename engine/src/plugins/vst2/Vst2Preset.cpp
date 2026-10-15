@@ -136,9 +136,12 @@ void writeOne(Writer& out, const Preset& preset) {
     out.patchSize(sizeAt);
 }
 
-std::optional<Preset> readOne(Reader& in) {
+// `programOnly`: a bank's entry, which is a program's values and nothing else (a bank in a bank isn't read: it
+// could nest without end).
+std::optional<Preset> readOne(Reader& in, bool programOnly = false) {
     uint32_t magic = 0, size = 0, kind = 0;
     if (!in.u32(magic) || magic != kChunkMagic || !in.u32(size) || !in.u32(kind)) return std::nullopt;
+    if (programOnly && kind != kProgram) return std::nullopt;
     Preset preset;
     if (kind == kProgram) {
         preset.kind = Preset::Kind::Program;
@@ -162,8 +165,8 @@ std::optional<Preset> readOne(Reader& in) {
         }
         if (preset.kind == Preset::Kind::Bank) {
             for (int32_t p = 0; p < preset.numPrograms; ++p) {
-                auto program = readOne(in);
-                if (!program || program->kind != Preset::Kind::Program) return std::nullopt;
+                auto program = readOne(in, true);
+                if (!program) return std::nullopt;
                 preset.programs.push_back(std::move(*program));
             }
         }

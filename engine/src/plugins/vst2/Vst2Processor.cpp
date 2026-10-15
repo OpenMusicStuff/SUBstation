@@ -273,7 +273,8 @@ void Vst2Processor::process(const ProcessContext& ctx, float* const* channels, i
             automated_[index].store(changes[next].value, std::memory_order_relaxed);
         }
         int end = numFrames;
-        if (next < numChanges) end = std::clamp(changes[next].sampleOffset, start + kMinSegment, numFrames);
+        // (At least kMinSegment frames, then never past the block: a short block, or one ending soon, ends it.)
+        if (next < numChanges) end = std::min(numFrames, std::max(changes[next].sampleOffset, start + kMinSegment));
         runSegment(start, end - start, ctx);
         start = end;
     }

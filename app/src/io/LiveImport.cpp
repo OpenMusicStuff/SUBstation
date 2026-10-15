@@ -1033,7 +1033,11 @@ std::optional<QJsonObject> Importer::plugin(const Element& device, const QString
                     break;
                 }
             }
-            if (!sameName && !plain.isEmpty() && plainPluginName(info.name) == plain) sameName = &info;
+            // (Of its name: a VST3 only. A VST2 of another id is another plug-in, and its own was looked for.)
+            if (!sameName && !plain.isEmpty() && info.format != QStringLiteral("VST2") &&
+                plainPluginName(info.name) == plain) {
+                sameName = &info;
+            }
         }
         const PluginInfo* chosen = itself ? itself : replacement ? replacement : sameName;
         if (!chosen) {

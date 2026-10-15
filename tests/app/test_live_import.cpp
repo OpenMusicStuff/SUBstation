@@ -840,6 +840,18 @@ private Q_SLOTS:
         QCOMPARE(preset->pluginId, 0x566C7676);
         QCOMPARE(QByteArray(reinterpret_cast<const char*>(preset->chunk.data()), qsizetype(preset->chunk.size())),
                  QByteArray("VC2!vintage"));
+
+        // A VST2 of its name but another id is another plug-in: not taken for it (its VST3 is, by name).
+        options.plugins[1].uid = QStringLiteral("01020304");
+        options.plugins[0].uid = classId(wordsOf("NotTheVST2sReplm"));
+        imported = load(liveSet(song), QStringLiteral("/nowhere/song.als"), options);
+        const std::vector<Device>& others = imported->project.tracks()[0].devices;
+        QCOMPARE(others.size(), size_t{1});
+        QCOMPARE(others[0].plugin->format, QStringLiteral("VST3"));
+        QVERIFY(!others[0].state);
+        options.plugins.erase(options.plugins.begin());  // the VST2 of another id alone: left out
+        imported = load(liveSet(song), QStringLiteral("/nowhere/song.als"), options);
+        QVERIFY(imported->project.tracks()[0].devices.empty());
     }
 
     // A real VST3 plug-in's settings as Live keeps them (its processor's and
