@@ -235,31 +235,34 @@ protected:
             float wet[kChannels] = {0.f, 0.f};
             for (int c = 0; c < carCount; ++c) {
                 const auto& gains = mod_[static_cast<size_t>(std::min(c, modCount - 1))];
-                const float overall = std::sqrt(carrierLevel_[static_cast<size_t>(c)].power());
-                const float floor = std::max(1e-6f, overall * dbToGain(-kMostEnhanceDb));
-                const float steady = 1.f / std::max(overall, 1e-6f);
-                float out = 0.f, power = 0.f, weight = 0.f;
+                // The bands first, and the levels they make; then each scaled by the levels as they are now (a
+                // carrier or modulator starting is never scaled by a level from the silence before it).
+                float ys[kMaxBands];
+                float power = 0.f, weight = 0.f;
                 for (int k = 0; k < bands; ++k) {
                     CarBand& b = car_[static_cast<size_t>(c)][static_cast<size_t>(k)];
                     const float y = b.filter[1].process(carCoeffs_[static_cast<size_t>(k)][1],
                                                         b.filter[0].process(carCoeffs_[static_cast<size_t>(k)][0],
                                                                             carIn[c]));
+                    ys[k] = y;
                     const float square = y * y;
                     const float g = gains[static_cast<size_t>(k)].gain;
                     power += g * g * square;
                     weight += g * g;
-                    float scaled;
-                    if (enhance) {
-                        b.level.push(square, enhancePole_, enhancePole_);
-                        if (control) b.inverse = 1.f / std::max(std::sqrt(b.level.power()), floor);
-                        scaled = y * b.inverse;
-                    } else {
-                        scaled = y * steady;
-                    }
-                    out += (k & 1 ? -scaled : scaled) * gains[static_cast<size_t>(k)].gain;  // (see updateLayout())
+                    if (enhance) b.level.push(square, enhancePole_, enhancePole_);
                 }
                 // (While the modulator is silent nothing comes out: the level holds.)
                 if (weight > 1e-30f) carrierLevel_[static_cast<size_t>(c)].push(power / weight, carrierPole_, carrierHold_);
+                const float overall = std::sqrt(carrierLevel_[static_cast<size_t>(c)].power());
+                const float floor = std::max(1e-6f, overall * dbToGain(-kMostEnhanceDb));
+                const float steady = 1.f / std::max(overall, 1e-6f);
+                float out = 0.f;
+                for (int k = 0; k < bands; ++k) {
+                    const float scaled =
+                        enhance ? ys[k] / std::max(std::sqrt(car_[static_cast<size_t>(c)][static_cast<size_t>(k)].level.power()), floor)
+                                : ys[k] * steady;
+                    out += (k & 1 ? -scaled : scaled) * gains[static_cast<size_t>(k)].gain;  // (see updateLayout())
+                }
                 // Unvoiced noise, as loud as the modulator's highs.
                 if (unvoicedAmount > 0.f) {
                     const float white = noise_[c].next() * 1.7320508f;
@@ -306,7 +309,6 @@ private:
     struct CarBand {
         std::array<dsp::Biquad, vocoder::kSections> filter{};
         CarrierLevel level;  // Enhance: its level
-        float inverse = 0.f; // and what brings it to 1 (every kControlSamples)
     };
     struct LayoutKey {
         int bands = 0;

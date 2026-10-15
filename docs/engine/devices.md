@@ -2373,7 +2373,8 @@ Ableton's Vocoder: the input (the modulator) split into bands, each band's level
   the carrier's spectrum, 200 % the modulator's peaks further out, at the same level. Gate silences a band under it
   (its gain smoothed over 2 ms). The gains (and Enhance's divisors) are worked out every 8 samples and ramped
   linearly between: the levels move far slower than that, and the logarithms per band would cost more than the
-  filters.
+  filters. The carrier's levels are brought up to date with each sample's bands before they scale them, so a
+  modulator or carrier starting after silence is never scaled by the silence's level.
 - **The carrier**: Noise is xorshift noise held at Rate (a fractional sample-and-hold clock) and, under 100 % Crackle,
   only a sample in 1/Crackle² of them, as loud (so the power stays); External the sidechain (silence without one);
   Modulator the input; Pitch Tracking a PolyBLEP saw or pulse at the tracked pitch times 2^(Pitch/12), gliding over
@@ -2895,7 +2896,8 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
 - [test_vocoder_engine.cpp](../../tests/engine/test_vocoder_engine.cpp): its listing; the bands (evenly in log
   frequency, each at 0 dB at its centre and -3 dB half a spacing out, Retro narrower and louder up, Formant's shift);
   the noise carrier speaking with the modulator's spectrum at about its level (Enhance or not); silence to exact
-  zeros, and a sound stopping ringing out to them (a short Release, or Gate); Dry/Wet 0 % the input bit for bit; External from the sidechain (its harmonics; silence without one);
+  zeros, and a sound stopping ringing out to them (a short Release, or Gate); a modulator (and a carrier) starting
+  after silence without a spike; Dry/Wet 0 % the input bit for bit; External from the sidechain (its harmonics; silence without one);
   Modulator; Pitch Tracking at the input's pitch, moved by Pitch, and the tracker alone; Formant; Depth (0 % flat and
   as loud, 200 % deeper) and Gate; Unvoiced on a hiss and not on a pitched input; Mono, Stereo, L/R and one channel;
   every band count and filter at 44.1 to 192 kHz; its displays.

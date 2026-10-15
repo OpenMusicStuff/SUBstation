@@ -54,7 +54,10 @@ void VocoderGraph::sync() {
     const int before = bandCount();
     centres_.assign(bands.centres.begin(), bands.centres.end());
     carrierCentres_.clear();
-    for (const double c : centres_) carrierCentres_.push_back(std::min(c * std::exp2(formant_ / 12.0), 0.45 * rate));
+    for (const double c : centres_) {  // (the engine leaves out a band moved past 0.45 of the rate)
+        const double shifted = c * std::exp2(formant_ / 12.0);
+        if (shifted <= 0.45 * rate) carrierCentres_.push_back(shifted);
+    }
     const QList<double> frequencies(curveFrequencies_.begin(), curveFrequencies_.end());
     curves_.clear();
     for (int k = 0; k < bandCount(); ++k) {

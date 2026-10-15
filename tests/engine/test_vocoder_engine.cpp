@@ -121,6 +121,25 @@ TEST_CASE("vocoder: a sound stopping rings out to exact zeros") {
     }
 }
 
+TEST_CASE("vocoder: a modulator starting after silence comes in without a spike") {
+    // The carrier's level is only heard once the modulator opens a band: its first samples must not be scaled
+    // by a level from before (silence), with Enhance or not, the carrier on all along or starting late.
+    Samples late = saw(220.0, kLength);
+    std::fill(late.begin(), late.begin() + kLength / 4 + 3, 0.f);  // (between two of the gains' updates)
+    for (const float carrier : {0.f, 1.f, 3.f}) {
+        for (const float enhance : {0.f, 1.f}) {
+            INFO("carrier " + std::to_string(carrier) + ", enhance " + std::to_string(enhance));
+            Samples in = tone(440.0);
+            std::fill(in.begin(), in.begin() + kLength / 4, 0.f);
+            Vocoder vocoder({{"carrier", carrier}, {"enhance", enhance}});
+            const auto [left, right] = vocoder.playKeyed(in, in, late, late);
+            CHECK(allFinite(left));
+            CHECK(maxAbs(left) < 1.0);
+            CHECK(maxAbs(slice(left, 0, kLength / 4)) == 0.0);
+        }
+    }
+}
+
 TEST_CASE("vocoder: Dry/Wet 0 % passes the input") {
     Vocoder vocoder({{"mix", 0.f}});
     const Samples in = tone(440.0);
