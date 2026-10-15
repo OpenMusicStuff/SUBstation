@@ -14,6 +14,7 @@
 // engine's, its dot follows the mouse, Ctrl and the wheel set the bell's Q.
 // With SUBSTATION_UI_SCREENSHOTS set, device-editors-gate*.png are saved there.
 
+#include <QElapsedTimer>
 #include <QFontMetricsF>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -111,6 +112,13 @@ class TestUiDeviceEditorsGate : public QObject, public sub::app::test::EditorHar
             QTest::qWait(ms);
             refreshDisplays();
         }
+    }
+
+    // `count` ticks back to back, each counting a tick's 16 ms: what the displays show of a sound just rendered.
+    // (Ticks with waits between would let the displays' own clock tick them too, and on a busy machine read the
+    // sound to its end, the meters falling after it.)
+    void ticksNow(int count) {
+        for (int i = 0; i < count; ++i) refreshDisplays();
     }
 
     // The mouse off the editor (where init() leaves it), then `count` ticks: the wait after a gesture on the
@@ -557,7 +565,7 @@ private Q_SLOTS:
 
         // Open: the input passes as it is.
         engine()->renderOffline(0.0, kSampleRate / 2);
-        tick(3, 20);
+        ticksNow(4);
         QVERIFY2(std::abs(graph->levelIn() - 20 * std::log10(0.5)) < 0.1,
                  qPrintable(QString::number(graph->levelIn())));
         QVERIFY2(std::abs(graph->levelOut() - 20 * std::log10(0.5)) < 0.1,
@@ -606,7 +614,7 @@ private Q_SLOTS:
         // Closed: the floor's -40 dB under the input.
         editor()->setDeviceParam(shown.track, shown.device, QStringLiteral("threshold"), 0.0);
         engine()->renderOffline(0.0, kSampleRate / 2);
-        tick(3, 20);
+        ticksNow(4);
         QVERIFY2(graph->passing() < 0.01, qPrintable(QString::number(graph->passing())));
         QVERIFY2(std::abs(graph->levelOut() - (20 * std::log10(0.5) - 40.0)) < 0.2,
                  qPrintable(QString::number(graph->levelOut())));
@@ -666,12 +674,18 @@ private Q_SLOTS:
         const double beatsPerSecond = project()->tempo() / 60.0;
         engine()->renderOffline(0.0, kSampleRate * 3);
         double seconds = 3.0;
-        // A tick's worth more, read at once (the display clock also ticks on its own while the test
-        // waits: had it read them first, the tick checked would be one without values).
+        // A tick's worth more, read at once, ticked by hand back to back: as much sound as the tick counts (the
+        // time since the last, a tick's at least, 0.1 s at most: DeviceCanvas::tickSeconds()). Not with waits
+        // between: the display clock would tick on its own in them, and on a busy machine a wait outlasts the
+        // sound made for it, so the history runs dry and moves.
+        constexpr double kTick = kDisplayRefreshMs / 1000.0;
+        QElapsedTimer sinceTick;
         auto more = [&] {
-            QTest::qWait(16);
-            engine()->renderOffline(seconds * beatsPerSecond, kSampleRate / 60);
-            seconds += 1.0 / 60;
+            const double dt = sinceTick.isValid() ? std::clamp(double(sinceTick.elapsed()) / 1000.0, kTick, 0.1) : kTick;
+            const int frames = int(std::lround(dt * kSampleRate));
+            engine()->renderOffline(seconds * beatsPerSecond, frames);
+            seconds += double(frames) / kSampleRate;
+            sinceTick.restart();
             refreshDisplays();
         };
         for (int i = 0; i < 150 && (i < 3 || graph->animating()); ++i)
