@@ -106,6 +106,7 @@ FileManager::FileManager(Project* project, ProjectEditor* editor, Selection* sel
     connect(project_, &Project::devicesChanged, this, &FileManager::scheduleUpdate);
     connect(project_, &Project::deviceStateChanged, this, &FileManager::scheduleUpdate);
     connect(project_, &Project::freezeChanged, this, &FileManager::scheduleUpdate);
+    connect(project_, &Project::takesChanged, this, &FileManager::scheduleUpdate);
     for (auto changed : {&Project::trackInserted, &Project::trackRemoved, &Project::returnInserted,
                          &Project::returnRemoved}) {
         connect(project_, changed, this, &FileManager::scheduleUpdate);
@@ -368,7 +369,7 @@ bool FileManager::hotSwap(const QString& path) { return hotSwap_ && hotSwap_->st
 void FileManager::selectClips(const QString& path) {
     const ClipRefs clips = fileUses(*project_, path).clips;
     if (clips.isEmpty()) {
-        Q_EMIT statusMessage(QStringLiteral("No clips play %1").arg(QFileInfo(path).fileName()));
+        Q_EMIT statusMessage(QStringLiteral("No clips on tracks play %1").arg(QFileInfo(path).fileName()));
         return;
     }
     selection_->selectClips(*editor_, clips);

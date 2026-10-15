@@ -24,6 +24,7 @@ HotSwap::HotSwap(Project* project, ProjectEditor* editor, QUndoStack* undoStack,
     });
     connect(project_, &Project::clipsChanged, this, &HotSwap::prune);
     connect(project_, &Project::devicesChanged, this, &HotSwap::prune);
+    connect(project_, &Project::takesChanged, this, &HotSwap::prune);
     for (auto gone : {&Project::trackRemoved, &Project::returnRemoved}) {
         connect(project_, gone, this, [this](const QString&, int) { prune(); });
     }
@@ -61,6 +62,7 @@ bool HotSwap::startClip(const ClipRef& ref) {
     FileUses uses = fileUses(*project_, clip->path);
     const auto elsewhere = [&ref](const auto& use) { return use.trackId != ref.trackId; };
     uses.clips.removeIf(elsewhere);
+    uses.takeClips.removeIf(elsewhere);
     uses.devices.removeIf(elsewhere);
     return !uses.isEmpty() && start(uses, clip->path, ref);
 }

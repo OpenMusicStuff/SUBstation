@@ -415,11 +415,12 @@ public:
 
     // --- Files (EditorFiles.cpp) ---
 
-    // Puts the file `path` (`seconds` long) in place of whatever these clips
-    // and devices play (the File Manager's Replace, a hot swap), as one undo
-    // step: each clip as edits::replaceFile has it (one that runs into the next
-    // clip is trimmed there), each device's state naming it. Uses on frozen
-    // tracks are refused (`refused`): leave them out (changeableUses). With a
+    // Puts the file `path` (`seconds` long) in place of whatever these clips,
+    // take lanes' clips and devices play (the File Manager's Replace, a hot
+    // swap), as one undo step: each clip as edits::replaceFile has it (one that
+    // runs into the next clip is trimmed there), each device's state naming it.
+    // Uses on frozen tracks are refused (`refused`): leave them out
+    // (changeableUses; a take lane's are fine). With a
     // merge key, a hot swap's replacements are one undo step, each worked out
     // from the clips as they were before it began (so a long sample tried and
     // left doesn't leave its clips trimmed). False if nothing changed (or it
@@ -431,9 +432,9 @@ public:
     // either). False if the last step isn't one of them.
     bool revertReplaceFiles(const QString& mergeKey);
     // Files found somewhere else (missing ones located): each old path -> its
-    // new one, wherever a clip plays it (or was reversed from it) and a device
-    // names it; on frozen tracks too, as it is the same audio. One undo step;
-    // false if nothing changed.
+    // new one, wherever a clip plays it (or was reversed from it; a take lane's
+    // too) and a device names it; on frozen tracks too, as it is the same
+    // audio. One undo step; false if nothing changed.
     bool relinkFiles(const QMap<QString, QString>& moved,
                      const QString& text = QStringLiteral("Locate Missing Files"));
 

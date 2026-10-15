@@ -22,6 +22,7 @@ const QString kEverything = QStringLiteral("*");
 
 QString trackRegion(const QString& trackId) { return QStringLiteral("track/") + trackId; }
 QString clipsRegion(const QString& trackId) { return trackRegion(trackId) + QStringLiteral("/clips"); }
+QString takesRegion(const QString& trackId) { return trackRegion(trackId) + QStringLiteral("/takes"); }
 QString devicesRegion(const QString& trackId) { return trackRegion(trackId) + QStringLiteral("/devices"); }
 QString deviceRegion(const QString& trackId, const QString& deviceId) {
     return devicesRegion(trackId) + u'/' + deviceId;
@@ -68,6 +69,9 @@ std::optional<QStringList> ownFootprint(const QUndoCommand& command, const Proje
         for (const DeviceTarget& device : c->statesBefore().keys() + c->statesAfter().keys()) {
             out.append(deviceRegion(device.first, device.second));
         }
+        for (const QString& id : c->takesBefore().keys() + c->takesAfter().keys()) out.append(takesRegion(id));
+    } else if (const auto* c = dynamic_cast<const SetTakeLanesCommand*>(&command)) {
+        out << takesRegion(c->trackId());
     } else if (const auto* c = dynamic_cast<const InsertTrackCommand*>(&command)) {
         out << trackRegion(c->track().id) << orderRegion(c->track().id);
     } else if (const auto* c = dynamic_cast<const RemoveTrackCommand*>(&command)) {

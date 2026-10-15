@@ -163,7 +163,8 @@ list; `Project::setTakeLanes` emits `takesChanged`). `edits::compedSpans` says w
 holds (`edits::sameContent`: a clip that is a window onto the same file or notes, at the same place), so a lane can
 draw the parts its comp is made of. Whether they show is view state (`takesShown`, `TrackField::TakesShown`, not
 undone). Copies of a track get lanes (and clips on them) with ids of their own; flattening drops them. The File
-Manager doesn't look at take lanes' files: a file only a take lane plays isn't listed (nor collected).
+Manager lists take lanes' files too (`FileUses::takeClips`), and replacing or relinking one changes the lanes in the
+same `ReplaceFilesCommand`.
 
 The master and the returns are `Track`s too, so whatever works on a track's devices, mixer or automation works on
 theirs: `Project::track(id)` finds an arrangement track, a return, or the master (`kMaster`). `hasTrack()` is true
@@ -656,11 +657,11 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   `addAutomationLane` [Q], `setAutomationLane` [Q], `removeAutomationLane` [Q], `resetAutomationView` [Q],
   `defaultAutomationKey` [Q].
 - **Freezing**: `freezeTracks`, `unfreezeTracks` [Q], `flattenTracks` [Q], `laneFrozen` [Q].
-- **Files**: `replaceFile(uses, path, seconds, text, mergeKey)` (a file in the place of whatever these clips and
-  devices play, one `ReplaceFilesCommand`: each clip as `edits::replaceFile` has it, trimmed at the next one; refused
-  on frozen tracks; with a merge key, from the clips as they were before the hot swap began), `relinkFiles({old:
-  new})` (files found somewhere else: every clip playing one or reversed from it, every device naming it, frozen
-  tracks too; "Locate Missing Files"). What plays a file (`FileUses`) is
+- **Files**: `replaceFile(uses, path, seconds, text, mergeKey)` (a file in the place of whatever these clips,
+  take lanes' clips and devices play, one `ReplaceFilesCommand`: each clip as `edits::replaceFile` has it, trimmed at
+  the next one; refused on frozen tracks, though not on their take lanes; with a merge key, from the clips as they
+  were before the hot swap began), `relinkFiles({old: new})` (files found somewhere else: every clip playing one or
+  reversed from it, on take lanes too, every device naming it, frozen tracks too; "Locate Missing Files"). What plays a file (`FileUses`) is
   [files/ProjectFiles.h](../../app/src/files/ProjectFiles.h)'s ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)).
 
 Three hooks connect it to the rest without it knowing the bridge or the preset library; the session sets them

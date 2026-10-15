@@ -179,8 +179,12 @@ private:
 // (track id, device id) -> a device's state (Device::state).
 using DeviceStates = QMap<std::pair<QString, QString>, std::optional<QString>>;
 
+// Track id -> its take lanes (Track::takes).
+using TakeLists = QMap<QString, std::vector<TakeLane>>;
+
 // Puts other files in place of some (the File Manager, a hot swap): the clips
-// of the tracks playing them (whole lists) and the states of the built-in
+// of the tracks playing them (whole lists), their take lanes (whole lists, of
+// the tracks whose take lanes play them) and the states of the built-in
 // devices naming them (a sampler's sample), together, as one undo step. With
 // a merge key (a hot swap trying file after file) consecutive replacements of
 // the same tracks and devices merge. `relink`: the files were only found
@@ -188,8 +192,8 @@ using DeviceStates = QMap<std::pair<QString, QString>, std::optional<QString>>;
 class ReplaceFilesCommand : public QUndoCommand {
 public:
     ReplaceFilesCommand(Project* project, const QString& text, ClipLists before, ClipLists after,
-                        DeviceStates statesBefore, DeviceStates statesAfter, QString mergeKey = {},
-                        bool relink = false);
+                        DeviceStates statesBefore, DeviceStates statesAfter, TakeLists takesBefore = {},
+                        TakeLists takesAfter = {}, QString mergeKey = {}, bool relink = false);
 
     int id() const override { return mergeId(mergeKey_); }
     bool mergeWith(const QUndoCommand* other) override;
@@ -200,6 +204,8 @@ public:
     const ClipLists& after() const { return after_; }
     const DeviceStates& statesBefore() const { return statesBefore_; }
     const DeviceStates& statesAfter() const { return statesAfter_; }
+    const TakeLists& takesBefore() const { return takesBefore_; }
+    const TakeLists& takesAfter() const { return takesAfter_; }
     const QString& mergeKey() const { return mergeKey_; }
     bool relink() const { return relink_; }
 
@@ -209,6 +215,8 @@ private:
     ClipLists after_;
     DeviceStates statesBefore_;
     DeviceStates statesAfter_;
+    TakeLists takesBefore_;
+    TakeLists takesAfter_;
     QString mergeKey_;
     bool relink_;
 };

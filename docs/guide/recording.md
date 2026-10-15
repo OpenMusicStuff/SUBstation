@@ -100,8 +100,8 @@ alike.
 - Comping and deleting lanes are undo steps; recording makes the takes and their lanes in
   one. Lanes are saved with the project; duplicating a track duplicates them.
 - The comp's clips are ordinary clips: move, trim, fade and edit them as any other.
-- The File Manager lists the files the track's clips play, not those only a take lane
-  plays.
+- The File Manager lists the files take lanes play too (*1 take clip*): a take's file gone
+  missing is found with the rest, and a file replaced is replaced on the take lanes too.
 
 ### Recording round the loop
 

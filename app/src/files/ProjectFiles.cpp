@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QStringList>
 
+#include <algorithm>
 #include <functional>
 
 #include "model/DeviceState.h"
@@ -16,23 +17,54 @@ namespace sub::app {
 
 namespace {
 
+// One use of a file: a clip, a take lane's clip or a device.
+struct Use {
+    const ClipRef* clip = nullptr;
+    const TakeClipRef* takeClip = nullptr;
+    const DeviceRef* device = nullptr;
+};
+
 // Every use of a file in the project: (its path, the use), in the order met.
-void eachUse(const Project& project, const std::function<void(const QString&, const ClipRef*, const DeviceRef*)>& use) {
+void eachUse(const Project& project, const std::function<void(const QString&, const Use&)>& use) {
+    const auto plays = [](const Clip& clip) { return clip.isAudio() && !clip.path.isEmpty(); };
     for (const Track* track : project.allTracks()) {
         if (track->isAudio()) {
             for (const Clip& clip : track->clips) {
-                if (!clip.isAudio() || clip.path.isEmpty()) continue;
+                if (!plays(clip)) continue;
                 const ClipRef ref{track->id, clip.id};
-                use(clip.path, &ref, nullptr);
+                use(clip.path, {.clip = &ref});
+            }
+            for (const TakeLane& lane : track->takes) {
+                for (const Clip& clip : lane.clips) {
+                    if (!plays(clip)) continue;
+                    const TakeClipRef ref{track->id, lane.id, clip.id};
+                    use(clip.path, {.takeClip = &ref});
+                }
             }
         }
         for (const Device* device : iterDevices(track->devices)) {  // (in racks too)
             const QString path = deviceFile(*device);
             if (path.isEmpty()) continue;
             const DeviceRef ref{track->id, device->id};
-            use(path, nullptr, &ref);
+            use(path, {.device = &ref});
         }
     }
+}
+
+void add(FileUses& uses, const Use& use) {
+    if (use.clip) uses.clips.append(*use.clip);
+    if (use.takeClip) uses.takeClips.append(*use.takeClip);
+    if (use.device) uses.devices.append(*use.device);
+}
+
+bool takeClipExists(const Project& project, const TakeClipRef& ref) {
+    const Track* track = project.findTrack(ref.trackId);
+    if (!track) return false;
+    for (const TakeLane& lane : track->takes) {
+        if (lane.id != ref.laneId) continue;
+        return std::any_of(lane.clips.begin(), lane.clips.end(), [&](const Clip& c) { return c.id == ref.clipId; });
+    }
+    return false;
 }
 
 bool frozenTrack(const Project& project, const QString& trackId) {
@@ -58,16 +90,14 @@ std::optional<QString> withDeviceFile(const std::optional<QString>& state, const
 std::vector<ProjectFile> projectFiles(const Project& project) {
     std::vector<ProjectFile> files;
     QHash<QString, size_t> byKey;
-    eachUse(project, [&](const QString& path, const ClipRef* clip, const DeviceRef* device) {
+    eachUse(project, [&](const QString& path, const Use& use) {
         const QString key = pathIdentity(path);
         auto found = byKey.constFind(key);
         if (found == byKey.constEnd()) {
             found = byKey.insert(key, files.size());
             files.push_back({path, {}});
         }
-        FileUses& uses = files[*found].uses;
-        if (clip) uses.clips.append(*clip);
-        if (device) uses.devices.append(*device);
+        add(files[*found].uses, use);
     });
     return files;
 }
@@ -76,10 +106,8 @@ FileUses fileUses(const Project& project, const QString& path) {
     FileUses uses;
     if (path.isEmpty()) return uses;
     const QString key = pathIdentity(path);
-    eachUse(project, [&](const QString& used, const ClipRef* clip, const DeviceRef* device) {
-        if (pathIdentity(used) != key) return;
-        if (clip) uses.clips.append(*clip);
-        if (device) uses.devices.append(*device);
+    eachUse(project, [&](const QString& used, const Use& use) {
+        if (pathIdentity(used) == key) add(uses, use);
     });
     return uses;
 }
@@ -88,6 +116,9 @@ FileUses existingUses(const Project& project, const FileUses& uses) {
     FileUses existing;
     for (const ClipRef& ref : uses.clips) {
         if (project.findClip(ref.trackId, ref.clipId)) existing.clips.append(ref);
+    }
+    for (const TakeClipRef& ref : uses.takeClips) {
+        if (takeClipExists(project, ref)) existing.takeClips.append(ref);
     }
     for (const DeviceRef& ref : uses.devices) {
         const bool there = project.hasOwner(ref.trackId) && project.findDevice(ref.trackId, ref.deviceId);
@@ -105,6 +136,7 @@ FileUses changeableUses(const Project& project, const FileUses& uses, FileUses* 
         else if (frozen)
             frozen->clips.append(ref);
     }
+    changeable.takeClips = existing.takeClips;  // (they don't play: frozen audio doesn't hold them)
     for (const DeviceRef& ref : existing.devices) {
         if (!frozenTrack(project, ref.trackId))
             changeable.devices.append(ref);
@@ -119,6 +151,10 @@ QString usesText(const Project& project, const FileUses& uses) {
     if (!uses.clips.isEmpty()) {
         const int clips = static_cast<int>(uses.clips.size());
         parts << countText(clips, QStringLiteral("clip"), QStringLiteral("clips"));
+    }
+    if (!uses.takeClips.isEmpty()) {
+        const int clips = static_cast<int>(uses.takeClips.size());
+        parts << countText(clips, QStringLiteral("take clip"), QStringLiteral("take clips"));
     }
     // Devices by what they are called ("Sampler", "2 × Sampler").
     QMap<QString, int> devices;

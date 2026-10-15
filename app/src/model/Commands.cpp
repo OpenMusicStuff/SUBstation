@@ -48,33 +48,39 @@ void SetClipsCommand::undo() {
 }
 
 ReplaceFilesCommand::ReplaceFilesCommand(Project* project, const QString& text, ClipLists before, ClipLists after,
-                                         DeviceStates statesBefore, DeviceStates statesAfter, QString mergeKey,
-                                         bool relink)
+                                         DeviceStates statesBefore, DeviceStates statesAfter, TakeLists takesBefore,
+                                         TakeLists takesAfter, QString mergeKey, bool relink)
     : QUndoCommand(text),
       project_(project),
       before_(std::move(before)),
       after_(std::move(after)),
       statesBefore_(std::move(statesBefore)),
       statesAfter_(std::move(statesAfter)),
+      takesBefore_(std::move(takesBefore)),
+      takesAfter_(std::move(takesAfter)),
       mergeKey_(std::move(mergeKey)),
       relink_(relink) {}
 
 bool ReplaceFilesCommand::mergeWith(const QUndoCommand* other) {
     const auto* next = dynamic_cast<const ReplaceFilesCommand*>(other);
     if (next == nullptr || next->mergeKey_ != mergeKey_ || next->after_.keys() != after_.keys() ||
-        next->statesAfter_.keys() != statesAfter_.keys() || next->relink_ != relink_) {
+        next->statesAfter_.keys() != statesAfter_.keys() || next->takesAfter_.keys() != takesAfter_.keys() ||
+        next->relink_ != relink_) {
         return false;
     }
     after_ = next->after_;
     statesAfter_ = next->statesAfter_;
+    takesAfter_ = next->takesAfter_;
     setText(next->text());  // (what was swapped in last)
     // Back where it began (a hot swap trying the file it started from): no undo step.
-    setObsolete(after_ == before_ && statesAfter_ == statesBefore_);
+    setObsolete(after_ == before_ && statesAfter_ == statesBefore_ && takesAfter_ == takesBefore_);
     return true;
 }
 
 void ReplaceFilesCommand::redo() {
     for (auto it = after_.constBegin(); it != after_.constEnd(); ++it) project_->setClips(it.key(), it.value());
+    for (auto it = takesAfter_.constBegin(); it != takesAfter_.constEnd(); ++it)
+        project_->setTakeLanes(it.key(), it.value());
     for (auto it = statesAfter_.constBegin(); it != statesAfter_.constEnd(); ++it) {
         project_->setDeviceState(it.key().first, it.key().second, it.value());
     }
@@ -82,6 +88,8 @@ void ReplaceFilesCommand::redo() {
 
 void ReplaceFilesCommand::undo() {
     for (auto it = before_.constBegin(); it != before_.constEnd(); ++it) project_->setClips(it.key(), it.value());
+    for (auto it = takesBefore_.constBegin(); it != takesBefore_.constEnd(); ++it)
+        project_->setTakeLanes(it.key(), it.value());
     for (auto it = statesBefore_.constBegin(); it != statesBefore_.constEnd(); ++it) {
         project_->setDeviceState(it.key().first, it.key().second, it.value());
     }

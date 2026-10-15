@@ -1,5 +1,5 @@
-// The File Manager and hot swaps: the files a project plays (its audio clips
-// and samplers, in racks too; one file however its path is written, in another
+// The File Manager and hot swaps: the files a project plays (its audio clips,
+// its take lanes' and samplers, in racks too; one file however its path is written, in another
 // case too on Windows), one file put in place of another (whole files
 // and stretches of them, a clip running into the next one trimmed, frozen
 // tracks refused, a hot swap's tries one undo step that goes when it is back
@@ -345,6 +345,59 @@ private Q_SLOTS:
         QVERIFY(!f.editor.relinkFiles({{QStringLiteral("D:/Nowhere.wav"), kickThere}}));
     }
 
+    void takeLanesFilesAreTheProjectsToo() {
+        EditorFixture f;
+        const QString a = f.editor.addAudioTrack();
+        f.editor.commitClips(QStringLiteral("Add"), {{a, {audioClip(QStringLiteral("k1"), 0.0, 0.5, kKick)}}});
+        // Takes recorded: one lane plays the kick, one a snare only it plays.
+        const QString lane1 = QStringLiteral("L1"), lane2 = QStringLiteral("L2");
+        f.project.setTakeLanes(a, {TakeLane{lane1, QStringLiteral("Take 1"), {audioClip(QStringLiteral("t1"), 0.0, 0.5, kKick)}},
+                                   TakeLane{lane2, QStringLiteral("Take 2"), {audioClip(QStringLiteral("t2"), 0.0, 0.5, kSnare)}}});
+        const std::vector<ProjectFile> files = projectFiles(f.project);
+        QCOMPARE(files.size(), size_t{2});
+        QCOMPARE(files[0].path, kKick);
+        QCOMPARE(files[0].uses.clips, (ClipRefs{{a, QStringLiteral("k1")}}));
+        QCOMPARE(files[0].uses.takeClips, (QList<TakeClipRef>{{a, lane1, QStringLiteral("t1")}}));
+        QCOMPARE(usesText(f.project, files[0].uses), QStringLiteral("1 clip, 1 take clip"));
+        QCOMPARE(files[1].path, kSnare);
+        QCOMPARE(usesText(f.project, files[1].uses), QStringLiteral("1 take clip"));
+        QCOMPARE(fileUses(f.project, kSnare), files[1].uses);
+
+        // Replaced on the take lane, one step, undone.
+        const int steps = f.stack.count();
+        QVERIFY(f.editor.replaceFile(fileUses(f.project, kSnare), QStringLiteral("D:/Samples/Clap.wav"), 0.5,
+                                     QStringLiteral("Replace Snare with Clap")));
+        QCOMPARE(f.stack.count(), steps + 1);
+        QCOMPARE(f.track(a).takes[1].clips[0].path, QStringLiteral("D:/Samples/Clap.wav"));
+        QCOMPARE(f.track(a).takes[1].clips[0].name, QStringLiteral("Clap"));
+        QCOMPARE(f.track(a).takes[1].id, lane2);
+        f.stack.undo();
+        QCOMPARE(f.track(a).takes[1].clips[0].path, kSnare);
+
+        // Found somewhere else: the track's clip and the take's both follow it.
+        const QString moved = QStringLiteral("E:/Samples/Drums/Kick.wav");
+        QVERIFY(f.editor.relinkFiles({{kKick, moved}}));
+        QCOMPARE(f.stack.count(), steps + 1);
+        QCOMPARE(clipPath(f.project, a, QStringLiteral("k1")), moved);
+        QCOMPARE(f.track(a).takes[0].clips[0].path, moved);
+        f.stack.undo();
+        QCOMPARE(f.track(a).takes[0].clips[0].path, kKick);
+
+        // Frozen: the track's clips are left as they are, the takes' may change (they don't play).
+        f.editor.freezeTracks({{a, Freeze{QStringLiteral("frozen.wav"), 2.0, 120.0}}});
+        FileUses frozen;
+        const FileUses changeable = changeableUses(f.project, fileUses(f.project, kKick), &frozen);
+        QCOMPARE(frozen.clips.size(), 1);
+        QCOMPARE(changeable.clips.size(), 0);
+        QCOMPARE(changeable.takeClips.size(), 1);
+        QVERIFY(f.editor.replaceFile(changeable, QStringLiteral("D:/Samples/808.wav"), 0.5, QStringLiteral("Replace")));
+        QCOMPARE(f.track(a).takes[0].clips[0].path, QStringLiteral("D:/Samples/808.wav"));
+        QCOMPARE(clipPath(f.project, a, QStringLiteral("k1")), kKick);
+        // Gone with its lane: no longer there.
+        f.project.setTakeLanes(a, {});
+        QVERIFY(existingUses(f.project, changeable).isEmpty());
+    }
+
     // --- The File Manager --------------------------------------------------------------------
 
     void missingFilesAreFoundInTheProjectsFolder() {
@@ -501,6 +554,36 @@ private Q_SLOTS:
         files.reveal(kick);
         QCOMPARE(revealed.count(), 1);
         QCOMPARE(files.filter(), QString());
+    }
+
+    void theFileManagerListsAndLocatesTakeLanesFiles() {
+        TempDir dir;  // (gone after the session, which may still be reading its files)
+        SessionFixture f;
+        const QString kick = wav(dir.path(QStringLiteral("Kick.wav")), 0.5);
+        const QString a = f.clipTrack(kick, 0.5, QStringLiteral("A"));
+        FileManager& files = *f.s().files();
+        files.update();
+        FileListModel& rows = *files.files();
+        QCOMPARE(rows.count(), 1);
+        // A take only a take lane plays, its file gone: listed (when the takes change), and missing.
+        const QString gone = dir.path(QStringLiteral("Takes/Vocal.wav"));
+        f.project().setTakeLanes(a, {TakeLane{QStringLiteral("L1"), QStringLiteral("Take 1"),
+                                              {audioClip(QStringLiteral("t1"), 0.0, 0.5, gone)}}});
+        QTRY_COMPARE(rows.count(), 2);
+        QCOMPARE(rows.get(0).value(QStringLiteral("path")).toString(), gone);  // (the missing first)
+        QVERIFY(rows.get(0).value(QStringLiteral("missing")).toBool());
+        QCOMPARE(rows.get(0).value(QStringLiteral("uses")).toString(), QStringLiteral("1 take clip"));
+        QCOMPARE(files.missingCount(), 1);
+        // No clips on tracks to select.
+        files.selectClips(gone);
+        QVERIFY(f.selection().clips().isEmpty());
+        // Located: the take lane plays it where it is now.
+        const QString found = wav(dir.path(QStringLiteral("Moved/Vocal.wav")), 0.5);
+        QVERIFY(files.locate(gone, found));
+        QCOMPARE(f.project().track(a).takes[0].clips[0].path, found);
+        QCOMPARE(files.missingCount(), 0);
+        f.stack().undo();
+        QCOMPARE(f.project().track(a).takes[0].clips[0].path, gone);
     }
 
     // --- Hot-swapping ------------------------------------------------------------------------

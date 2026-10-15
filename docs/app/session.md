@@ -267,15 +267,17 @@ Clicking a chain (`clickChain`) shows its rack's devices again.
 
 The files a project plays are worked out from the project each time, never stored:
 [ProjectFiles.h](../../app/src/files/ProjectFiles.h)'s `projectFiles(project)` walks the tracks, the returns and the
-master, each one's audio clips (the file a clip plays: a reversed clip's reversed copy) and then its devices, in racks
-too: a built-in device's state names a file under `"sample"` (`deviceFile`, `withDeviceFile`; the Sampler's). It
-groups them as the system compares paths (`pathIdentity`) and keeps each file's uses (`FileUses`: `ClipRef`s and
-`DeviceRef`s). Frozen tracks' own audio isn't among them. `changeableUses` leaves out what is on frozen tracks (or in
-frozen groups), which a replacement may not change.
+master, each one's audio clips (the file a clip plays: a reversed clip's reversed copy), then its take lanes' audio
+clips (`Track::takes`), then its devices, in racks too: a built-in device's state names a file under `"sample"`
+(`deviceFile`, `withDeviceFile`; the Sampler's). It groups them as the system compares paths (`pathIdentity`) and
+keeps each file's uses (`FileUses`: `ClipRef`s, `TakeClipRef`s and `DeviceRef`s). Frozen tracks' own audio isn't
+among them. `changeableUses` leaves out what is on frozen tracks (or in frozen groups), which a replacement may not
+change; take lanes' clips stay in (they don't play, so frozen audio doesn't hold them).
 
 Putting one file in another's place is the editor's (`EditorFiles.cpp`, [model.md](model.md)):
 `ProjectEditor::replaceFile(uses, path, seconds, text, mergeKey)` changes the clips (each as `edits::replaceFile` has
-it, then `edits::fitToTempo` trims one running into the next) and the devices' states in one `ReplaceFilesCommand`;
+it, then `edits::fitToTempo` trims one running into the next), the take lanes holding them (whole lists, as
+`Project::setTakeLanes` takes them) and the devices' states in one `ReplaceFilesCommand`;
 `relinkFiles({old: new})` does it for files found somewhere else (the same audio: `edits::relinkFile`, also what a
 reversed clip was reversed from; frozen tracks take it).
 
