@@ -1,5 +1,6 @@
 #pragma once
-// The files a project plays, and what plays each: its audio clips, and the
+// The files a project plays, and what plays each: its audio clips, the audio
+// clips of its take lanes (Track::takes: what a comp is made from), and the
 // built-in devices whose state names a file (a sampler's sample, under
 // "sample"; see DeviceState.h). What the File Manager lists, replaces and
 // locates (FileManager.h), and what a hot swap swaps (HotSwap.h).
@@ -9,7 +10,12 @@
 // application makes it, and makes it again. Paths are grouped as the system
 // compares them (pathIdentity: on Windows in any case) and keep the spelling of
 // the first use met, in the arrangement's order: the tracks, the returns, the
-// master; on each, its clips, then its devices (in racks too).
+// master; on each, its clips, then its take lanes' (oldest first), then its
+// devices (in racks too).
+//
+// A take lane's clips play only once comped (the comp's clips are the track's
+// own), so freezing a track leaves them as they are: they may be replaced on a
+// frozen track too.
 
 #include <QList>
 #include <QString>
@@ -36,13 +42,24 @@ struct DeviceRef {
     }
 };
 
-// What plays a file (or what a replacement changes): clips and devices.
+// A clip on a take lane by where it is: its track, its lane, its own id.
+struct TakeClipRef {
+    QString trackId;
+    QString laneId;
+    QString clipId;
+
+    friend bool operator==(const TakeClipRef&, const TakeClipRef&) = default;
+};
+
+// What plays a file (or what a replacement changes): clips, take lanes' clips
+// and devices.
 struct FileUses {
     ClipRefs clips;
+    QList<TakeClipRef> takeClips;
     QList<DeviceRef> devices;
 
-    bool isEmpty() const { return clips.isEmpty() && devices.isEmpty(); }
-    int count() const { return static_cast<int>(clips.size() + devices.size()); }
+    bool isEmpty() const { return clips.isEmpty() && takeClips.isEmpty() && devices.isEmpty(); }
+    int count() const { return static_cast<int>(clips.size() + takeClips.size() + devices.size()); }
 
     friend bool operator==(const FileUses&, const FileUses&) = default;
 };
@@ -66,12 +83,13 @@ std::vector<ProjectFile> projectFiles(const Project& project);
 // What plays one file (nothing: none of it).
 FileUses fileUses(const Project& project, const QString& path);
 // What of `uses` is still there, and on a track that isn't frozen (nor in a
-// frozen group): what a replacement may change. What is on frozen tracks goes
-// into `frozen`, if given.
+// frozen group), or on a take lane: what a replacement may change. What is on
+// frozen tracks goes into `frozen`, if given.
 FileUses changeableUses(const Project& project, const FileUses& uses, FileUses* frozen = nullptr);
 // What of `uses` is still there (on frozen tracks too).
 FileUses existingUses(const Project& project, const FileUses& uses);
-// "3 clips", "Sampler", "2 clips, Sampler"..., for the File Manager's rows.
+// "3 clips", "Sampler", "2 clips, 1 take clip, Sampler"..., for the File
+// Manager's rows.
 QString usesText(const Project& project, const FileUses& uses);
 
 }  // namespace sub::app

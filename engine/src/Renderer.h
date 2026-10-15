@@ -108,6 +108,35 @@ namespace sub {
 class Renderer {
 public:
     static constexpr int kMaxBlock = 1024;
+    static constexpr int kMaxSegments = 16;
+
+    // A stretch of the timeline a chunk plays, from `offset` in the chunk.
+    struct Segment {
+        int64_t position;
+        int length;
+        int offset;
+        bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
+        bool chase;  // playback starts here: notes already underway sound
+        bool wrap = false;  // the jump is the loop's, from its end back to its start
+        int64_t from = 0;    // a wrap: where the timeline went back from (the loop's end)
+        int64_t linear = 0;  // while recording: its position in recording time (LoopWrap); else `position`
+    };
+    // The loop as a chunk plays it.
+    struct ChunkLoop {
+        bool on = false;
+        int64_t start = 0;
+        int64_t end = 0;
+        bool looped = false;  // the playhead has wrapped already, as the chunk begins
+    };
+    // A chunk's segments as a track's clips' notes play them, `delay` samples
+    // late: on the timeline as it was played that long ago. After a wrap, where
+    // that falls before the loop's start the playhead was still going round the
+    // loop: at as many loop lengths later as bring it back inside it (a delay
+    // longer than the loop: more than one), the parts crossing the loop's end
+    // going on from its start. Into `out` (room for 2 × `count`: each segment
+    // inside the loop crosses its end at most once), returning how many.
+    static int delaySegments(const Segment* in, int count, int64_t delay, const ChunkLoop& loop,
+                             Segment* out) noexcept;
 
     // Non-real-time: allocates buffers. Keeps the transport position.
     void prepare(double sampleRate);
@@ -250,16 +279,6 @@ private:
         bool metronome;
     };
 
-    struct Segment {
-        int64_t position;
-        int length;
-        int offset;
-        bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
-        bool chase;  // playback starts here: notes already underway sound
-        bool wrap = false;  // the jump is the loop's, from its end back to its start
-        int64_t from = 0;    // a wrap: where the timeline went back from (the loop's end)
-        int64_t linear = 0;  // while recording: its position in recording time (LoopWrap); else `position`
-    };
     struct Tick {
         int offset;
         bool accent;
@@ -298,7 +317,6 @@ private:
         uint8_t key;
         int32_t noteId;
     };
-    static constexpr int kMaxSegments = 16;
     static constexpr int kMaxTicks = 64;
     static constexpr int kMaxPendingTicks = 256;
     static constexpr int kMaxActiveNotes = 512;  // across all tracks
@@ -467,8 +485,7 @@ private:
     // A track's note events for this chunk, into `out`: preview notes, its MIDI
     // input (if `hearsInput`, or to `take`), then (if `clipNotes`) its clips' notes.
     // The chunk's segments as a track's clips' notes play them, `delay` samples
-    // late (on the timeline as it was played that long ago: before a loop wrap,
-    // its end); into `out`, returning how many.
+    // late (delaySegments, in this chunk's loop); into `out`, returning how many.
     int delayedSegments(int64_t delay, Segment* out) const noexcept;
     // `chaseClips`: its clips' notes underway sound from the chunk's start (its clips play again).
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,

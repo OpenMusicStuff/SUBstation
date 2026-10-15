@@ -7,13 +7,15 @@ in place of one, while the song plays. Both work as in Ableton.
 ## The File Manager
 
 **Ctrl+Alt+F** (*View › File Manager*) shows or hides it, at the right of the window.
-It lists the files your project plays: its audio clips' files and samplers' samples (in
-racks too). Each row says the file's name, what plays it (*3 clips*, *Sampler*...) and
-its folder. Missing files come first, in red; then the rest by name. Over the list it
+It lists the files your project plays: its audio clips' files, the takes kept on take
+lanes (see [recording.md](recording.md#take-lanes-and-comping)) and samplers' samples (in
+racks too). Each row says the file's name, what plays it (*3 clips*, *1 take clip*,
+*Sampler*...) and its folder. Missing files come first, in red; then the rest by name. Over the list it
 says how many files there are, and how many are missing.
 
 - Type in its field to filter the list by name or folder.
-- **Double-click** a file (or press **Enter**) to select its clips in the arrangement.
+- **Double-click** a file (or press **Enter**) to select its clips in the arrangement (the
+  track clips: not those on take lanes).
 - **Drop** an audio file onto a file (from the browser, or from Explorer) to replace it
   everywhere it plays ([below](#replacing-a-file)).
 - Its **hot swap button** (⇄, at the right of the row) hot-swaps it
@@ -73,7 +75,8 @@ fades, and whether it is deactivated. It takes the new file's name.
 - A reversed clip plays the new file forwards: press **R** to reverse it again.
 
 Clips and samplers on frozen tracks are left as they are (unfreeze them to replace
-their files there); the status line says so.
+their files there); the status line says so. Their take lanes' clips are replaced: they
+don't play until comped.
 
 ## Hot swap
 

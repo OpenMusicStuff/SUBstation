@@ -4,7 +4,12 @@
 // once nothing is monitored; offline renders hear them all. Live, a track
 // playing its MIDI input then isn't delay-compensated, but its own clips' notes
 // are delayed to stay in time (with the fake ASIO driver: skipped without the
-// ASIO SDK).
+// ASIO SDK), going round the loop after a wrap, however short it is
+// (Renderer::delaySegments()).
+
+#include <array>
+#include <tuple>
+#include <vector>
 
 #include "Engine.h"
 #include "harness/Fixtures.h"
@@ -176,4 +181,44 @@ TEST_CASE("MIDI input played at once starts the next block") {
     CHECK(allEqual(heard(driver), 0.0));
     engine.setMidiImmediate(false);
     CHECK_EQ(engine.audioClock().midiDelay, kBuffer);
+}
+
+TEST_CASE("a live track's clips' notes played late go round the loop, however short it is") {
+    using Segment = sub::Renderer::Segment;
+    // (position, length, offset, jump, chase, wrap) of each segment.
+    using Played = std::tuple<int64_t, int, int, bool, bool, bool>;
+    const auto delayed = [](std::vector<Segment> in, int64_t delay, sub::Renderer::ChunkLoop loop) {
+        std::array<Segment, 2 * sub::Renderer::kMaxSegments> out;
+        const int n = sub::Renderer::delaySegments(in.data(), static_cast<int>(in.size()), delay, loop, out.data());
+        std::vector<Played> played;
+        for (int i = 0; i < n; ++i)
+            played.emplace_back(out[i].position, out[i].length, out[i].offset, out[i].jump, out[i].chase, out[i].wrap);
+        return played;
+    };
+    // A loop of 300 samples, from 1000; a chunk going round it: its last 50, then its first 100.
+    const sub::Renderer::ChunkLoop loop{true, 1000, 1300, true};
+    const std::vector<Segment> chunk{{1250, 50, 0, false, false}, {1000, 100, 50, true, false, true}};
+
+    // Shorter than the loop: before the wrap, its end.
+    CHECK((delayed(chunk, 100, loop) == std::vector<Played>{{1150, 50, 0, false, false, false},
+                                                           {1200, 100, 50, false, false, false}}));
+    // Longer than the loop (more than twice): as many times round as it takes, going straight on at the wrap.
+    CHECK((delayed(chunk, 700, loop) == std::vector<Played>{{1150, 50, 0, false, false, false},
+                                                           {1200, 100, 50, false, false, false}}));
+    // Crossing the loop's end within a segment: on from its start.
+    CHECK((delayed({{1000, 100, 0, true, false, true}}, 650, loop) ==
+          std::vector<Played>{{1250, 50, 0, false, false, false}, {1000, 50, 50, true, false, true}}));
+    // Catching up with the loop's start: from there as it is.
+    CHECK((delayed({{1000, 100, 0, true, false, true}}, 20, loop) ==
+          std::vector<Played>{{1280, 20, 0, false, false, false}, {1000, 80, 20, true, false, true}}));
+    // The first time round: played late, the part before the wrap is what was before the loop; at
+    // the wrap, a delay longer than the loop jumps in (what is underway there sounds).
+    const sub::Renderer::ChunkLoop firstTime{true, 1000, 1300, false};
+    CHECK((delayed(chunk, 700, firstTime) == std::vector<Played>{{550, 50, 0, false, false, false},
+                                                                {1200, 100, 50, true, true, false}}));
+    CHECK((delayed(chunk, 100, firstTime) == std::vector<Played>{{1150, 50, 0, false, false, false},
+                                                                {1200, 100, 50, false, false, false}}));
+    // No loop: only later.
+    CHECK((delayed(chunk, 700, {}) == std::vector<Played>{{550, 50, 0, false, false, false},
+                                                         {300, 100, 50, true, false, false}}));
 }
