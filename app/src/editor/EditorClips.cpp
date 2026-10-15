@@ -208,6 +208,33 @@ ClipRefs ProjectEditor::addClips(const QString& trackId, double startBeat,
     return refs;
 }
 
+bool ProjectEditor::warpToDetectedTempo(const QString& trackId, const std::vector<Clip>& added,
+                                        const QHash<QString, double>& bpms) {
+    const Project& p = *project_;
+    const Track* track = p.findTrack(trackId);
+    if (track == nullptr || added.empty()) return false;
+    const double tempo = p.tempo();
+    std::vector<Clip> clips = track->clips;
+    QSet<QString> placed;
+    double position = added.front().startBeat;
+    for (const Clip& was : added) {
+        const auto now = std::find_if(clips.begin(), clips.end(), [&](const Clip& c) { return c.id == was.id; });
+        if (now == clips.end() || *now != was) break;  // (changed since: it and the rest stay)
+        if (const auto bpm = bpms.constFind(was.id); bpm != bpms.constEnd()) {
+            now->warp = true;
+            now->segmentBpm = std::clamp(*bpm, kMinSegmentBpm, kMaxSegmentBpm);
+        }
+        now->startBeat = position;
+        position = now->endBeat(tempo);
+        placed.insert(was.id);
+    }
+    if (placed.isEmpty()) return false;
+    std::vector<Clip> after = edits::resolveOverlaps(clips, placed, tempo);
+    edits::sortByStart(after);
+    if (after == track->clips) return false;
+    return commitClips(QStringLiteral("Detect Tempo"), {{trackId, after}});
+}
+
 std::optional<ClipRef> ProjectEditor::addMidiClip(const QString& trackId, double startBeat, double lengthBeats) {
     const Track* track = project_->findTrack(trackId);
     if (track == nullptr || !track->isMidi() || lengthBeats < edits::kMinMidiClipBeats) return std::nullopt;

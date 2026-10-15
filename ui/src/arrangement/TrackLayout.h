@@ -27,6 +27,7 @@ struct Track;
 namespace sub::ui::arrangement {
 
 inline constexpr int kAutomationLaneHeight = 44;  // a lane shown below a track (or a return, the master)
+inline constexpr int kTakeLaneHeight = 40;        // a take lane shown below a track (below its automation lanes)
 // Groups in the headers' column, as Ableton's: a band in the group's colour
 // down its header and its tracks' (kGroupBand wide with the outline at its
 // right, a level kGroupIndent further right per group a track is in: side by
@@ -69,8 +70,18 @@ struct LaneRow {
     friend bool operator==(const LaneRow&, const LaneRow&) = default;
 };
 
+// A take lane shown below a track (app::TakeLane), at the bottom of its row.
+struct TakeRow {
+    int index = 0;  // in the track's takes
+    QString laneId;
+    int top = 0;
+    int height = kTakeLaneHeight;
+
+    friend bool operator==(const TakeRow&, const TakeRow&) = default;
+};
+
 // A track: its own lane (clips; its automation too while that shows), then the
-// automation lanes shown below it. A folded track's row is kFoldedHeight high
+// automation lanes shown below it, then its take lanes while they show. A folded track's row is kFoldedHeight high
 // (a folded group's kFoldedGroupHeight), and shows no automation. A folded
 // track (not a group) shows its clips as `bars`, as Ableton does: they are
 // clicked and dragged whole (all title); between them the row is a grid like
@@ -80,6 +91,7 @@ struct Row {
     int top = 0;
     int mainHeight = 0;  // the track's own lane
     std::vector<LaneRow> lanes;
+    std::vector<TakeRow> takes;  // its take lanes, while they show (not folded)
     bool automation = false;  // its automation shows
     bool hidden = false;      // in a folded group
     bool folded = false;      // the track itself is folded
@@ -88,6 +100,10 @@ struct Row {
 
     int height() const;
     int bottom() const { return top + height(); }
+    // Its own lane and its automation lanes: all but its take lanes.
+    int laneHeight() const;
+    // The take lane at a content height, if one is there.
+    const TakeRow* takeAt(double contentY) const;
 
     friend bool operator==(const Row&, const Row&) = default;
 };

@@ -3,7 +3,7 @@
 Audio recording works as Ableton's Arrangement recording, from an ASIO driver's inputs;
 MIDI tracks record along with audio ones, and any track can record another track's (or
 the master's) output by resampling. This page covers arming, inputs, monitoring, the
-count-in, takes and resampling. On Linux there are no device inputs: audio records by
+count-in, takes, take lanes and comping, and resampling. On Linux there are no device inputs: audio records by
 resampling, and MIDI from the computer MIDI keyboard.
 
 ## Arming
@@ -64,7 +64,8 @@ its take replaces them. With monitoring *Off* it is silent until recording stops
     bars: the metronome counts in even if it is off) if stopped;
   - or from the playhead while playing (punch in).
 - Record again to stop recording and keep playing; Stop or Space stop both.
-- While recording the loop doesn't wrap.
+- With the loop on, recording goes round it as playback does: each time round is a pass,
+  kept as a take of its own (see [Recording round the loop](#recording-round-the-loop)).
 
 ## Takes
 
@@ -79,6 +80,63 @@ its take replaces them. With monitoring *Off* it is silent until recording stops
   lines up.
 - Changing the audio device (or its sample rate, or a reset by the driver) ends a
   recording; what was recorded so far is kept. So does moving the playhead.
+
+### Take lanes and comping
+
+Every take is also kept on a **take lane** of its own below its track ("Take 1", "Take 2",
+...), as in Ableton, so recording a part several times keeps every pass, and the track
+plays the *comp*: the best parts of each, chosen from the lanes. Audio and MIDI tracks
+alike.
+
+- Right-click a track's header › **Show Take Lanes** to show them (it is
+  greyed out until the track has a take). They show below the track, under its automation
+  lanes; *Hide Take Lanes* (on a take lane's menu too) hides them again.
+- On a take lane, what the comp plays shows lit; the rest is shaded.
+- **Click** a take's clip on its lane to put all of it in the comp; **drag** across a lane
+  to put just that stretch in (on the grid; Alt: off it), replacing whatever the track
+  played there. Where the lane has nothing, that stretch of the track is left silent.
+- A take lane's menu: *Comp Whole Take*, *Delete Take Lane*, *Hide Take Lanes*. The track
+  header's *Delete Take Lanes* deletes them all; the track's clips stay as they are.
+- Comping and deleting lanes are undo steps; recording makes the takes and their lanes in
+  one. Lanes are saved with the project; duplicating a track duplicates them.
+- The comp's clips are ordinary clips: move, trim, fade and edit them as any other.
+- The File Manager lists the files the track's clips play, not those only a take lane
+  plays.
+
+### Recording round the loop
+
+With the loop on, recording wraps at the loop's end and goes on from its start, as
+playback does, until you stop it: play a part over and over, then choose the best.
+
+- Each time round is a take of its own on its own take lane ("Take 1", "Take 2", ...;
+  the first one from wherever recording began). Stopping just after the loop wrapped
+  makes no take of that moment.
+- The track plays the last time round (where you stopped part-way, the one before for the
+  rest of the loop): show the take lanes to comp from the others.
+- While recording, the take draws only the time round under way.
+- Audio takes are one WAV file, each take a stretch of it; MIDI takes the notes that
+  start in that time round (one held over the loop's end ends there).
+- Moving the playhead still ends the recording; the loop's wrap doesn't.
+
+### Punch In and Out
+
+The **Punch In** and **Punch Out** buttons either side of Loop in the transport bar
+restrict recording to the loop brace, as in Ableton, whether the loop is on or not:
+
+- **Punch In**: start recording before the loop's start to play along to what comes
+  before it: the armed tracks play their clips until the playhead reaches the loop's
+  start, and only what is played from there is kept.
+- **Punch Out**: the armed tracks play their clips again from the loop's end, and what
+  is played after it isn't kept. With the loop on, recording goes round the loop before
+  it gets there: Punch Out matters with the loop off.
+- Both together: drop into the loop's stretch and out of it again, the rest of the
+  track left as it was. With the loop on, every time round is a take (above), each just
+  the loop's stretch.
+- While recording, the take is drawn only inside the punch region.
+- They are settings of the project (saved with it); turning them on or off is an undo
+  step, as the loop's is. The punch region is the one when recording began.
+- The audio file still holds everything recorded, the run-in too: the takes are the
+  stretches of it inside the punch region.
 
 ### MIDI takes
 

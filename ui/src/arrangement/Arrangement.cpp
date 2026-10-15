@@ -95,6 +95,8 @@ void Arrangement::connectSession() {
     connect(p, &app::Project::devicesChanged, this, &Arrangement::invalidateGraph);
     connect(p, &app::Project::automationViewChanged, this, &Arrangement::onAutomationViewChanged);
     connect(p, &app::Project::clipsChanged, this, &Arrangement::updateHBar);
+    // Take lanes coming or going: its row, if they show (a row as onTrackChanged's).
+    connect(p, &app::Project::takesChanged, this, &Arrangement::onTrackChanged);
     connect(p, &app::Project::settingsChanged, this, [this] {
         updateHBar();
         Q_EMIT gridChanged();  // (the time signature's bars)

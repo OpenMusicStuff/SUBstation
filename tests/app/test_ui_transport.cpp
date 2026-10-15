@@ -86,8 +86,8 @@ private Q_SLOTS:
     void layout() {
         QCOMPARE(bar_->height(), 40.0);
         for (const char* name : {"tempo", "numerator", "denominator", "metronome", "key", "computerKeys", "position",
-                                 "play", "stop", "record", "countIn", "reEnable", "scope", "loop",
-                                 "follow"}) {
+                                 "play", "stop", "record", "countIn", "reEnable", "scope", "punchIn", "loop",
+                                 "punchOut", "follow"}) {
             QVERIFY2(item(name), name);
             QCOMPARE(item(name)->height(), 28.0);
         }
@@ -98,7 +98,8 @@ private Q_SLOTS:
         // The count-in: a drop-down attached to the metronome's right, as Live's.
         QVERIFY(left("metronome") < left("countIn") && left("countIn") < left("key"));
         QVERIFY(std::abs(left("countIn") - (left("metronome") + item("metronome")->width())) <= 1.0);
-        QVERIFY(left("reEnable") < left("scope") && left("scope") < left("loop"));
+        QVERIFY(left("reEnable") < left("scope") && left("scope") < left("punchIn"));
+        QVERIFY(left("punchIn") < left("loop") && left("loop") < left("punchOut") && left("punchOut") < left("follow"));
         QVERIFY(!item("lockEnvelopes"));  // (in the arrangement's corner, as Ableton's)
         QVERIFY(left("loop") < left("follow") && left("follow") < left("cpu") && left("cpu") < left("device"));
         QCOMPARE(text("position"), QStringLiteral("  1. 1. 1"));
@@ -208,6 +209,15 @@ private Q_SLOTS:
         QVERIFY(project().loopEnabled() && checked("loop"));
         session().undoStack()->undo();
         QVERIFY(!project().loopEnabled() && !checked("loop"));
+        // Punch In and Out: settings of the project, an undo step each, in the engine.
+        click("punchIn");
+        QVERIFY(project().punchIn() && checked("punchIn") && !project().punchOut());
+        QCOMPARE(session().undoStack()->undoText(), QStringLiteral("Toggle Punch In"));
+        click("punchOut");
+        QVERIFY(project().punchOut() && checked("punchOut"));
+        session().undoStack()->undo();
+        session().undoStack()->undo();
+        QVERIFY(!project().punchIn() && !project().punchOut() && !checked("punchIn"));
 
         QVERIFY(!item("reEnable")->isEnabled());  // nothing overridden
         QVERIFY(!checked("reEnable"));

@@ -1,6 +1,7 @@
 #include "pianoroll/ClipViewController.h"
 
 #include "editor/ProjectEditor.h"
+#include "intelligence/AudioAnalysis.h"
 #include "model/Errors.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
@@ -90,7 +91,10 @@ app::Project* ClipViewController::project() const { return session_ ? session_->
 
 void ClipViewController::setSession(app::Session* session) {
     if (session == session_) return;
-    if (session_) disconnect(session_->project(), nullptr, this, nullptr);
+    if (session_) {
+        disconnect(session_->project(), nullptr, this, nullptr);
+        disconnect(session_->audioAnalysis(), nullptr, this, nullptr);
+    }
     session_ = session;
     if (session) {
         app::Project* p = session->project();
@@ -106,6 +110,8 @@ void ClipViewController::setSession(app::Session* session) {
         connect(p, &app::Project::trackChanged, this, &ClipViewController::refresh);
         connect(p, &app::Project::reset, this, &ClipViewController::close);
         connect(p, &app::Project::trackRemoved, this, &ClipViewController::dropMissing);
+        // (What a clip's file was heard to hold: its tempo and key, in the info.)
+        connect(session->audioAnalysis(), &app::AudioAnalysis::analysed, this, &ClipViewController::refresh);
     }
     Q_EMIT sessionChanged();
     reopen();
@@ -321,6 +327,13 @@ void ClipViewController::refresh() {
             const double beats = lead.lengthBeats(tempo);
             info_ = QStringLiteral("%1 s  ·  %2 beats")
                         .arg(app::formatFixed(app::beatsToSeconds(beats, tempo), 2), app::formatFixed(beats, 2));
+            // What its file was heard to hold (AudioAnalysis): its tempo, its key.
+            if (const auto* heard = session_->audioAnalysis()->result(lead.path)) {
+                QStringList what;
+                if (heard->bpm) what << QStringLiteral("%1 BPM").arg(app::formatFixed(*heard->bpm, 2));
+                if (heard->key) what << heard->key->label();
+                if (!what.isEmpty()) info_ += QStringLiteral("  ·  heard: ") + what.join(QStringLiteral(", "));
+            }
         } else {
             QStringList tracks;
             for (const Shown& shown : items) {

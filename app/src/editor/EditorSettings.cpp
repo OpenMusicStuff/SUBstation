@@ -70,4 +70,12 @@ void ProjectEditor::setLoopEnabled(bool enabled) {
     setSettings(QStringLiteral("Toggle Loop"), {{SettingsField::LoopEnabled, enabled}});
 }
 
+void ProjectEditor::setPunchIn(bool enabled) {
+    setSettings(QStringLiteral("Toggle Punch In"), {{SettingsField::PunchIn, enabled}});
+}
+
+void ProjectEditor::setPunchOut(bool enabled) {
+    setSettings(QStringLiteral("Toggle Punch Out"), {{SettingsField::PunchOut, enabled}});
+}
+
 }  // namespace sub::app

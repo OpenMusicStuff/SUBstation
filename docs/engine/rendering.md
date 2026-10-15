@@ -100,8 +100,10 @@ segments per chunk. Each segment records:
   sounding notes stop;
 - `chase`: playback starts here, so notes already underway sound from here.
 
-While recording the loop doesn't wrap (punching in and out of it is not implemented). Stopped,
-there are no segments: devices see one stretch at the playhead.
+- `wrap`: the jump is the loop's wrap (from `from`, the loop's end): recording goes on through it
+  (in recording time, `linear`: [recording.md](recording.md#recording-audio-thread)).
+
+Stopped, there are no segments: devices see one stretch at the playhead.
 
 Processors see continuous stretches of the timeline: `processInserts()` turns the segments into
 `Slices` (plus one for the end of a count-in) and calls each device once per slice, with the
@@ -111,7 +113,7 @@ chunk (slice by slice) before the next device starts, so a rack can run its chai
 whole chunk too.
 
 `ProcessContext` carries the sample rate, sample and beat position, tempo, time signature,
-playing, looping (off while recording), the loop in beats, whether the render is offline, and
+playing, looping (recording too), the loop in beats, whether the render is offline, and
 the slice's events. See [devices.md](devices.md) for how processors use it.
 
 ### Transport in the renderer

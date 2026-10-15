@@ -202,6 +202,20 @@ void RecordingSession::writeFrames(RecordingTake& take, const float* samples, in
     take.written += frames;  // in time even if the disk failed: the error says so
 }
 
+bool RecordingSession::wrap(int64_t from, int64_t to) noexcept {
+    const int n = numWraps_.load(std::memory_order_relaxed);
+    if (n >= kMaxWraps) return false;
+    wraps_[static_cast<size_t>(n)] = {from + wrapOffset_, from - to};
+    wrapOffset_ += from - to;
+    numWraps_.store(n + 1, std::memory_order_release);
+    return true;
+}
+
+std::vector<LoopWrap> RecordingSession::wraps() const {
+    const int n = numWraps_.load(std::memory_order_acquire);
+    return {wraps_.begin(), wraps_.begin() + n};
+}
+
 std::vector<RecordedTake> RecordingSession::finish() {
     {
         std::lock_guard lock(mutex_);
@@ -231,6 +245,7 @@ std::vector<RecordedTake> RecordingSession::finish() {
         const int64_t start = take->start.load();
         result.frames = start == RecordingTake::kNotStarted ? 0 : take->written;
         result.startSample = start == RecordingTake::kNotStarted ? 0 : start - take->placement;
+        result.wraps = wraps();
         if (result.frames == 0) {
             std::error_code ignored;
             std::filesystem::remove(platform::toPath(take->path), ignored);
@@ -243,6 +258,7 @@ std::vector<RecordedTake> RecordingSession::finish() {
         result.sampleRate = sampleRate_;
         result.midi = true;
         result.notes = midiNotes(*take);
+        result.wraps = wraps();
         const int64_t start = take->start.load();
         if (start != RecordingTake::kNotStarted) {
             result.startSample = start;

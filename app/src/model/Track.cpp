@@ -1,5 +1,6 @@
 #include "model/Track.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -21,6 +22,7 @@ constexpr FieldName kFieldNames[] = {
     {TrackField::Monitor, "monitor"},    {TrackField::Armed, "armed"},
     {TrackField::Folded, "folded"},      {TrackField::Sends, "sends"},
     {TrackField::InputTap, "input_tap"}, {TrackField::Output, "output"},
+    {TrackField::TakesShown, "takes_shown"},
 };
 
 double asDouble(const TrackValue& value) {
@@ -94,6 +96,7 @@ TrackValue Track::value(TrackField field) const {
     case TrackField::Folded: return folded;
     case TrackField::Sends: return sends;
     case TrackField::Output: return output;
+    case TrackField::TakesShown: return takesShown;
     }
     return {};
 }
@@ -116,7 +119,19 @@ void Track::setValue(TrackField field, const TrackValue& value) {
     case TrackField::Folded: folded = std::get<bool>(value); break;
     case TrackField::Sends: sends = std::get<SendMap>(value); break;
     case TrackField::Output: output = std::get<Output>(value); break;
+    case TrackField::TakesShown: takesShown = std::get<bool>(value); break;
     }
+}
+
+QString nextTakeName(const Track& track) {
+    int highest = 0;
+    for (const TakeLane& lane : track.takes) {
+        const QStringList words = lane.name.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        bool number = false;
+        const int n = words.size() == 2 && words[0] == QLatin1String("Take") ? words[1].toInt(&number) : 0;
+        if (number) highest = std::max(highest, n);
+    }
+    return QStringLiteral("Take %1").arg(highest + 1);
 }
 
 Track newMaster() {

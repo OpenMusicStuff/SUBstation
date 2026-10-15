@@ -60,12 +60,6 @@ using Profile = std::array<float, 12>;
 
 double velocityWeight(int velocity) { return 0.5 + 0.5 * std::clamp(velocity, 1, 127) / 127.0; }
 
-double bassTrust(int pitch) {
-    if (pitch <= kBassFull) return 1.0;
-    if (pitch >= kBassFaint) return kFaintBass;
-    return 1.0 - (1.0 - kFaintBass) * (pitch - kBassFull) / double(kBassFaint - kBassFull);
-}
-
 bool onMultiple(double value, double step) {
     if (step <= 0.0) return false;
     const double q = value / step;
@@ -141,6 +135,12 @@ void spread(std::vector<Profile>& steps, double origin, double step, double a, d
 
 }  // namespace
 
+double bassTrust(int pitch) {
+    if (pitch <= kBassFull) return 1.0;
+    if (pitch >= kBassFaint) return kFaintBass;
+    return 1.0 - (1.0 - kFaintBass) * (pitch - kBassFull) / double(kBassFaint - kBassFull);
+}
+
 std::optional<Key> estimateKey(const std::vector<Note>& notes) {
     // How long each pitch class sounds, and again as long as it is the bass
     // (lowest, in a bass register): the bass tells C major from E minor.
@@ -156,7 +156,7 @@ std::optional<Key> estimateKey(const std::vector<Note>& notes) {
         events.emplace_back(n.end, -(n.pitch + 1));
     }
     const auto classes = std::count_if(sounding.begin(), sounding.end(), [](double d) { return d > 0.0; });
-    if (total < kMinKeyBeats || classes < 3) return std::nullopt;
+    if (total < kMinKeyBeats || classes < 3) return std::nullopt;  // (before sorting what may be many events)
     std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
     std::array<int, 128> held{};
     for (size_t i = 0; i < events.size();) {
@@ -169,6 +169,12 @@ std::optional<Key> estimateKey(const std::vector<Note>& notes) {
         const int pitch = static_cast<int>(lowest - held.begin());
         sounding[static_cast<size_t>(pitchClass(pitch))] += (events[i].first - time) * bassTrust(pitch);
     }
+    return estimateKey(sounding, total);
+}
+
+std::optional<Key> estimateKey(const std::array<double, 12>& sounding, double soundingBeats) {
+    const auto classes = std::count_if(sounding.begin(), sounding.end(), [](double d) { return d > 0.0; });
+    if (soundingBeats < kMinKeyBeats || classes < 3) return std::nullopt;
 
     const auto correlation = [&](const std::array<double, 12>& profile, int tonic) {
         double meanX = 0.0, meanY = 0.0;
@@ -227,7 +233,10 @@ Harmony inferHarmony(const std::vector<Note>& input, const InferenceOptions& opt
     const size_t steps = std::max<size_t>(1, stepsFor());
 
     // What sounds in each step, and what is lowest.
-    std::vector<Profile> sounding(steps, Profile{}), bass(steps, Profile{});
+    StepProfiles profiles{origin, step, std::vector<Profile>(steps, Profile{}), std::vector<Profile>(steps, Profile{}),
+                          first, last};
+    std::vector<Profile>& sounding = profiles.sounding;
+    std::vector<Profile>& bass = profiles.bass;
     for (const Note& n : notes)
         spread(sounding, origin, step, n.start, n.end, pitchClass(n.pitch), velocityWeight(n.velocity));
     struct Event {
@@ -254,8 +263,20 @@ Harmony inferHarmony(const std::vector<Note>& input, const InferenceOptions& opt
         spread(bass, origin, step, time, events[i].time, pitchClass(pitch), bassTrust(pitch));
     }
 
+    result.chords = inferChords(profiles, result.key, options.barBeats);
+    return result;
+}
+
+std::vector<ChordSpan> inferChords(const StepProfiles& profiles, const std::optional<Key>& key, double barBeats) {
+    std::vector<ChordSpan> result;
+    const std::vector<Profile>& sounding = profiles.sounding;
+    const std::vector<Profile>& bass = profiles.bass;
+    const size_t steps = std::min(sounding.size(), bass.size());
+    const double origin = profiles.origin, step = profiles.step, first = profiles.first, last = profiles.last;
+    if (steps == 0 || step <= 0.0) return result;
+
     // Each state's score for a step.
-    const std::array<Candidate, kChords> chords = candidates(result.key);
+    const std::array<Candidate, kChords> chords = candidates(key);
     std::vector<double> score(kStates);
     const auto scoreStep = [&](size_t t) {
         const Profile& p = sounding[t];
@@ -307,7 +328,7 @@ Harmony inferHarmony(const std::vector<Note>& input, const InferenceOptions& opt
     for (size_t t = 1; t < steps; ++t) {
         const int best = static_cast<int>(std::max_element(total.begin(), total.end()) - total.begin());
         bestBefore[t] = best;
-        const double cost = changeCost(origin + static_cast<double>(t) * step, options.barBeats);
+        const double cost = changeCost(origin + static_cast<double>(t) * step, barBeats);
         scoreStep(t);
         for (int s = 0; s < kStates; ++s) {
             const double stay = total[static_cast<size_t>(s)];
@@ -342,7 +363,7 @@ Harmony inferHarmony(const std::vector<Note>& input, const InferenceOptions& opt
             if (inversion && under[static_cast<size_t>(lowest)] >= kBassInversion * length) chord.bass = lowest;
             const double start = std::max(first, origin + static_cast<double>(t) * step);
             const double stop = std::min(last, origin + static_cast<double>(end) * step);
-            result.chords.push_back({start, stop, chord});
+            result.push_back({start, stop, chord});
         }
         t = end;
     }

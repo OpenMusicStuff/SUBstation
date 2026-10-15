@@ -148,7 +148,22 @@ first automated in), `automationView`, audio input (`input`: none, `{c}` or `{l,
 `inputTrack`: another track's id or `kMaster` for resampling; `inputTap`: where that is taken, `kPostFader`,
 `kPreFader` or `kPreFx`, as a sidechain's tap), `output` (an `Output`: where its output goes; see below), `midiInput` (a `MidiInput`, or none for *No Input*;
 new MIDI tracks hear every input), `monitor` (`kMonitorModes`: `off`, `in`, `auto`), `armed`, `parent` (the group it
-is in), `folded`, `sends` (return id → `Send`), `frozen`.
+is in), `folded`, `sends` (return id → `Send`), `frozen`, `takes` and `takesShown`.
+
+**Take lanes** (`TakeLane`: `id`, `name`, `clips`). Recording keeps what each take played on a lane of its own below
+its track (`ProjectEditor::addRecordings`: "Take 1", "Take 2"..., `nextTakeName`), as copies with ids of their own,
+in the same undo step that puts the takes on the track; the track's own clips are then the *comp*. A take
+recorded round the loop (`RecordedTake::wraps`: the engine's recording time) is cut into the passes it made
+(`loopPasses`, [RecordedTake.h](../../app/src/model/RecordedTake.h)): a clip and a lane each, the later passes
+winning on the track. A take lane's
+clips don't play, aren't selected, and nothing but the take-lane edits touches them: `compTake` (what a lane holds
+between two beats, its silence too, replaces what the track plays there: `edits::removeRange` then
+`edits::sliceRange`, copies again), `deleteTakeLane`, `deleteTakeLanes` (`SetTakeLanesCommand`, the track's whole
+list; `Project::setTakeLanes` emits `takesChanged`). `edits::compedSpans` says where the track plays what a lane
+holds (`edits::sameContent`: a clip that is a window onto the same file or notes, at the same place), so a lane can
+draw the parts its comp is made of. Whether they show is view state (`takesShown`, `TrackField::TakesShown`, not
+undone). Copies of a track get lanes (and clips on them) with ids of their own; flattening drops them. The File
+Manager doesn't look at take lanes' files: a file only a take lane plays isn't listed (nor collected).
 
 The master and the returns are `Track`s too, so whatever works on a track's devices, mixer or automation works on
 theirs: `Project::track(id)` finds an arrangement track, a return, or the master (`kMaster`). `hasTrack()` is true
@@ -422,7 +437,7 @@ Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: 
 ## The Project object and its signals
 
 `Project` ([Project.h](../../app/src/model/Project.h)) holds `tempo`, `timeSignature`, `key`, the loop
-(`loopEnabled`, `loopStart`, `loopEnd`, beats), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
+(`loopEnabled`, `loopStart`, `loopEnd`, beats; `punchIn`, `punchOut`: recording kept only inside the loop brace), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
 `shownChainLists` (the racks whose chain list shows: hidden by default), `hiddenRackDevices` (the racks whose
 chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
 `automationLocked`, `timeSignatureText`, `keyName`, `path`).
@@ -565,7 +580,7 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   the same undo step.
 - **Returns and sends**: `addReturnTrack` [Q], `setSend` (`EditError` for a cycle), `removeSend` [Q].
 - **Settings**: `setTempo` [Q] (20..999, rounded to 0.01), `setTimeSignature` [Q], `setKey`, `setKeyByName` [Q],
-  `setLoop` [Q], `setLoopEnabled` [Q], `setAutomationLocked` [Q].
+  `setLoop` [Q], `setLoopEnabled` [Q], `setPunchIn` [Q], `setPunchOut` [Q], `setAutomationLocked` [Q].
 - **Clips**: `commitClips`, `addClips` (audio files one after another, set up by `clipSettings`; a new audio track if
   needed), `addMidiClip`, `addMidiClipsOver`, `midiClipSpan`, `setClipNotes` (and `setClipsNotes`: several clips' notes in one
   undo step, for the piano roll editing them together, bends too), `moveClips` (with `clampTrackDelta`:

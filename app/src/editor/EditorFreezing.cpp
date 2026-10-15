@@ -89,6 +89,8 @@ QStringList ProjectEditor::flattenTracks(const QStringList& trackIds) {
         }
         after.devices.clear();
         after.frozen.reset();
+        after.takes.clear();  // (a MIDI track's takes are notes: no audio track's)
+        after.takesShown = false;
         EnvelopeMap envelopes;
         for (const auto& [key, points] : track.automation) {
             if (!automation::keyDevice(key)) envelopes.insert(key, points);

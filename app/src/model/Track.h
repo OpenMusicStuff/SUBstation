@@ -124,6 +124,21 @@ struct Output {
     friend bool operator==(const Output&, const Output&) = default;
 };
 
+// A take lane (Ableton's): what one recording on the track played, kept below
+// it. Recording puts each take on the track (replacing what was under it, as it
+// always has) and a copy of it on a lane of its own, "Take 1", "Take 2"...; the
+// track's own lane is then the comp, made of the parts of takes chosen from the
+// lanes (ProjectEditor::compTake). A take lane's clips don't play: they are
+// copies to choose from, with ids of their own (unique in the project, as the
+// track's clips' are). Its clips are sorted by start and never overlap.
+struct TakeLane {
+    QString id;
+    QString name;  // "Take 3"
+    std::vector<Clip> clips;
+
+    friend bool operator==(const TakeLane&, const TakeLane&) = default;
+};
+
 // Return id -> its send. Replaced whole, never changed in place.
 using SendMap = QMap<QString, Send>;
 // Target key -> envelope (never an empty one), in the order they were first set.
@@ -148,6 +163,7 @@ enum class TrackField {
     Folded,      // bool
     Sends,       // SendMap
     Output,      // Output
+    TakesShown,  // bool
 };
 using TrackValue = std::variant<bool, int, double, QString, std::vector<int>, std::optional<QString>,
                                 std::optional<MidiInput>, SendMap, Output>;
@@ -198,6 +214,8 @@ struct Track {
     SendMap sends;  // return id -> its send (replaced whole, never changed)
     Output output;  // where its output goes (a return's too; the master has none)
     std::optional<Freeze> frozen;  // its frozen audio (none: not frozen); see Freeze
+    std::vector<TakeLane> takes;   // its take lanes, oldest first (audio and MIDI tracks)
+    bool takesShown = false;       // its take lanes show below it (saved, not undone)
 
     // What its name is made from: its nameTemplate, or its name if it has none.
     const QString& nameSource() const { return nameTemplate.isEmpty() ? name : nameTemplate; }
@@ -219,6 +237,10 @@ struct Track {
 
     friend bool operator==(const Track&, const Track&) = default;
 };
+
+// What a track's next take lane is called: "Take n", one past the highest
+// number its lanes' names have ("Take 1" for its first).
+QString nextTakeName(const Track& track);
 
 // The master, with these settings (its id, name, colour and kind are fixed).
 Track newMaster();

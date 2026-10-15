@@ -202,6 +202,7 @@ std::vector<RecordingProgress> Engine::recordingProgress() {
         p.startSample = p.started ? start : 0;
         p.frames = take->frames.load(std::memory_order_acquire);
         p.notes = recording_->midiNotes(*take);
+        p.wraps = recording_->wraps();
         progress.push_back(std::move(p));
     }
     for (const auto& take : recording_->takes()) {
@@ -216,6 +217,7 @@ std::vector<RecordingProgress> Engine::recordingProgress() {
             p.peaks.push_back(peak.min);
             p.peaks.push_back(peak.max);
         }
+        p.wraps = recording_->wraps();
         progress.push_back(std::move(p));
     }
     return progress;

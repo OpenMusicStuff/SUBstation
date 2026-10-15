@@ -19,6 +19,7 @@
 #include <QUndoStack>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -572,6 +573,10 @@ QStringList ProjectEditor::insertCopies(const CopiedTracks& copied, int index, s
             track.parent = renamed.value(*original.parent);
         }
         for (Clip& clip : track.clips) clip.id = newId();
+        for (TakeLane& lane : track.takes) {
+            lane.id = newId();
+            for (Clip& clip : lane.clips) clip.id = newId();
+        }
         QHash<QString, QString> ids;  // its devices' and rack chains' ids: the copies'
         for (Device& device : track.devices) {
             const QStringList old = deviceAndChainIds(device);
@@ -950,39 +955,61 @@ void ProjectEditor::setTrackMidiInput(const QString& trackId, const std::optiona
 ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize, bool quantizeEnds) {
     const Project& p = *project_;
     const double tempo = p.tempo();
+    // Each track's passes (a take recorded round the loop made one each time
+    // round: loopPasses), in the order they were played: a clip each.
     OrderedMap<QString, std::vector<Clip>> byTrack;
-    for (const RecordedTake& take : takes) {
-        if (!p.hasTrack(take.trackId) || take.durationSec <= 0) continue;
-        const Track& track = p.track(take.trackId);
-        if (track.isMidi() != take.midi) continue;
-        if (take.midi) {
-            byTrack[take.trackId].push_back(recordedMidiClip(take, quantize, quantizeEnds));
-            continue;
+    for (const RecordedTake& recorded : takes) {
+        if (!p.hasTrack(recorded.trackId) || recorded.durationSec <= 0) continue;
+        const Track& track = p.track(recorded.trackId);
+        if (track.isMidi() != recorded.midi) continue;
+        for (const RecordedTake& take : loopPasses(recorded)) {
+            if (take.midi) {
+                byTrack[take.trackId].push_back(recordedMidiClip(take, quantize, quantizeEnds));
+                continue;
+            }
+            double startBeat = secondsToBeats(take.startSec, tempo);
+            double offset = take.offsetSec;
+            double duration = take.durationSec;
+            if (startBeat < 0) {  // it began before the timeline (the count-in's latency)
+                offset -= take.startSec;
+                duration += take.startSec;
+                startBeat = 0.0;
+            }
+            if (duration <= 0) continue;
+            const double file = take.fileSec > 0 ? take.fileSec : take.offsetSec + take.durationSec;
+            byTrack[take.trackId].push_back(Clip::audio(newId(), take.path, QFileInfo(take.path).completeBaseName(),
+                                                        startBeat, duration, offset, file));
         }
-        double startBeat = secondsToBeats(take.startSec, tempo);
-        double offset = 0.0;
-        if (startBeat < 0) {  // it began before the timeline (the count-in's latency)
-            offset = -take.startSec;
-            startBeat = 0.0;
-        }
-        const double duration = take.durationSec - offset;
-        if (duration <= 0) continue;
-        byTrack[take.trackId].push_back(Clip::audio(newId(), take.path, QFileInfo(take.path).completeBaseName(),
-                                                    startBeat, duration, offset, take.durationSec));
     }
+    // On the track, each pass replaces what was under it (the last time round the loop wins).
     QMap<QString, std::vector<Clip>> after;
     ClipRefs refs;
     for (const auto& [trackId, clips] : byTrack) {
-        QSet<QString> newIds;
         std::vector<Clip> all = p.track(trackId).clips;
         for (const Clip& clip : clips) {
-            newIds.insert(clip.id);
             all.push_back(clip);
-            refs.append({trackId, clip.id});
+            all = edits::resolveOverlaps(all, {clip.id}, tempo);
         }
-        after.insert(trackId, edits::resolveOverlaps(all, newIds, tempo));
+        for (const Clip& clip : all) {
+            if (std::any_of(clips.begin(), clips.end(), [&](const Clip& c) { return c.id == clip.id; }))
+                refs.append({trackId, clip.id});
+        }
+        after.insert(trackId, all);
     }
-    if (!after.isEmpty()) commitClips(QStringLiteral("Record"), after);
+    if (after.isEmpty()) return refs;
+    const QString text = QStringLiteral("Record");
+    Macro macro(undoStack_, text);
+    if (!commitClips(text, after)) return {};
+    for (const auto& [trackId, clips] : byTrack) {  // (a take lane of each pass, a copy of it)
+        const Track& track = p.track(trackId);
+        std::vector<TakeLane> lanes = track.takes;
+        int number = nextTakeName(track).section(QLatin1Char(' '), 1).toInt();  // ("Take 3": 3)
+        for (Clip copy : clips) {
+            copy.id = newId();
+            lanes.push_back({newId(), QStringLiteral("Take %1").arg(number++), {std::move(copy)}});
+        }
+        push(std::make_unique<SetTakeLanesCommand>(project_, trackId, track.takes, std::move(lanes), text));
+    }
     return refs;
 }
 
@@ -990,6 +1017,9 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
     const double tempo = project_->tempo();
     const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
     const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
+    // Cut short (the loop's end, Punch Out): nothing goes past it, not even an end put on the grid.
+    const double limit = take.cutSec ? secondsToBeats(*take.cutSec, tempo) - start
+                                     : std::numeric_limits<double>::infinity();
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
         double begin = secondsToBeats(played.start, tempo) - start;
@@ -1001,6 +1031,7 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
             if (quantizeEnds) {  // its end on the grid too (a step long, if that would be where it starts)
                 const double snappedEnd = roundHalfEven((start + playedEnd) / quantize) * quantize - start;
                 length = snappedEnd - begin > 1e-9 ? snappedEnd - begin : quantize;
+                length = std::min(length, limit - begin);
             }
         }
         if (begin < 0 || begin >= end - start || length <= 0) continue;

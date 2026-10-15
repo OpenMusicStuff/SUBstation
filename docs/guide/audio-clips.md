@@ -84,7 +84,8 @@ packs name loops (`Bass_Loop_128_Am.wav`, `Keys 92bpm F# minor`, `Vox_Ebmaj_140B
 
 A tempo in the name (`128`, `128bpm`, `bpm128`) warps the clip with that Seg. BPM, so
 the loop plays in time at any project tempo. Files 6 seconds or longer are warped even
-without one (at the project tempo, as when you turn Warp on).
+without one (at the project tempo, as when you turn Warp on), until their tempo is
+detected (below).
 
 ### Key
 
@@ -96,6 +97,30 @@ A key in the name (`Am`, `F#m`, `Eb`, `G minor`, `Cmaj`) transposes the clip to 
 - With *No Key*, nothing is transposed.
 - A bare letter (`_D_`) counts only next to a tempo, so names like "A Day" are left
   alone.
+
+## Tempo and chords detected
+
+SUBstation also listens to the audio itself: a moment after a file is added (a loop in a
+few hundredths of a second, a whole song in a few tenths, in the background), its tempo,
+key and chords are known.
+
+- **Tempo.** A file whose name gives no tempo is warped at the tempo it is heard to have,
+  if it is 6 seconds or longer, or a loop: whole bars long at that tempo (a 2-bar loop at
+  128 BPM, 3.75 s). One-shots stay as they are. Several files dropped together stay end to
+  end. This is an undo step of its own, *Detect Tempo*: undo it to have the clips as they
+  were added. A clip you have changed in the meantime is left alone. Detection follows
+  one steady tempo (60 to 200 BPM, from the first minute); a song that speeds up, or one
+  very slow or very fast, can come out off (often at double or half): set Seg. BPM, or :2
+  and ×2, by hand.
+- **Chords.** Audio clips name the chords they play along the bottom of their waveform
+  (once the track is tall enough), as they play them: transposing a clip transposes its
+  chords. They count in the song's chords too: the piano roll's chord lane (and Generate)
+  hear your audio loops and recordings along with your MIDI, but for tracks named as
+  drums.
+- **The clip view** shows what a clip's file was heard as, next to its length: *heard:
+  128.00 BPM, A Minor*.
+
+The key heard isn't used to transpose: only a key in the name is (above).
 
 ## Audio files
 

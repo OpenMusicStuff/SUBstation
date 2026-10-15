@@ -68,6 +68,25 @@ const std::map<QString, Icon>& icons() {
                                          p.drawArc(QRectF(10, 16, 44, 32), 30 * 16, 300 * 16);
                                          p.fillPath(path({{46, 8}, {58, 20}, {42, 24}}, true), c);
                                      }};
+        // Punch In: an arrow into the loop's start (a bracket); Punch Out: out of its end.
+        t[QStringLiteral("punch_in")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                             p.setPen(pen(c, 5, Qt::FlatCap, Qt::MiterJoin));
+                                             p.setBrush(Qt::NoBrush);
+                                             p.drawPath(path({{46, 12}, {38, 12}, {38, 52}, {46, 52}}, false));
+                                             p.setPen(pen(c, 5, Qt::RoundCap));
+                                             p.drawLine(QPointF(8, 32), QPointF(22, 32));
+                                             p.fillPath(path({{20, 22}, {32, 32}, {20, 42}}, true), c);
+                                             p.fillRect(QRectF(46, 24, 10, 16), c);
+                                         }};
+        t[QStringLiteral("punch_out")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                              p.setPen(pen(c, 5, Qt::FlatCap, Qt::MiterJoin));
+                                              p.setBrush(Qt::NoBrush);
+                                              p.drawPath(path({{18, 12}, {26, 12}, {26, 52}, {18, 52}}, false));
+                                              p.fillRect(QRectF(8, 24, 10, 16), c);
+                                              p.setPen(pen(c, 5, Qt::RoundCap));
+                                              p.drawLine(QPointF(32, 32), QPointF(46, 32));
+                                              p.fillPath(path({{44, 22}, {56, 32}, {44, 42}}, true), c);
+                                          }};
         t[QStringLiteral("follow")] = {text, [](QPainter& p, const QColor& c, bool) {
                                            p.setPen(pen(c, 5, Qt::RoundCap));
                                            p.drawLine(QPointF(14, 32), QPointF(46, 32));

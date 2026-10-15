@@ -9,6 +9,7 @@
 #include "browser/BrowserMime.h"
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
+#include "intelligence/AudioAnalysis.h"
 #include "files/HotSwap.h"
 #include "input/KeyMap.h"
 #include "input/Modifiers.h"
@@ -188,7 +189,8 @@ void ArrangementLanes::connectSession(app::Session* session) {
     connect(session->selection(), &app::Selection::changed, this, repaint);
     connect(session->selection(), &app::Selection::insertChanged, this, repaint);
     for (auto signal : {&app::Project::trackChanged, &app::Project::clipsChanged, &app::Project::devicesChanged,
-                        &app::Project::freezeChanged, &app::Project::automationViewChanged})
+                        &app::Project::freezeChanged, &app::Project::automationViewChanged,
+                        &app::Project::takesChanged})
         connect(p, signal, this, repaint);
     connect(p, &app::Project::settingsChanged, this, repaint);
     connect(p, &app::Project::automationChanged, this, repaint);
@@ -198,6 +200,7 @@ void ArrangementLanes::connectSession(app::Session* session) {
     });
     app::EngineBridge* bridge = session->bridge();
     connect(bridge, &app::EngineBridge::sourceReady, this, repaint);
+    connect(session->audioAnalysis(), &app::AudioAnalysis::analysed, this, repaint);  // (audio clips' chords)
     connect(bridge, &app::EngineBridge::sourceFailed, this, repaint);
     connect(bridge, &app::EngineBridge::automationStateChanged, this, repaint);
     // A parameter set by hand: lanes without an envelope draw its value.
@@ -309,6 +312,15 @@ std::optional<ArrangementLanes::Hit> ArrangementLanes::hitClip(const QPointF& po
     return std::nullopt;
 }
 
+std::optional<std::pair<QString, TakeRow>> ArrangementLanes::takeRowAt(const QPointF& pos) const {
+    const auto index = rowIndexAt(pos.y());
+    if (!index) return std::nullopt;
+    const Row& row = arrangement()->layout().rows()[static_cast<size_t>(*index)];
+    const TakeRow* take = row.takeAt(pos.y() + arrangement()->scrollY());
+    if (!take) return std::nullopt;
+    return std::make_pair(row.trackId, *take);
+}
+
 std::optional<ArrangementLanes::FadeHit> ArrangementLanes::hitFade(const QPointF& pos) const {
     if (!ready()) return std::nullopt;
     const auto index = rowIndexAt(pos.y());
@@ -383,7 +395,7 @@ QHash<QString, QRectF> ArrangementLanes::selectedAreas(const app::TimeRange& ran
     for (const QString& trackId : range.trackIds) {
         const Row* row = arrangement()->layout().rowFor(trackId);
         if (!row || row->hidden) continue;
-        const int height = locked ? row->mainHeight : row->height();
+        const int height = locked ? row->mainHeight : row->laneHeight();  // (never over its take lanes)
         areas.insert(trackId, QRectF(x0, row->top - arrangement()->scrollY(), x1 - x0, height - 1));
     }
     return areas;
@@ -465,6 +477,7 @@ void ArrangementLanes::paint(SgPainter& p) {
             p.fillRect(QRectF(visible.left(), y, visible.width(), row.mainHeight - 1), Theme::frozenTint());
         for (const LaneRow& lane : row.lanes)  // automation lanes below the track
             p.fillRect(QRectF(visible.left(), lane.top - scroll - 1, visible.width(), 1), Theme::gridBar());
+        for (const TakeRow& take : row.takes) drawTakeLane(p, *track, take, take.top - scroll, visible);
         p.fillRect(QRectF(visible.left(), y + row.height() - 1, visible.width(), 1), Theme::border());
     }
 
@@ -660,6 +673,7 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
                         arrangement()->view().framesPerPixel(source.sampleRate(), clip.sourceTempo(tempo)),
                         contentColor(clip), wave.height() >= 44, visible, app::dbToGain(clip.gainDb));
         p.restore();
+        drawChords(p, clip, body, visible);
     } else if (body.height() > 10 && rect.width() > 40) {
         const QString error = bridge.loadError(clip.path);
         if (!error.isEmpty()) p.fillRect(body, QColor(200, 60, 60, 110));
@@ -667,6 +681,31 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
                    error.isEmpty() ? QStringLiteral("Loading…") : QStringLiteral("Missing file"), Theme::accentText(),
                    uiFont(7.5));
     }
+}
+
+void ArrangementLanes::drawChords(SgPainter& p, const app::Clip& clip, const QRectF& body, const QRectF& visible) {
+    // The chords its file was heard to hold (AudioAnalysis), as it plays them,
+    // along the bottom of its body: a name where there is room, a tick where
+    // each starts. Not on a body too short to hold them over its waveform.
+    if (body.height() < kMinChordBody) return;
+    const app::AudioAnalysis* analysis = session()->audioAnalysis();
+    const app::AudioAnalysis::Result* heard = analysis ? analysis->result(clip.path) : nullptr;
+    if (!heard || heard->chords.empty()) return;
+    const timeline::Timeline& view = arrangement()->view();
+    const QFont font = uiFont(7.5);
+    const QRectF strip(body.left(), body.bottom() - kChordStrip, body.width(), kChordStrip);
+    p.save();
+    p.setClipRect(strip.intersected(visible));
+    const QColor ink = contentColor(clip);
+    for (const auto& chord : app::AudioAnalysis::clipChords(*heard, clip, session()->project()->tempo())) {
+        const double x0 = view.beatToX(chord.startBeat), x1 = view.beatToX(chord.endBeat);
+        if (x1 < visible.left() || x0 > visible.right()) continue;
+        p.fillRect(QRectF(x0, strip.top() + 2, 1, strip.height() - 3), ink);
+        const QString name = QString::fromStdString(chord.chord.name());
+        const QRectF text(x0 + 3, strip.top(), x1 - x0 - 4, strip.height());
+        if (text.width() >= SgPainter::textWidth(name, font)) p.drawText(text, Qt::AlignLeft | Qt::AlignVCenter, name, ink, font);
+    }
+    p.restore();
 }
 
 void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
@@ -698,6 +737,42 @@ void ArrangementLanes::drawClipFrame(SgPainter& p, const QColor& trackColor, con
         const double x = hoverEdge_->second ? rect.left() : rect.right() - 2;
         p.fillRect(QRectF(x, rect.top(), 2, rect.height()), hoverStretch_ ? Theme::accent() : Theme::selectionOutline());
     }
+}
+
+void ArrangementLanes::drawTakeLane(SgPainter& p, const app::Track& track, const TakeRow& take, double y,
+                                    const QRectF& visible) {
+    // Its clips as a track's are drawn, the parts the comp doesn't play under a
+    // shade, so what the comp is made of shows lit, lane by lane (as Ableton's).
+    static constexpr QColor kUnused{0, 0, 0, 110};
+    p.fillRect(QRectF(visible.left(), y - 1, visible.width(), 1), Theme::gridBar());
+    if (take.index < 0 || take.index >= static_cast<int>(track.takes.size())) return;
+    const app::TakeLane& lane = track.takes[static_cast<size_t>(take.index)];
+    const double tempo = session()->project()->tempo();
+    const timeline::Timeline& view = arrangement()->view();
+    const QColor trackColor = Theme::trackColor(track.color);
+    const std::vector<app::edits::Interval> comped = app::edits::compedSpans(track.clips, lane.clips, tempo);
+    for (const app::Clip& clip : lane.clips) {
+        const QRectF rect = clipRect(clip, y, take.height);
+        if (rect.left() > visible.right()) break;
+        if (rect.right() < visible.left()) continue;
+        drawClip(p, trackColor, clip, rect, visible, false, false, false, false);
+        double x = rect.left();
+        for (const auto& [start, end] : comped) {
+            const double x0 = std::max(rect.left(), view.beatToX(start)), x1 = std::min(rect.right(), view.beatToX(end));
+            if (x1 <= x0) continue;
+            if (x0 > x) p.fillRect(QRectF(x, rect.top(), x0 - x, rect.height()), kUnused);
+            x = std::max(x, x1);
+        }
+        if (x < rect.right()) p.fillRect(QRectF(x, rect.top(), rect.right() - x, rect.height()), kUnused);
+    }
+    if (const auto span = gesture_ ? gesture_->takeSpan() : std::nullopt;
+        span && span->trackId == track.id && span->laneId == lane.id) {
+        const double x0 = view.beatToX(span->start), x1 = view.beatToX(span->end);
+        p.fillRect(QRectF(x0, y, x1 - x0, take.height - 1), Theme::selection());
+    }
+    // Its name, at the lane's left (its header says it too).
+    p.drawText(QRectF(visible.left() + 6, y + 2, 120, 14), Qt::AlignLeft | Qt::AlignVCenter, lane.name,
+               Theme::textDim(), uiFont(8));
 }
 
 void ArrangementLanes::drawGroupSummary(SgPainter& p, const QString& groupId, double rowTop, int rowHeight,
@@ -814,6 +889,11 @@ void ArrangementLanes::mousePressEvent(QMouseEvent* event) {
     if (isPanModifier(mods)) {
         gesture_ = std::make_unique<PanGesture>(*this, pos);
         setCursor(Qt::ClosedHandCursor);
+        return;
+    }
+    if (const auto take = takeRowAt(pos)) {  // comping from a take lane
+        gesture_ = std::make_unique<TakeCompGesture>(*this, take->first, take->second.laneId, pos,
+                                                     mods & Qt::AltModifier);
         return;
     }
     // The third click of a triple-click on an automation lane: its whole track.
@@ -1126,6 +1206,11 @@ void ArrangementLanes::updateHover(const QPointF& pos, Qt::KeyboardModifiers mod
     }
     const auto& rows = arrangement()->layout().rows();
     Qt::CursorShape shape = Qt::ArrowCursor;
+    if (!pan && takeRowAt(pos)) {  // (a click comps the take's clip there, a drag a stretch of it)
+        setHoverEdge(std::nullopt);
+        setCursor(Qt::PointingHandCursor);
+        return;
+    }
     if (pan) {
         shape = Qt::OpenHandCursor;
     } else if (!rows.empty()) {
@@ -1271,6 +1356,23 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
         paste.enabled = actions->clipboardKind() == QStringLiteral("automation");
         menu.addSeparator();
         envelopes::addMenuEntries(*this, *area, pos, menu);
+        return menu;
+    }
+    if (const auto take = takeRowAt(pos)) {
+        app::ProjectEditor* editor = s->editor();
+        const QString trackId = take->first, laneId = take->second.laneId;
+        menu.add(QStringLiteral("Comp Whole Take"), [s, trackId, laneId] {
+            const app::Track* track = s->project()->findTrack(trackId);
+            if (!track) return;
+            for (const app::TakeLane& lane : track->takes) {
+                if (lane.id != laneId || lane.clips.empty()) continue;
+                const auto [start, end] = app::edits::selectionSpan(lane.clips, s->project()->tempo());
+                s->editor()->compTake(trackId, laneId, start, end);
+            }
+        });
+        menu.addSeparator();
+        menu.add(QStringLiteral("Delete Take Lane"), [editor, trackId, laneId] { editor->deleteTakeLane(trackId, laneId); });
+        menu.add(QStringLiteral("Hide Take Lanes"), [editor, trackId] { editor->setTakesShown(trackId, false); });
         return menu;
     }
     const auto hit = hitClip(pos);
