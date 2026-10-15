@@ -104,6 +104,14 @@ void SetFreezeCommand::redo() { project_->setFrozen(trackId(), new_); }
 
 void SetFreezeCommand::undo() { project_->setFrozen(trackId(), old_); }
 
+SetTakeLanesCommand::SetTakeLanesCommand(Project* project, const QString& trackId, std::vector<TakeLane> before,
+                                         std::vector<TakeLane> after, const QString& text)
+    : ValueCommand(project, text, trackId, std::move(before), std::move(after)) {}
+
+void SetTakeLanesCommand::redo() { project_->setTakeLanes(trackId(), new_); }
+
+void SetTakeLanesCommand::undo() { project_->setTakeLanes(trackId(), old_); }
+
 UpdateTrackCommand::UpdateTrackCommand(Project* project, const QString& trackId, TrackField field, TrackValue old,
                                        TrackValue nw, const QString& text, QString mergeKey)
     : MergeableCommand(project, text, {trackId, field}, std::move(old), std::move(nw), std::move(mergeKey)) {}

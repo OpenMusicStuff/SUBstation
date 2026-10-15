@@ -11,9 +11,22 @@ namespace sub::ui::arrangement {
 int minAutomationRow(const app::Track& track) { return track.isGroup() ? kMinGroupAutomationRow : kMinAutomationRow; }
 
 int Row::height() const {
+    int h = laneHeight();
+    for (const TakeRow& take : takes) h += take.height;
+    return h;
+}
+
+int Row::laneHeight() const {
     int h = mainHeight;
     for (const LaneRow& lane : lanes) h += lane.height;
     return h;
+}
+
+const TakeRow* Row::takeAt(double contentY) const {
+    for (const TakeRow& take : takes) {
+        if (take.top <= contentY && contentY < take.top + take.height) return &take;
+    }
+    return nullptr;
 }
 
 int AutomationRows::height() const {
@@ -73,6 +86,11 @@ void TrackLayout::rebuild(const app::Project& project) {
             row.mainHeight = lanes.mainHeight;
             row.lanes = std::move(lanes.lanes);
             row.automation = track.automationView.shown;
+            if (track.takesShown && track.hasClips()) {
+                int top = y + row.laneHeight();
+                for (size_t i = 0; i < track.takes.size(); ++i, top += kTakeLaneHeight)
+                    row.takes.push_back({static_cast<int>(i), track.takes[i].id, top, kTakeLaneHeight});
+            }
         }
         y += row.height();
         rows_.push_back(std::move(row));

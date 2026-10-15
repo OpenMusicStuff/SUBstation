@@ -52,6 +52,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QUndoStack>
 #include <QVariantList>
 #include <QVariantMap>
@@ -80,6 +81,7 @@ class DeviceSelection;
 class EngineBridge;
 class FileManager;
 class FreezeRender;
+class AudioAnalysis;
 class Harmony;
 class HotSwap;
 class Humanizer;
@@ -114,6 +116,7 @@ class Session : public QObject {
     // The Sampler's and the Drum Rack's similar-sound arrows.
     Q_PROPERTY(sub::app::SimilarSamples* similarSamples READ similarSamples CONSTANT)
     Q_PROPERTY(sub::app::Harmony* harmony READ harmony CONSTANT)
+    Q_PROPERTY(sub::app::AudioAnalysis* audioAnalysis READ audioAnalysis CONSTANT)
     Q_PROPERTY(sub::app::SoundSuggestions* suggestions READ suggestions CONSTANT)
     Q_PROPERTY(sub::app::Humanizer* humanizer READ humanizer CONSTANT)
     Q_PROPERTY(sub::app::TrackLabels* trackLabels READ trackLabels CONSTANT)
@@ -196,6 +199,7 @@ public:
         bool scanPlugins = true;    // scan the plug-ins at once (tests turn it off)
         bool browserIndex = true;   // keep the browser's index and the sounds' fingerprints on disk (tests turn it off)
         bool analyseSounds = true;  // fingerprint the browser's files in the background, for Find Similar (tests turn it off)
+        bool analyseAudio = true;   // the project's audio files' tempo, key and chords, in the background (tests turn it off)
     };
 
     static constexpr int kMaxRecent = 10;
@@ -219,6 +223,7 @@ public:
     SoundSimilarity* similarity() const { return similarity_; }
     SimilarSamples* similarSamples() const { return similarSamples_; }
     Harmony* harmony() const { return harmony_; }
+    AudioAnalysis* audioAnalysis() const { return audioAnalysis_; }
     SoundSuggestions* suggestions() const { return suggestions_; }
     Humanizer* humanizer() const { return humanizer_; }
     TrackLabels* trackLabels() const { return trackLabels_; }
@@ -522,6 +527,8 @@ private:
     SoundSimilarity* similarity_ = nullptr;
     SimilarSamples* similarSamples_ = nullptr;
     Harmony* harmony_ = nullptr;
+    AudioAnalysis* audioAnalysis_ = nullptr;
+    QTimer* analyseFiles_ = nullptr;  // (the project's audio files analysed, once a burst of edits settles)
     SoundSuggestions* suggestions_ = nullptr;
     Humanizer* humanizer_ = nullptr;
     TrackLabels* trackLabels_ = nullptr;

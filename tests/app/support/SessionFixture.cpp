@@ -15,6 +15,7 @@ SessionFixture::SessionFixture(bool clipFades) {
     options.scanPlugins = false;
     options.browserIndex = false;
     options.analyseSounds = false;  // (the browser lists the user's Music folder)
+    options.analyseAudio = false;   // (no tempo detected after a drop: an undo step of its own, later)
     session = std::make_unique<Session>(engine, options);
     QObject::connect(session.get(), &Session::statusMessage, [this](const QString& m) { messages.append(m); });
     QObject::connect(session.get(), &Session::warning, [this](const QString& m) { warnings.append(m); });

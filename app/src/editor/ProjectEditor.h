@@ -54,6 +54,7 @@
 #include "model/Timebase.h"
 #include "model/Track.h"
 
+#include <QHash>
 #include <QList>
 #include <QMap>
 #include <QObject>
@@ -228,7 +229,25 @@ public:
     // the notes played (their starts on the grid of `quantize` beats, if given:
     // record quantization). As in Ableton's Arrangement recording, a take
     // replaces what was under it. The clips made.
+    // A take recorded round the loop is a take for each pass it made
+    // (loopPasses), the last one played winning where they overlap. Each one is
+    // also kept on a take lane of its own below its track ("Take 1", "Take
+    // 2"...: Track::takes), in the same undo step.
     ClipRefs addRecordings(const std::vector<RecordedTake>& takes, double quantize = 0.0, bool quantizeEnds = false);
+
+    // --- Take lanes (EditorTakes.cpp) ---
+
+    // Comping: what take lane `laneId` holds between two beats (its clips there,
+    // and the silence between them) replaces what the track plays there, as
+    // copies (ids of their own), one undo step. False if nothing changed, or it
+    // was refused (a frozen track: `refused` says why).
+    Q_INVOKABLE bool compTake(const QString& trackId, const QString& laneId, double startBeat, double endBeat);
+    // A take lane and its clips go (an undo step); the track's clips stay as they are.
+    Q_INVOKABLE void deleteTakeLane(const QString& trackId, const QString& laneId);
+    // Every take lane of the track goes, in one undo step.
+    Q_INVOKABLE void deleteTakeLanes(const QString& trackId);
+    // Whether its take lanes show below it (view state: not undone).
+    Q_INVOKABLE void setTakesShown(const QString& trackId, bool shown);
 
     // --- Settings (EditorSettings.cpp) ---
 
@@ -244,6 +263,9 @@ public:
     // The loop: at least a sixteenth long, not before the timeline's start.
     Q_INVOKABLE void setLoop(bool enabled, double start, double end, const QString& mergeKey = {});
     Q_INVOKABLE void setLoopEnabled(bool enabled);
+    // Punch In and Out (Project::punchIn, punchOut).
+    Q_INVOKABLE void setPunchIn(bool enabled);
+    Q_INVOKABLE void setPunchOut(bool enabled);
 
     // --- Clips and time selections (EditorClips.cpp) ---
 
@@ -259,6 +281,13 @@ public:
     // and audio is transposed to the project's key. The clips made.
     ClipRefs addClips(const QString& trackId, double startBeat, const std::vector<std::pair<QString, double>>& sources,
                       int trackIndex = -1);
+    // Clips addClips just made (`added`, as it made them, in the order it placed
+    // them on `trackId`) whose files were heard to have a tempo: each one still
+    // as it was added is warped at its file's (`bpms`, by clip id), and those
+    // placed after it follow it, end to end, as they were placed (one undo step,
+    // "Detect Tempo"). From a clip changed (or gone) since, nothing changes.
+    // Whether anything did.
+    bool warpToDetectedTempo(const QString& trackId, const std::vector<Clip>& added, const QHash<QString, double>& bpms);
     // An empty MIDI clip on a MIDI track (with no name). It wins against
     // clips it overlaps, like a placed clip. None: not a MIDI track, too short,
     // or refused (frozen).

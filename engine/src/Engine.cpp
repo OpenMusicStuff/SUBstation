@@ -198,6 +198,13 @@ void Engine::setLoop(bool enabled, double startBeat, double endBeat) {
     rebuildSnapshotLocked();
 }
 
+void Engine::setPunch(bool in, bool out) {
+    std::lock_guard lock(mutex_);
+    punchIn_ = in;
+    punchOut_ = out;
+    rebuildSnapshotLocked();
+}
+
 void Engine::setMetronome(bool enabled) { shared_.metronome.store(enabled); }
 
 void Engine::setClipFadeMs(double ms) {

@@ -49,6 +49,14 @@ struct Readout {
     friend bool operator==(const Readout&, const Readout&) = default;
 };
 
+// A stretch of a take lane, being comped (TakeCompGesture): drawn lit on its lane.
+struct TakeSpan {
+    QString trackId;
+    QString laneId;
+    double start = 0.0;
+    double end = 0.0;
+};
+
 class Gesture {
 public:
     virtual ~Gesture() = default;
@@ -64,6 +72,7 @@ public:
     virtual std::vector<GestureClip> kept() const { return {}; }
     virtual std::optional<app::TimeRange> timeRange() const { return std::nullopt; }
     virtual std::optional<Readout> readout() const { return std::nullopt; }
+    virtual std::optional<TakeSpan> takeSpan() const { return std::nullopt; }
     // Whether it is selecting across the rows: then the lanes scroll while the
     // mouse is near their top or bottom, and past them (on the ruler, or below
     // the arrangement) it takes every row that way (ArrangementLanes).

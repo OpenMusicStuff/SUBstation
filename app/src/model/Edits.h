@@ -100,5 +100,14 @@ std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, double t
 // unless every clip is (the joined clip is deactivated then, its notes as they
 // were). It keeps the first clip's id and name.
 Clip consolidateMidi(const std::vector<Clip>& clips);
+// Whether two clips are windows onto the same content at the same place: an
+// audio clip playing the same file, as fast, its audio where the other's is on
+// the timeline; a MIDI clip the same notes, its content's start where the
+// other's is. (Where both are, they play the same.)
+bool sameContent(const Clip& a, const Clip& b, double tempo);
+// Where `comp` (a track's clips) plays what `take` (a take lane's) holds: the
+// spans, by time, where a clip of each overlaps one of the other with the same
+// content. A take lane draws these lit: the parts of it the comp is made of.
+std::vector<Interval> compedSpans(const std::vector<Clip>& comp, const std::vector<Clip>& take, double tempo);
 
 }  // namespace sub::app::edits

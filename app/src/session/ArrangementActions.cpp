@@ -3,7 +3,10 @@
 #include <QFileInfo>
 #include <QMap>
 
+#include <QHash>
+
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -12,6 +15,8 @@
 #include "audio/ReverseJob.h"
 #include "audio/Waveform.h"
 #include "editor/ProjectEditor.h"
+#include "intelligence/AudioAnalysis.h"
+#include "model/Keys.h"
 #include "io/Serialization.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
@@ -438,6 +443,39 @@ void ArrangementActions::dropFiles(const QStringList& paths, const QString& trac
     const ClipRefs refs =
         editor_->addClips(onto, std::max(0.0, beat), sources, static_cast<int>(project_->tracks().size()));
     if (!refs.isEmpty()) selection_->selectClips(*editor_, refs);
+    detectTempo(refs);
+}
+
+void ArrangementActions::setAudioAnalysis(AudioAnalysis* analysis) { analysis_ = analysis; }
+
+void ArrangementActions::detectTempo(const ClipRefs& added) {
+    if (!analysis_ || added.isEmpty()) return;
+    const QString trackId = added.front().trackId;
+    std::vector<Clip> clips;  // as they were added
+    QStringList paths;
+    for (const ClipRef& ref : added) {
+        const Clip* clip = ref.trackId == trackId ? project_->findClip(ref.trackId, ref.clipId) : nullptr;
+        if (clip == nullptr || !clip->isAudio()) return;
+        clips.push_back(*clip);
+        if (!paths.contains(clip->path)) paths.append(clip->path);
+    }
+    // Once every file is analysed (each heard of once), the clips warped together: one undo step.
+    auto left = std::make_shared<int>(static_cast<int>(paths.size()));
+    QPointer<ArrangementActions> self(this);
+    for (const QString& path : paths) {
+        analysis_->request(path, [self, left, trackId, clips](const AudioAnalysis::Result*) {
+            if (--*left > 0 || !self || !self->analysis_) return;
+            QHash<QString, double> bpms;
+            for (const Clip& clip : clips) {
+                const AudioAnalysis::Result* heard = self->analysis_->result(clip.path);
+                const double seconds = clip.sourceDurationSec > 0 ? clip.sourceDurationSec : clip.durationSec;
+                const auto bpm = detectedWarp(QFileInfo(clip.path).fileName(), seconds,
+                                              heard ? heard->bpm : std::nullopt);
+                if (bpm && !(clip.isWarped() && std::abs(clip.segmentBpm - *bpm) < 0.005)) bpms.insert(clip.id, *bpm);
+            }
+            if (!bpms.isEmpty()) self->editor_->warpToDetectedTempo(trackId, clips, bpms);
+        });
+    }
 }
 
 bool ArrangementActions::dropDevices(const QStringList& kinds, const QVariantList& plugins, const QString& trackId) {

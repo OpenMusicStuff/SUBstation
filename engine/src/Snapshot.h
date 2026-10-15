@@ -493,6 +493,9 @@ struct RenderSnapshot {
     bool loopEnabled = false;
     int64_t loopStart = 0;
     int64_t loopEnd = 0;
+    // Punch In and Out (Engine::setPunch): outside [loopStart, loopEnd), recorded tracks play their clips.
+    bool punchIn = false;
+    bool punchOut = false;
     int maxLatency = 0;  // the tracks reach the master this late (delay-compensated alike)
     // Delay compensation is constrained (Engine::setConstrainLatency()).
     bool constrained = false;

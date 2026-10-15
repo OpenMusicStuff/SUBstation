@@ -14,6 +14,7 @@
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
+#include "intelligence/AudioAnalysis.h"
 #include "intelligence/Harmony.h"
 #include "session/CpuUsage.h"
 #include "intelligence/Humanizer.h"
@@ -60,7 +61,10 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     similarityOptions.analyse = options_.analyseSounds;
     similarity_ = new SoundSimilarity(similarityOptions, this);
     similarSamples_ = new SimilarSamples(project_, editor_, similarity_, this);
+    audioAnalysis_ = new AudioAnalysis(bridge_, this);
+    audioAnalysis_->setEnabled(options_.analyseAudio);
     harmony_ = new Harmony(project_, this);
+    harmony_->setAudioAnalysis(audioAnalysis_);  // (audio clips' chords count in the song's)
     // The song's key reaches the engine, for the devices that follow it (Hue's Auto): now, and as it changes.
     const auto pushKey = [this] {
         const std::optional<Key> key = harmony_->key();
@@ -82,6 +86,28 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     render_ = new RenderProgress(this);
     cpuUsage_ = new CpuUsage(project_, bridge_, this);
     arrangement_ = new ArrangementActions(editor_, selection_, bridge_, render_, this);
+    arrangement_->setAudioAnalysis(audioAnalysis_);
+    // Every audio file the arrangement's clips play is analysed (its chords drawn, heard in the song's).
+    analyseFiles_ = new QTimer(this);
+    analyseFiles_->setSingleShot(true);
+    analyseFiles_->setInterval(200);
+    connect(analyseFiles_, &QTimer::timeout, this, [this] {
+        if (!audioAnalysis_->enabled()) return;
+        for (const Track& track : project_->tracks()) {
+            if (!track.isAudio()) continue;
+            for (const Clip& clip : track.clips) {
+                if (clip.isAudio() && !clip.path.isEmpty()) audioAnalysis_->request(clip.path);
+            }
+            for (const TakeLane& lane : track.takes) {  // (drawn too: their chords)
+                for (const Clip& clip : lane.clips) {
+                    if (clip.isAudio() && !clip.path.isEmpty()) audioAnalysis_->request(clip.path);
+                }
+            }
+        }
+    });
+    connect(project_, &Project::clipsChanged, analyseFiles_, qOverload<>(&QTimer::start));
+    connect(project_, &Project::takesChanged, analyseFiles_, qOverload<>(&QTimer::start));
+    connect(project_, &Project::reset, analyseFiles_, qOverload<>(&QTimer::start));
     devices_ = new DeviceSelection(editor_, selection_, bridge_, this);
     keyboard_ = new ComputerKeyboard(bridge_, this);
     learn_ = new ModulationLearn(project_, editor_, this);

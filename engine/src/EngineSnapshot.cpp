@@ -316,6 +316,8 @@ void Engine::rebuildSnapshotLocked() {
     snap->loopStart = std::llround(loopStartBeat_ * spb);
     snap->loopEnd = std::llround(loopEndBeat_ * spb);
     snap->loopEnabled = loopEnabled_ && snap->loopEnd - snap->loopStart >= 256;
+    snap->punchIn = punchIn_;
+    snap->punchOut = punchOut_;
 
     // Routing: the tracks in an order in which each comes after what feeds it
     // (through outputs, sends, inputs and sidechains alike).

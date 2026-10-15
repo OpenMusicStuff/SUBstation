@@ -25,6 +25,9 @@ graph, in [routing.md](routing.md).
   timeline position where it was taken. A disk-writer thread empties them into WAV files (32-bit
   float); the audio thread never touches a file.
 - Each take's start is moved back by its own *placement*, so it lands where what it recorded was heard.
+- The loop wraps while recording: takes run on in *recording time* (the timeline as if the loop had
+  never wrapped), and the session lists where it wrapped (`LoopWrap`), so the application can cut
+  each take into the passes it made round the loop.
 - The live waveform's peaks come through their own queue, not from the file.
 - Anything that changes the device, offline renders, and the playhead jumping end a recording; the
   takes so far are kept.
@@ -35,7 +38,7 @@ graph, in [routing.md](routing.md).
 ```
  audio thread, one chunk (Renderer::renderChunk)                 disk-writer thread
  ------------------------------------------------                -----------------
- prologue:  segments of the timeline (no loop wrap while recording)
+ prologue:  segments of the timeline (the loop's wraps: LoopWrap, recording time)
             recordInput(): device input of each Device take ---> SampleRing ---+
                            (start stamped at its first segment;    gaps -------+--> drain() -> ma_encoder
                             a jump interrupts the session)         peaks --> UI |    (WAV, f32)
@@ -89,7 +92,7 @@ takes up to `count`. Head and tail sit on separate cache lines.
 | `ring` | interleaved samples, audio thread → writer (8 seconds' worth: `sampleRate * 8` frames) |
 | `gaps` | overruns, audio thread → writer (`SpscQueue<Gap, 256>`) |
 | `peaks` | (min, max) of every `kPeakFrames` (128) frames, all channels: audio thread → UI |
-| `start` | timeline sample of its first frame, before placement; `kNotStarted` until input arrives |
+| `start` | recording-time sample of its first frame, before placement; `kNotStarted` until input arrives |
 | `frames`, `dropped` | frames taken (lost ones included), frames lost to overruns |
 
 **`RecordingSession`**: the tracks recorded together. Its constructor creates the WAV files (creating the
@@ -98,15 +101,22 @@ starts the writer thread. `interrupt()` / `interrupted()` (real-time) mark that 
 `finish()` (edit side, once the audio thread can no longer see the session) stops the writer, drains
 what is left, closes the files and returns a `RecordedTake` for each take.
 
-**`RecordedTake`**: `trackId`, `path` (empty for MIDI), `startSample` (timeline sample of its first
+**`RecordedTake`**: `trackId`, `path` (empty for MIDI), `startSample` (recording-time sample of its first
 frame, latency-corrected; may be negative), `frames` (0: nothing was recorded, and the file was
 removed), `channels`, `sampleRate`, `droppedFrames`, `error` (the file couldn't be written: "is the disk
-full?"), and for MIDI takes `midi` and `notes`.
+full?"), for MIDI takes `midi` and `notes` (in recording time), and `wraps`.
+
+**`LoopWrap`**: where the loop wrapped while recording: at `at` (recording time: where the loop ended)
+the timeline went `back` samples back (to its start). Recording time is the timeline's position plus
+the `back` of every wrap so far, so a take is one straight stretch of it; a sample of recording time
+`u` was heard at `u` less the `back` of every wrap at or before it. The session keeps up to
+`RecordingSession::kMaxWraps` (4096; preallocated, written by the audio thread, read once it is done or
+by `recordingProgress()`); one more ends the recording.
 
 **`RecordingProgress`** (Engine.h): a take while it records, for the UI's live waveform: `started` (the
 playhead moved, after any count-in, and input arrived), `startSample` (placed), `frames`, and the new
-peaks since the last call (`peaks`: (min, max) pairs, each over `RecordingTake::kPeakFrames` frames), and for a MIDI
-take its notes so far.
+peaks since the last call (`peaks`: (min, max) pairs, each over `RecordingTake::kPeakFrames` frames), for a MIDI
+take its notes so far, and the wraps so far.
 
 ## How it works
 
@@ -145,7 +155,11 @@ In the prologue, each track's `TrackBuffers::monitored` is worked out by `isMoni
 - `In`: always; `Auto`: armed and (stopped, or recording); `Off`: never.
 
 `TrackBuffers::recorded` is worked out there too, by `isRecorded()`: a take of the track records
-(the session isn't interrupted; live renders only). Such a track renders none of its clips
+(the session isn't interrupted; live renders only), and the chunk is inside the punch region
+(`insidePunch()`: with Punch In (`Engine::setPunch`, `RenderSnapshot::punchIn`) not before the loop's
+start, with Punch Out not from its end; a chunk reaching into it counts). Outside it a recorded track
+plays its clips as any other, while its take goes on recording: the application keeps only what is
+inside (`loopPasses`). Such a track renders none of its clips
 (`renderTrack()`, `assignVoices()`) and gets none of its clips' notes (`buildNoteEvents()` with
 `clipNotes` false, which releases those sounding): the take replaces them, so with monitoring Off
 the track is silent while it records, and monitored it hears only its input.
@@ -184,13 +198,18 @@ the transport is stopped it starts playing, after the count-in (`TransportComman
 
 ### Recording (audio thread)
 
-While a session is live, the loop doesn't wrap (`renderChunk`: punching in and out of the loop comes
-later), so the chunk's segments are one straight stretch of the timeline (more than one only if the
-playhead jumped).
+The loop wraps while a session is live, as it does otherwise. A segment the loop's wrap begins is
+marked `wrap` (`renderChunk`: `loopWrapped_`, set when the playhead goes back to the loop's start and
+cleared by any other move), with `from`, where the timeline went back from. `recordInput()` tells the
+session (`RecordingSession::wrap`), which adds the loop's length to its *wrap offset*, and gives every
+segment its position in recording time (`linear`: its position plus the offset). Takes start, and MIDI
+notes are stamped (`recordMidi`), in recording time, so the chunk's segments are one straight stretch
+of it (more than one only if the playhead jumped otherwise).
 
 - **Prologue, `recordInput()`**: for each segment, each take (audio and MIDI) whose `start` is still
-  `kNotStarted` gets the segment's position; if a started take meets a segment that `jump`s (a locate,
-  or stopped and started again), the session is interrupted and nothing more is recorded. Device takes
+  `kNotStarted` gets the segment's position in recording time; if a started take meets a segment that
+  `jump`s other than by the loop's wrap (a locate, or stopped and started again), the session is
+  interrupted and nothing more is recorded. Device takes
   then `push()` the segment's input. During a count-in the playhead stands, there are no segments, and
   nothing is taken. `recordSegments_` counts the segments taken.
 - **Epilogue, `recordRendered()`**: after the master strip and before the metronome, track and master
@@ -234,8 +253,9 @@ drains its peaks, for the live waveform.
 The engine bridge names the files in the project's `Recordings` folder (for a project not saved yet,
 `SUBSTATION_RECORDINGS` if set, else `SUBstation/Recordings` in the user's Music folder: `recordingsFolder()` in
 [app/src/audio/AudioFiles.h](../../app/src/audio/AudioFiles.h)) and hands the finished takes on
-(`EngineBridge::takesRecorded`); the session turns them into clips in one undo step, replacing what was under them
-(`ProjectEditor::addRecordings`). See [app/engine-bridge.md](../app/engine-bridge.md).
+(`EngineBridge::takesRecorded`, their wraps in seconds); the session turns them into clips in one undo step,
+replacing what was under them, a take recorded round the loop a clip and a take lane for each pass
+(`loopPasses`, `ProjectEditor::addRecordings`). See [app/engine-bridge.md](../app/engine-bridge.md).
 
 ## Invariants and real-time rules
 
@@ -255,8 +275,8 @@ The engine bridge names the files in the project's `Recordings` folder (for a pr
 - **Another input source**: add an `InputEdge::Source` and a `RecordingTake::Source`, decide whether it
   is monitorable, push it from the prologue (if it is known before the graph) or the epilogue (if it is
   rendered), and give it a placement in `startRecording()`.
-- **Punching in and out at the loop, stacking takes while looping**: today the loop doesn't wrap while
-  recording; a wrap would have to start a new take (or a new region) rather than interrupt the session.
+- **Punching in and out without the run-in on disk**: a take records from where it starts, the punch
+  region and the loop's passes cut out of it afterwards by the application.
 - **WASAPI inputs**: only the backend is missing ([audio-devices.md](audio-devices.md)).
 
 ## Gotchas
@@ -282,7 +302,8 @@ The engine bridge names the files in the project's `Recordings` folder (for a pr
   takes and their live peaks, Auto monitoring while recording, a track being recorded playing none of its clips
   (silent with monitoring Off), the count-in, what ends a recording (a locate, a device change, stopping before
   anything came in), and needing an open input.
-- [tests/engine/test_resampling_engine.cpp](../../tests/engine/test_resampling_engine.cpp): a resampled take equal to
+- [tests/engine/test_resampling_engine.cpp](../../tests/engine/test_resampling_engine.cpp): recording round the loop
+  (the wraps, and each pass holding the loop's stretch of its source), a resampled take equal to
   its source's offline render (latent plug-ins on the source, in the group and on the master, a slower track the
   source is delayed to line up with), monitoring a track not delayed, the master impossible to monitor, solo across
   a monitored input, cycles refused, the input going with its source, a source removed while recording leaving

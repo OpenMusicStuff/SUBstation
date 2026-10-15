@@ -28,9 +28,14 @@
 //   its notes other than its root makes it an inversion ("C/E"), if it is the
 //   bass under at least half of it in a bass register (a melody's lowest notes
 //   make no inversion).
+//
+// The scoring works on the profiles alone (inferChords), and the key on a
+// pitch-class profile alone (estimateKey of a profile), so audio is analysed
+// the same way once it is made into profiles (audio/AudioAnalysis.h).
 
 #pragma once
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -66,13 +71,42 @@ struct Harmony {
     std::vector<ChordSpan> chords;   // by time, not overlapping; nothing where no chord sounds
 };
 
+// What sounds in each step of a song, and what is the bass: what the chords
+// are inferred from. MIDI notes make them (inferHarmony), and so does audio
+// (audio/AudioAnalysis.cpp), in the same units: `sounding` is note-beats (two
+// notes sounding all through a step of `step` beats weigh 2 × step, louder notes
+// up to twice the softest), `bass` beats a pitch class is the lowest, by how
+// much it is a bass (fully up to E2, a quarter from G3 up).
+struct StepProfiles {
+    double origin = 0.0;  // the beat the first step starts on
+    double step = 0.5;    // beats a step
+    std::vector<std::array<float, 12>> sounding;
+    std::vector<std::array<float, 12>> bass;  // as many as `sounding`
+    double first = 0.0;  // where sound starts and ends, in beats: the chords are cut to them
+    double last = 0.0;
+};
+
 inline constexpr int kMaxSteps = 1 << 16;
 // Too little to tell a key from: fewer beats of notes than this, or fewer than
 // three pitch classes.
 inline constexpr double kMinKeyBeats = 2.0;
 
+// How much a pitch (MIDI) is a bass when it is the lowest: 1 up to E2, falling
+// to a quarter at G3 and above.
+double bassTrust(int pitch);
+
 // The key the notes are most likely in; none if they are too few.
 std::optional<Key> estimateKey(const std::vector<Note>& notes);
+// The key a profile is most likely in: how long each pitch class sounds,
+// counting again how long it is the bass (by how much it is a bass), and
+// `soundingBeats`, how long all of them sound (the note-beats, without the
+// bass). None if that is under kMinKeyBeats, fewer than three pitch classes
+// sound, or no key fits well.
+std::optional<Key> estimateKey(const std::array<double, 12>& profile, double soundingBeats);
+
+// The chords of steps: the best sequence (see the top), cut to [first, last).
+// Bars start every `barBeats` beats from beat 0.
+std::vector<ChordSpan> inferChords(const StepProfiles& profiles, const std::optional<Key>& key, double barBeats);
 
 // The notes' key (the one given, or estimated) and chords.
 Harmony inferHarmony(const std::vector<Note>& notes, const InferenceOptions& options = {});

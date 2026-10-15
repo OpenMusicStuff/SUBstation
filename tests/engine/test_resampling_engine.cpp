@@ -108,6 +108,51 @@ TEST_CASE("a resampled take equals its source's render") {
     }
 }
 
+// Recording round the loop: the loop wraps, the recording goes on. The take
+// runs on in recording time, the wraps say where the timeline went back, and
+// each pass round the loop holds what its source played that time round.
+TEST_CASE("recording wraps round the loop") {
+    requireTestAsio();
+    RecordingTest t;
+    auto& driver = t.driver;
+    auto& engine = t.engine;
+    Rng rng(5);
+    Samples signal(static_cast<size_t>(kRate));
+    for (float& x : signal) x = static_cast<float>(std::round(rng.uniform(-0.5, 0.5) * 32768) / 32768);
+    const std::string wav = makeWav(signal, 2);
+    openAsioPlain(engine);
+    engine.loadSource(wav);
+    const uint32_t source = engine.addTrack();
+    engine.setTrackClips(source, {clip(wav, 0.0, 1.0)});
+    const uint32_t recorder = engine.addTrack();
+    engine.setTrackInputTrack(recorder, source);
+    engine.setTrackMonitor(recorder, sub::MonitorMode::Off);
+    engine.setLoop(true, 0.0, 0.5);  // a quarter of a second at 120 BPM
+    const int64_t loop = kRate / 4;
+
+    engine.startRecording({{recorder, (tempDir() / "loop.wav").string()}});
+    driver.process(8 * kRate / kBuffer / 4 + 1);  // two seconds and a bit: eight times round
+    CHECK(engine.isRecording());  // (a wrap is no jump)
+    const sub::RecordedTake take = engine.stopRecording().at(0);
+    CHECK_EQ(take.startSample, int64_t{0});
+    REQUIRE(take.wraps.size() >= 7);
+    for (size_t k = 0; k < take.wraps.size(); ++k) {
+        CHECK_EQ(take.wraps[k].at, loop * static_cast<int64_t>(k + 1));
+        CHECK_EQ(take.wraps[k].back, loop);
+    }
+    const auto recorded = readTake(engine, take);
+    engine.stop();
+    engine.setLoop(false, 0.0, 0.5);
+    engine.setTrackSolo(source, true);
+    const Samples rendered = engine.renderOffline(0.0, loop);
+    const Samples heard = channel(rendered, 0);
+    for (size_t k = 0; k + 1 < take.wraps.size(); ++k) {  // every pass round the loop: the loop's stretch again
+        INFO("pass " + std::to_string(k));
+        const std::vector<float> pass = slice(recorded[0], static_cast<int>(k * loop), static_cast<int>((k + 1) * loop));
+        CHECK_ALLCLOSE(pass, std::vector<double>(heard.begin(), heard.end()), 1e-7, 1e-6);
+    }
+}
+
 // A monitored track hears its source's output instead of its clips, as soon
 // as the source has it: not delayed to line up with a slower track.
 void subtest::live::monitoringATrackIsNotDelayed(RecordingTest& t) {

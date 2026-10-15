@@ -118,6 +118,7 @@ makes one `Row` per track:
 | `trackId`, `top` | the track, and where its row starts (content y) |
 | `mainHeight` | its own lane: the track's height; at least `minAutomationRow(track)` (76 px, a group's 94) while its automation shows, so the header's name column has room for the choosers |
 | `lanes` | `LaneRow`s: the automation lanes shown below it, `kAutomationLaneHeight` (44 px) each |
+| `takes` | `TakeRow`s: its take lanes while they show (`Track::takesShown`, not folded), `kTakeLaneHeight` (40 px) each, at the bottom of the row, below its automation lanes (`laneHeight()`: the row without them; `takeAt()`) |
 | `automation` | its automation shows |
 | `hidden` | it is in a folded group: a row with no height |
 | `folded` | it is folded itself, with no automation: a track `kFoldedHeight` (21: its name row, 2 px above and below its 16 px buttons; its clips' title bars, as high as unfolded ones), a group `kFoldedGroupHeight` (39, as Ableton's: as tall as its colour's two rows while it is open, `kGroupBlock`, and the line under it; its volume and pan in the second) |
@@ -150,6 +151,24 @@ folds (down) or unfolds (up) the track under the mouse, a notch (120, summed for
 that is now, so sweeping the mouse down the tracks folds or unfolds them all. Below it, it resizes the track it
 started on by `kHeightStep` (12 px) a notch, clamped to `kMinTrackHeight`, never folding it (the tracks below move up
 under the mouse as it shrinks). Qt may report Alt+wheel as horizontal scrolling, so either axis counts.
+
+### Take lanes
+
+A track's take lanes (`app::TakeLane`, [guide/recording.md](../guide/recording.md#take-lanes-and-comping)) are rows
+at the bottom of its `Row` (`takes`), so its own lane and automation lanes keep their places. `Arrangement` rebuilds
+the layout on `Project::takesChanged` as on `trackChanged`. `ArrangementLanes::drawTakeLane` draws a lane's clips
+as the track's, shading what the comp doesn't play (`edits::compedSpans`), its name at the left; a press on one
+(`takeRowAt`) starts a `TakeCompGesture` ([ClipGestures.h](../../ui/src/arrangement/ClipGestures.h)): a drag comps
+the stretch it covers, snapped (drawn lit while it drags: `Gesture::takeSpan`), a click the clip under it, with one
+`ProjectEditor::compTake` on release. Its menu: *Comp Whole Take*, *Delete Take Lane*, *Hide Take Lanes*. A time
+selection's tint stops above them (`selectedAreas`). The header paints each lane's name in its row
+(`TrackHeaderItem::takeAt`, `takeMenu`); the track's header menu has *Show Take Lanes* and *Delete Take Lanes*.
+
+### Chords along audio clips
+
+`ArrangementLanes::drawChords` names an audio clip's chords (`app::AudioAnalysis::clipChords`) in a `kChordStrip`
+(12 px) band along the bottom of its body, a tick where each starts and its name where it fits, on bodies of
+`kMinChordBody` (40 px) or more; the lanes repaint on `AudioAnalysis::analysed`.
 
 ## Selection
 

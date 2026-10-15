@@ -6,8 +6,9 @@
 // every MIDI track that is heard (not muted, nor in a muted group) and whose
 // name doesn't say it plays drums ("Drums", "Kick", "Hats"...), its clips'
 // notes as they play them (the part each clip plays, on the timeline; none of
-// a deactivated clip). Audio
-// is for later. The piano roll shows them over its notes (the chord lane, notes
+// a deactivated clip); and, once their files are analysed (AudioAnalysis), the
+// chords the audio clips of the audio tracks it hears play (as their chords'
+// notes, a bass under each). The piano roll shows them over its notes (the chord lane, notes
 // out of the key tinted red) and writes parts from them (Generate); the MCP
 // server hands them to agents (get_harmony), and MIDI generation will take them.
 //
@@ -37,6 +38,7 @@
 
 namespace sub::app {
 
+class AudioAnalysis;
 class Project;
 
 class Harmony : public QObject {
@@ -56,6 +58,8 @@ public:
     inline static const QString kShownKey = QStringLiteral("pianoroll/show_harmony");
 
     explicit Harmony(Project* project, QObject* parent = nullptr);
+    // Where audio clips' chords come from (none: audio counts for nothing).
+    void setAudioAnalysis(AudioAnalysis* analysis);
 
     // The song's chords, by time, in timeline beats (inferred now if it changed).
     const std::vector<ChordSpan>& chords() const;
@@ -70,6 +74,10 @@ public:
     // The tracks it hears (see above), in order, and the notes they play, in timeline beats.
     static QStringList heardTracks(const Project& project);
     static std::vector<intelligence::harmony::Note> songNotes(const Project& project);
+    // The audio tracks it hears (as heardTracks, but audio), and the notes of the
+    // chords their clips play, as `analysis` heard their files.
+    static QStringList heardAudioTracks(const Project& project);
+    static std::vector<intelligence::harmony::Note> audioNotes(const Project& project, const AudioAnalysis& analysis);
     // Whether a track's name says it plays drums (its notes are no harmony).
     static bool isDrumTrack(const QString& name);
     static intelligence::harmony::Key toHarmony(const Key& key) { return {key.tonic, key.minor}; }
@@ -84,6 +92,8 @@ private:
     // What the harmony depends on besides the clips' notes.
     struct Inputs {
         QStringList tracks;  // heardTracks()
+        QStringList audioTracks;  // heardAudioTracks()
+        double tempo = 0.0;       // with audio tracks heard: where their chords fall in beats
         TimeSignature timeSignature;
         std::optional<Key> key;
 
@@ -97,6 +107,7 @@ private:
     const intelligence::harmony::Harmony& current() const;
 
     QPointer<Project> project_;
+    QPointer<AudioAnalysis> analysis_;
     QTimer settle_;
     Inputs inputs_;
     mutable bool stale_ = true;

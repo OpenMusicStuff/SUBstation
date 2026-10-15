@@ -2,10 +2,12 @@
 # on threads of its own, independent of the engine, the browser and Qt (the
 # application layer, app/src/intelligence, wraps it in Qt objects). Sound
 # similarity, harmony (a song's chords and key from its MIDI, and parts made
-# from them), humanizing (velocities by machine learning) and track labels;
-# MIDI generation by machine learning and an MCP server for agents are to come
-# (see docs/intelligence.md).
+# from them), a recording's tempo, key and chords, humanizing (velocities by
+# machine learning) and track labels; MIDI generation by machine learning and
+# an MCP server for agents are to come (see docs/intelligence.md).
 #
+#   audio/       a recording's tempo, key and chords, from its samples (the
+#                chords and the key by harmony's scoring)
 #   core/        what its parts share: decoding audio (miniaudio), hashing
 #                (what it needs of the operating system is sub_platform's: platform/)
 #   similarity/  sound similarity: fingerprints (made with Essentia), comparing
@@ -21,6 +23,7 @@
 #                libraries (tools/sound_tagger; compiled in: TaggerModel.inc);
 #                the words searches find sounds by ("hard trap snare")
 add_library(sub_intelligence STATIC
+    src/audio/AudioAnalysis.cpp
     src/core/AudioReader.cpp
     src/harmony/Accompaniment.cpp
     src/harmony/ChordInference.cpp
@@ -89,6 +92,11 @@ else()
     target_compile_options(essentia PRIVATE -w)
 endif()
 target_link_libraries(essentia PUBLIC Threads::Threads)
+# KISS FFT's real transforms, for the audio analysis (audio/AudioAnalysis.cpp):
+# compiled into Essentia's library above, its headers the module's own to use.
+# Its scalar is float (no FIXED_POINT or USE_SIMD).
+target_include_directories(sub_intelligence SYSTEM PRIVATE ${_essentia}/3rdparty/kiss_fft130
+    ${_essentia}/3rdparty/kiss_fft130/tools)
 
 # HUMANBRO's C++ runtime (third_party/humanbro, see its VERSION.txt): MIDI
 # features and the tree ensemble that predicts velocities from them. Its

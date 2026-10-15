@@ -6,7 +6,7 @@ import SUBstation
 // The bar on top of the window, left to right: the tempo, the time signature,
 // the metronome (its count-in a drop-down on its right), the project key, the
 // computer MIDI keyboard and Constrain Delay Compensation | the position (bar. beat. sixteenth), play, stop,
-// record, Re-Enable Automation, the oscilloscope | loop, follow, the CPU load
+// record, Re-Enable Automation, the oscilloscope | Punch In, loop, Punch Out, follow, the CPU load
 // and the audio device (a click opens Preferences). (Lock Envelopes is in the
 // arrangement's corner, as Ableton's: GridInfo.)
 //
@@ -262,6 +262,16 @@ Rectangle {
         }
 
         ToggleButton {
+            objectName: "punchIn"
+            Layout.preferredHeight: Theme.controlHeight
+            role: "tool"
+            iconName: "punch_in"
+            tooltip: qsTr("Punch In: recording keeps only what is played from the loop's start\n(recorded tracks play their clips before it)")
+            checkable: false
+            checked: Session.project.punchIn
+            onClicked: Session.editor.setPunchIn(!Session.project.punchIn)
+        }
+        ToggleButton {
             objectName: "loop"
             Layout.preferredHeight: Theme.controlHeight
             role: "tool"
@@ -270,6 +280,16 @@ Rectangle {
             checkable: false
             checked: Session.project.loopEnabled
             onClicked: Session.editor.setLoopEnabled(!Session.project.loopEnabled)
+        }
+        ToggleButton {
+            objectName: "punchOut"
+            Layout.preferredHeight: Theme.controlHeight
+            role: "tool"
+            iconName: "punch_out"
+            tooltip: qsTr("Punch Out: recording keeps only what is played up to the loop's end\n(recorded tracks play their clips after it)")
+            checkable: false
+            checked: Session.project.punchOut
+            onClicked: Session.editor.setPunchOut(!Session.project.punchOut)
         }
         ToggleButton {
             objectName: "follow"

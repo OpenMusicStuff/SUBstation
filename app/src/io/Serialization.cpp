@@ -424,6 +424,18 @@ QJsonObject trackToJson(const Track& t, const QString& base) {
     data[QStringLiteral("armed")] = t.armed;
     data[QStringLiteral("parent")] = optionalString(t.parent);
     data[QStringLiteral("folded")] = t.folded;
+    if (!t.takes.empty()) {
+        QJsonArray takes;
+        for (const TakeLane& lane : t.takes) {
+            QJsonArray laneClips;
+            for (const Clip& c : lane.clips) laneClips.append(clipToJson(c, base));
+            takes.append(QJsonObject{{QStringLiteral("id"), lane.id},
+                                     {QStringLiteral("name"), lane.name},
+                                     {QStringLiteral("clips"), laneClips}});
+        }
+        data[QStringLiteral("takes")] = takes;
+    }
+    if (t.takesShown) data[QStringLiteral("takes_shown")] = true;
     data[QStringLiteral("sends")] = sendsToJson(t.sends);
     addOutput(data, t.output);
     addFreeze(data, t.frozen, base);
@@ -1048,6 +1060,16 @@ void repairRouting(std::vector<Track>& tracks, std::vector<Track>& returns, Trac
     if (master != nullptr) repairMidi(*master);
 }
 
+// The loop brace, and Punch In and Out where they are on.
+QJsonObject loopToJson(const Project& project) {
+    QJsonObject loop{{QStringLiteral("enabled"), project.loopEnabled()},
+                     {QStringLiteral("start"), project.loopStart()},
+                     {QStringLiteral("end"), project.loopEnd()}};
+    if (project.punchIn()) loop[QStringLiteral("punch_in")] = true;
+    if (project.punchOut()) loop[QStringLiteral("punch_out")] = true;
+    return loop;
+}
+
 QJsonObject projectToJson(const Project& project, const QString& projectFile) {
     const QString base = baseOf(projectFile);
     QSet<QString> deviceIds;
@@ -1072,9 +1094,7 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
             {QStringLiteral("key"), key ? QJsonValue(key->name()) : QJsonValue(QJsonValue::Null)},
             {QStringLiteral("time_signature"),
              QJsonArray{project.timeSignature().numerator, project.timeSignature().denominator}},
-            {QStringLiteral("loop"), QJsonObject{{QStringLiteral("enabled"), project.loopEnabled()},
-                                                 {QStringLiteral("start"), project.loopStart()},
-                                                 {QStringLiteral("end"), project.loopEnd()}}},
+            {QStringLiteral("loop"), loopToJson(project)},
             {QStringLiteral("automation_locked"), project.automationLocked()},
             {QStringLiteral("master"), masterToJson(project.master())},
             {QStringLiteral("folded_devices"), present(project.foldedDevices())},
@@ -1110,6 +1130,18 @@ std::vector<Track> tracksFromJson(const QJsonObject& data, const QString& projec
                 track.clips.push_back(kind == kMidiKind ? midiClipFromJson(c) : audioClipFromJson(c, base));
             }
             edits::sortByStart(track.clips);
+            for (const QJsonValue& value : listOr(t, QStringLiteral("takes"))) {
+                const QJsonObject l = value.toObject();
+                TakeLane lane;
+                lane.id = toStr(need(l, QStringLiteral("id")));
+                lane.name = l.value(QStringLiteral("name")).toString();
+                for (const QJsonValue& c : listOr(l, QStringLiteral("clips"))) {
+                    lane.clips.push_back(kind == kMidiKind ? midiClipFromJson(c) : audioClipFromJson(c, base));
+                }
+                edits::sortByStart(lane.clips);
+                track.takes.push_back(std::move(lane));
+            }
+            track.takesShown = truthy(t.value(QStringLiteral("takes_shown"))) && !track.takes.empty();
         }
         track.kind = kind;
         track.automation = automationFromJson(t.value(QStringLiteral("automation")));
@@ -1172,6 +1204,8 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     contents.loopEnabled = truthy(loop.value(QStringLiteral("enabled")));
     contents.loopStart = floatOr(loop, QStringLiteral("start"), 0.0);
     contents.loopEnd = floatOr(loop, QStringLiteral("end"), 16.0);
+    contents.punchIn = truthy(loop.value(QStringLiteral("punch_in")));
+    contents.punchOut = truthy(loop.value(QStringLiteral("punch_out")));
     contents.automationLocked = truthy(data.value(QStringLiteral("automation_locked")));
     const QJsonValue key = data.value(QStringLiteral("key"));
     contents.key = key.isString() ? keyFromName(key.toString()) : std::nullopt;

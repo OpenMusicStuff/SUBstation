@@ -60,10 +60,10 @@
 // after its fader (an input edge: resampling), which renders first; or the
 // master's, which renders last, so it is recorded but never heard (monitoring
 // it would feed it back). While recording, the input of the tracks recorded
-// goes to the RecordingSession's rings, tagged with the timeline position it
-// was taken at: the device's in the prologue, the tracks' and the master's in
-// the epilogue (the master's after its fader, before the metronome); the loop
-// doesn't wrap then. A track being recorded plays none of its clips (nor a
+// goes to the RecordingSession's rings, tagged with the position it was taken
+// at in recording time (the timeline's, plus the loop lengths gone back as the
+// loop wrapped: LoopWrap): the device's in the prologue, the tracks' and the
+// master's in the epilogue (the master's after its fader, before the metronome). A track being recorded plays none of its clips (nor a
 // MIDI track its clips' notes): the take replaces them, so unmonitored it is
 // silent (TrackBuffers::recorded). A count-in clicks before the playhead moves
 // (the metronome, even if it is off).
@@ -257,6 +257,8 @@ private:
         bool jump;  // the playhead jumped here (locate, loop wrap): sounding notes stop
         bool chase;  // playback starts here: notes already underway sound
         bool wrap = false;  // the jump is the loop's, from its end back to its start
+        int64_t from = 0;    // a wrap: where the timeline went back from (the loop's end)
+        int64_t linear = 0;  // while recording: its position in recording time (LoopWrap); else `position`
     };
     struct Tick {
         int offset;
@@ -467,8 +469,9 @@ private:
     // late (on the timeline as it was played that long ago: before a loop wrap,
     // its end); into `out`, returning how many.
     int delayedSegments(int64_t delay, Segment* out) const noexcept;
+    // `chaseClips`: its clips' notes underway sound from the chunk's start (its clips play again).
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
-                         MidiRecordingTake* take) noexcept;
+                         MidiRecordingTake* take, bool chaseClips = false) noexcept;
     void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept;
     // A note-on for a note of the track's clips (and its bend where it starts
     // sounding, `from` samples into it), remembered as an active note.
@@ -488,6 +491,9 @@ private:
     bool hearsMidiInput(const TrackRender& track, ChunkFlags flags) const noexcept;
     // Whether a take of the track records now: it plays none of its clips then.
     bool isRecorded(uint32_t trackId) const noexcept;
+    // Whether this chunk's playhead is where recording replaces the recorded
+    // tracks' clips: inside the punch region (anywhere, without Punch In or Out).
+    bool insidePunch(const RenderSnapshot& snap) const noexcept;
     MidiRecordingTake* midiTake(uint32_t trackId) const noexcept;
     void routeMidiInput(const TrackRender& track, bool hears, MidiRecordingTake* take, TrackBuffers& out) noexcept;
     void recordMidi(MidiRecordingTake* take, int offset, uint8_t channel, uint8_t key, uint8_t velocity,

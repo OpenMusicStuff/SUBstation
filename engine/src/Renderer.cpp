@@ -248,8 +248,8 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         }
         bool chase = chasePending_ && done < frames;
         if (done < frames) chasePending_ = false;
-        // Recording goes straight on: the loop doesn't wrap (punching in and out of it comes later).
-        const bool loop = flags.loop && !recording_;
+        // (Recording wraps with the loop too: its takes run on in recording time, recordInput().)
+        const bool loop = flags.loop;
         chunkLoop_ = loop;
         chunkLoopStart_ = snap.loopStart;
         chunkLoopEnd_ = snap.loopEnd;
@@ -264,7 +264,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
             const bool jump = position_ != expectedPosition_;
             const bool wrap = jump && wrapNext_ && loop && position_ == snap.loopStart;
             if (jump) looped_ = wrap;
-            segments_[numSegments_++] = {position_, length, done, jump, chase, wrap};
+            segments_[numSegments_++] = {position_, length, done, jump, chase, wrap, expectedPosition_, position_};
             chase = false;
             if (flags.metronome) scheduleTicks(snap, position_, length, done);
             position_ += length;
@@ -293,7 +293,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     context.keyTonic = snap.keyTonic;
     context.keyMinor = snap.keyMinor;
     context.playing = playing_;
-    context.looping = flags.loop && !recording_;
+    context.looping = flags.loop;
     context.loopStartBeat = snap.loopStart / spb;
     context.loopEndBeat = snap.loopEnd / spb;
     context.offline = !flags.live;
@@ -303,13 +303,17 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     if (wasPlaying_ && !playing_) releaseLiveNotes_ = true;
     wasPlaying_ = playing_;
 
+    const bool punched = insidePunch(snap);
     // 2. What each track hears in this chunk, worked out in order: everything
     // here touches state the tracks share (sounding notes, MIDI input, the
     // recording, stretchers).
     for (const TrackRender& track : snap.tracks) {
         TrackBuffers& buffers = *track.buffers;
         buffers.monitored = isMonitored(track, flags);
-        buffers.recorded = flags.live && isRecorded(track.id);
+        const bool wasRecorded = buffers.recorded;
+        buffers.recorded = flags.live && punched && isRecorded(track.id);
+        // Its clips play again (Punch Out): their notes underway sound from here, as when playback starts.
+        const bool rejoins = wasRecorded && !buffers.recorded && playing_;
         const bool hearsMidi = hearsMidiInput(track, flags);
         // Constrained, a track played live (and what it is heard through) is
         // heard as soon as it can be, like monitored audio, playing back or not.
@@ -319,7 +323,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         if (!track.notes.empty() || numActiveNotes_ > 0 || numPreviewNotes_ > 0 || numInputEvents_ > 0 ||
             numLiveNotes_ > 0) {
             const bool clipNotes = !buffers.recorded && !(hearsMidi && track.monitor == MonitorMode::In);
-            buildNoteEvents(track, buffers, hearsMidi, clipNotes, take);
+            buildNoteEvents(track, buffers, hearsMidi, clipNotes, take, rejoins);
         }
         assignVoices(track, voices, flags.live, buffers);
     }
@@ -705,12 +709,19 @@ void Renderer::recordInput() noexcept {
     RecordingSession& session = *recording_;
     for (int s = 0; s < numSegments_; ++s) {
         if (session.interrupted()) return;
-        const Segment& segment = segments_[s];
+        Segment& segment = segments_[s];
+        // The loop's wrap goes on in recording time, the timeline's position plus
+        // the loop lengths gone back so far (LoopWrap); any other jump ends the takes.
+        if (segment.wrap && !session.wrap(segment.from, segment.position)) {
+            session.interrupt();
+            return;
+        }
+        segment.linear = segment.position + session.wrapOffset();
         bool jumped = false;
         const auto begin = [&](std::atomic<int64_t>& start) {
             if (start.load(std::memory_order_relaxed) == RecordingTake::kNotStarted) {
-                start.store(segment.position, std::memory_order_release);
-            } else if (segment.jump) {
+                start.store(segment.linear, std::memory_order_release);
+            } else if (segment.jump && !segment.wrap) {
                 jumped = true;
             }
         };
@@ -827,6 +838,22 @@ bool Renderer::hearsMidiInput(const TrackRender& track, ChunkFlags flags) const 
     return false;
 }
 
+bool Renderer::insidePunch(const RenderSnapshot& snap) const noexcept {
+    if (!snap.punchIn && !snap.punchOut) return true;
+    const auto inside = [&](int64_t from, int64_t to) {
+        return (!snap.punchIn || from >= snap.loopStart) && (!snap.punchOut || to <= snap.loopEnd);
+    };
+    if (numSegments_ == 0) return inside(position_, position_);  // (stopped, or counting in)
+    // Inside only if all of the chunk is: one reaching past the region's edge plays the clips, so
+    // a note starting just past Punch Out starts on time (and one at Punch In a few
+    // milliseconds early, which nothing keeps).
+    for (int s = 0; s < numSegments_; ++s) {
+        const Segment& segment = segments_[s];
+        if (!inside(segment.position, segment.position + segment.length)) return false;
+    }
+    return true;
+}
+
 bool Renderer::isRecorded(uint32_t trackId) const noexcept {
     // A take of it records (until the playhead jumps: the takes end there).
     if (!recording_ || recording_->interrupted()) return false;
@@ -859,7 +886,7 @@ void Renderer::recordMidi(MidiRecordingTake* take, int offset, uint8_t channel, 
     for (int s = 0; s < numSegments_; ++s) {
         const Segment& segment = segments_[s];
         if (offset >= segment.offset && offset < segment.offset + segment.length) {
-            take->push({segment.position + (offset - segment.offset), channel, key, velocity, bend, semitones});
+            take->push({segment.linear + (offset - segment.offset), channel, key, velocity, bend, semitones});
             return;
         }
     }
@@ -1923,7 +1950,7 @@ int Renderer::delayedSegments(int64_t delay, Segment* out) const noexcept {
 }
 
 void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
-                               MidiRecordingTake* take) noexcept {
+                               MidiRecordingTake* take, bool chaseClips) noexcept {
     // Notes played by hand come first, all at the block start and in the order
     // they were played: dragging a note across keys releases one key and plays
     // the next several times within a block, and reordering those would leave
@@ -1980,8 +2007,8 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
         if (segment.jump) releaseNotes(track.id, segment.offset, out);
         const int64_t segEnd = segment.position + segment.length;
 
-        // Notes already underway where playback starts sound from there.
-        if (segment.chase) {
+        // Notes already underway where playback starts (or its clips play again) sound from there.
+        if (segment.chase || (s == 0 && chaseClips)) {
             for (size_t i = 0; i < track.notes.size(); ++i) {
                 const NoteRender& note = track.notes[i];
                 if (note.start >= segment.position) break;
