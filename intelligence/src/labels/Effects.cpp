@@ -401,7 +401,7 @@ Effect classify(const DeviceFact& device) {
         {"chorus", E::Chorus},        {"phaser", E::Phaser},      {"gate", E::Gate},
         {"limiter", E::Limiter},      {"multiband", E::Compressor}, {"spectral", E::Compressor},
         {"transient", E::Transient},  {"vintage_hall", E::Reverb},  {"hue", E::PitchCorrection},
-        {"gigatune", E::PitchCorrection},
+        {"gigatune", E::PitchCorrection}, {"vocoder", E::Vocoder},  {"vocal_rider", E::Rider},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {

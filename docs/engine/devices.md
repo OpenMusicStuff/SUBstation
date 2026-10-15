@@ -69,6 +69,9 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc` (a modulator moving a parameter of a device on its track: its range and which way up), `modulationTarget`, `kMaxModulators`; see [automation.md](automation.md#modulation) |
 | [builtin/devices/Transient.cpp](../../engine/src/builtin/devices/Transient.cpp) | Transient Shaper: onsets and tails turned up or down by followers on the input's envelope, Threshold, Output, Dry/Wet, Clip, lookahead, displays |
 | [builtin/TransientDesign.h](../../engine/src/builtin/TransientDesign.h) | The Transient Shaper's maths (`transient::Hilbert`, the envelope; `Detector`, its three followers; `weight`, the threshold's fade; `gain`, the gain law; `softClip`; `lookaheadSamples`; the hit its editor draws, `hitEnvelope` and `hitResponse`), shared with the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) for the editor |
+| [builtin/devices/Vocoder.cpp](../../engine/src/builtin/devices/Vocoder.cpp) | Vocoder: Ableton's, a filter bank of up to 40 bands; Noise, External (the sidechain), Modulator and Pitch Tracking carriers, Enhance, Unvoiced, Precise or Retro, Formant, Depth, Gate, Mono, Stereo or L/R, displays |
+| [builtin/VocoderDesign.h](../../engine/src/builtin/VocoderDesign.h) | The Vocoder's maths (`vocoder::`): the bands (`bandCount`, `layout`, `sections`, `bandResponseDb`) and the pitch tracker (`PitchTracker`, YIN), shared with the application layer's [VocoderResponse.h](../../app/src/audio/VocoderResponse.h) for the editor |
+| [builtin/devices/VocalRider.cpp](../../engine/src/builtin/devices/VocalRider.cpp) | Vocal Rider: a slow gain riding a vocal to a target, holding between phrases, the music on the sidechain moving the target, displays |
 | [Rack.h](../../engine/src/Rack.h) | `RackProcessor`: a rack's place in a chain (its chains are run by the renderer) |
 | [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) | `SmoothedValue`, `SpscQueue`, `DisplayStream`, `dbToGain`, `gainToDb`, `expDbToGain`, `onePoleCoefficient`, `balanceGains` |
 | [EngineChains.cpp](../../engine/src/EngineChains.cpp) | `addBuiltinProcessor()`, and the processor calls the engine bridge makes (`setProcessorParam`, `processorState`, `setProcessorState`, `processorDisplays`, `readProcessorDisplay`, ...) |
@@ -2328,6 +2331,106 @@ Turns a sound's onsets (Attack) and its tails (Sustain) up or down, whatever its
 - Its envelopes, followers and gain on two channels took about 0.5 % of one core at 48 kHz on the machine it was
   written on.
 
+### Vocoder (`builtin:vocoder`, AudioEffect, with a sidechain)
+
+Ableton's Vocoder: the input (the modulator) split into bands, each band's level shaping the same band of a carrier
+([VocoderDesign.h](../../engine/src/builtin/VocoderDesign.h)).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `carrier` | Carrier | | Noise, External, Modulator, Pitch Tracking | Noise |
+| `noise_rate` | Rate | Hz | 100..20000, log | 20000 |
+| `crackle` | Crackle | % | 0..100 | 100 |
+| `pitch` | Pitch | st | -24..24 | 0 |
+| `wave` | Wave | | Saw, Pulse 50%, Pulse 25%, Pulse 12.5% | Saw |
+| `track_low` | Low | Hz | 30..1000, log | 80 |
+| `track_high` | High | Hz | 100..2000, log | 1000 |
+| `enhance` | Enhance | | Off, On | Off |
+| `unvoiced` | Unvoiced | % | 0..100 | 0 |
+| `sensitivity` | Sens. | % | 0..100 | 50 |
+| `speed` | Speed | | Fast, Slow | Fast |
+| `bands` | Bands | | 4, 8, .. 40 | 20 |
+| `low` | Low | Hz | 20..18000, log | 80 |
+| `high` | High | Hz | 20..18000, log | 12000 |
+| `bandwidth` | BW | % | 10..200 | 100 |
+| `filter` | Filter | | Precise, Retro | Precise |
+| `formant` | Formant | st | -12..12 | 0 |
+| `gate` | Gate | dB | -96..0 (-96: none) | -96 |
+| `depth` | Depth | % | 0..200 | 100 |
+| `attack` | Attack | ms | 0.1..100, log | 5 |
+| `release` | Release | ms | 1..3000, log | 150 |
+| `channels` | Channels | | Mono, Stereo, L/R | Stereo |
+| `level` | Level | dB | -24..24 | 0 |
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+
+- **The bands** (`vocoder::layout`): Bands centres evenly in log frequency from Low to High, each as wide as the
+  spacing times BW. Precise: two cookbook band-passes in a row at 0 dB, each wider by 1/0.6436 so the pair meets its
+  neighbours at -3 dB; Retro: one section, narrower (1.4 to 0.6 of the width) and louder (0 to +9 dB) up the bank.
+  Widths are prewarped, so a band near Nyquist is as wide as one low down. The carrier's sections are the
+  modulator's moved by Formant; a band whose centre, or whose carrier's, is past 0.45 of the rate is left out.
+- **The modulator's levels**: each band's mean square followed with Attack (rising) and Release (falling). Depth
+  scales each band's distance in dB from the bands' mean, then all are scaled back to the modulator's power: 0 % is
+  the carrier's spectrum, 200 % the modulator's peaks further out, at the same level. Gate silences a band under it
+  (its gain smoothed over 2 ms). The gains (and Enhance's divisors) are worked out every 8 samples and ramped
+  linearly between: the levels move far slower than that, and the logarithms per band would cost more than the
+  filters.
+- **The carrier**: Noise is xorshift noise held at Rate (a fractional sample-and-hold clock) and, under 100 % Crackle,
+  only a sample in 1/Crackle² of them, as loud (so the power stays); External the sidechain (silence without one);
+  Modulator the input; Pitch Tracking a PolyBLEP saw or pulse at the tracked pitch times 2^(Pitch/12), gliding over
+  5 ms. The tracker (`vocoder::PitchTracker`) is YIN on the input brought to about 12 kHz (two low-pass sections,
+  every n-th sample): a 25 ms window every 5 ms, the first dip of the cumulative mean normalised difference under
+  0.2 between High's and Low's periods, refined by a parabola; an unvoiced frame keeps the last pitch.
+- **Bringing the carrier to a steady level**: with Enhance each carrier band is divided by its own RMS (a 20 ms mean
+  square); without, all by the carrier's power over its bands weighted by the modulator's gains (100 ms), so a
+  carrier dark where the voice is dark isn't taken for louder than it is there. Either level is held at least at a
+  tenth of its peaks (held as long): a carrier starting from silence is raised 10 dB at the most while its mean
+  catches up. Enhance raises a band 60 dB over the carrier's level at the most.
+- **The bank's sum**: neighbouring Precise bands meet about 130° apart in phase, so every other band's polarity is
+  turned (they meet about 50° apart: they add) and the gains are divided by the bank's mean power gain across its
+  range, worked out when the bands change: the output is within a couple of dB of the input's level whatever the
+  carrier, Depth or band count.
+- **Unvoiced**: the share of the summed modulator's power above 4 kHz (a two-section high-pass), followed over 3 ms
+  (Fast) or 30 ms (Slow); over 0.6 × (1 - Sens.) it counts, fully 0.25 above that. White noise high-passed at 3 kHz,
+  as loud as the modulator's highs times that and Unvoiced, is added to each carrier channel's output.
+- **Channels**: Mono, one modulator and one carrier (each summed), the output on both sides; Stereo, the modulator
+  summed, a carrier each side (Noise: one each); L/R, a modulator and carrier each side. One channel in: Mono.
+- **Output**: `dry (1 - mix) + wet · Level · mix` (Level and Dry/Wet ramp over 20 ms).
+- **Its cost**, at 48 kHz on the machine it was written on: 1.5 % of a core at its defaults (20 bands, Stereo,
+  Noise); 7 % at the most (40 bands, L/R, Pitch Tracking, Enhance, Depth off 100 %).
+- **Displays**, every 1024 samples: `bands` (64 values a time, the first channel's modulator band levels in dB from the
+  lowest, the rest -96: the display's 8192 values hold whole frames), `pitch` (the pitch the oscillator plays, Hz; 0
+  when not tracking or unvoiced) and `output` (the output's peak in dB).
+
+### Vocal Rider (`builtin:vocal_rider`, AudioEffect, with a sidechain)
+
+A slow gain that rides a vocal to a target level, as an engineer riding a fader (Waves' Vocal Rider's idea).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `target` | Target | dB | -50..0 | -18 |
+| `min_gain` | Range Min | dB | -24..0 | -12 |
+| `max_gain` | Range Max | dB | 0..24 | 12 |
+| `speed` | Speed | ms | 20..2000, log | 250 |
+| `sensitivity` | Vocal Sens. | dB | -80..0 | -50 |
+| `music_sens` | Music Sens. | % | 0..100 | 0 |
+| `weighting` | Weighting | | Vocal, Flat | Vocal |
+| `output` | Output | dB | -24..24 | 0 |
+
+- **Hearing the vocal**: the channels summed, with Vocal through BS.1770's K-weighting shelf (+4 dB from 1.68 kHz)
+  and a 100 Hz high-pass (for the room's rumble, in place of its 38 Hz one). Its level is its mean square over
+  0.4 × Speed (10 ms at the least), in dB.
+- **Present or not**: a 10 ms mean square of the same signal over Vocal Sens. makes the vocal present, under it by
+  6 dB absent. A phrase starting seeds the slow level from the 10 ms one, so a phrase after a pause isn't taken for
+  quieter than it is (and ridden up at its start).
+- **The ride**: while the vocal is present the gain (dB) follows `target - level`, held to Range Min..Range Max, with
+  Speed as its time constant; while absent it holds (breaths, bleed, a phrase's tail aren't brought up). A range
+  narrowed while holding holds the gain inside it.
+- **Music Sens.**: with a sidechain, the music's level (the same weighting, 400 ms) moves the target to
+  `target + Music Sens. × (music - target)` while the music is over -60 dB.
+- **Output** ramps over 20 ms; the gain is applied to every channel alike.
+- **Displays**, one value per 256 samples: `level` (the vocal's level, dB), `gain` (the ride, dB), `target` (the
+  target Music Sens. makes) and `music` (the music's level; -96 without).
+
 ### LFO (`builtin:lfo`, Modulator)
 
 A drawn curve played over and over; its value moves the parameters mapped to it (a modulator:
@@ -2422,7 +2525,9 @@ readonly property var editors: ({
     "spectral": "SpectralEditor.qml",
     "transient": "TransientEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
-    "vital": "VitalEditor.qml"
+    "vital": "VitalEditor.qml",
+    "vocal_rider": "VocalRiderEditor.qml",
+    "vocoder": "VocoderEditor.qml"
 })
 ```
 
@@ -2432,7 +2537,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are twenty-five. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+- Today there are twenty-seven. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
   playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
   threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
   The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
@@ -2466,7 +2571,10 @@ readonly property var editors: ({
   with each tap's level (`l1`..`r4`) and wavering with its moving delays (`mod_b`, `mod_d`), a comet from each
   input for each onset (`input`) running round at the loop's speed and fading as Decay says, its taps weighted by
   Attack, and a bloom as loud as `output`; the EQ its bands' curves (from `eq::responseDb`)
-  over an analyzer of `input` and `output`; the Sidechain its curve, its
+  over an analyzer of `input` and `output`; the Vocoder its filter bank (from `vocoder::bandResponseDb`), each band
+  a bar as loud as `bands` says, Formant's carrier bands marked, and the pitch tracked (`pitch`); the Vocal Rider the
+  last 5 s of `level`, the output (`level` + `gain`) and `music`, the target as a line to drag (moved by `target`
+  while Music Sens. moves it), and the ride in a lane under them; the Sidechain its curve, its
   playhead from `phase` and its fit to the kick (`key`, against `input`); the Sampler the sample's waveform as it plays
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and
   the playhead from `position` (drop or double-click to load a sample; loading is an undoable state change through
@@ -2784,6 +2892,17 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   the same bit for bit whatever the block size; reset and a new rate; NaN and infinity as silence, the extremes at 8
   to 192 kHz; ringing out to exact zeros; one channel; the displays; the hit the editor draws, shaped as the device
   shapes one.
+- [test_vocoder_engine.cpp](../../tests/engine/test_vocoder_engine.cpp): its listing; the bands (evenly in log
+  frequency, each at 0 dB at its centre and -3 dB half a spacing out, Retro narrower and louder up, Formant's shift);
+  the noise carrier speaking with the modulator's spectrum at about its level (Enhance or not); silence to exact
+  zeros, and a sound stopping ringing out to them (a short Release, or Gate); Dry/Wet 0 % the input bit for bit; External from the sidechain (its harmonics; silence without one);
+  Modulator; Pitch Tracking at the input's pitch, moved by Pitch, and the tracker alone; Formant; Depth (0 % flat and
+  as loud, 200 % deeper) and Gate; Unvoiced on a hiss and not on a pitched input; Mono, Stereo, L/R and one channel;
+  every band count and filter at 44.1 to 192 kHz; its displays.
+- [test_vocal_rider_engine.cpp](../../tests/engine/test_vocal_rider_engine.cpp): its listing; quiet and loud phrases
+  ridden to the target (within 0.5 dB) and one there already left alone; Range Min and Max; holding between phrases
+  (a noise floor not brought up); Speed; Music Sens. (0, 50 and 100 %, and a silent sidechain); Output; the Vocal
+  weighting; its displays.
 - [test_eq_engine.cpp](../../tests/engine/test_eq_engine.cpp): each band type plays as `eq::responseDb` draws it,
   matching the analog filters, placement (left, mid, side), output gain and gain scale, extremes, the displays.
 - [test_modulators_engine.cpp](../../tests/engine/test_modulators_engine.cpp): the LFO and the Envelope on their
