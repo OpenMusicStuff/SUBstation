@@ -96,6 +96,8 @@ Each entry of `tracks`:
 | `armed` | bool (never true for a group on load) |
 | `parent` | the id of the group it is in, or null |
 | `folded` | bool |
+| `takes` | audio and MIDI tracks, only when they have take lanes: `[{"id", "name", "clips"}]`, oldest first (`Track::takes`: what each recording played; `clips` as the track's) |
+| `takes_shown` | only when true: its take lanes show below it (and only while it has some) |
 | `sends` | `{return id: {"level_db": float, "pre_fader": bool}}` |
 | `frozen` | only when frozen: `{"path", "relative_path", "duration_sec", "tempo"}`, its frozen audio (the file found as a clip's is); an incomplete one loads unfrozen. Once a time selection over it was edited, also `"segments"`: what of it plays, `[{"id", "start_beat", "offset_sec", "duration_sec"}]` (`Freeze::segments`: clips into the render, the rest of each is the freeze's: its file, warped from its tempo); none plays all of it, `[]` nothing; a damaged segment is left out |
 
@@ -228,6 +230,7 @@ that makes an older file load as it was, and saving writes the current version.
 | 21 | tracks' outputs (`output`) and where inputs from tracks are tapped (`input_tap`) | outputs into their groups (or the master), inputs taken after the source's fader |
 | 22 | notes' bends (a sixth value: points and vibratos, MIDI 2.0's per-note pitch bend) and devices' MIDI inputs from other tracks (`midi_from`) | no note bent; every device playing its own track's notes |
 | 23 | modulators' mappings (`modulations`) | none (no modulators either) |
+| 24 | take lanes (`takes`, `takes_shown`) | none |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and every rack's devices. The

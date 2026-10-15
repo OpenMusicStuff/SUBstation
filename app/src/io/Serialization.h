@@ -51,7 +51,10 @@
 // ...], "vibrato": [[start, length, depth, rate, fade], ...]}; a device taking
 // another track's notes stores that track ("midi_from"; version 22; older files
 // have neither: no note bends, every device hears its own track). A MIDI input
-// from a track that isn't a MIDI track there is dropped.
+// from a track that isn't a MIDI track there is dropped. An audio or MIDI track
+// stores its take lanes ("takes": [{"id", "name", "clips": [clips, as the
+// track's]}], oldest first) and whether they show ("takes_shown": true) when it
+// has them (version 24; older files have none).
 //
 // There is no per-version migration code: each addition has a default that
 // makes an older file load as it was, and saving writes the current version.
@@ -94,8 +97,9 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // track's number; kNameTemplatesVersion), 20: deactivated clips and notes, 21:
 // tracks' outputs and where inputs from tracks are tapped, 22: notes' bends
 // (MIDI 2.0's per-note pitch bend: points and vibratos) and devices' MIDI inputs
-// from other tracks, 23: modulators' mappings (Device::modulations)
-inline constexpr int kProjectVersion = 23;
+// from other tracks, 23: modulators' mappings (Device::modulations), 24: take
+// lanes (Track::takes, takesShown)
+inline constexpr int kProjectVersion = 24;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

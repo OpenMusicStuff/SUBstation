@@ -46,7 +46,8 @@ reads them as constant properties:
 | `project`, `undoStack`, `editor`, `selection`, `bridge` | `Project`, `QUndoStack`, `ProjectEditor`, `Selection`, `EngineBridge` | [model.md](model.md), [engine-bridge.md](engine-bridge.md) |
 | `browser`, `plugins` | `BrowserController`, `PluginIndex` | the browser ([browser.md](../browser.md)); the plug-ins, also Preferences › Plug-ins ([plugin-scanner.md](plugin-scanner.md)) |
 | `similarity` | `SoundSimilarity` | finding similar sounds ([intelligence.md](../intelligence.md)); the browser's Find Similar uses it |
-| `harmony` | `Harmony` | the song's chords and key, from its MIDI ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
+| `audioAnalysis` | `AudioAnalysis` | each audio file's tempo, key and chords, heard in the background ([intelligence.md](../intelligence.md#tempo-key-and-chords-from-audio-the-application-side)): dropped audio warped at its tempo, chords along audio clips |
+| `harmony` | `Harmony` | the song's chords and key, from its MIDI and its audio clips' chords ([intelligence.md](../intelligence.md#harmony-the-application-side)); the piano roll shows them and Generate writes from them |
 | `trackLabels` | `TrackLabels` | what each track is, in a few words, and what that was made from ([intelligence.md](../intelligence.md#track-labels-the-application-side)); the tooltip over a track's name, and what the MCP server tells agents of each track |
 | `mcp` | `McpServer` | the MCP server agents read and edit the project through ([mcp.md](mcp.md)); its `statusMessage` is the session's |
 | `agentChanges` | `AgentHistory` | what agents changed through it, apart from the undo stack: each change rewound and restored on its own (View › Agent Changes); `undo()` and `redo()` refuse to undo over an agent's change ([mcp.md](mcp.md#the-agents-history)) |

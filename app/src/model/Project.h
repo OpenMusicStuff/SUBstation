@@ -327,6 +327,8 @@ public:
     // These, setDevices, setChains and setDeviceName rename a track named by
     // what it holds after it: trackChanged, after clipsChanged or devicesChanged.
     void setClips(const QString& trackId, std::vector<Clip> clips);
+    // A track's take lanes (each lane's clips sorted here by start). Emits takesChanged.
+    void setTakeLanes(const QString& trackId, std::vector<TakeLane> lanes);
     void setDevices(const QString& trackId, std::vector<Device> devices);
     // Change several tracks' devices at once (a device moving between them): all
     // of them change before anyone hears of it (devicesChanged, in this order).
@@ -380,6 +382,8 @@ Q_SIGNALS:
     // The tracks' order or groups changed (not which tracks there are).
     void tracksArranged();
     void clipsChanged(const QString& trackId);
+    // Its take lanes: added, removed, renamed, or their clips.
+    void takesChanged(const QString& trackId);
     // Devices added/removed/moved/toggled (in racks too), a sidechain, a MIDI input, macros or a rack's name changed.
     void devicesChanged(const QString& trackId);
     // A rack chain's name or mixer.

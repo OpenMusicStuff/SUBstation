@@ -424,6 +424,18 @@ QJsonObject trackToJson(const Track& t, const QString& base) {
     data[QStringLiteral("armed")] = t.armed;
     data[QStringLiteral("parent")] = optionalString(t.parent);
     data[QStringLiteral("folded")] = t.folded;
+    if (!t.takes.empty()) {
+        QJsonArray takes;
+        for (const TakeLane& lane : t.takes) {
+            QJsonArray laneClips;
+            for (const Clip& c : lane.clips) laneClips.append(clipToJson(c, base));
+            takes.append(QJsonObject{{QStringLiteral("id"), lane.id},
+                                     {QStringLiteral("name"), lane.name},
+                                     {QStringLiteral("clips"), laneClips}});
+        }
+        data[QStringLiteral("takes")] = takes;
+    }
+    if (t.takesShown) data[QStringLiteral("takes_shown")] = true;
     data[QStringLiteral("sends")] = sendsToJson(t.sends);
     addOutput(data, t.output);
     addFreeze(data, t.frozen, base);
@@ -1075,6 +1087,18 @@ std::vector<Track> tracksFromJson(const QJsonObject& data, const QString& projec
                 track.clips.push_back(kind == kMidiKind ? midiClipFromJson(c) : audioClipFromJson(c, base));
             }
             edits::sortByStart(track.clips);
+            for (const QJsonValue& value : listOr(t, QStringLiteral("takes"))) {
+                const QJsonObject l = value.toObject();
+                TakeLane lane;
+                lane.id = toStr(need(l, QStringLiteral("id")));
+                lane.name = l.value(QStringLiteral("name")).toString();
+                for (const QJsonValue& c : listOr(l, QStringLiteral("clips"))) {
+                    lane.clips.push_back(kind == kMidiKind ? midiClipFromJson(c) : audioClipFromJson(c, base));
+                }
+                edits::sortByStart(lane.clips);
+                track.takes.push_back(std::move(lane));
+            }
+            track.takesShown = truthy(t.value(QStringLiteral("takes_shown"))) && !track.takes.empty();
         }
         track.kind = kind;
         track.automation = automationFromJson(t.value(QStringLiteral("automation")));

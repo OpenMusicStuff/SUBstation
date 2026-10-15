@@ -501,6 +501,7 @@ void TrackHeaderItem::refresh() {
 void TrackHeaderItem::refreshRow() {
     if (!arrangement_ || !project()) return;
     AutomationRows row{row_.mainHeight, {}};
+    std::vector<TakeRow> takes;
     int top = 0, depth = 0;
     bool folded = false, shown = false;
     if (isMaster()) {
@@ -513,14 +514,16 @@ void TrackHeaderItem::refreshRow() {
     } else if (const Row* r = arrangement_->layout().rowFor(trackId_)) {
         row.mainHeight = r->mainHeight;
         row.lanes = r->lanes;
+        takes = r->takes;
         top = r->top;
         depth = r->depth;
         folded = r->folded;
         shown = r->automation;
     }
     const bool changedRow = row.mainHeight != row_.mainHeight || row.lanes != row_.lanes || top != rowTop_ ||
-                            depth != depth_ || folded != folded_ || shown != automationShown_;
+                            depth != depth_ || folded != folded_ || shown != automationShown_ || takes != takes_;
     row_ = row;
+    takes_ = std::move(takes);
     rowTop_ = top;
     depth_ = depth;
     folded_ = folded;
@@ -949,10 +952,43 @@ MenuEntries TrackHeaderItem::contextMenu() {
             editor->moveTracks(selected, p->subtreeEnd(p->trackIndex(parent)), group.parent.value_or(QString()));
         });
     }
+    if (t->hasClips()) {
+        menu.addSeparator();
+        const bool shown = t->takesShown;
+        MenuEntry& takes = menu.add(QStringLiteral("Show Take Lanes"), [editor, id, shown] { editor->setTakesShown(id, !shown); });
+        takes.checkable = true;
+        takes.checked = shown;
+        takes.enabled = !t->takes.empty();
+        MenuEntry& clear = menu.add(QStringLiteral("Delete Take Lanes"), [editor, id] { editor->deleteTakeLanes(id); });
+        clear.enabled = !t->takes.empty();
+    }
     menu.addSeparator();
     addFreezeEntries(menu, selected);
     menu.addSeparator();
     addAutomationEntries(menu);
+    return menu;
+}
+
+std::optional<arrangement::TakeRow> TrackHeaderItem::takeAt(double y) const {
+    for (const TakeRow& take : takes_) {
+        const double top = take.top - rowTop_;
+        if (top <= y && y < top + take.height) return take;
+    }
+    return std::nullopt;
+}
+
+int TrackHeaderItem::takesHeight() const {
+    int height = 0;
+    for (const TakeRow& take : takes_) height += take.height;
+    return height;
+}
+
+MenuEntries TrackHeaderItem::takeMenu(const TakeRow& take) {
+    MenuEntries menu;
+    app::ProjectEditor* editor = session_->editor();
+    const QString id = trackId_, laneId = take.laneId;
+    menu.add(QStringLiteral("Delete Take Lane"), [editor, id, laneId] { editor->deleteTakeLane(id, laneId); });
+    menu.add(QStringLiteral("Hide Take Lanes"), [editor, id] { editor->setTakesShown(id, false); });
     return menu;
 }
 
@@ -1412,8 +1448,21 @@ void TrackHeaderItem::paint(SgPainter& p) {
         p.fillRect(QRectF(left, top, right - left, lane.height), shade(own));
         p.fillRect(QRectF(0, top, w, 1), Theme::gridBar());
     }
+    // Its take lanes below those: a row each, named.
+    for (const TakeRow& take : takes_) {
+        const double top = take.top - rowTop_;
+        p.fillRect(QRectF(0, top, w, take.height), Theme::panel());
+        p.fillRect(QRectF(0, top, w, 1), Theme::gridBar());
+        if (take.index < static_cast<int>(t->takes.size())) {
+            const QFont font = uiFont(9);
+            const QRectF nameRect(left + 6, top + kNamePad, w - left - 12, kNameButton);
+            p.drawText(nameRect, Qt::AlignVCenter | Qt::AlignLeft,
+                       SgPainter::elidedText(t->takes[static_cast<size_t>(take.index)].name, font, nameRect.width()),
+                       Theme::textDim(), font);
+        }
+    }
     // The columns' edges.
-    p.fillRect(QRectF(right, 0, 1, h), Theme::border());
+    p.fillRect(QRectF(right, 0, 1, h - takesHeight()), Theme::border());
     if (ioLeft_ > 0 && mixerLeft_ > ioLeft_) p.fillRect(QRectF(mixerLeft_ - 1, 0, 1, h), Theme::border());
     const QColor ink = barText();  // (deactivated or not: its activator says so)
     if (!isReturn()) {
@@ -1468,7 +1517,7 @@ void TrackHeaderItem::mousePressEvent(QMouseEvent* event) {
     const QPointF pos = event->position();
     app::Selection& selection = *session_->selection();
     if (event->button() == Qt::RightButton) {
-        menu_ = contextMenu();
+        menu_ = takeAt(pos.y()) ? takeMenu(*takeAt(pos.y())) : contextMenu();
         if (!menu_.isEmpty()) Q_EMIT menuRequested(menu_.toVariant(), pos);
         return;
     }

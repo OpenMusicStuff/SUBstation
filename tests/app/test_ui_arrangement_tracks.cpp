@@ -1538,6 +1538,60 @@ private Q_SLOTS:
 
     // --- Resizing -----------------------------------------------------------------------------
 
+    void takeLanesShowAndComp() {
+        // Two takes over beats 0..8: the track plays the second; each is on a lane of its own.
+        const QString id = editor().addAudioTrack(-1, QStringLiteral("Vox"));
+        editor().addRecordings({{id, QStringLiteral("one.wav"), 0.0, 4.0, {}, false}});
+        editor().addRecordings({{id, QStringLiteral("two.wav"), 0.0, 4.0, {}, false}});
+        h_->settle();
+        QVERIFY(arrangement()->layout().rowFor(id)->takes.empty());  // (hidden at first)
+        // The header's menu shows them.
+        TrackHeaderItem* h = header(id);
+        QVERIFY(h);
+        arr::MenuEntries menu = h->contextMenu();
+        QVERIFY(menu.triggerText(QStringLiteral("Show Take Lanes")));
+        h_->settle();
+        const arr::Row* row = arrangement()->layout().rowFor(id);
+        QCOMPARE(row->takes.size(), size_t(2));
+        QCOMPARE(row->height(), row->laneHeight() + 2 * arr::kTakeLaneHeight);
+        QCOMPARE(h->height(), double(row->height()));
+
+        // A drag across the first lane from beat 2 to 6 puts that stretch of it in the comp.
+        const auto& view = arrangement()->view();
+        const auto laneY = [&](int lane) {
+            const arr::Row* r = arrangement()->layout().rowFor(id);
+            return r->takes[static_cast<size_t>(lane)].top - arrangement()->scrollY() + 20.0;
+        };
+        const QPoint start = h_->at(QPointF(view.beatToX(2.0), laneY(0)));
+        const QPoint end = h_->at(QPointF(view.beatToX(6.0), laneY(0)));
+        test::press(window(), start);
+        test::moveTo(window(), start + QPoint(10, 0));
+        test::moveTo(window(), end);
+        test::release(window(), end);
+        h_->settle();
+        QCOMPARE(undo().undoText(), QStringLiteral("Comp Take"));
+        const auto& clips = project().track(id).clips;
+        QCOMPARE(clips.size(), size_t(3));
+        QCOMPARE(clips[1].path, QStringLiteral("one.wav"));
+        QCOMPARE(clips[1].startBeat, view.snapBeat(view.xToBeat(start.x() - h_->at(QPointF()).x())));
+        QCOMPARE(clips[2].path, QStringLiteral("two.wav"));
+
+        // A click on the second lane's take puts all of it back.
+        click(h_->at(QPointF(view.beatToX(4.0), laneY(1))));
+        QCOMPARE(project().track(id).clips.size(), size_t(1));
+        QCOMPARE(project().track(id).clips[0].path, QStringLiteral("two.wav"));
+
+        // A lane's menu deletes it; the comp stays.
+        menu = lanes()->contextMenu(QPointF(view.beatToX(4.0), laneY(1)));
+        QVERIFY(menu.triggerText(QStringLiteral("Delete Take Lane")));
+        h_->settle();
+        QCOMPARE(project().track(id).takes.size(), size_t(1));
+        QCOMPARE(arrangement()->layout().rowFor(id)->takes.size(), size_t(1));
+        QCOMPARE(project().track(id).clips.size(), size_t(1));
+        editor().deleteTracks({id});
+        h_->settle();
+    }
+
     void draggingAHeadersBottomEdgeResizesItsTrack() {
         const QString track = editor().addAudioTrack();
         h_->settle();

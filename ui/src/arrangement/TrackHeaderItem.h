@@ -277,6 +277,11 @@ public:
     // --- Menus (entries for ArrangementMenu.qml; triggerMenu runs the one chosen) ----------
 
     arrangement::MenuEntries contextMenu();
+    // A take lane's: deleting it, hiding them all.
+    arrangement::MenuEntries takeMenu(const arrangement::TakeRow& take);
+    // The take lane at a y of its own (none: not on one), and how tall they are together.
+    std::optional<arrangement::TakeRow> takeAt(double y) const;
+    int takesHeight() const;
     arrangement::MenuEntries inputMenu();
     arrangement::MenuEntries inputChannelMenu();
     arrangement::MenuEntries outputMenu();
@@ -376,6 +381,7 @@ private:
     qreal mixerLeft_ = 0;
     arrangement::AutomationRows row_{app::kDefaultTrackHeight, {}};  // (a new track's height)
     int rowTop_ = 0;  // a track's row's top (content y), its lanes' tops are from
+    std::vector<arrangement::TakeRow> takes_;  // a track's take lanes shown (its row's, tops in content y)
     int depth_ = 0;
     bool folded_ = false;
     bool automationShown_ = false;

@@ -37,6 +37,7 @@
 namespace sub::app {
 
 class EngineBridge;
+class AudioAnalysis;
 class ProjectEditor;
 class Render;
 class RenderProgress;
@@ -140,6 +141,12 @@ public:
     // Audio files dropped at `beat`, one after another: on `trackId` if it is an
     // audio track, else on a new track ("": below the tracks). Selected.
     Q_INVOKABLE void dropFiles(const QStringList& paths, const QString& trackId, double beat);
+    // Clips just added from files (in the order placed, on one track): each file
+    // is analysed (AudioAnalysis), and once all are, those whose names give no
+    // tempo are warped at the one heard (detectedWarp; ProjectEditor::
+    // warpToDetectedTempo, as long as they are still as they were added).
+    void detectTempo(const ClipRefs& added);
+    void setAudioAnalysis(AudioAnalysis* analysis);
     // Built-in devices and plug-ins (PluginRef fields) dropped on a track (or
     // the master, a return), or below the tracks ("": an instrument among them
     // makes a new MIDI track, the effects go on it). The track is selected.
@@ -179,6 +186,7 @@ private:
     RenderStarter startRender_;
     Clipboard clipboard_;
     double reverseInPlaceSeconds_ = kReverseInPlaceSeconds;
+    QPointer<AudioAnalysis> analysis_;
 };
 
 }  // namespace sub::app

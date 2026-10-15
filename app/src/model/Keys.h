@@ -86,4 +86,14 @@ struct ClipSettings {
 ClipSettings clipSettings(const QString& name, double durationSec, double tempo,
                           const std::optional<Key>& projectKey);
 
+// A short file is a loop (warped at the tempo it is heard to have) if it is
+// this close to a whole number of bars at that tempo (4 beats each).
+inline constexpr double kLoopLengthTolerance = 0.02;
+
+// The tempo to warp a newly added file at, from the tempo it was heard to have
+// (`heardBpm`; none: none heard): none if its name gives one (that wins) or
+// it is a one-shot (shorter than kAutoWarpMinSec, and not whole bars long at
+// that tempo); else the tempo heard.
+std::optional<double> detectedWarp(const QString& name, double durationSec, std::optional<double> heardBpm);
+
 }  // namespace sub::app

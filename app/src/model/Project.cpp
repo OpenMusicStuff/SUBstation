@@ -551,6 +551,12 @@ void Project::setClips(const QString& trackId, std::vector<Clip> clips) {
     followContents(trackId, followed);
 }
 
+void Project::setTakeLanes(const QString& trackId, std::vector<TakeLane> lanes) {
+    for (TakeLane& lane : lanes) edits::sortByStart(lane.clips);
+    trackRef(trackId).takes = std::move(lanes);
+    Q_EMIT takesChanged(trackId);
+}
+
 void Project::setDevices(const QString& trackId, std::vector<Device> devices) {
     Track& track = trackRef(trackId);
     const bool followed = namedByContents(track);

@@ -8,8 +8,9 @@ searches by description, "hard trap snare", and its Best sort, which suggests wh
 the piano roll's chord lane, its notes out of the key in red, and Generate's block chords and bass lines) and
 **humanizing** (the piano roll's Humanize › Velocity: velocities from HUMANBRO's XGBoost model, through its C++ library,
 vendored) and **track labels** (what each track is, in a few words: "Washed Out Serum Pluck", from its names, presets,
-notes, effects and mixer; the tooltip over a track's name); later MIDI generation by machine learning (melodies,
-accompaniment), a timing model for Humanize › Timing, and chords from audio. The MCP server agents read the project
+notes, effects and mixer; the tooltip over a track's name) and **audio analysis** (a recording's tempo, beats, key
+and chords, from its samples: what the arrangement learns of a file dragged into it); later MIDI generation by
+machine learning (melodies, accompaniment) and a timing model for Humanize › Timing. The MCP server agents read the project
 through ([app/mcp.md](app/mcp.md)) hands them the harmony and the track labels. It is a layer of its own, as
 the browser's backend is: the static library `sub_intelligence` ([intelligence/src](../intelligence/src), namespace
 `sub::intelligence`), with no Qt, and knowing nothing of the engine or the browser; its application side is
@@ -452,9 +453,153 @@ build, one core of a 4-core cloud machine); a typical song is under a millisecon
 
 ### What would make it better
 
-Chords from audio: the same scoring over the chroma of audio clips (the similarity's FFTs and frames). Time signature
-changes, and tempo changes, if the project gets them. A model trained on annotated MIDI as one more term of the score
-(or in place of the hand-set transitions), for the ambiguous passages.
+Time signature changes, and tempo changes, if the project gets them. A model trained on annotated MIDI as one more
+term of the score (or in place of the hand-set transitions), for the ambiguous passages. (Chords from audio go
+through the same scoring: [below](#tempo-key-and-chords-from-audio).)
+
+## Tempo, key and chords from audio
+
+[audio/AudioAnalysis.h](../intelligence/src/audio/AudioAnalysis.h) (namespace `sub::intelligence::audio`) works out a
+recording's tempo, where its beats fall, its key and its chords, from its samples: what the arrangement wants of a file
+dragged into it, a loop, a stem or a whole song. `analyze(channels, channelCount, frames, sampleRate, options)` takes
+planar float channels at any rate from 8 kHz and gives an `Analysis`: `tempo` (`bpm`, `confidence` 0–1,
+`firstBeatSec`, where the beat grid's phase falls, in [0, 60 / bpm)), `key`, and `chords` (`ChordSpanSec`: start and
+end in seconds, and a `harmony::Chord`). Each may be none: no tempo for a one-shot, a pad, speech or noise; no key
+or chords for drums alone. It is a pure function, like harmony's: no threads, no state, nothing global (KISS FFT's
+plans are made and freed in each call), so any number may run at once, each on a thread of its own; it allocates
+only its own buffers, the largest the mono mix at about 11 kHz (a 4-minute song: 10 MB). `Options::chords = false`
+gives the tempo alone (no key either: the chroma is most of the cost); `Options::maxTempoSeconds` (60) is how much of
+the start the tempo is taken from (a loop: all of it). `estimateTempo()` is the first step on its own, for mono
+samples.
+
+### What was weighed
+
+| Approach | Quality | Cost | Verdict |
+|---|---|---|---|
+| Learned models (a beat tracker's network, madmom's or Beat This!; a chord recognizer trained on annotated songs) | the state of the art at tempo, downbeats and chords, on real mixes | a runtime and a model to ship, tens of milliseconds to seconds a song | not now: as with the similarity, too heavy to ship and to start for every file dragged in |
+| Essentia's own (`RhythmExtractor2013`, `HPCP`, `ChordsDetection`, `Key`), already vendored | good, well known | a second or more a song (its multi-feature beat tracker), and 30 more of its algorithms to vendor; its chords a template per frame, unsmoothed | no: slower, and its chords would not be harmony's |
+| Onsets, autocorrelation and a comb, then chroma scored by harmony's chord templates and Viterbi search | right on the steady tempos and clear harmony of most loops and produced music; documented limits | a song in a fifth of a second, a loop in 15 ms | **chosen**: the same scoring as MIDI's, so a chord from audio and one from notes are the same chord |
+
+### Preparing
+
+The channels are mixed to mono and decimated by a whole factor to about 11 kHz (44.1 kHz by 4; 48 kHz by 4, to
+12 kHz; 96 kHz by 9; 22.05 kHz by 2; 16 kHz as it is), through a windowed-sinc low-pass (Blackman, 10 taps per unit
+of the factor, cutting at 84 % of the new Nyquist frequency): everything the analysis looks at is under 5 kHz. The
+filter's taps are summed in eight running sums, which the compilers vectorize; the mix is made a block at a time.
+A peak under −80 dBFS is silence: nothing.
+
+### The tempo
+
+- **Onsets**: 512-point frames 64 samples apart (172 a second; each frame ending where its time is, so a hit at the
+  very start is seen coming in). The spectrum's energy in 26 bands from 43 Hz, each a quarter-octave or a bin wider
+  than the last, log-compressed (a thousandth of the mean band energy counting as nothing), its rise from frame to
+  frame (half-wave rectified) summed over the bands; less its mean over half a second about it, what is left above
+  zero. Bands, not bins: a hi-hat's hundred bins don't outvote a kick's three.
+- **Periodicity**: the envelope's autocorrelation, less its mean (by FFT, each lag divided by how many products it
+  sums, and by lag 0's). Every tempo from 60 to 200 BPM, 0.1 % apart, scores the mean of the autocorrelation at every
+  multiple of its period up to 6 s (a comb), times a prior: a normal over log₂ of the tempo, centred on 135 BPM, half
+  an octave wide.
+- **Octaves**: of the five best peaks, each loses up to 60 % when the onsets half a period after its best phase are
+  60 % as strong as at it or more (its off-beats as strong as its beats: half the real tempo, a drum and bass pattern
+  read at 87). The prior's centre and width were set so that, with the comb's own preferences, boom bap at 90, house
+  at 128, half-time trap at 140 and drum and bass at 174 all come out as written, not at half or double (the comb
+  alone puts trap at 70 and drum and bass at 87).
+- **Loops**: a file 4, 8, 16, 32 or 64 beats long at a tempo in the range is likely a loop at it, so those tempos are
+  candidates too, scored by the better of the comb and the comb over the onsets wrapped round (a loop's end runs into
+  its start), counting half again as much. A trimmed loop gets the exact tempo its length makes, even one bar of
+  drum and bass (1.4 s, where the comb has only two beats to go on).
+- **Fine**: about the chosen tempo (± 0.2 %), steps of 0.002 %, with every multiple of the period up to 60 % of the
+  onsets' length: at 120 BPM over a minute, 72 of them, so the period is pinned to a hundredth of a frame. Then a
+  file within 2 % (and a quarter of a beat) of 4, 8, 16... beats gets the tempo its length makes, and a tempo within
+  0.15 of a whole BPM the whole BPM.
+- **Confidence**: how far the chosen comb stands above the median one, over 0.3 (clamped to 1). Under 0.3 is no tempo.
+- **Phase**: the phase (in quarter frames) where a pulse train at the period meets the most onsets, the onsets a
+  little smoothed (a triangle five frames wide, so a human's hits a few milliseconds apart meet as one), less the
+  13 ms the onsets run late (measured): `firstBeatSec`. It is the beats' phase, not the bars': which beat is the
+  downbeat isn't known (the chords guess it, below).
+
+The tempo is constant: a file whose tempo drifts or changes has the tempo of its first minute.
+
+### The chords and the key
+
+- **Chroma**: 4096-point frames (Hann, 0.37 s at 11 kHz: 2.7 Hz bins) 2048 samples apart. Its peaks alone: local
+  maxima over two bins either side, three times the spectrum's mean 16 bins either side and within 60 dB of the
+  frame's loudest, their frequency and amplitude from a parabola through the log magnitudes. So noise and drums,
+  whose spectra have few such peaks, add little.
+- **Tuning**: the circular mean of how far the peaks (100 Hz – 2 kHz, louder ones counting more) lie from equal
+  temperament on A = 440 Hz: a recording a little sharp or flat is read in its own tuning. A peak further than 0.4
+  of a semitone from a note is no note.
+- **Harmonics**: a note's third, fifth, sixth and seventh harmonics are other pitch classes (C's are G, E and B♭):
+  each peak gives up 0.8 × 1/h of the peak an h-th of its frequency below (a sawtooth's harmonics fall as 1/h; few
+  instruments' are as strong), but keeps at least a tenth of itself (a note played on another's harmonic may beat
+  with it and all but vanish: the fifth over a bass, 220 against 220.25 Hz). Octaves are left alone: they are the
+  same pitch class.
+- **The frame's profile**: each pitch class's sum (55 Hz – 2 kHz) as a share of the loudest's, to the power 0.5 (a
+  loud, doubled bass doesn't drown the other notes: about a note a note, as MIDI counts them), none under 0.2. **The
+  bass**: the lowest peak from 30 to 250 Hz at least a quarter as strong as the loudest there, counted by register as
+  MIDI's lowest note is (`harmony::bassTrust()`: fully to E2, a quarter from G3).
+- **How much a frame counts**: its tonality (the power in its peaks from 55 Hz, a Hann sinusoid's main lobe being
+  1.5 × its peak bin's, over the frame's whole power: nothing at 15 %, fully from 50 %) times its level (against the
+  file's 95th percentile frame: nothing 40 dB under, fully from 20 dB under). A kick's body is mostly under 55 Hz, a
+  snare's and a hat's power isn't in peaks: drums alone count for next to nothing.
+- **Steps**: the frames summed into eighth-note steps on the beat grid (from `firstBeatSec`); without a tempo,
+  quarter-second steps (as if at 120 BPM). In harmony's units (`harmony::StepProfiles`): a pitch class at its frame's
+  loudest all through a step of half a beat adds half a note-beat, as a MIDI note would, so a triad over its bass
+  is a full step to `kFullStep` and a lone note a thin one. A step with less than a quarter of a note in it has none
+  (so "no chord" wins on drums alone and on silence).
+- **Bars**: four beats, starting on the beat of four where the harmony changes most (the pitch classes of the two
+  beats before each beat against the two after, summed by the beat's place in the bar): chords change on bar lines
+  most readily.
+- **Then** `harmony::inferChords()`, the scoring, smoothing and inversions of [MIDI's chords](#the-chords-chordinferenceh),
+  unchanged, and back to seconds. **The key**: `harmony::estimateKey()` of the whole file's profile with the bass
+  counted again, as for MIDI.
+
+### How well it works
+
+The tests ([tests/intelligence/test_audio_analysis.cpp](../tests/intelligence/test_audio_analysis.cpp)) synthesize
+everything (with a random generator of their own: the same sounds everywhere):
+
+| Case | Result |
+|---|---|
+| Drum loops of 8 bars, humanized (hits up to 4 ms off, levels 80–100 %), over noise at −50 dB, a quarter second of silence before and half a second after: boom bap at 90 (swung), pop at 120, house at 128, half-time trap at 140, drum and bass at 174 | the tempo within 0.01 BPM before rounding (90.008, 120.000, 127.999, 139.991, 174.006), exact after; the first beat within 3 ms |
+| The same trimmed to 1, 2 and 4 bars | exact, the first beat within 2 ms of the start |
+| A kick, a snare (3 s), a held C major pad (8 s), white noise, silence | no tempo (the highest confidence of them 0.17, against 0.69 and up for every loop) |
+| C, G, Am, F twice at 100 BPM (sawtooth chords over a bass struck on the beat), alone and under drums | C G Am F C G Am F, C major, each chord within a step of its bar |
+| Am, Dm, E, Am twice at 90 BPM (harmonic minor), alone and under swung drums | Am Dm E Am Dm E Am, A minor |
+| Dm7, G7, Cmaj7 at 110 BPM under drums | Dm7 G7 Cmaj7, C major |
+| C/E, F, G, Am, plucked on every beat (hollow, odd harmonics, half-second decay) over a held bass | C/E F G Am C/E F G Am |
+| Drums alone at 120, 128, 140 | no chords, no key |
+| The pop progression and drums at 16, 22.05, 48 and 96 kHz, in stereo | the same tempo and chords at every rate |
+
+Speed, a release build on one core of a 4-core cloud machine (a 2.8 GHz Xeon, where KISS FFT takes 44 µs for 4096
+points): a 4-minute stereo song at 44.1 kHz in 180–230 ms (decimating 50, the tempo from its first minute 50, the
+chroma and the chords 80); the tempo alone 105 ms; a 10-second loop 15 ms.
+
+Limits, honestly: these are synthesized sounds with a clear beat and clear harmony. On real mixes, expect:
+
+- **Tempo**: right on steady electronic and produced music; a slow ballad under about 95 BPM can come out double, a
+  fast piece over 190 half, and a beat whose kick and snare are ambiguous (some breakbeats, half-time) at a related
+  tempo (2:3). Rubato, live tempo drift and tempo changes aren't followed: one tempo for the file. `firstBeatSec` is
+  a beat, not necessarily the downbeat.
+- **Chords**: right where a band or a pad plays them plainly; a mix where the vocal or a lead dominates leans on its
+  notes (as a melody does in MIDI); distorted guitars, detuned supersaws and heavy reverb blur the peaks; a strong
+  808 or kick tuned to a note can be read as the bass. Sevenths played are found; sevenths a mix only implies are
+  not.
+- **Key**: Krumhansl and Kessler's profiles: a relative major and minor can be confused when the tonic isn't
+  stressed; modal music (Dorian, Mixolydian) is read as its nearest major or minor.
+
+### What would make it better
+
+- **NNLS chroma** (Mauch and Dixon): the spectrum on a log-frequency axis explained as a sum of note templates with
+  their harmonics, by non-negative least squares, in place of subtracting harmonics peak by peak: cleaner chroma on
+  real mixes, at a few times the cost.
+- **Separating drums first** (median filtering of the spectrogram across time and frequency, Fitzgerald's HPSS) so
+  the chroma sees only what is held, and the onsets only what is struck.
+- **Downbeats**: from where the bass and the kick fall in the bar, not only where the harmony changes.
+- **A tempo that changes**: a beat tracker (Ellis's dynamic programming over the onsets) giving each beat's time,
+  for live recordings, so a clip could be warped to the grid rather than stretched by one ratio.
+- **A learned model** (a small beat and chord network) as one more term of the scores, once one is small enough to
+  ship and run on every file dragged in.
 
 ## Humanizing: velocities by machine learning
 
@@ -755,7 +900,8 @@ the arrangement.
 | [similarity/SoundIndex.h](../intelligence/src/similarity/SoundIndex.h) | `SoundIndex` (its threads; `find()`, `cancelSearch()`, `schema()`), `SoundQuery`, `SimilarityResult`, `SoundIndexStatus`, `SoundIndexOptions` |
 | [third_party/essentia](../intelligence/third_party/essentia) | Essentia 2.1-beta5's core and 29 algorithms (the `essentia` library), [VERSION.txt](../intelligence/third_party/essentia/VERSION.txt), [vendor.sh](../intelligence/third_party/essentia/vendor.sh), [local-changes.patch](../intelligence/third_party/essentia/local-changes.patch) |
 | [harmony/Chords.h](../intelligence/src/harmony/Chords.h) | `Quality`, `Chord` (its notes, its name: "Am7", "C/E"), `Key` (its scale, its triads), `pitchClass()`, `noteName()` |
-| [harmony/ChordInference.h](../intelligence/src/harmony/ChordInference.h) | `Note`, `ChordSpan`, `InferenceOptions`, `Harmony`; `estimateKey()`, `inferHarmony()` |
+| [harmony/ChordInference.h](../intelligence/src/harmony/ChordInference.h) | `Note`, `ChordSpan`, `InferenceOptions`, `Harmony`, `StepProfiles` (what sounds in each step, and the bass: from notes or from audio); `estimateKey()` (of notes, or of a pitch-class profile), `inferHarmony()`, `inferChords()` (of step profiles), `bassTrust()` |
+| [audio/AudioAnalysis.h](../intelligence/src/audio/AudioAnalysis.h) | `analyze()`: a recording's `Analysis` (`Tempo`, `harmony::Key`, `ChordSpanSec`s) from its samples, `Options`; `estimateTempo()`; `kMinBpm`, `kMaxBpm`, `kMinTempoConfidence` |
 | [harmony/Accompaniment.h](../intelligence/src/harmony/Accompaniment.h) | `GeneratedNote`; `chordPart()`, `bassPart()`, `starterProgression()` |
 | [humanize/VelocityModel.h](../intelligence/src/humanize/VelocityModel.h) | `VelocityModel` (`humanize()`, `predict()`), `Note` (a part's, `target` or context), `Meter`, `ModelError` |
 | [third_party/humanbro](../intelligence/third_party/humanbro) | HUMANBRO's C++ runtime (the `humanbro` library): `humanbro::Humanizer`, its features and tree walker |
@@ -904,7 +1050,11 @@ Minor").
 `Harmony` ([Harmony.h](../app/src/intelligence/Harmony.h)) lives on the application's thread. Its notes are those the
 song's MIDI tracks play (`songNotes()`): of every MIDI track heard (not muted, nor in a muted group) whose name doesn't
 say it plays drums ("Drums", "Kick", "Snare", "Hats", "Perc", "Claps"...: `isDrumTrack()`), what its clips play, where
-they play it on the timeline (nothing of a deactivated clip, nor deactivated notes: `Clip::heardNotes()`). Audio tracks are for later. The bars are the project's time signature's; the key its
+they play it on the timeline (nothing of a deactivated clip, nor deactivated notes: `Clip::heardNotes()`). With an
+`AudioAnalysis` (the session's), audio tracks count too: of every audio track heard whose name doesn't say drums, the
+chords its playing clips' files were heard to hold (`audioNotes()`: `AudioAnalysis::clipChords`, where each clip plays
+them, transposed as it plays them), each as its chord's notes from C4 up and its bass at C2's octave; a file analysed
+(`AudioAnalysis::analysed`) marks it stale, and so does the tempo while audio tracks are heard. The bars are the project's time signature's; the key its
 key, if it has one.
 
 A change to what it hears (the clips of a track it hears; which tracks those are, as tracks come, go, are muted,
@@ -916,7 +1066,33 @@ background, and the session asks for the key each time (it hands it to the engin
 a clip or shows), maps the chords over the part its clip plays into the clip's own beats, and draws them; Generate asks
 too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`), on at first.
 
-## Invariants
+### Tempo, key and chords from audio: the application side
+
+`AudioAnalysis` ([AudioAnalysis.h](../app/src/intelligence/AudioAnalysis.h), `Session.audioAnalysis`) runs
+`audio::analyze` on the application's behalf: each file once, after the engine bridge has decoded it (its samples at
+the engine's rate, an immutable source, so read on another thread), on a thread of its own at low priority, one file
+at a time; the result comes back on the application's thread and is kept by file (`pathIdentity`) for the session:
+`result(path)`, `analysed(path)`, `request(path, then)`. Nothing is saved: a project opened is analysed again as its
+files decode. The session asks for every file its audio tracks' clips play, 200 ms after the clips change (or a
+project opens). `Session::Options::analyseAudio` turns it off (the tests do, but the ones testing it, which give it
+an analyser of their own: `setAnalyser`).
+
+What it is used for:
+
+- **Dropped audio warps at its own tempo.** Audio dragged into the arrangement (or double-clicked in the browser) is
+  added at once, set up from its name as before (`clipSettings`). Once its files are analysed,
+  `ArrangementActions::detectTempo` warps those whose names give no tempo at the tempo heard (`detectedWarp`: a file
+  of `kAutoWarpMinSec` or more, which used to be warped at the project tempo, or a shorter one that is whole bars at
+  that tempo, within 2 %: a loop; a one-shot stays as it is), with `ProjectEditor::warpToDetectedTempo`: the clips
+  as they were added, end to end again, one undo step ("Detect Tempo"). A clip changed in the meantime (and those
+  placed after it) is left as it is.
+- **Chords along audio clips**: the arrangement names each clip's chords along the bottom of its body
+  (`clipChords`: the part of its file the clip plays, where it plays it at the project tempo, transposed by its
+  Transpose and Detune, or a Re-Pitch clip by its speed: `clipShift`).
+- **The song's chords** (above: `Harmony::audioNotes`), and with them the piano roll's chord lane, Generate and
+  `get_harmony`.
+- **The clip view** says what a clip's file was heard to hold ("heard: 128.00 BPM, A Minor").
+
 
 - The module includes nothing of Qt, the application, the UI, the engine or the browser (`ctest -R boundaries`); it
   decodes through the `miniaudio` library target, not through the engine.
@@ -931,6 +1107,9 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   `essentia::init()` under `std::call_once`), never on the audio thread; its logger is compiled out.
 - Harmony is pure functions of the notes and options: the same song always gives the same chords, key and parts.
   It keeps nothing and starts no thread; the application infers it on its own thread, only when asked after a change.
+- Audio analysis is a pure function of the samples, their rate and the options: the same file always gives the same
+  tempo, key and chords. It keeps nothing, shares nothing between calls and starts no thread; the caller runs it on a
+  thread of its own.
 - Humanized velocities are a pure function of the part's notes, the meter and the amount: the model never sees a
   velocity (only the targets' mean, which levels it), and the same part always comes out the same. Only targets
   change. The vendored runtime (`intelligence/third_party/humanbro`, outside the boundary check's folders) includes
@@ -1024,6 +1203,11 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
   little to tell); chords: triads and sevenths, inversions, a progression with its bass on another track, a melody's
   passing notes, arpeggios, a melody alone, a chord pushed off the beat, rests, the key given, a long song's speed;
   the chord part's voicings and voice leading, striking again at bar lines, the bass, the starter progression.
+- [tests/intelligence/test_audio_analysis.cpp](../tests/intelligence/test_audio_analysis.cpp) (`intelligence_tests`):
+  the tempo and first beat of humanized drum loops of five styles over noise, untrimmed and trimmed to one, two and
+  four bars (exact); none for one-shots, a pad, noise, silence; chords and keys of progressions (major, harmonic
+  minor, sevenths, an inversion; sawtooth and plucked tones) alone and under drums; none for drums alone; the same at
+  16–96 kHz and in stereo; the tempo from part of a file; a 4-minute song's and a loop's speed (printed).
 - [tests/app/test_harmony.cpp](../tests/app/test_harmony.cpp): the song's notes (MIDI tracks heard, not drums, what
   clips play where), following the project once edits settle, the key (the project's or inferred), the bars of the
   time signature, the `shown` setting.
@@ -1097,3 +1281,11 @@ too. `shown` (View › Chords and Key, C) is a setting (`pianoroll/show_harmony`
 - Fujishima, "Realtime chord recognition of musical sound" (ICMC 1999): pitch-class profiles against chord templates.
 - Sheh and Ellis, "Chord segmentation and recognition using EM-trained hidden Markov models" (ISMIR 2003): smoothing
   chord sequences with a Viterbi search.
+- Bello et al., "A tutorial on onset detection in music signals" (IEEE TSAP, 2005); Böck and Widmer, "Maximum filter
+  vibrato suppression for onset detection" (DAFx 2013): spectral flux, log-compressed, as the onset envelope.
+- Percival and Tzanetakis, "Streamlined tempo estimation based on autocorrelation and cross-correlation with pulses"
+  (IEEE/ACM TASLP, 2014); Ellis, "Beat tracking by dynamic programming" (JNMR, 2007): the autocorrelation scored at a
+  period's multiples, a log-normal tempo prior, the phase from a pulse train.
+- Gómez, "Tonal description of music audio signals" (PhD thesis, UPF, 2006): HPCP, chroma from spectral peaks with
+  the tuning estimated. Mauch and Dixon, "Approximate note transcription for the improved identification of
+  difficult chords" (ISMIR 2010): NNLS chroma.

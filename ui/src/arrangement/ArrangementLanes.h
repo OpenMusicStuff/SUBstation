@@ -114,6 +114,8 @@ inline constexpr double kFadeGrab = 4;       // pixels around a fade handle (squ
 inline constexpr double kFadeDot = 3;        // the radius of the dot on a fade's curve
 inline constexpr double kMinCurveFade = 12;  // the narrowest fade (pixels) whose curve has a dot
 inline constexpr double kMinFadeBody = 12;   // the lowest clip body (pixels) with fade handles
+inline constexpr double kChordStrip = 12;    // the band along an audio clip's body its chords are named in
+inline constexpr double kMinChordBody = 40;  // the lowest clip body (pixels) that names its chords
 
 // The title bar of a clip this high: where it is grabbed (the rest selects
 // time). A folded track's clips are all title bar, as in Ableton: a bar with
@@ -164,6 +166,8 @@ public:
         bool curve = false;
     };
     std::optional<FadeHit> hitFade(const QPointF& pos) const;
+    // The take lane under `pos` (its track's id, and its row), if one is.
+    std::optional<std::pair<QString, arrangement::TakeRow>> takeRowAt(const QPointF& pos) const;
     // Whether `pos` is in the top band of a lane, where clips (not automation)
     // are selected. Short lanes have no title bar, so all of them is the band.
     bool inClipBand(const QPointF& pos) const override;
@@ -301,6 +305,10 @@ private:
                      const QRectF& visible);
     void drawClipFrame(SgPainter& p, const QColor& trackColor, const app::Clip& clip, const QRectF& rect,
                        bool selected, bool ghost, bool folded, bool automation = false) const;
+    // A take lane: its clips, dimmed but where the track's comp plays them.
+    // An audio clip's chords, along the bottom of its body.
+    void drawChords(SgPainter& p, const app::Clip& clip, const QRectF& body, const QRectF& visible);
+    void drawTakeLane(SgPainter& p, const app::Track& track, const arrangement::TakeRow& take, double y, const QRectF& visible);
     void drawGroupSummary(SgPainter& p, const QString& groupId, double rowTop, int rowHeight, bool folded,
                           const QRectF& visible) const;
     void drawNotes(SgPainter& p, const app::Clip& clip, const QRectF& area, const QRectF& visible) const;

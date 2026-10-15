@@ -202,6 +202,28 @@ private:
     bool active_ = false;
 };
 
+// On a take lane: a drag comps the stretch it covers (on the grid; Alt: off it)
+// into the track (ProjectEditor::compTake), the take's silence there too; a
+// click comps the take's clip under it, whole. One undo step, on release.
+class TakeCompGesture : public Gesture {
+public:
+    TakeCompGesture(LanesHost& host, const QString& trackId, const QString& laneId, const QPointF& press,
+                    bool bypassSnap);
+
+    void move(const QPointF& pos, Qt::KeyboardModifiers modifiers) override;
+    void finish() override;
+    std::optional<TakeSpan> takeSpan() const override;
+
+private:
+    LanesHost& host_;
+    QString trackId_;
+    QString laneId_;
+    QPointF press_;
+    double anchor_ = 0.0;
+    double beat_ = 0.0;
+    bool active_ = false;
+};
+
 // Shift-click (and a drag on from it): the time selection extended to where the
 // mouse is, over the time between and everything in that direction, as the
 // drag that made it would have gone on. A clip range takes in every track from

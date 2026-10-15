@@ -7,6 +7,7 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace sub::app::edits {
@@ -345,6 +346,36 @@ Clip consolidateMidi(const std::vector<Clip>& clips) {
                              notes::normalize(notes::untangle(played)));
     joined.muted = allMuted;
     return joined;
+}
+
+bool sameContent(const Clip& a, const Clip& b, double tempo) {
+    if (a.kind != b.kind) return false;
+    if (a.isMidi()) return std::abs((a.startBeat - a.offsetBeats) - (b.startBeat - b.offsetBeats)) < 1e-6 && a.notes == b.notes;
+    if (a.path != b.path || a.isWarped() != b.isWarped() || a.transpose != b.transpose || a.detune != b.detune) return false;
+    if (std::abs(a.sourceTempo(tempo) - b.sourceTempo(tempo)) > 1e-9) return false;
+    return std::abs((a.startBeat - a.sourceToBeats(a.offsetSec, tempo)) -
+                    (b.startBeat - b.sourceToBeats(b.offsetSec, tempo))) < 1e-6;
+}
+
+std::vector<Interval> compedSpans(const std::vector<Clip>& comp, const std::vector<Clip>& take, double tempo) {
+    std::vector<Interval> spans;
+    for (const Clip& t : take) {
+        for (const Clip& c : comp) {
+            const double start = std::max(t.startBeat, c.startBeat);
+            const double end = std::min(t.endBeat(tempo), c.endBeat(tempo));
+            if (end > start + kEps && sameContent(t, c, tempo)) spans.emplace_back(start, end);
+        }
+    }
+    std::sort(spans.begin(), spans.end());
+    std::vector<Interval> merged;
+    for (const Interval& span : spans) {
+        if (!merged.empty() && span.first <= merged.back().second + kEps) {
+            merged.back().second = std::max(merged.back().second, span.second);
+        } else {
+            merged.push_back(span);
+        }
+    }
+    return merged;
 }
 
 }  // namespace sub::app::edits

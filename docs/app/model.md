@@ -147,7 +147,19 @@ first automated in), `automationView`, audio input (`input`: none, `{c}` or `{l,
 `inputTrack`: another track's id or `kMaster` for resampling; `inputTap`: where that is taken, `kPostFader`,
 `kPreFader` or `kPreFx`, as a sidechain's tap), `output` (an `Output`: where its output goes; see below), `midiInput` (a `MidiInput`, or none for *No Input*;
 new MIDI tracks hear every input), `monitor` (`kMonitorModes`: `off`, `in`, `auto`), `armed`, `parent` (the group it
-is in), `folded`, `sends` (return id → `Send`), `frozen`.
+is in), `folded`, `sends` (return id → `Send`), `frozen`, `takes` and `takesShown`.
+
+**Take lanes** (`TakeLane`: `id`, `name`, `clips`). Recording keeps what each take played on a lane of its own below
+its track (`ProjectEditor::addRecordings`: "Take 1", "Take 2"..., `nextTakeName`), as copies with ids of their own,
+in the same undo step that puts the takes on the track; the track's own clips are then the *comp*. A take lane's
+clips don't play, aren't selected, and nothing but the take-lane edits touches them: `compTake` (what a lane holds
+between two beats, its silence too, replaces what the track plays there: `edits::removeRange` then
+`edits::sliceRange`, copies again), `deleteTakeLane`, `deleteTakeLanes` (`SetTakeLanesCommand`, the track's whole
+list; `Project::setTakeLanes` emits `takesChanged`). `edits::compedSpans` says where the track plays what a lane
+holds (`edits::sameContent`: a clip that is a window onto the same file or notes, at the same place), so a lane can
+draw the parts its comp is made of. Whether they show is view state (`takesShown`, `TrackField::TakesShown`, not
+undone). Copies of a track get lanes (and clips on them) with ids of their own; flattening drops them. The File
+Manager doesn't look at take lanes' files: a file only a take lane plays isn't listed (nor collected).
 
 The master and the returns are `Track`s too, so whatever works on a track's devices, mixer or automation works on
 theirs: `Project::track(id)` finds an arrangement track, a return, or the master (`kMaster`). `hasTrack()` is true

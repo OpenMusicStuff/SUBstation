@@ -49,6 +49,8 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
                 │ on the GUI thread with the song's MIDI notes when asked             │
                 │ Labels: pure functions; TrackLabels (app/src/intelligence) calls    │
                 │ them on the GUI thread with the project's facts when asked          │
+                │ Audio: pure functions; AudioAnalysis (app/src/intelligence) runs    │
+                │ them on a thread of its own with each decoded file's samples        │
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐
   platform      │ sub_platform, under the engine, the browser and the intelligence:   │
@@ -62,7 +64,7 @@ so nothing above it has `#ifdef`s for one. This page is the map; each part has i
 | Application layer | [app/src](../app/src): `model/`, `editor/`, `io/`, `audio/`, `session/`, `files/`, `browser/`, `intelligence/`, `plugins/`, `analysis/` | `sub_app` | Qt Core and Gui, `sub_engine`, `sub_browser`, `sub_intelligence` | [app/](README.md#application-layer) |
 | Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, the platform layer, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
 | Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library, the platform layer | [browser.md](browser.md) |
-| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
+| Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `audio/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
 | Plug-in host | [tools/pluginhost](../tools/pluginhost/main.cpp) | `substation-plugin-host`, a program of its own: the plug-in sandboxes | `sub_engine` | [engine/sandboxes.md](engine/sandboxes.md) |
@@ -173,6 +175,7 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 | Recorder's disk writer | empties the recording rings into WAV files | — |
 | Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)) | take the engine's mutex |
 | Render jobs ([RenderJob](engine/README.md#in-the-background)) | an export or a freeze's render, on the snapshot it began with (live output is silent meanwhile) | take the engine's mutex |
+| Audio analysis (`AudioAnalysis`'s `QThreadPool`, 1 thread, low priority) | a decoded file's tempo, key and chords (`audio::analyze`), one file at a time; results come back to the GUI thread | touch the model |
 | Reverse jobs (`ReverseJob`) | a reversed copy of a decoded file written as a WAV file, then decoded | touch the model |
 | MIDI driver threads | stamp incoming messages against the audio clock and queue them for the audio thread | take the engine's mutex |
 | Browser indexer and search threads (`sub_browser`) | keep the file index, run searches; then call the wake callback, which posts a queued call to `FileIndex` on the GUI thread | call into the application (but for the wake callback) |

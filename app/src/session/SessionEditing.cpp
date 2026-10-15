@@ -183,6 +183,7 @@ void Session::addFileAtInsert(const QString& path) {
     const ClipRefs refs = editor_->addClips(trackId, selection_->insertBeat(), {{path, info->duration}},
                                             static_cast<int>(project_->tracks().size()));
     if (!refs.isEmpty()) selection_->selectClips(*editor_, refs);
+    arrangement_->detectTempo(refs);
 }
 
 void Session::presetSaved(const QString&) { presets_->rescan(); }

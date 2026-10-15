@@ -247,6 +247,18 @@ public:
     const QString& trackId() const { return target_; }
 };
 
+// A track's take lanes, all of them. Target: the track's id.
+class SetTakeLanesCommand : public ValueCommand<QString, std::vector<TakeLane>> {
+public:
+    SetTakeLanesCommand(Project* project, const QString& trackId, std::vector<TakeLane> before,
+                        std::vector<TakeLane> after, const QString& text);
+
+    void redo() override;
+    void undo() override;
+
+    const QString& trackId() const { return target_; }
+};
+
 // One setting of a track: target (track id, field).
 class UpdateTrackCommand
     : public MergeableCommand<UpdateTrackCommand, std::pair<QString, TrackField>, TrackValue> {

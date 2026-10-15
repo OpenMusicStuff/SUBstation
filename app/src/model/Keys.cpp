@@ -5,6 +5,8 @@
 
 #include <QRegularExpression>
 
+#include <cmath>
+
 namespace sub::app {
 
 namespace {
@@ -203,6 +205,15 @@ ClipSettings clipSettings(const QString& name, double durationSec, double tempo,
     }
     if (const int transpose = transposeTo(info.key, projectKey); transpose != 0) settings.transpose = transpose;
     return settings;
+}
+
+std::optional<double> detectedWarp(const QString& name, double durationSec, std::optional<double> heardBpm) {
+    if (!heardBpm || *heardBpm < kMinSegmentBpm || *heardBpm > kMaxSegmentBpm || parseFilename(name).bpm) return std::nullopt;
+    if (durationSec >= kAutoWarpMinSec) return heardBpm;
+    const double bars = durationSec * *heardBpm / 60.0 / 4.0;
+    const double whole = std::round(bars);
+    if (whole >= 1.0 && std::abs(bars - whole) <= kLoopLengthTolerance * whole) return heardBpm;
+    return std::nullopt;
 }
 
 }  // namespace sub::app

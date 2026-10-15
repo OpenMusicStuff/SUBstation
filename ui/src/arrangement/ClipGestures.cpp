@@ -338,6 +338,52 @@ void TimeSelectGesture::move(const QPointF& pos, Qt::KeyboardModifiers modifiers
     host_.setHostCursor(QCursor(Qt::IBeamCursor));
 }
 
+// --- TakeCompGesture -----------------------------------------------------------------------------
+
+TakeCompGesture::TakeCompGesture(LanesHost& host, const QString& trackId, const QString& laneId,
+                                 const QPointF& press, bool bypassSnap)
+    : host_(host), trackId_(trackId), laneId_(laneId), press_(press) {
+    const timeline::Timeline& view = host.hostArrangement()->view();
+    anchor_ = beat_ = std::max(0.0, view.snapBeat(view.xToBeat(press.x()), bypassSnap));
+}
+
+void TakeCompGesture::move(const QPointF& pos, Qt::KeyboardModifiers modifiers) {
+    if (!active_) {
+        if (!farEnough(pos, press_)) return;
+        active_ = true;
+    }
+    const timeline::Timeline& view = host_.hostArrangement()->view();
+    beat_ = std::max(0.0, view.snapBeat(view.xToBeat(pos.x()), modifiers & Qt::AltModifier));
+    host_.setHostCursor(QCursor(Qt::IBeamCursor));
+}
+
+std::optional<TakeSpan> TakeCompGesture::takeSpan() const {
+    if (!active_) return std::nullopt;
+    return TakeSpan{trackId_, laneId_, std::min(anchor_, beat_), std::max(anchor_, beat_)};
+}
+
+void TakeCompGesture::finish() {
+    app::Session& session = *host_.hostSession();
+    const app::Project& project = *session.project();
+    const app::Track* track = project.findTrack(trackId_);
+    if (track == nullptr) return;
+    double start = std::min(anchor_, beat_), end = std::max(anchor_, beat_);
+    if (!active_) {  // a click: the take's clip under it
+        const double beat = host_.hostArrangement()->view().xToBeat(press_.x());
+        start = end = 0.0;
+        for (const app::TakeLane& lane : track->takes) {
+            if (lane.id != laneId_) continue;
+            for (const app::Clip& clip : lane.clips) {
+                if (clip.startBeat <= beat && beat < clip.endBeat(project.tempo())) {
+                    start = clip.startBeat;
+                    end = clip.endBeat(project.tempo());
+                }
+            }
+        }
+    }
+    if (end > start) session.editor()->compTake(trackId_, laneId_, start, end);
+}
+
 // --- ExtendGesture -------------------------------------------------------------------------------
 
 std::unique_ptr<ExtendGesture> ExtendGesture::start(LanesHost& host, const QPointF& press,

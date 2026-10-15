@@ -12,6 +12,7 @@
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "files/HotSwap.h"
+#include "intelligence/AudioAnalysis.h"
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
 #include "intelligence/SoundSimilarity.h"
@@ -61,6 +62,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<PluginIndex>("PluginIndex");
     registerUncreatable<SoundSimilarity>("SoundSimilarity");
     registerUncreatable<Harmony>("Harmony");
+    registerUncreatable<AudioAnalysis>("AudioAnalysis");
     registerUncreatable<Humanizer>("Humanizer");
     registerUncreatable<TrackLabels>("TrackLabels");
     registerUncreatable<TrackSearch>("TrackSearch");

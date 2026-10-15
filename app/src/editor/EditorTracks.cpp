@@ -572,6 +572,10 @@ QStringList ProjectEditor::insertCopies(const CopiedTracks& copied, int index, s
             track.parent = renamed.value(*original.parent);
         }
         for (Clip& clip : track.clips) clip.id = newId();
+        for (TakeLane& lane : track.takes) {
+            lane.id = newId();
+            for (Clip& clip : lane.clips) clip.id = newId();
+        }
         QHash<QString, QString> ids;  // its devices' and rack chains' ids: the copies'
         for (Device& device : track.devices) {
             const QStringList old = deviceAndChainIds(device);
@@ -967,7 +971,21 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
         }
         after.insert(trackId, edits::resolveOverlaps(all, newIds, tempo));
     }
-    if (!after.isEmpty()) commitClips(QStringLiteral("Record"), after);
+    if (after.isEmpty()) return refs;
+    const QString text = QStringLiteral("Record");
+    Macro macro(undoStack_, text);
+    if (!commitClips(text, after)) return {};
+    for (const auto& [trackId, clips] : byTrack) {  // (a take lane of each track's takes, copies of them)
+        const Track& track = p.track(trackId);
+        std::vector<TakeLane> lanes = track.takes;
+        TakeLane lane{newId(), nextTakeName(track), {}};
+        for (Clip copy : clips) {
+            copy.id = newId();
+            lane.clips.push_back(std::move(copy));
+        }
+        lanes.push_back(std::move(lane));
+        push(std::make_unique<SetTakeLanesCommand>(project_, trackId, track.takes, std::move(lanes), text));
+    }
     return refs;
 }
 
