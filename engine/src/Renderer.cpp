@@ -1244,6 +1244,13 @@ bool Renderer::rests(const RenderSnapshot& snap, const StripRender& chain, size_
         return false;
     };
     if (rest.playing != playing_ || (!playing_ && rest.position != position_)) return wake();
+    // Its parameters moved by automation or a modulator: a level brought up from
+    // zero may make it sound, so it doesn't rest.
+    const auto moves = [i](const auto& lane) { return lane.insert == static_cast<int>(i); };
+    if (std::any_of(chain.automation.begin(), chain.automation.end(), moves) ||
+        std::any_of(chain.modulation.begin(), chain.modulation.end(), moves)) {
+        return wake();
+    }
     for (int s = 0; s < slices.count; ++s) {
         const Slice& slice = slices.slice[static_cast<size_t>(s)];
         if (slice.endEvent > slice.firstEvent) return wake();  // notes (or other events) for it

@@ -66,6 +66,12 @@ void CpuUsage::update() {
             };
             take(times.tracks);
             take(times.devices);
+            // Those not measured now (unloaded, loading, gone): read as nothing, so they fade out.
+            for (auto it = cpu_.begin(); it != cpu_.end(); ++it) {
+                if (times.tracks.contains(it.key()) || times.devices.contains(it.key())) continue;
+                it.value() *= 1.0 - kSmoothing;
+                peak_[it.key()] *= kPeakDecay;
+            }
         }
     }
     std::vector<Row> rows = buildRows();

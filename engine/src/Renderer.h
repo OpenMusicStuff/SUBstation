@@ -417,7 +417,8 @@ private:
     // kRestAfter more, while its input, its sidechain and its notes stay
     // silent and the transport stays as it was; every kLookEvery it is
     // processed once, so that one making sound of itself (a knob turned) wakes.
-    // Never in offline renders, nor modulators, MIDI effects and racks.
+    // Never in offline renders, nor modulators, MIDI effects, racks, and devices
+    // with automation or modulation on their parameters.
     bool rests(const RenderSnapshot& snap, const StripRender& chain, size_t i, const Slices& slices,
                float* left, float* right, int frames) noexcept;
     // Live: after device i was processed, how long what it passes on has been silent.
