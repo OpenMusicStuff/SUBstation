@@ -93,6 +93,7 @@ class Render;
 class RenderProgress;
 class Selection;
 class SoundSimilarity;
+class SimilarSamples;
 class SoundSuggestions;
 class TrackLabels;
 class TrackSearch;
@@ -109,6 +110,8 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::BrowserController* browser READ browser CONSTANT)
     Q_PROPERTY(sub::app::PluginIndex* plugins READ plugins CONSTANT)
     Q_PROPERTY(sub::app::SoundSimilarity* similarity READ similarity CONSTANT)
+    // The Sampler's and the Drum Rack's similar-sound arrows.
+    Q_PROPERTY(sub::app::SimilarSamples* similarSamples READ similarSamples CONSTANT)
     Q_PROPERTY(sub::app::Harmony* harmony READ harmony CONSTANT)
     Q_PROPERTY(sub::app::SoundSuggestions* suggestions READ suggestions CONSTANT)
     Q_PROPERTY(sub::app::Humanizer* humanizer READ humanizer CONSTANT)
@@ -126,6 +129,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::PluginHostingPreferences* pluginHosting READ pluginHosting CONSTANT)
     Q_PROPERTY(sub::app::Updater* updates READ updates CONSTANT)
     Q_MOC_INCLUDE("update/Updater.h")
+    Q_MOC_INCLUDE("intelligence/SimilarSamples.h")
     // The MCP server agents read and edit the project through (Options › MCP Server).
     Q_PROPERTY(sub::app::McpServer* mcp READ mcp CONSTANT)
     // What agents changed through it, apart from the undo stack: each change
@@ -157,6 +161,8 @@ class Session : public QObject {
     Q_PROPERTY(double recordQuantize READ recordQuantize WRITE setRecordQuantize NOTIFY recordQuantizeChanged)
     // [{label ("No Quantization", "1/16"...), value: beats}]
     Q_PROPERTY(QVariantList recordQuantizeChoices READ recordQuantizeChoices CONSTANT)
+    // And their ends on the grid too (saved with the preferences).
+    Q_PROPERTY(bool recordQuantizeEnds READ recordQuantizeEnds WRITE setRecordQuantizeEnds NOTIFY recordQuantizeEndsChanged)
     // Whether automation was overridden somewhere (Re-Enable Automation is enabled, its button lit).
     Q_PROPERTY(bool automationOverridden READ automationOverridden NOTIFY automationOverriddenChanged)
 
@@ -209,6 +215,7 @@ public:
     BrowserController* browser() const { return browser_; }
     PluginIndex* plugins() const { return plugins_; }
     SoundSimilarity* similarity() const { return similarity_; }
+    SimilarSamples* similarSamples() const { return similarSamples_; }
     Harmony* harmony() const { return harmony_; }
     SoundSuggestions* suggestions() const { return suggestions_; }
     Humanizer* humanizer() const { return humanizer_; }
@@ -249,6 +256,8 @@ public:
     double recordQuantize() const;
     void setRecordQuantize(double grid);
     QVariantList recordQuantizeChoices() const;
+    bool recordQuantizeEnds() const;
+    void setRecordQuantizeEnds(bool ends);
     bool automationOverridden() const { return automationOverridden_; }
     int pluginsLoaded() const { return pluginsLoaded_; }
     int pluginsTotal() const { return pluginsTotal_; }
@@ -366,6 +375,9 @@ public:
     Q_INVOKABLE QVariantMap renameTarget(bool browserListFocused = false);
     // S: solo the selected tracks (and unsolo the rest); if they all are already, unsolo every track.
     Q_INVOKABLE void soloSelectedTracks();
+    // Arms the selected tracks for recording, disarming the others (as clicking
+    // one's arm does); with all of them armed already, disarms them.
+    Q_INVOKABLE void armSelectedTracks();
     // Ctrl+Shift+F: freezes the selected tracks (and returns), or unfreezes them if they all are.
     Q_INVOKABLE void toggleFreeze();
     // Flatten Track: the selected frozen tracks become audio tracks playing their frozen audio.
@@ -467,6 +479,7 @@ Q_SIGNALS:
     void templateChanged();
     void countInBarsChanged();
     void recordQuantizeChanged();
+    void recordQuantizeEndsChanged();
     void automationOverriddenChanged();
     void pluginsLoadingChanged();
 
@@ -504,6 +517,7 @@ private:
     EngineBridge* bridge_ = nullptr;
     PluginIndex* plugins_ = nullptr;
     SoundSimilarity* similarity_ = nullptr;
+    SimilarSamples* similarSamples_ = nullptr;
     Harmony* harmony_ = nullptr;
     SoundSuggestions* suggestions_ = nullptr;
     Humanizer* humanizer_ = nullptr;

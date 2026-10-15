@@ -55,6 +55,7 @@ std::vector<std::pair<QString, QStringList>> builtinCategories() {
 
 bool isInstrument(const QString& kind, const std::optional<PluginRef>& plugin) {
     if (kind == kPluginKind) return plugin && plugin->instrument;
+    if (kind == kDrumRackKind) return true;
     const BuiltinDevice* builtin = builtinDevice(kind);
     return builtin != nullptr && builtin->instrument;
 }
@@ -64,7 +65,10 @@ bool isModulator(const QString& kind) {
     return builtin != nullptr && builtin->modulator;
 }
 
+bool isDeviceKind(const QString& kind) { return kind == kDrumRackKind || builtinDevice(kind) != nullptr; }
+
 bool deviceIsInstrument(const Device& device) {
+    if (device.isDrumRack()) return true;
     if (device.isRack()) {
         for (const Chain& chain : device.chains) {
             for (const Device& d : chain.devices) {
@@ -78,6 +82,7 @@ bool deviceIsInstrument(const Device& device) {
 
 bool loadsInto(const Device& preset, const Device& device) {
     if (preset.kind != device.kind || deviceIsInstrument(preset) != deviceIsInstrument(device)) return false;
+    if (preset.isDrumRack() != device.isDrumRack()) return false;
     if (preset.isPlugin()) return preset.plugin && device.plugin && preset.plugin->uid == device.plugin->uid;
     return true;
 }
@@ -88,6 +93,7 @@ QString deviceName(const Device& device) {
 }
 
 QString kindName(const Device& device) {
+    if (device.isDrumRack()) return QStringLiteral("Drum Rack");
     if (device.isRack()) {
         return deviceIsInstrument(device) ? QStringLiteral("Instrument Rack") : QStringLiteral("Audio Effect Rack");
     }
@@ -106,6 +112,7 @@ Device newDevice(const QString& kind, const std::optional<PluginRef>& plugin) {
         return device;
     }
     if (kind == kRackKind) return newRack({});
+    if (kind == kDrumRackKind) return newDrumRack();
     const BuiltinDevice* builtin = builtinDevice(kind);
     if (builtin == nullptr) throw EditError(QStringLiteral("There is no %1 device").arg(kind));
     Device device;
@@ -124,6 +131,41 @@ Device newRack(std::vector<Chain> chains) {
     rack.chains = std::move(chains);
     return rack;
 }
+
+Device newDrumRack() {
+    Device rack = newRack({});
+    rack.drum = true;
+    return rack;
+}
+
+Chain newDrumPad(int note, const QString& name, std::vector<Device> devices) {
+    Chain pad = newChain(name.isEmpty() ? drumNoteName(note) : name, std::move(devices));
+    pad.receiveNote = std::clamp(note, 0, 127);
+    return pad;
+}
+
+QString drumNoteName(int note) {
+    // As the piano roll names keys: C3 = 60.
+    static const char* const names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    note = std::clamp(note, 0, 127);
+    return QString::fromLatin1(names[note % 12]) + QString::number(note / 12 - 2);
+}
+
+const Chain* drumPad(const Device& rack, int note) {
+    for (const Chain& chain : rack.chains) {
+        if (chain.receiveNote == note) return &chain;
+    }
+    return nullptr;
+}
+
+Device* padSampler(Chain& pad) {
+    for (Device& device : pad.devices) {
+        if (device.kind == kSamplerKind) return &device;
+    }
+    return nullptr;
+}
+
+const Device* padSampler(const Chain& pad) { return padSampler(const_cast<Chain&>(pad)); }
 
 Chain newChain(const QString& name, std::vector<Device> devices) {
     Chain chain;

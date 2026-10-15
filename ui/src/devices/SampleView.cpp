@@ -2,6 +2,7 @@
 
 #include "audio/AudioFiles.h"
 #include "audio/EngineBridge.h"
+#include "browser/BrowserMime.h"
 #include "controls/KnobItem.h"
 #include "editor/ProjectEditor.h"
 #include "mainwindow/FileUrls.h"
@@ -211,18 +212,9 @@ void SampleView::readSample() {
 
 
 void SampleView::loadSample(const QString& path) {
-    const sub::app::Device* found = device();
-    if (found == nullptr)
+    if (device() == nullptr)
         return;
-    sub::app::deviceState::Values values;
-    if (!path.isEmpty())
-        values.insert(QStringLiteral("sample"), QDir::cleanPath(path));
-    const std::optional<QString> state = sub::app::deviceState::toModel(values);
-    if (state == found->state)
-        return;
-    const std::optional<QString> old = found->state;
-    session()->editor()->setDeviceState(trackId(), deviceId(), old, state,
-                                        path.isEmpty() ? QStringLiteral("Clear Sample") : QStringLiteral("Load Sample"));
+    session()->editor()->loadSample(trackId(), deviceId(), path);
 }
 
 void SampleView::sync() {
@@ -398,40 +390,29 @@ void SampleView::hoverMoveEvent(QHoverEvent* event) {
 
 // --- Dropping files --------------------------------------------------------------------------
 
-QString SampleView::droppedFile(const QDropEvent* event) {
-    const QMimeData* mime = event->mimeData();
-    if (mime == nullptr)
-        return {};
-    for (const QUrl& url : mime->urls()) {
-        const QString path = url.toLocalFile();
-        if (!path.isEmpty() && sub::app::isAudioFile(path))
-            return path;
-    }
-    return {};
-}
-
 void SampleView::dragEnterEvent(QDragEnterEvent* event) {
-    if (!droppedFile(event).isEmpty())
+    if (sub::app::droppedAudio(event->mimeData()))
         event->acceptProposedAction();
     else
         event->ignore();
 }
 
 void SampleView::dragMoveEvent(QDragMoveEvent* event) {
-    if (!droppedFile(event).isEmpty())
+    if (sub::app::droppedAudio(event->mimeData()))
         event->acceptProposedAction();
     else
         event->ignore();
 }
 
 void SampleView::dropEvent(QDropEvent* event) {
-    const QString path = droppedFile(event);
-    if (path.isEmpty()) {
+    // A file (from the browser, the desktop), or a clip dragged out of the arrangement: its part of its file.
+    const std::optional<sub::app::DroppedAudio> audio = sub::app::droppedAudio(event->mimeData());
+    if (!audio || device() == nullptr) {
         event->ignore();
         return;
     }
     event->acceptProposedAction();
-    loadSample(path);
+    session()->editor()->loadSample(trackId(), deviceId(), audio->path, audio->start, audio->end);
 }
 
 // --- Drawing -------------------------------------------------------------------------------

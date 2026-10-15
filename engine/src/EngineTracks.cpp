@@ -417,6 +417,7 @@ LiveLatency Engine::liveLatency(uint32_t trackId) {
     const TrackRender* track = snap.findTrack(trackId);
     if (!track) return out;
     out.live = track->live;
+    out.clipDelay = track->clipDelay;
     // Along its output, through its groups, to the master.
     for (int hops = 0; track && hops <= static_cast<int>(snap.tracks.size()); ++hops) {
         out.devices += track->latency;

@@ -207,6 +207,15 @@ the bottom.
 
 - Drop an audio file on the display (from the browser or the desktop) or double-click it
   to load one; the right-click menu has *Load Sample…*, *Clear Sample* and *Reverse*.
+  An audio clip dragged down out of the arrangement onto it loads its part of its file
+  (Start and End set to that part).
+- **Similar sounds**: the **‹** and **›** arrows at the display's bottom right swap in the
+  sounds most like the sample (as the browser's *Find Similar Sounds* finds them in its
+  places), most like it first, one at a time; each swap is an undo step. They step from
+  a **reference**: the sample you started stepping from, so **‹** goes back through what
+  you heard to it. Right-click › *Save as Similar Reference* makes the sample playing the
+  reference (it stays until you save another, whatever you load meanwhile); *Return to
+  Reference* plays it again. The reference is saved with the project.
 - Drag Start, End and (Classic, looping) Loop Start on the display.
 - Under the display: **Gain**; the mode's own settings; **Snap** (Start, End, Loop
   Start and slices move to the nearest zero crossing, so notes don't click as they
@@ -1540,6 +1549,41 @@ one undo step.
   macro by hand overrides its automation, as with any parameter, until it is
   re-enabled.
 - The macro's tooltip lists what it moves; its name is lit while it moves something.
+
+### Drum Rack
+
+A rack of pads, as Ableton's Drum Rack. Add one from the browser (*Instruments › Drum
+Rack*), dropped on a track or the device view, or double-clicked; with no MIDI track
+selected it makes one. Each of its chains is a **pad**, playing only the notes of its own
+key, which its devices hear as C3: a Sampler on a pad plays its sample at its own pitch.
+
+- **Pads**: sixteen at a time, four by four, the lowest key (C1 at first) at the bottom
+  left. The ▴ and ▾ arrows beside them (or the wheel over them) show a row of keys up or
+  down; the narrow strip at their left shows all 128 keys, lit where a pad is, and a click
+  there shows those pads.
+- **Loading samples**: drop an audio file on a pad (from the browser or the desktop), or
+  an audio clip dragged down out of the arrangement (its part of its file), or right-click
+  › *Load Sample…*. The pad gets a Sampler with the sample, in **1-Shot** (a hit plays
+  whole however short the note), and the sample's name. Onto a
+  pad with a sample, the new one replaces it (and a pad named after its sample takes the
+  new name; one you named keeps its name).
+- Click a pad to play its key and show its devices beside the rack (its Sampler); drop
+  devices on a pad with a sample to add them to it. Each pad has a **lock** at its top
+  right, and its activator (mute) and solo along its bottom; double-click its name (or right-click › *Rename*,
+  or Ctrl+R) to rename it. Its right-click menu also duplicates (onto the next free key)
+  and deletes it.
+- **Similar sounds**: the **‹** and **›** arrows in the Drum Rack's title bar swap
+  every pad's sample for the next (or previous) sound like it, each pad from its own
+  reference, as the Sampler's arrows do, in one undo step. **Locked** pads keep their
+  samples. A pad's menu steps it alone, saves its sample as its reference or returns to
+  it; the rack's menu has *Save Pads as Similar References* and *Return Pads to
+  References* for every pad but the locked ones.
+- Its chain list (the rows button) lists the pads, as a rack's chains, with their mixers;
+  *Add Pad* (or **+ Chain**) adds an empty pad on the first free key. Its macros work as
+  any rack's; the **▾** in its title bar collapses them (and **▸** shows them again), which
+  is saved with the project.
+- A Drum Rack is an instrument even while empty: it goes first on a MIDI track. Its
+  presets load into Drum Racks only.
 
 ## Presets
 

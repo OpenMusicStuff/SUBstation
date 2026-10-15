@@ -78,6 +78,7 @@ const std::vector<KeyMap::Command>& KeyMap::allCommands() {
         {"selectAll", "Edit", "Select All"},
         {"reEnableAutomation", "Edit", "Re-Enable Automation"},
         {"soloSelectedTracks", "Edit", "Solo Selected Tracks"},
+        {"armSelectedTracks", "Edit", "Arm Selected Tracks"},
         {"playStop", "Edit", "Play / Stop"},
         {"record", "Edit", "Record"},
         {"goToStart", "Edit", "Go to Start"},

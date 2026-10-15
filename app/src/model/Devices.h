@@ -39,6 +39,9 @@ std::vector<std::pair<QString, QStringList>> builtinCategories();
 
 // Whether a device of this kind (and plug-in) is an instrument.
 bool isInstrument(const QString& kind, const std::optional<PluginRef>& plugin = std::nullopt);
+// Whether a device of this kind can be asked for by kind alone (a drop, the
+// browser): a built-in device, or kDrumRackKind (a new Drum Rack).
+bool isDeviceKind(const QString& kind);
 // Whether a device of this kind is a modulator (a built-in LFO or envelope:
 // its `modulations` move parameters of other devices on its track).
 bool isModulator(const QString& kind);
@@ -51,7 +54,7 @@ bool loadsInto(const Device& preset, const Device& device);
 // preset's), else every device by its kind (kindName).
 QString deviceName(const Device& device);
 // The name of a device's kind: a plug-in's, a built-in device's, Audio Effect
-// Rack or Instrument Rack.
+// Rack, Instrument Rack or Drum Rack.
 QString kindName(const Device& device);
 
 // A new device of a kind (new id): a built-in one with its parameters at their
@@ -62,6 +65,20 @@ Device newDevice(const QString& kind, const std::optional<PluginRef>& plugin = s
 // A rack with these chains and kDefaultMacroCount macros, at 0.
 Device newRack(std::vector<Chain> chains);
 Chain newChain(const QString& name, std::vector<Device> devices = {});
+// An empty Drum Rack (a rack with `drum` set), with its macros.
+Device newDrumRack();
+// A Drum Rack's pad for a key, named so (empty: after its key, "C1").
+Chain newDrumPad(int note, const QString& name = {}, std::vector<Device> devices = {});
+// A key's name as the piano roll writes it (C3 = 60): "C1", "F#2".
+QString drumNoteName(int note);
+// A Drum Rack's pad for a key (null: none).
+const Chain* drumPad(const Device& rack, int note);
+// The Sampler that plays a pad's sample (its first; null: none).
+Device* padSampler(Chain& pad);
+const Device* padSampler(const Chain& pad);
+
+inline const QString kSamplerKind = QStringLiteral("sampler");
+inline constexpr double kSamplerOneShot = 1.0;  // the Sampler's "mode": 0 Classic, 1 1-Shot, 2 Slice
 
 // A built-in device's parameter as the engine describes it (null: no such one).
 const sub::ParamInfo* builtinParamInfo(const QString& kind, const QString& paramId);

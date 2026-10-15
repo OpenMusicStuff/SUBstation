@@ -50,6 +50,7 @@ class DeviceInfo : public QObject {
     Q_PROPERTY(QString name READ name NOTIFY changed)  // its title
     Q_PROPERTY(QString toolTip READ toolTip NOTIFY changed)  // its title's ("": none)
     Q_PROPERTY(bool isRack READ isRack NOTIFY changed)
+    Q_PROPERTY(bool isDrumRack READ isDrumRack NOTIFY changed)  // a rack whose chains are pads
     Q_PROPERTY(bool isPlugin READ isPlugin NOTIFY changed)
     Q_PROPERTY(bool instrument READ instrument NOTIFY changed)
     Q_PROPERTY(bool enabled READ enabled NOTIFY changed)  // as heard: following its automation while it plays
@@ -61,6 +62,7 @@ class DeviceInfo : public QObject {
     // A rack's chain list shows (hidden by default); its chain's devices show beside it (shown by default).
     Q_PROPERTY(bool chainListShown READ chainListShown NOTIFY changed)
     Q_PROPERTY(bool rackDevicesShown READ rackDevicesShown NOTIFY changed)
+    Q_PROPERTY(bool rackMacrosShown READ rackMacrosShown NOTIFY changed)  // a rack's macros, unless collapsed
     Q_PROPERTY(QString chainId READ chainId NOTIFY changed)  // the chain it is in ("": the track's own)
     Q_PROPERTY(bool canMoveLeft READ canMoveLeft NOTIFY changed)
     Q_PROPERTY(bool canMoveRight READ canMoveRight NOTIFY changed)
@@ -98,6 +100,7 @@ public:
     QString name() const { return state_.name; }
     QString toolTip() const { return state_.toolTip; }
     bool isRack() const { return state_.isRack; }
+    bool isDrumRack() const { return state_.isDrumRack; }
     bool isPlugin() const { return state_.isPlugin; }
     bool instrument() const { return state_.instrument; }
     bool enabled() const { return state_.enabled; }
@@ -106,6 +109,7 @@ public:
     bool folded() const { return state_.folded; }
     bool chainListShown() const { return state_.chainListShown; }
     bool rackDevicesShown() const { return state_.rackDevicesShown; }
+    bool rackMacrosShown() const { return state_.rackMacrosShown; }
     QString chainId() const { return state_.chainId; }
     bool canMoveLeft() const { return state_.canMoveLeft; }
     bool canMoveRight() const { return state_.canMoveRight; }
@@ -174,6 +178,7 @@ private:
         QString name;
         QString toolTip;
         bool isRack = false;
+        bool isDrumRack = false;
         bool isPlugin = false;
         bool instrument = false;
         bool enabled = true;
@@ -182,6 +187,7 @@ private:
         bool folded = false;
         bool chainListShown = false;
         bool rackDevicesShown = true;
+        bool rackMacrosShown = true;
         QString chainId;
         bool canMoveLeft = false;
         bool canMoveRight = false;

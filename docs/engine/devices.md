@@ -533,7 +533,9 @@ glides back to the newest key still held, whose bends then find the voice by its
   mutex* (it may take a while), and publishes it, unless another state came meanwhile or
   it is the file already playing (notes go on). If the file can't be loaded it publishes
   nothing (silent until it can be loaded) and rethrows, but keeps the path in its state,
-  so the project keeps it. Unknown state values are ignored.
+  so the project keeps it. Other state values it keeps as they came (`others_`), and gives
+  back with its state: the application keeps the similar sounds' reference there
+  (`"similar_reference"`, `"similar_reference_saved"`: app/src/model/SamplerState.h).
 - **Handing the sample to the audio thread without a lock**: the main side puts a new
   `Sample` (the source and its transients) into `pending_` (an atomic pointer; a sample
   still pending and never taken is freed there). At the start of each `render()` the
@@ -2389,7 +2391,9 @@ A drawn curve played once from each trigger, its value moving the parameters map
 
 A rack is a `RackProcessor` ([Rack.h](../../engine/src/Rack.h), `typeId()` `"rack"`): only its place in a chain, its
 on/off switch, its id and its latency (as the last snapshot worked it out, for the UI). It has no parameters, and its
-`process()` is never called: the renderer runs its chains (`Renderer::processRack`). See [routing.md](routing.md).
+`process()` is never called: the renderer runs its chains (`Renderer::processRack`). A Drum Rack is a rack whose
+chains have keys (`Engine::setChainReceiveNote`): each hears only its key's notes, as C3. See
+[routing.md](routing.md#racks).
 
 ## Built-in devices' own editors
 

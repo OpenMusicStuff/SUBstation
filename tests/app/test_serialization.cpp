@@ -622,6 +622,7 @@ private Q_SLOTS:
         saved = setIn(saved, {"tracks", 1, "devices", 1}, savedRack);
         saved["chain_lists_shown"] = QJsonArray{};
         saved["rack_devices_hidden"] = QJsonArray{};
+        saved["rack_macros_hidden"] = QJsonArray{};
         saved = setIn(saved, {"tracks", 2, "clips", 0, "name"}, "");  // (MIDI clips have no name: dropped on load)
         saved = setIn(saved, {"master", "height"}, kMinTrackHeight);  // (the master folds and resizes as a track)
         saved = setIn(saved, {"master", "folded"}, false);

@@ -170,6 +170,13 @@ void MoveRangeGesture::finish() {
     selection.setInsert(start);
 }
 
+std::optional<app::Clip> MoveRangeGesture::draggedAudio() const {
+    if (!active_ || pieces_.size() != 1 || !pieces_.front().second.isAudio()) return std::nullopt;
+    const app::Clip& clip = pieces_.front().second;
+    if (clip.path.isEmpty() || clip.durationSec <= 0.0) return std::nullopt;
+    return clip;
+}
+
 void MoveRangeGesture::cancel() {
     if (previewed_) host_.hostSession()->bridge()->endClipPreview();
 }
