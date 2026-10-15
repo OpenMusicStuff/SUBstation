@@ -12,8 +12,12 @@
 // on its inputs (and its own state), never on which thread runs it or when, so
 // that the result is the same with or without workers.
 //
-// Between runs workers spin briefly (consecutive chunks of a callback come
-// quickly), then sleep until the next run. They run at real-time priority
+// A run takes as many of the workers as its caller asks for (the work it has
+// to share: waking more costs more than they save), the lowest numbered first;
+// the others go on sleeping. Each worker sleeps on a word of its own, so a run
+// wakes only those it takes. After a run that another follows at once
+// (consecutive chunks of a callback, an offline render) its workers spin
+// briefly for it; else they sleep at once, until the next run. They run at real-time priority
 // (platform::ScopedRealtimePriority: MMCSS's "Pro Audio" on Windows, SCHED_FIFO
 // on Linux, the time-constraint policy on macOS) where the system allows, join
 // the audio device's workgroup where it has one (macOS), and flush denormals
@@ -102,10 +106,16 @@ public:
 
     int threads() const noexcept { return static_cast<int>(workers_.size()) + 1; }
 
+    static constexpr int kAllWorkers = -1;
+
     // Real-time. Runs `job` for every node of the graph, each after the nodes
     // that go into it, and returns once all are done. `parallel` false (or no
-    // workers): all on the calling thread, in the graph's order. One run at a time.
-    void run(TaskGraph& graph, Job job, void* context, bool parallel) noexcept;
+    // workers): all on the calling thread, in the graph's order. `helpers`: how
+    // many of the pool's workers take part (at least one; kAllWorkers: all).
+    // `runFollows`: another run comes right after this one, which the workers
+    // spin for instead of sleeping. One run at a time.
+    void run(TaskGraph& graph, Job job, void* context, bool parallel, int helpers = kAllWorkers,
+             bool runFollows = true) noexcept;
 
     // Nodes the pool's workers have rendered, since the scheduler started (for tests).
     uint64_t nodesOnWorkers() const noexcept { return nodesOnWorkers_.load(std::memory_order_relaxed); }
@@ -126,15 +136,25 @@ private:
     // it last slept: it naps between nodes when that was too long ago (Scheduler.cpp).
     void work(int worker, std::chrono::steady_clock::time_point* lastSlept = nullptr) noexcept;
 
+    // What a worker sleeps on: run() counts `wakes` up for a worker `asleep`.
+    struct alignas(64) Sleep {
+        std::atomic<uint32_t> wakes{0};
+        std::atomic<bool> asleep{false};
+    };
+    // Wakes worker `worker` (1..) if it sleeps.
+    void wake(int worker) noexcept;
+
     std::vector<std::thread> workers_;
+    std::unique_ptr<Sleep[]> sleeps_;  // worker w's at w - 1
     // The current run (valid while it is open).
     TaskGraph* graph_ = nullptr;
     Job job_ = nullptr;
     void* context_ = nullptr;
-    // (run number << 1) | open; kQuit ends the workers. Workers sleep on it.
+    int helpers_ = 0;          // workers 1..helpers_ take part
+    bool runFollows_ = false;  // they spin for the next run after it
+    // (run number << 1) | open; kQuit ends the workers.
     alignas(64) std::atomic<uint64_t> state_{0};
     alignas(64) std::atomic<int> active_{0};    // workers inside a run
-    alignas(64) std::atomic<int> sleepers_{0};  // workers waiting on state_
     std::atomic<uint64_t> nodesOnWorkers_{0};
     uint64_t runs_ = 0;
     std::atomic<int> started_{0};  // workers that have asked for their priority

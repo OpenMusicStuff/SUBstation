@@ -16,6 +16,7 @@
 #include "files/HotSwap.h"
 #include "intelligence/AudioAnalysis.h"
 #include "intelligence/Harmony.h"
+#include "session/CpuUsage.h"
 #include "intelligence/Humanizer.h"
 #include "intelligence/SimilarSamples.h"
 #include "intelligence/SoundSimilarity.h"
@@ -83,6 +84,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     browser_ = new BrowserController(plugins_, browserOptions, this);
     presets_ = new PresetIndex(this);
     render_ = new RenderProgress(this);
+    cpuUsage_ = new CpuUsage(project_, bridge_, this);
     arrangement_ = new ArrangementActions(editor_, selection_, bridge_, render_, this);
     arrangement_->setAudioAnalysis(audioAnalysis_);
     // Every audio file the arrangement's clips play is analysed (its chords drawn, heard in the song's).

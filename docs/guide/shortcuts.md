@@ -95,6 +95,7 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Narrow / widen grid, toggle snap | Ctrl+1 / Ctrl+2 / Ctrl+4 |
 | Toggle browser / device view | Ctrl+Alt+B / Ctrl+Alt+L |
 | Show / hide the File Manager | Ctrl+Alt+F |
+| Show / hide CPU Usage (what each track and device costs) | Ctrl+Alt+U |
 | End a hot swap, keeping the sample swapped in (the browser's list having the keyboard); keep the sample selected and end it | Esc; Enter (or double-click it) |
 | Show / hide the track headers' In/Out column | Ctrl+Alt+I |
 | Show / hide the piano roll's chords and the key (notes out of it in red) | C |

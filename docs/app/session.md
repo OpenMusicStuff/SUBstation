@@ -56,6 +56,7 @@ reads them as constant properties:
 | `arrangement` | `ArrangementActions` | [below](#the-arrangements-actions-arrangementactions) |
 | `deviceSelection` | `DeviceSelection` | [below](#the-device-view-deviceselection) |
 | `render` | `RenderProgress` | [below](#renders-in-the-background) |
+| `cpuUsage` | `CpuUsage` | View › CPU Usage: each track's and device's share of a core, in a list model; while `active` the engine times them (`EngineBridge::setMeasuringCpu`, `Engine::takeCpu`) |
 | `computerKeyboard` | `ComputerKeyboard` | [below](#the-computer-midi-keyboard) |
 | `modulationLearn` | `ModulationLearn` | a modulator (an LFO, an Envelope) waiting for the next parameter touched on its track (`ProjectEditor::parameterTouched`) to be mapped to it: `start`, `stop`, `toggle`, `isLearning`, `active`; its own controls don't count, it says why for another track's or a switch, and it stops once it maps one, its modulator goes or the project is replaced ([ui/device-view.md](../ui/device-view.md#modulators)) |
 | `files`, `hotSwap` | `FileManager`, `HotSwap` | [below](#the-file-manager-and-hot-swaps-filemanager-hotswap) |

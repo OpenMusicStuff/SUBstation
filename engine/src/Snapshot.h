@@ -44,6 +44,8 @@ struct TrackParams {
     // Written by the audio thread, read and reset by the API.
     std::atomic<float> peakLeft{0.f};
     std::atomic<float> peakRight{0.f};
+    // The time spent rendering it (its clips, devices and fader; nanoseconds), while measured.
+    std::atomic<uint64_t> cpuNs{0};
 
     // Audio-thread-only fader smoothing; persists across snapshots. Automation
     // replaces volume or pan sample by sample; where it stops, the smoothing

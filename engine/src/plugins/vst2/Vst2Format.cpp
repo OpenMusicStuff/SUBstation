@@ -159,8 +159,8 @@ PluginDescription describe(vst_effect_t* effect, const std::string& path, const 
 // The format
 
 Vst2Format& Vst2Format::instance() {
-    static Vst2Format format;
-    return format;
+    static auto* format = new Vst2Format;  // never freed: its kept libraries aren't unloaded at exit either
+    return *format;
 }
 
 std::vector<std::string> Vst2Format::defaultSearchPaths() const { return systemPluginFolders(); }
@@ -169,18 +169,21 @@ bool Vst2Format::isPluginFile(const std::string& path) {
     return isPluginFileName(platform::fromPath(platform::toPath(path).filename()));
 }
 
-std::shared_ptr<Module> Vst2Format::loadModule(const std::string& path) {
+std::shared_ptr<Module> Vst2Format::loadModule(const std::string& path, bool keepLoaded) {
     std::lock_guard lock(mutex_);
     auto& slot = modules_[platform::fileKey(path)];  // one library per file
-    if (auto module = slot.lock()) return module;
-    auto module = std::make_shared<Module>(path);
-    slot = module;
+    auto module = slot.lock();
+    if (!module) {
+        module = std::make_shared<Module>(path);
+        slot = module;
+    }
+    if (keepLoaded && std::find(kept_.begin(), kept_.end(), module) == kept_.end()) kept_.push_back(module);
     return module;
 }
 
 std::vector<PluginDescription> Vst2Format::scanFile(const std::string& path) {
     vst3::prepareThreadForModules();  // (COM on Windows, which some plug-ins need as VST3 ones do)
-    const auto module = loadModule(path);
+    const auto module = loadModule(path, false);
     if (!module->isPlugin()) return {};  // a library beside the plug-ins
     const std::string stem = platform::fromPath(platform::toPath(path).stem());
     vst_effect_t* effect = module->create(0);
@@ -234,7 +237,7 @@ std::shared_ptr<Processor> Vst2Format::instantiate(const std::string& path, cons
     vst3::prepareThreadForModules();
     const auto id = vst2IdFromUid(uid);
     if (!id) throw std::invalid_argument("Not a VST2 plug-in id: " + uid);
-    const auto module = loadModule(path);
+    const auto module = loadModule(path, true);
     const std::string file = platform::fromPath(platform::toPath(path).filename());
     vst_effect_t* effect = module->create(*id);
     if (effect && effect->unique_id != *id) {

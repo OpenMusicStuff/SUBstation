@@ -186,6 +186,16 @@ struct MeterReading {
     uint32_t chainId = 0;  // a rack chain's fader (on track trackId); 0: the track's own
 };
 
+// The time the audio thread (and its workers) spent on each track and device
+// over `wallNs` of wall-clock time (Engine::takeCpu): a track's or device's
+// share of one core is its time / wallNs. A track's time includes its devices';
+// a rack's devices are measured each (the rack is what they add up to).
+struct CpuReading {
+    int64_t wallNs = 0;
+    std::vector<std::pair<uint32_t, uint64_t>> tracks;      // (track id, ns); kMaster: the master
+    std::vector<std::pair<uint32_t, uint64_t>> processors;  // (processor id, ns)
+};
+
 struct DeviceMeterReading {
     uint32_t processorId = 0;
     float left = 0.f;
@@ -387,6 +397,10 @@ public:
     std::vector<MeterReading> takeMeters();
     // Each device's loudest output (left, right) since the last call: its meter.
     std::vector<DeviceMeterReading> takeDeviceMeters();
+    // Whether live rendering times every track and device (for takeCpu()). Off by default.
+    void setMeasuringCpu(bool on);
+    // The time spent on each track and device since the last call (or since measuring began).
+    CpuReading takeCpu();
     // The latency a track's devices add (samples, compensated; kMaster: the master's), and the whole
     // output's: the latest a track is aligned to plus the master's devices.
     int trackLatency(uint32_t trackId);
@@ -1035,6 +1049,7 @@ private:
     SharedState shared_;
     std::unique_ptr<Scheduler> scheduler_;  // the live and offline renderers share it (never at once)
     Renderer renderer_;
+    int64_t cpuTakenNs_ = 0;  // steady_clock, when takeCpu() last read (0: not yet)
     RenderJob* job_ = nullptr;  // the render in the background, until finished (it holds itself)
     std::atomic<bool> requestedPlaying_{false};
     std::atomic<uint64_t> locatesPushed_{0};  // Locate commands pushed (against shared_.locatesPublished)

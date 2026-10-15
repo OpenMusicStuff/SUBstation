@@ -353,6 +353,18 @@ public:
     int switchFadeIn() const noexcept { return switchFadeIn_; }
     void setSwitchFadeIn(int samples) noexcept { switchFadeIn_ = samples; }
 
+    // Rendering thread, live: whether the renderer lets it rest (doesn't
+    // process it: its input silent, no notes, and what it passes on silent for
+    // longer than its tail), and what that goes by (Renderer::rests()).
+    struct Rest {
+        int64_t quiet = 0;      // frames what it passed on has been silent
+        bool resting = false;
+        int lookIn = 0;         // resting: frames until it is processed once, to look
+        int64_t position = 0;   // resting: the playhead (stopped) and the transport when it began
+        bool playing = false;
+    };
+    Rest& rest() noexcept { return rest_; }
+
     // --- Automation (rendering thread) -------------------------------------
     // Before each process() call the renderer hands the processor what its
     // automation does during that call: parameter `index` goes to the normalized
@@ -432,6 +444,10 @@ public:
     std::pair<float, float> takeOutputPeak() noexcept {
         return {outputPeak_[0].exchange(0.f), outputPeak_[1].exchange(0.f)};
     }
+    // The time the renderer spent in it (process(), nanoseconds) since takeCpu(),
+    // while it measures (Renderer::setMeasuringCpu: the CPU Usage view is open).
+    void addCpu(uint64_t ns) noexcept { cpuNs_.fetch_add(ns, std::memory_order_relaxed); }
+    uint64_t takeCpu() noexcept { return cpuNs_.exchange(0, std::memory_order_relaxed); }
 
 protected:
     // In process(): the automation for this call (processors may sort it).
@@ -449,8 +465,10 @@ private:
     std::atomic<bool> constrained_{false};
     std::atomic<bool> resetRequested_{false};
     std::atomic<float> outputPeak_[2]{};
+    std::atomic<uint64_t> cpuNs_{0};
     bool switchedOff_ = false;
     int switchFadeIn_ = 0;
+    Rest rest_;
     std::vector<ParamAutomation> automation_ = std::vector<ParamAutomation>(kMaxAutomation);
     size_t numAutomation_ = 0;
 };

@@ -169,9 +169,12 @@ void Renderer::processLive(const RenderSnapshot& snap, SharedState& shared, cons
         const int n = static_cast<int>(std::min<uint32_t>(kMaxBlock, frames - done));
         inputOffset_ = static_cast<int>(done);
         deviceTime_ = io.sampleTime + done;
+        chunkFollows_ = done + static_cast<uint32_t>(n) < frames;
+        measureChunk_ = measuringCpu_.load(std::memory_order_relaxed);
         gatherMidiInput(n);
         renderChunk(snap, n,
                     {true, snap.loopEnabled, shared.metronome.load(std::memory_order_relaxed)});
+        measureChunk_ = false;  // (offline renders never measure)
         numPreviewNotes_ = 0;  // played in the first chunk
         numInputEvents_ = 0;
         mixPreview(shared, n);
@@ -199,6 +202,7 @@ void Renderer::renderOffline(const RenderSnapshot& snap, float* outStereo, int64
     int64_t done = 0;
     while (done < frames) {
         const int n = static_cast<int>(std::min<int64_t>(kMaxBlock, frames - done));
+        chunkFollows_ = done + n < frames;
         renderChunk(snap, n, {false, loop && snap.loopEnabled, metronome});
         interleave(masterLeft_.data(), masterRight_.data(), n, outStereo + done * 2);
         done += n;
@@ -215,6 +219,7 @@ void Renderer::renderTrackOffline(const RenderSnapshot& snap, int track, float* 
         const int n = static_cast<int>(std::min<int64_t>(kMaxBlock, frames - done));
         std::fill_n(captureLeft_.data(), n, 0.f);  // (a track not in the snapshot: silence)
         std::fill_n(captureRight_.data(), n, 0.f);
+        chunkFollows_ = done + n < frames;
         renderChunk(snap, n, {false, false, false});
         interleave(captureLeft_.data(), captureRight_.data(), n, outStereo + done * 2);
         done += n;
@@ -344,17 +349,29 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     if (snap.graph && scheduler_) {
         const bool parallel = static_cast<int64_t>(snap.parallelWork) * frames >= kMinParallelWork &&
                               snap.parallelWork >= 2;
+        int helpers = Scheduler::kAllWorkers;
         if (parallel) {  // the heaviest paths first (by what the tracks took lately)
             TaskGraph& graph = *snap.graph;
             const bool byCost = costOrdering();
+            float total = 0.f;  // ns per frame, all the tracks
             for (int t = 0; t < graph.size(); ++t) {
-                graph.setCost(t, byCost ? snap.tracks[static_cast<size_t>(t)].buffers->cost.load(
-                                              std::memory_order_relaxed)
-                                        : 0.f);
+                const float cost = snap.tracks[static_cast<size_t>(t)].buffers->cost.load(std::memory_order_relaxed);
+                total += cost;
+                graph.setCost(t, byCost ? cost : 0.f);
             }
             graph.orderRoots();
+            // As many workers as the work keeps busy (the calling thread is one
+            // more): not more than it has for each, nor than paths as long as the
+            // longest fit in it. (Costs not known yet: all of them.)
+            if (total > 0.f) {
+                float longest = 0.f;
+                for (const int root : graph.roots()) longest = std::max(longest, graph.rank(root));
+                const float byWork = total * static_cast<float>(frames) / kWorkPerHelperNs;
+                const float byPaths = longest > 0.f ? total / longest - 1.f : byWork;
+                helpers = std::max(1, static_cast<int>(std::ceil(std::min(byWork, byPaths))));
+            }
         }
-        scheduler_->run(*snap.graph, &Renderer::renderNode, this, parallel);
+        scheduler_->run(*snap.graph, &Renderer::renderNode, this, parallel, helpers, chunkFollows_);
     } else {
         for (int t = 0; t < static_cast<int>(snap.tracks.size()); ++t) renderTrack(snap, t, scratch_[0]);
     }
@@ -367,7 +384,12 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     std::fill_n(masterR, frames, 0.f);
     for (const int e : snap.masterInputs) sumEdge(snap, snap.edges[static_cast<size_t>(e)], masterL, masterR, frames, scratch_[0]);
     if (snap.master.params) {
+        const auto masterFrom = measureChunk_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         processStrip(snap, snap.master, context, nullptr, 0, masterL, masterR, frames, true, flags, scratch_[0]);
+        if (measureChunk_) {
+            snap.master.params->cpuNs.fetch_add(
+                static_cast<uint64_t>((std::chrono::steady_clock::now() - masterFrom).count()), std::memory_order_relaxed);
+        }
     }
     // What the tracks being recorded take from other tracks' outputs, or the
     // master's (resampling), now that they are rendered.
@@ -474,7 +496,9 @@ void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scr
     // Smoothed over roughly the last ten chunks: a synth costs more while it
     // plays a chord, a plug-in's first blocks after loading more than later ones.
     if (frames > 0) {
-        const auto elapsed = std::chrono::duration<float, std::nano>(std::chrono::steady_clock::now() - started);
+        const auto took = std::chrono::steady_clock::now() - started;
+        if (measureChunk_) track.params->cpuNs.fetch_add(static_cast<uint64_t>(took.count()), std::memory_order_relaxed);
+        const auto elapsed = std::chrono::duration<float, std::nano>(took);
         const float perFrame = elapsed.count() / static_cast<float>(frames);
         const float last = buffers.cost.load(std::memory_order_relaxed);
         buffers.cost.store(last > 0.f ? last + kCostSmoothing * (perFrame - last) : perFrame,
@@ -969,6 +993,7 @@ bool Renderer::takeResets(const StripRender& chain) noexcept {
 
 void Renderer::resetInsert(Processor& insert, const RackRender* rack) noexcept {
     insert.reset();
+    insert.rest() = {};
     // A rack's devices reset as they run next (and so, in turn, do those of racks in it).
     if (!rack) return;
     for (const ChainRender& inner : rack->chains) {
@@ -1168,8 +1193,9 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             insert.setSwitchedOff(!on);
             if (on && rack) {
                 processRack(snap, *rack, context, slices, events, left, right, frames, monitored, scratch);
-            } else if (on) {
+            } else if (on && !(switched == nullptr && full && rests(snap, chain, i, slices, left, right, frames))) {
                 processDevice(snap, chain, i, context, slices, events, left, right, frames, scratch);
+                if (chunkFlags_.live) noteQuiet(snap, insert, left, right, frames);
             }
             if (!on) {
                 std::copy_n(dryL, frames, left);
@@ -1191,6 +1217,81 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             tapInto(snap, e, left, right, frames);
         }
     }
+}
+
+namespace {
+
+// Silence: below -120 dB.
+bool quiet(const float* left, const float* right, int frames) noexcept {
+    constexpr float kQuiet = 1e-6f;
+    for (int s = 0; s < frames; ++s) {
+        if (std::abs(left[s]) >= kQuiet || std::abs(right[s]) >= kQuiet) return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool Renderer::rests(const RenderSnapshot& snap, const StripRender& chain, size_t i, const Slices& slices,
+                     float* left, float* right, int frames) noexcept {
+    if (!chunkFlags_.live) return false;
+    Processor& insert = *chain.inserts[i];
+    Processor::Rest& rest = insert.rest();
+    if (!rest.resting) return false;
+    const auto wake = [&rest] {
+        rest.resting = false;
+        rest.quiet = 0;
+        return false;
+    };
+    if (rest.playing != playing_ || (!playing_ && rest.position != position_)) return wake();
+    // Its parameters moved by automation or a modulator: a level brought up from
+    // zero may make it sound, so it doesn't rest.
+    const auto moves = [i](const auto& lane) { return lane.insert == static_cast<int>(i); };
+    if (std::any_of(chain.automation.begin(), chain.automation.end(), moves) ||
+        std::any_of(chain.modulation.begin(), chain.modulation.end(), moves)) {
+        return wake();
+    }
+    for (int s = 0; s < slices.count; ++s) {
+        const Slice& slice = slices.slice[static_cast<size_t>(s)];
+        if (slice.endEvent > slice.firstEvent) return wake();  // notes (or other events) for it
+    }
+    if (i < chain.midiFeeds.size() && chain.midiFeeds[i] && chain.midiFeeds[i]->numEvents > 0) return wake();
+    if (!quiet(left, right, frames)) return wake();
+    if (i < chain.sidechains.size()) {
+        for (const int e : chain.sidechains[i]) {
+            const EdgeRender& edge = snap.edges[static_cast<size_t>(e)];
+            if (!edge.state->live) continue;
+            const float* l;
+            const float* r;
+            edgeSignal(snap, edge, l, r);
+            if (!quiet(l, r, frames)) return wake();
+        }
+    }
+    rest.lookIn -= frames;
+    if (rest.lookIn <= 0) {  // processed this once (noteQuiet() lets it rest again if it stays silent)
+        rest.resting = false;
+        return false;
+    }
+    std::fill_n(left, frames, 0.f);
+    std::fill_n(right, frames, 0.f);
+    return true;
+}
+
+void Renderer::noteQuiet(const RenderSnapshot& snap, Processor& insert, const float* left, const float* right,
+                         int frames) noexcept {
+    Processor::Rest& rest = insert.rest();
+    if (!quiet(left, right, frames)) {
+        rest.quiet = 0;
+        return;
+    }
+    rest.quiet += frames;
+    const auto after = static_cast<int64_t>(kRestAfter * snap.sampleRate);
+    if (rest.quiet < after) return;  // (the latency and tail asked for only then)
+    if (rest.quiet < after + insert.latencySamples() + insert.tailSamples()) return;
+    rest.resting = true;
+    rest.lookIn = static_cast<int>(kLookEvery * snap.sampleRate);
+    rest.position = position_;
+    rest.playing = playing_;
 }
 
 void Renderer::waitForSidechain(const RenderSnapshot& snap, const StripRender& chain, size_t i, float* left,
@@ -1249,6 +1350,7 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
                              const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                              WorkerScratch& scratch, EventOutput* out, Slices* outSlices) noexcept {
     Processor& insert = *chain.inserts[i];
+    const auto measuredFrom = measureChunk_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const double samplesPerBeat = snap.samplesPerBeat();
     static const std::vector<int> kNone;
     const std::vector<int>& keys = i < chain.sidechains.size() ? chain.sidechains[i] : kNone;
@@ -1324,6 +1426,7 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
         insert.clearAutomation();
         insert.setSidechain(nullptr, nullptr);
     }
+    if (measureChunk_) insert.addCpu(static_cast<uint64_t>((std::chrono::steady_clock::now() - measuredFrom).count()));
 }
 
 DelayLine* Renderer::switchDelayLine(const SwitchRender& device) const noexcept {

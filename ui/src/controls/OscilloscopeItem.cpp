@@ -94,6 +94,9 @@ void OscilloscopeItem::poll() {
         return;
     const int start = trigger(fetched.constData(), int(fetched.size()), kWindow);
     const int end = std::min(int(fetched.size()), start + kWindow);
+    // The same samples as shown (silence, while the engine runs stopped): no repaint.
+    if (std::equal(fetched.constBegin() + start, fetched.constBegin() + end, samples_.begin(), samples_.end()))
+        return;
     samples_.assign(fetched.constBegin() + start, fetched.constBegin() + end);
     rebuild();
 }

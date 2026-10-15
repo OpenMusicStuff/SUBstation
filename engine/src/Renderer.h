@@ -118,10 +118,17 @@ public:
     // Below this much work (tracks worth a thread, times frames) a chunk renders
     // serially: waking workers would cost more than they save.
     static constexpr int kMinParallelWork = 256;
+    // Parallel, a chunk takes one worker per this much of the work its tracks
+    // took lately (and no more than the graph's longest path leaves room for):
+    // a worker woken for less costs more than it saves.
+    static constexpr float kWorkPerHelperNs = 50'000.f;
     // Whether the graph starts the tracks that cost the most first (else in
     // snapshot order). Any thread; on by default.
     void setCostOrdering(bool on) noexcept { costOrdering_.store(on, std::memory_order_relaxed); }
     bool costOrdering() const noexcept { return costOrdering_.load(std::memory_order_relaxed); }
+    // Whether live chunks time each track and device (Processor::addCpu, TrackParams::cpuNs).
+    // Any thread; off by default (two clock reads per device per chunk).
+    void setMeasuringCpu(bool on) noexcept { measuringCpu_.store(on, std::memory_order_relaxed); }
 
     // Real-time. Applies transport commands, renders tracks, metronome and the
     // browser preview, and publishes position/meters. The master goes to the
@@ -404,6 +411,21 @@ private:
     static bool takeResets(const StripRender& chain) noexcept;
     // Resets a device now; a rack asks everything in it to reset as it runs next.
     static void resetInsert(Processor& insert, const RackRender* rack) noexcept;
+    // Live: whether device i of the chain rests this chunk instead of being
+    // processed (its output, `left` and `right`, then silence). A device rests
+    // once what it passed on has been silent for its latency and tail and
+    // kRestAfter more, while its input, its sidechain and its notes stay
+    // silent and the transport stays as it was; every kLookEvery it is
+    // processed once, so that one making sound of itself (a knob turned) wakes.
+    // Never in offline renders, nor modulators, MIDI effects, racks, and devices
+    // with automation or modulation on their parameters.
+    bool rests(const RenderSnapshot& snap, const StripRender& chain, size_t i, const Slices& slices,
+               float* left, float* right, int frames) noexcept;
+    // Live: after device i was processed, how long what it passes on has been silent.
+    void noteQuiet(const RenderSnapshot& snap, Processor& insert, const float* left, const float* right,
+                   int frames) noexcept;
+    static constexpr double kRestAfter = 2.0;  // seconds
+    static constexpr double kLookEvery = 0.5;  // seconds
     // A device's meter: the loudest of what it passes on (live chunks only).
     static void meterOutput(Processor& insert, const float* left, const float* right, int frames) noexcept;
     // A chain skipped (none of its devices on): each one's meter takes what goes past it.
@@ -505,10 +527,13 @@ private:
     bool ignoreSolo_ = false;
     Scheduler* scheduler_ = nullptr;
     std::atomic<bool> costOrdering_{true};
+    std::atomic<bool> measuringCpu_{false};
+    bool measureChunk_ = false;  // this chunk measures (live, and measuringCpu_ as it began)
     std::vector<WorkerScratch> scratch_;  // one per thread: [0] the rendering thread's
     // The chunk the graph renders (set by the prologue, read by every thread).
     const RenderSnapshot* chunkSnap_ = nullptr;
     int chunkFrames_ = 0;
+    bool chunkFollows_ = false;  // another chunk comes right after this one (the scheduler's workers spin for it)
     ChunkFlags chunkFlags_{};
     ProcessContext chunkContext_;
     const WarpVoiceSet* voiceOverride_ = nullptr;

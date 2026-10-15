@@ -92,6 +92,7 @@ private Q_SLOTS:
             {"browser", {"Ctrl+Alt+B"}},
             {"fileManager", {"Ctrl+Alt+F"}},
             {"agentChangesView", {"Ctrl+Alt+A"}},
+            {"cpuUsage", {"Ctrl+Alt+U"}},
             {"deviceView", {"Ctrl+Alt+L"}},
             {"clipView", {"Shift+Tab"}},
             {"findTrack", {"Q"}},
