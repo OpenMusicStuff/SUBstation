@@ -49,6 +49,8 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Hue: [HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml), [HueSpectrum](../../ui/src/devices/HueSpectrum.h), [HueWheel](../../ui/src/devices/HueWheel.h), the application layer's [Chroma.h](../../app/src/analysis/Chroma.h) | |
 | Vintage Hall: [VintageHallEditor.qml](../../ui/qml/devices/editors/VintageHallEditor.qml), [VintageHallLoop](../../ui/src/devices/VintageHallLoop.h), the application layer's [VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h) | |
 | Transient Shaper: [TransientEditor.qml](../../ui/qml/devices/editors/TransientEditor.qml), [TransientShapeGraph](../../ui/src/devices/TransientShapeGraph.h), [TransientGraph](../../ui/src/devices/TransientGraph.h), the application layer's [TransientResponse.h](../../app/src/audio/TransientResponse.h) | |
+| Vocoder: [VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml), [VocoderGraph](../../ui/src/devices/VocoderGraph.h), the application layer's [VocoderResponse.h](../../app/src/audio/VocoderResponse.h) | |
+| Vocal Rider: [VocalRiderEditor.qml](../../ui/qml/devices/editors/VocalRiderEditor.qml), [VocalRiderGraph](../../ui/src/devices/VocalRiderGraph.h) | |
 | Sidechain: [SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml), [CurveGraph](../../ui/src/devices/CurveGraph.h), [ClashView](../../ui/src/devices/ClashView.h) | |
 | Sampler: [SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml), [SampleView](../../ui/src/devices/SampleView.h), the application layer's [SampleSlices.h](../../app/src/audio/SampleSlices.h) | |
 | Vital: [VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml), [VitalPatchInfo](../../ui/src/devices/VitalPatchInfo.h) (its patch besides its parameters: the modulations, the wavetables' and LFO shapes' names, the preset's name, author and macros' names; the matrix's and the wavetables' edits, through the editor), its panels: [VitalGraph](../../ui/src/devices/VitalGraph.h) (their base), [VitalWavetableGraph](../../ui/src/devices/VitalWavetableGraph.h), [VitalEnvelopeGraph](../../ui/src/devices/VitalEnvelopeGraph.h), [VitalLfoGraph](../../ui/src/devices/VitalLfoGraph.h), [VitalFilterGraph](../../ui/src/devices/VitalFilterGraph.h), [VitalScope](../../ui/src/devices/VitalScope.h) | |
@@ -386,7 +388,9 @@ readonly property var editors: ({
     "spectral": "SpectralEditor.qml",
     "transient": "TransientEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
-    "vital": "VitalEditor.qml"
+    "vital": "VitalEditor.qml",
+    "vocal_rider": "VocalRiderEditor.qml",
+    "vocoder": "VocoderEditor.qml"
 })
 ```
 
@@ -1260,6 +1264,31 @@ The editors:
     and fade (τ 250 ms); the in-tune band's glow eases (τ 120 ms); while no voice is heard everything but the scale
     fades out (τ 220 ms; back in τ 60 ms), the name dimming to the last note heard. It repaints only while
     something moves.
+- **Vocoder** ([VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml)), laid out as Ableton's: down the
+  left the Carrier drop-down and, under it, the chosen carrier's own settings (Noise: Rate and Crackle; Pitch
+  Tracking: the wave, Pitch, and Low and High boxes; External and Modulator: a line on what they take), Enhance at
+  the bottom; beside them Unvoiced and Sens. over Fast and Slow; in the middle the bank
+  ([VocoderGraph](../../ui/src/devices/VocoderGraph.h), at least 268 px, as wide as the row under it) over Bands,
+  Low, High, BW and Precise or Retro; at the right Formant, Depth and Gate over Attack, Release and Level, then
+  Mono, Stereo and L/R over Dry/Wet. Boxes are as wide as their texts (`EditorBoxWidth`).
+  - The bank, on a log axis from 20 Hz to 20 kHz with its decade grid: a bar per band, from halfway to the band
+    below to halfway to the one above, as tall as the newest whole frame of `bands` says (-72 dB at the bottom),
+    the bands' filters drawn faintly over them (`vocoderBandResponseDb()`: the engine's `bandResponseDb`), ticks
+    along the bottom where the carrier's bands are (blue while Formant moves them), and along the top the count and
+    range, and while tracking the pitch (`pitch`, newest over 50 ms) in Hz with its note.
+  - Its animation, in `advance()` by `tickSeconds()`: a bar rises at once (τ 15 ms) and falls smoothly (τ 180 ms);
+    nothing for 250 ms and all fall to the bottom, fading (τ 400 ms; back in τ 50 ms). It repaints only while
+    something moves.
+- **Vocal Rider** ([VocalRiderEditor.qml](../../ui/qml/devices/editors/VocalRiderEditor.qml)): its display (300 px)
+  with Target's box and the ride now ("Ride +3.2 dB", from the graph's `gain`) along its top, then four knobs a row:
+  Range Min, Range Max, Speed and Output over Vocal Sens., Music Sens. and Vocal or Flat.
+  - The display ([VocalRiderGraph](../../ui/src/devices/VocalRiderGraph.h)) scrolls the last 5 s as the
+    Compressor's `ReductionGraph` does (rings by absolute index, a steady 30 ms lag, columns of whole buckets): above,
+    on -60..0 dB, `level` filled grey, `level` + `gain` outlined (what comes out) and `music` in yellow; the target
+    as a blue line (dragged up and down, Shift a tenth, one undo step per drag, "Change Vocal Rider Target";
+    double-click resets it; right-click on it opens its menu), and while Music Sens. moves it, the target the device
+    used (`target`) as a fainter line. The bottom 30 % is a lane of `gain` (0 dB across its middle, as far as the
+    range goes either way, Range Min and Max dashed); presses there go to the frame.
 - **Hue** ([HueEditor.qml](../../ui/qml/devices/editors/HueEditor.qml)): no pages, no margins round its spectrum: the
   spectrum fills the body from edge to edge (as wide as the Vintage Hall folded: its loop, four cells, their gaps and
   its margins), and over its top edge the key and HQ (Quality) at the left, the arrow at the right (a `fold` icon
@@ -1586,5 +1615,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_editors_vintage_hall.cpp](../../tests/app/test_ui_device_editors_vintage_hall.cpp) | The Vintage Hall's editor: fitting the body folded and with Advanced open (the loop first, the knobs beside it, the editor as wide as they are and its margin; every caption and every text a readout takes whole; Advanced sliding open and shut, not at once), the defaults, the log knobs log, a knob's drag one undo step; the loop being the engine's (its lap for Size, the taps' weights for Attack, easing to a new Size); dragging it (up for Decay, across for Size, Shift finely, one undo step, named; a double-click resetting both); the displays reaching it (the taps' levels, the output, comets at a recent onset, few for a backlog's) and its coming to rest |
 | [test_ui_device_editors_vital.cpp](../../tests/app/test_ui_device_editors_vital.cpp) | Vital's editor: as wide as it was (996 px); every page and each of its choices showing Vital's parameters (each one the device has, inside the body; every section's somewhere; no caption or readout cut short), a knob editing the model undoably with Vital's text ("262 Hz") and the editor's caption, knobs that do nothing dimmed (the formant's, a rate or a tempo by the timing, following the page), the matrix adding a modulation (its row, its amount and switches the slot's parameters, an LFO's bipolar), removing it and undoing, every source and destination to choose; the preset's name; the wavetables' and LFO shapes' names and buttons on their pages, following the patch; the panels: the oscillator's frames (a square's), dragged through (one step), the envelope's handles dragged (one step each) and reset, its curves Vital's, the LFO's shape following the patch, the filter's response (low-pass, high-pass) and its handle dragged; what the engine plays reaching them (the envelope's and the LFO's dots, the voices) and the dot going once silent; with `SUBSTATION_UI_SCREENSHOTS`, each page saved, a note playing |
 | [test_ui_device_editors_transient.cpp](../../tests/app/test_ui_device_editors_transient.cpp) | The Transient Shaper's editor: fitting the body (its parts inside it side by side, the editor as wide as they are and its margin; every caption and every text a readout takes whole), the defaults, only Attack, Sustain and Output bipolar, the times log, Attack and Sustain signed; Clip undoable, the lookahead reaching the engine's latency; the shape's handles (up and down for the amount, across for the time, never both; Shift; one undo step each, named; the curve following a drag at once; double-click resetting a handle's two; presses off them the frame's; the right button the amount's menu); the curve being the engine's hit (exactly, once settled), morphing to a new shape, the handles at the peak and on the tail; the displays reaching both graphs (the history, the gain's parts, sparks, rings and a playhead at a recent transient, none for a backlog's), and both coming to rest |
+| [test_ui_device_editors_vocoder.cpp](../../tests/app/test_ui_device_editors_vocoder.cpp) | The Vocoder's editor: fitting the body; every control there, the boxes' texts whole (`EditorBoxWidth`); Noise's and Pitch Tracking's own settings shown only for their carrier; the bank (`bandCount()`, `bandCentre()`) following Bands and Low; what the engine rendered reaching the bars (the band nearest a 1 kHz tone the loudest, falling once nothing comes) and the pitch tracked |
+| [test_ui_device_editors_vocal_rider.cpp](../../tests/app/test_ui_device_editors_vocal_rider.cpp) | The Vocal Rider's editor: fitting the body; every control there, Target's box whole; the ride and the level as the device made them (a -30 dB tone ridden up 12 dB); the target line dragged up (one undo step) and reset by a double-click |
 | [test_session_devices.cpp](../../tests/app/test_session_devices.cpp) | `DeviceSelection` through the session: selecting, the focus, the clipboard, folding, racks, drops, presets |
 | [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) | The Sidechain's fit |

@@ -211,7 +211,7 @@ private Q_SLOTS:
         for (const char* kind : {"amp", "arpeggiator", "bitcrusher", "chorus", "compressor", "delay", "disperser",
                                  "envelope", "eq", "erosion", "gate", "gigatune", "lfo", "limiter", "multiband",
                                  "phaser", "reverb", "sampler", "saturator", "sidechain", "spectral", "transient",
-                                 "vintage_hall", "vital"}) {
+                                 "vintage_hall", "vital", "vocal_rider", "vocoder"}) {
             QVariant url;
             QMetaObject::invokeMethod(root_.get(), "editorFor", Q_RETURN_ARG(QVariant, url),
                                       Q_ARG(QVariant, QString::fromLatin1(kind)));

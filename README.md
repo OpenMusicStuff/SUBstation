@@ -107,6 +107,9 @@ Claude Code can read and edit your song while you watch.
   Disperser.
 - **Pitch**: GigaTune (pitch correction for a voice: a key's notes, retune speed, pitch and
   formant shifts), Hue.
+- **Voice**: Vocoder (as Ableton's: Noise, External, Modulator and Pitch Tracking carriers, 4 to 40
+  bands, Precise or Retro, Formant, Enhance, Unvoiced), Vocal Rider (rides a vocal's level to a target,
+  holding between phrases, following the music on its sidechain).
 - **Utility**: EQ, Utility.
 - Racks with parallel chains, macros and presets. Every parameter can be automated and is
   played sample-accurately.
