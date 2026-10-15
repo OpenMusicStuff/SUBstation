@@ -828,11 +828,13 @@ private Q_SLOTS:
         tick();
         QVERIFY(graph_->figureShown(-24.0) > 0.5);
 
-        // Fading as the line passes, without a jump.
+        // Fading as the line passes, without a jump. (The figure goes by where the line is drawn, which eases to the
+        // threshold by the time each tick counts: at least a tick's, more when the machine held the test up. So
+        // the line is let catch up at each step, and the figure compared between steps of the line itself.)
         double last = graph_->figureShown(-24.0);
         for (double db = -24.0; db <= -12.0; db += 0.1) {
             set("threshold", db);
-            tick(1);
+            tick(20);
             const double shown = graph_->figureShown(-24.0);
             QVERIFY2(std::abs(shown - last) < 0.1, qPrintable(QStringLiteral("%1 at %2 dB").arg(shown).arg(db)));
             last = shown;
@@ -1092,13 +1094,18 @@ private Q_SLOTS:
         QTest::qWait(50);
         QCOMPARE(orangeInTheTop(0.4), 0);
 
-        // Once everything has settled, nothing is drawn again however often the display ticks.
+        // Once everything has settled, nothing is drawn again however often the display ticks. (Counted after a
+        // frame of the window's own each time, so that what was asked for before is drawn, however late.)
+        const auto drawn = [&] {
+            QSignalSpy frame(window_, &QQuickWindow::frameSwapped);
+            window_->update();
+            [&] { QVERIFY(frame.wait(5000)); }();
+            return graph_->lastStats().frames;
+        };
         for (int i = 0; i < 600; ++i) refreshDisplays();  // (10 s: the meters' peaks have fallen)
-        QTest::qWait(50);
-        const int settled = graph_->lastStats().frames;
+        const int settled = drawn();
         for (int i = 0; i < 30; ++i) refreshDisplays();
-        QTest::qWait(50);
-        QCOMPARE(graph_->lastStats().frames, settled);
+        QCOMPARE(drawn(), settled);
     }
 
     // A read can hold a long backlog (an editor shown, or shown again, after the sound stopped): the meters show
