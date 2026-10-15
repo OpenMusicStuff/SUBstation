@@ -930,6 +930,10 @@ ApplicationWindow {
     CpuUsageWindow {
         visible: cpuUsageAction.checked
         onClosing: cpuUsageAction.checked = false
+        onTrackClicked: trackId => {
+            if (arrangement.revealTrack)
+                arrangement.revealTrack(trackId)
+        }
     }
 
     FileDialog {

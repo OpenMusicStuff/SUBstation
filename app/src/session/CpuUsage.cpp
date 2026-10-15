@@ -1,6 +1,7 @@
 #include "session/CpuUsage.h"
 
 #include <algorithm>
+#include <climits>
 
 #include "audio/EngineBridge.h"
 #include "model/Automation.h"  // kMaster
@@ -12,6 +13,7 @@ namespace {
 
 constexpr double kSmoothing = 0.4;   // of each new reading in the shown value
 constexpr double kPeakDecay = 0.85;  // per update
+constexpr double kSortStep = 0.5;    // % of a core: costs within one sort as equal
 
 }  // namespace
 
@@ -71,11 +73,33 @@ void CpuUsage::update() {
     for (const Row& row : rows) {
         if (row.track) total_ += row.cpu;
     }
-    const bool same = rows.size() == rows_.size() &&
-                      std::equal(rows.begin(), rows.end(), rows_.begin(), [](const Row& a, const Row& b) {
-                          return a.id == b.id && a.name == b.name && a.color == b.color && a.depth == b.depth;
-                      });
-    if (same) {
+    const auto alike = [](const Row& a, const Row& b) {
+        return a.id == b.id && a.name == b.name && a.color == b.color && a.depth == b.depth;
+    };
+    // The same rows, in another order (costliest first): moved, so a list
+    // scrolled stays where it is. Other rows: a reset.
+    bool sameRows = rows.size() == rows_.size();
+    if (sameRows) {
+        QHash<QString, const Row*> before;
+        for (const Row& row : rows_) before.insert(row.id, &row);
+        for (const Row& row : rows) {
+            const Row* old = before.value(row.id);
+            if (!old || !alike(*old, row)) {
+                sameRows = false;
+                break;
+            }
+        }
+    }
+    if (sameRows) {
+        for (size_t i = 0; i < rows.size(); ++i) {
+            size_t from = i;
+            while (from < rows_.size() && rows_[from].id != rows[i].id) ++from;
+            if (from == i || from >= rows_.size()) continue;
+            beginMoveRows({}, static_cast<int>(from), static_cast<int>(from), {}, static_cast<int>(i));
+            std::rotate(rows_.begin() + static_cast<std::ptrdiff_t>(i), rows_.begin() + static_cast<std::ptrdiff_t>(from),
+                        rows_.begin() + static_cast<std::ptrdiff_t>(from) + 1);
+            endMoveRows();
+        }
         rows_ = std::move(rows);
         if (!rows_.empty()) Q_EMIT dataChanged(index(0), index(static_cast<int>(rows_.size()) - 1), {CpuRole, PeakRole});
     } else {
@@ -140,7 +164,15 @@ std::vector<CpuUsage::Row> CpuUsage::buildRows() const {
     add(project_->master(), kMaster, 0);
 
     if (sortByCpu_) {
-        const auto costlier = [](const Row& a, const Row& b) { return a.cpu > b.cpu; };
+        // Costliest first, by steps of kSortStep: within a step the order stays
+        // as it was (rows of nearly the same cost don't swap at every update).
+        QHash<QString, int> was;
+        for (size_t i = 0; i < rows_.size(); ++i) was.insert(rows_[i].id, static_cast<int>(i));
+        const auto costlier = [&was](const Row& a, const Row& b) {
+            const auto step = [](double cpu) { return static_cast<long>(cpu / kSortStep); };
+            if (step(a.cpu) != step(b.cpu)) return step(a.cpu) > step(b.cpu);
+            return was.value(a.id, INT_MAX) < was.value(b.id, INT_MAX);
+        };
         std::stable_sort(groups.begin(), groups.end(),
                          [&](const Group& a, const Group& b) { return costlier(a.track, b.track); });
         for (Group& group : groups) {

@@ -9,6 +9,8 @@
 #include "model/Automation.h"
 #include "session/CpuUsage.h"
 
+#include <QAbstractItemModelTester>
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace sub::app;
@@ -39,6 +41,7 @@ private Q_SLOTS:
         const QString group = studio.edit.groupTracks({bass});
         const QString verb = studio.edit.addReturnTrack(QStringLiteral("Verb"));
         CpuUsage usage(&studio.project, studio.bridge.get());
+        QAbstractItemModelTester tester(&usage, QAbstractItemModelTester::FailureReportingMode::QtTest);
         usage.update();
         QCOMPARE(column(usage, CpuUsage::RowIdRole), (QStringList{drums, eq, utility, group, bass, verb, kMaster}));
         QCOMPARE(column(usage, CpuUsage::IsTrackRole),
@@ -75,6 +78,26 @@ private Q_SLOTS:
         studio.edit.addDevice(first, QStringLiteral("utility"));
         usage.update();
         QCOMPARE(usage.rowCount(), 3);
+    }
+
+    void theSameRowsReorderedAreMovedNotReset() {
+        // (As the costliest-first order changes: a list scrolled stays where it is.)
+        Studio studio;
+        const QString a = studio.edit.addAudioTrack(QStringLiteral("A"));
+        const QString aEq = studio.edit.addDevice(a, QStringLiteral("eq"));
+        const QString b = studio.edit.addAudioTrack(QStringLiteral("B"));
+        const QString bUtility = studio.edit.addDevice(b, QStringLiteral("utility"));
+        CpuUsage usage(&studio.project, studio.bridge.get());
+        QAbstractItemModelTester tester(&usage, QAbstractItemModelTester::FailureReportingMode::QtTest);
+        usage.update();
+        QCOMPARE(column(usage, CpuUsage::RowIdRole), (QStringList{a, aEq, b, bUtility, kMaster}));
+        QSignalSpy resets(&usage, &QAbstractItemModel::modelReset);
+        QSignalSpy moves(&usage, &QAbstractItemModel::rowsMoved);
+        studio.edit.moveTracks({b}, 0, std::nullopt);
+        usage.update();
+        QCOMPARE(column(usage, CpuUsage::RowIdRole), (QStringList{b, bUtility, a, aEq, kMaster}));
+        QCOMPARE(resets.count(), 0);
+        QVERIFY(moves.count() > 0);
     }
 
     void measuresOnlyWhileActive() {

@@ -12,7 +12,8 @@
 // sandbox counts what the audio thread waits for it. A device that rests in
 // silence (Renderer::rests) costs nothing. Each value is smoothed over a few
 // updates; `peak` holds the highest lately, decaying. With `sortByCpu` the
-// tracks come costliest first, each with its devices costliest first.
+// tracks come costliest first, each with its devices costliest first (rows
+// moved, not reset, so a list scrolled stays put).
 
 #include <QAbstractListModel>
 #include <QHash>

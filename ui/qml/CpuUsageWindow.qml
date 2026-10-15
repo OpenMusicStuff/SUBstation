@@ -7,12 +7,16 @@ import SUBstation
 // what each track and device costs the audio thread, in % of one CPU core,
 // updated twice a second. The tracks are listed as in the arrangement (or the
 // costliest first), each followed by its devices; a bar shows each one's
-// share, its number the average lately and its peak. Clicking a row selects
-// its track. The engine only measures while this window is open.
+// share, its number the average lately and its peak. Clicking a row shows its
+// track in the arrangement (trackClicked: selected, unfolded, scrolled to) and
+// selects its device. The engine only measures while this window is open.
 Window {
     id: window
 
     readonly property var usage: Session.cpuUsage
+
+    // A row clicked: its track, to show in the arrangement (Main.qml).
+    signal trackClicked(string trackId)
 
     // Its bar's colour: green, then yellow from 5%, red from 15% of a core.
     function levelColor(cpu) {
@@ -86,6 +90,7 @@ Window {
                 delegate: Item {
                     id: row
 
+                    required property string rowId
                     required property string trackId
                     required property string name
                     required property string color
@@ -161,7 +166,11 @@ Window {
                         id: area
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: Session.selection.selectTrack(row.trackId)
+                        onClicked: {
+                            window.trackClicked(row.trackId)
+                            if (!row.isTrack)
+                                Session.deviceSelection.selectDevice(row.rowId)
+                        }
                     }
                 }
             }
@@ -172,7 +181,7 @@ Window {
             wrapMode: Text.WordWrap
             font: Theme.smallFont
             color: Theme.textDim
-            text: qsTr("% of one CPU core. A track counts its clips and devices; a group only what it adds. A plug-in in a sandbox counts the time the audio thread waits for it. A device resting in silence costs nothing. Measured only while this window is open.")
+            text: qsTr("% of one CPU core. A track counts its clips and devices; a group only what it adds. A plug-in in a sandbox counts the time the audio thread waits for it. A device resting in silence costs nothing. Click a row to show its track. Measured only while this window is open.")
         }
     }
 }

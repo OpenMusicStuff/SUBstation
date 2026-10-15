@@ -177,8 +177,8 @@ with others (see [recording.md](recording.md#monitoring)).
 and the master, each followed by its devices, with how much of one CPU core each takes.
 It updates twice a second; each row shows the average lately and its peak, and a bar
 that turns yellow from 5% of a core and red from 15%. **Costliest first** puts the
-heaviest tracks at the top, each with its heaviest devices first. Clicking a row selects
-its track.
+heaviest tracks at the top, each with its heaviest devices first. Clicking a row scrolls
+the arrangement to its track and selects it (and a device's row selects the device).
 
 - A track's number includes its clips and devices; a group's is only what it adds to the
   tracks in it. A rack's is what the devices in it add up to; they follow it, named after
