@@ -679,6 +679,21 @@ void ProjectEditor::setTrackColor(const QString& trackId, const QString& color) 
     }
 }
 
+void ProjectEditor::setTracksColor(const QStringList& trackIds, const QString& color) {
+    QStringList changing;
+    for (const QString& id : trackIds) {
+        const Track* track = project_->findTrack(id);
+        if (track != nullptr && color != track->color && !changing.contains(id)) changing << id;
+    }
+    if (changing.size() == 1) {
+        setTrackColor(changing.front(), color);
+        return;
+    }
+    if (changing.isEmpty()) return;
+    Macro macro(undoStack_, QStringLiteral("Change Track Colors"));
+    for (const QString& id : changing) setTrackColor(id, color);
+}
+
 void ProjectEditor::setTrackParam(const QString& trackId, TrackField field, double value, const QString& mergeKey) {
     QString label;
     switch (field) {

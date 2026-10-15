@@ -127,6 +127,9 @@ public:
     // Its name template ("# Lead": "4 Lead", the # its number; TrackField::Name).
     Q_INVOKABLE void renameTrack(const QString& trackId, const QString& name);
     Q_INVOKABLE void setTrackColor(const QString& trackId, const QString& color);
+    // The same colour on several tracks (groups, returns) as one undo step; the ones that have it already, and
+    // the ones that aren't there, are left alone.
+    Q_INVOKABLE void setTracksColor(const QStringList& trackIds, const QString& color);
     // Mixer settings: VolumeDb, Pan, Mute, Solo (the master: volume and pan;
     // EditError for the others: the master is always heard). Mute and Solo are
     // bools (any value but 0 is true). Solo is a listening aid: saved, but not
