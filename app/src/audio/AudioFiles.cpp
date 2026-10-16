@@ -24,11 +24,13 @@ QString besideProject(const Project& project, const QString& name) {
 }
 
 // A new file in `folder`: `stem` and `extension` (".wav"), or if that is taken
-// "<stem> 2", "<stem> 3"..., the first that isn't.
-QString uniquePath(const QString& folder, const QString& stem, const QString& extension) {
+// (or among `taken`) "<stem> 2", "<stem> 3"..., the first that isn't.
+QString uniquePath(const QString& folder, const QString& stem, const QString& extension, const QStringList& taken = {}) {
     const QDir dir(folder);
     QString path = dir.filePath(stem + extension);
-    for (int n = 2; QFileInfo::exists(path); ++n) path = dir.filePath(stem + u' ' + QString::number(n) + extension);
+    for (int n = 2; QFileInfo::exists(path) || taken.contains(path); ++n) {
+        path = dir.filePath(stem + u' ' + QString::number(n) + extension);
+    }
     return path;
 }
 
@@ -48,7 +50,7 @@ QString recordingsFolder(const Project& project) {
     return QDir(music).filePath(QStringLiteral("SUBstation/Recordings"));
 }
 
-QString takePath(const QString& folder, const QString& trackName, const QDateTime& when) {
+QString takePath(const QString& folder, const QString& trackName, const QDateTime& when, const QStringList& taken) {
     QString name = withSafeCharacters(trackName);
     // Spaces and dots go from both ends (Windows drops them from file names).
     qsizetype first = 0;
@@ -57,7 +59,8 @@ QString takePath(const QString& folder, const QString& trackName, const QDateTim
     while (last > first && (name[last - 1] == u' ' || name[last - 1] == u'.')) --last;
     name = name.mid(first, last - first);
     if (name.isEmpty()) name = QStringLiteral("Audio");
-    return uniquePath(folder, name + u' ' + when.toString(QStringLiteral("yyyy-MM-dd HHmmss")), QStringLiteral(".wav"));
+    return uniquePath(folder, name + u' ' + when.toString(QStringLiteral("yyyy-MM-dd HHmmss")), QStringLiteral(".wav"),
+                      taken);
 }
 
 QString freezeFolder(const Project& project) {

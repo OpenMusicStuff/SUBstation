@@ -62,8 +62,22 @@ std::optional<qint64> EngineRender::finish() {
     }
 }
 
-FreezeRender::FreezeRender(const QString& trackId, std::shared_ptr<sub::RenderJob> job, double tempo,
+FreezeRender::FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, double tempo,
                            QObject* parent)
-    : EngineRender(std::move(job), parent), trackId_(trackId), tempo_(tempo) {}
+    : EngineRender(std::move(job), parent), trackIds_(trackIds), tempo_(tempo) {}
+
+QStringList FreezeRender::paths() const {
+    QStringList paths;
+    for (const std::string& path : job().paths()) paths.append(QString::fromStdString(path));
+    return paths;
+}
+
+std::vector<std::shared_ptr<sub::AudioSource>> FreezeRender::sources() const { return job().sources(); }
+
+QList<qint64> FreezeRender::written() const {
+    QList<qint64> frames;
+    for (const int64_t written : job().written()) frames.append(static_cast<qint64>(written));
+    return frames;
+}
 
 }  // namespace sub::app

@@ -379,9 +379,13 @@ device, and exports come out aligned ([routing.md](routing.md)). A latency chang
 
 ### Offline renders and resets
 
-Offline renders share plug-ins with live playback. Around them the engine calls `resetOffline()` (suspend, deactivate
-and reactivate: clears tails a real-time reset can't, and forgets held notes) and requests a real-time reset. Offline
-blocks set `ProcessContext::offline`, but the plug-in is still processed in `kRealtime` mode.
+Offline renders share plug-ins with live playback. Around them the engine calls `resetOffline(rendering)` (suspend,
+deactivate and reactivate: clears tails a real-time reset can't, and forgets held notes) and requests a real-time
+reset. Before a render (`rendering` true) a VST3 plug-in is set up anew in `kOffline` mode while it is inactive
+(`setupProcessing()` between `setActive(false)` and `setActive(true)`, as VST 3 requires), and every block's
+`ProcessData::processMode` says so; after it, back in `kRealtime` the same way (`processMode_`; a restart the plug-in
+asks for in between keeps the mode). A plug-in may then take its time (a higher quality, no dropped work). A VST2
+plug-in's process level (below) is offline (4, Steinberg's `kVstProcessLevelOffline`) while it renders offline.
 
 ## `EditorWindow`
 
@@ -546,7 +550,7 @@ answers what is its own (`Vst2Processor::hostCall`):
 | refresh (update display) | its names or values changed (a program picked): re-read in `idle()` |
 | sample rate, block size | the processor's |
 | effect directory | its library's folder |
-| process level | 2 (real-time) on the rendering thread, else 1 (the UI) |
+| process level | 2 (real-time) on the rendering thread (4, offline, in an offline render: `resetOffline(true)` until `resetOffline(false)`), else 1 (the UI) |
 | vendor, product, vendor version, language | "SUBstation", "SUBstation", 1000, English |
 | can do | `sendVstEvents`, `sendVstMidiEvent`, `sendVstTimeInfo`, `sizeWindow`, `acceptIOChanges`, `startStopProcess`, `shellCategory`, `supplyIdle` |
 

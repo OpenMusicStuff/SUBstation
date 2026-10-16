@@ -59,7 +59,7 @@ public:
 
     void prepare(double sampleRate, int maxBlockSize) override;
     void reset() override;
-    void resetOffline() override;
+    void resetOffline(bool rendering) override;
     void process(const ProcessContext& ctx, float* const* channels, int numChannels, int numFrames) override;
     int latencySamples() const override { return latency_.load(std::memory_order_relaxed); }
     bool hasSidechain() const override { return auxInput_ >= 0; }
@@ -161,6 +161,9 @@ private:
     bool singleComponent_ = false;  // the component is its own controller
     bool active_ = false;
     bool processing_ = false;
+    // Its process mode (ProcessSetup's, and each block's ProcessData's): kOffline
+    // while an offline render processes it (resetOffline()), else kRealtime.
+    int32_t processMode_ = 0;
 
     double sampleRate_ = 48000.0;
     int maxBlock_ = 0;

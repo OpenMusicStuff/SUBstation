@@ -22,8 +22,8 @@ using namespace subtest;
 
 namespace {
 
-// SUB Test Synth's parameters (then Macros 2..10).
-enum { GAIN, WAVE, TEMPO, PLAYING, BEAT, LOOP, MACRO };
+// SUB Test Synth's parameters (then Macros 2..10, then Offline).
+enum { GAIN, WAVE, TEMPO, PLAYING, BEAT, LOOP, MACRO, OFFLINE = MACRO + 10 };
 
 using EventType = sub::ProcessorEvent::Type;
 
@@ -125,11 +125,12 @@ TEST_CASE("parameters as the plug-in describes them") {
     const auto params = engine.processorParams(synth);
     std::vector<std::string> names{"Gain", "Wave", "Tempo", "Playing", "Beat", "Loop"};
     for (int i = 1; i <= 10; ++i) names.push_back("Macro " + std::to_string(i));
+    names.push_back("Offline");
     CHECK(paramNames(params) == names);
     std::vector<std::string> ids;
-    for (int i = 0; i < 16; ++i) ids.push_back(std::to_string(i));
+    for (int i = 0; i < 17; ++i) ids.push_back(std::to_string(i));
     CHECK(paramIds(params) == ids);
-    REQUIRE(params.size() == 16);
+    REQUIRE(params.size() == 17);
     const auto& gain = params[GAIN];
     const auto& wave = params[WAVE];
     CHECK_EQ(gain.minValue, 0.f);
@@ -144,6 +145,7 @@ TEST_CASE("parameters as the plug-in describes them") {
     for (const auto& p : params) readOnly.push_back(p.readOnly);
     std::vector<bool> expected{false, false, true, true, true, true};
     expected.resize(16, false);
+    expected.push_back(true);
     CHECK(readOnly == expected);
     CHECK_EQ(params[TEMPO].unit, std::string("BPM"));
     CHECK_EQ(engine.processorParamIndex(synth, "1"), WAVE);
@@ -185,6 +187,19 @@ TEST_CASE("transport reaches the plug-in") {
     CHECK_NEAR(engine.processorParam(synth, BEAT) * 1000.0, beatOfLastBlock, 1e-3);
     CHECK_EQ(engine.processorParam(synth, LOOP), 0.f);
     CHECK(hasEvent(engine.takeProcessorEvents(), EventType::ParamsChanged));
+}
+
+TEST_CASE("an offline render processes a plug-in in its offline mode") {
+    PluginEngine e;
+    auto& engine = e.engine;
+    const auto [track, synth] = pluginTrack(engine, "SUB Test Synth", {{0.0, 1.0, 60, 100}});
+    engine.renderOffline(0.0, 4096);
+    engine.idle();  // the plug-in's output parameters reach its controller
+    CHECK_EQ(engine.processorParam(synth, OFFLINE), 1.f);  // set up so, and each block said so
+    const auto path = (tempDir() / "offline.wav").string();
+    engine.renderTrackToWav(track, path, 0.0, 1.0, 0.0);
+    engine.idle();
+    CHECK_EQ(engine.processorParam(synth, OFFLINE), 1.f);
 }
 
 TEST_CASE("blocks are split where the loop wraps") {

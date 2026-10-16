@@ -8,7 +8,9 @@
 //    As a synth that reuses its voices can (Serum 2 appears to), a new note keeps
 //    the tuning of the last note to end until a tuning of its own comes. It
 //    reports the transport it was given in read-only parameters, and has ten
-//    Macro parameters that only its controller keeps (in its own state).
+//    Macro parameters that only its controller keeps (in its own state); last,
+//    Offline (read-only): 1 when it was set up and processed in the offline
+//    process mode, 0 in the real-time one (0.5: the two disagree).
 //  * SUB Test Effect: a single-component effect (processor and controller in one
 //    object, like most JUCE plug-ins). Gain, a Latency parameter that delays the
 //    audio and reports it, a bypass parameter, state, and a Win32 editor that
@@ -78,6 +80,7 @@ void writeOutputParam(ProcessData& data, ParamID id, ParamValue value) {
 
 enum SynthParam : ParamID { kSynthGain = 0, kSynthWave, kSynthTempo, kSynthPlaying, kSynthBeat, kSynthLoop, kSynthMacro };
 constexpr int kNumMacros = 10;
+constexpr ParamID kSynthOffline = kSynthMacro + kNumMacros;
 
 class SynthProcessor : public AudioEffect {
 public:
@@ -94,6 +97,7 @@ public:
 
     tresult PLUGIN_API setupProcessing(ProcessSetup& setup) override {
         sampleRate_ = setup.sampleRate;
+        setupMode_ = setup.processMode;
         return AudioEffect::setupProcessing(setup);
     }
 
@@ -119,6 +123,8 @@ public:
             writeOutputParam(data, kSynthBeat, context->projectTimeMusic / 1000.0);
             writeOutputParam(data, kSynthLoop, (context->state & ProcessContext::kCycleActive) ? 1.0 : 0.0);
         }
+        writeOutputParam(data, kSynthOffline,
+                         (data.processMode == kOffline ? 0.5 : 0.0) + (setupMode_ == kOffline ? 0.5 : 0.0));
         if (data.numOutputs < 1 || data.outputs[0].numChannels < 1 || data.numSamples <= 0) return kResultOk;
 
         AudioBusBuffers& out = data.outputs[0];
@@ -205,6 +211,7 @@ private:
     std::vector<Note> notes_;
     double lastTuning_ = 0.0;  // the tuning of the last note to end, which the next one starts with
     double sampleRate_ = 48000.0;
+    int32 setupMode_ = kRealtime;
     double gain_ = 1.0;
     bool sine_ = true;
 };
@@ -235,6 +242,7 @@ public:
             parameters.addParameter(reinterpret_cast<const TChar*>(wide.c_str()), nullptr, 0, 0.0,
                                     ParameterInfo::kCanAutomate, kSynthMacro + i);
         }
+        parameters.addParameter(STR16("Offline"), nullptr, 0, 0.0, ParameterInfo::kIsReadOnly, kSynthOffline);
         return kResultOk;
     }
 

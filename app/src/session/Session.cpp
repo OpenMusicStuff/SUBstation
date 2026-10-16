@@ -121,7 +121,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
         Q_EMIT statusMessage(QStringLiteral("SUBstation %1 is available: Options › Preferences › Updates.").arg(version));
     });
     mcp_ = new McpServer(*this, this);  // (last: its tools read the parts above)
-    finishFreeze_ = [this](FreezeRender& render) { return bridge_->finishFreeze(render); };
+    finishFreeze_ = [this](FreezeRender& render) { return bridge_->finishFreezes(render); };
     wire();
 }
 
@@ -326,7 +326,7 @@ bool Session::startRender(Render* render) {
 
 bool Session::rendering() const { return rendering_ && !rendering_->isFinished(); }
 
-void Session::setFreezeFinisher(std::function<std::optional<Freeze>(FreezeRender&)> finisher) {
+void Session::setFreezeFinisher(std::function<std::optional<OrderedMap<QString, Freeze>>(FreezeRender&)> finisher) {
     finishFreeze_ = std::move(finisher);
 }
 

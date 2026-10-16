@@ -36,7 +36,7 @@ class Channel;
 
 namespace sub::sandbox {
 
-inline constexpr uint32_t kVersion = 3;
+inline constexpr uint32_t kVersion = 4;
 
 enum class Kind : uint32_t {
     // Engine → host. (Instance: the plug-in it is about; request: answered by a Reply with it.)
@@ -44,7 +44,7 @@ enum class Kind : uint32_t {
                           // format ("VST3", "VST2")
     Destroy,              // -
     Prepare,              // sample rate (f64), max block (u32)
-    ResetOffline,         // - (request)
+    ResetOffline,         // rendering (u8): Processor::resetOffline()'s (request)
     SetParam,             // index (u32), plain value (f32): the plug-in's controller (its audio hears it in the block)
     ParamText,            // index (u32), plain value (f32) (request: the text)
     GetState,             // - (request: the state)

@@ -280,8 +280,11 @@ public:
     // Only the renderer calls it, before a block, when a reset was requested.
     virtual void reset() {}
     // Clears everything a real-time reset can't (a plug-in's reverb tail), with
-    // the processor not being processed. The engine calls it around offline renders.
-    virtual void resetOffline() {}
+    // the processor not being processed. The engine calls it around offline
+    // renders: `rendering` before one (it is processed offline until the next
+    // call: a plug-in is told so, VST3's kOffline process mode, VST2's offline
+    // process level), false after it (live again).
+    virtual void resetOffline(bool /*rendering*/) {}
 
     // Real-time. Processes planar channel buffers in place.
     virtual void process(const ProcessContext& ctx, float* const* channels, int numChannels, int numFrames) = 0;

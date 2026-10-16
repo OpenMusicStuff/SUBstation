@@ -162,66 +162,61 @@ void FreezeTracksRender::start() {
             done();
             return;
         }
-        next();
+        render();
     });
 }
 
-void FreezeTracksRender::next() {
-    if (index_ >= tracks_.size()) {
-        // Every render made: one undo step freezes them all.
-        frozen_ = editor_->freezeTracks(freezes_);
-        for (const auto& [trackId, freeze] : freezes_) {
-            if (!frozen_.contains(trackId)) bridge_->discardFreeze(freeze);  // (the editor refused it)
-        }
-        done();
-        return;
+namespace {
+
+// "A", "A, B and C", "5 tracks": the tracks being frozen, for the progress dialog.
+QString trackNames(const Project& project, const QStringList& trackIds) {
+    QStringList names;
+    for (const QString& id : trackIds) {
+        const Track* track = project.findTrack(id);
+        names.append(track != nullptr ? track->name : id);
     }
-    const QString trackId = tracks_.at(index_);
-    const Track* track = editor_->project()->findTrack(trackId);
-    const QString name = track != nullptr ? track->name : trackId;
+    if (names.size() > 3) return QStringLiteral("%1 tracks").arg(names.size());
+    if (names.size() < 2) return names.value(0);
+    const QString last = names.takeLast();
+    return names.join(QStringLiteral(", ")) + QStringLiteral(" and ") + last;
+}
+
+}  // namespace
+
+// One render for all of them (a file for each), then one undo step freezes them all.
+void FreezeTracksRender::render() {
+    const QString names = trackNames(*editor_->project(), tracks_);
     try {
-        render_ = bridge_->startFreeze(trackId);
+        render_ = bridge_->startFreeze(tracks_);
     } catch (const EditError& error) {
-        Q_EMIT editor_->refused(QStringLiteral("%1 could not be frozen: %2").arg(name, error.message()));
-        discard();
+        Q_EMIT editor_->refused(QStringLiteral("%1 could not be frozen: %2").arg(names, error.message()));
         done();
         return;
     }
-    const auto count = tracks_.size();
-    const QString of = count > 1 ? QStringLiteral(" (%1 of %2)").arg(index_ + 1).arg(count) : QString();
-    follow(render_.get(), QStringLiteral("Freezing %1%2…").arg(name, of), static_cast<int>(index_),
-           static_cast<int>(count), [this] { rendered(); });
+    follow(render_.get(), QStringLiteral("Freezing %1…").arg(names), 0, 1, [this] { rendered(); });
 }
 
 void FreezeTracksRender::rendered() {
-    const QString trackId = tracks_.at(index_);
-    const Track* track = editor_->project()->findTrack(trackId);
-    const QString name = track != nullptr ? track->name : trackId;
-    std::optional<Freeze> freeze;
+    std::optional<OrderedMap<QString, Freeze>> freezes;
     try {
-        freeze = finisher_(*render_);
+        freezes = finisher_(*render_);
     } catch (const EditError& error) {
         render_.reset();
-        Q_EMIT editor_->refused(QStringLiteral("%1 could not be frozen: %2").arg(name, error.message()));
-        discard();
+        Q_EMIT editor_->refused(
+            QStringLiteral("%1 could not be frozen: %2").arg(trackNames(*editor_->project(), tracks_), error.message()));
         done();
         return;
     }
     render_.reset();
-    if (!freeze) {  // cancelled: none is frozen
-        discard();
+    if (!freezes) {  // cancelled: none is frozen
         done();
         return;
     }
-    freezes_.insert(trackId, *freeze);
-    ++index_;
-    next();
-}
-
-// The renders no track will play: gone.
-void FreezeTracksRender::discard() {
-    for (const auto& [trackId, freeze] : freezes_) bridge_->discardFreeze(freeze);
-    freezes_.clear();
+    frozen_ = editor_->freezeTracks(*freezes);
+    for (const auto& [trackId, freeze] : *freezes) {
+        if (!frozen_.contains(trackId)) bridge_->discardFreeze(freeze);  // (the editor refused it)
+    }
+    done();
 }
 
 void FreezeTracksRender::abort() {
@@ -229,12 +224,13 @@ void FreezeTracksRender::abort() {
     if (render_ && !render_->finished()) {
         render_->cancel();
         try {
-            if (const auto freeze = bridge_->finishFreeze(*render_)) bridge_->discardFreeze(*freeze);
+            if (const auto freezes = bridge_->finishFreezes(*render_)) {
+                for (const auto& [trackId, freeze] : *freezes) bridge_->discardFreeze(freeze);
+            }
         } catch (const EditError&) {
         }
     }
     render_.reset();
-    discard();
     done();
 }
 

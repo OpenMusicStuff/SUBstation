@@ -31,9 +31,10 @@ void forEachClip(const TrackRender& track, int64_t segStart, int64_t segEnd, F&&
 
 void Renderer::prepare(double sampleRate) {
     sampleRate_ = sampleRate;
-    for (auto* buffer : {&masterLeft_, &masterRight_, &silence_, &captureLeft_, &captureRight_}) {
+    for (auto* buffer : {&masterLeft_, &masterRight_, &silence_}) {
         buffer->assign(kMaxBlock, 0.f);
     }
+    captured_.assign(static_cast<size_t>(numCaptures_) * 2 * kMaxBlock, 0.f);
     setScheduler(scheduler_);
     recordScratch_.assign(2 * kMaxBlock, 0.f);
     countIn_ = countInTotal_ = 0;
@@ -197,35 +198,93 @@ void Renderer::processLive(const RenderSnapshot& snap, SharedState& shared, cons
 }
 
 void Renderer::renderOffline(const RenderSnapshot& snap, float* outStereo, int64_t frames,
-                             bool loop, bool metronome) noexcept {
+                             bool loop, bool metronome, bool more) noexcept {
     syncTempo(snap);
     int64_t done = 0;
     while (done < frames) {
         const int n = static_cast<int>(std::min<int64_t>(kMaxBlock, frames - done));
-        chunkFollows_ = done + n < frames;
+        chunkFollows_ = done + n < frames || more;
         renderChunk(snap, n, {false, loop && snap.loopEnabled, metronome});
         interleave(masterLeft_.data(), masterRight_.data(), n, outStereo + done * 2);
         done += n;
     }
 }
 
-void Renderer::renderTrackOffline(const RenderSnapshot& snap, int track, float* outStereo,
-                                  int64_t frames) noexcept {
+void Renderer::setCaptures(const RenderSnapshot& snap, const std::vector<int>& tracks, bool whole) {
+    captureOf_.assign(snap.tracks.size(), -1);
+    numCaptures_ = static_cast<int>(tracks.size());
+    for (int c = 0; c < numCaptures_; ++c) {
+        const int t = tracks[static_cast<size_t>(c)];
+        if (t >= 0 && static_cast<size_t>(t) < captureOf_.size()) captureOf_[static_cast<size_t>(t)] = c;
+    }
+    captured_.assign(static_cast<size_t>(numCaptures_) * 2 * kMaxBlock, 0.f);
+    pruned_ = !whole;
+    prunedTracks_.clear();
+    prunedGraph_.reset();
+    prunedWork_ = 0;
+    if (whole) return;
+    // The tracks that feed the captures, in snapshot order (so that each comes
+    // after what feeds it), and the edges between them, as the snapshot's graph
+    // has them (an edge into a track: Engine::rebuildSnapshotLocked()).
+    const std::vector<char> needed = upstream(snap, tracks);
+    std::vector<int> node(snap.tracks.size(), -1);
+    for (size_t t = 0; t < needed.size(); ++t) {
+        if (!needed[t]) continue;
+        node[t] = static_cast<int>(prunedTracks_.size());
+        prunedTracks_.push_back(static_cast<int>(t));
+        // Worth a thread of its own: devices to run, or clips to stretch.
+        const TrackRender& track = snap.tracks[t];
+        const bool enabledDevice = std::any_of(track.inserts.begin(), track.inserts.end(),
+                                               [](const auto& insert) { return insert->isActive(); });
+        const bool warping = std::any_of(track.clips.begin(), track.clips.end(), [](const ClipRender& clip) {
+            return clip.playback != ClipRender::Playback::Direct;
+        });
+        if (enabledDevice || warping) ++prunedWork_;
+    }
+    std::vector<std::pair<int, int>> edges;
+    for (const EdgeRender& edge : snap.edges) {
+        if (edge.to < 0) continue;
+        const int from = node[static_cast<size_t>(edge.from)];
+        const int to = node[static_cast<size_t>(edge.to)];
+        if (from >= 0 && to >= 0) edges.emplace_back(from, to);
+    }
+    prunedGraph_ = std::make_unique<TaskGraph>(static_cast<int>(prunedTracks_.size()), edges);
+}
+
+void Renderer::renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames,
+                              bool more) noexcept {
     syncTempo(snap);
-    captureTrack_ = track;
+    capturing_ = true;
     ignoreSolo_ = true;
     int64_t done = 0;
     while (done < frames) {
         const int n = static_cast<int>(std::min<int64_t>(kMaxBlock, frames - done));
-        std::fill_n(captureLeft_.data(), n, 0.f);  // (a track not in the snapshot: silence)
-        std::fill_n(captureRight_.data(), n, 0.f);
-        chunkFollows_ = done + n < frames;
+        for (int c = 0; c < numCaptures_; ++c) {  // (a track not in the snapshot: silence)
+            std::fill_n(captured_.data() + static_cast<size_t>(c) * 2 * kMaxBlock, 2 * kMaxBlock, 0.f);
+        }
+        chunkFollows_ = done + n < frames || more;
         renderChunk(snap, n, {false, false, false});
-        interleave(captureLeft_.data(), captureRight_.data(), n, outStereo + done * 2);
+        for (int c = 0; c < numCaptures_; ++c) {
+            const float* left = captured_.data() + static_cast<size_t>(c) * 2 * kMaxBlock;
+            interleave(left, left + kMaxBlock, n, outStereo[c] + done * 2);
+        }
         done += n;
     }
-    captureTrack_ = -1;
+    capturing_ = false;
     ignoreSolo_ = false;
+}
+
+std::vector<char> Renderer::upstream(const RenderSnapshot& snap, const std::vector<int>& tracks) {
+    std::vector<char> marked(snap.tracks.size(), 0);
+    for (const int t : tracks) {
+        if (t >= 0 && static_cast<size_t>(t) < marked.size()) marked[static_cast<size_t>(t)] = 1;
+    }
+    // Backwards: what feeds a track comes before it in the snapshot.
+    for (size_t t = marked.size(); t-- > 0;) {
+        if (!marked[t]) continue;
+        for (const int e : snap.tracks[t].incoming) marked[static_cast<size_t>(snap.edges[static_cast<size_t>(e)].from)] = 1;
+    }
+    return marked;
 }
 
 void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags flags) noexcept {
@@ -346,18 +405,23 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     chunkSnap_ = &snap;
     chunkFrames_ = frames;
     chunkFlags_ = flags;
-    if (snap.graph && scheduler_) {
-        const bool parallel = static_cast<int64_t>(snap.parallelWork) * frames >= kMinParallelWork &&
-                              snap.parallelWork >= 2;
+    // Capturing tracks (renderCaptures()), only what feeds them, through a graph of their own.
+    const bool pruned = capturing_ && pruned_;
+    chunkTracks_ = pruned ? prunedTracks_.data() : nullptr;
+    TaskGraph* const taskGraph = pruned ? prunedGraph_.get() : snap.graph.get();
+    const int parallelWork = pruned ? prunedWork_ : snap.parallelWork;
+    if (taskGraph && scheduler_) {
+        const bool parallel = static_cast<int64_t>(parallelWork) * frames >= kMinParallelWork && parallelWork >= 2;
         int helpers = Scheduler::kAllWorkers;
         if (parallel) {  // the heaviest paths first (by what the tracks took lately)
-            TaskGraph& graph = *snap.graph;
+            TaskGraph& graph = *taskGraph;
             const bool byCost = costOrdering();
             float total = 0.f;  // ns per frame, all the tracks
-            for (int t = 0; t < graph.size(); ++t) {
+            for (int n = 0; n < graph.size(); ++n) {
+                const int t = chunkTracks_ ? chunkTracks_[n] : n;
                 const float cost = snap.tracks[static_cast<size_t>(t)].buffers->cost.load(std::memory_order_relaxed);
                 total += cost;
-                graph.setCost(t, byCost ? cost : 0.f);
+                graph.setCost(n, byCost ? cost : 0.f);
             }
             graph.orderRoots();
             // As many workers as the work keeps busy (the calling thread is one
@@ -371,9 +435,15 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
                 helpers = std::max(1, static_cast<int>(std::ceil(std::min(byWork, byPaths))));
             }
         }
-        scheduler_->run(*snap.graph, &Renderer::renderNode, this, parallel, helpers, chunkFollows_);
+        scheduler_->run(*taskGraph, &Renderer::renderNode, this, parallel, helpers, chunkFollows_);
+    } else if (pruned) {
+        for (const int t : prunedTracks_) renderTrack(snap, t, scratch_[0]);
     } else {
         for (int t = 0; t < static_cast<int>(snap.tracks.size()); ++t) renderTrack(snap, t, scratch_[0]);
+    }
+    if (pruned) {  // (nothing hears the master: its strip, and what follows it, stay as they are)
+        outputTime_ += frames;
+        return;
     }
 
     // 4. The master strip: what goes into it, summed in order (it never mutes,
@@ -409,7 +479,8 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
 
 void Renderer::renderNode(void* self, int node, int worker) noexcept {
     auto& renderer = *static_cast<Renderer*>(self);
-    renderer.renderTrack(*renderer.chunkSnap_, node, renderer.scratch_[static_cast<size_t>(worker)]);
+    const int track = renderer.chunkTracks_ ? renderer.chunkTracks_[node] : node;
+    renderer.renderTrack(*renderer.chunkSnap_, track, renderer.scratch_[static_cast<size_t>(worker)]);
 }
 
 void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scratch) noexcept {
@@ -452,9 +523,10 @@ void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scr
     ProcessContext context = chunkContext_;  // its own: the inserts move it along the chunk's stretches
     processInserts(snap, track, context, buffers.events.data(), buffers.numEvents, left, right, frames,
                    buffers.uncompensated, scratch);
-    if (t == captureTrack_) {  // what freezing it keeps
-        std::copy_n(left, frames, captureLeft_.data());
-        std::copy_n(right, frames, captureRight_.data());
+    if (capturing_ && captureOf_[static_cast<size_t>(t)] >= 0) {  // what freezing it keeps
+        float* captured = captured_.data() + static_cast<size_t>(captureOf_[static_cast<size_t>(t)]) * 2 * kMaxBlock;
+        std::copy_n(left, frames, captured);
+        std::copy_n(right, frames, captured + kMaxBlock);
     }
     // Pre-fader taps take the signal here, into their own buffers (taps after a
     // device took theirs as it processed).

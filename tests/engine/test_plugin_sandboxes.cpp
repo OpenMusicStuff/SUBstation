@@ -38,7 +38,7 @@ using EventType = sub::ProcessorEvent::Type;
 using sub::PluginHosting;
 using sub::PluginStatus;
 
-enum { GAIN, WAVE, TEMPO, PLAYING };  // SUB Test Synth's first parameters
+enum { GAIN, WAVE, TEMPO, PLAYING, OFFLINE = 16 };  // SUB Test Synth's parameters (Offline last)
 
 std::string pluginHost() { return SUBSTATION_PLUGIN_HOST; }
 
@@ -208,6 +208,7 @@ TEST_CASE("sandbox: parameters, their texts, transport and state come from there
     engine.renderOffline(2.0, 4096);
     CHECK(until(engine, [&] { return std::abs(engine.processorParam(synth, TEMPO) - 0.09f) < 1e-6f; }));
     CHECK_EQ(engine.processorParam(synth, PLAYING), 1.f);
+    CHECK_EQ(engine.processorParam(synth, OFFLINE), 1.f);  // told it renders offline there too
     CHECK(engine.processorParamText(synth, TEMPO, engine.processorParam(synth, TEMPO)).rfind("90", 0) == 0);
 
     // Its state, and another plug-in's refused.

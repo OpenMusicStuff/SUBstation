@@ -3,6 +3,8 @@
 #
 #   parallel_render_bench   tracks rendered on one thread and on several: the
 #                           engine alone, no Qt (with the engine tests' helpers)
+#   freeze_bench            tracks rendered before their faders, as freezing
+#                           them does: the engine alone, no Qt
 #   browser_backend_bench   the browser's backend on a large synthetic library,
 #                           checked against the reference the tests use (it
 #                           needs the application layer: SUBSTATION_BUILD_APP)
@@ -30,6 +32,11 @@ if (TARGET sub_test_asio)
     add_dependencies(parallel_render_bench sub_test_asio)
     target_compile_definitions(parallel_render_bench PRIVATE SUBSTATION_TEST_ASIO_DRIVER="$<TARGET_FILE:sub_test_asio>")
 endif()
+
+add_executable(freeze_bench freeze_bench.cpp Json.h)
+target_include_directories(freeze_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(freeze_bench PRIVATE sub_engine)
+sub_project_warnings(freeze_bench)
 
 add_executable(builtin_devices_bench builtin_devices_bench.cpp Json.h)
 target_include_directories(builtin_devices_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

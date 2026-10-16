@@ -21,6 +21,9 @@ and the graph it runs is built with each snapshot ([routing.md](routing.md)).
 and there is an edge `(from, to)` for each routing edge between two tracks (outputs into groups,
 sends into returns, input edges, sidechains). Edges into the master go nowhere the graph runs.
 The nodes are already in topological order, so every node comes after those that go into it.
+A render of a few tracks (freezing: `Renderer::setCaptures()`) makes a graph of its own of just
+the tracks it needs, in the same order, and maps its nodes back to the snapshot's tracks
+([rendering.md](rendering.md#offline-renders)).
 
 It stores the outgoing edges as flat arrays (`first_`, `destinations_`), each node's input
 count, and, allocated with it so a run never allocates: per-node pending counters, a queue of

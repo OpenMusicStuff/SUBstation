@@ -7,9 +7,9 @@
 //
 // - ExportAudioRender: the arrangement (the loop, a time selection) into a WAV
 //   or MP3 file, once the devices are ready.
-// - FreezeTracksRender: several tracks, one after another, then frozen in one
-//   undo step: all or nothing (cancelled, or one failing, none is frozen, and
-//   the renders made so far are deleted).
+// - FreezeTracksRender: several tracks, in one render (a file for each), then
+//   frozen in one undo step: all or nothing (cancelled, or failing, none is
+//   frozen, and the renders are deleted).
 // - ReverseClipsRender: reversed copies of long files, written side by side,
 //   followed one after another; cancelled, none is used.
 
@@ -114,9 +114,9 @@ class FreezeTracksRender : public Render {
     Q_OBJECT
 
 public:
-    // How a track's render becomes its frozen audio (EngineBridge::finishFreeze;
+    // How the tracks' render becomes their frozen audio (EngineBridge::finishFreezes;
     // the tests make it fail).
-    using Finisher = std::function<std::optional<Freeze>(FreezeRender&)>;
+    using Finisher = std::function<std::optional<OrderedMap<QString, Freeze>>(FreezeRender&)>;
 
     // `tracks`: those to freeze, in order (that can be frozen).
     FreezeTracksRender(RenderProgress* progress, EngineBridge* bridge, ProjectEditor* editor, QStringList tracks,
@@ -129,16 +129,13 @@ public:
     const QStringList& frozen() const { return frozen_; }
 
 private:
-    void next();
+    void render();
     void rendered();
-    void discard();
 
     ProjectEditor* editor_;
     QStringList tracks_;
     Finisher finisher_;
-    int index_ = 0;
     std::unique_ptr<FreezeRender> render_;
-    OrderedMap<QString, Freeze> freezes_;
     QStringList frozen_;
 };
 

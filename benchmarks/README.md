@@ -6,6 +6,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | | |
 |---|---|
 | [parallel_render_bench.cpp](parallel_render_bench.cpp) | Tracks rendered on one thread and on several: offline (best of three, checked bit-identical on any number of threads) and live through the fake ASIO driver. The engine alone, no Qt. |
+| [freeze_bench.cpp](freeze_bench.cpp) | Tracks rendered before their faders into WAV files with a 10 s tail, as freezing them does: one track out of many, several at once, a group, one track of a short song; and the whole mix exported, for comparison. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
 | [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
@@ -30,15 +31,16 @@ thousands of shapes).
 The benchmarks are built with `-DSUBSTATION_BUILD_BENCHMARKS=ON` (off by
 default), into the build's `bin` folder with everything else. Always in Release.
 `browser_backend_bench` needs the application layer (Qt Core, as the tests do);
-`parallel_render_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
+`parallel_render_bench`, `freeze_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
 intelligence module (no Qt either; it wants a sample library of your own).
 
 Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench fft_bench sound_similarity_bench
+ninja -C build parallel_render_bench freeze_bench browser_backend_bench builtin_devices_bench warp_bench fft_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
+build/bin/freeze_bench --json freeze.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
 build/bin/fft_bench
@@ -282,6 +284,62 @@ With 4 threads or more the render is down to about as long as the heaviest track
 takes alone. With 2 threads the order hardly matters: every track starts within
 the first few slots anyway. With 32 equal tracks both orders are the same within
 noise, and timing every track costs nothing measurable on one thread.
+
+# Freezing
+
+```
+freeze_bench [--tracks 16] [--seconds 30] [--freeze 4] [--threads N] [--json out.json]
+```
+
+The project: `--tracks` tracks of four-note chords on the built-in Synth, each through
+an EQ and a Saturator, every fourth through a Compressor too (the second track's keyed
+by the first: a sidechain). The first four go into a group with a Reverb; every track
+sends into a return with a Delay and a Reverb; the master has a Limiter. Each is
+rendered as freezing it renders it (`Engine::renderTrackToWav`: from the start of the
+arrangement to its end, then the application's 10 s tail, into a 32-bit float WAV
+file), best of three: one track of its own out of all of them, `--freeze` tracks
+(as freezing that many at once does), the group, and one track of a 4-second song
+(chords to 3 s: the tail is most of what is rendered). The whole mix exported (a
+16-bit WAV) is measured for comparison: it shares the code. Times are wall-clock, on
+the engine's default number of audio threads (`--threads`).
+
+## Results
+
+A 4-core cloud VM (Intel Xeon, 2.1 GHz), Linux, GCC, Release; 16 tracks, 30 s, 3 audio
+threads, the machine otherwise idle. Before is commit 8422aee (the benchmark added), after is
+the branch that made freezing faster; both run one after the other. Raw reports:
+`results/freeze-16-before.json`, `results/freeze-16-after.json`.
+
+| | before | after | |
+|---|---|---|---|
+| One track | 2.67 s | 0.26 s | 10× |
+| 4 tracks | 10.22 s | 0.51 s | 20× |
+| 4 tracks, a render each (as before, with the rest) | | 0.89 s | |
+| The group, its 4 tracks and the return | | 2.46 s | |
+| The same, a render each | | 4.50 s | |
+| The group | 2.47 s | 1.17 s | 2.1× |
+| One track of a 4 s song | 0.70 s | 0.04 s | 18× |
+| Export (the whole mix, 16-bit WAV) | 2.13 s | 2.02 s | (noise) |
+| Export as MP3 (320 kbps) | 2.62 s | 2.08 s | 1.26× |
+| Decoding the 4 tracks' files (the window, after freezing) | 0.06 s | none | |
+
+Where it comes from, step by step (the branch's commits):
+
+- **Rendering only what a track needs** (`Renderer::setCaptures()`): a track of its own no longer
+  renders the other 17 tracks and the master. The group needs its
+  four tracks (and its Reverb's tail), so it gains less.
+- **Stopping the tail once it is silent** (`TrackCapture`): the 10 s tail rendered whole made a
+  4-second song's track 14 s of rendering; it now stops a second or so (the devices' declared
+  tails) after the last sound (about twice as fast on its own, under load).
+- **Several tracks in one render** (`startTracksRender()`): once each track renders only itself,
+  four separate tracks gain from sharing the prologue and the job (0.89 → 0.51 s); tracks that
+  share what feeds them gain most: the group, its tracks and the return, 4.50 → 2.46 s.
+- **The samples handed over** (`RenderJob::sources()`): the window no longer decodes the files
+  after the render (60 ms here, for 2 minutes of audio from the page cache; more from a disk).
+- **Workers spinning between pieces** (`more`): within noise here (2.11 → 2.05 s for the export);
+  it saves a wake-up per 4096 frames. **MP3 encoded on a thread of its own**: 2.62 → 2.05 s.
+- **VST3's offline mode**: no built-in device cares; a plug-in may take more time in it, for
+  quality, so renders with such plug-ins may be slower, not faster.
 
 # Sound similarity
 
