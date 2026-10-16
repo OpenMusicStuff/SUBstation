@@ -782,7 +782,8 @@ project with an engine bridge as *File › Open* does (no window, no plug-ins).
 *open*: until the bridge has handed the engine everything; *decoded*: then until
 every file has arrived from the decoders (these small WAVs decode while the project
 opens: real libraries take longer); *one edit*: the loop switched, a single
-snapshot; *drag*: a drag's preview of every clip a beat later, and its end. Each
+snapshot; *drag*: a drag's preview of every clip a beat later, and its end;
+*close*: the bridge letting go of every track (`shutdown()`). Each
 with the snapshots the engine built (`Engine::snapshotBuilds()`, "-" before it
 counted them).
 
@@ -801,6 +802,23 @@ is with them. The raw report is in `results/snapshot-batches.json`.
 
 Opening a 256-track project went from 6.9 s to a third of a second, and a drag
 over every clip from 1.4 s a mouse move to 15 ms: each is now one snapshot (the
-drag's preview and its end, one each). One snapshot still costs what it did, and
-grows with the project (2.2 ms at 256 tracks): building only what an edit
-changed is the next step.
+drag's preview and its end, one each).
+
+Then a snapshot itself. Profiled (callgrind, one edit at 256 tracks), about 85 %
+of it was the MIDI tracks' notes: each made again in samples, its bend
+worked out, and every track's sorted, for every snapshot. Now a track's notes are
+made once and shared by the snapshots after, until its notes, the tempo or the
+rate change. And the bridge letting go of every track (closing a project,
+quitting) is one batch, where it had built a snapshot for each track it removed.
+The same benchmark, before and after (`results/snapshot-notes.json`):
+
+| tracks | one edit, before | one edit, after | close, before | close, after |
+|---|---|---|---|---|
+| 32 | 0.24 ms | 0.10 ms | 5.2 ms (38 snapshots) | 0.3 ms (1) |
+| 128 | 1.66 ms | 0.35 ms | 84 ms (146) | 1.8 ms (1) |
+| 256 | 2.31 ms | 0.86 ms | 364 ms (290) | 6.4 ms (1) |
+
+What a snapshot costs now is spread thin: about 40 % allocating and freeing its
+many small lists, the rest routing, delay compensation, automation and clips,
+none of them more than a few percent. A drag still makes the notes of every
+track it moves again (they changed), 15 ms a move at 256 tracks.

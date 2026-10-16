@@ -156,7 +156,10 @@ converted to samples at the current tempo and sample rate. In order:
    recursively, with the devices' MIDI feeds), automation in samples (`buildAutomationLocked()`),
    notes (and their bends) and clips in samples (with their fades), its input, monitoring and
    MIDI route. A track left out (frozen, or in a frozen group) keeps its notes while a
-   device elsewhere takes them.
+   device elsewhere takes them. A track's notes (a `NoteList`) are made once and shared by the
+   snapshots after (`renderedNotesLocked()`, kept in `TrackModel::rendered`): only new notes
+   (`setTrackNotes()`), a new tempo or a new sample rate make them again. They were most of what
+   a snapshot cost.
 6. Stretch voices: enough for the clips that need stretching, at most 64 per configuration
    (`ensureWarpVoicesLocked()`); they only grow until the sample rate changes. Each stretched clip
    also asks the warp cache for its whole render (`WarpCache::request()`, in step 5), which the

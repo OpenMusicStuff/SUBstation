@@ -833,6 +833,11 @@ private:
         std::vector<ClipDesc> clips;
         std::vector<std::string> clipKeys;  // sourceKey() of each clip's path
         std::vector<NoteDesc> notes;
+        // Its notes as snapshots play them, made at `renderedSpb` samples a beat and `renderedRate`: made
+        // again only when its notes (setTrackNotes()), the tempo or the rate change. Null: not made yet.
+        std::shared_ptr<const std::vector<NoteRender>> rendered;
+        double renderedSpb = 0.0;
+        double renderedRate = 0.0;
         uint32_t chainId = 0;               // its main chain
         uint32_t output = 0;                // where its output goes: kMaster, a track (a routing edge) or kNoOutput
         uint32_t outputProcessor = 0;       // a device whose sidechain its output goes into instead (0: none)
@@ -961,6 +966,8 @@ private:
     const std::shared_ptr<const RenderSnapshot>& currentSnapshotLocked();
     void publishPendingLocked();  // builds the snapshot if it is stale
     void buildSnapshotLocked();   // builds and publishes it, now
+    // A track's notes for the snapshot: TrackModel::rendered, made again if out of date.
+    NoteList renderedNotesLocked(TrackModel& track, double samplesPerBeat);
     bool pushCommandLocked(const TransportCommand& command);  // false: the queue was full
     void serviceTransportIfIdleLocked();
     void collectGarbageLocked();

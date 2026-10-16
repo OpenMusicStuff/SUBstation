@@ -81,7 +81,9 @@ void Engine::setTrackClips(uint32_t trackId, const std::vector<ClipDesc>& clips)
 
 void Engine::setTrackNotes(uint32_t trackId, const std::vector<NoteDesc>& notes) {
     std::lock_guard lock(mutex_);
-    arrangementTrackLocked(trackId).notes = notes;
+    TrackModel& track = arrangementTrackLocked(trackId);
+    track.notes = notes;
+    track.rendered.reset();  // (made again with the next snapshot)
     rebuildSnapshotLocked();
 }
 

@@ -45,8 +45,8 @@ delays before sidechained ones), per insert the sidechain edge into it (`sidecha
 rack it is (`racks`), and the edges leaving after a device (`deviceTaps`). `TrackRender`
 adds a track's id, its edges (`incoming`, `outgoing`, `inputCount`), `inputLatency`, its
 `TrackBuffers`, input, MIDI route, monitor mode and arm state, its clips (`ClipRender`, sorted by
-start, with `maxClipLength` to bound the search) and notes (`NoteRender`, sorted by start then
-key). The master is a plain `StripRender`. A rack's chain is a `ChainRender`: a strip inside a
+start, with `maxClipLength` to bound the search) and notes (a `NoteList` of `NoteRender`s, sorted by start then
+key, shared by the snapshots built while they don't change). The master is a plain `StripRender`. A rack's chain is a `ChainRender`: a strip inside a
 strip, with its id and its line-up delay.
 
 **State outside the snapshot.** The edit side allocates these with their track or edge and

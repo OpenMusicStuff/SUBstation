@@ -1,0 +1,88 @@
+{
+  "machine": "Linux VM, 4 vCPUs (Intel Xeon @ 2.10GHz), GCC 13, Release",
+  "what": "before: batches only; after: notes kept between snapshots, shutdown in one batch",
+  "notes": 256,
+  "audio_every": 4,
+  "before": [
+    {
+      "tracks": 32,
+      "open_ms": 16.25,
+      "open_builds": 1,
+      "decoded_ms": 6.55,
+      "decoded_builds": 1,
+      "edit_ms": 0.239,
+      "edit_builds": 1,
+      "drag_ms": 1.673,
+      "drag_builds": 2,
+      "close_ms": 5.15,
+      "close_builds": 38
+    },
+    {
+      "tracks": 128,
+      "open_ms": 131.49,
+      "open_builds": 1,
+      "decoded_ms": 1.35,
+      "decoded_builds": 0,
+      "edit_ms": 1.6564,
+      "edit_builds": 1,
+      "drag_ms": 8.11,
+      "drag_builds": 2,
+      "close_ms": 83.88,
+      "close_builds": 146
+    },
+    {
+      "tracks": 256,
+      "open_ms": 348.75,
+      "open_builds": 1,
+      "decoded_ms": 1.6,
+      "decoded_builds": 0,
+      "edit_ms": 2.3116,
+      "edit_builds": 1,
+      "drag_ms": 14.936,
+      "drag_builds": 2,
+      "close_ms": 363.84,
+      "close_builds": 290
+    }
+  ],
+  "after": [
+    {
+      "tracks": 32,
+      "open_ms": 16.08,
+      "open_builds": 1,
+      "decoded_ms": 3.03,
+      "decoded_builds": 1,
+      "edit_ms": 0.0973,
+      "edit_builds": 1,
+      "drag_ms": 1.601,
+      "drag_builds": 2,
+      "close_ms": 0.33,
+      "close_builds": 1
+    },
+    {
+      "tracks": 128,
+      "open_ms": 105.16,
+      "open_builds": 1,
+      "decoded_ms": 0.9,
+      "decoded_builds": 0,
+      "edit_ms": 0.3459,
+      "edit_builds": 1,
+      "drag_ms": 6.669,
+      "drag_builds": 2,
+      "close_ms": 1.83,
+      "close_builds": 1
+    },
+    {
+      "tracks": 256,
+      "open_ms": 350.57,
+      "open_builds": 1,
+      "decoded_ms": 1.9,
+      "decoded_builds": 0,
+      "edit_ms": 0.8581,
+      "edit_builds": 1,
+      "drag_ms": 15.536,
+      "drag_builds": 2,
+      "close_ms": 6.42,
+      "close_builds": 1
+    }
+  ]
+}

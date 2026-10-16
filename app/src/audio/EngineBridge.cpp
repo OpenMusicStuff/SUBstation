@@ -119,6 +119,7 @@ void EngineBridge::shutdown() {
     closeAllEditors();
     d_->statePool.waitForDone();  // (no plug-in is waited for: they all go)
     d_->arrivals.reset();
+    const sub::Engine::Batch batch(engine_);  // (one snapshot for every track going, not one a track)
     removeEngineTracks();
     d_->devices.clear();
     d_->pluginIds.clear();

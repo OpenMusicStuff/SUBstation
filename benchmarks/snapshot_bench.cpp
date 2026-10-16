@@ -15,6 +15,7 @@
 //   decoded      then until every file has been decoded and arrived
 //   one edit     a change that rebuilds the snapshot once (the loop switched)
 //   drag         a drag's preview of every clip a beat later, and its end
+//   close        the bridge letting go of every track (closing the project, quitting)
 //
 // For each, the wall time and how many snapshots the engine built
 // (Engine::snapshotBuilds(); "-" when the engine doesn't count them, before it
@@ -152,8 +153,8 @@ QJsonObject makeProject(const Options& o, int tracks, const app::test::TempDir& 
 
 struct Result {
     int tracks = 0;
-    double openMs = 0.0, decodedMs = 0.0, editMs = 0.0, dragMs = 0.0;
-    int64_t openBuilds = -1, decodedBuilds = -1, editBuilds = -1, dragBuilds = -1;
+    double openMs = 0.0, decodedMs = 0.0, editMs = 0.0, dragMs = 0.0, closeMs = 0.0;
+    int64_t openBuilds = -1, decodedBuilds = -1, editBuilds = -1, dragBuilds = -1, closeBuilds = -1;
 };
 
 Result measure(const Options& o, int tracks) {
@@ -215,6 +216,13 @@ Result measure(const Options& o, int tracks) {
     r.dragMs = static_cast<double>(timer.nsecsElapsed()) / 1e6 / o.repeats;
     after = builds(studio.engine);
     r.dragBuilds = before < 0 ? -1 : (after - before) / o.repeats;
+
+    before = after;
+    timer.start();
+    studio.bridge->shutdown();
+    r.closeMs = static_cast<double>(timer.nsecsElapsed()) / 1e6;
+    after = builds(studio.engine);
+    r.closeBuilds = before < 0 ? -1 : after - before;
     return r;
 }
 
@@ -225,14 +233,15 @@ int main(int argc, char** argv) {
     try {
         const Options o = parse(argc, argv);
         app::test::prepareApplication();
-        std::printf("%7s %12s %8s %12s %8s %12s %8s %12s %8s\n", "tracks", "open ms", "builds", "decoded ms", "builds",
-                    "edit ms", "builds", "drag ms", "builds");
+        std::printf("%7s %12s %8s %12s %8s %12s %8s %12s %8s %12s %8s\n", "tracks", "open ms", "builds", "decoded ms",
+                    "builds", "edit ms", "builds", "drag ms", "builds", "close ms", "builds");
         Json results = Json::array();
         for (const int tracks : o.tracks) {
             const Result r = measure(o, tracks);
-            std::printf("%7d %12.1f %8s %12.1f %8s %12.3f %8s %12.2f %8s\n", r.tracks, r.openMs,
+            std::printf("%7d %12.1f %8s %12.1f %8s %12.3f %8s %12.2f %8s %12.1f %8s\n", r.tracks, r.openMs,
                         count(r.openBuilds).c_str(), r.decodedMs, count(r.decodedBuilds).c_str(), r.editMs,
-                        count(r.editBuilds).c_str(), r.dragMs, count(r.dragBuilds).c_str());
+                        count(r.editBuilds).c_str(), r.dragMs, count(r.dragBuilds).c_str(), r.closeMs,
+                        count(r.closeBuilds).c_str());
             std::fflush(stdout);
             Json row = Json::object();
             row.set("tracks", r.tracks);
@@ -244,6 +253,8 @@ int main(int argc, char** argv) {
             row.set("edit_builds", r.editBuilds);
             row.set("drag_ms", sub::bench::rounded(r.dragMs, 3));
             row.set("drag_builds", r.dragBuilds);
+            row.set("close_ms", sub::bench::rounded(r.closeMs, 2));
+            row.set("close_builds", r.closeBuilds);
             results.push(std::move(row));
         }
         if (!o.json.empty()) {

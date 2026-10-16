@@ -344,6 +344,29 @@ const std::shared_ptr<const RenderSnapshot>& Engine::currentSnapshotLocked() {
     return snapshotHold_;
 }
 
+NoteList Engine::renderedNotesLocked(TrackModel& track, double spb) {
+    if (!track.rendered || track.renderedSpb != spb || track.renderedRate != sampleRate_) {
+        auto notes = std::make_shared<std::vector<NoteRender>>();
+        notes->reserve(track.notes.size());
+        for (const NoteDesc& note : track.notes) {
+            NoteRender nr;
+            nr.start = std::max<int64_t>(0, std::llround(note.startBeat * spb));
+            nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
+            nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
+            nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
+            nr.bend = noteBend(note, spb, sampleRate_);
+            notes->push_back(std::move(nr));
+        }
+        std::sort(notes->begin(), notes->end(), [](const NoteRender& a, const NoteRender& b) {
+            return a.start != b.start ? a.start < b.start : a.key < b.key;
+        });
+        track.rendered = std::move(notes);
+        track.renderedSpb = spb;
+        track.renderedRate = sampleRate_;
+    }
+    return NoteList(track.rendered);
+}
+
 void Engine::buildSnapshotLocked() {
     for (auto& [id, entry] : processors_) {
         if (!entry.rack) entry.alignedLatency = ownLatency(*entry.processor);
@@ -679,22 +702,8 @@ void Engine::buildSnapshotLocked() {
         // (its edges are delayed after the fader, to line up where they go).
         buildAutomationLocked(build, render.inputLatency + render.latency, render);
         // (A track left out keeps its notes while a device elsewhere takes them.)
-        static const std::vector<NoteDesc> kNoNotes;
         const bool fed = fedTracks.count(track.id) > 0;
-        const std::vector<NoteDesc>& notes = silent[static_cast<size_t>(t)] && !fed ? kNoNotes : track.notes;
-        render.notes.reserve(notes.size());
-        for (const NoteDesc& note : notes) {
-            NoteRender nr;
-            nr.start = std::max<int64_t>(0, std::llround(note.startBeat * spb));
-            nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
-            nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
-            nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
-            nr.bend = noteBend(note, spb, sampleRate_);
-            render.notes.push_back(std::move(nr));
-        }
-        std::sort(render.notes.begin(), render.notes.end(), [](const NoteRender& a, const NoteRender& b) {
-            return a.start != b.start ? a.start < b.start : a.key < b.key;
-        });
+        if (!silent[static_cast<size_t>(t)] || fed) render.notes = renderedNotesLocked(track, spb);
         std::array<size_t, kNumStretchConfigs> stretching{};
         for (size_t i = 0; i < (idle[static_cast<size_t>(t)] ? 0 : track.clips.size()); ++i) {  // (idle: no use)
             const ClipDesc& clip = track.clips[i];
