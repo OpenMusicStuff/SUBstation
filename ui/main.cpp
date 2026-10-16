@@ -14,6 +14,7 @@
 #include "app/AppTypes.h"
 #include "Engine.h"
 #include "Ui.h"
+#include "session/DisplayPreferences.h"
 #include "session/Session.h"
 #include "update/Updater.h"
 
@@ -48,6 +49,8 @@ int main(int argc, char* argv[]) {
     if (auto* window = qobject_cast<QQuickWindow*>(qml.rootObjects().first())) {
         // Plug-in editors float above the main window.
         session.setOwnerWindow([window] { return static_cast<uintptr_t>(window->winId()); });
+        // The displays refresh no faster than its screen does.
+        session.displayPreferences()->followWindow(window);
     }
     // The audio device opens once the window shows; then the project asked for,
     // if any, else a new one (the template, if one was saved).

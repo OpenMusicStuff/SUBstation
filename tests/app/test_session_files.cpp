@@ -3,7 +3,7 @@
 // once, in any case where the system ignores case, a one-item list read back
 // as a string, at most ten, missing files dropped), Export Audio's choices, the count-in and record
 // quantization, recording with nothing armed, the about text, and the
-// preferences (audio threads, devices, MIDI inputs).
+// preferences (audio threads, devices, MIDI inputs, the display rate).
 
 #include "SessionFixture.h"
 #include "TestSupport.h"
@@ -12,6 +12,7 @@
 #include "audio/AudioSettings.h"
 #include "platform/Paths.h"
 #include "session/AudioPreferences.h"
+#include "session/DisplayPreferences.h"
 #include "session/MidiPreferences.h"
 
 #include <QDir>
@@ -497,6 +498,74 @@ private Q_SLOTS:
         QCOMPARE(choices[1].first, QStringLiteral("3 (mono) · Out 3"));
         QCOMPARE(choices[1].second, std::vector<int>{2});
         QVERIFY(outputChoices({}).empty());
+    }
+
+    // Preferences › Look and Feel › Maximum display frame rate: 60 Hz at first (a tick every 16 ms, as ever). A
+    // rate chosen is kept for the next run and applies at once: the bridge polls the playhead and the meters at
+    // it. The screen's own rate caps it.
+    void displayRatePreference() {
+        SessionFixture f;
+        DisplayPreferences& display = *f.s().displayPreferences();
+        QCOMPARE(display.maxRate(), 60);
+        QCOMPARE(display.rate(), 60.0);
+        QCOMPARE(display.intervalMs(), 16);
+        QCOMPARE(f.bridge().displayInterval(), 16);
+        QCOMPARE(labels(display.rateChoices()), (QStringList{QStringLiteral("30 Hz"), QStringLiteral("60 Hz"),
+                                                            QStringLiteral("120 Hz"), QStringLiteral("144 Hz"),
+                                                            QStringLiteral("240 Hz")}));
+        QCOMPARE(values(display.rateChoices()).at(3).toInt(), 144);
+        QCOMPARE(display.rateIndex(), 1);
+        QCOMPARE(display.status(), QStringLiteral("Displays refresh at 60 Hz."));
+
+        QSignalSpy changed(&display, &DisplayPreferences::changed);
+        display.chooseRate(2);
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(display.maxRate(), 120);
+        QCOMPARE(display.rateIndex(), 2);
+        QCOMPARE(display.intervalMs(), 8);
+        QCOMPARE(f.bridge().displayInterval(), 8);
+        QCOMPARE(QSettings().value(DisplayPreferences::kKey).toInt(), 120);
+        display.chooseRate(2);  // (the same again: nothing)
+        display.chooseRate(7);  // (no such choice)
+        QCOMPARE(changed.count(), 1);
+
+        // A tick's interval at each rate: 1000 / rate ms, rounded leaning short.
+        QCOMPARE(DisplayPreferences::intervalFor(30), 33);
+        QCOMPARE(DisplayPreferences::intervalFor(60), 16);
+        QCOMPARE(DisplayPreferences::intervalFor(59.94), 16);
+        QCOMPARE(DisplayPreferences::intervalFor(75), 13);
+        QCOMPARE(DisplayPreferences::intervalFor(120), 8);
+        QCOMPARE(DisplayPreferences::intervalFor(144), 7);
+        QCOMPARE(DisplayPreferences::intervalFor(165), 6);
+        QCOMPARE(DisplayPreferences::intervalFor(240), 4);
+
+        // The screen's rate caps it: a 75 Hz screen, 75 a second; one faster than the rate chosen, the rate.
+        display.setScreenRate(75.0);
+        QCOMPARE(display.screenRate(), 75.0);
+        QCOMPARE(display.rate(), 75.0);
+        QCOMPARE(display.intervalMs(), 13);
+        QCOMPARE(f.bridge().displayInterval(), 13);
+        QCOMPARE(display.status(), QStringLiteral("Displays refresh at 75 Hz, the screen's rate."));
+        display.setScreenRate(239.76);
+        QCOMPARE(display.rate(), 120.0);
+        QCOMPARE(f.bridge().displayInterval(), 8);
+        QCOMPARE(display.status(), QStringLiteral("Displays refresh at 120 Hz (the screen: 239.76 Hz)."));
+        display.chooseRate(4);
+        QCOMPARE(display.rate(), 239.76);
+        QCOMPARE(f.bridge().displayInterval(), 4);
+        display.setScreenRate(0.0);  // (not known: the rate chosen)
+        QCOMPARE(display.rate(), 240.0);
+        display.chooseRate(2);
+
+        // Kept for the next run; a rate not offered is the nearest offered.
+        DisplayPreferences again(nullptr);
+        QCOMPARE(again.maxRate(), 120);
+        again.setMaxRate(100);
+        QCOMPARE(again.maxRate(), 120);
+        again.setMaxRate(200);
+        QCOMPARE(again.maxRate(), 240);
+        QSettings().setValue(DisplayPreferences::kKey, QStringLiteral("fast"));
+        QCOMPARE(DisplayPreferences(nullptr).maxRate(), 60);
     }
 
     void preferencesListTheMidiInputs() {

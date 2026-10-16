@@ -75,7 +75,6 @@ EqGraph::EqGraph(QQuickItem* parent) : DeviceCanvas(parent) {
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     setActiveFocusOnTab(false);
-    animation_.setInterval(kDisplayRefreshMs);
     connect(&animation_, &QTimer::timeout, this, &EqGraph::animate);
     connect(&displayTimer_, &QTimer::timeout, this, [this] {
         if (alive() && isVisible())
@@ -723,7 +722,7 @@ double EqGraph::targetRadius(int index) const {
 void EqGraph::animateSoon() {
     if (!animation_.isActive()) {
         animationClock_.invalidate();  // (its first tick: a tick long)
-        animation_.start();
+        animation_.start(DisplayClock::instance()->intervalMs());
     }
 }
 

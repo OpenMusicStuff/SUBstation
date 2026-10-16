@@ -24,7 +24,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | [PluginDeviceBody.qml](../../ui/qml/devices/PluginDeviceBody.qml), [PluginParamKnob.qml](../../ui/qml/devices/PluginParamKnob.qml), [PluginParams](../../ui/src/devices/PluginParams.h) | A plug-in's generic editor: its parameters (`PluginParams`, `PluginParam`), or why it shows none |
 | [RackDeviceBody.qml](../../ui/qml/devices/RackDeviceBody.qml), [RackMacroKnob.qml](../../ui/qml/devices/RackMacroKnob.qml), [RackMacroMappings.qml](../../ui/qml/devices/RackMacroMappings.qml), [RackChainRow.qml](../../ui/qml/devices/RackChainRow.qml), [RackChainView.qml](../../ui/qml/devices/RackChainView.qml), [RackMacro](../../ui/src/devices/RackMacro.h) (`RackMacro`, `RackMacros`), [RackChain](../../ui/src/devices/RackChain.h), [RackChains](../../ui/src/devices/RackChains.h) | A rack: its buttons, macros and chain list, a macro's mappings and their ranges, a chain's row, the chain shown beside the rack |
 | [DrumRackBody.qml](../../ui/qml/devices/DrumRackBody.qml), [DrumPad.qml](../../ui/qml/devices/DrumPad.qml), [DrumRack](../../ui/src/devices/DrumRack.h) (`DrumRack`, `DrumPadItem`) | A Drum Rack: its pads, the keys' overview, the similar-sound arrows, a pad's menu; dropping samples on pads |
-| [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h) | The base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
+| [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h), [DisplayClock](../../ui/src/devices/DisplayClock.h) | The display clock their displays tick on (at the display rate); the base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
 | [DisplayValue](../../ui/src/devices/DisplayValue.h) | A device's display as a number for QML, drawing nothing: its newest value, eased (`smoothed`), and whether any came lately (`active`), for editors drawn in QML to animate by (the Arpeggiator's, the Bitcrusher's) |
 | [editors/DeviceEditors.qml](../../ui/qml/devices/editors/DeviceEditors.qml) | The editor registry (a singleton): `editorFor(kind)` |
 | [editors/LfoEditor.qml](../../ui/qml/devices/editors/LfoEditor.qml), [editors/EnvelopeEditor.qml](../../ui/qml/devices/editors/EnvelopeEditor.qml), [editors/ModulatorTargets.qml](../../ui/qml/devices/editors/ModulatorTargets.qml), [ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), [ModulatorMappings](../../ui/src/devices/ModulatorMappings.h), [ModulatorValues](../../ui/src/devices/ModulatorValues.h) | The modulators' editors (see [Modulators](#modulators)): the curve and what it plays, what they move (Map, ranges, Invert, ×), and their values as they play for whatever draws the parameters they move |
@@ -432,8 +432,10 @@ value as it is now, set undoably, touched when pressed, the parameter's menu on 
   (`bridge.readProcessorDisplay`, a position kept per processor and display; `readDisplayAt()` with the absolute index
   of the first value; `readRecent(id, seconds)` only the newest of it, the values covering the last `seconds` at the
   display's samples per value: a read can hold a long backlog, an editor shown again after the sound stopped).
-  `refreshDisplays()` is called on each tick of the `DisplayClock` (about 60 times a second), only while the item is
-  visible. Displays are what the engine's built-in devices publish for their editors (see
+  `refreshDisplays()` is called on each tick of the `DisplayClock`, only while the item is visible. The clock
+  ([DisplayClock.h](../../ui/src/devices/DisplayClock.h), one for the application, the scope and `ModulatorValues`
+  ticking on it too) ticks every `intervalMs()`: it follows the session's `DisplayPreferences` (`follow()`, from
+  `registerSession`: the maximum display frame rate, no faster than the screen; 16 ms, 60 Hz, by default). Displays are what the engine's built-in devices publish for their editors (see
   [engine/devices.md](../engine/devices.md)).
 - Everything a display animates moves by the time since its last tick (`tickSeconds()`, the clock's `elapsed()`: at
   least a tick, so ticks by hand count a tick each; at most 0.1 s; a tick after more than a second, hidden meanwhile),
@@ -1342,7 +1344,7 @@ The editors:
     display `notes`). Inside, an arrow from each moved note bending onto its target, sparks flowing along it while
     the note sounds in the input (steady in High Quality, wavering as Low Latency's shifter does). Within that the
     chromagram (`analysis::Chroma` of the displays `input` and `output` between Start and End as Hue clamps them,
-    measured 30 times a second): the output as a petal per note in its hue, the input as a faint outline behind, so
+    measured 30 times a second, whatever the display rate: the analysis costs, and the wheel eases between): the output as a petal per note in its hue, the input as a faint outline behind, so
     what Hue pulled into key shows against what came in; a lit note glows as it sounds; in the middle a bloom in
     the colour the sound is now (the notes' hues weighted by their levels), the key's name and HQ or LL. It repaints
     only while something moves: once the chromagram is under -66 dB and every animation has settled it rests.
@@ -1353,8 +1355,8 @@ The editors:
   start collapsed, and the sliders button over the curve's top right shows them in every EQ (the editor is wider
   then). The expand button opens the EQ bigger in a window of its own
   ([EqWindow.qml](../../ui/qml/devices/editors/EqWindow.qml), via the `EqWindows` singleton: one per device, made or
-  brought to the front; titled after the track; reading its displays on a 16 ms timer of its own
-  (`displayInterval`); closed when the device goes).
+  brought to the front; titled after the track; reading its displays on a timer of its own at the display rate
+  (`displayInterval`, bound to `Session.displayPreferences.intervalMs`); closed when the device goes).
   - `EqGraph`: 10 Hz..22 kHz, ± `EqView.range` dB (3, 6, 12 or 30); 24 bands; each band's curve and the total from the
     engine's own filter design (`sub::app::eqResponseDb`, the application layer's wrapper of the engine's
     `sub::eq::responseDb`, so the curve is the sound), the selected and hovered bands filled in their colours

@@ -45,6 +45,7 @@
 #include "devices/DeviceParam.h"
 #include "devices/DispersionGraph.h"
 #include "devices/DisplayClock.h"
+#include "session/DisplayPreferences.h"
 #include "devices/EditorPaint.h"
 #include "devices/EqGraph.h"
 #include "devices/EqView.h"
@@ -1314,6 +1315,16 @@ private Q_SLOTS:
         QTest::qWait(40);
         const double later = probe.tickSeconds();
         QVERIFY2(later >= 0.035 && later <= 0.1, qPrintable(QString::number(later)));
+        // At 120 Hz (Preferences › Look and Feel), the display clock ticks every 8 ms, and a tick by hand counts 8
+        // ms: what moves by them moves as far a second as at 60.
+        session()->displayPreferences()->setMaxRate(120);
+        QCOMPARE(DisplayClock::instance()->intervalMs(), 8);
+        QCOMPARE(bridge()->displayInterval(), 8);
+        Probe fast;
+        QCOMPARE(fast.tickSeconds(), 0.008);
+        QCOMPARE(fast.tickSeconds(), 0.008);
+        session()->displayPreferences()->setMaxRate(60);
+        QCOMPARE(DisplayClock::instance()->intervalMs(), kDisplayRefreshMs);
     }
 
 

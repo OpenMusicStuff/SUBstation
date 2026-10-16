@@ -27,13 +27,15 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 | [ModulationLearn.h](../../app/src/session/ModulationLearn.h) | A modulator's Map: the next parameter touched on its track is mapped to it |
 | [AudioPreferences.h](../../app/src/session/AudioPreferences.h), [MidiPreferences.h](../../app/src/session/MidiPreferences.h) | Preferences › Audio and › MIDI, without their widgets |
 | [PluginHostingPreferences.h](../../app/src/session/PluginHostingPreferences.h) | Preferences › Plug-ins › Plug-in Hosting, without its widgets: where plug-ins run |
+| [DisplayPreferences.h](../../app/src/session/DisplayPreferences.h) | Preferences › Look and Feel › Maximum display frame rate, without its widgets: how often the live displays refresh |
 | [SessionSupport.h](../../app/src/session/SessionSupport.h) | Small helpers the parts share (plug-in refs from QML maps, clip refs for QML) |
 | [files/FileManager.h](../../app/src/files/FileManager.h), [files/HotSwap.h](../../app/src/files/HotSwap.h) | The File Manager and hot swaps ([below](#the-file-manager-and-hot-swaps-filemanager-hotswap)); what they work from: [files/ProjectFiles.h](../../app/src/files/ProjectFiles.h) (the files a project plays, and what plays each) and [files/MissingFiles.h](../../app/src/files/MissingFiles.h) (finding missing files again) |
 
 ## What it owns
 
 `Session(engine, options)` makes, in order: the `Project`, the `QUndoStack`, the `ProjectEditor`, the `Selection`, the
-`EngineBridge` (on the engine it is given, which outlives it), the `PluginIndex`, the `SoundSimilarity` (which
+`EngineBridge` (on the engine it is given, which outlives it), the `PluginHostingPreferences` and the
+`DisplayPreferences` (which the bridge follows from the start), the `PluginIndex`, the `SoundSimilarity` (which
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the
 `Humanizer`, the `TrackLabels` (what each track is, in words), the `TrackSearch` (finding tracks by their names and labels), the `BrowserController` (which starts the plug-in
 scan, and points the sound similarity at its index), the `PresetIndex`, the `RenderProgress`, and the parts `ArrangementActions`, `DeviceSelection`,
@@ -62,6 +64,7 @@ reads them as constant properties:
 | `files`, `hotSwap` | `FileManager`, `HotSwap` | [below](#the-file-manager-and-hot-swaps-filemanager-hotswap) |
 | `audioPreferences`, `midiPreferences` | `AudioPreferences`, `MidiPreferences` | [below](#preferences) |
 | `pluginHosting` | `PluginHostingPreferences` | [below](#preferences) |
+| `displayPreferences` | `DisplayPreferences` | [below](#preferences) |
 | `updates` | `Updater` | Preferences › Updates: [updates.md](updates.md); an update found also goes out on `statusMessage` |
 
 `Session::Options` is for the tests: `scanner` (the plug-in scanner's program; empty: `substation-scan` beside the
@@ -405,6 +408,20 @@ toolTip}]`, the choices); `reloadPlugins()` (every plug-in again, where the mode
 a saved mode the default is "together", or `SUBSTATION_PLUGIN_HOSTING`'s (the tests set "within": their plug-ins run in
 their own process unless a test asks for sandboxes).
 
+**Preferences › Look and Feel › Maximum display frame rate** is `DisplayPreferences` (`Session.displayPreferences`,
+[DisplayPreferences.h](../../app/src/session/DisplayPreferences.h)); the theme beside it is the UI's own (`Theme`). How
+often the live displays refresh: the playhead, the meters, a recording's waveform, the scope, the devices' editors.
+`maxRate` is one of `kRates` (30, 60, 120, 144, 240 Hz; 60 by default, so a tick every 16 ms as it always was), saved
+as `ui/max_display_rate` (another number: the nearest of them); `rateChoices` (`[{label, value}]`), `rateIndex` and
+`chooseRate(index)` for the page's `ChoiceBox`. The displays tick at `rate`, the lower of it and `screenRate`, the main
+window's screen's refresh rate (`followWindow(window)`, from `ui/main.cpp`: its screen now, and as the window moves to
+another or the rate changes; 0, not known, caps nothing; `setScreenRate` for the tests), every `intervalMs`: 1000 /
+rate ms rounded leaning short (`intervalFor`: 33, 16, 8, 7 and 4 ms; 59.94 Hz 16 ms). `status` says what it comes to
+("Displays refresh at 75 Hz, the screen's rate."). Applied at once: the bridge polls the playhead and the meters every
+`intervalMs` (`EngineBridge::setDisplayInterval`, [engine-bridge.md](engine-bridge.md#polling)), and the UI's
+`DisplayClock` follows `changed` ([ui/device-view.md](../ui/device-view.md)). An application preference, not the
+project's: no undo.
+
 ## Settings
 
 Besides the audio and MIDI preferences ([engine-bridge.md](engine-bridge.md#settings-storage)), the session and its
@@ -415,6 +432,7 @@ parts keep these QSettings keys:
 | `files/recent` | the recent projects, the latest first (at most 10) | `Session::kRecentKey` |
 | `files/last_dir` | where the file dialogs start (default `~/Music`) | `Session::kLastFolderKey` |
 | `transport/count_in_bars` | the count-in (0, 1, 2 or 4 bars) | `Session::kCountInKey` |
+| `ui/max_display_rate` | Preferences › Look and Feel › Maximum display frame rate, in Hz (30, 60, 120, 144 or 240; 60 without one) | `DisplayPreferences::kKey` |
 | `updates/channel`, `updates/auto_check`, `updates/auto_install`, `updates/last_check` | Preferences › Updates, and when it last looked | `Updater` ([updates.md](updates.md#settings)) |
 | `presets/dir` | where *Load Preset…* last loaded a preset file from (default: the library) | `DeviceSelection::presetFolder` |
 | `vital/preset_dir` | where a Vital preset (`.vital`) was last loaded from or saved to (default: Vital's presets folder, `Documents/Vital` or `~/.local/share/vital`, if it exists) | `DeviceSelection::vitalPresetFolder` |
@@ -439,7 +457,8 @@ parts keep these QSettings keys:
 - [test_session_devices.cpp](../../tests/app/test_session_devices.cpp): the device view's selection, clipboard, racks,
   drops and presets.
 - [test_session_files.cpp](../../tests/app/test_session_files.cpp): files, the title, the recent projects, Export
-  Audio's choices, count-in and record quantization, the preferences.
+  Audio's choices, count-in and record quantization, the preferences (the display rate too: kept, applied to the
+  bridge, capped by the screen's).
 - [test_session_renders.cpp](../../tests/app/test_session_renders.cpp): renders in the background, Cancel, closing
   meanwhile, freezing and flattening, plug-ins loading after a project opens.
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp): what the engine hears of the edits.

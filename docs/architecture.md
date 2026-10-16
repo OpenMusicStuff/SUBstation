@@ -200,7 +200,7 @@ signals. There are no nested event loops (see [app/session.md](app/session.md#re
 - **Edits build an immutable `RenderSnapshot`**, published with one atomic pointer swap. Retired snapshots are freed
   once the audio thread's epoch counter shows it no longer uses them, never by the audio thread: by whichever
   thread makes the next engine call (`collectGarbageLocked()`), and by `Engine::idle()`, which the bridge calls
-  from its 33 ms timer. Plug-ins are destroyed only on the GUI thread, in `idle()`.
+  from its 33 ms idle timer. Plug-ins are destroyed only on the GUI thread, in `idle()`.
 - **Continuous controls are atomics** (volume, pan, mute, solo, send levels, device parameters), smoothed on the
   audio thread. A fader drag never rebuilds a snapshot.
 - **What goes to the audio thread** besides snapshots and atomics goes through single-producer, single-consumer
@@ -209,8 +209,9 @@ signals. There are no nested event loops (see [app/session.md](app/session.md#re
 - **The application never waits on the audio thread.** What comes back is read without waiting: the playhead, the
   transport state, CPU load and meters are atomics (meters are written with "store max" and taken with
   `exchange(0)`); recorded peaks, plug-in reports and driver events go through lock-free queues or flags. The bridge
-  drains them on the GUI thread on its timers: the playhead every 16 ms (`kPositionPollMs`), and every 33 ms
-  (`kMeterPollMs`) recording progress, meters, `Engine::idle()` with the plug-ins' reports, and device events
+  drains them on the GUI thread on its timers: the playhead, recording progress and the meters every display tick
+  (16 ms at the default 60 Hz; Preferences › Look and Feel's maximum display frame rate, capped by the screen's),
+  and every 33 ms (`kIdlePollMs`) `Engine::idle()` with the plug-ins' reports, and device events
   (see [app/engine-bridge.md](app/engine-bridge.md#polling)).
 - **Renders are deterministic**: the result never depends on which thread finished a track first, so offline
   renders are bit-identical on any number of threads.

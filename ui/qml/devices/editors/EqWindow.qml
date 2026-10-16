@@ -28,7 +28,7 @@ Window {
             session: Session
             trackId: window.trackId
             deviceId: window.deviceId
-            displayInterval: 16
+            displayInterval: Session.displayPreferences.intervalMs
             width: parent.width
             height: parent.height - 8 - panel.height
             onAliveChanged: if (!alive) window.close()

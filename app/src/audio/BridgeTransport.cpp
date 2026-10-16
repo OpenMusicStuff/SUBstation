@@ -1,8 +1,9 @@
 // The transport (play, stop, locate, the metronome), previews (a file, a note),
-// and polling: the playhead every kPositionPollMs; every kMeterPollMs, in this
-// order, recording progress, the meters, the plug-ins (the engine's idle() and
-// what they reported) and the device's events. None of these wait for a render
-// in the background: it renders without the engine's lock.
+// and polling: every display tick (setDisplayInterval) the playhead, then
+// recording progress and the meters; every kIdlePollMs the latencies, the
+// plug-ins (the engine's idle() and what they reported) and the device's
+// events. None of these wait for a render in the background: it renders
+// without the engine's lock.
 
 #include "audio/BridgePrivate.h"
 
@@ -82,7 +83,16 @@ void EngineBridge::pollPosition() {
     }
 }
 
-void EngineBridge::pollMeters() {
+void EngineBridge::setDisplayInterval(int ms) {
+    ms = std::max(1, ms);
+    if (ms == d_->positionTimer.interval()) return;
+    d_->positionTimer.setInterval(ms);
+    d_->displayTimer.setInterval(ms);
+}
+
+int EngineBridge::displayInterval() const { return d_->positionTimer.interval(); }
+
+void EngineBridge::pollDisplays() {
     pollRecording();
     Private& d = *d_;
     QHash<quint32, QString> byEngineId;
@@ -116,10 +126,13 @@ void EngineBridge::pollMeters() {
         level.right = reading.right;
         d.deviceMeters.insert(*device, level);
     }
-    pollLatencies();
     Q_EMIT metersUpdated();
+}
+
+void EngineBridge::pollIdle() {
+    pollLatencies();
     pollPlugins();
-    if (!d.busy) pollDevice();  // not from a message loop inside a plug-in's or driver's call
+    if (!d_->busy) pollDevice();  // not from a message loop inside a plug-in's or driver's call
 }
 
 const QMap<QString, MeterLevel>& EngineBridge::meters() const { return d_->meters; }

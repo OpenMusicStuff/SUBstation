@@ -31,6 +31,7 @@
 #include "plugins/PluginIndex.h"
 #include "session/ArrangementActions.h"
 #include "session/AudioPreferences.h"
+#include "session/DisplayPreferences.h"
 #include "session/PluginHostingPreferences.h"
 #include "session/ComputerKeyboard.h"
 #include "session/ModulationLearn.h"
@@ -55,6 +56,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     selection_ = new Selection(this);
     bridge_ = new EngineBridge(engine_, project_, this);
     pluginHosting_ = new PluginHostingPreferences(bridge_, options_.pluginHost, this);  // (before any plug-in loads)
+    displayPreferences_ = new DisplayPreferences(bridge_, this);  // (the bridge polls at its rate)
     plugins_ = new PluginIndex(this, options_.scanner);
     SoundSimilarity::Options similarityOptions;
     if (!options_.browserIndex) similarityOptions.storePath = QString();

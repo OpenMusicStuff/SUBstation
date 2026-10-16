@@ -480,6 +480,51 @@ private Q_SLOTS:
         QVERIFY(!meter->clipped());
     }
 
+    // At 120 Hz (Preferences › Look and Feel: the display clock every 8 ms) the meter falls and the scope holds
+    // and fades as far a second as at 60, each update by hand counting a tick of 8 ms (and at 240, of 4 ms).
+    void fasterDisplaysMoveAsFast() {
+        sub::ui::DisplayClock& clock = *sub::ui::DisplayClock::instance();
+        const int was = clock.intervalMs();
+        clock.setTicksByHand(true);  // (a busy machine's pauses between the calls don't count)
+        auto* meter = item<Meter>("meter");
+        const auto fallen = [&](int ms, double seconds) {
+            clock.setIntervalMs(ms);
+            meter->reset();
+            meter->setLevels(1.0, 1.0);
+            for (int i = 0; i < int(std::lround(seconds * 1000.0 / ms)); ++i)
+                meter->setLevels(0.0, 0.0);
+            return double(meter->leftLevel());
+        };
+        const double at60 = fallen(16, 0.4);
+        QVERIFY(std::abs(at60 - (60.0 / 66.0 - Meter::kFallPerSecond * 0.4)) < 1e-9);
+        QVERIFY(std::abs(fallen(8, 0.4) - at60) < 1e-9);
+        QVERIFY(std::abs(fallen(4, 0.4) - at60) < 1e-9);
+
+        auto* scope = item<OscilloscopeItem>("scope");
+        const auto faded = [&](int ms, double seconds) {
+            clock.setIntervalMs(ms);
+            FakeFeed feed;
+            for (int i = 0; i < 2048; ++i)
+                feed.samples << float(0.8 * std::sin(2 * M_PI * (i - 7.5) / 100.0));
+            feed.written = 2048;
+            scope->setFeed(&feed);
+            scope->poll();
+            const float before = scope->samples()[25];
+            for (int i = 0; i < int(std::lround(seconds * 1000.0 / ms)); ++i)
+                scope->poll();
+            const double left = scope->samples().empty() ? 0.0 : double(scope->samples()[25] / before);
+            scope->setFeed(nullptr);
+            return left;
+        };
+        // Held 0.144 s, then 0.8 every 16 ms of the time past it.
+        const double expected = std::pow(0.8, (0.24 - OscilloscopeItem::kHoldSeconds) / 0.016);
+        for (const int ms : {16, 8, 4})
+            QVERIFY2(std::abs(faded(ms, 0.24) - expected) < 1e-5, qPrintable(QString::number(ms)));
+        QCOMPARE(faded(8, 0.12), 1.0);  // (still held)
+        clock.setTicksByHand(false);
+        clock.setIntervalMs(was);
+    }
+
     // --- Oscilloscope --------------------------------------------------------------
 
     void scopeTrigger() {

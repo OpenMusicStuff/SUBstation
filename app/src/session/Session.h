@@ -34,6 +34,9 @@
 // - audioPreferences, midiPreferences: Preferences › Audio and › MIDI
 //   (Preferences › Plug-ins is the plug-in index's: plugins; and where plug-ins
 //   run, in sandboxes or not: pluginHosting, PluginHostingPreferences);
+// - displayPreferences: Preferences › Look and Feel › Maximum display frame
+//   rate: how often the live displays refresh (DisplayPreferences; the bridge's
+//   playhead and meters follow it, as the UI's display clock does);
 // - updates: Preferences › Updates: the channel, checking for updates and
 //   installing them (Updater; an update found also says so on statusMessage).
 //
@@ -74,6 +77,7 @@ namespace sub::app {
 class AgentHistory;
 class ArrangementActions;
 class AudioPreferences;
+class DisplayPreferences;
 class PluginHostingPreferences;
 class BrowserController;
 class ComputerKeyboard;
@@ -132,6 +136,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::AudioPreferences* audioPreferences READ audioPreferences CONSTANT)
     Q_PROPERTY(sub::app::MidiPreferences* midiPreferences READ midiPreferences CONSTANT)
     Q_PROPERTY(sub::app::PluginHostingPreferences* pluginHosting READ pluginHosting CONSTANT)
+    Q_PROPERTY(sub::app::DisplayPreferences* displayPreferences READ displayPreferences CONSTANT)
     Q_PROPERTY(sub::app::Updater* updates READ updates CONSTANT)
     Q_MOC_INCLUDE("update/Updater.h")
     Q_MOC_INCLUDE("intelligence/SimilarSamples.h")
@@ -239,6 +244,7 @@ public:
     AudioPreferences* audioPreferences() const { return audioPreferences_; }
     MidiPreferences* midiPreferences() const { return midiPreferences_; }
     PluginHostingPreferences* pluginHosting() const { return pluginHosting_; }
+    DisplayPreferences* displayPreferences() const { return displayPreferences_; }
     Updater* updates() const { return updates_; }
     PresetIndex* presets() const { return presets_; }
     McpServer* mcp() const { return mcp_; }
@@ -548,6 +554,7 @@ private:
     AudioPreferences* audioPreferences_ = nullptr;
     MidiPreferences* midiPreferences_ = nullptr;
     PluginHostingPreferences* pluginHosting_ = nullptr;
+    DisplayPreferences* displayPreferences_ = nullptr;
     Updater* updates_ = nullptr;
     QPointer<Render> rendering_;
     std::function<std::optional<Freeze>(FreezeRender&)> finishFreeze_;

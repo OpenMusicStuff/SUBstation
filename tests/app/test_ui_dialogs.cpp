@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -32,7 +33,9 @@
 #include "mcp/McpServer.h"
 #include "model/Project.h"
 #include "plugins/PluginIndex.h"
+#include "devices/DisplayClock.h"
 #include "session/AudioPreferences.h"
+#include "session/DisplayPreferences.h"
 #include "session/MidiPreferences.h"
 #include "session/PluginHostingPreferences.h"
 #include "session/RenderProgress.h"
@@ -239,7 +242,8 @@ private Q_SLOTS:
     }
 
     // Preferences › Look and Feel: the themes; one chosen applies at once (the
-    // dialog repaints in it) and is kept.
+    // dialog repaints in it) and is kept. The maximum display frame rate: chosen,
+    // the display clock and the bridge tick at it at once, and it is kept.
     void lookAndFeelPage() {
         open(QStringLiteral("preferencesDialog"));
         object(QStringLiteral("preferencesDialog"))->setProperty("currentPage", 3);
@@ -259,6 +263,30 @@ private Q_SLOTS:
                          sub::ui::Theme::window());
             test::screenshot(window_, QStringLiteral("preferences-look-and-feel-") + name.toLower());
         }
+
+        sub::app::DisplayPreferences& display = *session().displayPreferences();
+        QCOMPARE(comboText(QStringLiteral("displayRate")), QStringLiteral("60 Hz"));
+        QCOMPARE(sub::ui::DisplayClock::instance()->intervalMs(), 16);
+        QVERIFY(shown(QStringLiteral("displayRateStatus"))->property("text").toString().startsWith(display.status()));
+        choose(QStringLiteral("displayRate"), 3);
+        QCOMPARE(display.maxRate(), 144);
+        QCOMPARE(comboText(QStringLiteral("displayRate")), QStringLiteral("144 Hz"));
+        QCOMPARE(QSettings().value(sub::app::DisplayPreferences::kKey).toInt(), 144);
+        QCOMPARE(sub::ui::DisplayClock::instance()->intervalMs(), 7);
+        QCOMPARE(session().bridge()->displayInterval(), 7);
+        // A slower screen caps it, and the page says so.
+        display.setScreenRate(100.0);
+        QCOMPARE(sub::ui::DisplayClock::instance()->intervalMs(), 10);
+        QTRY_VERIFY(shown(QStringLiteral("displayRateStatus"))->property("text").toString().startsWith(
+            QStringLiteral("Displays refresh at 100 Hz, the screen's rate.")));
+        // Following the window's screen: its rate (where the platform knows one).
+        display.followWindow(window_);
+        const double screen = window_->screen()->refreshRate();
+        QCOMPARE(display.screenRate(), screen >= 1.0 ? screen : 0.0);
+        display.followWindow(nullptr);
+        QCOMPARE(display.screenRate(), 0.0);
+        choose(QStringLiteral("displayRate"), 1);
+        QCOMPARE(sub::ui::DisplayClock::instance()->intervalMs(), 16);
         close(QStringLiteral("preferencesDialog"));
     }
 

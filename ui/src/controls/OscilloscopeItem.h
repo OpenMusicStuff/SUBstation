@@ -3,7 +3,7 @@
 // The oscilloscope of the master output, as in FL Studio's tool bar;
 // Oscilloscope.qml wraps it with its tooltip.
 //
-// Every kUpdateMs its timer reads the feed's `scopeWritten` (a counter); only
+// On each display tick (DisplayClock) it reads the feed's `scopeWritten` (a counter); only
 // when it moved does it fetch scopeSamples(2 * kWindow) (neither may block).
 // trigger() finds the last rising zero crossing that still leaves a full
 // kWindow after it, so steady tones stand still; with none, it shows the newest
@@ -13,8 +13,8 @@
 // buffer), the trace shrinks by kFade every kFadeSeconds of the time past it
 // (by the time since the last update, DisplayClock::elapsed: as fast however
 // often it updates) and stops repainting once flat. Without the hold, an update that
-// fell between two device buffers (a buffer longer than kUpdateMs, or the
-// timer firing twice in one buffer) faded or cleared the trace and the next
+// fell between two device buffers (a buffer longer than a tick, or two ticks
+// in one buffer) faded or cleared the trace and the next
 // one restored it, so it flickered, most visibly in silence (a bright flat
 // line blinking against the axis). Audio that comes, however quiet, always
 // shows (silence as a flat line): a threshold there would blink the trace on
@@ -38,7 +38,6 @@
 #include <QList>
 #include <QPointF>
 #include <QPointer>
-#include <QTimer>
 #include <QtQml/qqmlregistration.h>
 
 #include <vector>
@@ -52,7 +51,6 @@ class OscilloscopeItem : public SgCanvas {
 
 public:
     static constexpr int kWindow = 1024;  // samples shown; twice as many are read to find a trigger in
-    static constexpr int kUpdateMs = 16;  // ~60 fps
     static constexpr double kFade = 0.8, kFadeSeconds = 0.016;  // while no audio comes: 0.8 every 16 ms
     static constexpr double kSilent = 1e-4;        // below this the trace counts as flat and stops repainting
     static constexpr double kHoldSeconds = 0.144;  // without audio before the fade (the 10th update of 16 ms fades)
@@ -73,7 +71,7 @@ public:
     const std::vector<float>& samples() const { return samples_; }
     const std::vector<QPointF>& tracePoints() const { return trace_; }
 
-    // One update (the timer's): reads the feed if it moved, else fades.
+    // One update (the display clock's tick): reads the feed if it moved, else fades.
     Q_INVOKABLE void poll();
 
 Q_SIGNALS:
@@ -87,7 +85,6 @@ private:
     void rebuild();
 
     QPointer<QObject> feed_;
-    QTimer timer_;
     std::vector<float> samples_;
     std::vector<QPointF> trace_;
     quint64 written_ = 0;

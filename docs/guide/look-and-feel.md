@@ -1,7 +1,8 @@
 # Look and Feel
 
 *Options › Preferences › Look and Feel* (**Ctrl+,**, then the *Look and Feel* tab)
-chooses SUBstation's theme. A theme changes colours only: everything stays where it is
+chooses SUBstation's theme, and how often the displays refresh
+([below](#maximum-display-frame-rate)). A theme changes colours only: everything stays where it is
 and the same size. The one chosen applies at once, everywhere (no restart), and is kept
 for the next time SUBstation starts.
 
@@ -20,4 +21,19 @@ palette (a Live set's other colours) are brought to the theme's brightness, thei
 kept. The project keeps the same colours whatever the theme. The displays of the EQ, the
 Sidechain and the clash view stay dark in every theme, as a screen on a device.
 
-For how themes work in the code, see [../ui/README.md](../ui/README.md#themes).
+## Maximum display frame rate
+
+*Maximum display frame rate*, on the same page, sets how often what moves on screen
+refreshes: the playhead, the meters, a recording's waveform, the scope in the transport
+bar and the devices' displays (spectra, meters, curves, the modulators' playheads). The
+choices are 30, 60, 120, 144 and 240 Hz; 60 Hz is the default. On a high refresh rate
+screen, 120, 144 or 240 Hz makes them move more smoothly. They never refresh faster
+than the screen the window is on: under the box the page says what they refresh at
+(on a 75 Hz screen with 120 Hz chosen: 75 Hz). Things fall and glide at the same speed
+at any rate, only in more steps. A faster rate costs more of the computer's time:
+the devices' spectra (the EQ's especially) are worked out at each refresh. Hue's
+analysis of the notes stays at 30 a second. The choice is kept for the next time
+SUBstation starts.
+
+For how themes work in the code, see [../ui/README.md](../ui/README.md#themes); for the
+display rate, [../app/session.md](../app/session.md#preferences).

@@ -15,9 +15,7 @@ namespace sub::ui {
 
 OscilloscopeItem::OscilloscopeItem(QQuickItem* parent) : SgCanvas(parent) {
     setImplicitSize(150, 30);  // fixed, as the Python UI's oscilloscope
-    timer_.setInterval(kUpdateMs);
-    connect(&timer_, &QTimer::timeout, this, &OscilloscopeItem::poll);
-    timer_.start();
+    connect(DisplayClock::instance(), &DisplayClock::tick, this, &OscilloscopeItem::poll);
 }
 
 void OscilloscopeItem::setFeed(QObject* feed) {

@@ -165,8 +165,9 @@ struct EngineBridge::Private {
     // Built-in devices' states are restored one at a time, in the order they
     // were set, so the last one set wins.
     QThreadPool statePool;
-    QTimer positionTimer;
-    QTimer meterTimer;
+    QTimer positionTimer;  // the playhead: every display tick
+    QTimer displayTimer;   // the meters, a recording's progress: the same
+    QTimer idleTimer;      // the plug-ins, the device: kIdlePollMs
 
     // For tests: reports to take as if the plug-ins had sent them (BridgeTestAccess).
     std::vector<sub::ProcessorEventRecord> injectedEvents;

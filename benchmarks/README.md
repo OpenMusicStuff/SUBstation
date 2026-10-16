@@ -636,4 +636,5 @@ size kept).
 The analyzers' ticks gain less than their FFTs: what is left is per bin (the
 window, a power's average, a level in dB: a `log10` per bin and channel), about
 180 µs of the EQ's 228. At 60 ticks a second an open EQ costs the GUI thread
-1.4 % of a core (3.3 % before).
+1.4 % of a core (3.3 % before); at 240 (Preferences › Look and Feel › Maximum
+display frame rate) 5.5 % (13 % before).

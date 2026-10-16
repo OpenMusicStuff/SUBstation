@@ -55,7 +55,7 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
   Session (app/src/session) ─ ProjectEditor ─► QUndoCommand ─► Project ─► Qt signals ─┐
        │                                                                              │
        └─ EngineBridge (app/src/audio) ─► sub::Engine (engine/src)                    │
-             positionChanged (16 ms), metersUpdated (33 ms),                          │
+             positionChanged, metersUpdated (each display tick: 16 ms at 60 Hz),     │
              automationStateChanged, plugin*, sourceReady ... ────────────────────────┤
                                                                                       ▼
                                    QML bindings re-evaluate, items update() and repaint
@@ -94,8 +94,14 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
   `liveTakes()`, `waveform(path)` (a `Waveform`: frames, channels, peaks), `loadError(path)`, parameter metadata
   (`paramSpec`, `paramGroups`, `canAutomate`, `deviceParams`), automation state (`isAutomated`, `isOverridden`,
   `currentValue`, `ownValue`), processor displays (`readProcessorDisplay`), the scope (`scopeWritten`,
-  `scopeSamples`), `cpuLoad`, `deviceStatus`. The bridge polls the playhead every 16 ms and the meters every 33 ms
-  and emits `positionChanged` and `metersUpdated`; the UI never waits on the audio thread. See
+  `scopeSamples`), `cpuLoad`, `deviceStatus`. The bridge polls the playhead and the meters every display tick (16 ms at
+  60 Hz; the display rate below) and emits `positionChanged` and `metersUpdated`; the UI never waits on the audio
+  thread.
+- **The display rate.** Everything live (the playhead, the meters, the scope, the devices' editors) refreshes at the
+  rate Preferences › Look and Feel sets (`Session.displayPreferences`: 30 to 240 Hz, 60 by default, no faster than
+  the main window's screen, [app/session.md](../app/session.md#preferences)): the bridge's polls and the UI's
+  `DisplayClock` ([device-view.md](device-view.md)) tick at its `intervalMs`, and what moves on a display moves by
+  the time since its last tick (`DisplayClock::elapsed`), never by a share a tick, so it looks the same at any rate. See
   [app/engine-bridge.md](../app/engine-bridge.md).
 - **Status text.** The session forwards what the bridge, the browser, the plug-in index, the arrangement's and the
   device view's actions, the computer keyboard and the editor's refusals (`refused`) say, as
@@ -442,7 +448,7 @@ ends it when it loses the mouse grab.
 
 The scope in the transport bar shows the master output, as FL Studio's does. Its feed is any `QObject` with a
 `quint64 scopeWritten` property (samples written so far) and `Q_INVOKABLE QList<float> scopeSamples(int frames)`:
-the bridge. Every 16 ms (`kUpdateMs`) its timer reads `scopeWritten`; only when it moved does it fetch
+the bridge. On each display tick (`DisplayClock`, at the display rate) it reads `scopeWritten`; only when it moved does it fetch
 `scopeSamples(2 * kWindow)` (neither blocks). `trigger()` finds the last rising zero crossing that still leaves a
 full `kWindow` (1024 samples, about 21 ms at 48 kHz) after it, so steady tones stand still; with none it shows the
 newest window. `trace()` turns the samples into one column per pixel (the column's highest then lowest sample),
@@ -452,7 +458,7 @@ since the last update: `DisplayClock::elapsed`; at 60 Hz the tenth update withou
 it always was) and stops repainting once flat. It skips its work while hidden.
 
 `kWindow` is a fixed number of samples because the engine's sample rate is behind its edit lock, which the scope
-shouldn't take 60 times a second. The glow is drawn without antialiasing (it is soft anyway); only the thin line has
+shouldn't take on every tick. The glow is drawn without antialiasing (it is soft anyway); only the thin line has
 it.
 
 ## Transport bar
@@ -508,8 +514,10 @@ application-layer object that holds the logic. What the preferences mean to the 
     searched) and the user's own (red if missing); Add Folder… and Remove (only new files are read; a removed
     folder's plug-ins leave the browser); Rescan Plug-ins; the scan's status, its failures in the tooltip. See
     [app/plugin-scanner.md](../app/plugin-scanner.md).
-  - **Look and Feel** (`LookAndFeelPage` on the `Theme` singleton): the theme, a `ChoiceBox` of `Theme.names`
-    showing `Theme.name` and setting it ([Themes](#themes)).
+  - **Look and Feel** (`LookAndFeelPage` on the `Theme` singleton and `Session.displayPreferences`): the theme, a
+    `ChoiceBox` of `Theme.names` showing `Theme.name` and setting it ([Themes](#themes)); the maximum display frame
+    rate, a `ChoiceBox` of `rateChoices` (`rateIndex`, `chooseRate(i)`), and under it `status` (what the displays
+    refresh at, capped by the screen) ([app/session.md](../app/session.md#preferences)).
   - **Keyboard** (`KeyboardPage` on the `KeyMap` singleton, [above](#keys-and-profiles-keymap)): the profile (a
     `ChoiceBox` of `KeyMap.profiles`), Reset All, a search field (a command's name, menu or keys), and every
     command in a list: its menu, its name (bold while customized), a button per key (its × takes it back:
