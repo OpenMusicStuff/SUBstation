@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
         if (std::strcmp(argv[i], "--rounds") == 0 && i + 1 < argc) {
             rounds = std::max(1, std::atoi(argv[++i]));
         } else if (std::strcmp(argv[i], "--rate") == 0 && i + 1 < argc) {
-            rate = std::clamp(std::atof(argv[++i]), 1.0, kSampleRate);  // (at least a sample a tick)
+            const double asked = std::atof(argv[++i]);
+            rate = std::isfinite(asked) ? std::clamp(asked, 1.0, kSampleRate) : 60.0;  // (at least a sample a tick)
         } else {
             std::printf("display_fft_bench [--rounds 2000] [--rate 60]\n");
             return std::strcmp(argv[i], "--help") == 0 ? 0 : 2;
