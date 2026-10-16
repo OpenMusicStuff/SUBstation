@@ -210,3 +210,42 @@ TEST_CASE("a warped clip follows a tempo ramp") {
     const auto expected = static_cast<int64_t>(std::llround(8.0 * std::log(1.5) * kSampleRate));
     CHECK(std::abs(loudestBetween(out, 3.0, 3.5) - expected) <= 2);
 }
+
+namespace {
+
+// A file rendered under slowsAtBeat4() (a frozen track's): its beats are that map's.
+Samples sourceMappedRender(const TempoMap& song, double startBeat, double offsetSec, double durationSec,
+                           const std::string& wav) {
+    sub::Engine engine;
+    engine.setClipFadeMs(0);
+    engine.setTempoMap(song);
+    engine.loadSource(wav);
+    const uint32_t track = engine.addTrack();
+    sub::ClipDesc frozen = clip(wav, startBeat, durationSec);
+    frozen.offsetSec = offsetSec;
+    frozen.warp = true;
+    frozen.segmentBpm = 120.0;
+    frozen.sourceMap = std::make_shared<const TempoMap>(slowsAtBeat4());
+    frozen.warpMode = sub::WarpMode::RePitch;
+    engine.setTrackClips(track, {frozen});
+    return channel(engine.renderOffline(0.0, 9 * kSampleRate), 0);
+}
+
+}  // namespace
+
+TEST_CASE("a clip whose source has its own tempo map keeps its beats on the timeline's") {
+    // Clicks on the source's beats 2 (1 s in) and 5 (3 s in: a second after the slow-down at 2 s).
+    const std::string wav = clicksAt({1.0, 3.0});
+    // Under the map it was made with: as it is.
+    const Samples same = sourceMappedRender(slowsAtBeat4(), 0.0, 0.0, 4.0, wav);
+    CHECK(std::abs(loudestBetween(same, 0.8, 1.2) - 1 * kSampleRate) <= 2);
+    CHECK(std::abs(loudestBetween(same, 2.8, 3.2) - 3 * kSampleRate) <= 2);
+    // At 120 BPM throughout: beat 5 is at 2.5 s.
+    const Samples steady = sourceMappedRender(TempoMap(120.0), 0.0, 0.0, 4.0, wav);
+    CHECK(std::abs(loudestBetween(steady, 0.8, 1.2) - 1 * kSampleRate) <= 2);
+    // (Played at twice its speed there: where the click starts, its loudest sample a little in.)
+    CHECK(std::abs(firstAbove(steady, 2 * kSampleRate, 0.1) - kSampleRate * 5 / 2) <= 2);
+    // A part of it from 2 s in (its beat 4), played from beat 8: its beat 5 at beat 9, 4.5 s.
+    const Samples part = sourceMappedRender(TempoMap(120.0), 8.0, 2.0, 2.0, wav);
+    CHECK(std::abs(firstAbove(part, 0, 0.1) - kSampleRate * 9 / 2) <= 2);  // (nothing before it)
+}

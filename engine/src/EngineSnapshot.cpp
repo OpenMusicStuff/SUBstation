@@ -120,38 +120,57 @@ std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, const Rende
 }
 
 // A warped clip's source along it (WarpCurve), where the tempo changes under it: null if it doesn't
-// (one rate throughout). `framesPerBeat`: the source frames a beat of the clip plays. Points at the
-// clip's ends, the tempo map's points within it, and every kWarpCurveStep samples through its ramps
-// (a ramp's source position bends; straight lines that close follow it to well under a frame).
+// (one rate throughout). `framesPerBeat`: the source frames a beat of the clip plays, or, with a
+// source map (ClipDesc::sourceMap), that map from `sourceFrom` (its beat at the clip's start, at
+// `offsetSec` into the file), at `sampleRate`. Points at the clip's ends, either map's points within
+// it, and every kWarpCurveStep samples through their ramps (a ramp's source position bends;
+// straight lines that close follow it to well under a frame).
 constexpr int64_t kWarpCurveStep = 256;
 
+struct SourceTempo {
+    const TempoMap* map = nullptr;
+    double from = 0.0;
+    double offsetSec = 0.0;
+    double sampleRate = 0.0;
+};
+
 std::shared_ptr<const WarpCurve> warpCurve(const RenderSnapshot& snap, int64_t start, int64_t length,
-                                           double framesPerBeat) {
+                                           double framesPerBeat, const SourceTempo& source = {}) {
     const TempoMap& map = *snap.tempoMap;
-    if (map.constant() || length <= 0) return nullptr;
+    if ((map.constant() && source.map == nullptr) || length <= 0) return nullptr;
+    const double from = snap.beatAt(static_cast<double>(start));
     std::vector<int64_t> ats{0, length};
-    const auto& points = map.points();
     const auto inside = [&](int64_t at) { return at > 0 && at < length; };
-    for (size_t i = 0; i < points.size(); ++i) {
-        const int64_t at = snap.sampleAt(points[i].beat) - start;
-        if (inside(at)) ats.push_back(at);
-        if (i + 1 < points.size() && points[i + 1].beat > points[i].beat && points[i + 1].bpm != points[i].bpm) {
-            const int64_t to = std::min(length, snap.sampleAt(points[i + 1].beat) - start);
-            for (int64_t a = std::max<int64_t>(0, at) + kWarpCurveStep; a < to; a += kWarpCurveStep) ats.push_back(a);
+    // A map's points within the clip, and steps through its ramps (`toTimeline`: its beats on the timeline).
+    const auto addPoints = [&](const TempoMap& points, const auto& toTimeline) {
+        const auto& p = points.points();
+        for (size_t i = 0; i < p.size(); ++i) {
+            const int64_t at = snap.sampleAt(toTimeline(p[i].beat)) - start;
+            if (inside(at)) ats.push_back(at);
+            if (i + 1 < p.size() && p[i + 1].beat > p[i].beat && p[i + 1].bpm != p[i].bpm) {
+                const int64_t to = std::min(length, snap.sampleAt(toTimeline(p[i + 1].beat)) - start);
+                for (int64_t a = std::max<int64_t>(0, at) + kWarpCurveStep; a < to; a += kWarpCurveStep) ats.push_back(a);
+            }
         }
-    }
+    };
+    if (!map.constant()) addPoints(map, [](double beat) { return beat; });
+    if (source.map != nullptr) addPoints(*source.map, [&](double beat) { return from + beat - source.from; });
     std::sort(ats.begin(), ats.end());
     ats.erase(std::unique(ats.begin(), ats.end()), ats.end());
-    const double from = snap.beatAt(static_cast<double>(start));
     // One tempo all along the clip: its rate is enough.
     const double ends = map.bpmAt(from), last = map.bpmAt(snap.beatAt(static_cast<double>(start + length)));
-    if (ats.size() == 2 && ends == last && map.bpmAt(snap.beatAt(static_cast<double>(start + length / 2))) == ends) {
+    if (source.map == nullptr && ats.size() == 2 && ends == last &&
+        map.bpmAt(snap.beatAt(static_cast<double>(start + length / 2))) == ends) {
         return nullptr;
     }
     auto curve = std::make_shared<WarpCurve>();
     curve->reserve(ats.size());
     for (const int64_t at : ats) {
-        curve->push_back({at, (snap.beatAt(static_cast<double>(start + at)) - from) * framesPerBeat});
+        const double beats = snap.beatAt(static_cast<double>(start + at)) - from;  // of the clip
+        const double frames = source.map != nullptr
+                                  ? (source.map->secondsAt(source.from + beats) - source.offsetSec) * source.sampleRate
+                                  : beats * framesPerBeat;
+        curve->push_back({at, frames});
     }
     return curve;
 }
@@ -757,15 +776,26 @@ void Engine::buildSnapshotLocked() {
             cr.start = std::max<int64_t>(0, snap->sampleAt(clip.startBeat));
             cr.sourceOffset = std::clamp<int64_t>(std::llround(clip.offsetSec * sampleRate_), 0, source->frames());
             const bool warped = clip.warp && clip.segmentBpm > 0.0;
-            const double endBeat = clip.startBeat + clip.durationSec * clip.segmentBpm / 60.0;
+            // A source whose own tempo changes: its beats are its map's, from where the clip starts in it.
+            SourceTempo sourceTempo;
+            if (warped && clip.sourceMap) {
+                sourceTempo = {clip.sourceMap.get(), clip.sourceMap->beatAt(clip.offsetSec), clip.offsetSec, sampleRate_};
+            }
+            // Its beats of the source's from `offset` seconds into it, for `seconds`.
+            const auto sourceBeats = [&](double offset, double seconds) {
+                return sourceTempo.map != nullptr
+                           ? sourceTempo.map->beatAt(offset + seconds) - sourceTempo.map->beatAt(offset)
+                           : seconds * clip.segmentBpm / 60.0;
+            };
+            const double endBeat = clip.startBeat + sourceBeats(clip.offsetSec, clip.durationSec);
             if (warped) {
                 // Locked to beats: both ends sit on their beats at any tempo. (Under a tempo
                 // that changes along the clip, at the rate that takes it from one to the other.)
                 cr.length = snap->sampleAt(endBeat) - cr.start;
-                cr.rate = tempoMap_->constant() || cr.length <= 0
+                cr.rate = (tempoMap_->constant() && sourceTempo.map == nullptr) || cr.length <= 0
                               ? tempoMap_->points().front().bpm / clip.segmentBpm
                               : clip.durationSec * sampleRate_ / static_cast<double>(cr.length);
-                cr.curve = warpCurve(*snap, cr.start, cr.length, 60.0 / clip.segmentBpm * sampleRate_);
+                cr.curve = warpCurve(*snap, cr.start, cr.length, 60.0 / clip.segmentBpm * sampleRate_, sourceTempo);
                 if (!cr.curve && !tempoMap_->constant()) {  // (one tempo all along it: that tempo's rate)
                     cr.rate = snap->tempoAt(static_cast<double>(cr.start)) / clip.segmentBpm;
                 }
@@ -783,7 +813,8 @@ void Engine::buildSnapshotLocked() {
             // attack stays as it is). Its own are shortened in proportion where
             // together they would be longer than it; the short ones give way to them.
             const auto fadeLength = [&](double sec, bool atEnd) {
-                const double beats = sec * clip.segmentBpm / 60.0;  // (warped: in the clip's beats, where they are)
+                const double beats = atEnd ? sourceBeats(clip.offsetSec + clip.durationSec - sec, sec)
+                                           : sourceBeats(clip.offsetSec, sec);  // (warped: in the clip's beats, where they are)
                 const double samples = !warped ? sec * sampleRate_
                                        : atEnd ? snap->samplesBetween(endBeat - beats, beats)
                                                : snap->samplesBetween(clip.startBeat, beats);

@@ -14,6 +14,7 @@ sub::ClipDesc clipDesc(const Clip& clip) {
     desc.pan = static_cast<float>(clip.pan);
     desc.warp = clip.isWarped();
     desc.segmentBpm = clip.segmentBpm;
+    if (clip.sourceMap && !clip.sourceMap->constant()) desc.sourceMap = clip.sourceMap->shared();
     // The engine's modes are in kWarpModes' order; an unknown one plays as Standard.
     const qsizetype mode = kWarpModes.indexOf(clip.warpMode);
     desc.warpMode = mode >= 0 ? static_cast<sub::WarpMode>(mode) : sub::WarpMode::Standard;

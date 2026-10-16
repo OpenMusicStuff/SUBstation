@@ -87,6 +87,9 @@ struct ClipDesc {
     // the tempo of the source audio, and they play at tempo / segmentBpm speed.
     bool warp = false;
     double segmentBpm = 0.0;
+    // Warped, a source whose tempo changes along it (a track frozen under a tempo map): where its
+    // seconds, from the file's start, fall in its beats. Null: segmentBpm throughout.
+    std::shared_ptr<const TempoMap> sourceMap;
     WarpMode warpMode = WarpMode::Standard;
     double transpose = 0.0;     // semitones (fractions for detune); ignored by Re-Pitch
     std::string id;             // stable clip identity, so edits don't interrupt a stretching clip

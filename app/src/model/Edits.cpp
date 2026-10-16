@@ -356,7 +356,7 @@ bool sameContent(const Clip& a, const Clip& b, const Tempo& tempo) {
     if (a.kind != b.kind) return false;
     if (a.isMidi()) return std::abs((a.startBeat - a.offsetBeats) - (b.startBeat - b.offsetBeats)) < 1e-6 && a.notes == b.notes;
     if (a.path != b.path || a.isWarped() != b.isWarped() || a.transpose != b.transpose || a.detune != b.detune) return false;
-    if (a.isWarped() && std::abs(a.segmentBpm - b.segmentBpm) > 1e-9) return false;
+    if (a.isWarped() && (std::abs(a.segmentBpm - b.segmentBpm) > 1e-9 || a.sourceMap != b.sourceMap)) return false;
     // Where each has its file's start: the same place, the same content.
     return std::abs((a.startBeat + a.sourceToBeats(-a.offsetSec, tempo)) -
                     (b.startBeat + b.sourceToBeats(-b.offsetSec, tempo))) < 1e-6;

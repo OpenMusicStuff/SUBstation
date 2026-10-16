@@ -150,6 +150,11 @@ When the snapshot is built (`rebuildSnapshotLocked`, see [rendering.md](renderin
   its beats where the map puts that beat. The points are its ends, the map's points within it, and every 256
   samples through a ramp (`warpCurve()`, EngineSnapshot.cpp); `rate` is then its average. One tempo all along it:
   no curve, that tempo's rate.
+- **Warped from a source map** (`ClipDesc::sourceMap`: a track frozen under a tempo map): the source's own beats
+  are that map's (its seconds from the file's start), so `endBeat = startBeat + map.beatAt(offset + duration) -
+  map.beatAt(offset)`, and it always has a curve: each point's source frame is where the source map has the clip's
+  beat at that sample (the song's points and the source map's within it, steps through either's ramps). Fades
+  count their beats by the source map too.
 - **Unwarped**: `rate` 1, and the length is `durationSec` in samples, so its length in beats follows the tempo.
 - The length is cut so the clip never plays past the end of the file.
 - Playback:

@@ -50,6 +50,7 @@ public:
     Tempo(const TempoMap& map);  // NOLINT(google-explicit-constructor)
 
     const TempoMap& map() const { return *map_; }
+    const std::shared_ptr<const TempoMap>& shared() const { return map_; }
     bool constant() const { return constant_; }
     double bpm() const { return bpm_; }  // at beat 0
     double bpmAt(double beat) const { return constant_ ? bpm_ : map_->bpmAt(beat); }

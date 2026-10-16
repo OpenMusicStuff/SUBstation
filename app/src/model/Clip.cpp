@@ -56,11 +56,26 @@ bool Clip::isWarped() const { return isAudio() && warp && segmentBpm > 0; }
 
 double Clip::sourceTempo(const Tempo& tempo) const { return isWarped() ? segmentBpm : tempo.bpmAt(startBeat); }
 
+namespace {
+
+// A source map's seconds at a timeline beat of its clip (its offset plays at its start beat).
+double mappedSource(const Clip& clip, double beat) {
+    const TempoMap& map = clip.sourceMap->map();
+    return map.secondsAt(map.beatAt(clip.offsetSec) + beat - clip.startBeat);
+}
+
+}  // namespace
+
 double Clip::beatsToSourceFrom(double from, double beats, const Tempo& tempo) const {
+    if (isWarped() && sourceMap) return mappedSource(*this, from + beats) - mappedSource(*this, from);
     return isWarped() ? beatsToSeconds(beats, segmentBpm) : tempo.secondsFor(from, beats);
 }
 
 double Clip::sourceToBeatsFrom(double from, double seconds, const Tempo& tempo) const {
+    if (isWarped() && sourceMap) {
+        const double at = mappedSource(*this, from);
+        return sourceMap->map().beatAt(at + seconds) - sourceMap->map().beatAt(at);
+    }
     return isWarped() ? secondsToBeats(seconds, segmentBpm) : tempo.beatsFor(from, seconds);
 }
 

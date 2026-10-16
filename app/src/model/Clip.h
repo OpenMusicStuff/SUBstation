@@ -39,6 +39,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 #include <vector>
 
 namespace sub::app {
@@ -140,6 +142,10 @@ struct Clip {
     bool warp = false;
     QString warpMode = kDefaultWarpMode;  // one of kWarpModes
     double segmentBpm = 0.0;  // tempo of the source audio; 0: not set, shown as the project tempo
+    // Warped, a source whose tempo changes along it (a track frozen under a tempo map): where its
+    // seconds fall in its beats, from the file's start (its BPM there is segmentBpm). None: segmentBpm
+    // throughout. Its beats are locked to the timeline's as any warped clip's are.
+    std::optional<Tempo> sourceMap;
     int transpose = 0;  // semitones
     double detune = 0.0;  // cents
     double pan = 0.0;

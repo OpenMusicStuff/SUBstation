@@ -42,8 +42,6 @@ What SUBstation doesn't do yet, by area.
 - Tempo curves: the master's Song Tempo lane draws the tempo as steps and straight ramps
   (as the tempo map plays it); a segment can't be bent. Its range is 60 to 200 BPM (wider
   if the song's tempo goes beyond), with no way to set it yet.
-- A track frozen under a tempo that changes along the song plays as it was rendered: freeze
-  it again after changing the tempo.
 - Automation lanes below a track have a fixed height.
 
 ## Devices and plug-ins

@@ -88,7 +88,10 @@ both kinds are edited alike.
   clip-view settings `gainDb`, `warp`, `warpMode`, `segmentBpm`, `transpose` (semitones), `detune` (cents), `pan`.
   Unwarped audio plays at its own speed, so the clip's length in beats follows the tempo, where it is (under a tempo
   that changes, two seconds may be four beats at one place and two at another); warped (`isWarped()`: `warp` and
-  `segmentBpm > 0`), the audio is taken to be at `segmentBpm`, so its length in beats is fixed. `sourceTempo()`,
+  `segmentBpm > 0`), the audio is taken to be at `segmentBpm`, so its length in beats is fixed. A warped clip whose
+  source has a tempo that changes along it (a track frozen under a tempo map) has `sourceMap`: where the file's
+  seconds fall in its beats; the clip's offset plays at its start beat and its beats follow the map's from there
+  (the engine's `ClipDesc::sourceMap`, sent only when it isn't one tempo). `sourceTempo()`,
   `beatsToSource()` and `sourceToBeats()` convert between the two, from the clip's start (`beatsToSourceFrom()`,
   `sourceToBeatsFrom()`: from another beat; a fade-out's beats count back from its end). They take a `Tempo`
   ([Timebase.h](../../app/src/model/Timebase.h)): the song's tempo map (music/TempoMap.h, [music.md](../music.md)),
@@ -249,8 +252,9 @@ Device ids are unique in the whole project, so a device is found wherever it sit
 
 A track, group or return can be frozen: `Track::frozen` is a `Freeze` (its frozen audio's `path`, `durationSec`, and
 the `tempo` it was rendered at; `Freeze::clip()` is the warped clip that plays all of it from beat 0). Rendered under a
-tempo that changes along the song, it keeps that tempo map (`Freeze::map`) and plays as it was rendered, unwarped:
-in time while the song's tempo stays it (freeze it again after changing it).
+tempo that changes along the song, it keeps that tempo map (`Freeze::map`), and its clip and segments follow it
+(`Clip::sourceMap`): they keep the beats the render was made on whatever the song's tempo becomes, as any warped
+clip does.
 `Project::setFrozen()` emits `freezeChanged`; `updateTrack()` can't set it (there is no `TrackField` for it).
 
 What of the render plays are its **segments**: `Freeze::segments`, audio clips into the render file (warped from its

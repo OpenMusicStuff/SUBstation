@@ -7,11 +7,13 @@
 #include "EditorFixture.h"
 #include "TestSupport.h"
 
+#include "audio/EngineDescs.h"
 #include "io/Serialization.h"
 #include "model/Commands.h"
 #include "model/Edits.h"
 #include "model/RecordedTake.h"
 #include "model/Timebase.h"
+#include "model/Track.h"
 
 #include <QTest>
 
@@ -207,6 +209,26 @@ private Q_SLOTS:
         f.stack.undo();
         QVERIFY(near(f.project.tempoMap().bpmAt(8.0), 130.0));
         QVERIFY(near(*autom::valueAt(f.project.envelope(kMaster, autom::kMixerVolume), 8.0), 0.25));
+    }
+
+    // A track frozen under a changing tempo: its audio keeps the beats it was rendered on, whatever the
+    // song's tempo becomes (as a warped clip does), its segments too.
+    void aFreezeKeepsTheBeatsItWasRenderedOn() {
+        Freeze freeze{QStringLiteral("frozen.wav"), 6.0, 120.0};
+        freeze.map = slowsAtBeat4();  // 6 s: beats 0 to 4 in 2 s, then 4 to 8 in 4 s
+        Clip all = freeze.clip(QStringLiteral("t"), QString());
+        QVERIFY(all.isWarped() && all.sourceMap);
+        QVERIFY(near(all.endBeat(Tempo(90.0)), 8.0));
+        QVERIFY(near(all.endBeat(slowsAtBeat4()), 8.0));
+        // Cut at beat 6 (4 s in, by the render's map), whatever the song's tempo.
+        const auto parts = edits::splitClip(all, 6.0, Tempo(150.0));
+        QVERIFY(parts.has_value());
+        QVERIFY(near(parts->first.durationSec, 4.0));
+        QVERIFY(near(parts->second.offsetSec, 4.0));
+        QVERIFY(near(parts->second.endBeat(Tempo(150.0)), 8.0));
+        // Its engine clip carries the map.
+        QVERIFY(clipDesc(parts->second).sourceMap != nullptr);
+        QVERIFY(clipDesc(test::audioClip(QStringLiteral("c"), 0.0, 1.0)).sourceMap == nullptr);
     }
 
     // A take's seconds are the timeline's: its beats are where the tempo map has them.
