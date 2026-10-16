@@ -2,7 +2,8 @@
 // Runs the routing graph's strips on several threads: a fixed pool of workers
 // plus the thread that asks (the audio thread, or one rendering offline).
 //
-// The graph (TaskGraph) is the snapshot's: node i is the i-th track, and its
+// The graph (TaskGraph) is the snapshot's (or a render's of a few tracks and what
+// feeds them: Renderer::setCaptures()): node i is the i-th track, and its
 // edges go into other nodes (a group's bus, a return), each of which runs once
 // every edge going into it is done. Per run each node's counter starts at its
 // input count (its incoming edges); the nodes without inputs are queued, those

@@ -758,6 +758,11 @@ public:
     // off (for benchmarks): then in routing order. Results are the same either way.
     void setCostOrdering(bool on);
     bool costOrdering() const { return renderer_.costOrdering(); }
+    // A track's render (renderTrackOffline(), freezing) renders only the track
+    // and what feeds it (Renderer::setCaptures()), unless this is off (for
+    // tests): then every track and the master, as an export does. Results are
+    // the same either way.
+    void setPruneTrackRenders(bool on);
     std::vector<TrackCost> trackCosts();
 
     // --- Housekeeping ---------------------------------------------------------
@@ -918,6 +923,7 @@ private:
     void resumeLiveLocked();
     void renderOfflineLocked(double startBeat, int64_t frames, float* out, bool loop, bool metronome);
     // Delay lines an offline render brings, so that it neither disturbs live playback nor depends on it.
+    bool pruneTrackRenders_ = true;  // setPruneTrackRenders()
     struct OfflineLines {
         WarpVoiceSet voices;
         std::vector<std::shared_ptr<DelayLine>> delays, deviceDelays, chainDelays, switchDelays;

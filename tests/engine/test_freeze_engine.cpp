@@ -201,6 +201,103 @@ TEST_CASE("the tail goes on through a clip or note sounding again after silence"
     CHECK(tailAsCut(engine, keys, 2.0, 10.0) > 3 * kSampleRate);
 }
 
+// --- Rendering only what a track needs ---------------------------------------------
+
+namespace {
+
+// A project whose tracks feed each other every way there is: a group of a synth
+// and a stretched clip; a return they send to (one before its fader); a
+// compressor keyed by the synth (before its fader), and a track going into its
+// sidechain; a synth playing the first one's notes; a track taking another's
+// output as its input (monitored); a rack of two synths; a soloed track; more
+// stretched clips elsewhere (sharing the stretchers); effects on the master.
+struct Graph {
+    uint32_t group, synth, stretched, ret, keyed, intoKey, fed, input, rack, elsewhere;
+};
+
+uint32_t synthTrack(sub::Engine& engine, int key, uint32_t output = sub::Engine::kMaster) {
+    const uint32_t track = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(track), "synth", -1);
+    std::vector<sub::NoteDesc> notes;
+    for (int beat = 0; beat < 8; ++beat) notes.push_back({beat * 0.5, 0.4, key + beat % 3 * 4, 90});
+    engine.setTrackNotes(track, notes);
+    engine.setTrackOutput(track, output);
+    return track;
+}
+
+uint32_t stretchedTrack(sub::Engine& engine, const std::string& wav, double transpose, uint32_t output) {
+    const uint32_t track = engine.addTrack();
+    sub::ClipDesc clip = subtest::clip(wav, 0.0, 3.0);
+    clip.warp = true;
+    clip.segmentBpm = 100.0;
+    clip.transpose = transpose;
+    engine.setTrackClips(track, {clip});
+    engine.setTrackOutput(track, output);
+    return track;
+}
+
+Graph graph(sub::Engine& engine) {
+    const std::string wav = makeWav(noise(static_cast<size_t>(kSampleRate) * 3 * 2, 7, 0.3f), 2);
+    engine.loadSource(wav);
+    Graph g{};
+    g.group = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(g.group), "saturator", -1);
+    g.ret = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(g.ret), "reverb", -1);
+    g.synth = synthTrack(engine, 48, g.group);
+    engine.addBuiltinProcessor(engine.trackChain(g.synth), "eq", -1);
+    g.stretched = stretchedTrack(engine, wav, 3.0, g.group);
+    engine.setTrackSend(g.synth, g.ret, 0.5f, false);
+    engine.setTrackSend(g.stretched, g.ret, 0.7f, true);
+    g.keyed = synthTrack(engine, 60);
+    const uint32_t compressor = engine.addBuiltinProcessor(engine.trackChain(g.keyed), "compressor", -1);
+    engine.setProcessorSidechain(compressor, g.synth, sub::SidechainTap::PreFader);
+    g.intoKey = stretchedTrack(engine, wav, -2.0, sub::Engine::kMaster);
+    engine.setTrackOutputSidechain(g.intoKey, compressor);
+    g.fed = engine.addTrack();
+    const uint32_t fedSynth = engine.addBuiltinProcessor(engine.trackChain(g.fed), "synth", -1);
+    engine.setProcessorMidiInput(fedSynth, g.synth);
+    g.input = engine.addTrack();
+    engine.setTrackInputTrack(g.input, g.keyed);
+    engine.setTrackMonitor(g.input, sub::MonitorMode::In);
+    engine.addBuiltinProcessor(engine.trackChain(g.input), "delay", -1);
+    g.rack = engine.addTrack();
+    engine.setTrackNotes(g.rack, {{0.0, 2.0, 36, 100}, {2.0, 2.0, 43, 100}});
+    const uint32_t rack = engine.addRack(engine.trackChain(g.rack), -1);
+    for (int c = 0; c < 2; ++c) engine.addBuiltinProcessor(engine.addRackChain(rack, -1), c == 0 ? "synth" : "chorus", -1);
+    g.elsewhere = stretchedTrack(engine, wav, 5.0, sub::Engine::kMaster);
+    stretchedTrack(engine, wav, 7.0, g.ret);
+    engine.setTrackSolo(synthTrack(engine, 72), true);
+    engine.addBuiltinProcessor(engine.trackChain(sub::Engine::kMaster), "limiter", -1);
+    return g;
+}
+
+// The track rendered alone (with what feeds it) is the track rendered with
+// everything, to the bit.
+void sameAsWhole(sub::Engine& engine, uint32_t track) {
+    engine.setPruneTrackRenders(false);
+    const Samples whole = engine.renderTrackOffline(track, 0.0, 3 * kSampleRate);
+    engine.setPruneTrackRenders(true);
+    const Samples pruned = engine.renderTrackOffline(track, 0.0, 3 * kSampleRate);
+    CHECK(maxAbs(whole) > 1e-3);
+    CHECK(pruned == whole);
+}
+
+}  // namespace
+
+TEST_CASE("a track renders as it does with everything else") {
+    for (const int threads : {1, 3}) {
+        FreezeEngine e;
+        auto& engine = e.engine;
+        engine.setAudioThreads(threads);
+        const Graph g = graph(engine);
+        for (const uint32_t track : {g.group, g.synth, g.stretched, g.ret, g.keyed, g.intoKey, g.fed, g.input, g.rack,
+                                     g.elsewhere}) {
+            sameAsWhole(engine, track);
+        }
+    }
+}
+
 TEST_CASE("the WAV keeps what is louder than full scale") {
     FreezeEngine e;
     auto& engine = e.engine;

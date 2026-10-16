@@ -327,16 +327,18 @@ void Engine::renderTrackLocked(uint32_t trackId, double startBeat, int64_t frame
     Renderer offline;
     OfflineLines lines;
     prepareOfflineLocked(snap, offline, lines, startBeat);
+    offline.setCaptures(snap, {track}, !pruneTrackRenders_);
     // Its signal before its fader lags the timeline by what feeds it (a group's
     // bus hears its tracks that late) and its own devices: render that first and drop it.
     constexpr int64_t kChunk = 16384;
     std::vector<float> rendered(kChunk * 2);
     dropFrames(found->inputLatency + found->latency, rendered,
-               [&](float* out, int64_t n) { offline.renderTrackOffline(snap, track, out, n); });
+               [&](float* out, int64_t n) { offline.renderCaptures(snap, &out, n); });
     for (int64_t done = 0; done < frames;) {
         const int64_t n = std::min(kChunk, frames - done);
-        offline.renderTrackOffline(snap, track, rendered.data(), n);
-        sink(rendered.data(), n);
+        float* out = rendered.data();
+        offline.renderCaptures(snap, &out, n);
+        sink(out, n);
         done += n;
     }
 }
@@ -470,11 +472,12 @@ std::shared_ptr<RenderJob> Engine::startTrackRender(uint32_t trackId, const std:
     const int64_t lag = found->inputLatency + found->latency;
     const int64_t frames = std::llround((endBeat - startBeat) * snap.samplesPerBeat());
     const int64_t tail = std::llround(std::clamp(tailSeconds, 0.0, 600.0) * sampleRate_);
+    render->renderer.setCaptures(snap, {track}, !pruneTrackRenders_);
     const std::vector<char> upstream = Renderer::upstream(snap, {track});
     const int64_t start = render->renderer.position();
     auto capture = std::make_shared<TrackCapture>(writer, lag, frames, tail, quietWindow(snap, upstream),
                                                   lastSounding(snap, upstream, start + frames + tail) - start);
-    return startJobLocked(path, frames + tail, [render, capture, track, lag, frames, tail](RenderJob& job)
+    return startJobLocked(path, frames + tail, [render, capture, lag, frames, tail](RenderJob& job)
                                                    -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
@@ -489,8 +492,9 @@ std::shared_ptr<RenderJob> Engine::startTrackRender(uint32_t trackId, const std:
         for (int64_t done = 0; done < total && !capture->done();) {
             if (job.stopping()) return std::nullopt;
             const int64_t n = std::min(kJobChunk, total - done);
-            render->renderer.renderTrackOffline(snap, track, rendered.data(), n);
-            capture->take(rendered.data(), n);
+            float* out = rendered.data();
+            render->renderer.renderCaptures(snap, &out, n);
+            capture->take(out, n);
             done += n;
             report(done);
         }

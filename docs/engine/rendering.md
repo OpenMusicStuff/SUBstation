@@ -333,10 +333,22 @@ started with. Differences from live:
   same threads, and are bit-identical whatever their number.
 
 **One track** (freezing it): `Engine::renderTrackOffline()` and `renderTrackToWav()` render the
-whole graph the same way, but put out one track's signal after its devices, before its fader
-(`Renderer::renderTrackOffline()`: the track is copied out of `renderTrack()` as it leaves
-`processInserts()`). Solo is ignored (`ignoreSolo_`), so a group's bus is heard as if nothing
-were soloed. The signal lags the timeline by the track's `inputLatency` plus its devices'
+graph the same way, but put out one track's signal after its devices, before its fader
+(`Renderer::setCaptures()`, then `renderCaptures()`: the track is copied out of `renderTrack()` as it
+leaves `processInserts()`). Solo is ignored (`ignoreSolo_`), so a group's bus is heard as if nothing
+were soloed.
+
+Only what the track needs renders: the track and everything upstream of it (`Renderer::upstream()`:
+through every edge into it, however far back: what goes into a group or a return, sidechains, input
+edges), in a graph of their own for the scheduler (`prunedGraph_`, whose nodes are those tracks in
+snapshot order, `prunedTracks_`; `prunedWork_` counts those worth a thread as `parallelWork` does),
+and not the master's strip, nor the metronome after it. The rest of the chunk is as it was: the
+prologue still works out every track's notes, stretch voices and solo, so the state the tracks
+share (sounding notes, which voice plays which clip) is the same, and a track's render depends only
+on its own state and what comes in on its edges. A device taking another track's notes
+(`MidiFeed`) needs nothing rendered: the prologue copies them. So the track comes out the same,
+to the bit, as rendering everything makes; `Engine::setPruneTrackRenders(false)` renders
+everything instead, for the tests that compare the two. The signal lags the timeline by the track's `inputLatency` plus its devices'
 latency, so that much is rendered first and dropped. `renderTrackToWav()` writes 32-bit float
 (nothing above full scale is clipped), and renders on past the end for up to `tailSeconds`,
 cut where it falls below -100 dB. `startTrackRender()` is the same in the background (freezing
@@ -397,6 +409,10 @@ In the engine's tests, [tests/engine](../../tests/engine):
   offsets, gain and pan, mute and solo, loop wraps, tempo changes keeping the playhead on the
   beat, transport state without a device, metronome clicks, clip fades, export matching a render.
 - [test_render_jobs.cpp](../../tests/engine/test_render_jobs.cpp): renders in the background.
+- [test_freeze_engine.cpp](../../tests/engine/test_freeze_engine.cpp): a track's render, lined up, its
+  tail (the same as cutting the whole tail), the same rendering only what feeds it as rendering
+  everything (on a graph with groups, returns, sidechains, MIDI from another track, an input edge,
+  racks, stretched clips); frozen tracks.
 - [test_groups_engine.cpp](../../tests/engine/test_groups_engine.cpp),
   [test_sends_engine.cpp](../../tests/engine/test_sends_engine.cpp): solo and mute across levels and sends,
   meters of groups and returns.

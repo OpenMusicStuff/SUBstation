@@ -94,6 +94,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "AudioDevice.h"
@@ -172,12 +173,21 @@ public:
     void renderOffline(const RenderSnapshot& snap, float* outStereo, int64_t frames,
                        bool loop = false, bool metronome = false) noexcept;
 
+    // Non-real-time, while the renderer doesn't run (allocates): the tracks
+    // renderCaptures() puts out, by snapshot index, in `snap`. Only they and
+    // what feeds them render (upstream()), in the graph's order (a graph of
+    // their own for the scheduler), and not the master: what they put out is
+    // the same as rendering everything makes, to the bit. `whole` renders
+    // everything, the master too, as renderOffline() does (tests compare).
+    void setCaptures(const RenderSnapshot& snap, const std::vector<int>& tracks, bool whole = false);
     // Renders the timeline from the current position, like renderOffline(), but
-    // puts out snapshot track `track`'s signal before its fader (after its
-    // devices) instead of the master's, as it leaves them (a caller lining it up
-    // with the timeline drops its latency). Solo is ignored: every strip is heard
-    // as if nothing were soloed. Freezing a track renders this.
-    void renderTrackOffline(const RenderSnapshot& snap, int track, float* outStereo, int64_t frames) noexcept;
+    // puts out the signals of the tracks setCaptures() was given (of the same
+    // snapshot) before their faders (after their devices), each into its own
+    // interleaved stereo buffer (outStereo[i] for the i-th), as they leave them
+    // (a caller lining one up with the timeline drops its latency). Solo is
+    // ignored: every strip is heard as if nothing were soloed. Freezing tracks
+    // renders this.
+    void renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames) noexcept;
 
     // Snapshot tracks `tracks` and everything that feeds them, however far back
     // (through outputs, sends, inputs and sidechains: what renders before
@@ -543,17 +553,30 @@ private:
     std::vector<float> silence_, recordScratch_;
 
     std::vector<float> masterLeft_, masterRight_;
-    // renderTrackOffline(): the track whose signal is taken before its fader, into these (-1: none).
-    int captureTrack_ = -1;
-    std::vector<float> captureLeft_, captureRight_;
+    // setCaptures(): each snapshot track's capture (-1: none), and the captures'
+    // signals for the chunk, taken before their faders (capture c's left at 2c *
+    // kMaxBlock, its right after it).
+    std::vector<int> captureOf_;
+    std::vector<float> captured_;
+    int numCaptures_ = 0;
+    // What renders while capturing, unless setCaptures() was told `whole`: the
+    // tracks upstream of the captures (snapshot indices, in snapshot order), the
+    // graph of them, and how many are worth a thread (RenderSnapshot::parallelWork's).
+    bool pruned_ = false;
+    std::vector<int> prunedTracks_;
+    std::unique_ptr<TaskGraph> prunedGraph_;
+    int prunedWork_ = 0;
+    bool capturing_ = false;  // renderCaptures() is rendering
     bool ignoreSolo_ = false;
     Scheduler* scheduler_ = nullptr;
     std::atomic<bool> costOrdering_{true};
     std::atomic<bool> measuringCpu_{false};
     bool measureChunk_ = false;  // this chunk measures (live, and measuringCpu_ as it began)
     std::vector<WorkerScratch> scratch_;  // one per thread: [0] the rendering thread's
-    // The chunk the graph renders (set by the prologue, read by every thread).
+    // The chunk the graph renders (set by the prologue, read by every thread):
+    // node n is snapshot track chunkTracks_[n] (null: track n).
     const RenderSnapshot* chunkSnap_ = nullptr;
+    const int* chunkTracks_ = nullptr;
     int chunkFrames_ = 0;
     bool chunkFollows_ = false;  // another chunk comes right after this one (the scheduler's workers spin for it)
     ChunkFlags chunkFlags_{};

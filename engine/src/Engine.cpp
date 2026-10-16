@@ -283,6 +283,11 @@ int Engine::realtimeWorkers() {
 
 void Engine::setCostOrdering(bool on) { renderer_.setCostOrdering(on); }  // offline renders copy it
 
+void Engine::setPruneTrackRenders(bool on) {
+    std::lock_guard lock(mutex_);
+    pruneTrackRenders_ = on;
+}
+
 std::vector<TrackCost> Engine::trackCosts() {
     std::lock_guard lock(mutex_);
     std::vector<TrackCost> costs;
