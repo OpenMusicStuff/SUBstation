@@ -6,9 +6,11 @@ import SUBstation
 // their names, then by what they are (their labels and what those were made
 // from: an instrument's preset, the files they play; Session.trackSearch).
 // Typing goes to the best match; Enter (or Down) to the next, after the last the
-// first again; Shift+Enter (or Up) to the one before; Esc (or ✕) closes it
-// (closed(): the view under it takes the keyboard back). Each match is
-// matchChosen(trackId): the main window shows it (Main.qml's showTrackMatch).
+// first again; Up to the one before. Shift+Enter settles on the match shown and
+// closes it, as Esc (or ✕) does (closed(): the view under it takes the keyboard
+// back); Ctrl+Enter goes back to where the search began (returnRequested(), then
+// closed()). Each match is matchChosen(trackId): the main window shows it
+// (Main.qml's showTrackMatch).
 Rectangle {
     id: bar
 
@@ -16,6 +18,7 @@ Rectangle {
 
     signal closed()
     signal matchChosen(string trackId)
+    signal returnRequested()
 
     // Q: shows (or, shown, takes the keyboard again), what was typed selected to type over.
     function open() {
@@ -36,6 +39,17 @@ Rectangle {
     function step(forward) {
         reveal(forward ? Session.trackSearch.next() : Session.trackSearch.previous())
     }
+    // Enter: the next match; Shift+Enter: this one, and closed; Ctrl+Enter: back where it began, and closed.
+    function enter(modifiers) {
+        if (modifiers & Qt.ControlModifier) {
+            returnRequested()
+            close()
+        } else if (modifiers & Qt.ShiftModifier) {
+            close()
+        } else {
+            step(true)
+        }
+    }
 
     visible: false
     width: content.implicitWidth + 12
@@ -55,13 +69,16 @@ Rectangle {
             objectName: "trackSearchField"
             width: 220
             placeholderText: qsTr("Find track  (Q)")
+            ToolTip.visible: hovered && text === ""
+            ToolTip.delay: 600
+            ToolTip.text: qsTr("Enter: the next match · Shift+Enter: go to this one · Ctrl+Enter: back to where you were")
             Component.onCompleted: text = Session.trackSearch.query
             onTextEdited: {
                 Session.trackSearch.query = text
                 bar.reveal(Session.trackSearch.currentTrackId)
             }
-            Keys.onReturnPressed: event => bar.step(!(event.modifiers & Qt.ShiftModifier))
-            Keys.onEnterPressed: event => bar.step(!(event.modifiers & Qt.ShiftModifier))
+            Keys.onReturnPressed: event => bar.enter(event.modifiers)
+            Keys.onEnterPressed: event => bar.enter(event.modifiers)
             Keys.onDownPressed: bar.step(true)
             Keys.onUpPressed: bar.step(false)
             Keys.onEscapePressed: bar.close()

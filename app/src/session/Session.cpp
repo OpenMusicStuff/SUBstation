@@ -31,6 +31,7 @@
 #include "plugins/PluginIndex.h"
 #include "session/ArrangementActions.h"
 #include "session/AudioPreferences.h"
+#include "session/Backups.h"
 #include "session/PluginHostingPreferences.h"
 #include "session/ComputerKeyboard.h"
 #include "session/ModulationLearn.h"
@@ -78,8 +79,8 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     BrowserController::Options browserOptions;
     browserOptions.scanPlugins = options_.scanPlugins;
     browserOptions.similarity = similarity_;  // (it analyses the browser's files)
-    suggestions_ = new SoundSuggestions(project_, harmony_, similarity_, this);
-    browserOptions.suggestions = suggestions_;  // (the Best sort: what fits the project)
+    suggestions_ = new SoundSuggestions(project_, harmony_, similarity_, this);  // (what fits the project: the agents')
+    backups_ = new Backups(project_, options_.backups ? Backups::defaultFolder() : QString(), this);
     if (!options_.browserIndex) browserOptions.indexPath = QString();
     browser_ = new BrowserController(plugins_, browserOptions, this);
     presets_ = new PresetIndex(this);
@@ -258,6 +259,12 @@ void Session::wire() {
     connect(undoStack_, &QUndoStack::cleanChanged, this, &Session::cleanChanged);
     connect(agents_, &AgentHistory::cleanChanged, this, &Session::cleanChanged);
     connect(this, &Session::cleanChanged, this, &Session::titleChanged);
+    // Backups: unsaved changes written every minute (Backups.h).
+    backups_->setBeforeBackup([this] { bridge_->storePluginStates(); });
+    backups_->setUnsaved([this] { return !clean(); });
+    backups_->setUntitledName([this] { return untitledName_.isEmpty() ? QStringLiteral("Untitled") : untitledName_; });
+    connect(undoStack_, &QUndoStack::indexChanged, backups_, &Backups::changed);
+    connect(agents_, &AgentHistory::changed, backups_, &Backups::changed);
     // What an agent did shows in the status line, as the user's refusals do.
     connect(agents_, &AgentHistory::changed, this, [this](int id) {
         const AgentHistory::Change* change = agents_->find(id);
@@ -275,7 +282,11 @@ void Session::pruneSelection() { selection_->prune(*project_); }
 
 void Session::setOwnerWindow(std::function<uintptr_t()> ownerWindow) { bridge_->setOwnerWindow(std::move(ownerWindow)); }
 
-void Session::start() { bridge_->startAudio(); }
+void Session::start() {
+    bridge_->startAudio();
+    backups_->start();
+    if (!backups_->recoverable().isEmpty()) Q_EMIT recoveryAvailable();
+}
 
 void Session::shutdown() {
     if (shutDown_) return;
@@ -290,6 +301,7 @@ void Session::shutdown() {
     similarity_->close();  // (after the browser, which lets go of it first; saves the fingerprints)
     engine_.closeDevice();
     bridge_->shutdown();  // unloads the plug-ins, while the application is still whole
+    backups_->finish();   // (it ended as it should: nothing to recover)
 }
 
 bool Session::requestClose() {

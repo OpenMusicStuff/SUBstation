@@ -181,6 +181,14 @@ private Q_SLOTS:
         const Clip silent = edits::consolidateMidi({off, offToo});
         QVERIFY(silent.muted);
         QCOMPARE(silent.notes, joinedClip.notes);
+
+        // Over a time selection: from its start to its end where it reaches past them.
+        const Clip filled = edits::consolidateMidi({b, a}, edits::Interval{2.0, 12.0});
+        QCOMPARE(filled.startBeat, 2.0);
+        QCOMPARE(filled.durationBeats, 10.0);
+        QVERIFY((filled.notes == std::vector<Note>{note(60, 2.0, 0.5), note(62, 3.5, 0.5), note(67, 6.0, 0.5)}));
+        // A selection within the clips changes nothing.
+        QVERIFY(edits::consolidateMidi({b, a}, edits::Interval{5.0, 6.0}) == joinedClip);
     }
 
     void deactivatedNotesArentHeard() {

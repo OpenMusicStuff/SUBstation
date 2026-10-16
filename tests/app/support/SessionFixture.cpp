@@ -14,6 +14,7 @@ SessionFixture::SessionFixture(bool clipFades) {
     Session::Options options;
     options.scanPlugins = false;
     options.browserIndex = false;
+    options.backups = false;
     options.analyseSounds = false;  // (the browser lists the user's Music folder)
     options.analyseAudio = false;   // (no tempo detected after a drop: an undo step of its own, later)
     session = std::make_unique<Session>(engine, options);

@@ -21,7 +21,7 @@ vibrato (MIDI 2.0's per-note pitch bend), MIDI input from controllers and keyboa
   doesn't change with the tempo.
 - As in Ableton, a clip plays the notes that start inside it and cuts them at its end.
 - **Ctrl+J** (*Consolidate*, also in a clip's right-click menu) joins the selected MIDI
-  clips on each track into one.
+  clips on each track into one, filling the empty space the time selection covers too.
 
 ## The piano roll
 

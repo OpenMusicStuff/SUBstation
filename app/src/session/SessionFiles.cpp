@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QSettings>
 #include <QVariant>
 
@@ -24,6 +25,7 @@
 #include "model/Project.h"
 #include "model/Timebase.h"
 #include "plugins/PluginIndex.h"
+#include "session/Backups.h"
 #include "session/DeviceSelection.h"
 #include "session/Renders.h"
 #include "session/Selection.h"
@@ -56,6 +58,7 @@ void Session::resetSession(const QString& untitledName) {
     selection_->selectTrack(QString());
     selection_->setInsert(0.0);
     bridge_->locate(0.0);
+    backups_->saved();  // (as its file has it, or new: nothing to back up yet)
     Q_EMIT cleanChanged();
     Q_EMIT titleChanged();
 }
@@ -128,6 +131,7 @@ bool Session::importLiveSet(const QString& path) {
     loadedFrom(path, fileStem(path));
     // It has no file yet: unsaved until it is saved (New, Open and Quit ask first).
     undoStack_->resetClean();
+    backups_->changed();
     Q_EMIT statusMessage(QStringLiteral("Imported %1: %2, %3")
                              .arg(name, countText(imported.tracks, QStringLiteral("track"), QStringLiteral("tracks")),
                                   countText(imported.clips, QStringLiteral("clip"), QStringLiteral("clips"))));
@@ -161,6 +165,7 @@ bool Session::saveTo(const QString& path) {
     }
     undoStack_->setClean();
     agents_->setClean();
+    backups_->saved();
     setLastFolder(QFileInfo(path).absolutePath());
     addRecent(path);
     Q_EMIT titleChanged();
@@ -178,6 +183,71 @@ QString Session::projectFilter() const { return QStringLiteral("SUBstation Proje
 QString Session::liveSetFilter() const { return QStringLiteral("Ableton Live Set (*.als)"); }
 
 QString Session::projectExtension() const { return kProjectExtension; }
+
+// --- Backups --------------------------------------------------------------------------------
+
+namespace {
+
+QString backupTime(const QDateTime& time) { return QLocale().toString(time, QStringLiteral("ddd d MMM, HH:mm:ss")); }
+
+}  // namespace
+
+QVariantList Session::recoverableBackups() const {
+    QVariantList items;
+    for (const Backups::Backup& backup : backups_->recoverable()) {
+        const QString name = backup.name.isEmpty() ? QStringLiteral("Untitled") : backup.name;
+        items.append(QVariantMap{{QStringLiteral("path"), backup.path},
+                                 {QStringLiteral("name"), name},
+                                 {QStringLiteral("time"), backupTime(backup.time)}});
+    }
+    return items;
+}
+
+bool Session::recoverBackup(const QString& path) {
+    const auto of = Backups::backupOf(path);
+    if (!of) {
+        Q_EMIT warning(QStringLiteral("The backup %1 can't be read.").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+    try {
+        sub::app::loadProject(*project_, path);
+    } catch (const ProjectFileError& error) {
+        Q_EMIT warning(error.message());
+        return false;
+    }
+    // The project it was of, with that project's file: Save writes there.
+    project_->setPath(of->first);
+    resetSession(of->first.isEmpty() ? of->second : QString());
+    files_->update();
+    Q_EMIT projectOpened();
+    undoStack_->resetClean();  // (unsaved until it is saved)
+    backups_->changed();
+    backups_->forgetRecoverable();
+    Q_EMIT statusMessage(QStringLiteral("Recovered %1 from its backup of %2: save it to keep it")
+                             .arg(title().section(QStringLiteral(" - "), 0, 0).remove(u'*'),
+                                  backupTime(QFileInfo(path).lastModified())) +
+                         missingFilesText());
+    return true;
+}
+
+void Session::dismissRecovery() { backups_->forgetRecoverable(); }
+
+QVariantList Session::backupMenuItems() const {
+    QVariantList items;
+    const QList<Backups::Backup> backups = backups_->backupsOfProject();
+    for (qsizetype i = 0; i < backups.size(); ++i) {
+        const QString time = backupTime(backups[i].time);
+        items.append(QVariantMap{{QStringLiteral("path"), backups[i].path},
+                                 {QStringLiteral("label"), i < 9 ? QStringLiteral("&%1  %2").arg(i + 1).arg(time) : time},
+                                 {QStringLiteral("toolTip"), QDir::toNativeSeparators(backups[i].path)}});
+    }
+    return items;
+}
+
+QString Session::backupsFolder() const {
+    const QString folder = backups_->projectFolder();
+    return QFileInfo(folder).isDir() ? folder : backups_->folder();
+}
 
 // --- The template ------------------------------------------------------------------------------
 

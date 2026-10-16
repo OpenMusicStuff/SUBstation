@@ -99,6 +99,7 @@ class Selection;
 class SoundSimilarity;
 class SimilarSamples;
 class SoundSuggestions;
+class Backups;
 class TrackLabels;
 class TrackSearch;
 class Updater;
@@ -201,6 +202,7 @@ public:
         bool browserIndex = true;   // keep the browser's index and the sounds' fingerprints on disk (tests turn it off)
         bool analyseSounds = true;  // fingerprint the browser's files in the background, for Find Similar (tests turn it off)
         bool analyseAudio = true;   // the project's audio files' tempo, key and chords, in the background (tests turn it off)
+        bool backups = true;        // back unsaved changes up, and offer what a crash left (Backups.h; tests turn it off)
     };
 
     static constexpr int kMaxRecent = 10;
@@ -437,6 +439,22 @@ public:
     Q_INVOKABLE QVariantList recentMenuItems() const;
     Q_INVOKABLE void clearRecentProjects();
 
+    // --- Backups (Backups.h) -------------------------------------------------------------
+    // What sessions that crashed left unsaved, found by start() (then
+    // recoveryAvailable): [{path, name, time (as text)}], the newest first.
+    Q_INVOKABLE QVariantList recoverableBackups() const;
+    // Opens a backup in place of the project (the UI asked about unsaved
+    // changes first): the project it was of, with its file (Save writes there),
+    // unsaved. Whether it opened (a backup that can't be read: warning).
+    Q_INVOKABLE bool recoverBackup(const QString& path);
+    // The crash's backups aren't offered again (they stay in the backups folder).
+    Q_INVOKABLE void dismissRecovery();
+    // File › Backups: the open project's, [{path, label ("&1  Fri 16 Oct, 14:03:22")}], the newest first.
+    Q_INVOKABLE QVariantList backupMenuItems() const;
+    // The folder the open project's backups are in (or, with none yet, the backups folder).
+    Q_INVOKABLE QString backupsFolder() const;
+    Backups* backups() const { return backups_; }
+
     // --- Templates -----------------------------------------------------------------------
     // Save as Template: the project as it is now (its tracks, clips, devices and
     // plug-ins' states, automation, routing, tempo and settings, what its views
@@ -484,6 +502,7 @@ Q_SIGNALS:
     void titleChanged();
     void cleanChanged();
     void recentProjectsChanged();
+    void recoveryAvailable();                  // start() found what a crash left (recoverableBackups)
     void lastFolderChanged();
     void templateChanged();
     void countInBarsChanged();
@@ -531,6 +550,7 @@ private:
     AudioAnalysis* audioAnalysis_ = nullptr;
     QTimer* analyseFiles_ = nullptr;  // (the project's audio files analysed, once a burst of edits settles)
     SoundSuggestions* suggestions_ = nullptr;
+    Backups* backups_ = nullptr;
     Humanizer* humanizer_ = nullptr;
     TrackLabels* trackLabels_ = nullptr;
     TrackSearch* trackSearch_ = nullptr;

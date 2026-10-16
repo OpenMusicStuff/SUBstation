@@ -4,8 +4,9 @@ The intelligence module is what SUBstation works out about music and sound: for 
 Similar Sounds in the browser, on threads of its own; its descriptors made with
 [Essentia](../intelligence/third_party/essentia), vendored), **sound tagging** (what each sample is and how it sounds,
 "Snare · Punchy · Bright", by a model trained on open sample libraries, from the same descriptors; the browser's
-searches by description, "hard trap snare", and its Best sort, which suggests what fits the project), **harmony** (a song's chords and key, inferred from its MIDI:
-the piano roll's chord lane, its notes out of the key in red, and Generate's block chords and bass lines) and
+searches by description, "hard trap snare"; and what the project sounds like, "Techno, Punchy · A Minor", for the
+agents), **harmony** (a song's chords and key, inferred from its MIDI: the piano roll's chord lane, its notes out of
+the key in red, and Generate's block chords and bass lines) and
 **humanizing** (the piano roll's Humanize › Velocity: velocities from HUMANBRO's XGBoost model, through its C++ library,
 vendored) and **track labels** (what each track is, in a few words: "Washed Out Serum Pluck", from its names, presets,
 notes, effects and mixer; the tooltip over a track's name) and **audio analysis** (a recording's tempo, beats, key
@@ -208,13 +209,13 @@ lightest) and decoding's cost again. The descriptors stay what tells one kick fr
 
 ## Sound tagging: what a sound is, and the words for it
 
-[tagging/](../intelligence/src/tagging) (namespace `sub::intelligence::tagging`) tells what every sound of the
-library is (a kick, a snare, a closed hat... bass, a synth, keys, vocals: 23 kinds), whether it is a loop, its note, how it
+[tagging/](../intelligence/src/tagging) (namespace `sub::intelligence::tagging`) tells what every sound of the library
+is (a kick, a snare, a closed hat... bass, a synth, keys, vocals: 23 kinds), whether it is a loop, its note, how it
 sounds among its own kind (bright, hard, long, low, distorted, wet, acoustic, electric, synthesized, pitched) and what
 people would call it (punchy, dubstep, lo-fi, 808...); and reads what a search's words ask for ("hard trap snare",
-"low chill kick", "long crash", "vocal chop", "c#2 bass"). The browser searches and labels files with it, and its Best
-sort weighs how well each fits the project ([browser.md](browser.md)). It costs no analysis of its own: it reads the
-similarity's fingerprint, and runs as part of making it.
+"low chill kick", "long crash", "vocal chop", "c#2 bass"). The browser searches and labels files with it
+([browser.md](browser.md)), and `SoundSuggestions` works out what the project's own sounds are from it. It costs no
+analysis of its own: it reads the similarity's fingerprint, and runs as part of making it.
 
 ### What was weighed
 
@@ -286,13 +287,13 @@ its note, and its three clearest traits, each saying something different ("Snare
 
 ### Fitting a project ([ProjectFit.h](../intelligence/src/tagging/ProjectFit.h))
 
-How well a sound fits a project, for the browser's Best sort: 0.35 × its genre and character (the learned words the
-project's sounds are clearly more than not, weighed by how much, against the sound's degrees of them) + 0.35 × its
-nearest neighbour among the project's sounds (how close its description, attributes and learned words, is to the
-closest of up to 12 of them) + 0.3 × its key (a pitched sound on the project key's tonic or fifth 1, in its scale
-0.85, out of it 0.1; unpitched 0.5). A project the tagger knows nothing of fits everything at 0.5. The project's
-sounds are the files its audio clips and samplers play; its key the project's, or the one its notes are in
-(`Session.harmony`).
+What `SoundSuggestions` works out of the project: what its sounds are and its key, and how well a sound fits them:
+0.35 × its genre and character (the learned words the project's sounds are clearly more than not, weighed by how much,
+against the sound's degrees of them) + 0.35 × its nearest neighbour among the project's sounds (how close its
+description, attributes and learned words, is to the closest of up to 12 of them) + 0.3 × its key (a pitched sound on
+the project key's tonic or fifth 1, in its scale 0.85, out of it 0.1; unpitched 0.5). A project the tagger knows
+nothing of fits everything at 0.5. The project's sounds are the files its audio clips and samplers play; its key the
+project's, or the one its notes are in (`Session.harmony`).
 
 ### How well it works
 
@@ -370,7 +371,7 @@ Speed (a release build, one core of a 4-core cloud machine):
 | reading a fingerprint into tags (`describe()`) | 0.25 µs |
 | a library's tag table, 200 000 files | 45 ms, on a thread of its own, at most every 1.5 s while files are analysed |
 | a search hearing "hard trap snare" | 2.6 ms more per 10 000 files |
-| the Best sort's project fit | 0.8 µs a file the first time, then kept until the project or the tags change |
+| how well a sound fits the project (`ProjectFit::fit`) | 0.8 µs a sound |
 
 ### What would make it better
 
@@ -929,7 +930,7 @@ platform layer's, which the browser and the engine share: [platform.md](platform
 | [Harmony.h](../app/src/intelligence/Harmony.h) | `Harmony` (`Session.harmony`): the song's notes (`songNotes()`), its chords and key inferred from them when asked after a change, the key (the project's, else inferred), `shown` (the setting C toggles) |
 | [Humanizer.h](../app/src/intelligence/Humanizer.h) | `Humanizer` (`Session.humanizer`): the velocity model loaded on first use (`velocityModelPath()`, `velocityAvailable`), `velocities(targets, amount)` with each track's notes as context, `statusMessage` |
 | [TrackLabels.h](../app/src/intelligence/TrackLabels.h) | `TrackLabels` (`Session.trackLabels`): the project's facts (`facts()`, `namedByUser()`), its labels made again when asked after a change, `label()`, `toolTip()`, `describe()`, `changed`, `revision` |
-| [SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h) | `SoundSuggestions` (`Session.suggestions`): the project's sounds and key as a `ProjectFit`, `fit()` for the browser's Best sort, `summary` ("Techno, Punchy · A Minor"), made again after the project, the key or the tags change |
+| [SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h) | `SoundSuggestions` (`Session.suggestions`): the project's sounds and key as a `ProjectFit` (`projectFit()`), `summary` ("Techno, Punchy · A Minor", which the MCP server's agents read), made again after the project, the key or the tags change |
 | [TrackSearch.h](../app/src/intelligence/TrackSearch.h) | `TrackSearch` (`Session.trackSearch`): the find bar's matches, names first, then labels (`find()`), `query`, `next()`, `previous()`; the clip view's area (`setArea()`, `clipInArea()`) |
 
 A plug-in's preset's name is the engine's to read ([engine/plugins.md](engine/plugins.md#preset-names)): the
@@ -1053,14 +1054,13 @@ gives one file's tags however its path is spelt.
 
 ### Sound suggestions: the application side
 
-`SoundSuggestions` ([SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h), `Session.suggestions`) lives
-on the application's thread. Its project's sounds are the files its tracks' audio clips play (the file a reversed
-clip was made from) and its samplers' samples, each once, as the sound similarity tags them (`tagsOf()`); its key
+`SoundSuggestions` ([SoundSuggestions.h](../app/src/intelligence/SoundSuggestions.h), `Session.suggestions`) lives on
+the application's thread. Its project's sounds are the files its tracks' audio clips play (the file a reversed clip
+was made from) and its samplers' samples, each once, as the sound similarity tags them (`tagsOf()`); its key
 `Session.harmony`'s (the project's, or inferred). A change to the tracks, clips, devices or their state, the key, or
-the tags makes them again 300 ms after the last of a burst (`kSettleMs`), then `changed`: the browser searches a list
-under Best again. `fit()` is what the Best sort weighs, each file's fit worked out the first time a search asks for
-it and kept until the next change; `summary` is what the browser's footer says the project is ("Techno, Punchy · A
-Minor").
+the tags makes them again 300 ms after the last of a burst (`kSettleMs`), then `changed`. `projectFit()` is the
+`ProjectFit` made of them; `summary` says what the project is ("Techno, Punchy · A Minor"), which the MCP server gives
+the agents as the project's style ([app/mcp.md](app/mcp.md)). The browser doesn't use them.
 
 ### Harmony: the application side
 
@@ -1259,11 +1259,11 @@ What it is used for:
   preset's `Core - Horns`), every word wherever it is, the arrangement's order within each; stepping through the
   matches, wrapping around, and following the project; the clip in the clip view's area. [test_ui_mainwindow.cpp](../tests/app/test_ui_mainwindow.cpp): Q, the find bar.
 - [tests/app/test_sound_similarity.cpp](../tests/app/test_sound_similarity.cpp): the browser's files analysed; Find
-  Similar's list, sort, status, filtering by text and places; ending it (another sort, another list, clearing, Ctrl+F);
-  a clip's part of a loop; a sound outside the library and `SimilarSounds`; files found later; a sound that can't be
-  analysed; the result menu. Samples found by how they sound (a kick named "Untitled" found by "kick", after those
-  named so; its row's label; Samples › Kicks; words the tagger doesn't know matching names only); the Best sort's
-  project fit (`SoundSuggestions`: what is like the project's sounds first).
+  Similar's list, sort, status, filtering by text and places; ending it (another sort, another list, clearing,
+  Ctrl+F); a clip's part of a loop; a sound outside the library and `SimilarSounds`; files found later; a sound that
+  can't be analysed; the result menu. Samples found by how they sound (a kick named "Untitled" found by "kick", after
+  those named so; its row's label; Samples › Kicks; words the tagger doesn't know matching names only); what fits the
+  project (`suggestionsFitTheProjectsSounds`: `SoundSuggestions`' fit higher for sounds like the project's own).
 - [tests/app/test_browser_native.cpp](../tests/app/test_browser_native.cpp): the backend's `Sort::Score` against the
   reference.
 - The UI: the similar bar ([test_ui_browser.cpp](../tests/app/test_ui_browser.cpp)), an audio clip's *Find Similar

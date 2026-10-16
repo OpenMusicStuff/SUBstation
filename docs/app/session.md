@@ -16,7 +16,8 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 | File | What it holds |
 |---|---|
 | [Session.h](../../app/src/session/Session.h) | `Session`: its parts, properties, invokables and signals; its header comment is the overview. `Session.cpp`: making the parts and wiring them, the title, start-up and shut-down |
-| [SessionFiles.cpp](../../app/src/session/SessionFiles.cpp) | New, open, save, the template, the recent projects, the last folder, Export Audio |
+| [SessionFiles.cpp](../../app/src/session/SessionFiles.cpp) | New, open, save, the template, the recent projects, the last folder, recovering backups, Export Audio |
+| [Backups.h](../../app/src/session/Backups.h) / [Backups.cpp](../../app/src/session/Backups.cpp) | `Backups`: unsaved changes backed up every minute, the marks running sessions keep, what a crash left |
 | [SessionEditing.cpp](../../app/src/session/SessionEditing.cpp) | The Create and Edit commands on what is selected (dispatched to the arrangement's actions, or the device view's while it has the focus), adding to the selected track, freezing |
 | [SessionTransport.cpp](../../app/src/session/SessionTransport.cpp) | Play, record (with the count-in), stop, locate |
 | [Selection.h](../../app/src/session/Selection.h) | `Selection`: what is selected in the arrangement |
@@ -121,7 +122,7 @@ The full list, with what each does, is in [Session.h](../../app/src/session/Sess
 | Adding | `addDeviceToSelectedTrack(kind)`, `addPluginToSelectedTrack({format, uid, name, vendor, path, instrument})`, `addPresetToSelectedTrack(path)` (an instrument with no MIDI track selected: on a new MIDI track), `addFileAtInsert(path)`, `presetSaved(path)` |
 | Edit | `cut()`, `copy()`, `paste()`, `duplicate()`, `whatIsCopied(verb)`, `deleteSelection()`, `split()`, `selectAll()`, `consolidate()`, `reverseClips()`, `toggleClipActivation()`, `soloSelectedTracks()`, `armSelectedTracks()`, `renameTarget(browserListFocused)` |
 | Freezing | `toggleFreeze()` (Ctrl+Shift+F), `flattenSelectedTracks()`, `freezeActions(ids)` (a track menu's texts and states), `freezeTracks(ids)`, `unfreezeTracks(ids)`, `flattenTracks(ids)` |
-| Files | `newProject()`, `openProject(path)`, `saveProject()`, `saveProjectAs(path)`, `suggestedSavePath()`, `recentProjects`, `recentProjectAvailable(path)`, `recentMenuItems()`, `clearRecentProjects()`, `lastFolder`, `projectFilter`, `projectExtension`, `confirmDiscardText`; `saveAsTemplate()`, `clearTemplate()`, `hasTemplate`, `templatePath()`; `importLiveSet(path)`, `liveSetFilter` |
+| Files | `newProject()`, `openProject(path)`, `saveProject()`, `saveProjectAs(path)`, `suggestedSavePath()`, `recentProjects`, `recentProjectAvailable(path)`, `recentMenuItems()`, `clearRecentProjects()`, `recoverableBackups()`, `recoverBackup(path)`, `dismissRecovery()`, `backupMenuItems()`, `backupsFolder()`, `lastFolder`, `projectFilter`, `projectExtension`, `confirmDiscardText`; `saveAsTemplate()`, `clearTemplate()`, `hasTemplate`, `templatePath()`; `importLiveSet(path)`, `liveSetFilter` |
 | Export | `exportRangeChoices()` ("arrangement", "loop" while the loop is on, "selection" while there is a time selection), `exportProblem(range)`, `suggestedExportPath(fileType)`, `exportBitDepthChoices`, `defaultExportBitDepth` (24), `exportFileTypeChoices` (WAV, MP3), `exportBitrateChoices`, `defaultExportBitrate` (320), `exportAudio(path, range, bitDepth, fileType, bitrate)` |
 | Plug-ins loading | `pluginsLoaded`, `pluginsTotal`, `pluginsLoadingText` ("Loading plug-ins: 1 of 3") |
 
@@ -182,6 +183,25 @@ The session never asks the user anything; the UI does, and then calls it:
   case) replaces it. `recentMenuItems()` gives the
   Open Recent menu's entries (`"&1  song.gilproj"`, with `&` doubled in names). A list of one, which QSettings can hand back
   as a single string, is read as a list too.
+- **Backups** ([Backups.h](../../app/src/session/Backups.h); `Options::backups`, off in the tests): while the session
+  isn't `clean`, the project is written every `Backups::kIntervalMs` (a minute) after a change (the undo stack's
+  `indexChanged`, an agent's change), the plug-ins' states stored first as Save stores them, to a folder of the
+  project's own under `Backups::defaultFolder()` (`Backups` in the local data folder, or `SUBSTATION_BACKUPS`): "<name>
+  <8 hex digits of its path's MD5>" for a saved project, "Untitled <session id>" for one never saved. A backup is the
+  project as Save writes it (relative paths to the project's own file), named by when it was made
+  (`2026-10-16 14-03-22.gilproj`), plus `backup_of` (the project's file, "" for none) and `backup_name`. The newest
+  `kKeep` (20) of a folder stay. Saving, opening, New and importing mark the project as its file has it
+  (`Backups::saved()`: nothing to back up or recover); an import, untitled and unsaved, is backed up as it changes.
+  Each running session keeps a mark in `sessions/`: `<id>.lock` (a `QLockFile` it holds, with no stale time: only a
+  session whose process is gone lets go) and `<id>.json` (`backup`: its latest backup while unsaved, else "";
+  `project`, `name`). `start()` (from `Session::start()`) takes the marks whose locks are free (sessions that ended
+  without `finish()`: they crashed), keeps those with a backup as `recoverableBackups()` (the newest first), removes
+  the marks and emits `recoveryAvailable()`; the UI asks "Recover them from its backup of …?". `recoverBackup(path)`
+  loads a backup, gives the project the file it was of (`Project::setPath`: Save writes there; none for one never
+  saved, named after `backup_name`), starts a session of its own as opening does, leaves it unsaved
+  (`resetClean`) and says "Recovered song from its backup of …: save it to keep it". `shutdown()` calls `finish()`,
+  removing the session's mark (its backups stay). `backupMenuItems()` is File › Backups (the open project's backups,
+  the newest first), `backupsFolder()` its Show Backups Folder.
 
 ## The selection (Selection)
 
@@ -438,6 +458,8 @@ parts keep these QSettings keys:
   reversing.
 - [test_session_devices.cpp](../../tests/app/test_session_devices.cpp): the device view's selection, clipboard, racks,
   drops and presets.
+- [test_backups.cpp](../../tests/app/test_backups.cpp): backups per project and how many stay, only unsaved changes
+  backed up, a crashed session's backup offered (not a running one's, not a saved one's), the session recovering one.
 - [test_session_files.cpp](../../tests/app/test_session_files.cpp): files, the title, the recent projects, Export
   Audio's choices, count-in and record quantization, the preferences.
 - [test_session_renders.cpp](../../tests/app/test_session_renders.cpp): renders in the background, Cancel, closing
