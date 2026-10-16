@@ -283,6 +283,7 @@ add_library(sub_engine STATIC
     src/EngineSandboxes.cpp
     src/Mp3Writer.cpp
     src/EngineSnapshot.cpp
+    src/TempoMap.cpp
     src/EngineTracks.cpp
     src/AudioDevice.cpp
     src/backends/MiniaudioBackend.cpp
