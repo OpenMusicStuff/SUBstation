@@ -897,6 +897,25 @@ private Q_SLOTS:
         save(grab(), QStringLiteral("phaser-doubler-idle.png"));
     }
 
+    // While the engine publishes (as it does with the transport stopped too), an edit is drawn at once: the
+    // curve is the parameters as they are, moved by the modulation the engine has (whose own sweep comes a
+    // block at a time and is played back a little late).
+    void editsShowAtOnceWhileLive() {
+        QQuickItem* view = showPhaser();
+        QVERIFY(view);
+        auto* graph = find<PhaserGraph>(view, QStringLiteral("phaserGraph"));
+        QVERIFY(graph);
+        set("amount", 0.0);  // (no sweep: the curve is where Center puts it)
+        play(0.0, 12000);
+        QVERIFY(graph->live());
+        for (const double center : {300.0, 4000.0, 700.0}) {
+            set("center", center);  // (no tick between: what sync() draws)
+            QVERIFY2(std::abs(graph->sweepLeft() / center - 1.0) < 1e-6,
+                     qPrintable(QStringLiteral("%1 for %2").arg(graph->sweepLeft()).arg(center)));
+            QVERIFY(std::abs(graph->sweepRight() / center - 1.0) < 1e-6);
+        }
+    }
+
     // Dragging the graph: across and up, one undo step per drag; a double-click resets.
     void graphDragIsOneStep() {
         QQuickItem* view = showPhaser();

@@ -31,6 +31,14 @@ double gainDb(const ParamValues& values, double freq, double rate = kSampleRate)
 
 af::Weights weightsOf(int type, double morph = 0.0) { return af::weights(static_cast<af::Type>(type), morph); }
 
+// The cutoffs a device's `sweep_l` (or `sweep_r`) puts it at: Frequency moved by the sweep's octaves.
+std::vector<float> cutoffsOf(Standalone& device, const char* display, double frequency) {
+    std::vector<float> out;
+    for (const float octaves : device.display(display))
+        out.push_back(static_cast<float>(af::cutoffHz(frequency, octaves, device.rate())));
+    return out;
+}
+
 }  // namespace
 
 TEST_CASE("the auto filter is listed as an audio effect with a sidechain") {
@@ -107,7 +115,7 @@ TEST_CASE("the envelope opens the filter as the sound gets louder") {
     const Samples loud = sine(200.0, 0.25, 0.9);
     std::copy(loud.begin(), loud.end(), in.begin() + kSampleRate / 4);
     device.play(in);
-    const std::vector<float> cutoff = device.display("cutoff_l");
+    const std::vector<float> cutoff = cutoffsOf(device, "sweep_l", 300.0);
     const std::vector<float> env = device.display("env");
     REQUIRE(cutoff.size() == size_t(kSampleRate / 2 / 128));
     const size_t quiet = cutoff.size() / 8, playing = cutoff.size() * 3 / 4;
@@ -119,7 +127,7 @@ TEST_CASE("the envelope opens the filter as the sound gets louder") {
     // Turned the other way, it closes.
     Standalone down("auto_filter", kSampleRate, {{"freq", 3000.f}, {"env_amount", -50.f}});
     down.play(in);
-    CHECK(down.display("cutoff_l")[playing] < 3000.0 / 4.0);
+    CHECK(cutoffsOf(down, "sweep_l", 3000.0)[playing] < 3000.0 / 4.0);
 }
 
 TEST_CASE("the sidechain keys the envelope") {
@@ -130,14 +138,14 @@ TEST_CASE("the sidechain keys the envelope") {
     device.run({&in}, {}, 256, [&](int64_t start, int) {
         device.processor().setSidechain(key.data() + start, key.data() + start);
     });
-    const std::vector<float> cutoff = device.display("cutoff_l");
+    const std::vector<float> cutoff = cutoffsOf(device, "sweep_l", 300.0);
     CHECK(cutoff.back() > 300.0 * 32.0);
     // Connected but silent: the input's own level doesn't move it.
     Standalone silent("auto_filter", kSampleRate, {{"freq", 300.f}, {"env_amount", 100.f}});
     Samples loud = sine(200.0, 0.5, 0.9);
     silent.processor().setSidechainConnected(true);
     silent.run({&loud}, {}, 256, [&](int64_t, int) { silent.processor().setSidechain(nullptr, nullptr); });
-    CHECK_APPROX_REL(silent.display("cutoff_l").back(), 300.0, 1e-3);
+    CHECK_APPROX_REL(cutoffsOf(silent, "sweep_l", 300.0).back(), 300.0, 1e-3);
 }
 
 TEST_CASE("the LFO sweeps the cutoff at its rate, each side as Phase and Spin say") {
@@ -147,7 +155,7 @@ TEST_CASE("the LFO sweeps the cutoff at its rate, each side as Phase and Spin sa
         device.context().tempo = 120.0;
         Samples l = full(kSampleRate * 2, 0.f), r = l;
         device.play(l, r);
-        return std::pair{device.display("cutoff_l"), device.display("cutoff_r")};
+        return std::pair{cutoffsOf(device, "sweep_l", 1000.0), cutoffsOf(device, "sweep_r", 1000.0)};
     };
     // 2 Hz, ±2 octaves round 1 kHz: 375 display values a second, so a cycle every 187.5.
     {
@@ -240,7 +248,7 @@ TEST_CASE("the LFO's Morph and Quantize, and Clip") {
                          {{"lfo_amount", 50.f}, {"lfo_freq", 3.f}, {"lfo_quantize", 1.f}, {"lfo_steps", 4.f}});
     Samples l = full(kSampleRate, 0.f), r = l;
     quantized.play(l, r);
-    std::vector<float> cutoffs = quantized.display("cutoff_l");
+    std::vector<float> cutoffs = cutoffsOf(quantized, "sweep_l", 2000.0);
     std::sort(cutoffs.begin(), cutoffs.end());
     std::vector<float> settled;  // (the glide's passing values left out: each level held for a while)
     for (size_t i = 0; i < cutoffs.size();) {
