@@ -190,6 +190,8 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("gigatune", "GigaTune")) == Effect::PitchCorrection);
     CHECK(classify(builtin("vocoder", "Vocoder")) == Effect::Vocoder);
     CHECK(classify(builtin("vocal_rider", "Vocal Rider")) == Effect::Rider);
+    CHECK(classify(builtin("tape_stop", "Tape Stop")) == Effect::Glitch);
+    CHECK(classify(builtin("glitch", "Glitch")) == Effect::Glitch);
     CHECK(classify(serum("")) == Effect::Instrument);
     // The words of their names: "verb" a reverb, "dist" a distortion...
     CHECK(classify(plugin("ValhallaVintageVerb", "Fx")) == Effect::Reverb);

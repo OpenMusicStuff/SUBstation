@@ -1555,6 +1555,73 @@ Fewer bits and a lower sample rate.
 - **Display**: `level`, one value per 256 samples: the input's peak over them (the louder channel). Its
   editor works its preview out from the parameters, and runs it along while this comes.
 
+### Tape Stop (`builtin:tape_stop`, AudioEffect)
+
+The sound slowing to a halt, as a tape machine's or a turntable's does when its motor is cut, and spinning up
+again.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `stop` | Stop | | Off, On | Off |
+| `stop_time` | Stop Time | ms | 20..4000, log | 600 |
+| `start_time` | Start Time | ms | 1..4000, log | 250 |
+| `curve` | Curve | % | -100..100 | 0 |
+| `tone` | Tone | % | 0..100 | 50 |
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+
+- **The tape**: the input goes into a ring (a `dsp::DelayLine` per channel, 8 s long: a whole stop and a whole
+  start at their longest), read `lag` samples behind (linearly under 2 samples, Hermite beyond). `progress` runs
+  from 0 (full speed) to 1 (stopped): up by 1 / Stop Time's samples each sample while Stop is on, down by 1 / Start
+  Time's while it is off; the speed is `speedAt(progress, curve)`, and the lag grows by 1 − speed each sample.
+- **Curve**: k = 2^(|curve| / 40); from 0 up, speed = 1 − p^k (held, then dropping: 0 is an even slope); below,
+  (1 − p)^k (dropping at once, crawling to the end). A start runs back along the same curve.
+- **Starting again**: let go once stopped (silent), the head starts from the input as it is then (lag 0); let go
+  partway, it speeds up from where it had got to. Back at full speed with a lag, it crossfades to the input as it
+  is over 20 ms (a stop waits for that to end), and from then on passes it bit for bit.
+- **Level and tone**: the level fades out (an S-curve) over the last tenth of the speed; Tone darkens it as it
+  slows: a one-pole low-pass at 80 Hz + 18 kHz × speed², its coefficient × Tone, off at full speed. Dry/Wet ramps
+  over 20 ms. On `reset()` it starts stopped if Stop is on.
+- **Tail**: Stop Time (a stop goes on playing what came before).
+- **Display**: `speed`, one value per 256 samples: the speed (0..1). Its editor's reels turn at it.
+
+### Glitch (`builtin:glitch`, AudioEffect)
+
+Steps of the sound on a grid of note values cut up at random: stuttered, reversed, slowed to a stop or chopped.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `grid` | Grid | | 1/32, 1/16, 1/8, 1/4, 1/2, 1 Bar | 1/8 |
+| `chance` | Chance | % | 0..100 | 40 |
+| `stutter` | Stutter | % | 0..100 | 100 |
+| `reverse` | Reverse | % | 0..100 | 60 |
+| `tape` | Tape | % | 0..100 | 40 |
+| `gate` | Gate | % | 0..100 | 40 |
+| `variation` | Variation | | 0..99, whole | 0 |
+| `mix` | Dry/Wet | % | 0..100 | 100 |
+
+- **The grid**: steps of Grid's note value from the song's start while it plays (`ctx.beatPos`), on its own clock
+  at the tempo while it doesn't (so live input glitches too). A step entered other than at its start (playback
+  starting or jumping into it, Grid changed) plays as it is.
+- **The roll**: at a step's start, 64 random bits from its number and Variation (splitmix64's finalizer: the same
+  place always glitches the same way, and a render repeats exactly): under Chance it glitches, its kind picked by
+  the four weights, then its parts.
+- **The kinds**, as a voice reading the history (a `dsp::DelayLine` per channel, 8 s) `delay` samples behind, moving
+  `rate` further each sample, `t` samples into a step of `L`:
+  - **Stutter**: the step's first 1/2, 1/3, 1/4, 1/6 or 1/8 over and over (no repeat under 10 ms):
+    delay = ⌊t / S⌋ · S.
+  - **Reverse**: the step before, backwards: delay = 2t + 1.
+  - **Tape**: the speed falling from 1 to 0 over the step: delay = t² / 2L, rate t / L; the level fades out (an
+    S-curve) over the last 8 % of the speed.
+  - **Gate**: the step cut into 4, 6 or 8, every other part silent (a gain ramped over 2 ms).
+  A step too long to reverse from the history doesn't glitch.
+- **Crossfades**: wherever the voice jumps (more than half a sample from where it was going), the old one goes on
+  as it was (its delay moving at its rate) and fades out over 2 ms, the new one in (an S-curve). Unglitched and
+  with no fade going, the input passes bit for bit. Dry/Wet ramps over 20 ms.
+- **Tail**: a step at 60 BPM (a reverse plays the step before).
+- **Displays**, one value each per 256 samples: `step`, the step's number modulo 16 plus 16 × its kind (0 none,
+  1 Stutter, 2 Reverse, 3 Tape, 4 Gate; one value, so the editor never sees one without the other), and `level`,
+  the input's peak.
+
 ### Delay (`builtin:delay`, AudioEffect)
 
 A stereo delay after Ableton's.
