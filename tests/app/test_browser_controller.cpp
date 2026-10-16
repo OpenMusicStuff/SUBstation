@@ -455,16 +455,16 @@ private Q_SLOTS:
         QVERIFY(settle(*browser));
         ItemListModel& results = *browser->results();
         const QString device = builtinItems().front().name;
+        const int plugin = static_cast<int>(names(results).lastIndexOf(QStringLiteral("Synth")));  // (the plug-in: after the built-in Synth)
+        QCOMPARE(results.data(results.index(plugin), ItemListModel::KindRole).toString(), QStringLiteral("plugin"));
         QVERIFY(!sidebarTitles(*browser->sidebar()).contains(QStringLiteral("Hidden")));
         QSignalSpy messages(browser.get(), &BrowserController::statusMessage);
-        browser->setHiddenFromSearch({rowOf(results, QStringLiteral("Kick.wav")), rowOf(results, QStringLiteral("Synth")),
-                                      rowOf(results, device)},
-                                     true);
+        browser->setHiddenFromSearch({rowOf(results, QStringLiteral("Kick.wav")), plugin, rowOf(results, device)}, true);
         QCOMPARE(messages.count(), 1);
         QVERIFY(settle(*browser));
         QStringList listed = names(results);
         QVERIFY(!listed.contains(QStringLiteral("Kick.wav")));
-        QVERIFY(!listed.contains(QStringLiteral("Synth")));
+        QCOMPARE(listed.count(QStringLiteral("Synth")), 1);  // (the built-in one)
         QVERIFY(!listed.contains(device));
         QVERIFY(listed.contains(QStringLiteral("Kick Loop.wav")));
         browser->setSearchText(QStringLiteral("kick"));

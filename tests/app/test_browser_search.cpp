@@ -309,11 +309,13 @@ private Q_SLOTS:
         QCOMPARE(pluginTag(pluginItem(PluginInfo())), QStringLiteral("Audio Effects"));
         QCOMPARE(pluginTag(audio(QStringLiteral("x.wav"))), QStringLiteral("Audio Effects"));
 
-        QCOMPARE(sortOrders().size(), 3);
-        QCOMPARE(sortOrders()[0].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("best"));
-        QCOMPARE(sortOrders()[1].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("rank"));
-        QCOMPARE(sortOrders()[2].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Name"));
-        QVERIFY(isSortOrder(QStringLiteral("name")) && isSortOrder(QStringLiteral("best")) && !isSortOrder(QStringLiteral("size")));
+        QCOMPARE(sortOrders().size(), 2);
+        QCOMPARE(sortOrders()[0].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("rank"));
+        QCOMPARE(sortOrders()[1].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Name"));
+        QVERIFY(isSortOrder(QStringLiteral("name")) && isSortOrder(QStringLiteral("rank")) && !isSortOrder(QStringLiteral("best")));
+        // Hidden: everything, only what was hidden from search.
+        QCOMPARE(query({QStringLiteral("hidden")}).groups, (std::vector<int>{kBuiltinGroup, kPluginsGroup, kPresetsGroup, kAudioGroup}));
+        QVERIFY(query({QStringLiteral("hidden")}).hiddenOnly && !query({QStringLiteral("all")}).hiddenOnly);
         // Samples › a sound: the files only, those that sound like the word.
         const ScopeQuery kicks = scopeQuery({QStringLiteral("sounds"), QStringLiteral("kick")});
         QCOMPARE(kicks.groups, std::vector<int>{kAudioGroup});

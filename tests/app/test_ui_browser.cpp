@@ -390,7 +390,7 @@ private Q_SLOTS:
         search(QStringLiteral("e"));
         const QStringList before = names();
         const QString last = before.last();
-        for (int i = 0; i < 3; ++i) browser().activate(int(before.size()) - 1);  // double-clicks (more than any other's)
+        for (int i = 0; i < 6; ++i) browser().activate(int(before.size()) - 1);  // double-clicks (more than any other's)
         search(QStringLiteral("e "));
         QCOMPARE(names().first(), last);
         QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));
