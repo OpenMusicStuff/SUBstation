@@ -37,7 +37,7 @@ The transforms follow numpy's conventions (an unscaled forward transform, the in
 window, zero at both ends), so values computed with numpy from the same signals serve as the tests' expected values.
 `rfft` is KFR's real transform (half the work of a complex one); on this machine's kind of CPU an 8192-point `rfft`
 takes about a tenth of the time of the radix-2 transform it replaced, and an open EQ's display tick less than half (`display_fft_bench`,
-[benchmarks/README.md](../../benchmarks/README.md#display-fft-benchmark)).
+[benchmarks/README.md](../../benchmarks/README.md#display-fft)).
 
 ## Spectra
 

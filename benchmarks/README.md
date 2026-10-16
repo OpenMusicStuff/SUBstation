@@ -37,7 +37,7 @@ Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench sound_similarity_bench
+ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench display_fft_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
