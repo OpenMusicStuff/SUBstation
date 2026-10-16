@@ -62,7 +62,7 @@ Clip Freeze::clip(const QString& trackId, const QString& name) const {
 
 Clip Freeze::segment(const QString& id, double startBeat, double offsetSec, double length) const {
     Clip played = Clip::audio(id, path, QString(), startBeat, length, offsetSec, durationSec);
-    played.warp = true;
+    played.warp = !map;  // (rendered under a changing tempo: its samples as they are)
     played.warpMode = kDefaultWarpMode;
     played.segmentBpm = tempo;
     return played;

@@ -70,6 +70,9 @@ struct Freeze {
     QString path;
     double durationSec = 0.0;
     double tempo = 120.0;
+    // Rendered under a tempo that changes along the song: that tempo map, and it plays as it was
+    // rendered (unwarped), in time while the song's tempo stays it (freeze it again after changing it).
+    std::optional<Tempo> map = std::nullopt;
     std::optional<std::vector<Clip>> segments = std::nullopt;
 
     // The clip that plays all of it, from the timeline's start (warped from

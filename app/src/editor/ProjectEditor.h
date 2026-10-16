@@ -253,9 +253,17 @@ public:
 
     // Change the tempo (20..999, to 0.01), trimming clips that would otherwise
     // overlap (within a drag, from the clips as they were when it began).
+    // The tempo at the song's start (a tempo that changes along it: all of it in proportion).
     Q_INVOKABLE void setTempo(double bpm, const QString& mergeKey = {});
+    // The tempo along the song; unwarped clips that would overlap are trimmed, as for setTempo().
+    void setTempoMap(const Tempo& tempo, const QString& mergeKey = {});
+    // The time signature at the song's start.
     void setTimeSignature(const TimeSignature& timeSignature);
     Q_INVOKABLE void setTimeSignature(int numerator, int denominator);
+    // The time signature's changes; one from the start of the bar `beat` is in, or none there.
+    void setMeter(const MeterMap& meter);
+    Q_INVOKABLE void setTimeSignatureAt(double beat, int numerator, int denominator);
+    Q_INVOKABLE void removeTimeSignatureAt(double beat);
     // The project's key (none: none). Audio added afterwards is transposed to it.
     void setKey(const std::optional<Key>& key);
     // By its name as Key::name has it ("F#m"; "" or a name that isn't one: none).

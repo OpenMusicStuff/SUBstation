@@ -54,7 +54,10 @@ Every parameter translated that Live can automate is entered in `targets_`: its
 `AutomationTarget Id` → (owner track, automation key, a function mapping Live's value to
 automation's 0..1). `readAutomation` then puts each `AutomationEnvelope` (by its `PointeeId`) in its
 owner's automation; one whose target isn't there is counted in the notes. The tempo's and time
-signature's targets are read by `readSettings` instead.
+signature's targets are read by `readSettings` instead: their events become the project's tempo map
+(`tempo_map`: Live's events are in beats, straight lines between them, as SUBstation's) and time
+signature changes (`time_signatures`); tempos past 20 to 999 BPM are held to them, and the notes say so.
+Unwarped clips are placed by that tempo map (`song_`: their seconds last what it makes them where they are).
 
 Values Live writes, and what they become:
 

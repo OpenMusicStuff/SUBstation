@@ -82,6 +82,10 @@ QVariantList Session::countInChoices() const {
     return choices;
 }
 
-double Session::countInBeats() const { return countInBars() * project_->timeSignature().beatsPerBar(); }
+// Bars of the time signature where playback starts.
+double Session::countInBeats() const {
+    const double at = bridge_ ? bridge_->position() : 0.0;
+    return countInBars() * project_->meter().at(at).beatsPerBar();
+}
 
 }  // namespace sub::app

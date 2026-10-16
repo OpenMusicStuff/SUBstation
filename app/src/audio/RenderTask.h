@@ -11,6 +11,7 @@
 // project as it was when it started is what renders: the UI takes no edits.
 
 #include "model/Errors.h"
+#include "model/Timebase.h"
 
 #include <QList>
 #include <QObject>
@@ -104,7 +105,7 @@ class FreezeRender : public EngineRender {
     Q_PROPERTY(QString trackId READ trackId CONSTANT)
 
 public:
-    FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, double tempo,
+    FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, Tempo tempo,
                  QObject* parent = nullptr);
 
     QString trackId() const { return trackIds_.front(); }  // (the first)
@@ -116,11 +117,11 @@ public:
     // Once finished: each file's samples as decoding it gives them (the render
     // kept them: RenderJob::sources()), in the order of trackIds().
     std::vector<std::shared_ptr<sub::AudioSource>> sources() const;
-    double tempo() const { return tempo_; }  // the project's when it started
+    const Tempo& tempo() const { return tempo_; }  // the project's when it started
 
 private:
     QStringList trackIds_;
-    double tempo_;
+    Tempo tempo_;
 };
 
 }  // namespace sub::app

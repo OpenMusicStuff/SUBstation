@@ -309,10 +309,10 @@ public:
     TrackField field() const { return target_.first; }
 };
 
-// A tempo and the clips that go with it (the trims that keep unwarped clips
-// from overlapping).
+// A tempo (one, or a tempo map) and the clips that go with it (the trims that
+// keep unwarped clips from overlapping).
 struct TempoState {
-    double tempo = 120.0;
+    Tempo tempo;
     ClipLists clips;  // track id -> its clips
 
     friend bool operator==(const TempoState&, const TempoState&) = default;

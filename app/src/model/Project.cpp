@@ -63,6 +63,8 @@ QString settingsFieldName(SettingsField field) {
     switch (field) {
     case SettingsField::Tempo: return QStringLiteral("tempo");
     case SettingsField::TimeSignature: return QStringLiteral("time_signature");
+    case SettingsField::TempoMap: return QStringLiteral("tempo_map");
+    case SettingsField::Meter: return QStringLiteral("time_signatures");
     case SettingsField::Key: return QStringLiteral("key");
     case SettingsField::LoopEnabled: return QStringLiteral("loop_enabled");
     case SettingsField::LoopStart: return QStringLiteral("loop_start");
@@ -78,8 +80,10 @@ Project::Project(QObject* parent) : QObject(parent), master_(newMaster()) {}
 
 SettingsValue Project::setting(SettingsField field) const {
     switch (field) {
-    case SettingsField::Tempo: return tempo_;
+    case SettingsField::Tempo: return tempo_.bpm();
     case SettingsField::TimeSignature: return timeSignature_;
+    case SettingsField::TempoMap: return tempo_;
+    case SettingsField::Meter: return meter_;
     case SettingsField::Key: return key_;
     case SettingsField::LoopEnabled: return loopEnabled_;
     case SettingsField::LoopStart: return loopStart_;
@@ -156,7 +160,7 @@ const Clip& Project::clip(const QString& trackId, const QString& clipId) const {
 double Project::endBeat() const {
     double end = 0.0;
     for (const Track& t : tracks_) {
-        for (const Clip& c : t.clips) end = std::max(end, c.endBeat(tempo_));
+        for (const Clip& c : t.clips) end = std::max(end, c.endBeat(tempo_));  // (by the map)
     }
     return end;
 }
@@ -738,12 +742,24 @@ void Project::setRackDevicesShown(const QString& trackId, const QString& rackId,
     Q_EMIT rackViewChanged(trackId);
 }
 
+void Project::setMeter(const MeterMap& meter) {
+    meter_ = meter;
+    const MeterMap::Change& first = meter_.changes().front();
+    timeSignature_ = {first.numerator, first.denominator};
+}
+
 void Project::updateSettings(const SettingsValues& values) {
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
         const SettingsValue& value = it.value();
         switch (it.key()) {
-        case SettingsField::Tempo: tempo_ = std::get<double>(value); break;
-        case SettingsField::TimeSignature: timeSignature_ = std::get<TimeSignature>(value); break;
+        case SettingsField::Tempo: tempo_ = Tempo(std::get<double>(value)); break;
+        case SettingsField::TempoMap: tempo_ = std::get<Tempo>(value); break;
+        case SettingsField::TimeSignature: {
+            const auto& ts = std::get<TimeSignature>(value);
+            setMeter(MeterMap(ts.numerator, ts.denominator));
+            break;
+        }
+        case SettingsField::Meter: setMeter(std::get<MeterMap>(value)); break;
         case SettingsField::Key: key_ = std::get<std::optional<Key>>(value); break;
         case SettingsField::LoopEnabled: loopEnabled_ = std::get<bool>(value); break;
         case SettingsField::LoopStart: loopStart_ = std::get<double>(value); break;
@@ -773,7 +789,7 @@ void Project::setAutomationView(const QString& owner, const AutomationView& view
 
 void Project::replaceContents(ProjectContents contents) {
     tempo_ = contents.tempo;
-    timeSignature_ = contents.timeSignature;
+    setMeter(contents.meter);
     key_ = contents.key;
     loopEnabled_ = contents.loopEnabled;
     loopStart_ = contents.loopStart;

@@ -120,8 +120,10 @@ ChainValue chainValue(const Chain& chain, ChainField field);
 
 // The project's settings Project::updateSettings changes.
 enum class SettingsField {
-    Tempo,             // double
-    TimeSignature,     // TimeSignature
+    Tempo,             // double: one tempo throughout
+    TimeSignature,     // TimeSignature: one throughout
+    TempoMap,          // Tempo: the tempo along the song (its changes, ramps)
+    Meter,             // MeterMap: the time signature's changes
     Key,               // std::optional<Key>
     LoopEnabled,       // bool
     LoopStart,         // double
@@ -130,14 +132,14 @@ enum class SettingsField {
     PunchIn,           // bool
     PunchOut,          // bool
 };
-using SettingsValue = std::variant<bool, double, TimeSignature, std::optional<Key>>;
+using SettingsValue = std::variant<bool, double, TimeSignature, std::optional<Key>, Tempo, MeterMap>;
 using SettingsValues = QMap<SettingsField, SettingsValue>;
 QString settingsFieldName(SettingsField field);  // "loop_start"
 
 // Everything a project holds, replaced at once (a project opened).
 struct ProjectContents {
-    double tempo = 120.0;
-    TimeSignature timeSignature;
+    Tempo tempo;  // (a BPM: one tempo throughout)
+    MeterMap meter;
     std::optional<Key> key;
     bool loopEnabled = false;
     double loopStart = 0.0;
@@ -171,8 +173,13 @@ public:
     explicit Project(QObject* parent = nullptr);
 
     // --- Settings ---
-    double tempo() const { return tempo_; }
+    // The tempo at the song's start, and along it (music/TempoMap.h: steady, ramps, jumps); what
+    // a stretch of beats lasts depends on where it is (Tempo::secondsFor()).
+    double tempo() const { return tempo_.bpm(); }
+    const Tempo& tempoMap() const { return tempo_; }
+    // The time signature at the song's start, and its changes (each starting a bar).
     const TimeSignature& timeSignature() const { return timeSignature_; }
+    const MeterMap& meter() const { return meter_; }
     // The project's key: audio added with a key in its file name is transposed to it.
     const std::optional<Key>& key() const { return key_; }
     bool loopEnabled() const { return loopEnabled_; }
@@ -425,6 +432,7 @@ Q_SIGNALS:
 private:
     Track& trackRef(const QString& trackId);
     int indexIn(const std::vector<Track>& tracks, const QString& trackId) const;  // tracks_ or returns_
+    void setMeter(const MeterMap& meter);  // and timeSignature_
     // After a change of what a track holds: renamed after it if it was named so before.
     void followContents(const QString& trackId, bool followed);
     // Names the tracks from `from` on (and the returns, with `returns`) from
@@ -434,8 +442,9 @@ private:
     Device& deviceRef(const QString& trackId, const QString& deviceId);
     Chain& chainRef(const QString& trackId, const QString& chainId);
 
-    double tempo_ = 120.0;
-    TimeSignature timeSignature_;
+    Tempo tempo_;
+    MeterMap meter_;
+    TimeSignature timeSignature_;  // meter_'s first
     std::optional<Key> key_;
     bool loopEnabled_ = false;
     bool punchIn_ = false;

@@ -54,17 +54,21 @@ Clip Clip::midi(const QString& id, const QString& name, double startBeat, double
 
 bool Clip::isWarped() const { return isAudio() && warp && segmentBpm > 0; }
 
-double Clip::sourceTempo(double tempo) const { return isWarped() ? segmentBpm : tempo; }
+double Clip::sourceTempo(const Tempo& tempo) const { return isWarped() ? segmentBpm : tempo.bpmAt(startBeat); }
 
-double Clip::beatsToSource(double beats, double tempo) const { return beatsToSeconds(beats, sourceTempo(tempo)); }
+double Clip::beatsToSourceFrom(double from, double beats, const Tempo& tempo) const {
+    return isWarped() ? beatsToSeconds(beats, segmentBpm) : tempo.secondsFor(from, beats);
+}
 
-double Clip::sourceToBeats(double seconds, double tempo) const { return secondsToBeats(seconds, sourceTempo(tempo)); }
+double Clip::sourceToBeatsFrom(double from, double seconds, const Tempo& tempo) const {
+    return isWarped() ? secondsToBeats(seconds, segmentBpm) : tempo.beatsFor(from, seconds);
+}
 
-double Clip::lengthBeats(double tempo) const {
+double Clip::lengthBeats(const Tempo& tempo) const {
     return isMidi() ? durationBeats : sourceToBeats(durationSec, tempo);
 }
 
-double Clip::endBeat(double tempo) const { return startBeat + lengthBeats(tempo); }
+double Clip::endBeat(const Tempo& tempo) const { return startBeat + lengthBeats(tempo); }
 
 void Clip::fitFades() {
     if (!isAudio()) {

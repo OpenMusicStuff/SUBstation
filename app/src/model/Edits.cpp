@@ -20,7 +20,7 @@ namespace {
 
 // The part of `clip` between two beats, its content left in place on the
 // timeline; none if that is too short to keep.
-std::optional<Clip> piece(const Clip& clip, double start, double end, double tempo, const QString& clipId) {
+std::optional<Clip> piece(const Clip& clip, double start, double end, const Tempo& tempo, const QString& clipId) {
     Clip part = clip;
     part.id = clipId;
     part.startBeat = start;
@@ -30,7 +30,7 @@ std::optional<Clip> piece(const Clip& clip, double start, double end, double tem
         part.offsetBeats = clip.offsetBeats + (start - clip.startBeat);
         return part;
     }
-    const double duration = clip.beatsToSource(end - start, tempo);
+    const double duration = clip.beatsToSourceFrom(start, end - start, tempo);  // (where they are)
     if (duration < kMinClipSec) return std::nullopt;
     part.durationSec = duration;
     part.offsetSec = clip.offsetSec + clip.beatsToSource(start - clip.startBeat, tempo);
@@ -60,7 +60,7 @@ std::vector<Interval> subtractIntervals(double start, double end, const std::vec
     return pieces;
 }
 
-std::vector<Clip> resolveOverlaps(const std::vector<Clip>& clips, const QSet<QString>& winners, double tempo) {
+std::vector<Clip> resolveOverlaps(const std::vector<Clip>& clips, const QSet<QString>& winners, const Tempo& tempo) {
     std::vector<Interval> cuts;
     for (const Clip& c : clips) {
         if (winners.contains(c.id)) cuts.emplace_back(c.startBeat, c.endBeat(tempo));
@@ -83,7 +83,7 @@ std::vector<Clip> resolveOverlaps(const std::vector<Clip>& clips, const QSet<QSt
     return result;
 }
 
-std::vector<Clip> cutClip(const Clip& clip, const std::vector<Interval>& cuts, double tempo) {
+std::vector<Clip> cutClip(const Clip& clip, const std::vector<Interval>& cuts, const Tempo& tempo) {
     const double end = clip.endBeat(tempo);
     const std::vector<Interval> pieces = subtractIntervals(clip.startBeat, end, cuts);
     if (pieces.size() == 1 && pieces.front() == Interval{clip.startBeat, end}) {
@@ -96,7 +96,7 @@ std::vector<Clip> cutClip(const Clip& clip, const std::vector<Interval>& cuts, d
     return result;
 }
 
-std::vector<Clip> removeRange(const std::vector<Clip>& clips, double start, double end, double tempo) {
+std::vector<Clip> removeRange(const std::vector<Clip>& clips, double start, double end, const Tempo& tempo) {
     std::vector<Clip> result;
     for (const Clip& clip : clips) {
         for (Clip& part : cutClip(clip, {{start, end}}, tempo)) result.push_back(std::move(part));
@@ -105,7 +105,7 @@ std::vector<Clip> removeRange(const std::vector<Clip>& clips, double start, doub
     return result;
 }
 
-std::vector<Clip> fitToTempo(const std::vector<Clip>& clips, double tempo, bool* changed) {
+std::vector<Clip> fitToTempo(const std::vector<Clip>& clips, const Tempo& tempo, bool* changed) {
     std::vector<Clip> ordered = clips;
     sortByStart(ordered);
     std::vector<Clip> result;
@@ -125,7 +125,7 @@ std::vector<Clip> fitToTempo(const std::vector<Clip>& clips, double tempo, bool*
     return anyChange ? result : clips;
 }
 
-std::vector<Clip> sliceRange(const std::vector<Clip>& clips, double start, double end, double tempo, bool keepIds) {
+std::vector<Clip> sliceRange(const std::vector<Clip>& clips, double start, double end, const Tempo& tempo, bool keepIds) {
     std::vector<Clip> result;
     for (const Clip& clip : clips) {
         const double clipEnd = clip.endBeat(tempo);
@@ -144,7 +144,7 @@ std::vector<Clip> sliceRange(const std::vector<Clip>& clips, double start, doubl
     return result;
 }
 
-std::optional<std::pair<Clip, Clip>> splitClip(const Clip& clip, double atBeat, double tempo) {
+std::optional<std::pair<Clip, Clip>> splitClip(const Clip& clip, double atBeat, const Tempo& tempo) {
     if (clip.isMidi()) {
         auto left = piece(clip, clip.startBeat, atBeat, tempo, clip.id);
         auto right = piece(clip, atBeat, clip.endBeat(), tempo, newId());
@@ -167,7 +167,7 @@ std::optional<std::pair<Clip, Clip>> splitClip(const Clip& clip, double atBeat, 
     return std::make_pair(std::move(left), std::move(right));
 }
 
-Clip trimStart(const Clip& clip, double newStartBeat, double tempo) {
+Clip trimStart(const Clip& clip, double newStartBeat, const Tempo& tempo) {
     Clip trimmed = clip;
     if (clip.isMidi()) {
         const double end = clip.endBeat();
@@ -186,7 +186,7 @@ Clip trimStart(const Clip& clip, double newStartBeat, double tempo) {
     }
     double delta = clip.beatsToSource(newStartBeat - clip.startBeat, tempo);
     delta = std::max(delta, -clip.offsetSec);  // cannot reveal audio before the file starts
-    delta = std::max(delta, -clip.beatsToSource(clip.startBeat, tempo));  // nor move before beat 0
+    delta = std::max(delta, -clip.beatsToSourceFrom(0.0, clip.startBeat, tempo));  // nor move before beat 0
     delta = std::min(delta, clip.durationSec - kMinClipSec);
     trimmed.startBeat = clip.startBeat + clip.sourceToBeats(delta, tempo);
     trimmed.offsetSec = clip.offsetSec + delta;
@@ -195,7 +195,7 @@ Clip trimStart(const Clip& clip, double newStartBeat, double tempo) {
     return trimmed;
 }
 
-Clip trimEnd(const Clip& clip, double newEndBeat, double tempo) {
+Clip trimEnd(const Clip& clip, double newEndBeat, const Tempo& tempo) {
     Clip trimmed = clip;
     if (clip.isMidi()) {
         trimmed.durationBeats = std::max(kMinMidiClipBeats, newEndBeat - clip.startBeat);
@@ -209,7 +209,7 @@ Clip trimEnd(const Clip& clip, double newEndBeat, double tempo) {
     return trimmed;
 }
 
-Clip stretchClip(const Clip& clip, double edgeBeat, bool left, double tempo) {
+Clip stretchClip(const Clip& clip, double edgeBeat, bool left, const Tempo& tempo) {
     const double start = clip.startBeat, end = clip.endBeat(tempo);
     double length = left ? std::min(end - edgeBeat, end) : edgeBeat - start;  // (not before beat 0)
     Clip stretched = clip;
@@ -237,7 +237,7 @@ Clip stretchClip(const Clip& clip, double edgeBeat, bool left, double tempo) {
     return stretched;
 }
 
-Clip slipClip(const Clip& clip, double deltaBeats, double tempo) {
+Clip slipClip(const Clip& clip, double deltaBeats, const Tempo& tempo) {
     Clip slipped = clip;
     if (clip.isMidi()) {
         double offset = clip.offsetBeats - deltaBeats;
@@ -255,7 +255,7 @@ Clip slipClip(const Clip& clip, double deltaBeats, double tempo) {
     return slipped;
 }
 
-Clip fadeClip(const Clip& clip, bool out, double beats, double tempo) {
+Clip fadeClip(const Clip& clip, bool out, double beats, const Tempo& tempo) {
     if (!clip.isAudio()) return clip;
     Clip faded = clip;
     const double room = std::max(0.0, clip.durationSec - (out ? clip.fadeInSec : clip.fadeOutSec));
@@ -317,7 +317,7 @@ Clip relinkFile(const Clip& clip, const QString& from, const QString& to) {
     return relinked;
 }
 
-std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, double tempo) {
+std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, const Tempo& tempo) {
     double start = clips.front().startBeat;
     double end = clips.front().endBeat(tempo);
     for (const Clip& c : clips) {
@@ -352,16 +352,17 @@ Clip consolidateMidi(const std::vector<Clip>& clips, const std::optional<Interva
     return joined;
 }
 
-bool sameContent(const Clip& a, const Clip& b, double tempo) {
+bool sameContent(const Clip& a, const Clip& b, const Tempo& tempo) {
     if (a.kind != b.kind) return false;
     if (a.isMidi()) return std::abs((a.startBeat - a.offsetBeats) - (b.startBeat - b.offsetBeats)) < 1e-6 && a.notes == b.notes;
     if (a.path != b.path || a.isWarped() != b.isWarped() || a.transpose != b.transpose || a.detune != b.detune) return false;
-    if (std::abs(a.sourceTempo(tempo) - b.sourceTempo(tempo)) > 1e-9) return false;
-    return std::abs((a.startBeat - a.sourceToBeats(a.offsetSec, tempo)) -
-                    (b.startBeat - b.sourceToBeats(b.offsetSec, tempo))) < 1e-6;
+    if (a.isWarped() && std::abs(a.segmentBpm - b.segmentBpm) > 1e-9) return false;
+    // Where each has its file's start: the same place, the same content.
+    return std::abs((a.startBeat + a.sourceToBeats(-a.offsetSec, tempo)) -
+                    (b.startBeat + b.sourceToBeats(-b.offsetSec, tempo))) < 1e-6;
 }
 
-std::vector<Interval> compedSpans(const std::vector<Clip>& comp, const std::vector<Clip>& take, double tempo) {
+std::vector<Interval> compedSpans(const std::vector<Clip>& comp, const std::vector<Clip>& take, const Tempo& tempo) {
     std::vector<Interval> spans;
     for (const Clip& t : take) {
         for (const Clip& c : comp) {

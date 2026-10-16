@@ -451,6 +451,11 @@ private:
     double tempo_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
+    // An automated tempo and time signature: where they change (none: one throughout), and the song's
+    // tempo as unwarped clips are placed by it.
+    std::vector<TempoMap::Point> tempoChanges_;
+    std::vector<MeterMap::Change> signatureChanges_;
+    Tempo song_;
     QHash<QString, QString> ids_;             // a Live track's Id -> its id here
     QStringList returnIds_;                   // the return tracks' ids, in order
     QHash<QString, Target> targets_;          // Live's AutomationTarget Id -> where its automation goes
@@ -479,7 +484,8 @@ void Importer::readSettings() {
         numerator_ = std::clamp(signature % 99 + 1, 1, 32);
         denominator_ = 1 << std::clamp(signature / 99, 0, 5);
     }
-    // An automated tempo or time signature: its value at the start; changes are noted.
+    // An automated tempo or time signature: its value at the start, and where it changes (Live's
+    // events are in beats; between two the tempo goes in a straight line, two at one time jump).
     if (master && mixer) {
         const auto targetId = [mixer](QStringView path) {
             const Element* target = mixer->at(path);
@@ -497,34 +503,47 @@ void Importer::readSettings() {
                 if (!events || target.isEmpty() || (target != tempoTarget && target != signatureTarget)) continue;
                 std::optional<double> first;
                 QSet<QString> values;
+                std::vector<std::pair<double, double>> later;  // (time, value) after the start
                 for (const Element* event : events->all()) {
                     const double time = event->numberAttribute(u"Time");
+                    const double value = event->numberAttribute(u"Value");
                     values.insert(event->attribute(u"Value"));
-                    if (time <= 0 || !first) first = event->numberAttribute(u"Value");
+                    if (time <= 0 || !first) first = value;
+                    if (time > 0) later.emplace_back(time, value);
                 }
                 if (!first) continue;
                 if (target == tempoTarget) {
-                    tempo_ = std::clamp(*first, 20.0, 999.0);  // (as the project has it, before the note says it)
+                    const bool outside = std::any_of(later.begin(), later.end(), [](const auto& e) {
+                        return e.second < TempoMap::kMinBpm || e.second > TempoMap::kMaxBpm;
+                    });
+                    if (outside || *first < TempoMap::kMinBpm || *first > TempoMap::kMaxBpm) {
+                        notes_.line(QStringLiteral("The tempo goes past SUBstation's tempos (20 to 999 BPM): it plays at "
+                                                   "their limit there."));
+                    }
+                    tempo_ = std::clamp(*first, 20.0, 999.0);  // (as the project has it)
                     if (values.size() > 1) {
-                        notes_.line(
-                            QStringLiteral("The tempo changes during the song; SUBstation has one tempo: %1 BPM.")
-                                .arg(QString::number(tempo_, 'g', 6)));
+                        tempoChanges_ = {{0.0, tempo_}};
+                        for (const auto& [time, value] : later) tempoChanges_.push_back({time, value});
                     }
                 } else {
-                    const int signature = static_cast<int>(*first);
-                    numerator_ = std::clamp(signature % 99 + 1, 1, 32);
-                    denominator_ = 1 << std::clamp(signature / 99, 0, 5);
+                    const auto signatureOf = [](double value) {
+                        const int signature = static_cast<int>(value);
+                        return std::pair{std::clamp(signature % 99 + 1, 1, 32), 1 << std::clamp(signature / 99, 0, 5)};
+                    };
+                    std::tie(numerator_, denominator_) = signatureOf(*first);
                     if (values.size() > 1) {
-                        notes_.line(
-                            QStringLiteral("The time signature changes during the song; SUBstation has one: %1/%2.")
-                                .arg(numerator_)
-                                .arg(denominator_));
+                        signatureChanges_ = {{0.0, numerator_, denominator_}};
+                        for (const auto& [time, value] : later) {
+                            const auto [n, d] = signatureOf(value);
+                            signatureChanges_.push_back({time, n, d});
+                        }
                     }
                 }
             }
         }
     }
     tempo_ = std::clamp(tempo_, 20.0, 999.0);
+    song_ = tempoChanges_.empty() ? Tempo(tempo_) : Tempo(TempoMap(tempoChanges_));
 }
 
 QString Importer::liveName(const Element& track) {
@@ -655,6 +674,16 @@ ImportResult Importer::run() {
         {QStringLiteral("tempo"), tempo_},
         {QStringLiteral("key"), key ? QJsonValue(key->name()) : QJsonValue(QJsonValue::Null)},
         {QStringLiteral("time_signature"), QJsonArray{numerator_, denominator_}},
+        {QStringLiteral("tempo_map"), tempoChanges_.empty() ? QJsonValue(QJsonValue::Null) : [this] {
+             QJsonArray points;
+             for (const TempoMap::Point& p : tempoChanges_) points.append(QJsonArray{p.beat, p.bpm});
+             return QJsonValue(points);
+         }()},
+        {QStringLiteral("time_signatures"), signatureChanges_.empty() ? QJsonValue(QJsonValue::Null) : [this] {
+             QJsonArray changes;
+             for (const MeterMap::Change& c : signatureChanges_) changes.append(QJsonArray{c.beat, c.numerator, c.denominator});
+             return QJsonValue(changes);
+         }()},
         {QStringLiteral("loop"), QJsonObject{{QStringLiteral("enabled"), transport && transport->flag(u"LoopOn")},
                                              {QStringLiteral("start"), loopStart},
                                              {QStringLiteral("end"), loopStart + std::max(loopLength, 1.0)}}},
@@ -1936,9 +1965,9 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
             }
         }
     } else {
-        // Unwarped: its markers are in seconds, and it plays at its own speed.
-        const double secondsPerBeat = 60.0 / tempo_;
-        for (const Span& span : clipSpans(clip, length * secondsPerBeat, &cut)) {
+        // Unwarped: its markers are in seconds, and it plays at its own speed (its beats last what the
+        // song's tempo makes them where it is).
+        for (const Span& span : clipSpans(clip, song_.secondsFor(start, length), &cut)) {
             double from = span.from;
             double to = span.to;
             double at = span.at;
@@ -1948,7 +1977,7 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
             }
             if (sourceSec > 0) to = std::min(to, sourceSec);
             if (to - from <= 1e-9) continue;
-            pieces.push_back({start + at / secondsPerBeat, from, to - from, 0.0});
+            pieces.push_back({start + song_.beatsFor(start, at), from, to - from, 0.0});
         }
     }
     if (cut) notes_.line(kTooManyLoops);

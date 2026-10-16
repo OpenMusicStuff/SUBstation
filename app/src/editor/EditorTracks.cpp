@@ -954,7 +954,7 @@ void ProjectEditor::setTrackMidiInput(const QString& trackId, const std::optiona
 
 ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, double quantize, bool quantizeEnds) {
     const Project& p = *project_;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     // Each track's passes (a take recorded round the loop made one each time
     // round: loopPasses), in the order they were played: a clip each.
     OrderedMap<QString, std::vector<Clip>> byTrack;
@@ -967,7 +967,7 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
                 byTrack[take.trackId].push_back(recordedMidiClip(take, quantize, quantizeEnds));
                 continue;
             }
-            double startBeat = secondsToBeats(take.startSec, tempo);
+            double startBeat = tempo.beatAt(take.startSec);
             double offset = take.offsetSec;
             double duration = take.durationSec;
             if (startBeat < 0) {  // it began before the timeline (the count-in's latency)
@@ -1014,16 +1014,17 @@ ClipRefs ProjectEditor::addRecordings(const std::vector<RecordedTake>& takes, do
 }
 
 Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, bool quantizeEnds) const {
-    const double tempo = project_->tempo();
-    const double start = std::max(0.0, secondsToBeats(take.startSec, tempo));
-    const double end = secondsToBeats(take.startSec + take.durationSec, tempo);
+    const Tempo& tempo = project_->tempoMap();
+    // (Its times are the timeline's seconds: beats where the tempo map has them.)
+    const double start = std::max(0.0, tempo.beatAt(take.startSec));
+    const double end = tempo.beatAt(take.startSec + take.durationSec);
     // Cut short (the loop's end, Punch Out): nothing goes past it, not even an end put on the grid.
-    const double limit = take.cutSec ? secondsToBeats(*take.cutSec, tempo) - start
-                                     : std::numeric_limits<double>::infinity();
+    const double limit = take.cutSec ? tempo.beatAt(*take.cutSec) - start : std::numeric_limits<double>::infinity();
     std::vector<Note> clipNotes;
     for (const RecordedTakeNote& played : take.notes) {
-        double begin = secondsToBeats(played.start, tempo) - start;
-        double length = secondsToBeats(played.end, tempo) - start - begin;
+        const double playedAt = tempo.beatAt(played.start);
+        double begin = playedAt - start;
+        double length = tempo.beatAt(played.end) - start - begin;
         const double playedEnd = begin + length;
         if (quantize > 0) {  // on the arrangement's grid, unless that is outside the clip
             const double snapped = roundHalfEven((start + begin) / quantize) * quantize - start;
@@ -1038,7 +1039,9 @@ Clip ProjectEditor::recordedMidiClip(const RecordedTake& take, double quantize, 
         Note note{std::clamp(played.pitch, 0, 127), begin, length, std::clamp(played.velocity, 1, 127)};
         // How it was bent (MIDI 2.0), a point for each change it heard, drawn with as few as keep its shape.
         std::vector<BendPoint> bend;
-        for (const auto& [seconds, semitones] : played.bend) bend.push_back({secondsToBeats(seconds, tempo), semitones, 0.0});
+        for (const auto& [seconds, semitones] : played.bend) {  // (seconds from when it was played)
+            bend.push_back({tempo.beatsFor(playedAt, seconds), semitones, 0.0});
+        }
         for (const BendPoint& point : notes::simplifiedBend(bend)) note = notes::withBendPoint(note, point);
         clipNotes.push_back(std::move(note));
     }

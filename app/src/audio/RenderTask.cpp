@@ -62,9 +62,9 @@ std::optional<qint64> EngineRender::finish() {
     }
 }
 
-FreezeRender::FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, double tempo,
+FreezeRender::FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, Tempo tempo,
                            QObject* parent)
-    : EngineRender(std::move(job), parent), trackIds_(trackIds), tempo_(tempo) {}
+    : EngineRender(std::move(job), parent), trackIds_(trackIds), tempo_(std::move(tempo)) {}
 
 QStringList FreezeRender::paths() const {
     QStringList paths;

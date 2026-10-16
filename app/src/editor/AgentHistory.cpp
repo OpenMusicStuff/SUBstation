@@ -36,7 +36,12 @@ QString fieldRegion(const QString& trackId, TrackField field) {
 QString laneRegion(const QString& owner, const QString& key) {
     return QStringLiteral("auto/") + owner + u'/' + key;
 }
-QString settingsRegion(SettingsField field) { return QStringLiteral("settings/") + settingsFieldName(field); }
+QString settingsRegion(SettingsField field) {
+    // (The tempo is one setting, whether one throughout or along the song; the time signature too.)
+    if (field == SettingsField::TempoMap) field = SettingsField::Tempo;
+    if (field == SettingsField::Meter) field = SettingsField::TimeSignature;
+    return QStringLiteral("settings/") + settingsFieldName(field);
+}
 // Where a track is in the arrangement (inserted, removed); "order" alone: all of it (arranged).
 QString orderRegion(const QString& trackId = {}) {
     return trackId.isEmpty() ? QStringLiteral("order") : QStringLiteral("order/") + trackId;

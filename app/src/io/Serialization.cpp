@@ -168,6 +168,48 @@ int toSmallInt(const QJsonValue& value) {
                                                   std::numeric_limits<int>::max()));
 }
 
+// The tempo along the song: [[beat, bpm], ...] (none: one tempo, "tempo"). Two at one beat: a jump.
+QJsonValue tempoMapToJson(const Tempo& tempo) {
+    if (tempo.constant()) return QJsonValue(QJsonValue::Null);
+    QJsonArray points;
+    for (const TempoMap::Point& p : tempo.map().points()) points.append(QJsonArray{p.beat, p.bpm});
+    return points;
+}
+
+// Time signature changes: [[beat, numerator, denominator], ...] (none: one, "time_signature").
+QJsonValue meterToJson(const MeterMap& meter) {
+    if (meter.constant()) return QJsonValue(QJsonValue::Null);
+    QJsonArray changes;
+    for (const MeterMap::Change& c : meter.changes()) changes.append(QJsonArray{c.beat, c.numerator, c.denominator});
+    return changes;
+}
+
+std::optional<Tempo> tempoMapFromJson(const QJsonValue& value) {
+    if (!value.isArray()) return std::nullopt;
+    std::vector<TempoMap::Point> points;
+    for (const QJsonValue& point : value.toArray()) {
+        if (!point.isArray() || point.toArray().size() != 2) damaged(QStringLiteral("a tempo change is a beat and a tempo"));
+        points.push_back({point.toArray().at(0).toDouble(), point.toArray().at(1).toDouble()});
+    }
+    if (points.empty()) return std::nullopt;
+    return Tempo(TempoMap(std::move(points)));
+}
+
+std::optional<MeterMap> meterFromJson(const QJsonValue& value) {
+    if (!value.isArray()) return std::nullopt;
+    std::vector<MeterMap::Change> changes;
+    for (const QJsonValue& change : value.toArray()) {
+        if (!change.isArray() || change.toArray().size() != 3) {
+            damaged(QStringLiteral("a time signature change is a beat and two numbers"));
+        }
+        const QJsonArray c = change.toArray();
+        changes.push_back({c.at(0).toDouble(), toSmallInt(c.at(1)), toSmallInt(c.at(2))});
+    }
+    if (changes.empty()) return std::nullopt;
+    return MeterMap(std::move(changes));
+}
+
+
 // A value as text (a number as it is written; null as "None").
 QString toStr(const QJsonValue& value) {
     switch (value.type()) {
@@ -343,6 +385,7 @@ void addFreeze(QJsonObject& data, const std::optional<Freeze>& freeze, const QSt
                        {QStringLiteral("relative_path"), relative(freeze->path, base)},
                        {QStringLiteral("duration_sec"), freeze->durationSec},
                        {QStringLiteral("tempo"), freeze->tempo}};
+    if (freeze->map) frozen.insert(QStringLiteral("tempo_map"), tempoMapToJson(*freeze->map));
     if (freeze->segments) {  // (what of it plays, once a time selection over it was edited)
         QJsonArray segments;
         for (const Clip& segment : *freeze->segments) {
@@ -580,6 +623,11 @@ std::optional<Freeze> freezeFromJson(const QJsonValue& value, const QString& bas
     }
     if (duration <= 0 || tempo <= 0) return std::nullopt;
     Freeze freeze{resolveClipPath(data, base), duration, tempo};
+    try {
+        freeze.map = tempoMapFromJson(data.value(QStringLiteral("tempo_map")));
+    } catch (const Damaged&) {
+        return std::nullopt;
+    }
     // What of it plays (none, as files from before version 16 have it: all of
     // it). A damaged segment is left out.
     const QJsonValue segments = data.value(QStringLiteral("segments"));
@@ -1088,7 +1136,7 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
     QJsonArray returns;
     for (const Track& t : project.returns()) returns.append(returnToJson(t, base));
     const auto& key = project.key();
-    return {{QStringLiteral("format"), kProjectFormat},
+    QJsonObject out{{QStringLiteral("format"), kProjectFormat},
             {QStringLiteral("version"), kProjectVersion},
             {QStringLiteral("tempo"), project.tempo()},
             {QStringLiteral("key"), key ? QJsonValue(key->name()) : QJsonValue(QJsonValue::Null)},
@@ -1102,6 +1150,10 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
             {QStringLiteral("rack_devices_hidden"), present(project.hiddenRackDevices())},
             {QStringLiteral("tracks"), tracks},
             {QStringLiteral("returns"), returns}};
+    // (Only when there are changes: "tempo" and "time_signature" say one throughout.)
+    if (!project.tempoMap().constant()) out.insert(QStringLiteral("tempo_map"), tempoMapToJson(project.tempoMap()));
+    if (!project.meter().constant()) out.insert(QStringLiteral("time_signatures"), meterToJson(project.meter()));
+    return out;
 }
 
 std::vector<Track> tracksFromJson(const QJsonObject& data, const QString& projectFile) {
@@ -1200,7 +1252,9 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     repairRouting(contents.tracks, contents.returns, &master);
     contents.master = std::move(master);
     contents.tempo = floatOr(data, QStringLiteral("tempo"), 120.0);
-    contents.timeSignature = ts;
+    if (auto map = tempoMapFromJson(data.value(QStringLiteral("tempo_map")))) contents.tempo = *map;
+    contents.meter = MeterMap::valid(ts.numerator, ts.denominator) ? MeterMap(ts.numerator, ts.denominator) : MeterMap();
+    if (auto meter = meterFromJson(data.value(QStringLiteral("time_signatures")))) contents.meter = *meter;
     contents.loopEnabled = truthy(loop.value(QStringLiteral("enabled")));
     contents.loopStart = floatOr(loop, QStringLiteral("start"), 0.0);
     contents.loopEnd = floatOr(loop, QStringLiteral("end"), 16.0);

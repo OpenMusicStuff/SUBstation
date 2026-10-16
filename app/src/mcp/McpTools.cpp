@@ -188,7 +188,7 @@ public:
 
     // A clip as get_track gives it: where it plays, and what is set on it that isn't as it was placed.
     QJsonObject clipJson(const Clip& clip) const {
-        const double tempo = project().tempo();
+        const Tempo& tempo = project().tempoMap();
         QJsonObject c{{QStringLiteral("id"), clip.id},
                       {QStringLiteral("kind"), clip.isMidi() ? QStringLiteral("midi") : QStringLiteral("audio")},
                       {QStringLiteral("startBeat"), beat(clip.startBeat)},
@@ -283,6 +283,28 @@ public:
             {QStringLiteral("insertBeat"), beat(selection.insertBeat())},
             {QStringLiteral("insertBar"), bar(selection.insertBeat())},
         };
+        // Where the tempo and the time signature change along the song (none: one throughout, above).
+        if (!p.tempoMap().constant()) {
+            QJsonArray changes;
+            for (const TempoMap::Point& point : p.tempoMap().map().points()) {
+                changes.append(QJsonObject{{QStringLiteral("beat"), beat(point.beat)},
+                                           {QStringLiteral("bar"), bar(point.beat)},
+                                           {QStringLiteral("bpm"), rounded(point.bpm)}});
+            }
+            out.insert(QStringLiteral("tempoChanges"), changes);
+            out.insert(QStringLiteral("tempoChangesNote"),
+                       QStringLiteral("Between two points the tempo goes in a straight line; two at one beat jump."));
+        }
+        if (!p.meter().constant()) {
+            QJsonArray changes;
+            for (const MeterMap::Change& change : p.meter().changes()) {
+                changes.append(QJsonObject{{QStringLiteral("beat"), beat(change.beat)},
+                                           {QStringLiteral("bar"), bar(change.beat)},
+                                           {QStringLiteral("timeSignature"),
+                                            QStringLiteral("%1/%2").arg(change.numerator).arg(change.denominator)}});
+            }
+            out.insert(QStringLiteral("timeSignatureChanges"), changes);
+        }
         // What it sounds like, as the browser's Best sort weighs it ("Techno, Punchy · A Minor").
         if (session_.suggestions() && !session_.suggestions()->summary().isEmpty()) {
             out.insert(QStringLiteral("style"), session_.suggestions()->summary());
@@ -1100,7 +1122,7 @@ public:
             std::vector<Clip> clips = editor.project()->track(trackId).clips;
             clips.push_back(clip);
             // (It wins where it overlaps: what was there is trimmed, split or goes.)
-            editor.commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project().tempo())}});
+            editor.commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project().tempoMap())}});
         });
     }
 

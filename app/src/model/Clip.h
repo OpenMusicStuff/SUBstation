@@ -34,6 +34,8 @@
 // heardNotes(). Its pieces (split, trimmed, copied) are deactivated too. So
 // can single notes of a MIDI clip (Note::muted).
 
+#include "model/Timebase.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -167,16 +169,22 @@ struct Clip {
     // Warped: warp on and a segment BPM set (MIDI clips never are).
     bool isWarped() const;
     // The tempo at which this clip's audio maps onto beats: its segment BPM when
-    // warped, otherwise the project tempo (it plays at its own speed).
-    double sourceTempo(double tempo) const;
-    // Seconds of source audio covered by `beats` of this clip.
-    double beatsToSource(double beats, double tempo) const;
-    double sourceToBeats(double seconds, double tempo) const;
-    double lengthBeats(double tempo = 0.0) const;
-    double endBeat(double tempo = 0.0) const;
-    // An audio clip's fades, in beats (0 for a MIDI clip).
-    double fadeInBeats(double tempo) const { return isAudio() ? sourceToBeats(fadeInSec, tempo) : 0.0; }
-    double fadeOutBeats(double tempo) const { return isAudio() ? sourceToBeats(fadeOutSec, tempo) : 0.0; }
+    // warped, otherwise the song's tempo where it starts (it plays at its own speed).
+    double sourceTempo(const Tempo& tempo) const;
+    // Seconds of source audio covered by `beats` of this clip from its start (or from
+    // beat `from`: an unwarped clip's beats last what the tempo makes them where they are),
+    // and back. Negative: before it.
+    double beatsToSource(double beats, const Tempo& tempo) const { return beatsToSourceFrom(startBeat, beats, tempo); }
+    double sourceToBeats(double seconds, const Tempo& tempo) const { return sourceToBeatsFrom(startBeat, seconds, tempo); }
+    double beatsToSourceFrom(double from, double beats, const Tempo& tempo) const;
+    double sourceToBeatsFrom(double from, double seconds, const Tempo& tempo) const;
+    double lengthBeats(const Tempo& tempo = {}) const;
+    double endBeat(const Tempo& tempo = {}) const;
+    // An audio clip's fades, in beats (0 for a MIDI clip): from its start, and back from its end.
+    double fadeInBeats(const Tempo& tempo) const { return isAudio() ? sourceToBeats(fadeInSec, tempo) : 0.0; }
+    double fadeOutBeats(const Tempo& tempo) const {
+        return isAudio() ? -sourceToBeatsFrom(endBeat(tempo), -fadeOutSec, tempo) : 0.0;
+    }
     // Its fades held to its length: where together they are longer than the
     // clip, both shortened in proportion so they meet. A MIDI clip's are none.
     void fitFades();

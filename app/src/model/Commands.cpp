@@ -155,7 +155,7 @@ SetTempoCommand::SetTempoCommand(Project* project, TempoState old, TempoState nw
                        std::move(mergeKey)) {}
 
 void SetTempoCommand::apply(const TempoState& state) {
-    project_->updateSettings({{SettingsField::Tempo, state.tempo}});
+    project_->updateSettings({{SettingsField::TempoMap, state.tempo}});
     for (auto it = state.clips.constBegin(); it != state.clips.constEnd(); ++it) {
         if (project_->hasTrack(it.key()) && project_->track(it.key()).clips != it.value()) {
             project_->setClips(it.key(), it.value());

@@ -52,7 +52,7 @@ bool ProjectEditor::replaceFile(const FileUses& uses, const QString& path, doubl
         takesBaseline = last->takesBefore();
         statesBaseline = last->statesBefore();
     }
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     ClipLists after;
     for (auto it = baseline.constBegin(); it != baseline.constEnd(); ++it) {
         const QSet<QString> replacing = clipIds.value(it.key());
