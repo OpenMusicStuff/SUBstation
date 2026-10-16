@@ -228,6 +228,19 @@ void Renderer::renderTrackOffline(const RenderSnapshot& snap, int track, float* 
     ignoreSolo_ = false;
 }
 
+std::vector<char> Renderer::upstream(const RenderSnapshot& snap, const std::vector<int>& tracks) {
+    std::vector<char> marked(snap.tracks.size(), 0);
+    for (const int t : tracks) {
+        if (t >= 0 && static_cast<size_t>(t) < marked.size()) marked[static_cast<size_t>(t)] = 1;
+    }
+    // Backwards: what feeds a track comes before it in the snapshot.
+    for (size_t t = marked.size(); t-- > 0;) {
+        if (!marked[t]) continue;
+        for (const int e : snap.tracks[t].incoming) marked[static_cast<size_t>(snap.edges[static_cast<size_t>(e)].from)] = 1;
+    }
+    return marked;
+}
+
 void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags flags) noexcept {
     const int64_t chunkStart = position_;
     const WarpVoiceSet& voices = voiceOverride_ ? *voiceOverride_ : snap.warpVoices;

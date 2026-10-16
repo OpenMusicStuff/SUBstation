@@ -3,7 +3,11 @@
 // frozen tracks playing their clips through their faders without their devices,
 // notes or what goes into them; what goes only into frozen tracks isn't rendered.
 
+#include <algorithm>
 #include <cmath>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "Engine.h"
 #include "harness/Fixtures.h"
@@ -34,6 +38,32 @@ std::vector<int64_t> clicks(const Samples& out) { return above(channel(out, 0), 
 
 // A click of 0.25 at sample 1000 of a second.
 std::string level(float value, int seconds = 1) { return makeWav(full(static_cast<size_t>(seconds) * kSampleRate * 2, value), 2); }
+
+// The track rendered into a WAV file with its tail (renderTrackToWav, which
+// stops once it stays silent) is what rendering all of the tail and cutting it
+// where it falls below -100 dB makes, to the bit. The frames of tail written.
+int64_t tailAsCut(sub::Engine& engine, uint32_t track, double endBeat, double tailSeconds) {
+    static int renders = 0;  // (a file of its own each time: sources are cached by path)
+    const auto path = tempDir() / ("tail" + std::to_string(++renders) + ".wav");
+    const int64_t written = engine.renderTrackToWav(track, path.string(), 0.0, endBeat, tailSeconds);
+    const auto frames = static_cast<int64_t>(std::llround(endBeat * kSpb));
+    const auto tail = static_cast<int64_t>(std::llround(tailSeconds * kSampleRate));
+    const Samples whole = engine.renderTrackOffline(track, 0.0, frames + tail);
+    int64_t kept = frames + tail;
+    const auto silent = [&](int64_t f) {
+        return std::abs(whole[static_cast<size_t>(f) * 2]) < 1e-5f && std::abs(whole[static_cast<size_t>(f) * 2 + 1]) < 1e-5f;
+    };
+    while (kept > frames && silent(kept - 1)) --kept;
+    CHECK_EQ(written, kept);
+    const auto source = engine.loadSource(path.string());
+    REQUIRE(source->frames() == written);
+    bool same = true;
+    for (int64_t f = 0; f < written; ++f) {
+        for (uint32_t c = 0; c < 2; ++c) same = same && source->channelData(c)[f] == whole[static_cast<size_t>(f) * 2 + c];
+    }
+    CHECK(same);
+    return written - frames;
+}
 
 }  // namespace
 
@@ -118,6 +148,57 @@ TEST_CASE("the WAV has the range and its tail") {
         const Samples samples(source->channelData(c), source->channelData(c) + written);
         CHECK_ALLCLOSE(samples, 0.5, 1e-7, 1e-4);
     }
+}
+
+TEST_CASE("the tail ends where it falls silent") {
+    FreezeEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = engine.addTrack();
+    const uint32_t synth = engine.addBuiltinProcessor(engine.trackChain(track), "synth", -1);
+    setParam(engine, synth, "release", 300.f);
+    engine.setTrackNotes(track, {{0.0, 1.0, 60, 100}, {1.5, 0.5, 64, 100}});
+    const int64_t tail = tailAsCut(engine, track, 2.0, 10.0);  // (the release rings past the range)
+    CHECK(tail > kSampleRate / 10);
+    CHECK(tail < kSampleRate);
+}
+
+TEST_CASE("a delay's tail isn't cut at the silence between its echoes") {
+    FreezeEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = stereoClickTrack(engine, 0.5f, 0.5f, 100, 0.5);
+    const uint32_t delay = engine.addBuiltinProcessor(engine.trackChain(track), "delay", -1);
+    for (const auto& [name, value] : std::vector<std::pair<std::string, float>>{
+             {"l_sync", 0.f}, {"r_sync", 0.f}, {"l_time", 1500.f}, {"r_time", 1500.f}, {"feedback", 30.f},
+             {"filter", 0.f}, {"mix", 100.f}}) {
+        setParam(engine, delay, name, value);
+    }
+    // Echoes every 1.5 s, silent between them: several of them come in the tail.
+    CHECK(tailAsCut(engine, track, 1.0, 10.0) > 4 * kSampleRate);
+}
+
+TEST_CASE("a reverb's tail") {
+    FreezeEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = stereoClickTrack(engine, 0.5f, 0.5f, 100, 0.5);
+    const uint32_t reverb = engine.addBuiltinProcessor(engine.trackChain(track), "reverb", -1);
+    setParam(engine, reverb, "decay", 4000.f);
+    const int64_t tail = tailAsCut(engine, track, 1.0, 10.0);
+    CHECK(tail > kSampleRate);
+}
+
+TEST_CASE("the tail goes on through a clip or note sounding again after silence") {
+    FreezeEngine e;
+    auto& engine = e.engine;
+    // A clip sounding again 2 s after the range's end, past a silence.
+    Samples gap(static_cast<size_t>(kSampleRate) * 4 * 2, 0.f);
+    std::fill(gap.end() - kSampleRate / 2, gap.end(), 0.25f);
+    const uint32_t clip = clipTrack(engine, makeWav(gap, 2), 0.0, 4.0);
+    CHECK(tailAsCut(engine, clip, 2.0, 10.0) > 2 * kSampleRate);
+    // A note starting 3 s after it.
+    const uint32_t keys = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(keys), "synth", -1);
+    engine.setTrackNotes(keys, {{0.0, 0.5, 60, 100}, {8.0, 0.5, 60, 100}});
+    CHECK(tailAsCut(engine, keys, 2.0, 10.0) > 3 * kSampleRate);
 }
 
 TEST_CASE("the WAV keeps what is louder than full scale") {

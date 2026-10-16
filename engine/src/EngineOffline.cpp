@@ -95,6 +95,115 @@ private:
     std::vector<uint8_t> converted_;
 };
 
+// Freezing: a track's render on its way into its file. Its lag (what feeds it
+// and its devices' latency) is dropped, the range written as it comes, and the
+// tail kept back until it is known where it falls below -100 dB: it ends after
+// its last frame above that. The render stops early once the track has been
+// silent long enough past the range (`quietEnough`, quietWindow()) and nothing
+// that feeds it starts again later (`settled`, frames from the range's start);
+// had it gone on, that tail would have been cut there just the same.
+class TrackCapture {
+public:
+    TrackCapture(std::shared_ptr<AudioFileWriter> writer, int64_t lag, int64_t frames, int64_t tail,
+                 int64_t quietEnough, int64_t settled)
+        : writer_(std::move(writer)), lag_(lag), frames_(frames), tail_(tail), quietEnough_(quietEnough),
+          settled_(settled) {}
+
+    // The render's next `n` frames (interleaved stereo).
+    void take(const float* rendered, int64_t n) {
+        int64_t i = std::clamp<int64_t>(lag_ - taken_, 0, n);  // (its lag: dropped)
+        taken_ += n;
+        int64_t at = taken_ - n + i - lag_;  // where frame i falls, from the range's start
+        if (const int64_t inRange = std::clamp<int64_t>(frames_ - at, 0, n - i); inRange > 0) {
+            writer_->write(rendered + i * 2, inRange);
+            for (const int64_t end = i + inRange; i < end; ++i) quiet_ = silent(rendered + i * 2) ? quiet_ + 1 : 0;
+            at += inRange;
+        }
+        const int64_t inTail = std::clamp<int64_t>(frames_ + tail_ - at, 0, n - i);
+        if (inTail > 0 && tailSamples_.empty()) tailSamples_.reserve(static_cast<size_t>(std::min(tail_, kJobChunk * 64)) * 2);
+        tailSamples_.insert(tailSamples_.end(), rendered + i * 2, rendered + (i + inTail) * 2);
+        for (int64_t f = 0; f < inTail; ++f) {
+            const bool quiet = silent(rendered + (i + f) * 2);
+            quiet_ = quiet ? quiet_ + 1 : 0;
+            if (!quiet) tailKept_ = at - frames_ + f + 1;
+        }
+        at += inTail;
+        done_ = at >= frames_ + tail_ ||
+                (quietEnough_ >= 0 && at >= std::max(frames_, settled_) && quiet_ >= quietEnough_);
+    }
+    // Nothing it renders from here on is kept.
+    bool done() const noexcept { return done_; }
+    // The tail as far as it sounds, and the file kept: the frames written.
+    int64_t finish() {
+        if (tailKept_ > 0) writer_->write(tailSamples_.data(), tailKept_);
+        writer_->keep();
+        return frames_ + tailKept_;
+    }
+
+private:
+    static bool silent(const float* frame) noexcept {
+        constexpr float kSilence = 1e-5f;  // -100 dB
+        return std::abs(frame[0]) < kSilence && std::abs(frame[1]) < kSilence;
+    }
+
+    std::shared_ptr<AudioFileWriter> writer_;
+    int64_t lag_, frames_, tail_;
+    int64_t quietEnough_;  // -1: the whole tail is rendered
+    int64_t settled_;
+    int64_t taken_ = 0;  // frames of the render so far
+    int64_t quiet_ = 0;  // frames it has been silent for, up to there
+    std::vector<float> tailSamples_;
+    int64_t tailKept_ = 0;  // the tail up to its last frame above -100 dB
+    bool done_ = false;
+};
+
+// How long a track's render must have stayed silent past the range before it is
+// taken to have ended (TrackCapture): at least kQuietSeconds, and as long as
+// every device that feeds it, its own and those of the tracks upstream, says it
+// rings on (Processor::tailSamples(), plus its latency), all added up, so the
+// silence between a delay's echoes isn't taken for its end. -1 (the whole tail
+// is rendered) where something may sound again after any silence: a MIDI effect
+// (an arpeggiator holding its notes plays on), a plug-in that declares no tail
+// (many don't, delays among them). On the main thread (tails are asked there).
+constexpr double kQuietSeconds = 1.0;
+
+int64_t quietWindow(const RenderSnapshot& snap, const std::vector<char>& upstream) {
+    int64_t window = std::llround(kQuietSeconds * snap.sampleRate);
+    bool unknown = false;
+    const std::function<void(const StripRender&)> add = [&](const StripRender& strip) {
+        for (size_t i = 0; i < strip.inserts.size(); ++i) {
+            const Processor& insert = *strip.inserts[i];
+            if (insert.isMidiEffect()) unknown = true;
+            const int tail = insert.tailSamples();
+            if (tail <= 0 && !insert.typeId().starts_with("builtin:") && insert.typeId() != "rack") unknown = true;
+            window += std::max(0, insert.latencySamples()) + std::max(0, tail);
+            if (i < strip.racks.size() && strip.racks[i]) {
+                for (const ChainRender& chain : strip.racks[i]->chains) add(chain);
+            }
+        }
+    };
+    for (size_t t = 0; t < upstream.size(); ++t) {
+        if (upstream[t]) add(snap.tracks[t]);
+    }
+    return unknown ? -1 : window;
+}
+
+// Where the last clip or note on these tracks that starts before `to` ends
+// (timeline samples), at most `to`; 0 if none does.
+int64_t lastSounding(const RenderSnapshot& snap, const std::vector<char>& upstream, int64_t to) {
+    int64_t last = 0;
+    for (size_t t = 0; t < upstream.size(); ++t) {
+        if (!upstream[t]) continue;
+        for (const ClipRender& clip : snap.tracks[t].clips) {
+            if (clip.start < to) last = std::max(last, std::min(to, clip.start + clip.length));
+        }
+        for (const NoteRender& note : snap.tracks[t].notes) {
+            if (note.start < to) last = std::max(last, std::min(to, note.end));
+        }
+    }
+    return last;
+}
+
 ma_format exportFormat(int bitDepth) {
     switch (bitDepth) {
         case 16: return ma_format_s16;
@@ -361,34 +470,33 @@ std::shared_ptr<RenderJob> Engine::startTrackRender(uint32_t trackId, const std:
     const int64_t lag = found->inputLatency + found->latency;
     const int64_t frames = std::llround((endBeat - startBeat) * snap.samplesPerBeat());
     const int64_t tail = std::llround(std::clamp(tailSeconds, 0.0, 600.0) * sampleRate_);
-    return startJobLocked(path, frames + tail, [render, writer, track, lag, frames, tail](RenderJob& job)
+    const std::vector<char> upstream = Renderer::upstream(snap, {track});
+    const int64_t start = render->renderer.position();
+    auto capture = std::make_shared<TrackCapture>(writer, lag, frames, tail, quietWindow(snap, upstream),
+                                                  lastSounding(snap, upstream, start + frames + tail) - start);
+    return startJobLocked(path, frames + tail, [render, capture, track, lag, frames, tail](RenderJob& job)
                                                    -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
         std::vector<float> rendered(kJobChunk * 2);
-        dropFrames(lag, rendered, [&](float* out, int64_t n) { render->renderer.renderTrackOffline(snap, track, out, n); });
-        // The range as it comes; the tail is kept back until it is known where it falls silent.
-        std::vector<float> tailSamples;
-        tailSamples.reserve(static_cast<size_t>(tail) * 2);
-        for (int64_t done = 0; done < frames + tail;) {
+        const int64_t total = lag + frames + tail;
+        int64_t reported = 0;  // (progress: of the range and tail, the lag counted in)
+        const auto report = [&](int64_t done) {
+            const int64_t upTo = std::min(done, frames + tail);
+            job.advance(upTo - reported);
+            reported = upTo;
+        };
+        for (int64_t done = 0; done < total && !capture->done();) {
             if (job.stopping()) return std::nullopt;
-            const int64_t n = std::min(kJobChunk, frames + tail - done);
+            const int64_t n = std::min(kJobChunk, total - done);
             render->renderer.renderTrackOffline(snap, track, rendered.data(), n);
-            const int64_t inRange = std::clamp<int64_t>(frames - done, 0, n);
-            if (inRange > 0) writer->write(rendered.data(), inRange);
-            tailSamples.insert(tailSamples.end(), rendered.data() + inRange * 2, rendered.data() + n * 2);
+            capture->take(rendered.data(), n);
             done += n;
-            job.advance(n);
+            report(done);
         }
-        constexpr float kSilence = 1e-5f;  // -100 dB
-        int64_t kept = static_cast<int64_t>(tailSamples.size() / 2);
-        while (kept > 0 && std::abs(tailSamples[static_cast<size_t>(kept) * 2 - 2]) < kSilence &&
-               std::abs(tailSamples[static_cast<size_t>(kept) * 2 - 1]) < kSilence) {
-            --kept;
-        }
-        if (kept > 0) writer->write(tailSamples.data(), kept);
-        writer->keep();
-        return frames + kept;
+        const int64_t written = capture->finish();
+        report(total);  // (what is left is known to be silent)
+        return written;
     });
 }
 

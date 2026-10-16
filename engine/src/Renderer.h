@@ -179,6 +179,11 @@ public:
     // as if nothing were soloed. Freezing a track renders this.
     void renderTrackOffline(const RenderSnapshot& snap, int track, float* outStereo, int64_t frames) noexcept;
 
+    // Snapshot tracks `tracks` and everything that feeds them, however far back
+    // (through outputs, sends, inputs and sidechains: what renders before
+    // them): 1 for each, by snapshot index.
+    static std::vector<char> upstream(const RenderSnapshot& snap, const std::vector<int>& tracks);
+
     // Transport state. Only one thread drives a renderer at a time: the audio
     // thread while a device runs, otherwise the engine under its edit mutex.
     void syncTempo(const RenderSnapshot& snap) noexcept;

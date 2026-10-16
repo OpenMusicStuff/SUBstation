@@ -720,8 +720,10 @@ public:
     // soloed); mute isn't. Interleaved stereo.
     std::vector<float> renderTrackOffline(uint32_t trackId, double startBeat, int64_t frames);
     // The same from startBeat to endBeat, then on for up to `tailSeconds` while
-    // it isn't silent (a reverb's tail), into a new 32-bit float WAV file.
-    // Returns the frames written.
+    // it isn't silent (a reverb's tail), into a new 32-bit float WAV file: cut
+    // after its last frame above -100 dB, and rendered only until it has stayed
+    // below that for as long as what feeds it says it may ring on (its devices'
+    // tails: docs/engine/rendering.md). Returns the frames written.
     int64_t renderTrackToWav(uint32_t trackId, const std::string& path, double startBeat, double endBeat,
                              double tailSeconds);
     // exportWav() (exportFile()) and renderTrackToWav() on a thread of their own (RenderJob.h):

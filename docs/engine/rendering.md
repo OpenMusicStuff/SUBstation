@@ -342,6 +342,22 @@ latency, so that much is rendered first and dropped. `renderTrackToWav()` writes
 cut where it falls below -100 dB. `startTrackRender()` is the same in the background (freezing
 from the UI).
 
+**The tail** (`TrackCapture`, [EngineOffline.cpp](../../engine/src/EngineOffline.cpp)) is kept back
+as it renders and written up to its last frame above -100 dB. The render stops before the end of
+`tailSeconds` once the track has been silent (both channels under -100 dB) for long enough
+(`quietWindow()`), and nothing feeding it sounds later: no clip or note on it or upstream of it plays
+on past that point (`lastSounding()`, the tail's end at most). Long enough is a second
+(`kQuietSeconds`) plus, added up, the latency and tail (`Processor::tailSamples()`) of every
+device on the track and on the tracks feeding it, rack chains' too: a device rings on no longer than
+its tail after its input falls silent, so a silence that long within it (between a delay's echoes,
+which `Delay` counts in its tail) can't be followed by more of it, and a chain of them by no longer
+than their sum. Where a device could sound again after any silence the whole tail is rendered: a MIDI
+effect (an arpeggiator holding its notes plays on past the arrangement), or a plug-in declaring no
+tail (many do, delays among them). So the file is the same as rendering the whole tail and cutting
+it would make, to the bit, whenever the tail really dies away; it differs only for a device that
+sounds again after falling silent for longer than it declares (a generator gated by a slow LFO), whose
+later sound is left out.
+
 ## Invariants and real-time rules
 
 - The renderer never allocates after `prepare()`/`setScheduler()`: all buffers (scratch per
