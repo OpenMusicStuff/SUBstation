@@ -303,17 +303,41 @@ the engine's default number of audio threads (`--threads`).
 
 ## Results
 
-A 4-core cloud VM (Intel Xeon, 2.1 GHz), Linux, GCC, Release; 16 tracks, 30 s, 3
-audio threads. Another build ran on the machine meanwhile, so the times are only
-good to 10 or 20 %.
+A 4-core cloud VM (Intel Xeon, 2.1 GHz), Linux, GCC, Release; 16 tracks, 30 s, 3 audio
+threads, the machine otherwise idle. Before is commit 8422aee (the benchmark added), after is
+the branch that made freezing faster; both run one after the other. Raw reports:
+`results/freeze-16-before.json`, `results/freeze-16-after.json`.
 
-| | before |
-|---|---|
-| One track | 3.05 s |
-| 4 tracks | 11.62 s |
-| The group | 2.70 s |
-| One track of a 4 s song | 0.76 s |
-| Export (the whole mix) | 2.31 s |
+| | before | after | |
+|---|---|---|---|
+| One track | 2.67 s | 0.26 s | 10× |
+| 4 tracks | 10.22 s | 0.51 s | 20× |
+| 4 tracks, a render each (as before, with the rest) | | 0.89 s | |
+| The group, its 4 tracks and the return | | 2.46 s | |
+| The same, a render each | | 4.50 s | |
+| The group | 2.47 s | 1.17 s | 2.1× |
+| One track of a 4 s song | 0.70 s | 0.04 s | 18× |
+| Export (the whole mix, 16-bit WAV) | 2.13 s | 2.02 s | (noise) |
+| Export as MP3 (320 kbps) | 2.62 s | 2.08 s | 1.26× |
+| Decoding the 4 tracks' files (the window, after freezing) | 0.06 s | none | |
+
+Where it comes from, step by step (the branch's commits):
+
+- **Rendering only what a track needs** (`Renderer::setCaptures()`): a track of its own no longer
+  renders the other 17 tracks and the master. The group needs its
+  four tracks (and its Reverb's tail), so it gains less.
+- **Stopping the tail once it is silent** (`TrackCapture`): the 10 s tail rendered whole made a
+  4-second song's track 14 s of rendering; it now stops a second or so (the devices' declared
+  tails) after the last sound (about twice as fast on its own, under load).
+- **Several tracks in one render** (`startTracksRender()`): once each track renders only itself,
+  four separate tracks gain from sharing the prologue and the job (0.89 → 0.51 s); tracks that
+  share what feeds them gain most: the group, its tracks and the return, 4.50 → 2.46 s.
+- **The samples handed over** (`RenderJob::sources()`): the window no longer decodes the files
+  after the render (60 ms here, for 2 minutes of audio from the page cache; more from a disk).
+- **Workers spinning between pieces** (`more`): within noise here (2.11 → 2.05 s for the export);
+  it saves a wake-up per 4096 frames. **MP3 encoded on a thread of its own**: 2.62 → 2.05 s.
+- **VST3's offline mode**: no built-in device cares; a plug-in may take more time in it, for
+  quality, so renders with such plug-ins may be slower, not faster.
 
 # Sound similarity
 
