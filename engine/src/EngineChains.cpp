@@ -408,6 +408,7 @@ ProcessorInfo Engine::processorInfo(uint32_t processorId) {
     std::string problem;
     {
         std::lock_guard lock(mutex_);
+        publishPendingLocked();  // (a rack's latency, and what is constrained, as the snapshot has them)
         p = processorLocked(processorId);
         if (const auto& plugin = processors_.at(processorId).plugin) problem = plugin->problem;
     }

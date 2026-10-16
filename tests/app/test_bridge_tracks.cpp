@@ -15,6 +15,7 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace sub::app;
@@ -517,6 +518,61 @@ private Q_SLOTS:
         track = studio.project.tracks().front().id;
         studio.edit.unfreeze(track);
         QVERIFY(test::peak(studio.render(1000)) > 0.2f);
+    }
+
+    // However many tracks a project has, opening it builds the engine's snapshot
+    // once (Engine::Batch), and its files arriving from the decoders build it once
+    // for those that arrive together, not once a file; a drag over many tracks
+    // builds it once a move. It plays as it did.
+    void openingAProjectBuildsOneSnapshot() {
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        QStringList grouped;
+        QStringList wavs;
+        for (int t = 0; t < 12; ++t) {
+            const QString wav =
+                test::writeWav(dir.path(QStringLiteral("dc%1.wav").arg(t)), std::vector<float>(test::kSampleRate, 0.05f));
+            wavs.append(wav);
+            const QString track = studio.edit.addAudioTrack();
+            studio.edit.setClips(track, {test::audioClip(track + QStringLiteral("c"), wav, 0.0, 1.0)});
+            studio.edit.addDevice(track, QStringLiteral("utility"));
+            if (t % 2 == 0) grouped.append(track);
+        }
+        studio.edit.groupTracks(grouped);
+        QTRY_VERIFY(std::none_of(wavs.begin(), wavs.end(), [&](const QString& wav) { return bridge.isLoading(wav); }));
+        const float level = test::peak(studio.render(1000));
+        QVERIFY(level > 0.2f);
+        const QString path = dir.path(QStringLiteral("many.gilproj"));
+        saveProject(studio.project, path);
+
+        // Opened afresh: a new engine and bridge, decoding every file.
+        Studio opened;
+        EngineBridge& reopened = *opened.bridge;
+        uint64_t before = opened.engine.snapshotBuilds();
+        loadProject(opened.project, path);
+        QCOMPARE(opened.engine.snapshotBuilds(), before + 1);
+        before = opened.engine.snapshotBuilds();
+        BridgeTestAccess::finishDecoding(reopened);  // (all of them decoded, none arrived yet)
+        QCOMPARE(opened.engine.snapshotBuilds(), before);
+        QTRY_VERIFY(std::none_of(wavs.begin(), wavs.end(), [&](const QString& wav) { return reopened.isLoading(wav); }));
+        QVERIFY(opened.engine.snapshotBuilds() - before < static_cast<uint64_t>(wavs.size()));
+        QCOMPARE(test::peak(opened.render(1000)), level);
+
+        // A drag's preview of every clip, a beat later: one snapshot.
+        QMap<QString, std::vector<Clip>> moved;
+        for (const Track& track : opened.project.tracks()) {
+            if (track.clips.empty()) continue;
+            std::vector<Clip> clips = track.clips;
+            for (Clip& clip : clips) clip.startBeat += 1.0;
+            moved.insert(track.id, clips);
+        }
+        before = opened.engine.snapshotBuilds();
+        reopened.previewClips(moved, {});
+        QCOMPARE(opened.engine.snapshotBuilds(), before + 1);
+        QCOMPARE(test::peak(opened.render(1000)), 0.f);  // (they start a beat later)
+        reopened.endClipPreview();
+        QCOMPARE(test::peak(opened.render(1000)), level);
     }
 };
 

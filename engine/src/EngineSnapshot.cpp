@@ -35,6 +35,10 @@ void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const s
     std::vector<char>& heard = liveStrips_;
     heard.assign(tracks_.size() + 1, 0);
     if (constrainLatency_ && !constrainHeld_) {
+        std::vector<std::vector<const RouteEdge*>> summedFrom(tracks_.size());  // by source
+        for (const RouteEdge& edge : edges) {
+            if (edge.sums && edge.from >= 0) summedFrom[static_cast<size_t>(edge.from)].push_back(&edge);
+        }
         std::vector<int> pending;
         for (size_t t = 0; t < tracks_.size(); ++t) {
             const TrackModel& track = tracks_[t];
@@ -46,12 +50,11 @@ void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const s
         while (!pending.empty()) {
             const int from = pending.back();
             pending.pop_back();
-            for (const RouteEdge& edge : edges) {
-                if (edge.from != from || !edge.sums) continue;
-                const size_t to = edge.to < 0 ? tracks_.size() : static_cast<size_t>(edge.to);
+            for (const RouteEdge* edge : summedFrom[static_cast<size_t>(from)]) {
+                const size_t to = edge->to < 0 ? tracks_.size() : static_cast<size_t>(edge->to);
                 if (heard[to]) continue;
                 heard[to] = 1;
-                if (edge.to >= 0) pending.push_back(edge.to);
+                if (edge->to >= 0) pending.push_back(edge->to);
             }
         }
     }
@@ -300,7 +303,48 @@ void Engine::collectModulators(const StripRender& chain, const RackRender* rack,
 // ---------------------------------------------------------------------------
 // Snapshot publishing
 
+void Engine::beginBatch() {
+    std::lock_guard lock(mutex_);
+    ++batchDepth_;
+}
+
+void Engine::endBatch() noexcept {
+    std::lock_guard lock(mutex_);
+    assert(batchDepth_ > 0);
+    if (--batchDepth_ > 0) return;
+    try {
+        publishPendingLocked();
+    } catch (const std::exception&) {
+        // (Out of memory, say: it stays stale, and the next edit or read builds it.)
+    }
+}
+
+uint64_t Engine::snapshotBuilds() {
+    std::lock_guard lock(mutex_);
+    return snapshotBuilds_;
+}
+
 void Engine::rebuildSnapshotLocked() {
+    if (batchDepth_ > 0) {
+        // Tracks whose output went into a device that is gone go into the master
+        // now, as the next edit in the batch (a cycle check) expects.
+        dropGoneOutputSidechainsLocked();
+        snapshotStale_ = true;
+        return;
+    }
+    buildSnapshotLocked();
+}
+
+void Engine::publishPendingLocked() {
+    if (snapshotStale_) buildSnapshotLocked();
+}
+
+const std::shared_ptr<const RenderSnapshot>& Engine::currentSnapshotLocked() {
+    publishPendingLocked();
+    return snapshotHold_;
+}
+
+void Engine::buildSnapshotLocked() {
     for (auto& [id, entry] : processors_) {
         if (!entry.rack) entry.alignedLatency = ownLatency(*entry.processor);
     }
@@ -774,6 +818,8 @@ void Engine::rebuildSnapshotLocked() {
 
     std::shared_ptr<const RenderSnapshot> old = std::move(snapshotHold_);
     snapshotHold_ = snap;
+    snapshotStale_ = false;
+    ++snapshotBuilds_;
     // Publish, then read the epoch (both seq_cst; see DeferredReleasePool).
     snapshot_.store(snap.get(), std::memory_order_seq_cst);
     releasePool_.retire(std::move(old), audioEpoch_.load(std::memory_order_seq_cst));

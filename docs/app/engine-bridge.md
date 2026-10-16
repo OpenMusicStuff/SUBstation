@@ -45,6 +45,12 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
   sidechains, MIDI inputs, device on/off and rack chain mixers, and compares before calling.
 - Its slots never let an exception reach Qt: each runs inside `guarded()`, which logs what was thrown
   (`qWarning`) and goes on.
+- Each change of the project reaches the engine as one batch (`guardedBatch()`: `guarded()` around an
+  `Engine::Batch`, [engine/README.md](../engine/README.md#building-and-publishing-the-snapshot)): however many engine
+  calls a signal takes (a track added pushes its mixer, input, clips, devices, automation and routes), the engine
+  builds its snapshot once, when the slot returns. So are the project opening (`onReset`), a deferred plug-in loading,
+  a drag's preview and its end, and re-enabling automation. The playhead and meters' polls change nothing, and stay
+  `guarded()` alone.
 
 ## Files
 
@@ -327,7 +333,9 @@ sandboxes](#plug-ins-in-sandboxes)); within SUBstation, a project's plug-ins loa
 follows.
 
 On `reset` (a project opened, or a new one) `onReset` builds the engine's tracks, clips, mixers and built-in devices at
-once, but a plug-in device found where it was (or by its id) doesn't load then: while `deferring` (and plug-ins run
+once, in one batch: one snapshot for the whole project. While `resetting`, `addEngineTrack` leaves out the routes
+(outputs, sends, inputs, sidechains, MIDI inputs: each pushes every track's), which `onReset` pushes once the tracks
+are all there, not again for each; but a plug-in device found where it was (or by its id) doesn't load then: while `deferring` (and plug-ins run
 within SUBstation), `loadPlugin` hands
 it to the loading queue ([BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp)), which keeps its device id in
 `pendingPlugins`. Until its turn the device is in the engine as a missing plug-in is: in its chain with no processor.
@@ -508,7 +516,11 @@ See [engine/automation.md](../engine/automation.md).
 ## Async decoding
 
 Audio files (`audioExtensions()`: `.wav`, `.wave`, `.flac`, `.mp3`) are decoded at the engine's rate in a
-`QThreadPool` of two threads (`Engine::loadSource`). `requestSource(path, then)` decodes a file once (keyed by
+`QThreadPool` of two threads (`Engine::decodeSource`: cached in the engine, its snapshot not built). The files
+arrive on the GUI thread (`onLoaded`, `onFailed`), each in a batch with what waited for it; while more have been
+decoded behind it (`Private::arriving`), the bridge holds a batch open over them (`holdArrivals`, `Private::arrivals`)
+and lets go of it at the last, or every `kArrivalsHeldMs` (100) of a long stream: a project's files are heard together,
+one snapshot for a burst of them, not one a file. `requestSource(path, then)` decodes a file once (keyed by
 `pathIdentity(path)`, [model/Paths.h](../../app/src/model/Paths.h): absolute and clean, in any case on Windows, so
 two spellings of one file share one source), queues
 `then` callbacks while it loads, and emits `sourceReady(path)` or `sourceFailed(path, message)` on the GUI thread.
@@ -654,7 +666,8 @@ the UI's window state. The user-facing side is in
 
 ## Extending it
 
-- **A new model signal**: connect it in the `EngineBridge` constructor (inside `guarded()`), push only what changed,
+- **A new model signal**: connect it in the `EngineBridge` constructor (inside `edit()`, `guardedBatch()`, if it
+  changes the engine; `guarded()` if it only reads), push only what changed,
   and keep the last value pushed (in `Private`) if the engine call is expensive or must be ordered.
 - **A new engine call**: add it to `Engine.h` ([engine/README.md](../engine/README.md#extending-it)) and call it from
   the bridge's file of its area. If the UI must show what it returns, give it an application-layer type in

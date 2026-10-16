@@ -24,6 +24,13 @@ void guarded(const char* what, const std::function<void()>& body) {
     }
 }
 
+void guardedBatch(sub::Engine& engine, const char* what, const std::function<void()>& body) {
+    guarded(what, [&] {
+        sub::Engine::Batch batch(engine);
+        body();
+    });
+}
+
 EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* parent)
     : QObject(parent), engine_(engine), project_(project), d_(std::make_unique<Private>()) {
     d_->trackIds.insert(kMaster, sub::Engine::kMaster);
@@ -34,44 +41,48 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
         sub::setEditorEventLoop(d_->editorLoop);
     }
 
+    // What changes the engine reaches it in one batch a signal (guardedBatch): one snapshot, however many
+    // engine calls the change takes.
+    const auto edit = [this](const char* what, const std::function<void()>& body) { guardedBatch(engine_, what, body); };
+
     d_->pluginTimer.setSingleShot(true);
-    connect(&d_->pluginTimer, &QTimer::timeout, this, [this] { guarded("loading plug-ins", [&] { loadNextPlugin(); }); });
+    connect(&d_->pluginTimer, &QTimer::timeout, this, [edit, this] { edit("loading plug-ins", [&] { loadNextPlugin(); }); });
     d_->pool.setMaxThreadCount(2);
     d_->statePool.setMaxThreadCount(1);
 
-    connect(project, &Project::reset, this, [this] { guarded("reset", [&] { onReset(); }); });
+    connect(project, &Project::reset, this, [edit, this] { edit("reset", [&] { onReset(); }); });
     connect(project, &Project::trackInserted, this,
-            [this](const QString& trackId, int) { guarded("trackInserted", [&] { addEngineTrack(trackId); }); });
+            [edit, this](const QString& trackId, int) { edit("trackInserted", [&] { addEngineTrack(trackId); }); });
     connect(project, &Project::trackRemoved, this,
-            [this](const QString& trackId, int) { guarded("trackRemoved", [&] { onTrackRemoved(trackId); }); });
+            [edit, this](const QString& trackId, int) { edit("trackRemoved", [&] { onTrackRemoved(trackId); }); });
     connect(project, &Project::returnInserted, this,
-            [this](const QString& trackId, int) { guarded("returnInserted", [&] { addEngineTrack(trackId); }); });
+            [edit, this](const QString& trackId, int) { edit("returnInserted", [&] { addEngineTrack(trackId); }); });
     connect(project, &Project::returnRemoved, this,
-            [this](const QString& trackId, int) { guarded("returnRemoved", [&] { onTrackRemoved(trackId); }); });
+            [edit, this](const QString& trackId, int) { edit("returnRemoved", [&] { onTrackRemoved(trackId); }); });
     connect(project, &Project::trackChanged, this,
-            [this](const QString& trackId) { guarded("trackChanged", [&] { onTrackChanged(trackId); }); });
-    connect(project, &Project::tracksArranged, this, [this] { guarded("tracksArranged", [&] { pushRoutes(); }); });
+            [edit, this](const QString& trackId) { edit("trackChanged", [&] { onTrackChanged(trackId); }); });
+    connect(project, &Project::tracksArranged, this, [edit, this] { edit("tracksArranged", [&] { pushRoutes(); }); });
     connect(project, &Project::clipsChanged, this,
-            [this](const QString& trackId) { guarded("clipsChanged", [&] { pushClips(trackId); }); });
+            [edit, this](const QString& trackId) { edit("clipsChanged", [&] { pushClips(trackId); }); });
     connect(project, &Project::devicesChanged, this,
-            [this](const QString& trackId) { guarded("devicesChanged", [&] { syncDevices(trackId); }); });
+            [edit, this](const QString& trackId) { edit("devicesChanged", [&] { syncDevices(trackId); }); });
     connect(project, &Project::freezeChanged, this,
-            [this](const QString& trackId) { guarded("freezeChanged", [&] { onFreezeChanged(trackId); }); });
-    connect(project, &Project::chainChanged, this, [this](const QString& trackId, const QString& chainId) {
-        guarded("chainChanged", [&] { onChainChanged(trackId, chainId); });
+            [edit, this](const QString& trackId) { edit("freezeChanged", [&] { onFreezeChanged(trackId); }); });
+    connect(project, &Project::chainChanged, this, [edit, this](const QString& trackId, const QString& chainId) {
+        edit("chainChanged", [&] { onChainChanged(trackId, chainId); });
     });
     connect(project, &Project::deviceParamChanged, this,
-            [this](const QString& trackId, const QString& deviceId, const QString& paramId) {
-                guarded("deviceParamChanged", [&] { onDeviceParamChanged(trackId, deviceId, paramId); });
+            [edit, this](const QString& trackId, const QString& deviceId, const QString& paramId) {
+                edit("deviceParamChanged", [&] { onDeviceParamChanged(trackId, deviceId, paramId); });
             });
-    connect(project, &Project::deviceStateChanged, this, [this](const QString& trackId, const QString& deviceId) {
-        guarded("deviceStateChanged", [&] { pushDeviceState(trackId, deviceId); });
+    connect(project, &Project::deviceStateChanged, this, [edit, this](const QString& trackId, const QString& deviceId) {
+        edit("deviceStateChanged", [&] { pushDeviceState(trackId, deviceId); });
     });
     connect(project, &Project::trackChanged, this,
             [this](const QString& trackId) { guarded("trackChanged", [&] { updateEditorTitles(trackId); }); });
-    connect(project, &Project::settingsChanged, this, [this] { guarded("settingsChanged", [&] { pushSettings(); }); });
-    connect(project, &Project::automationChanged, this, [this](const QString& owner, const QString& key) {
-        guarded("automationChanged", [&] { onAutomationChanged(owner, key); });
+    connect(project, &Project::settingsChanged, this, [edit, this] { edit("settingsChanged", [&] { pushSettings(); }); });
+    connect(project, &Project::automationChanged, this, [edit, this](const QString& owner, const QString& key) {
+        edit("automationChanged", [&] { onAutomationChanged(owner, key); });
     });
 
     d_->positionTimer.setInterval(kDisplayPollMs);
@@ -86,6 +97,7 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
     connect(&d_->idleTimer, &QTimer::timeout, this, [this] { guarded("idle", [&] { pollIdle(); }); });
     d_->idleTimer.start();
 
+    const sub::Engine::Batch batch(engine_);
     onReset();
 }
 
@@ -97,6 +109,7 @@ EngineBridge::~EngineBridge() {
     // Their results come to this object, which is going: what is posted to it goes with it.
     d_->pool.waitForDone();
     d_->statePool.waitForDone();
+    d_->arrivals.reset();  // (files that won't arrive now: the engine publishes what it has)
     // (Editors still open keep it, and unregister through it, until they close.)
     if (d_->editorLoop && sub::editorEventLoop() == d_->editorLoop) sub::setEditorEventLoop(nullptr);
 }
@@ -105,6 +118,7 @@ void EngineBridge::shutdown() {
     stopLoadingPlugins();
     closeAllEditors();
     d_->statePool.waitForDone();  // (no plug-in is waited for: they all go)
+    d_->arrivals.reset();
     removeEngineTracks();
     d_->devices.clear();
     d_->pluginIds.clear();

@@ -47,7 +47,11 @@ std::string Engine::sourceKey(const std::string& path) { return platform::fileKe
 // ---------------------------------------------------------------------------
 // Sources
 
-std::shared_ptr<AudioSource> Engine::loadSource(const std::string& path) {
+std::shared_ptr<AudioSource> Engine::loadSource(const std::string& path) { return loadSourceImpl(path, true); }
+
+std::shared_ptr<AudioSource> Engine::decodeSource(const std::string& path) { return loadSourceImpl(path, false); }
+
+std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, bool publish) {
     const std::string key = sourceKey(path);
     uint32_t rate = 0;
     {
@@ -68,7 +72,11 @@ std::shared_ptr<AudioSource> Engine::loadSource(const std::string& path) {
         auto& slot = sources_[key];
         if (slot && slot->sampleRate() == rate) return slot;
         slot = std::move(source);
-        rebuildSnapshotLocked();  // clips waiting for this file become audible
+        if (publish) {
+            rebuildSnapshotLocked();  // clips waiting for this file become audible
+        } else {
+            snapshotStale_ = true;  // (they do when the decoder publishes)
+        }
         return slot;
     }
     throw std::runtime_error("The sample rate kept changing while loading " + path);
@@ -123,8 +131,10 @@ bool Engine::pushCommandLocked(const TransportCommand& command) {
 void Engine::serviceTransportIfIdleLocked() {
     // Without a running device nobody else consumes transport commands, so the
     // edit side applies them to keep the state consistent.
-    if (deviceRunning_ || !snapshotHold_) return;
-    renderer_.syncTempo(*snapshotHold_);
+    if (deviceRunning_) return;
+    const auto& snap = currentSnapshotLocked();
+    if (!snap) return;
+    renderer_.syncTempo(*snap);
     renderer_.drainCommands(shared_);
     renderer_.publishTransport(shared_);
     Renderer::discardPreviewNotes(shared_);  // nobody would hear them, and a stale note-on could hang
@@ -161,7 +171,9 @@ double Engine::positionBeats() const {
 
 void Engine::setTempo(double bpm) {
     std::lock_guard lock(mutex_);
-    tempo_ = std::clamp(bpm, 20.0, 999.0);
+    const double tempo = std::clamp(bpm, 20.0, 999.0);
+    if (tempo == tempo_) return;  // (the settings pushed again: nothing to build)
+    tempo_ = tempo;
     rebuildSnapshotLocked();
 }
 
@@ -176,6 +188,7 @@ void Engine::setTimeSignature(int numerator, int denominator) {
         throw std::invalid_argument("Unsupported time signature");
     }
     std::lock_guard lock(mutex_);
+    if (numerator == timeSigNum_ && denominator == timeSigDen_) return;
     timeSigNum_ = numerator;
     timeSigDen_ = denominator;
     rebuildSnapshotLocked();
@@ -192,14 +205,18 @@ void Engine::setSongKey(int tonic, bool minor) {
 
 void Engine::setLoop(bool enabled, double startBeat, double endBeat) {
     std::lock_guard lock(mutex_);
+    const double start = std::max(0.0, startBeat);
+    const double end = std::max(start, endBeat);
+    if (enabled == loopEnabled_ && start == loopStartBeat_ && end == loopEndBeat_) return;
     loopEnabled_ = enabled;
-    loopStartBeat_ = std::max(0.0, startBeat);
-    loopEndBeat_ = std::max(loopStartBeat_, endBeat);
+    loopStartBeat_ = start;
+    loopEndBeat_ = end;
     rebuildSnapshotLocked();
 }
 
 void Engine::setPunch(bool in, bool out) {
     std::lock_guard lock(mutex_);
+    if (in == punchIn_ && out == punchOut_) return;
     punchIn_ = in;
     punchOut_ = out;
     rebuildSnapshotLocked();
@@ -316,6 +333,8 @@ void Engine::idle(bool releaseAll) {
             closeDeviceLocked();  // the backend lost the device; the UI reports it via takeDeviceEvent()
         }
         collectGarbageLocked();
+        // Sources decoded since the last edit that nobody published (decodeSource()).
+        if (!rendering && batchDepth_ == 0) publishPendingLocked();
         serviceTransportIfIdleLocked();
         if (!rendering) {
             for (const auto& [id, entry] : processors_) live.push_back(entry.processor);

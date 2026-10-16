@@ -17,14 +17,6 @@ namespace {
     throw std::out_of_range(std::string("no ") + what + " " + id.toStdString());
 }
 
-// Where the track of this id is in a list (-1: not there).
-int indexIn(const std::vector<Track>& tracks, const QString& trackId) {
-    for (int index = 0; index < static_cast<int>(tracks.size()); ++index) {
-        if (tracks[index].id == trackId) return index;
-    }
-    return -1;
-}
-
 double asDouble(const ChainValue& value) {
     if (const auto* d = std::get_if<double>(&value)) return *d;
     if (const auto* b = std::get_if<bool>(&value)) return *b ? 1.0 : 0.0;
@@ -101,14 +93,31 @@ SettingsValue Project::setting(SettingsField field) const {
 
 // --- Queries ---
 
+// Where the track of this id is in tracks_ or returns_ (-1: not there): by a map
+// made again after either list changed (indexDirty_), as the bridge and the
+// editor ask for every track.
+int Project::indexIn(const std::vector<Track>& tracks, const QString& trackId) const {
+    const auto rebuild = [this] {
+        trackIndex_.clear();
+        returnIndex_.clear();
+        for (int i = 0; i < static_cast<int>(tracks_.size()); ++i) trackIndex_.insert(tracks_[i].id, i);
+        for (int i = 0; i < static_cast<int>(returns_.size()); ++i) returnIndex_.insert(returns_[i].id, i);
+        indexDirty_ = false;
+    };
+    if (indexDirty_) rebuild();
+    const QHash<QString, int>& map = &tracks == &tracks_ ? trackIndex_ : returnIndex_;
+    int index = map.value(trackId, -1);
+    if (index >= 0 && (index >= static_cast<int>(tracks.size()) || tracks[index].id != trackId)) {
+        rebuild();  // (a list changed without saying so)
+        index = map.value(trackId, -1);
+    }
+    return index;
+}
+
 const Track* Project::findTrack(const QString& trackId) const {
     if (trackId == kMaster) return &master_;
-    for (const Track& track : tracks_) {
-        if (track.id == trackId) return &track;
-    }
-    for (const Track& track : returns_) {
-        if (track.id == trackId) return &track;
-    }
+    if (const int index = indexIn(tracks_, trackId); index >= 0) return &tracks_[static_cast<size_t>(index)];
+    if (const int index = indexIn(returns_, trackId); index >= 0) return &returns_[static_cast<size_t>(index)];
     return nullptr;
 }
 
@@ -442,6 +451,7 @@ void Project::insertTrack(Track track, int index) {
     index = std::max(0, std::min(index, static_cast<int>(tracks_.size())));
     const QString id = track.id;
     tracks_.insert(tracks_.begin() + index, std::move(track));
+    indexDirty_ = true;
     QStringList renamed = renumber(index);
     renamed.removeAll(id);
     Q_EMIT trackInserted(id, index);
@@ -452,6 +462,7 @@ std::pair<Track, int> Project::removeTrack(const QString& trackId) {
     const int index = trackIndex(trackId);
     Track removed = std::move(tracks_[index]);
     tracks_.erase(tracks_.begin() + index);
+    indexDirty_ = true;
     const QStringList renamed = renumber(index);
     Q_EMIT trackRemoved(trackId, index);
     announceRenamed(renamed);
@@ -463,6 +474,7 @@ void Project::insertReturn(Track track, int index) {
     const QString id = track.id;
     track.name = track.nameSource();
     returns_.insert(returns_.begin() + index, std::move(track));
+    indexDirty_ = true;
     Q_EMIT returnInserted(id, index);
 }
 
@@ -470,6 +482,7 @@ std::pair<Track, int> Project::removeReturn(const QString& trackId) {
     const int index = returnIndex(trackId);
     Track removed = std::move(returns_[index]);
     returns_.erase(returns_.begin() + index);
+    indexDirty_ = true;
     Q_EMIT returnRemoved(trackId, index);
     return {std::move(removed), index};
 }
@@ -503,6 +516,7 @@ void Project::arrangeTracks(const TrackTree& tree) {
         throw EditError(*problem);
     }
     tracks_ = std::move(arranged);
+    indexDirty_ = true;
     const QStringList renamed = renumber(0);
     Q_EMIT tracksArranged();
     announceRenamed(renamed);
@@ -529,8 +543,10 @@ Track Project::replaceTrack(Track track) {
     const int index = trackIndex(id);
     Track old = std::move(tracks_[index]);
     tracks_.erase(tracks_.begin() + index);
+    indexDirty_ = true;
     Q_EMIT trackRemoved(id, index);
     tracks_.insert(tracks_.begin() + index, std::move(track));
+    indexDirty_ = true;
     renumber(index);
     Q_EMIT trackInserted(id, index);
     return old;
@@ -768,6 +784,7 @@ void Project::replaceContents(ProjectContents contents) {
     automationLocked_ = contents.automationLocked;
     tracks_ = std::move(contents.tracks);
     returns_ = std::move(contents.returns);
+    indexDirty_ = true;
     renumber(0, true);
     foldedDevices_ = std::move(contents.foldedDevices);
     shownChainLists_ = std::move(contents.shownChainLists);

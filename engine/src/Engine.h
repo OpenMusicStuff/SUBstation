@@ -299,6 +299,34 @@ public:
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
 
+    // --- Batches --------------------------------------------------------------
+    // Every edit publishes a new snapshot, which rebuilds the whole of it. Edits
+    // made while a Batch lives (from any thread) only mark it stale; the last
+    // Batch to end publishes it once. Whatever reads the snapshot on the edit
+    // side (latencies, a processor's info, an offline render) publishes it first,
+    // so a batch changes when the audio thread hears edits, never what the API
+    // answers. Keep batches short: the audio thread plays the snapshot from
+    // before the batch until it ends.
+    class Batch {
+    public:
+        explicit Batch(Engine& engine) : engine_(engine) { engine_.beginBatch(); }
+        ~Batch() { engine_.endBatch(); }
+        Batch(const Batch&) = delete;
+        Batch& operator=(const Batch&) = delete;
+
+    private:
+        Engine& engine_;
+    };
+    void beginBatch();
+    void endBatch() noexcept;
+    // Snapshots built since the engine began (for tests and benchmarks).
+    uint64_t snapshotBuilds();
+    // A source decoded at the engine's rate and cached, as loadSource() does, but
+    // not yet heard: the snapshot is only marked stale. Whoever decodes in the
+    // background publishes the sources that arrived together (a Batch, or any
+    // edit), instead of rebuilding the snapshot once a file.
+    std::shared_ptr<AudioSource> decodeSource(const std::string& path);
+
     // --- Device ---------------------------------------------------------------
     // Opening and closing devices and their control panels: from the thread that
     // created the engine (ASIO drivers are COM objects in its apartment).
@@ -926,13 +954,20 @@ private:
     void rackContentsLocked(uint32_t rackId, std::vector<uint32_t>& processors, std::vector<uint32_t>& chains) const;
     ProcessorIds processorIdsLocked() const;
     std::vector<StripSlot> stripSlotsLocked(const TrackModel& track, const ProcessorIds& ids) const;
+    // After an edit: publishes a new snapshot, or marks it stale inside a batch.
     void rebuildSnapshotLocked();
+    // The published snapshot, built first if stale. Every read of snapshotHold_
+    // on the edit side goes through here (or publishPendingLocked()).
+    const std::shared_ptr<const RenderSnapshot>& currentSnapshotLocked();
+    void publishPendingLocked();  // builds the snapshot if it is stale
+    void buildSnapshotLocked();   // builds and publishes it, now
     bool pushCommandLocked(const TransportCommand& command);  // false: the queue was full
     void serviceTransportIfIdleLocked();
     void collectGarbageLocked();
     void openDeviceLocked(const DeviceConfig& config);
     void closeDeviceLocked();
     void reloadSourcesLocked();
+    std::shared_ptr<AudioSource> loadSourceImpl(const std::string& path, bool publish);
     void waitForCallbackLocked();
     InputEdge inputEdgeLocked(const TrackModel& track) const;
     void finishRecordingLocked();
@@ -1070,6 +1105,9 @@ private:
 
     std::atomic<const RenderSnapshot*> snapshot_{nullptr};
     std::shared_ptr<const RenderSnapshot> snapshotHold_;
+    int batchDepth_ = 0;          // Batches alive
+    bool snapshotStale_ = false;  // edits since the snapshot was built
+    uint64_t snapshotBuilds_ = 0;
     DeferredReleasePool releasePool_;
     SharedState shared_;
     std::unique_ptr<Scheduler> scheduler_;  // the live and offline renderers share it (never at once)
@@ -1100,6 +1138,7 @@ private:
     int midiBufferFrames_ = 512;       // the device's buffer: MIDI input's delay unless immediate
 
     std::vector<TrackModel> tracks_;
+    mutable std::unordered_map<uint32_t, int> trackIndex_;  // id -> index into tracks_ (trackIndexLocked(); may be stale)
     uint32_t nextTrackId_ = 1;
     TrackModel master_{kMaster, std::make_shared<TrackParams>()};  // never has clips or notes
     std::unordered_map<uint32_t, ChainModel> chains_;              // id -> chain (with its owning strip and rack)

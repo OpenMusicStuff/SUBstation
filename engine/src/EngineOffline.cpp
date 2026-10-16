@@ -405,15 +405,16 @@ void Engine::renderOfflineLocked(double startBeat, int64_t frames, float* out, b
     suspendLiveLocked();
     resetProcessorsLocked(true);
     ScopeExit resume([this] { endOfflineLocked(); });
+    const std::shared_ptr<const RenderSnapshot> snap = currentSnapshotLocked();
     Renderer offline;
     OfflineLines lines;
-    prepareOfflineLocked(*snapshotHold_, offline, lines, startBeat);
+    prepareOfflineLocked(*snap, offline, lines, startBeat);
     // With delay compensation the output lags the timeline: render the lag first and drop it.
-    if (const int64_t lag = snapshotHold_->outputLatency(); lag > 0) {
+    if (const int64_t lag = snap->outputLatency(); lag > 0) {
         std::vector<float> discarded(static_cast<size_t>(lag) * 2);
-        offline.renderOffline(*snapshotHold_, discarded.data(), lag, loop, metronome, frames > 0);
+        offline.renderOffline(*snap, discarded.data(), lag, loop, metronome, frames > 0);
     }
-    offline.renderOffline(*snapshotHold_, out, frames, loop, metronome);
+    offline.renderOffline(*snap, out, frames, loop, metronome);
 }
 
 std::vector<float> Engine::renderOffline(double startBeat, int64_t frames, bool loop, bool metronome) {
@@ -443,7 +444,8 @@ void Engine::renderTrackLocked(uint32_t trackId, double startBeat, int64_t frame
     suspendLiveLocked();  // (before the snapshot is taken: it may make a new one)
     resetProcessorsLocked(true);
     ScopeExit resume([this] { endOfflineLocked(); });
-    const RenderSnapshot& snap = *snapshotHold_;
+    const std::shared_ptr<const RenderSnapshot> held = currentSnapshotLocked();
+    const RenderSnapshot& snap = *held;
     const TrackRender* found = snap.findTrack(trackId);
     if (!found) throw std::invalid_argument("Unknown track id " + std::to_string(trackId));
     const int track = static_cast<int>(found - snap.tracks.data());
@@ -496,7 +498,7 @@ std::shared_ptr<Engine::OfflineRender> Engine::beginOfflineLocked(double startBe
     try {
         resetProcessorsLocked(true);
         auto render = std::make_shared<OfflineRender>();
-        render->snapshot = snapshotHold_;
+        render->snapshot = currentSnapshotLocked();
         prepareOfflineLocked(*render->snapshot, render->renderer, render->lines, startBeat);
         return render;
     } catch (...) {

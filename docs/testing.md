@@ -293,6 +293,7 @@ Rendered offline unless the file says otherwise; the live tests play through the
 
 | File | What it covers |
 |---|---|
+| [test_batches_engine.cpp](../tests/engine/test_batches_engine.cpp) | Batches (`Engine::Batch`): one snapshot for the edits made in one (nested too), playing as the same edits unbatched do; reads in a batch see its edits; sources decoded without publishing (`decodeSource()`) heard once published, or read, or by `idle()`. |
 | [test_engine_render.cpp](../tests/engine/test_engine_render.cpp) | Clip placement to the sample, tempo, offsets, gain, pan, mute and solo, looping, the metronome, clip fades (the short ones only where a clip cuts into its file, a clip's own with their curves, in a warped clip's time), Utility and Over The Top, sources and peaks, resampling to the engine's rate, export, transport state without a device, chains, moving processors, the master's devices. |
 | [test_automation_engine.cpp](../tests/engine/test_automation_engine.cpp) | Envelopes of mixer controls (tracks and master) and of device parameters, sample by sample. |
 | [test_switches_engine.cpp](../tests/engine/test_switches_engine.cpp) | A track's activator and a device's (or a rack's) on/off, automated: silence and the fade, standing in for mute, a latent device passed by in time. |
@@ -405,7 +406,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 
 | File | What it covers |
 |---|---|
-| [test_bridge_tracks.cpp](../tests/app/test_bridge_tracks.cpp) | Clips and notes as the engine has them (none of deactivated clips or notes), groups as buses, returns and sends (made silent when only automated), inputs from tracks, the master's mixer, the settings, a drag's preview, overrides. |
+| [test_bridge_tracks.cpp](../tests/app/test_bridge_tracks.cpp) | Clips and notes as the engine has them (none of deactivated clips or notes), groups as buses, returns and sends (made silent when only automated), inputs from tracks, the master's mixer, the settings, a drag's preview, overrides; a project opened building one snapshot, its files arriving fewer, and a drag over every track one a move. |
 | [test_bridge_devices.cpp](../tests/app/test_bridge_devices.cpp) | Racks keeping each device's processor as they are made, undone, moved and deleted; chain and nested automation and overrides; macros moving plug-in parameters, and macro automation moving what is mapped to them; sidechains; presets reaching the engine. |
 | [test_bridge_sandboxes.cpp](../tests/app/test_bridge_sandboxes.cpp) | Plug-ins in sandboxes through the bridge: a project opening without waiting for them, states, automation and sidechains once loaded, a crash and Reload, Reload Plug-ins moving them, the hosting preference. |
 | [test_bridge_plugins.cpp](../tests/app/test_bridge_plugins.cpp) | Plug-ins in projects and their state, a project's plug-ins loading after it opens, missing and moved plug-ins, devices keeping their processors as they move, plug-ins' reports (edits for undo only from a shown editor), editors (on Linux an X11 one, run by Qt's event loop, on an X server of its own), automating plug-in parameters. |

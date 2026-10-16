@@ -58,9 +58,9 @@ Cheap work that keeps everything after it from turning into firefighting.
   - Opening a project rebuilds once per track per property: O(tracks × project size).
   - Each decoded file triggers a rebuild, on the decoding threads, holding the mutex that `takeMeters()` needs every display frame.
   - Dragging clips across 50 tracks causes 50 full rebuilds *per mouse move* (`BridgeTracks.cpp:387`).
-- **Step 1.** Add an `Engine::BatchScope` (rebuild once at its end) and use it in `onReset`, plug-in loading and `previewClips`. Move source arrivals onto the idle tick. Replace the linear `trackIndexLocked` and `Project::findTrack` scans with id→index maps.
+- **Step 1 (done).** `Engine::Batch`: edits in one build one snapshot when it ends, and every change of the project reaches the engine as one batch (opening it, plug-in loading, a drag's preview). Opening a project no longer pushes every track's routes again for each track added. Decoded files arriving together are published together. `trackIndexLocked` and `Project::findTrack` look tracks up by maps. Measured with `snapshot_bench` (benchmarks/README.md): opening a 256-track project went from 6.9 s to 0.33 s, and a drag over every clip from 1.4 s a mouse move to 15 ms.
 - **Step 2.** Rebuild incrementally: cache each `TrackRender`, mark tracks dirty, and rebuild routing only when routing changed.
-- **Prerequisite.** Add a `snapshot_bench` (N tracks, notes and lanes → ms per rebuild) *before* starting, so the gain is measured.
+- **Measure it** with `snapshot_bench`: one snapshot still costs 2.2 ms at 256 tracks, and grows with the project. That is what step 2 makes small.
 
 ### 4. Get heavy work off the GUI thread. Effort: M
 - **Backups.** The backup every minute runs on the GUI thread and first asks *every* plug-in for its state, serially. Each sandboxed `getState` can wait up to 15 s. Collect states in parallel, reuse the ones that haven't changed (`StateDirty` already exists), and serialize and write on a worker.

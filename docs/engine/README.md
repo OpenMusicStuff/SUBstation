@@ -109,13 +109,27 @@ only tracks and the edges between them.
   lower-cased, so one file is decoded once whatever its spelling). `loadSource()` decodes without
   holding the lock and retries if the sample rate changed meanwhile; it rebuilds the snapshot,
   so clips waiting for the file become audible (as `cacheSource()` does, for one it had let go
-  of: `releaseUnusedSources()`). A new sample rate reloads every source
-  (`reloadSourcesLocked()`). See [warp.md](warp.md) for decoding.
+  of: `releaseUnusedSources()`). `decodeSource()` is `loadSource()` without the rebuild: it only
+  marks the snapshot stale, for a decoder that publishes the files arriving together at once (the
+  bridge does: [engine-bridge.md](../app/engine-bridge.md)); `idle()` publishes what nobody did. A
+  new sample rate reloads every source (`reloadSourcesLocked()`). See [warp.md](warp.md) for
+  decoding.
 
 Every call that changes something the renderer reads ends with `rebuildSnapshotLocked()`.
 Calls that only change an atomic don't: track and chain gain, pan, mute and solo
 (`setTrackGain` etc. store into `TrackParams`), a send's level when only the level changes
 (`EdgeState::gain`), the metronome switch, a processor's parameter.
+
+**Batches.** While an `Engine::Batch` lives (`beginBatch()`/`endBatch()`, nested, from any
+thread), `rebuildSnapshotLocked()` only marks the snapshot stale (`snapshotStale_`), after
+dropping outputs into devices that are gone, as the next edit's cycle check expects; the
+outermost batch to end builds it once (`buildSnapshotLocked()`). Whatever reads the snapshot on
+the edit side goes through `currentSnapshotLocked()` (latencies, `processorInfo()`, offline
+renders, recording's placement, the transport without a device), which builds it first if it is
+stale: a batch changes when the audio thread hears edits, never what the API answers. Opening a
+device builds it at once, at the new rate, before the device starts. `snapshotBuilds()` counts
+the snapshots built, for the tests and [snapshot_bench](../../benchmarks/snapshot_bench.cpp).
+The engine bridge makes every change of the project one batch.
 
 Errors for the caller are exceptions: `std::invalid_argument` for a call that can't be made
 (unknown ids, a route that would close a cycle, racks nested too deep), `std::runtime_error` for
@@ -395,8 +409,12 @@ on the edit side with the track (as `TrackBuffers` and `EdgeState` are), keep it
 ## Gotchas
 
 - `mutex_` is recursive because plug-ins re-enter; don't "fix" it into a plain mutex.
-- `rebuildSnapshotLocked()` is not cheap for big projects: it rebuilds everything. Calls the UI
-  makes continuously (fader drags) must stay atomics.
+- Building the snapshot is not cheap for big projects: it rebuilds everything. Calls the UI
+  makes continuously (fader drags) must stay atomics, and a change that takes many calls is one
+  `Engine::Batch`. Keep batches short: the audio thread plays the snapshot from before the batch
+  until it ends.
+- A new read of the edit side's snapshot goes through `currentSnapshotLocked()`, never
+  `snapshotHold_` itself, which may be stale inside a batch.
 - `setTrackSend()` to the master is refused (everything reaches the master anyway).
 - A removed processor lives until no snapshot holds it *and* `idle()` runs (a render in the
   background holds its snapshot until it is finished). Tests that check plug-in destruction
