@@ -123,6 +123,11 @@ Rectangle {
         case "toggleTags":
             browser.tagsShown = !browser.tagsShown
             break
+        case "hideFromSearch":
+        case "showInSearch":  // (the selected rows, if the row is one of them)
+            browser.setHiddenFromSearch(results.isSelected(row) ? results.sortedSelection() : [row],
+                                        action === "hideFromSearch")
+            break
         }
     }
 
@@ -260,7 +265,7 @@ Rectangle {
                     return 0
                 }
                 tooltip: panel.browser.similarTo !== "" ? qsTr("Similarity: the most similar sounds first")
-                                                        : qsTr("Sort the list: Best weighs what matches, what you use and what fits your project; Rank puts what you use most first")
+                                                        : qsTr("Sort the list: Rank puts what you use most often lately first (uses a week, over the last four weeks); Name, alphabetically")
                 onChosen: index => panel.browser.sort = panel.browser.sorts[index].value
             }
         }

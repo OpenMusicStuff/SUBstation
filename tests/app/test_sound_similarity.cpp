@@ -4,7 +4,7 @@
 // filtering it, ending it, a clip's part of a file, a file outside the
 // library, files found later, and a sound that can't be analysed. And what the
 // sound tagger hears in the files: searches by how they sound, their rows'
-// labels, Samples › Kicks, and the project's sounds in the Best sort. And the
+// labels, Samples › Kicks, and what fits the project's sounds. And the
 // Sampler's and the Drum Rack's arrows stepping through similar sounds
 // (SimilarSamples), from a reference.
 
@@ -217,7 +217,7 @@ private Q_SLOTS:
         QVERIFY(settle());
         QCOMPARE(browser_->similarTo(), QString());
         QCOMPARE(browser_->sort(), QStringLiteral("name"));
-        QCOMPARE(browser_->sorts().size(), 3);  // (Best, Rank, Name: no Similarity)
+        QCOMPARE(browser_->sorts().size(), 2);  // (Rank, Name: no Similarity)
         QCOMPARE(names(*browser_->results()).first(), QStringLiteral("Hat 1.wav"));
         // A list that isn't files.
         browser_->findSimilar(from);
@@ -428,7 +428,7 @@ private Q_SLOTS:
         QVERIFY(settle());
         similarity_->takeTags();
         QVERIFY(similarity_->tags() && similarity_->tags()->size() == 12);
-        QCOMPARE(browser_->sort(), kBestSort);
+        QCOMPARE(browser_->sort(), kRankSort);
         browser_->setSearchText(QStringLiteral("kick"));
         QVERIFY(settle());
         const QStringList found = names(*browser_->results());
@@ -463,9 +463,8 @@ private Q_SLOTS:
         QCOMPARE(names(*browser_->results()).size(), 2);
     }
 
-    // The Best sort: with nothing typed, what fits the project comes first: the
-    // sounds most like the project's own.
-    void bestPutsWhatFitsTheProjectFirst() {
+    // What fits the project (SoundSuggestions): the sounds most like the project's own.
+    void suggestionsFitTheProjectsSounds() {
         make();
         Project project;
         Harmony harmony(&project);
@@ -473,20 +472,17 @@ private Q_SLOTS:
         QVERIFY(settle());
         similarity_->takeTags();
         suggestions.update();
-        QVERIFY(!suggestions.fit());  // (no sounds in the project, no key: nothing to fit)
+        QVERIFY(suggestions.projectFit().empty());  // (no sounds in the project, no key: nothing to fit)
         project.insertTrack(test::makeTrack(QStringLiteral("t"), QStringLiteral("Drums")), 0);
         project.setClips(QStringLiteral("t"), {Clip::audio(QStringLiteral("c"), lib_ + QStringLiteral("/Hats/Hat 1.wav"),
                                                            QStringLiteral("Hat 1"), 0.0, 0.4)});
         suggestions.update();
-        const auto fit = suggestions.fit();
-        QVERIFY(fit);
+        QVERIFY(!suggestions.projectFit().empty());
         auto fitOf = [&](const QString& file) {
-            const std::string path = toBackendPath(lib_ + QLatin1Char('/') + file);
-            const size_t cut = path.find_last_of("/\\");
-            return fit(sub::browser::fileHash(sub::browser::folderHash(path.substr(0, cut)), path.substr(cut + 1)));
+            const auto tags = similarity_->tagsOf(lib_ + QLatin1Char('/') + file);
+            return tags ? suggestions.projectFit().fit(*tags) : -1.f;
         };
         QVERIFY(fitOf(QStringLiteral("Hats/Hat 2.wav")) > fitOf(QStringLiteral("Kicks/Kick 2.wav")));
-        QCOMPARE(fitOf(QStringLiteral("Nowhere/None.wav")), 0.5f);
     }
 
     void audioFilesOfferFindSimilar() {
@@ -498,13 +494,19 @@ private Q_SLOTS:
             return ids;
         };
         QCOMPARE(actions(0), QStringList({QStringLiteral("findSimilar"), QString(), QStringLiteral("showInFolder"), QString(),
-                                          QStringLiteral("toggleTags")}));
+                                          QStringLiteral("toggleTags"), QString(), QStringLiteral("hideFromSearch")}));
         // Hide Tags: kept in the settings, the entry then Show Tags.
         QVERIFY(browser_->tagsShown());
-        QCOMPARE(browser_->resultActions(0).last().toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Hide Tags"));
+        const auto tagsLabel = [this] {
+            for (const QVariant& a : browser_->resultActions(0))
+                if (a.toMap().value(QStringLiteral("action")) == QStringLiteral("toggleTags"))
+                    return a.toMap().value(QStringLiteral("label")).toString();
+            return QString();
+        };
+        QCOMPARE(tagsLabel(), QStringLiteral("Hide Tags"));
         browser_->setTagsShown(false);
         QCOMPARE(QSettings().value(QStringLiteral("browser/tags_shown")).toBool(), false);
-        QCOMPARE(browser_->resultActions(0).last().toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Show Tags"));
+        QCOMPARE(tagsLabel(), QStringLiteral("Show Tags"));
         browser_->setTagsShown(true);
         // Without a sound similarity, not offered.
         browser_.reset();
@@ -515,7 +517,8 @@ private Q_SLOTS:
         browser_ = std::make_unique<BrowserController>(nullptr, options);
         QVERIFY(settle());
         QVERIFY(!browser_->canFindSimilar());
-        QCOMPARE(actions(0), QStringList({QStringLiteral("showInFolder"), QString(), QStringLiteral("toggleTags")}));
+        QCOMPARE(actions(0), QStringList({QStringLiteral("showInFolder"), QString(), QStringLiteral("toggleTags"), QString(),
+                                          QStringLiteral("hideFromSearch")}));
         browser_->findSimilar(lib_ + QStringLiteral("/Kicks/Kick 1.wav"));
         QCOMPARE(browser_->similarTo(), QString());
     }

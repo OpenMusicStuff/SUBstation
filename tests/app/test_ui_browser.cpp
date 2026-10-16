@@ -384,16 +384,16 @@ private Q_SLOTS:
 
     // Used items rank first; Name sorts by name (test_used_items_rank_first).
     void usedItemsRankFirst() {
-        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));  // Rank (after Best)
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 0));  // Rank (the default)
         QCOMPARE(browser().sort(), QStringLiteral("rank"));
         browser().setScope({QStringLiteral("all")});
         search(QStringLiteral("e"));
         const QStringList before = names();
         const QString last = before.last();
-        for (int i = 0; i < 3; ++i) browser().activate(int(before.size()) - 1);  // double-clicks (more than any other's)
+        for (int i = 0; i < 6; ++i) browser().activate(int(before.size()) - 1);  // double-clicks (more than any other's)
         search(QStringLiteral("e "));
         QCOMPARE(names().first(), last);
-        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 2));
+        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));
         QCOMPARE(browser().sort(), QStringLiteral("name"));
         QVERIFY(settle());
         QStringList sorted = before;
@@ -401,10 +401,9 @@ private Q_SLOTS:
         QCOMPARE(names(), sorted);
         QCOMPARE(QSettings().value(QStringLiteral("browser/sort")).toString(), QStringLiteral("name"));
         QCOMPARE(item("sort")->property("displayText").toString(), QStringLiteral("Name"));
-        QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 1));
-        QCOMPARE(browser().sort(), QStringLiteral("rank"));
         QMetaObject::invokeMethod(item("sort"), "activated", Q_ARG(int, 0));
-        QCOMPARE(browser().sort(), QStringLiteral("best"));
+        QCOMPARE(browser().sort(), QStringLiteral("rank"));
+        QCOMPARE(item("sort")->property("displayText").toString(), QStringLiteral("Rank"));
     }
 
     // A list searched again for a change elsewhere keeps its current item
@@ -530,7 +529,7 @@ private Q_SLOTS:
         test::screenshot(window_, QStringLiteral("browser-similar"), QRect(0, 0, 400, window_->height()));
         test::click(window_, test::centerOf(item("clearSimilar")));
         QTRY_VERIFY(!item("similarBar")->isVisible());
-        QCOMPARE(browser().sort(), QStringLiteral("best"));  // (the sort before)
+        QCOMPARE(browser().sort(), QStringLiteral("rank"));  // (the sort before)
         QVERIFY(settle());
         QCOMPARE(results().total(), 3);
     }
@@ -574,7 +573,7 @@ private Q_SLOTS:
         QTRY_VERIFY_WITH_TIMEOUT(results().total() == 1 && !browser().searching(), 5000);
         QVERIFY(settle());  // (a change to the index after this would search again, and take the rename's row)
         QCOMPARE(names(), QStringList{QStringLiteral("Wide Utility")});
-        QCOMPARE(browser().resultActions(0).size(), 4);
+        QCOMPARE(browser().resultActions(0).size(), 6);  // (and Hide from Search)
 
         // Rename… in place: typed, Enter.
         QVERIFY(QMetaObject::invokeMethod(panel_, "runResultAction", Q_ARG(QVariant, QStringLiteral("renamePreset")),

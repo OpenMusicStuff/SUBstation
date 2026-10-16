@@ -420,7 +420,8 @@ void ProjectEditor::splitClips(const ClipRefs& refs, double atBeat) {
     if (!after.isEmpty()) commitClips(QStringLiteral("Split"), after);
 }
 
-OrderedMap<QString, std::vector<Clip>> ProjectEditor::consolidatable(const ClipRefs& refs) const {
+OrderedMap<QString, std::vector<Clip>> ProjectEditor::consolidatable(const ClipRefs& refs,
+                                                                     const std::optional<std::pair<double, double>>& area) const {
     OrderedMap<QString, std::vector<Clip>> byTrack;
     for (const ClipRef& ref : refs) {
         const Clip& clip = project_->clip(ref.trackId, ref.clipId);
@@ -428,17 +429,22 @@ OrderedMap<QString, std::vector<Clip>> ProjectEditor::consolidatable(const ClipR
     }
     OrderedMap<QString, std::vector<Clip>> result;
     for (const auto& [trackId, clips] : byTrack) {
-        if (clips.size() > 1) result.insert(trackId, clips);
+        if (clips.size() > 1) {
+            result.insert(trackId, clips);
+        } else if (area && !clips.empty()) {  // (one clip: joined only with the empty space selected around it)
+            const auto [start, end] = edits::selectionSpan(clips, 0.0);
+            if (area->first < start - edits::kEps || area->second > end + edits::kEps) result.insert(trackId, clips);
+        }
     }
     return result;
 }
 
-ClipRefs ProjectEditor::consolidateClips(const ClipRefs& refs) {
+ClipRefs ProjectEditor::consolidateClips(const ClipRefs& refs, const std::optional<std::pair<double, double>>& area) {
     const double tempo = project_->tempo();
     QMap<QString, std::vector<Clip>> after;
     ClipRefs joined;
-    for (const auto& [trackId, clips] : consolidatable(refs)) {
-        const Clip clip = edits::consolidateMidi(clips);
+    for (const auto& [trackId, clips] : consolidatable(refs, area)) {
+        const Clip clip = edits::consolidateMidi(clips, area);
         QSet<QString> ids;
         for (const Clip& c : clips) ids.insert(c.id);
         std::vector<Clip> kept = clipsWithout(project_->track(trackId).clips, ids);

@@ -96,12 +96,14 @@ struct ExternalGroup {
     std::vector<ExternalItem> items;
 };
 
-// How often items were used (the app layer's Library keeps the records; these
-// are copies).
+// How often items were used, and which are hidden from search (the app
+// layer's Library keeps the records; these are copies).
 struct UsageRecord {
     std::string key;
-    double score = 0.0;      // 0 when the record has none
-    double lastUsed = 0.0;   // NaN when the record has none
+    double score = 0.0;          // a use count from before `times`, decaying; 0 when the record has none
+    double lastUsed = 0.0;       // NaN when the record has none
+    std::vector<double> times{}; // when it was used lately (seconds since 1970)
+    bool hidden = false;         // left out of searches (Query::hiddenOnly: only these)
 };
 
 struct Usage {
@@ -111,18 +113,19 @@ struct Usage {
 
     uint64_t version = 0;
     double halfLifeDays = 30.0;
+    double windowDays = 28.0;
     std::vector<UsageRecord> records;
     std::unordered_map<std::string_view, uint32_t> byKey;
-    // library.Library.rank(): each use counts 1 when it happens, half of that every half-life after.
+    bool anyHidden = false;
+    // Library::rank(): how many times a week the item was used, on average over
+    // the last `windowDays`; an older record's score (halved every half-life)
+    // counts as that many uses in them.
     double rank(const UsageRecord& record, double now) const;
 };
 
-// Rank: most used first, then the best matches. Name: by casefolded name.
-// Score: indexed files by Query::score, the highest first (similar sounds).
-// Best: by a blend of how well an item matches (its name, and what it sounds
-// like), how much it was used lately, and how well it fits (Query::fit): what
-// the application suggests first.
-enum class Sort : uint8_t { Rank, Name, Score, Best };
+// Rank: most used lately first, then the best matches. Name: by casefolded
+// name. Score: indexed files by Query::score, the highest first (similar sounds).
+enum class Sort : uint8_t { Rank, Name, Score };
 
 // The hash files are told by to the application's sound matching (64-bit FNV-1a
 // of the path as shown, Snapshot::join of its folder's path and its name;
@@ -169,10 +172,9 @@ struct Query {
     // Files' sounds: made once per search for its terms (pySplit(pyLower(text)));
     // null (or a null matcher) for none: only names and folders match.
     std::function<std::shared_ptr<const SoundMatcher>(const std::vector<std::string>& terms)> sounds;
-    // Sort::Best: how well a file fits (0..1, by fileHash(); 0.5 for unknown):
-    // what the application knows of the project (its sounds, its key). Called
-    // on the search thread, so it must only read what doesn't change.
-    std::function<float(uint64_t fileHash)> fit;
+    // Items hidden from search (their use record's `hidden`) are left out; with
+    // this, only they are listed (to show them again).
+    bool hiddenOnly = false;
 };
 
 struct Hit {

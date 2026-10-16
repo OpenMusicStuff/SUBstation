@@ -96,10 +96,13 @@ Clip relinkFile(const Clip& clip, const QString& from, const QString& to);
 std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, double tempo);
 // Ableton's Consolidate (Ctrl+J): one MIDI clip from the first clip's start to
 // the last one's end, holding just the notes the clips play, where they play
-// them (cut at their clip's end). A deactivated clip's notes come deactivated,
-// unless every clip is (the joined clip is deactivated then, its notes as they
-// were). It keeps the first clip's id and name.
-Clip consolidateMidi(const std::vector<Clip>& clips);
+// them (cut at their clip's end). With an `area` (the time selection), the
+// clip reaches over the empty space it selects too: from the earlier of its
+// start and the first clip's to the later of its end and the last clip's. A
+// deactivated clip's notes come deactivated, unless every clip is (the joined
+// clip is deactivated then, its notes as they were). It keeps the first clip's
+// id and name.
+Clip consolidateMidi(const std::vector<Clip>& clips, const std::optional<Interval>& area = std::nullopt);
 // Whether two clips are windows onto the same content at the same place: an
 // audio clip playing the same file, as fast, its audio where the other's is on
 // the timeline; a MIDI clip the same notes, its content's start where the
