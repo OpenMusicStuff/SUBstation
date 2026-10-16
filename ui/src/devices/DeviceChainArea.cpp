@@ -32,7 +32,15 @@ const QString kDeviceRole = QStringLiteral("device");
 const QString kChainRole = QStringLiteral("chain");
 const QString kChainRowRole = QStringLiteral("chainRow");
 
-// The topmost item at a scene point under `item` (in paint order), not looking into clipped parts.
+// Whether an item is no cover for what is under it: the popups' overlay (it
+// fills the window whenever any popup is up, a tooltip included), and a
+// tooltip, which a press goes through.
+bool seeThrough(QQuickItem* item) {
+    return item->inherits("QQuickOverlay") || (item->parent() && item->parent()->inherits("QQuickToolTip"));
+}
+
+// The topmost item at a scene point under `item` (in paint order), not
+// looking into clipped parts, seeing through the overlay and tooltips.
 QQuickItem* topItemAt(QQuickItem* item, const QPointF& scenePos) {
     QList<QQuickItem*> children = item->childItems();
     std::stable_sort(children.begin(), children.end(), [](QQuickItem* a, QQuickItem* b) { return a->z() < b->z(); });
@@ -40,6 +48,13 @@ QQuickItem* topItemAt(QQuickItem* item, const QPointF& scenePos) {
         QQuickItem* child = *it;
         if (!child->isVisible())
             continue;
+        if (seeThrough(child)) {
+            if (child->inherits("QQuickOverlay")) {  // (a popup on it, a menu, still covers)
+                if (QQuickItem* found = topItemAt(child, scenePos))
+                    return found;
+            }
+            continue;
+        }
         const QPointF local = child->mapFromScene(scenePos);
         if (child->clip() && !child->contains(local))
             continue;
@@ -60,8 +75,8 @@ DeviceChainArea::DeviceChainArea(QQuickItem* parent) : QQuickItem(parent) {
 }
 
 DeviceChainArea::~DeviceChainArea() {
-    if (filtered_)
-        filtered_->removeEventFilter(this);
+    if (filtered_ && QCoreApplication::instance())
+        QCoreApplication::instance()->removeEventFilter(this);
     if (pan_)
         QGuiApplication::restoreOverrideCursor();
 }
@@ -285,13 +300,17 @@ bool DeviceChainArea::wheel(QWheelEvent* event) {
 }
 
 void DeviceChainArea::installFilter(QQuickWindow* window) {
+    // On the application, not the window: its filters see an event before the
+    // window's do, and the popups' overlay filters the window's events while a
+    // popup is up (a tooltip too), taking presses before a filter of ours there.
     if (filtered_ == window)
         return;
-    if (filtered_)
-        filtered_->removeEventFilter(this);
+    QCoreApplication* app = QCoreApplication::instance();
+    if (filtered_ && app)
+        app->removeEventFilter(this);
     filtered_ = window;
-    if (filtered_)
-        filtered_->installEventFilter(this);
+    if (filtered_ && app)
+        app->installEventFilter(this);
 }
 
 void DeviceChainArea::itemChange(ItemChange change, const ItemChangeData& data) {
@@ -306,9 +325,12 @@ bool DeviceChainArea::eventFilter(QObject* watched, QEvent* event) {
     switch (event->type()) {
         case QEvent::Wheel:
             return wheel(static_cast<QWheelEvent*>(event));
-        case QEvent::MouseButtonPress: {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonDblClick: {  // (a quick second press comes as a double click too: items take it as a press)
             auto* mouse = static_cast<QMouseEvent*>(event);
-            if (!pan_ && mouse->button() == Qt::LeftButton && isPanModifier(mouse->modifiers()) &&
+            if (pan_)
+                return true;
+            if (mouse->button() == Qt::LeftButton && isPanModifier(mouse->modifiers()) &&
                 overChain(mouse->scenePosition())) {
                 pan_ = Pan{mouse->globalPosition().x(), contentX_};
                 QGuiApplication::setOverrideCursor(QCursor(Qt::ClosedHandCursor));

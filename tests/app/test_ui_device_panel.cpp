@@ -15,6 +15,8 @@
 #include <QDrag>
 #include <QGuiApplication>
 #include <QPointer>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
@@ -529,6 +531,62 @@ private Q_SLOTS:
         QVERIFY(QGuiApplication::overrideCursor() == nullptr);
         test::moveTo(window(), start - QPoint(300, 0), {}, Qt::NoButton);  // the pan is over
         QCOMPARE(area()->contentX(), 50.0);
+    }
+
+    void ctrlAltDragGoesPastATooltip() {
+        // Any popup up, a tooltip too, puts the overlay over the whole window: the press still pans.
+        QStringList ids;
+        shownTrack(&ids, 12);
+        QTRY_VERIFY(area()->maxContentX() > 0);
+        QTest::qWait(1);
+        area()->setContentX(0);
+        QQmlComponent component(qmlEngine(area()));
+        component.setData("import QtQuick.Controls\nToolTip { text: \"tip\"; delay: 0; timeout: -1 }", QUrl());
+        std::unique_ptr<QObject> tip(component.create());
+        QVERIFY2(tip, qPrintable(component.errorString()));
+        tip->setProperty("parent", QVariant::fromValue(area()));
+        tip->setProperty("visible", true);
+        QTRY_VERIFY(tip->property("opened").toBool());
+        const QStringList order = chain(devices().trackId());
+        const int steps = undo().count();
+        const QPoint start = centerOf(ids[1], "title");  // (dragging a title moves the device, Ctrl copies it)
+        const Qt::KeyboardModifiers pan = Qt::ControlModifier | Qt::AltModifier;
+        test::press(window(), start, pan);
+        QVERIFY(area()->panning());
+        test::moveTo(window(), start - QPoint(60, 0), pan);
+        QCOMPARE(area()->contentX(), 60.0);
+        test::release(window(), start - QPoint(60, 0), pan);
+        QVERIFY(!area()->panning());
+        QVERIFY(devices().selected().isEmpty());
+        QCOMPARE(chain(devices().trackId()), order);
+        QCOMPARE(undo().count(), steps);
+        tip->setProperty("visible", false);
+        QTRY_VERIFY(!tip->property("opened").toBool());
+    }
+
+    void ctrlAltDoubleClickPansToo() {
+        // A quick second press comes as a double click as well: it reaches no device either.
+        QStringList ids;
+        shownTrack(&ids, 12);
+        QTRY_VERIFY(area()->maxContentX() > 0);
+        QTest::qWait(1);
+        area()->setContentX(0);
+        const QStringList order = chain(devices().trackId());
+        const int steps = undo().count();
+        const QPoint start = centerOf(ids[1], "title");
+        const Qt::KeyboardModifiers pan = Qt::ControlModifier | Qt::AltModifier;
+        test::doubleClick(window(), start, pan);
+        QVERIFY(!area()->panning());
+        test::press(window(), start, pan);  // (the press after it pans as ever)
+        QVERIFY(area()->panning());
+        test::moveTo(window(), start - QPoint(40, 0), pan);
+        QCOMPARE(area()->contentX(), 40.0);
+        test::release(window(), start - QPoint(40, 0), pan);
+        QVERIFY(!area()->panning());
+        QVERIFY(devices().selected().isEmpty());
+        QCOMPARE(chain(devices().trackId()), order);
+        QCOMPARE(undo().count(), steps);
+        QVERIFY(QGuiApplication::overrideCursor() == nullptr);
     }
 
     void addingADeviceScrollsToIt() {
