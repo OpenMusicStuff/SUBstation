@@ -152,11 +152,21 @@ TEST_CASE("the chance glitches some steps; a variation others") {
 }
 
 TEST_CASE("a step entered partway plays as it is") {
-    // From half way through the first step (beat 0.25): that half as it is, the next step glitched.
+    // From half way through the first step (beat 0.25): that half as it is, and the next (only half a step has
+    // come in: nothing to reverse yet), then the one after reversed.
     const Samples dry = glitched({}, noiseInput(), false, 0.25);
     const Samples out = glitched(only("reverse"), noiseInput(), true, 0.25);
-    for (int64_t i = 0; i < kEighth / 2; ++i) REQUIRE(sampleAt(out, i) == sampleAt(dry, i));
-    CHECK(sampleAt(out, kEighth / 2 + 1000) == sampleAt(dry, kEighth / 2 - 1001));
+    for (int64_t i = 0; i < kEighth * 3 / 2; ++i) REQUIRE(sampleAt(out, i) == sampleAt(dry, i));
+    const int64_t start = kEighth * 3 / 2;
+    CHECK(sampleAt(out, start + 1000) == sampleAt(dry, start - 1001));
+}
+
+TEST_CASE("no reverse until a step has come in") {
+    // From the song's start, all reverse: the first step as it is (the one before it was nothing), then reversed.
+    const Samples dry = glitched({}, noiseInput(), false);
+    const Samples out = glitched(only("reverse"), noiseInput());
+    for (int64_t i = 0; i < kEighth; ++i) REQUIRE(sampleAt(out, i) == sampleAt(dry, i));
+    CHECK(sampleAt(out, kEighth + 1000) == sampleAt(dry, kEighth - 1001));
 }
 
 TEST_CASE("dry, the glitch passes the input") {

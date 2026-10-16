@@ -10,7 +10,8 @@
 //
 // - Stutter: the step's first 1/2, 1/3, 1/4, 1/6 or 1/8 played over and over
 //   (no repeat shorter than 10 ms).
-// - Reverse: the step before played backwards.
+// - Reverse: the step before played backwards (not until a whole step has
+//   come in since the start: the step before would be silence).
 // - Tape: the step slowing from full speed to a stop, its pitch falling.
 // - Gate: the step cut into 4, 6 or 8, every other one silent.
 //
@@ -78,6 +79,7 @@ public:
         for (auto& line : lines_) line.reset();
         step_ = INT64_MIN;
         kind_ = None;
+        recorded_ = 0;
         t_ = 0;
         freeBeat_ = 0.0;
         voice_ = {};
@@ -104,6 +106,7 @@ protected:
         mix_.setTarget(param(Mix) / 100.f);
 
         for (int i = 0; i < numFrames; ++i) {
+            ++recorded_;
             for (int c = 0; c < n; ++c) {
                 lines_[c].push(ch[c][i]);
                 peak_ = std::max(peak_, std::abs(ch[c][i]));
@@ -191,6 +194,9 @@ private:
             if (pick < weights[k]) break;
             pick -= weights[k];
         }
+        // A reverse plays the step before: not until a whole step has come since the start (silence, else).
+        if (kind_ == ReverseKind && static_cast<double>(recorded_) < length_ + 1.0) kind_ = None;
+        if (kind_ == None) return;
         static constexpr std::array<int, 5> kRepeats = {2, 3, 4, 6, 8};
         static constexpr std::array<int, 3> kChops = {4, 6, 8};
         int parts = kind_ == GateKind ? kChops[static_cast<size_t>(u3) % kChops.size()]
@@ -231,6 +237,7 @@ private:
     int64_t step_ = INT64_MIN;  // the step playing, on the grid
     Kind kind_ = None;          // what it does
     int64_t t_ = 0;             // samples into it
+    int64_t recorded_ = 0;      // samples come in since reset() (a reverse needs a step of them)
     double length_ = 1.0;       // its length in samples
     int64_t slice_ = 1;         // a stutter's repeat, or a gate's part, in samples
     double freeBeat_ = 0.0;     // the grid's own clock while the song isn't playing
