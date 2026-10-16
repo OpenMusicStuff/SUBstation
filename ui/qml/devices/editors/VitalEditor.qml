@@ -228,7 +228,7 @@ Item {
             [[e + "low_lower_threshold", qsTr("Low Low")], [e + "low_lower_ratio", qsTr("Low Exp")],
              [e + "band_upper_threshold", qsTr("Mid Up")], [e + "band_upper_ratio", qsTr("Mid Ratio")],
              [e + "band_lower_threshold", qsTr("Mid Low")], [e + "band_lower_ratio", qsTr("Mid Exp")],
-             [e + "high_upper_threshold", qsTr("High Up")], [e + "high_upper_ratio", qsTr("High Ratio")],
+             [e + "high_upper_threshold", qsTr("High Up")], [e + "high_upper_ratio", qsTr("Hi Ratio")],
              [e + "high_lower_threshold", qsTr("High Low")], [e + "high_lower_ratio", qsTr("High Exp")]]]
         case "delay": return [
             [[e + "dry_wet", qsTr("Mix")], [e + "style", qsTr("Style"), 2], [e + "feedback", qsTr("Feedback")],

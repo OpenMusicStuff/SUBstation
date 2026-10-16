@@ -67,6 +67,9 @@ mcp::Headers headersFor(const QJsonObject& message, const QString& version = mcp
 QJsonObject result(const mcp::Reply& reply) { return reply.body->value(QStringLiteral("result")).toObject(); }
 // A tool call's structured content.
 QJsonObject structured(const QJsonObject& called) { return called.value(QStringLiteral("structuredContent")).toObject(); }
+// An array of the one row given. (Not QJsonArray{QJsonArray{...}}: a braced list of one QJsonArray
+// copies it with MSVC, nests it with GCC.)
+QJsonArray oneRow(const QJsonArray& row) { return QJsonArray() << row; }
 int errorCode(const mcp::Reply& reply) {
     return reply.body->value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt();
 }
@@ -646,7 +649,7 @@ private Q_SLOTS:
                     .value(QStringLiteral("isError")).toBool());  // (a note outside the clip)
         QVERIFY(call(protocol, QStringLiteral("write_midi_clip"),
                      {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_beat"), 8}, {QStringLiteral("end_beat"), 12},
-                      {QStringLiteral("notes"), QJsonArray{QJsonArray{8, 1}}}})
+                      {QStringLiteral("notes"), oneRow({8, 1})}})
                     .value(QStringLiteral("isError")).toBool());  // (a row without its pitch)
         QCOMPARE(f.stack().count(), undoSteps);
         QCOMPARE(history.count(), 4);
@@ -699,15 +702,15 @@ private Q_SLOTS:
         // Written over as rows, the bend would go: it says so.
         out = structured(call(protocol, QStringLiteral("write_midi_clip"),
                               {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_bar"), 5}, {QStringLiteral("end_bar"), 6},
-                               {QStringLiteral("notes"), QJsonArray{QJsonArray{18, 1, 72}}}}));
+                               {QStringLiteral("notes"), oneRow({18, 1, 72})}}));
         QVERIFY(out.value(QStringLiteral("warning")).toString().contains(QStringLiteral("bends")));
         // Wrong: a bad name, a bend outside its note, a muted note that isn't there.
         for (const QJsonObject& wrong :
-             {QJsonObject{{QStringLiteral("notes"), QJsonArray{QJsonArray{16, 1, QStringLiteral("H3")}}}},
+             {QJsonObject{{QStringLiteral("notes"), oneRow({16, 1, QStringLiteral("H3")})}},
               QJsonObject{{QStringLiteral("notes"), QJsonArray{QJsonObject{{QStringLiteral("pitch"), 60}, {QStringLiteral("start_beat"), 16},
                                                                           {QStringLiteral("length"), 1},
-                                                                          {QStringLiteral("bend"), QJsonArray{QJsonArray{2, 1}}}}}}},
-              QJsonObject{{QStringLiteral("notes"), QJsonArray{QJsonArray{16, 1, 60}}}, {QStringLiteral("muted"), QJsonArray{3}}}}) {
+                                                                          {QStringLiteral("bend"), oneRow({2, 1})}}}}},
+              QJsonObject{{QStringLiteral("notes"), oneRow({16, 1, 60})}, {QStringLiteral("muted"), QJsonArray{3}}}}) {
             QJsonObject arguments = wrong;
             arguments.insert(QStringLiteral("track_id"), copy);
             arguments.insert(QStringLiteral("start_bar"), 5);
@@ -716,7 +719,7 @@ private Q_SLOTS:
         }
         QVERIFY(call(protocol, QStringLiteral("write_midi_clip"),
                      {{QStringLiteral("track_id"), copy}, {QStringLiteral("start_bar"), 5},
-                      {QStringLiteral("notes"), QJsonArray{QJsonArray{16, 1, 60}}}})
+                      {QStringLiteral("notes"), oneRow({16, 1, 60})}})
                     .value(QStringLiteral("isError")).toBool());  // (no end)
         QVERIFY(history.rewindFrom(history.changes()[4].id).isEmpty());  // (as before these)
         QCOMPARE(history.count(), 7);
@@ -1329,13 +1332,13 @@ private Q_SLOTS:
         QVERIFY(f.s().agentChanges()->changes().back().text.contains(QStringLiteral("bars 1 to 2")));
         // Points in a stretch replace it, the rest stays.
         write({{QStringLiteral("mixer"), QStringLiteral("volume")}, {QStringLiteral("start_beat"), 2}, {QStringLiteral("end_beat"), 6},
-               {QStringLiteral("points"), QJsonArray{QJsonArray{4, -6}}}});
+               {QStringLiteral("points"), oneRow({4, -6})}});
         const Envelope volume = f.project().envelope(lead, automation::kMixerVolume);
         QCOMPARE(volume.front().beat, 0.0);
         QCOMPARE(volume.back().beat, 8.0);
         QVERIFY(std::abs(*automation::valueAt(volume, 4.0) - automation::volumeToNormalized(-6.0)) < 1e-6);
         // One point goes in among the others.
-        write({{QStringLiteral("mixer"), QStringLiteral("volume")}, {QStringLiteral("points"), QJsonArray{QJsonArray{7, -3}}}});
+        write({{QStringLiteral("mixer"), QStringLiteral("volume")}, {QStringLiteral("points"), oneRow({7, -3})}});
         QCOMPARE(f.project().envelope(lead, automation::kMixerVolume).size(), volume.size() + 1);
 
         // A ramp over bars 2 to 3 (a pan sweep).
@@ -1382,13 +1385,13 @@ private Q_SLOTS:
         // Wrong: two targets or none, a value out of range, a shape without an end, points outside the stretch.
         for (const QJsonObject& wrong : {
                  QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("send"), QStringLiteral("x")}, {QStringLiteral("clear"), true}},
-                 QJsonObject{{QStringLiteral("points"), QJsonArray{QJsonArray{0, 0}}}},
-                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), QJsonArray{QJsonArray{0, 5}}}},
+                 QJsonObject{{QStringLiteral("points"), oneRow({0, 0})}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), oneRow({0, 5})}},
                  QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")},
                              {QStringLiteral("shape"), QJsonObject{{QStringLiteral("type"), QStringLiteral("ramp")}, {QStringLiteral("from"), 0}, {QStringLiteral("to"), 1}}}},
                  QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("end_beat"), 2},
-                             {QStringLiteral("points"), QJsonArray{QJsonArray{4, 0}}}},
-                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), QJsonArray{QJsonArray{0, 0}}},
+                             {QStringLiteral("points"), oneRow({4, 0})}},
+                 QJsonObject{{QStringLiteral("mixer"), QStringLiteral("pan")}, {QStringLiteral("points"), oneRow({0, 0})},
                              {QStringLiteral("clear"), true}}}) {
             QVERIFY2(write(wrong).value(QStringLiteral("isError")).toBool(), qPrintable(QJsonDocument(wrong).toJson(QJsonDocument::Compact)));
         }
