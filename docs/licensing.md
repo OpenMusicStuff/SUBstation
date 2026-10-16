@@ -19,11 +19,11 @@ the licences, not legal advice: for a commercial release, have it checked.
 | [Essentia](../intelligence/third_party/essentia) 2.1-beta5 | intelligence/third_party/essentia | AGPL-3.0-or-later (or a proprietary licence from the Universitat Pompeu Fabra) | statically linked: the sound similarity's descriptors | — it is what makes the whole AGPL |
 | KISS FFT 1.3.0 | inside Essentia's folder | BSD-3-Clause | Essentia's FFT | yes |
 | [Vital](../engine/third_party/vital) 1.0.6's source | engine/third_party/vital | GPL-3.0-or-later (or a commercial licence from Vital's author) | statically linked: the built-in Vital's synthesis engine | yes (GPLv3 combines with AGPLv3). Its name is a trademark: see [below](#to-decide) |
-| nlohmann JSON 3.1.2, KISS FFT | inside Vital's folder | MIT, BSD-3-Clause | Vital's presets (KISS FFT is vendored with Vital but not used: KFR's FFT is) | yes |
-| [KFR](../engine/third_party/kfr) 7.2.0 (its DFT only) | engine/third_party/kfr | GPL-2.0-or-later (or a commercial licence from KFR's authors) | statically linked: the built-in Vital's FFT | yes (GPLv2-or-later is used under the GPLv3, which combines with AGPLv3; ship its [LICENSE.txt](../engine/third_party/kfr/LICENSE.txt)) |
+| nlohmann JSON 3.1.2 | inside Vital's folder | MIT | Vital's presets | yes |
+| [KFR](../engine/third_party/kfr) 7.2.0 (its DFT only) | engine/third_party/kfr | GPL-2.0-or-later (or a commercial licence from KFR's authors) | statically linked: the FFT of the built-in Vital, Hue, GigaTune's SwiftF0, and under Signalsmith Linear (time stretching, Spectral) | yes (GPLv2-or-later is used under the GPLv3, which combines with AGPLv3; ship its [LICENSE.txt](../engine/third_party/kfr/LICENSE.txt)) |
 | TNT | inside Essentia's core | public domain | Essentia's matrices | yes |
 | [miniaudio](../engine/third_party/miniaudio) | engine/third_party | Unlicense or MIT-0 | audio I/O, decoding | yes |
-| [Signalsmith Stretch, Linear](../engine/third_party) | engine/third_party | MIT | time stretching, FFTs | yes |
+| [Signalsmith Stretch, Linear](../engine/third_party) | engine/third_party | MIT | time stretching, Spectral's STFT (their FFTs run on KFR's: a backend of SUBstation's, `platform/fft-kfr.h`) | yes |
 | [fastpitch](../engine/third_party/fastpitch) 1.0.0 | engine/third_party/fastpitch | MIT | pitch tracking (pYIN): GigaTune | yes |
 | [swift-f0](../engine/third_party/swift-f0) 0.3.0's model | engine/third_party/swift-f0 (its weights in engine/src/builtin/SwiftF0Data.h) | MIT | pitch tracking (SwiftF0): GigaTune's High Quality | yes |
 | [VST 3 SDK](../engine/third_party/vst3sdk) 3.8.1 | engine/third_party | MIT | plug-in hosting | yes |

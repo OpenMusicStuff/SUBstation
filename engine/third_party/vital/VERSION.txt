@@ -8,8 +8,8 @@ What is here, as it is upstream unless listed below:
   load_save (trimmed, see below), wavetable/ (the wavetable creators).
 - src/interface/look_and_feel/synth_strings.h: the parameters' value names.
 - src/unity_build/: synthesis.cpp and common.cpp, the files Vital builds as.
-- third_party/json (nlohmann's JSON 3.1.2, MIT), third_party/kissfft
-  (KISS FFT, BSD-3-Clause): Vital's own copies.
+- third_party/json (nlohmann's JSON 3.1.2, MIT): Vital's own copy. (Its
+  KISS FFT isn't vendored: FourierTransform runs on KFR's, below.)
 
 SUBstation's (not Vital's):
 - compat/kfr_fourier_transform.cpp: Vital's FourierTransform on KFR (above).
@@ -28,8 +28,9 @@ SUBstation's (not Vital's):
   - src/common/fourier_transform.h: a branch for SUBSTATION_KFR_FFT (after
     Intel IPP's) declaring FourierTransform, which compat/kfr_fourier_transform.cpp
     implements on KFR's real FFT (third_party/kfr) in the IPP build's layout.
-    Without it, Vital falls back on KISS FFT, which spent about 40 % of the
-    instrument's time and dropped the Nyquist bin.
+    Upstream falls back on KISS FFT, which spent about 40 % of the
+    instrument's time and dropped the Nyquist bin; here that fallback is an
+    #error, and KISS FFT isn't vendored.
 
 Not here: Vital's interface (its window, OpenGL), its plug-in and standalone
 wrappers, its presets and wavetables (under their own licence, not

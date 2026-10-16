@@ -48,7 +48,7 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 | [EngineOffline.cpp](../../engine/src/EngineOffline.cpp) | fresh voices for offline renders (`prepareOfflineLocked`) |
 | [Renderer.cpp](../../engine/src/Renderer.cpp) | `assignVoices()` (a render or a voice), `carriedOn()`, `acquireVoice()`, `renderClips()` |
 | [third_party/signalsmith-stretch](../../engine/third_party/signalsmith-stretch) | Signalsmith Stretch 1.3.2 (MIT), one header, unmodified |
-| [third_party/signalsmith-linear](../../engine/third_party/signalsmith-linear) | Signalsmith Linear 0.6.4 (MIT): only `stft.h` and `fft.h`, what Stretch needs without platform FFT backends |
+| [third_party/signalsmith-linear](../../engine/third_party/signalsmith-linear) | Signalsmith Linear 0.6.4 (MIT): only `stft.h` and `fft.h`, what Stretch needs, plus a platform FFT backend of SUBstation's (`platform/fft-kfr.h`: its power-of-two FFTs on KFR's, `SIGNALSMITH_USE_KFR`) |
 | [third_party/miniaudio](../../engine/third_party/miniaudio) | the decoders `AudioSource` uses (compiled once in [miniaudio_impl.c](../../engine/src/miniaudio_impl.c)) |
 
 Both Signalsmith libraries are added as `SYSTEM` include directories in [CMakeLists.txt](../../CMakeLists.txt), and

@@ -1,3 +1,6 @@
 Signalsmith Linear 0.6.4 (MIT), https://github.com/Signalsmith-Audio/linear
 Only stft.h and fft.h are vendored (all Signalsmith Stretch needs without the
-optional platform FFT backends); unmodified.
+optional platform FFT backends). One local change: fft.h includes
+platform/fft-kfr.h (SUBstation's own, MIT like the rest) when SIGNALSMITH_USE_KFR
+is defined, so its power-of-two FFTs run on KFR's (engine/CMakeLists.txt defines
+it for every user of signalsmith_linear).
