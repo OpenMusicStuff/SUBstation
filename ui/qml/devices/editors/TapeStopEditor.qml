@@ -2,39 +2,36 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// The Tape Stop's editor, compact: a deck (two reels, the tape between them)
-// over the stop's curve, worked out here as the engine works it out
-// (TapeStop.cpp's speedAt: the speed falling from full to nothing along Curve),
-// with Stop's button over its corner; beside it the times, the curve, the tone
-// and the mix, three to a row.
+// The Tape Stop's editor, laid out as Kilohearts' Tape Stop: a deck across the
+// top, two big reels (cut off by its bottom edge) either side of the Stop
+// button (a play triangle while the tape runs, a square while it is stopped);
+// under it the knobs in a row, Stop Time and Start Time at the ends, Curve,
+// Tone and Dry/Wet between them.
 //
 // Its animation: the reels turn at the speed the tape is going (the display
-// `speed`, through a DisplayValue), slowing to a halt as it stops and dimming
-// while it is stopped; a dot rides the curve where the stop has got to; a
-// change of the curve fades the new one in.
+// `speed`, through a DisplayValue), slowing to a halt as it stops, the tape
+// between them sagging and the deck dimming while it is stopped; the button
+// glows while the tape runs.
 Item {
     id: editor
 
     required property string trackId
     required property string deviceId
 
-    readonly property int deckWidth: 104
     readonly property int knobWidth: 56
     readonly property int knobSize: 28
-    readonly property int spacing: 8
+    readonly property int knobGap: 4
+    readonly property int knobCount: 5
+    readonly property int contentWidth: knobCount * knobWidth + (knobCount - 1) * knobGap
 
-    implicitWidth: 8 + deckWidth + spacing + 3 * knobWidth + 2 * 4 + 8 - 2
-    implicitHeight: 6 + Math.max(knobs.implicitHeight, 96) + 6
+    implicitWidth: 8 + contentWidth + 8 - 2
+    implicitHeight: 6 + 60 + 4 + knobs.implicitHeight + 6
 
     DeviceParamMap {
         id: p
         trackId: editor.trackId
         deviceId: editor.deviceId
         ids: ["stop", "stop_time", "start_time", "curve", "tone", "mix"]
-    }
-    function value(id, otherwise) {
-        const param = p.get(id)
-        return param ? param.value : otherwise
     }
 
     DisplayValue {
@@ -47,29 +44,15 @@ Item {
         width: 0
         height: 0
     }
-    // The tape's speed as the engine has it (full while nothing comes, as it would run).
+    readonly property bool stopped: p.get("stop") ? p.get("stop").value >= 0.5 : false
+    // The tape's speed as the engine has it (while nothing comes, as the switch says it would run).
     readonly property real speed: speedDisplay.active ? Math.max(0, Math.min(1, speedDisplay.value))
-                                                      : (editor.value("stop", 0) >= 0.5 ? 0 : 1)
+                                                      : (editor.stopped ? 0 : 1)
     readonly property bool running: speedDisplay.active && editor.speed > 0.001
-
-    // The speed `progress` (0..1) through a stop, along `curve` (-100..100): the engine's speedAt.
-    function speedAt(progress, curve) {
-        const k = Math.pow(2, Math.abs(curve) / 40)
-        const t = Math.max(0, Math.min(1, progress))
-        return curve >= 0 ? 1 - Math.pow(t, k) : Math.pow(1 - t, k)
-    }
-    // How far through a stop the tape is going at `speed`: speedAt's inverse.
-    function progressAt(speed, curve) {
-        const k = Math.pow(2, Math.abs(curve) / 40)
-        const s = Math.max(0, Math.min(1, speed))
-        return curve >= 0 ? Math.pow(1 - s, 1 / k) : 1 - Math.pow(s, 1 / k)
-    }
-    readonly property real curve: value("curve", 0)
 
     // The reels' turn, in degrees: on at the speed while the tape runs.
     property real angle: 0
     Timer {
-        id: spin
         interval: 16
         repeat: true
         running: editor.running && editor.visible
@@ -79,54 +62,58 @@ Item {
             const now = Date.now()
             const dt = Math.min(0.1, (now - last) / 1000)
             last = now
-            editor.angle = (editor.angle + 240 * editor.speed * dt) % 360
+            editor.angle = (editor.angle + 200 * editor.speed * dt) % 360
         }
     }
 
-    // A reel: a hub, its spokes and the tape wound on it.
+    // A reel: a grey flange with three holes, turning; the tape wound on it under them.
     component Reel: Item {
         id: reel
 
         property real wound: 0.6  // how much of the reel the tape fills
-        width: 34
-        height: 34
         rotation: editor.angle
 
-        Rectangle {  // the tape on it
-            anchors.centerIn: parent
-            width: 12 + (reel.width - 12) * reel.wound
-            height: width
-            radius: width / 2
-            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
-        }
         Rectangle {  // the flange
             anchors.fill: parent
             radius: width / 2
-            color: "transparent"
-            border.color: Theme.textDim
+            color: Qt.rgba(Theme.textDim.r, Theme.textDim.g, Theme.textDim.b, 0.55)
+            border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.25)
         }
-        Repeater {
+        Rectangle {  // the tape wound on it, seen through the holes
+            anchors.centerIn: parent
+            width: reel.width * (0.3 + 0.55 * reel.wound)
+            height: width
+            radius: width / 2
+            color: Qt.rgba(Theme.lane.r * 0.6, Theme.lane.g * 0.6, Theme.lane.b * 0.6, 1)
+            opacity: 0.6
+        }
+        Repeater {  // the holes
             model: 3
             Rectangle {
                 required property int index
-                x: reel.width / 2 - 1
-                y: 4
-                width: 2
-                height: reel.height / 2 - 4
-                color: Theme.textDim
-                transform: Rotation {
-                    origin.x: 1
-                    origin.y: reel.height / 2 - 4
-                    angle: index * 120
-                }
+                readonly property real a: (index * 120 - 90) * Math.PI / 180
+                width: reel.width * 0.3
+                height: width
+                radius: width / 2
+                x: reel.width / 2 + Math.cos(a) * reel.width * 0.27 - width / 2
+                y: reel.height / 2 + Math.sin(a) * reel.width * 0.27 - height / 2
+                color: Theme.lane
             }
         }
         Rectangle {  // the hub
             anchors.centerIn: parent
-            width: 8
-            height: 8
-            radius: 4
-            color: Theme.accent
+            width: reel.width * 0.16
+            height: width
+            radius: width / 2
+            color: Theme.lane
+            border.color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.35)
+            Rectangle {  // its key
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: 1
+                width: 2
+                height: parent.height / 2 - 1
+                color: Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.5)
+            }
         }
     }
 
@@ -135,118 +122,145 @@ Item {
         objectName: "deck"
         x: 8
         y: 6
-        width: editor.deckWidth
-        height: editor.height - 12
+        width: editor.contentWidth
+        height: editor.height - 12 - knobs.height - 4
         color: Theme.lane
         border.color: Theme.border
         clip: true
 
-        // The reels and the tape between them, dimmed while the tape is stopped.
+        readonly property real reelSize: Math.min(height * 1.25, width * 0.36)
+
         Item {
             id: reels
             objectName: "reels"
-            x: 1
-            y: 3
-            width: parent.width - 2
-            height: 36
-            opacity: 0.45 + 0.55 * editor.speed
+            anchors.fill: parent
+            opacity: 0.55 + 0.45 * editor.speed
             Behavior on opacity {
                 NumberAnimation {
                     duration: 150
                 }
             }
 
-            Rectangle {  // the tape
-                x: left.x + left.width / 2
-                y: left.y + left.height - 1
-                width: right.x - left.x
-                height: 1
-                color: Theme.accent
-            }
             Reel {
                 id: left
-                x: 12
-                wound: 0.75
+                width: deck.reelSize
+                height: width
+                x: deck.width * 0.04
+                y: deck.height * 0.18
+                wound: 0.8
             }
             Reel {
                 id: right
-                x: reels.width - width - 12
+                width: deck.reelSize
+                height: width
+                x: deck.width - width - deck.width * 0.04
+                y: deck.height * 0.18
                 wound: 0.35
             }
-        }
-
-        // The curve: the speed through a stop, left to right, a dot where the tape is.
-        Item {
-            id: graph
-            objectName: "curveGraph"
-            x: 4
-            y: reels.y + reels.height + 4
-            width: parent.width - 8
-            height: parent.height - y - 4
-
-            Rectangle {  // nothing
-                y: graph.height - 1
-                width: parent.width
-                height: 1
-                color: Theme.border
-            }
-            Repeater {
-                model: Math.max(0, Math.floor(graph.width / 2))
-                Rectangle {
-                    required property int index
-                    readonly property real level: editor.speedAt((index + 0.5) / (graph.width / 2), editor.curve)
-                    x: 2 * index
-                    y: graph.height - height
-                    width: 1
-                    height: Math.max(1, level * graph.height)
-                    color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.35)
-                    Behavior on height {
-                        NumberAnimation {
-                            duration: 140
-                            easing.type: Easing.OutCubic
-                        }
-                    }
-                }
-            }
+            // The tape from reel to reel under the button, sagging as it slows.
             Rectangle {
-                id: dot
-                objectName: "speedDot"
-                readonly property real progress: editor.progressAt(editor.speed, editor.curve)
-                x: progress * (graph.width - width)
-                y: (1 - editor.speed) * (graph.height - height)
-                width: 5
-                height: 5
-                radius: 2.5
-                color: Theme.accent
-                border.color: Theme.accentText
-                Behavior on x {
-                    NumberAnimation {
-                        duration: 60
-                    }
-                }
+                x: left.x + left.width / 2
+                width: right.x + right.width / 2 - x
+                y: deck.height - 3 - 2 * (1 - editor.speed)
+                height: 2
+                color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.5)
                 Behavior on y {
                     NumberAnimation {
-                        duration: 60
+                        duration: 120
                     }
                 }
             }
         }
 
-        HoverHandler {
-            id: hover
+        // Stop: a play triangle while the tape runs, a square while it is stopped; pressed, it switches.
+        Item {
+            id: stopButton
+            objectName: "stop"
+            readonly property bool lit: editor.stopped
+            readonly property DeviceParam param: p.get("stop")
+            readonly property real glyph: Math.min(30, deck.height * 0.5)
+            anchors.centerIn: parent
+            width: glyph + 14
+            height: glyph + 10
+
+            ParamArea {
+                anchors.fill: parent
+                param: stopButton.param
+            }
+            MouseArea {
+                id: press
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: if (stopButton.param) stopButton.param.touch()
+                onClicked: if (stopButton.param) stopButton.param.set(stopButton.lit ? 0 : 1)
+            }
+
+            // The play triangle: rows narrowing to its point.
+            Item {
+                id: play
+                objectName: "playGlyph"
+                anchors.centerIn: parent
+                width: stopButton.glyph * 0.9
+                height: stopButton.glyph
+                opacity: stopButton.lit ? 0 : 1
+                scale: press.pressed ? 0.92 : (press.containsMouse ? 1.06 : 1)
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 120
+                    }
+                }
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 90
+                    }
+                }
+                Repeater {
+                    model: Math.max(1, Math.round(play.height))
+                    Rectangle {
+                        required property int index
+                        y: index
+                        height: 1
+                        width: play.width * (1 - Math.abs(2 * (index + 0.5) / play.height - 1))
+                        color: Theme.accent
+                    }
+                }
+            }
+            // The stopped square.
+            Rectangle {
+                objectName: "stopGlyph"
+                anchors.centerIn: parent
+                width: stopButton.glyph * 0.75
+                height: width
+                radius: 2
+                color: Theme.textDim
+                opacity: stopButton.lit ? 1 : 0
+                scale: press.pressed ? 0.92 : (press.containsMouse ? 1.06 : 1)
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 120
+                    }
+                }
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 90
+                    }
+                }
+            }
+
+            ToolTip.visible: press.containsMouse
+            ToolTip.delay: 700
+            ToolTip.text: qsTr("Stop: the tape slows to a halt; pressed again, it spins up (automate it to stop on the beat)")
         }
-        ToolTip.visible: hover.hovered
-        ToolTip.delay: 700
-        ToolTip.text: qsTr("The tape's speed through a stop: Curve bends it, the reels turn as fast as it goes")
     }
 
-    Grid {
+    // The knobs in a row under the deck: Stop Time and Start Time at the ends.
+    Row {
         id: knobs
-        x: deck.x + deck.width + editor.spacing
-        y: 6
-        columns: 3
-        columnSpacing: 4
-        rowSpacing: 2
+        x: deck.x
+        y: deck.y + deck.height + 4
+        spacing: editor.knobGap
 
         EditorKnob {
             objectName: "stop_time"
@@ -255,14 +269,6 @@ Item {
             param: p.get("stop_time")
             title: qsTr("Stop Time")
             tooltip: qsTr("Stop Time: how long the tape takes to slow to a halt")
-        }
-        EditorKnob {
-            objectName: "start_time"
-            width: editor.knobWidth
-            size: editor.knobSize
-            param: p.get("start_time")
-            title: qsTr("Start Time")
-            tooltip: qsTr("Start Time: how long it takes to spin up again once Stop is let go")
         }
         EditorKnob {
             objectName: "curve"
@@ -288,21 +294,13 @@ Item {
             param: p.get("mix")
             title: qsTr("Dry/Wet")
         }
-        // Stop itself, lit while stopped: pressed to stop, pressed again to start.
-        Item {
+        EditorKnob {
+            objectName: "start_time"
             width: editor.knobWidth
-            height: knobs.children[0].height
-
-            ParamButton {
-                id: stopButton
-                objectName: "stop"
-                anchors.centerIn: parent
-                width: parent.width - 4
-                height: 24
-                param: p.get("stop")
-                text: qsTr("Stop")
-                tooltip: qsTr("Stop: the tape slows to a halt; pressed again, it spins up (automate it to stop on the beat)")
-            }
+            size: editor.knobSize
+            param: p.get("start_time")
+            title: qsTr("Start Time")
+            tooltip: qsTr("Start Time: how long it takes to spin up again once Stop is let go")
         }
     }
 }

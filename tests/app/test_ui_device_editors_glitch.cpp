@@ -3,8 +3,9 @@
 // knobs, Grid and Variation bound and undoable, the kinds' knobs in their
 // colours, and its animations following the displays (DisplayValues): the
 // cursor sliding to the step playing, the cells taking what each step did,
-// popping and shivering while they glitch, the scan line only then, all still
-// while nothing comes in. With SUBSTATION_UI_SCREENSHOTS set to a folder, it is
+// popping, shivering and ghosting while they glitch, the tears, static, scan
+// line and the kind's name only then, all still while nothing comes in; the
+// knobs centred top to bottom. With SUBSTATION_UI_SCREENSHOTS set to a folder, it is
 // saved there as a PNG.
 
 #include <QQuickItem>
@@ -39,6 +40,8 @@ class TestUiDeviceEditorsGlitch : public QObject, public sub::app::test::EditorH
     // The engine says step `at` plays, doing `kind` (one value: the step plus 16 times the kind).
     static void playing(DisplayValue* step, int at, int kind) { step->advance(true, at + 16 * kind, 0.016); }
 
+    QQuickItem* strip(QQuickItem* view) { return find(view, QStringLiteral("steps")); }
+
 private Q_SLOTS:
     void initTestCase() {
         if (!haveDisplay())
@@ -69,6 +72,10 @@ private Q_SLOTS:
         for (const char* name : {"stutter", "reverse", "tape", "gate"})
             colours << find(view, QString::fromLatin1(name))->property("color").value<QColor>().name();
         QCOMPARE(colours.size(), 4);
+        // The knobs centred top to bottom.
+        QQuickItem* knobs = find(view, QStringLiteral("knobs"));
+        QVERIFY(knobs);
+        QVERIFY(std::abs(knobs->y() + knobs->height() / 2 - view->height() / 2) <= 1.0);
         // A knob set, undoably.
         editor()->setDeviceParam(track_, device_, QStringLiteral("chance"), 80.0);
         QCOMPARE(value("chance"), 80.0);
@@ -114,6 +121,23 @@ private Q_SLOTS:
         QVERIFY(shivered);
         QTRY_VERIFY(scan->opacity() > 0.1);
         QTRY_VERIFY(scan->y() != scanAt);
+        // Its ghosts and tears, the static, and its name thrown across the strip.
+        QVERIFY(find(cell3, QStringLiteral("ghostCyan"))->isVisible());
+        QVERIFY(find(cell3, QStringLiteral("ghostMagenta"))->isVisible());
+        bool torn = false, crackling = false;
+        for (QQuickItem* tear : itemsNamed(strip(view), QStringLiteral("tear"))) torn = torn || tear->isVisible();
+        for (QQuickItem* dot : itemsNamed(strip(view), QStringLiteral("static"))) crackling = crackling || dot->isVisible();
+        QVERIFY(torn && crackling);
+        QQuickItem* label = find(view, QStringLiteral("kindLabel"));
+        QCOMPARE(label->property("text").toString(), QStringLiteral("REVERSE"));
+        // The disorder moves: the clock runs while it glitches (the display coming all the while).
+        const int tick = view->property("tick").toInt();
+        for (int i = 0; i < 5; ++i) {
+            playing(step, 3, 2);
+            QTest::qWait(30);
+        }
+        QVERIFY(view->property("tick").toInt() > tick);
+        QTRY_COMPARE(label->opacity(), 0.0);  // (thrown, then gone)
         for (int i = 0; i < 6; ++i) {  // as it plays
             playing(step, 3, 2);
             QTest::qWait(30);
@@ -129,6 +153,11 @@ private Q_SLOTS:
         QTRY_COMPARE(cell3->scale(), 1.0);
         QTRY_COMPARE(cell3->property("shiver").toDouble(), 0.0);
         QTRY_COMPARE(scan->opacity(), 0.0);
+        QVERIFY(!find(cell3, QStringLiteral("ghostCyan"))->isVisible());
+        for (QQuickItem* tear : itemsNamed(strip(view), QStringLiteral("tear"))) QVERIFY(!tear->isVisible());
+        const int still = view->property("tick").toInt();
+        QTest::qWait(150);
+        QCOMPARE(view->property("tick").toInt(), still);  // (the clock stopped)
         const QVariantList cells = view->property("cells").toList();
         QCOMPARE(cells.at(5).toInt(), 1);
         QCOMPARE(cells.at(6).toInt(), 4);

@@ -1,9 +1,11 @@
 // The Tape Stop's editor (ui/qml/devices/editors/TapeStopEditor.qml): loaded as
-// the device view loads it, over a real engine; compact (fitting the view, its
-// knobs at their small size), its Stop button switching the parameter undoably,
-// the curve drawn as the engine bends it, and the reels turning at the speed the
-// engine says the tape goes (DisplayValue), still while it is stopped. With
-// SUBSTATION_UI_SCREENSHOTS set to a folder, it is saved there as a PNG.
+// the device view loads it, over a real engine; laid out as Kilohearts' (the deck
+// over a row of knobs, Stop Time and Start Time at its ends, the Stop button in
+// the deck's middle), compact and fitting the view; the button switching the
+// parameter undoably, its glyph a triangle while the tape runs and a square while
+// it is stopped; and the reels turning at the speed the engine says the tape
+// goes (DisplayValue), still while it is stopped. With SUBSTATION_UI_SCREENSHOTS
+// set to a folder, it is saved there as a PNG.
 
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -35,11 +37,9 @@ class TestUiDeviceEditorsTapeStop : public QObject, public sub::app::test::Edito
         return show(QStringLiteral("tape_stop"), track_, device_);
     }
 
-    static double speedAt(QQuickItem* view, double progress, double curve) {
-        QVariant out;
-        QMetaObject::invokeMethod(view, "speedAt", Q_RETURN_ARG(QVariant, out), Q_ARG(QVariant, progress),
-                                  Q_ARG(QVariant, curve));
-        return out.toDouble();
+    QRectF rectOf(QQuickItem* view, const char* name) {
+        QQuickItem* item = find(view, QString::fromLatin1(name));
+        return item ? item->mapRectToItem(view, QRectF(0, 0, item->width(), item->height())) : QRectF();
     }
 
 private Q_SLOTS:
@@ -58,35 +58,37 @@ private Q_SLOTS:
         QVERIFY(view && fitted());
         QVERIFY(view->implicitHeight() <= bodyHeight());  // fits the view
         QVERIFY(view->implicitWidth() <= 310);            // compact
-        for (const char* name : {"stop_time", "start_time", "curve", "tone", "mix", "stop", "deck", "reels", "curveGraph"})
+        for (const char* name : {"stop_time", "start_time", "curve", "tone", "mix", "stop", "deck", "reels"})
             QVERIFY2(find<QQuickItem>(view, QString::fromLatin1(name)), name);
 
-        // Stop: pressed, the tape stops (lit); undone, it runs.
-        QQuickItem* stop = find(view, QStringLiteral("stop"));
-        QVERIFY(!stop->property("lit").toBool());
-        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
-                          centerOf(qvariant_cast<QQuickItem*>(stop->property("button"))));
+        // Kilohearts' layout: the deck over the knobs, in one row from Stop Time to Start Time, the button in
+        // the deck's middle.
+        const QRectF deck = rectOf(view, "deck"), stop = rectOf(view, "stop");
+        QVERIFY(deck.contains(stop));
+        QVERIFY(std::abs(stop.center().x() - deck.center().x()) < 1.0);
+        QVERIFY(std::abs(stop.center().y() - deck.center().y()) < 1.0);
+        double lastX = -1;
+        for (const char* name : {"stop_time", "curve", "tone", "mix", "start_time"}) {
+            const QRectF knob = rectOf(view, name);
+            QVERIFY2(knob.top() >= deck.bottom(), name);
+            QVERIFY2(std::abs(knob.top() - rectOf(view, "stop_time").top()) < 0.5, name);
+            QVERIFY2(knob.left() > lastX, name);
+            QVERIFY2(knob.bottom() <= view->height(), name);
+            lastX = knob.left();
+        }
+
+        // The button: pressed, the tape stops (its square showing); undone, it runs (the triangle).
+        QQuickItem* button = find(view, QStringLiteral("stop"));
+        QVERIFY(!button->property("lit").toBool());
+        QTRY_COMPARE(find(view, QStringLiteral("playGlyph"))->opacity(), 1.0);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(button));
         QCOMPARE(value("stop"), 1.0);
-        QVERIFY(stop->property("lit").toBool());
+        QVERIFY(button->property("lit").toBool());
+        QTRY_COMPARE(find(view, QStringLiteral("stopGlyph"))->opacity(), 1.0);
+        QTRY_COMPARE(find(view, QStringLiteral("playGlyph"))->opacity(), 0.0);
         undo()->undo();
         QCOMPARE(value("stop"), 0.0);
-    }
-
-    void curveAsTheEngineBendsIt() {
-        QQuickItem* view = showTapeStop();
-        QVERIFY(view);
-        QCOMPARE(speedAt(view, 0.25, 0.0), 0.75);
-        QVERIFY(speedAt(view, 0.25, 100.0) > 0.99);  // 1 - 0.25^5.66
-        QVERIFY(std::abs(speedAt(view, 0.25, -100.0) - std::pow(0.75, std::exp2(2.5))) < 1e-9);
-        QCOMPARE(speedAt(view, 0.0, -40.0), 1.0);
-        QCOMPARE(speedAt(view, 1.0, 40.0), 0.0);
-        // Its inverse puts the dot back where the speed was.
-        for (const double curve : {-80.0, 0.0, 65.0}) {
-            QVariant progress;
-            QMetaObject::invokeMethod(view, "progressAt", Q_RETURN_ARG(QVariant, progress), Q_ARG(QVariant, 0.4),
-                                      Q_ARG(QVariant, curve));
-            QVERIFY(std::abs(speedAt(view, progress.toDouble(), curve) - 0.4) < 1e-9);
-        }
+        QTRY_COMPARE(find(view, QStringLiteral("playGlyph"))->opacity(), 1.0);
     }
 
     void reelsTurnAtTheSpeed() {
@@ -108,14 +110,7 @@ private Q_SLOTS:
         const double stopped = view->property("angle").toDouble();
         QTest::qWait(100);
         QCOMPARE(view->property("angle").toDouble(), stopped);
-        QTRY_VERIFY(find(view, QStringLiteral("reels"))->opacity() < 0.5);
-        // Half way up: the dot half way down the curve.
-        set("curve", 0.0);
-        speed->advance(true, 0.5, 0.016);
-        QQuickItem* dot = find(view, QStringLiteral("speedDot"));
-        QQuickItem* graph = find(view, QStringLiteral("curveGraph"));
-        QTRY_VERIFY(std::abs(dot->x() - 0.5 * (graph->width() - dot->width())) < 0.5);
-        set("curve", -30.0);
+        QTRY_VERIFY(find(view, QStringLiteral("reels"))->opacity() < 0.6);
         for (int i = 0; i < 10; ++i) {
             speed->advance(true, 0.6, 0.016);
             QTest::qWait(30);

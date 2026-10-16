@@ -986,8 +986,9 @@ pitch falling with it; let go, it spins back up.
 - **Tone** (0 to 100 %): how much darker it gets as it slows.
 - **Dry/Wet**.
 
-Running, it passes the sound exactly as it is. Its editor shows two reels turning as fast as the
-tape goes, over the curve the stop follows with a dot where the tape is now.
+Running, it passes the sound exactly as it is. Its editor is laid out as Kilohearts' Tape Stop:
+two tape reels turning as fast as the tape goes, the Stop button between them (a play triangle
+while it runs, a square while it is stopped), and the knobs in a row underneath.
 
 ### Glitch
 
@@ -1008,7 +1009,10 @@ Cuts the sound up on the beat: at each step of a grid, the step may glitch, at r
 - **Dry/Wet**.
 
 Its editor shows the last sixteen steps, each coloured by what it did (the knobs are in the
-same colours), the one playing outlined; a step that glitches pops and shivers as it plays.
+same colours), the one playing outlined. When a step glitches the editor goes with it: the
+cells jolt, the strip flashes and tears, static crackles, the kind's name flies across, and the
+step's cell splits, ghosts and moves as its kind sounds (rippling for Stutter, sweeping back for
+Reverse, sinking for Tape, blinking for Gate). Between glitches it is still.
 
 ### Chorus-Ensemble
 

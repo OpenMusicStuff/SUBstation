@@ -407,7 +407,7 @@ readonly property var editors: ({
 - `required property string trackId` and `deviceId`.
 - It is the device's body: the frame around it (the border, the title bar, the menu) is the panel's. Its
   `implicitWidth` is the body's width (Compressor 658, Gate 568, or 837 with its sidechain section, Limiter 610,
-  Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 454, Bitcrusher 380, Tape Stop 302, Glitch 332, Arpeggiator 404, Chorus-Ensemble
+  Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 454, Bitcrusher 380, Tape Stop 310, Glitch 332, Arpeggiator 404, Chorus-Ensemble
   534, Phaser-Flanger 732, or 906 with More open, Reverb 1023, Disperser 544, EQ 580, or 756 with its band controls,
   Sidechain 720, Sampler 760, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Bitcrusher's, Tape Stop's, Glitch's, Arpeggiator's, Disperser's, EQ's, Sidechain's and
   Sampler's are their widths in the default font as the tests' host has it (Inter standing in for Segoe UI): their parts
@@ -966,21 +966,28 @@ The editors:
   corner; beside it the other six `EditorKnob`s, three to a row. Animated: while the display `level` comes (a
   [DisplayValue](../../ui/src/devices/DisplayValue.h)) the wave runs along (two cycles side by side, scrolled one
   cycle every 2.4 s, held where it got to while nothing comes), glowing as loud as the input; new steps fade in.
-- **Tape Stop** ([TapeStopEditor.qml](../../ui/qml/devices/editors/TapeStopEditor.qml)): no pages, compact (its
-  knobs at 28 px, in cells 56 px wide); a deck: two reels (the tape between them) over the stop's curve, worked out
-  in the QML as the engine works it out (`speedAt`, and its inverse `progressAt` for the dot), drawn with
-  Rectangles; beside it Stop Time, Start Time, Curve, Tone and Dry/Wet, three to a row, and Stop's button (lit while
-  stopped) in the sixth place. Animated: the reels turn at the display `speed` (a `DisplayValue`; `angle`, stepped
-  by a 16 ms `Timer` by the time since the last, only while the speed is above nothing), dimming as it falls; a dot
-  rides the curve where the stop has got to; a new curve eases in.
+- **Tape Stop** ([TapeStopEditor.qml](../../ui/qml/devices/editors/TapeStopEditor.qml)): no pages, laid out as
+  Kilohearts' Tape Stop: a deck across the top (as tall as the body leaves it), two big reels (a grey flange with
+  three holes and a keyed hub, cut off by its bottom edge) either side of the Stop button in its middle (its own
+  item, `stop`: a `ParamArea` under a left-button `MouseArea` that touches and switches the parameter; a play
+  triangle drawn as rows of Rectangles while the tape runs, a square while it is stopped, crossfading); under it the
+  knobs in a row, 28 px in cells 56 px wide: Stop Time, Curve, Tone, Dry/Wet, Start Time. Animated: the reels turn
+  at the display `speed` (a `DisplayValue`; `angle`, stepped by a 16 ms `Timer` by the time since the last, only
+  while the speed is above nothing), the deck dimming and the tape between them sagging as it falls; the glyph
+  swells under the mouse and shrinks while pressed.
 - **Glitch** ([GlitchEditor.qml](../../ui/qml/devices/editors/GlitchEditor.qml)): no pages, compact (its knobs at 28
   px, in cells 50 px wide); Grid (a `ParamChoice`) and Variation (a value box) over sixteen cells in two rows, the
   last sixteen steps (`cells`: what each did when it last played, from the display `step`, the step plus 16 × its
-  kind, through a `DisplayValue`), each in its kind's colour (`kindColors`; dim for nothing); beside them Chance and
-  Dry/Wet over each other, then the four kinds' weights two by two, each knob in its kind's colour. Animated,
-  subtly: an outline slides to the step playing; a cell that glitches pops (to 1.1×, eased back) and shivers a pixel
-  while it plays; cells fade as they age; a scan line runs down the cells while a step glitches; the kind playing
-  swells its knob a little. Still while nothing comes in.
+  kind, through a `DisplayValue`), each in its kind's colour (`kindColors`; dim for nothing); beside them, centred
+  top to bottom, Chance and Dry/Wet over each other, then the four kinds' weights two by two, each knob in its
+  kind's colour. Animated, loudly while a step glitches and not at all otherwise: an outline slides to the step
+  playing. A glitch starting (`onsets`, counted in `note()`) jolts the cells sideways, flashes the strip in its
+  kind's colour and throws its name (`kindLabel`) across it in split red, cyan and white. While it plays, a 45 ms
+  clock (`tick`, on only then) reshuffles the disorder, each piece placed by `noise(a, tick)` (a hash, so bindings
+  follow the clock): tears (bands across the strip, knocked sideways), static, and the playing cell's cyan and
+  magenta ghosts and its slices knocked sideways; two scan lines run down and up the cells; the cell pops (to 1.1×),
+  shivers a pixel and moves as its kind does (Stutter: two echoes rippling out; Reverse: a white sweep running back;
+  Tape: dark sinking from its top; Gate: blinking); the kind's knob swells and flickers. Cells fade as they age.
 - **Arpeggiator** ([ArpeggiatorEditor.qml](../../ui/qml/devices/editors/ArpeggiatorEditor.qml)): no pages; Style (a
   `ParamChoice`) and Hold over the pattern (`pattern`: sixteen steps of a three-note chord over the octaves, the
   rows as the engine's `indexFor` picks them, mirrored in `indexFor` here; Chord the whole chord an octave up each
@@ -1631,8 +1638,8 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_panel_midi_from.cpp](../../tests/app/test_ui_device_panel_midi_from.cpp) | The MIDI From button (on an instrument and an effect with a MIDI input, not on one without), its tooltip (following its source's name) and menu, choosing a track and its own again, undo, its source deleted |
 | [test_ui_device_editors.cpp](../../tests/app/test_ui_device_editors.cpp) | The registry (every kind with an editor, and the generic knobs for the others); the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and Sampler's editors, each loaded as the view loads it, driven with the mouse and keys, the project and (rendering offline) the engine checked; what the editors share (SgPainter's additions, the animation helpers, `EditorKnob` and `DeviceParamMap`); the parameter cell and its menu. Its host, and every editor test's, is [support/EditorHarness.h](../../tests/app/support/EditorHarness.h) |
 | [test_ui_device_editors_arpeggiator.cpp](../../tests/app/test_ui_device_editors_arpeggiator.cpp) | The Arpeggiator's editor: it goes after the instrument and fits the view, the octaves and velocity under the timing; the step playing lit; its buttons (Octaves, Hold, Velocity) set their parameters undoably, the fixed velocity's box live only while Fixed; the rate as a note value or a knob in Hz; the pattern drawn for each style |
-| [test_ui_device_editors_tape_stop.cpp](../../tests/app/test_ui_device_editors_tape_stop.cpp) | The Tape Stop's editor: compact and fitting the view, its controls, Stop's button (lit, undoable), the curve the engine's (and its inverse), the reels turning at the display's speed and still when stopped, the dot on the curve |
-| [test_ui_device_editors_glitch.cpp](../../tests/app/test_ui_device_editors_glitch.cpp) | The Glitch's editor: compact and fitting the view, its controls, the kinds' knobs in four colours, the cells inside the strip; the outline going to the step playing, cells taking what each step did, a glitching cell popping and shivering and the scan line running only then, all settling after |
+| [test_ui_device_editors_tape_stop.cpp](../../tests/app/test_ui_device_editors_tape_stop.cpp) | The Tape Stop's editor: Kilohearts' layout (the deck over one row of knobs from Stop Time to Start Time, the button in the deck's middle), fitting the view, its button (lit, undoable, a triangle or a square), the reels turning at the display's speed and still when stopped |
+| [test_ui_device_editors_glitch.cpp](../../tests/app/test_ui_device_editors_glitch.cpp) | The Glitch's editor: compact and fitting the view, its controls, the kinds' knobs in four colours, the cells inside the strip; the knobs centred top to bottom; the outline going to the step playing, cells taking what each step did, a glitching cell popping, shivering and ghosting, the tears, static, scan line, its name thrown across and the clock running only then, all settling after |
 | [test_ui_device_editors_bitcrusher.cpp](../../tests/app/test_ui_device_editors_bitcrusher.cpp) | The Bitcrusher's editor: fitting the view, its knobs, and its preview (one cycle) following Bits (its levels), Rate (its held samples), Drive (clipping) and Output (a box over it, its height); the wave running along only while sound comes in |
 | [test_ui_device_editors_modulators.cpp](../../tests/app/test_ui_device_editors_modulators.cpp) | The LFO's and the Envelope's editors: fitting the body; the curve the device's (its sine, its pluck), a point's drag one undo step and snapped with Ctrl, a shape replacing it; Map waiting and mapping the next parameter touched, the list's row, its range (one step a drag) and Invert, ×; what the engine renders reaching the graph (output, playhead) and the modulated parameter (its range and where it is now); the Envelope's hint and sidechain button; Random (the random curve the engine plays drawn, not editable, a shape turning it off); a modulated knob's look, its amount's handle dragged (one step) and Alt+Shift-clicked to bipolar, and its ring while Map waits |
 | [test_ui_device_editors_gate.cpp](../../tests/app/test_ui_device_editors_gate.cpp) | The Gate's editor: fitting the body in any font (the display at its own width; the knobs in equal cells and the column beside them, each as wide as its texts need as a Text lays them out in their font, and no wider; every caption and every text a readout takes whole, and the knobs' `texts()` every form of those), every control bound and undoable (the lookahead reaching the engine's latency; the list as wide as its longest choice; only the key EQ's Gain bipolar; the In meter's panel-grey well); the threshold and return lines' drags (relative, Shift, double-click, also of a line still easing, where it is drawn; one step each; either taken when they are one), their right-click menus, the meters not a control, their captions centred over them and apart by two of their font's word spaces and a pixel (as drawn too: the caption row blank for two word spaces between "In" and "Gate"); the displays reaching the graph (its rings holding all the plot draws, at any rate up to 384 kHz), its scrolling and rest, going idle, silence and a steady tone drawing nothing, listening while idle drawing nothing; the key dot's colour following the key's level now and the dot falling below the line within a few ticks, the passing shade showing over the levels; the sidechain section (fold, the type buttons' EQ faces, what is dimmed but settable and what is disabled, the source button naming itself for the menu, renames, every cell's texts whole and its width theirs, the source and EQ buttons as wide as their names need, the buttons along its top and the types at its right edge); the key curve being the engine's filter, its dot following the mouse, Ctrl and the wheel for the bell's Q |

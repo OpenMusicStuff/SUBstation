@@ -58,7 +58,7 @@ public:
         return grid >= static_cast<int>(kBeats.size()) ? beatsPerBar : kBeats[static_cast<size_t>(std::max(0, grid))];
     }
 
-    // 32 random bits from a step's number and a variation (splitmix64's finalizer).
+    // 64 random bits from a step's number and a variation (splitmix64's finalizer).
     static uint64_t roll(int64_t step, int variation) noexcept {
         uint64_t z = static_cast<uint64_t>(step) * 0x9E3779B97F4A7C15ULL + static_cast<uint64_t>(variation) * 0xD1B54A32D192ED03ULL;
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
