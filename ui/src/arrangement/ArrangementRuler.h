@@ -14,8 +14,14 @@
 // decides once, on its first 3 px, whether it pans (mostly horizontal: scroll)
 // or zooms (mostly vertical: 1.012 per pixel, around where it was pressed).
 // The playhead is an ArrangementPlayhead over it.
+//
+// Time signature changes: where the time signature changes, its new one shows
+// beside the bar's number (Theme::accent()). Right-click: the bar under the
+// mouse's time signature (Time Signature › 2/4 ... 12/8: a change from that bar
+// on), or removing a change there (menuRequested; ArrangementMenu.qml shows it).
 
 #include "arrangement/ArrangementItem.h"
+#include "arrangement/MenuEntries.h"
 
 #include <QColor>
 #include <QPointF>
@@ -45,6 +51,13 @@ public:
     static QColor loopEdgeColor(bool enabled);
     static bool inLoopStrip(double y);
 
+    Q_INVOKABLE void triggerMenu(int id);
+    // What its menu has at x (for tests and the right-click).
+    arrangement::MenuEntries contextMenu(double x) const;
+
+Q_SIGNALS:
+    void menuRequested(const QVariantList& entries, const QPointF& pos);
+
 protected:
     void paint(SgPainter& painter) override;
     void connectSession(app::Session* session) override;
@@ -57,6 +70,7 @@ protected:
     void hoverMoveEvent(QHoverEvent* event) override;
 
 private:
+    arrangement::MenuEntries menu_;
     enum class Zone { None, Start, End, Body };
     enum class Mode { LoopStart, LoopEnd, LoopBody, LoopNew, Scrub };
     struct Drag {

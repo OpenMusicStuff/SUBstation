@@ -33,7 +33,7 @@ MoveRangeGesture::MoveRangeGesture(LanesHost& host, const QPointF& press, std::f
         trackIds_ = range->trackIds;
         rows_ = session.selection()->rangeRows();
     }
-    const double tempo = project.tempo();
+    const app::Tempo& tempo = project.tempoMap();
     const timeline::Timeline& view = host.hostArrangement()->view();
     originBeat_ = view.xToBeat(press.x());
     originRow_ = host.rowAt(press.y(), true).value_or(0);
@@ -73,7 +73,7 @@ void MoveRangeGesture::move(const QPointF& pos, Qt::KeyboardModifiers modifiers)
     // Frozen tracks' clips where they stay: on a frozen track the moved stretch
     // replaces everything where it lands.
     frozenKept_.clear();
-    const double tempo = host_.hostSession()->project()->tempo();
+    const app::Tempo& tempo = host_.hostSession()->project()->tempoMap();
     for (const FrozenRow& frozen : frozen_) {
         std::vector<app::Clip> clips =
             copy_ ? frozen.clips : app::edits::removeRange(frozen.clips, start_, end_, tempo);
@@ -192,7 +192,7 @@ ClipEditGesture::ClipEditGesture(LanesHost& host, const QString& trackId, const 
 
 const app::Track* ClipEditGesture::track() const { return host_.hostSession()->project()->findTrack(trackId_); }
 
-double ClipEditGesture::tempo() const { return host_.hostSession()->project()->tempo(); }
+const app::Tempo& ClipEditGesture::tempo() const { return host_.hostSession()->project()->tempoMap(); }
 
 void ClipEditGesture::update(const app::Clip& result) {
     const app::Track* track = this->track();
@@ -300,13 +300,15 @@ FadeGesture::FadeGesture(LanesHost& host, const QString& trackId, const app::Cli
 void FadeGesture::move(const QPointF& pos, Qt::KeyboardModifiers) {
     const timeline::Timeline& view = host_.hostArrangement()->view();
     const double moved = view.xToBeat(pos.x()) - view.xToBeat(press_.x());
-    const double tempo = this->tempo();
+    const app::Tempo& tempo = this->tempo();
     const double from = out_ ? clip_.fadeOutBeats(tempo) : clip_.fadeInBeats(tempo);
     const app::Clip faded = app::edits::fadeClip(clip_, out_, from + (out_ ? -moved : moved), tempo);
     update(faded);
+    // (How long it lasts on the timeline, where it is.)
     const double beats = out_ ? faded.fadeOutBeats(tempo) : faded.fadeInBeats(tempo);
+    const double at = out_ ? faded.endBeat(tempo) - beats : faded.startBeat;
     readout_ = Readout{pos, (out_ ? QStringLiteral("Fade Out ") : QStringLiteral("Fade In ")) +
-                                fadeText(app::beatsToSeconds(beats, tempo))};
+                                fadeText(tempo.secondsFor(at, beats))};
 }
 
 // --- FadeCurveGesture -----------------------------------------------------------------------------
@@ -381,9 +383,9 @@ void TakeCompGesture::finish() {
         for (const app::TakeLane& lane : track->takes) {
             if (lane.id != laneId_) continue;
             for (const app::Clip& clip : lane.clips) {
-                if (clip.startBeat <= beat && beat < clip.endBeat(project.tempo())) {
+                if (clip.startBeat <= beat && beat < clip.endBeat(project.tempoMap())) {
                     start = clip.startBeat;
-                    end = clip.endBeat(project.tempo());
+                    end = clip.endBeat(project.tempoMap());
                 }
             }
         }

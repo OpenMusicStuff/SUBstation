@@ -69,7 +69,13 @@ QString TransportState::formatPosition(double beat, int numerator, int denominat
 }
 
 void TransportState::showPosition(double beat) {
-    const QString text = formatPosition(beat, numerator(), denominator());
+    QString text;
+    if (session_ && !session_->project()->meter().constant()) {  // (bars as each time signature makes them)
+        const app::BarPosition at = app::splitPosition(beat, session_->project()->meter());
+        text = QStringLiteral("%1. %2. %3").arg(at.bar + 1, 3).arg(at.beat + 1).arg(at.sixteenth + 1);
+    } else {
+        text = formatPosition(beat, numerator(), denominator());
+    }
     if (text == positionText_) return;  // (the playhead moves 60 times a second; the text less often)
     positionText_ = text;
     Q_EMIT positionTextChanged();

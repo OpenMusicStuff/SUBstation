@@ -41,10 +41,16 @@ public:
     static constexpr double kMaxPxPerBeat = 4000.0;
     static constexpr double kDefaultPxPerBeat = 24.0;
 
-    // The project gives the time signature (the grid's bars and beats) and the tempo.
-    void setProject(const app::Project* project) { project_ = project; }
+    // The project gives the time signature (the grid's bars and beats) and the tempo. On the song's
+    // own beats (the arrangement: songTime), bars follow its time signature changes (meter());
+    // elsewhere (a clip's beats in the piano roll) they are the song's first time signature's.
+    void setProject(const app::Project* project, bool songTime = false) {
+        project_ = project;
+        songTime_ = songTime;
+    }
     const app::Project* project() const { return project_; }
-    app::TimeSignature timeSignature() const;
+    app::TimeSignature timeSignature() const;  // at the view's left edge
+    MeterMap meter() const;
     double tempo() const;
 
     double pxPerBeat() const { return pxPerBeat_; }
@@ -82,6 +88,7 @@ public:
 
 private:
     const app::Project* project_ = nullptr;
+    bool songTime_ = false;
     double pxPerBeat_ = kDefaultPxPerBeat;
     double scrollBeats_ = 0.0;
     int scrollY_ = 0;
@@ -96,6 +103,7 @@ struct GridLine {
     double x;
     double beat;
     LineKind kind;
+    int64_t bar = 0;  // the bar it is in (from 0)
 };
 
 // The grid lines between x0 and x1 (every `step` beats; 0: the grid's step).
@@ -103,6 +111,9 @@ std::vector<GridLine> gridLines(const Timeline& view, double x0, double x1, doub
 // Beats between ruler labels: the grid step or a coarser musical unit, so
 // labels are at least 44 px apart.
 double labelStep(const Timeline& view, double step);
+// Whether a ruler labels this line, its labels `every` beats apart (labelStep()): where bars differ in
+// length, every so many bars (and beats of each bar, while labels are closer than a bar).
+bool labelled(const Timeline& view, const GridLine& line, double every);
 // The grid lines between x0 and x1, from `top` to `bottom`: the theme's
 // gridBar/Beat/Sub as they would be over its lane, drawn see-through, so they
 // show as well over a lighter ground (a selected track's lane, a selection's

@@ -20,7 +20,16 @@ double gridMinPixels(int level) {
 }
 
 app::TimeSignature Timeline::timeSignature() const {
-    return project_ ? project_->timeSignature() : app::TimeSignature();
+    if (!project_) return app::TimeSignature();
+    if (!songTime_) return project_->timeSignature();
+    const MeterMap::Change& at = project_->meter().at(scrollBeats_);
+    return {at.numerator, at.denominator};
+}
+
+MeterMap Timeline::meter() const {
+    if (!project_) return MeterMap();
+    if (songTime_) return project_->meter();
+    return MeterMap(project_->timeSignature().numerator, project_->timeSignature().denominator);
 }
 
 double Timeline::tempo() const { return project_ ? project_->tempo() : 120.0; }
@@ -100,25 +109,68 @@ double Timeline::gridStep() const {
 double Timeline::snapBeat(double beat, bool bypass) const {
     if (!snap_ || bypass) return beat;
     const double step = gridStep();
-    return app::roundHalfEven(beat / step) * step;
+    const MeterMap bars = meter();
+    if (bars.constant()) return app::roundHalfEven(beat / step) * step;
+    // Bars of different lengths: steps from each bar's start, or every so many bars.
+    const double viewBar = timeSignature().beatsPerBar();
+    if (step >= viewBar - 1e-9) {
+        const double every = std::max(1.0, std::round(step / viewBar));
+        const double bar = app::roundHalfEven((app::barNumberAt(beat, bars) - 1.0) / every) * every;
+        return bars.barStart(static_cast<int64_t>(bar));
+    }
+    const MeterMap::Bar bar = bars.barAt(beat);
+    const double snapped = bar.start + app::roundHalfEven((beat - bar.start) / step) * step;
+    return std::min(snapped, bar.start + bar.length);
 }
 
 std::vector<GridLine> gridLines(const Timeline& view, double x0, double x1, double step) {
     if (step <= 0.0) step = view.gridStep();
-    const app::TimeSignature ts = view.timeSignature();
-    const auto first = static_cast<long long>(std::max(0.0, std::floor(view.xToBeat(x0) / step)));
-    const auto last = static_cast<long long>(std::ceil(view.xToBeat(x1) / step));
+    const MeterMap bars = view.meter();
     std::vector<GridLine> lines;
-    for (long long k = first; k <= last; ++k) {
-        const double beat = static_cast<double>(k) * step;
-        LineKind kind = LineKind::Sub;
-        if (app::isMultiple(beat, ts.beatsPerBar()))
-            kind = LineKind::Bar;
-        else if (app::isMultiple(beat, ts.beatLength()))
-            kind = LineKind::Beat;
-        lines.push_back({view.beatToX(beat), beat, kind});
+    if (bars.constant()) {
+        const app::TimeSignature ts = view.timeSignature();
+        const auto first = static_cast<long long>(std::max(0.0, std::floor(view.xToBeat(x0) / step)));
+        const auto last = static_cast<long long>(std::ceil(view.xToBeat(x1) / step));
+        for (long long k = first; k <= last; ++k) {
+            const double beat = static_cast<double>(k) * step;
+            LineKind kind = LineKind::Sub;
+            if (app::isMultiple(beat, ts.beatsPerBar()))
+                kind = LineKind::Bar;
+            else if (app::isMultiple(beat, ts.beatLength()))
+                kind = LineKind::Beat;
+            lines.push_back({view.beatToX(beat), beat, kind, static_cast<int64_t>(std::floor(beat / ts.beatsPerBar() + 1e-9))});
+        }
+        return lines;
+    }
+    // Bars of different lengths: each bar's lines from its start; a step of bars, every so many.
+    const double viewBar = view.timeSignature().beatsPerBar();
+    const int64_t everyBars = step >= viewBar - 1e-9 ? static_cast<int64_t>(std::max(1.0, std::round(step / viewBar))) : 0;
+    const double end = view.xToBeat(x1);
+    for (MeterMap::Bar bar = bars.barAt(std::max(0.0, view.xToBeat(x0))); bar.start <= end;
+         bar = bars.barAt(bar.start + bar.length)) {
+        if (everyBars > 0) {
+            if (bar.index % everyBars == 0) lines.push_back({view.beatToX(bar.start), bar.start, LineKind::Bar, bar.index});
+            continue;
+        }
+        const double beatLength = 4.0 / bar.denominator;
+        for (double at = 0.0; at < bar.length - 1e-9; at += step) {
+            const LineKind kind = at < 1e-9 ? LineKind::Bar : app::isMultiple(at, beatLength) ? LineKind::Beat : LineKind::Sub;
+            lines.push_back({view.beatToX(bar.start + at), bar.start + at, kind, bar.index});
+        }
     }
     return lines;
+}
+
+bool labelled(const Timeline& view, const GridLine& line, double every) {
+    const MeterMap bars = view.meter();
+    if (bars.constant()) return std::abs(line.beat / every - std::round(line.beat / every)) < 1e-6;
+    const double viewBar = view.timeSignature().beatsPerBar();
+    if (every >= viewBar - 1e-9) {  // every so many bars
+        const auto everyBars = static_cast<int64_t>(std::max(1.0, std::round(every / viewBar)));
+        return line.kind == LineKind::Bar && line.bar % everyBars == 0;
+    }
+    const double into = line.beat - bars.barStart(line.bar);  // (beats of each bar)
+    return std::abs(into / every - std::round(into / every)) < 1e-6;
 }
 
 double labelStep(const Timeline& view, double step) {
@@ -177,6 +229,18 @@ void drawGridBands(SgPainter& painter, const Timeline& view, double x0, double x
     const double bar = view.timeSignature().beatsPerBar();
     const double label = labelStep(view, view.gridStep());
     const double block = label >= bar ? 2 * label : bar;
+    const MeterMap bars = view.meter();
+    if (!bars.constant()) {  // blocks of so many bars, bars as long as their time signatures make them
+        const auto blockBars = static_cast<int64_t>(std::max(1.0, std::round(block / bar)));
+        const int64_t first = bars.barAt(std::max(0.0, view.xToBeat(x0))).index / blockBars;
+        const int64_t last = bars.barAt(view.xToBeat(x1)).index / blockBars;
+        for (int64_t k = first | 1; k <= last; k += 2) {
+            const double left = std::max(x0, app::roundHalfEven(view.beatToX(bars.barStart(k * blockBars))));
+            const double right = std::min(x1, app::roundHalfEven(view.beatToX(bars.barStart((k + 1) * blockBars))));
+            if (right > left) painter.fillRect(QRectF(left, top, right - left, bottom - top), Theme::gridBand());
+        }
+        return;
+    }
     const auto first = static_cast<long long>(std::max(0.0, std::floor(view.xToBeat(x0) / block)));
     const auto last = static_cast<long long>(std::ceil(view.xToBeat(x1) / block));
     for (long long k = first | 1; k <= last; k += 2) {

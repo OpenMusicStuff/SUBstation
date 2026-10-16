@@ -318,6 +318,32 @@ private Q_SLOTS:
         QVERIFY(arrangement()->followPaused());
     }
 
+    // The ruler's menu: a time signature from the bar clicked, checked as it is, and removed again.
+    void rulerTimeSignatureMenu() {
+        sub::ui::ArrangementRuler* ruler = h_->ruler();
+        arr::MenuEntries menu = ruler->contextMenu(h_->x(9.0));  // bar 3
+        const arr::MenuEntry* four = menu.find(QStringLiteral("Time Signature From Bar 3/4/4"));
+        QVERIFY(four && four->checked);
+        QVERIFY(!menu.find(QStringLiteral("Remove Time Signature Change"))->enabled);
+        QVERIFY(menu.triggerText(QStringLiteral("Time Signature From Bar 3/3/4")));
+        QCOMPARE(project().meter().changes().size(), size_t{2});
+        QCOMPARE(project().meter().changes()[1].beat, 8.0);
+        QCOMPARE(project().meter().changes()[1].numerator, 3);
+        // Bar 4 is now three beats long: from beat 11.
+        menu = ruler->contextMenu(h_->x(11.5));
+        QVERIFY(menu.find(QStringLiteral("Time Signature From Bar 4/3/4"))->checked);
+        menu = ruler->contextMenu(h_->x(9.0));
+        QVERIFY(menu.triggerText(QStringLiteral("Remove Time Signature Change")));
+        QVERIFY(project().meter().constant());
+        // Bar 1's is the song's own.
+        menu = ruler->contextMenu(h_->x(1.0));
+        QVERIFY(menu.triggerText(QStringLiteral("Time Signature From Bar 1/6/8")));
+        QVERIFY(project().meter().constant());
+        QCOMPARE(project().timeSignature().numerator, 6);
+        undo().undo();
+        QCOMPARE(project().timeSignature().numerator, 4);
+    }
+
     void mouseTrimAndSelectingBelowTheTracks() {
         threeTracks();
         const QString track = trackId(0);

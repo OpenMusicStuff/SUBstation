@@ -100,11 +100,15 @@ bool MenuEntries::trigger(int id) const {
 
 const MenuEntry* MenuEntries::find(const QString& path) const {
     const QStringList parts = path.split(u'/');
+    // An entry's own text may hold a slash ("3/4"): the longest that matches, at each level.
     const std::vector<MenuEntry>* level = &entries_;
     const MenuEntry* found = nullptr;
-    for (const QString& part : parts) {
-        found = findText(*level, part);
+    for (qsizetype i = 0; i < parts.size();) {
+        found = nullptr;
+        qsizetype end = parts.size();
+        for (; end > i && found == nullptr; --end) found = findText(*level, parts.mid(i, end - i).join(u'/'));
         if (found == nullptr) return nullptr;
+        i = end + 1;
         level = &found->children;
     }
     return found;

@@ -39,10 +39,10 @@ What SUBstation doesn't do yet, by area.
 ## Automation and tempo
 
 - Recording automation (writing it while playing).
-- Drawing tempo changes and time signature changes: the song plays them (from a Live Set,
-  a project file or an agent), and the transport's boxes change the tempo at the start (all
-  of it in proportion) and the first time signature, but the arrangement has no tempo lane or
-  time signature markers yet.
+- Drawing tempo changes: the song plays them (from a Live Set, a project file or an agent),
+  and the transport's tempo box changes the tempo at the start (all of it in proportion), but
+  the arrangement has no tempo lane yet. Time signature changes are set from the ruler's
+  right-click menu.
 - A track frozen under a tempo that changes along the song plays as it was rendered: freeze
   it again after changing the tempo.
 - Automation lanes below a track have a fixed height.
