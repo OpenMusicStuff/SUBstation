@@ -7,6 +7,7 @@
 #include <QHash>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace sub::app {
@@ -180,7 +181,36 @@ std::vector<const Track*> Project::allTracks() const {
 const EnvelopeMap& Project::automation(const QString& owner) const { return track(owner).automation; }
 
 Envelope Project::envelope(const QString& owner, const QString& key) const {
+    if (owner == kMaster && key == automation::kSongTempo) return tempoEnvelope();
     return automation(owner).value(key);
+}
+
+void Project::setTempo(const Tempo& tempo) {
+    tempo_ = tempo;
+    for (const TempoMap::Point& point : tempo_.map().points()) {
+        tempoRange_.first = std::min(tempoRange_.first, point.bpm);
+        tempoRange_.second = std::max(tempoRange_.second, point.bpm);
+    }
+}
+
+Envelope Project::tempoEnvelope() const {
+    const auto [low, high] = tempoRange_;
+    Envelope points;
+    for (const TempoMap::Point& point : tempo_.map().points()) {
+        points.push_back({point.beat, std::clamp((point.bpm - low) / (high - low), 0.0, 1.0), 0.0});
+    }
+    return points;
+}
+
+Tempo Project::tempoOfEnvelope(const Envelope& points) const {
+    if (points.empty()) return Tempo(tempo());
+    const auto [low, high] = tempoRange_;
+    std::vector<TempoMap::Point> map;
+    for (const AutomationPoint& point : automation::normalize(points)) {
+        const double bpm = low + std::clamp(point.value, 0.0, 1.0) * (high - low);
+        map.push_back({point.beat, std::round(bpm * 100.0) / 100.0});
+    }
+    return Tempo(TempoMap(std::move(map)));
 }
 
 const AutomationView& Project::automationView(const QString& owner) const { return track(owner).automationView; }
@@ -752,8 +782,8 @@ void Project::updateSettings(const SettingsValues& values) {
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
         const SettingsValue& value = it.value();
         switch (it.key()) {
-        case SettingsField::Tempo: tempo_ = Tempo(std::get<double>(value)); break;
-        case SettingsField::TempoMap: tempo_ = std::get<Tempo>(value); break;
+        case SettingsField::Tempo: setTempo(Tempo(std::get<double>(value))); break;
+        case SettingsField::TempoMap: setTempo(std::get<Tempo>(value)); break;
         case SettingsField::TimeSignature: {
             const auto& ts = std::get<TimeSignature>(value);
             setMeter(MeterMap(ts.numerator, ts.denominator));
@@ -788,7 +818,8 @@ void Project::setAutomationView(const QString& owner, const AutomationView& view
 }
 
 void Project::replaceContents(ProjectContents contents) {
-    tempo_ = contents.tempo;
+    tempoRange_ = {kTempoLaneLow, kTempoLaneHigh};
+    setTempo(contents.tempo);
     setMeter(contents.meter);
     key_ = contents.key;
     loopEnabled_ = contents.loopEnabled;

@@ -135,6 +135,11 @@ std::optional<QStringList> ownFootprint(const QUndoCommand& command, const Proje
         out << deviceRegion(c->trackId(), c->deviceId()) + QStringLiteral("/midi");
     } else if (const auto* c = dynamic_cast<const SetEnvelopesCommand*>(&command)) {
         for (const LaneRef& lane : c->target()) out << laneRegion(lane.first, lane.second);
+        if (c->tempo()) {
+            out << settingsRegion(SettingsField::Tempo);
+            addClipLists(out, c->tempo()->first.clips);
+            addClipLists(out, c->tempo()->second.clips);
+        }
     } else if (const auto* c = dynamic_cast<const SetEnvelopeCommand*>(&command)) {
         out << laneRegion(c->owner(), c->automationKey());
     } else if (dynamic_cast<const ArrangeTracksCommand*>(&command) != nullptr) {

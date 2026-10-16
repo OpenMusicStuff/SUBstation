@@ -568,7 +568,7 @@ EnvelopeMap automationFromJson(const QJsonValue& value) {
     EnvelopeMap envelopes;
     const QJsonObject data = objectOrEmpty(value);
     for (auto it = data.constBegin(); it != data.constEnd(); ++it) {
-        if (!automation::isKey(it.key())) continue;
+        if (!automation::isKey(it.key()) || it.key() == automation::kSongTempo) continue;  // (the tempo map: its own)
         if (!it->isArray()) damaged(QStringLiteral("%1 isn't a list of points").arg(quoted(it.key())));
         Envelope points;
         for (const QJsonValue& p : it->toArray()) {

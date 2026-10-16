@@ -23,6 +23,10 @@ std::vector<int> indexList(const QList<int>& indices) { return {indices.begin(),
 
 void ProjectEditor::setEnvelope(const QString& owner, const QString& key, const Envelope& points, const QString& text,
                                 const QString& mergeKey) {
+    if (owner == kMaster && key == automation::kSongTempo) {
+        setTempoMap(project_->tempoOfEnvelope(points), mergeKey);
+        return;
+    }
     const Envelope nw = automation::normalize(points);
     const Envelope old = project_->envelope(owner, key);
     if (nw != old) push(std::make_unique<SetEnvelopeCommand>(project_, owner, key, old, nw, text, mergeKey));
@@ -52,6 +56,7 @@ void ProjectEditor::deleteAutomationPoints(const QString& owner, const QString& 
 
 void ProjectEditor::setAutomationCurve(const QString& owner, const QString& key, const Envelope& original, int index,
                                        double curve, const QString& mergeKey) {
+    if (key == automation::kSongTempo) return;  // (the tempo map's ramps are straight)
     setEnvelope(owner, key, automation::setCurve(original, index, curve), QStringLiteral("Change Automation Curve"),
                 mergeKey);
 }
@@ -94,9 +99,23 @@ void ProjectEditor::moveAutomationRange(double start, double end, const QMap<Lan
         nw.insert(it.key(), std::move(moved));
         current.insert(it.key(), project_->envelope(it.key().first, it.key().second));
     }
-    if (nw != current) {
-        push(std::make_unique<SetEnvelopesCommand>(project_, current, nw, QStringLiteral("Move Automation"), mergeKey));
+    if (nw != current) pushEnvelopes(current, nw, QStringLiteral("Move Automation"), mergeKey);
+}
+
+void ProjectEditor::pushEnvelopes(QMap<LaneRef, Envelope> old, QMap<LaneRef, Envelope> nw, const QString& text,
+                                  const QString& mergeKey) {
+    const LaneRef tempoLane{kMaster, automation::kSongTempo};
+    std::optional<std::pair<TempoState, TempoState>> tempo;
+    if (nw.contains(tempoLane)) {
+        const Tempo map = project_->tempoOfEnvelope(nw.take(tempoLane));
+        old.remove(tempoLane);
+        if (nw.isEmpty()) {  // the tempo alone: as the tempo box changes it
+            setTempoMap(map, mergeKey);
+            return;
+        }
+        tempo = tempoChange(map, mergeKey);  // (even unchanged: so the drag's commands merge)
     }
+    push(std::make_unique<SetEnvelopesCommand>(project_, std::move(old), std::move(nw), text, mergeKey, std::move(tempo)));
 }
 
 void ProjectEditor::duplicateAutomationRange(double start, double end, const QList<LaneRef>& lanes) {
@@ -149,6 +168,7 @@ QList<std::optional<LaneRef>> ProjectEditor::automationPasteTargets(const Copied
 bool ProjectEditor::laneExists(const LaneRef& lane) const {
     const auto& [owner, key] = lane;
     if (!project_->hasOwner(owner) || !automation::isKey(key)) return false;
+    if (key == automation::kSongTempo) return owner == kMaster;
     if (const auto device = automation::keyDevice(key)) return project_->hasDevice(owner, *device);
     const auto send = automation::keySend(key);
     return !send || project_->track(owner).sends.contains(*send);
@@ -179,7 +199,7 @@ QList<LaneRef> ProjectEditor::pasteAutomation(const CopiedAutomation& content, d
         }
     }
     if (!changed.isEmpty()) {
-        push(std::make_unique<SetEnvelopesCommand>(project_, old, changed, QStringLiteral("Paste Automation")));
+        pushEnvelopes(old, changed, QStringLiteral("Paste Automation"));
     }
     return pasted;
 }

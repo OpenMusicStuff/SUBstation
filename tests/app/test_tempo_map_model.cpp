@@ -156,6 +156,59 @@ private Q_SLOTS:
         QVERIFY(studio.engine.meter() == MeterMap({{0.0, 4, 4}, {4.0, 3, 4}}));
     }
 
+    // The master's Song Tempo lane: the tempo map's points, its BPMs over the lane's range.
+    void theSongTempoLaneIsTheTempoMap() {
+        EditorFixture f;
+        namespace autom = sub::app::automation;
+        QCOMPARE(f.project.tempoRange(), std::make_pair(60.0, 200.0));
+        Envelope lane = f.project.envelope(kMaster, autom::kSongTempo);
+        QCOMPARE(lane.size(), size_t{1});
+        QVERIFY(near(lane[0].value, (120.0 - 60.0) / 140.0));
+        QVERIFY(f.project.automation(kMaster).isEmpty());  // (never stored as an envelope)
+        // A point added: a ramp to it.
+        f.editor.addAutomationPoint(kMaster, autom::kSongTempo, 8.0, 1.0);
+        QCOMPARE(f.project.tempoMap().map().points().size(), size_t{2});
+        QCOMPARE(f.project.tempoMap().bpmAt(8.0), 200.0);
+        QCOMPARE(f.project.tempoMap().bpmAt(4.0), 160.0);
+        QVERIFY(f.project.automation(kMaster).isEmpty());
+        // Curves don't apply: the map's ramps are straight.
+        f.editor.setAutomationCurve(kMaster, autom::kSongTempo, f.project.envelope(kMaster, autom::kSongTempo), 0, 0.5);
+        QVERIFY(f.project.envelope(kMaster, autom::kSongTempo)[0].curve == 0.0);
+        f.stack.undo();
+        QVERIFY(f.project.tempoMap().constant());
+        // A tempo beyond the lane's range widens it.
+        f.editor.setTempo(300.0);
+        QCOMPARE(f.project.tempoRange().second, 300.0);
+        QCOMPARE(f.project.envelope(kMaster, autom::kSongTempo)[0].value, 1.0);
+        f.stack.undo();
+        QCOMPARE(f.project.tempoRange().second, 300.0);  // (never narrowed)
+        // Pasted onto: only the master's.
+        const CopiedAutomation copied{4.0, {{{kMaster, autom::kSongTempo}, {{0.0, 0.5}}}}};
+        QVERIFY(f.editor.automationPasteTargets(copied, {})[0].has_value());
+        QVERIFY(!f.editor.automationPasteTargets(copied, {{QStringLiteral("t"), autom::kSongTempo}})[0].has_value());
+    }
+
+    // A range moved over it and another lane: one undo step, the tempo and the envelope together.
+    void aRangeMovesOverTheTempoLaneAndOthers() {
+        EditorFixture f;
+        namespace autom = sub::app::automation;
+        f.editor.setTempoMap(Tempo(TempoMap({{0.0, 120.0}, {4.0, 120.0}, {8.0, 130.0}})));
+        f.editor.setEnvelope(kMaster, autom::kMixerVolume, {{0.0, 0.5}, {8.0, 0.25}});
+        const int before = f.stack.count();
+        QMap<LaneRef, Envelope> originals{
+            {{kMaster, autom::kSongTempo}, f.project.envelope(kMaster, autom::kSongTempo)},
+            {{kMaster, autom::kMixerVolume}, f.project.envelope(kMaster, autom::kMixerVolume)}};
+        const QString key = QStringLiteral("range-drag");
+        f.editor.moveAutomationRange(6.0, 10.0, originals, 0.0, 0.05, key);
+        f.editor.moveAutomationRange(6.0, 10.0, originals, 0.0, 0.1, key);
+        QCOMPARE(f.stack.count(), before + 1);
+        QVERIFY(near(f.project.tempoMap().bpmAt(8.0), 144.0, 0.01));  // 130 + 0.1 of 140
+        QVERIFY(near(*autom::valueAt(f.project.envelope(kMaster, autom::kMixerVolume), 8.0), 0.35));
+        f.stack.undo();
+        QVERIFY(near(f.project.tempoMap().bpmAt(8.0), 130.0));
+        QVERIFY(near(*autom::valueAt(f.project.envelope(kMaster, autom::kMixerVolume), 8.0), 0.25));
+    }
+
     // A take's seconds are the timeline's: its beats are where the tempo map has them.
     void recordingsArePlacedByTheTempoMap() {
         EditorFixture f;

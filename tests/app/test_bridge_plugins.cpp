@@ -583,10 +583,11 @@ private Q_SLOTS:
         QVERIFY(bridge.pluginErrors().isEmpty());
         // Its devices can be automated, in the master's lanes.
         const std::vector<ParamGroup> groups = bridge.paramGroups(kMaster);
-        QCOMPARE(groups.size(), size_t{3});
+        QCOMPARE(groups.size(), size_t{4});
         QCOMPARE(groups[0].id, QStringLiteral("mixer"));
-        QCOMPARE(groups[1].id, utility);
-        QCOMPARE(groups[2].id, effect);
+        QCOMPARE(groups[1].id, QStringLiteral("song"));  // the Song Tempo lane
+        QCOMPARE(groups[2].id, utility);
+        QCOMPARE(groups[3].id, effect);
         QCOMPARE(groups[0].specs[0].name, QStringLiteral("Master Volume"));
         const QString key = automation::deviceKey(utility, QStringLiteral("gain"));
         studio.edit.setEnvelope(kMaster, key, {{0.0, 0.0, 0.0}});

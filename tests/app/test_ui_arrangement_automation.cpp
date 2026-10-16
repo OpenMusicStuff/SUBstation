@@ -201,7 +201,7 @@ private Q_SLOTS:
         editor().showAutomation(b_);
         h_->settle();
         QQuickItem* volume = h_->control(h_->header(a_), QStringLiteral("volume"));
-        const int steps = undo().count();
+        const int steps = undo().index();
         click(test::centerOf(volume));
         const auto& view = project().track(a_).automationView;
         QVERIFY(view.shown);
@@ -236,7 +236,7 @@ private Q_SLOTS:
         click(point(a_, 6.0, 0.5));
         QCOMPARE(beats(envelope(a_, kPan)), (std::vector<double>{2.0, 6.0}));
         // Drag the first one right and up: it stops at its neighbour, and it is one undo step.
-        const int steps = undo().count();
+        const int steps = undo().index();
         drag(point(a_, 2.0, added.value), point(a_, 9.0, 1.0));
         const AutomationPoint moved = envelope(a_, kPan)[0];
         QVERIFY(near(moved.beat, 6.0));
@@ -249,7 +249,7 @@ private Q_SLOTS:
     void pressingOnTheLineAddsABreakpointThatADragPlaces() {
         editor().showAutomation(a_, kPan);
         h_->settle();
-        const int steps = undo().count();
+        const int steps = undo().index();
         drag(point(a_, 2.0, 0.5), point(a_, 3.0, 0.9));
         QCOMPARE(envelope(a_, kPan).size(), size_t(1));
         const AutomationPoint placed = envelope(a_, kPan)[0];
@@ -492,6 +492,31 @@ private Q_SLOTS:
         QVERIFY(h_->masterLane()->height() >= arr::kMasterHeight + arr::kAutomationLaneHeight);
     }
 
+    // The master's Song Tempo lane: the tempo map, drawn and edited as an envelope.
+    void songTempoLane() {
+        const QString tempo = automation::kSongTempo;
+        editor().showAutomation(kMaster, tempo);
+        h_->settle();
+        QCOMPARE(chooser(h_->masterHeader(), 0).value(QStringLiteral("device")).toString(), QStringLiteral("Song"));
+        QCOMPARE(chooser(h_->masterHeader(), 0).value(QStringLiteral("param")).toString(), QStringLiteral("Song Tempo"));
+        const double at120 = (120.0 - 60.0) / 140.0;  // the lane's 60 to 200 BPM
+        const int steps = undo().index();
+        click(point(kMaster, 8.0, at120, tempo));  // on its line: a point, the tempo as it is
+        QCOMPARE(project().tempoMap().map().points().size(), size_t(2));
+        QVERIFY(project().tempoMap().constant());
+        drag(point(kMaster, 8.0, at120, tempo), point(kMaster, 8.0, 1.0, tempo));  // up to the top: a ramp to 200
+        const double top = project().tempoMap().bpmAt(8.0);
+        QVERIFY(near(top, 200.0, 4.0));  // (a pixel: about 4 BPM)
+        QVERIFY(near(project().tempoMap().bpmAt(4.0), (120.0 + top) / 2.0, 0.01));
+        QVERIFY(project().master().automation.isEmpty());
+        QVERIFY(near(*bridge().currentValue(kMaster, tempo, 8.0), top));
+        // The engine plays it: the renderer has the map.
+        QVERIFY(ui_->engine().tempoMap() == project().tempoMap().map());
+        while (undo().index() > steps) undo().undo();
+        QVERIFY(project().tempoMap().constant());
+        QCOMPARE(project().tempo(), 120.0);
+    }
+
     void lanesBelowATrack() {
         editor().showAutomation(a_);
         h_->settle();
@@ -691,7 +716,7 @@ private Q_SLOTS:
         click(near_);
         QCOMPARE(selection().points(), std::make_optional(points(a_, kPan, {1, 2})));
         QCOMPARE(envelope(a_, kPan).size(), size_t(4));
-        const int steps = undo().count();
+        const int steps = undo().index();
         const double height = area(a_).values().height();
         drag(near_, near_ + QPoint(0, -int(std::round(height * 0.25))));
         const Envelope points = envelope(a_, kPan);
@@ -717,7 +742,7 @@ private Q_SLOTS:
         QCOMPARE(lanes()->cursor().shape(), Qt::ArrowCursor);
         // Up: the inside moves, with steps at the edges; the outside stays.
         const double height = area(a_).values().height();
-        const int steps = undo().count();
+        const int steps = undo().index();
         drag(inside, inside + QPoint(0, -int(std::round(height * 0.25))));
         Envelope points = envelope(a_, kPan);
         QVERIFY(near(*automation::valueAt(points, 3.0), 0.625, 0.02));

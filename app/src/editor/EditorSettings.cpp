@@ -33,26 +33,34 @@ void ProjectEditor::setTempo(double bpm, const QString& mergeKey) {
     setTempoMap(Tempo(TempoMap(std::move(points))), mergeKey);
 }
 
-void ProjectEditor::setTempoMap(const Tempo& tempo, const QString& mergeKey) {
+std::pair<TempoState, TempoState> ProjectEditor::tempoChange(const Tempo& tempo, const QString& mergeKey) const {
     const Project& p = *project_;
-    if (tempo == p.tempoMap()) return;
     ClipLists current;
     for (const Track& t : p.tracks()) current.insert(t.id, t.clips);
     // Within one drag, fit from the clips as they were when the drag began, so
     // going up and back down doesn't leave clips trimmed.
     ClipLists baseline = current;
     const int index = undoStack_->index();
-    const auto* last = index > 0 ? dynamic_cast<const SetTempoCommand*>(undoStack_->command(index - 1)) : nullptr;
-    if (!mergeKey.isEmpty() && last != nullptr && last->mergeKey() == mergeKey &&
-        last->oldValue().clips.keys() == current.keys()) {
-        baseline = last->oldValue().clips;
+    const QUndoCommand* last = index > 0 ? undoStack_->command(index - 1) : nullptr;
+    std::optional<TempoState> began;
+    if (const auto* set = dynamic_cast<const SetTempoCommand*>(last); set && set->mergeKey() == mergeKey) {
+        began = set->oldValue();
+    } else if (const auto* lanes = dynamic_cast<const SetEnvelopesCommand*>(last);
+               lanes && lanes->mergeKey() == mergeKey && lanes->tempo()) {
+        began = lanes->tempo()->first;
     }
+    if (!mergeKey.isEmpty() && began && began->clips.keys() == current.keys()) baseline = began->clips;
     ClipLists fitted;
     for (auto it = baseline.constBegin(); it != baseline.constEnd(); ++it) {
         fitted.insert(it.key(), edits::fitToTempo(it.value(), tempo));
     }
-    push(std::make_unique<SetTempoCommand>(project_, TempoState{p.tempoMap(), current}, TempoState{tempo, fitted},
-                                           mergeKey));
+    return {TempoState{p.tempoMap(), current}, TempoState{tempo, fitted}};
+}
+
+void ProjectEditor::setTempoMap(const Tempo& tempo, const QString& mergeKey) {
+    if (tempo == project_->tempoMap()) return;
+    auto [old, nw] = tempoChange(tempo, mergeKey);
+    push(std::make_unique<SetTempoCommand>(project_, std::move(old), std::move(nw), mergeKey));
 }
 
 void ProjectEditor::setMeter(const MeterMap& meter) {

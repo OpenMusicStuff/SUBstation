@@ -657,6 +657,14 @@ moved point ended up (several points override what they land on, so indices shif
 Envelope, Re-Enable Automation (if overridden), Remove Lane (lanes below), Show Automation in New Lane, Hide
 Automation.
 
+### The Song Tempo lane
+
+The master's *Song* / *Song Tempo* (`automation::kSongTempo`) is the tempo map drawn as an envelope: its points are
+the map's (`Project::tempoEnvelope()`, linear over `tempoRange()`), so a ramp is a straight line and two points at
+one beat a jump, and every edit on it (adding, moving, deleting points, a range moved, pasted or deleted) changes the
+tempo map through the editor (see [app/model.md](../app/model.md)). Alt-drag bends nothing: the map has no curves.
+Its readout is the BPM; it counts as automated (a red dot) while the tempo changes along the song.
+
 ### Showing automation
 
 What shows is view state on each owner's `automationView` (`shown`, `key`, `lanes`), saved but not undone. `A` is
@@ -670,7 +678,7 @@ lane (`editor.showAutomation(owner, key)`), if `bridge.canAutomate` says it can 
 (`[{lane, device, param}]`), a device chooser, a parameter chooser and **+** (`addLane()`) for the own lane, and a
 device chooser, a parameter chooser and **−** (`removeLane(lane)`) for each lane below, centred in it. A chooser
 ([AutomationChooser.qml](../../ui/qml/arrangement/AutomationChooser.qml)) shows its text and asks for its menu:
-`deviceMenu(lane)` lists `bridge.paramGroups(owner)` (*Mixer*, then each device, rack chains included), each
+`deviceMenu(lane)` lists `bridge.paramGroups(owner)` (*Mixer*, *Song* on the master, then each device, rack chains included), each
 choosing the group's first automated parameter (or its first); `paramMenu(lane)` lists the current group's
 parameters. Automated ones get a red dot. Choosing calls `editor.setAutomationLane(owner, lane, key)`.
 

@@ -74,6 +74,8 @@ class QUndoStack;
 
 namespace sub::app {
 
+struct TempoState;
+
 class ProjectEditor : public QObject {
     Q_OBJECT
 
@@ -946,7 +948,14 @@ private:
     double ownParamValue(const QString& trackId, const QString& deviceId, const QString& paramId,
                          double fallback) const;
 
+    // A tempo change, before and after: the tempo and the clips it trims (within
+    // one drag, fitted from the clips as they were when it began).
+    std::pair<TempoState, TempoState> tempoChange(const Tempo& tempo, const QString& mergeKey) const;
+
     // Automation.
+    // Replaces envelopes (the Song Tempo lane among them: the tempo map) as one undo step.
+    void pushEnvelopes(QMap<LaneRef, Envelope> old, QMap<LaneRef, Envelope> nw, const QString& text,
+                       const QString& mergeKey = {});
     void eachLane(const QString& text, const QList<LaneRef>& lanes, const std::function<Envelope(const Envelope&)>& change);
     bool laneExists(const LaneRef& lane) const;
     void updateView(const QString& owner, const std::function<void(AutomationView&)>& change);

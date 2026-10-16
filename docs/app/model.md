@@ -366,6 +366,13 @@ See [Automation.h](../../app/src/model/Automation.h) and, for the engine side,
   - `device:<device id>:<param id>` (`deviceKey`)
   - `device:<device id>:device:on` (`deviceOnKey`, `kDeviceOn`): a device's (or a rack's) on/off
   - `device:<rack id>:chain:<chain id>:volume` / `:pan` (`chainKey`): a rack chain's fader, a target of its rack
+  - `song:tempo` (`kSongTempo`), on the master only: the Song Tempo lane. It is never stored as an envelope:
+    `Project::envelope(kMaster, kSongTempo)` is `tempoEnvelope()`, a straight point for each of the tempo map's, its
+    BPM mapped linearly over `tempoRange()` (60 to 200 BPM, widened, never narrowed, to fit every tempo the map
+    has had, so nothing moves under a drag); `tempoOfEnvelope()` turns a lane's points back into a map (BPMs to
+    0.01, curves ignored). The editor's envelope edits on it change the tempo map (`setTempoMap`: with the clip
+    trims, one undo step per drag); a range moved over it and other lanes is one `SetEnvelopesCommand` carrying
+    the tempo change. Its spec is `tempoSpec(low, high)` (group *Song*), the master's second `paramGroups` group.
 - `parseKey` splits a key (a `Target`); `keyDevice`, `keySend`, `keyChain`, `keyChainControl`, `isMixerKey`,
   `isSwitchKey` (an activator or an on/off), `isKey` classify it.
 - Switches are 0 (off) or 1 (on): `switchSpec` describes them (*Track Activator* in `mixerSpecs`, *Device On*:
@@ -522,7 +529,7 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `SetDeviceStateCommand` | a device's state (a plug-in preset, a sampler's sample) |
 | `ReplaceFilesCommand` | other files in some files' place: the clip lists of the tracks playing them and the states of the built-in devices naming them (`DeviceStates`), together; merging per hot swap (the same tracks and devices); `relink` for files only found somewhere else (frozen tracks take those) |
 | `SetDeviceEnabledCommand`, `SetDeviceSidechainCommand`, `SetDeviceMidiFromCommand` | on/off; sidechain; MIDI input (`Device::midiFrom`, "Change MIDI Input" / "Remove MIDI Input") |
-| `SetEnvelopeCommand`, `SetEnvelopesCommand` | one envelope; several (a range moved on several lanes) |
+| `SetEnvelopeCommand`, `SetEnvelopesCommand` | one envelope; several (a range moved on several lanes; with the Song Tempo lane among them, its tempo change as `SetTempoCommand`'s, merged alike) |
 
 How it fits together:
 

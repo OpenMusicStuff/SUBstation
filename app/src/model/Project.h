@@ -170,6 +170,10 @@ class Project : public QObject {
     Q_PROPERTY(QString path READ path NOTIFY pathChanged)
 
 public:
+    // The Song Tempo lane's range at first (see tempoRange()).
+    static constexpr double kTempoLaneLow = 60.0;
+    static constexpr double kTempoLaneHigh = 200.0;
+
     explicit Project(QObject* parent = nullptr);
 
     // --- Settings ---
@@ -177,6 +181,16 @@ public:
     // a stretch of beats lasts depends on where it is (Tempo::secondsFor()).
     double tempo() const { return tempo_.bpm(); }
     const Tempo& tempoMap() const { return tempo_; }
+    // The tempo map as the master's Song Tempo lane (automation::kSongTempo): a
+    // point for each of the map's, straight, its BPM mapped linearly over
+    // tempoRange() (so the lane's straight lines are the map's ramps).
+    Envelope tempoEnvelope() const;
+    // And back: a lane's points as a tempo map, BPMs to 0.01 (curves are
+    // ignored; none: the tempo at the start, throughout).
+    Tempo tempoOfEnvelope(const Envelope& points) const;
+    // The BPMs at the lane's bottom and top: 60 to 200, widened (never narrowed)
+    // to fit every tempo the map has had, so its points never move under a drag.
+    std::pair<double, double> tempoRange() const { return tempoRange_; }
     // The time signature at the song's start, and its changes (each starting a bar).
     const TimeSignature& timeSignature() const { return timeSignature_; }
     const MeterMap& meter() const { return meter_; }
@@ -442,7 +456,10 @@ private:
     Device& deviceRef(const QString& trackId, const QString& deviceId);
     Chain& chainRef(const QString& trackId, const QString& chainId);
 
+    void setTempo(const Tempo& tempo);  // (and widen tempoRange_ to fit it)
+
     Tempo tempo_;
+    std::pair<double, double> tempoRange_{kTempoLaneLow, kTempoLaneHigh};
     MeterMap meter_;
     TimeSignature timeSignature_;  // meter_'s first
     std::optional<Key> key_;

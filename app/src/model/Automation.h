@@ -14,7 +14,9 @@
 //   has none), sendKey(return id) (the level of the owner's send to a return
 //   track), deviceKey(device id, parameter id), deviceOnKey(device id) (a
 //   device's on/off, a rack's too), or chainKey(rack id, chain id, kChainVolume
-//   or kChainPan) (a rack chain's fader: a target of its rack). Device ids are
+//   or kChainPan) (a rack chain's fader: a target of its rack), or, on the
+//   master only, kSongTempo (the project's tempo map, shown as a lane: see
+//   Project::tempoEnvelope; never stored as an envelope). Device ids are
 //   unique in the project, so a key keeps pointing at its device wherever the
 //   device sits (inside a rack too). A send's level, and a chain's volume, map
 //   as a volume does.
@@ -74,6 +76,8 @@ inline const QString kMixerPan = QStringLiteral("mixer:pan");
 inline const QString kMixerOn = QStringLiteral("mixer:on");
 inline const QStringList kMixerKeys{kMixerVolume, kMixerPan, kMixerOn};
 inline const QString kSendPrefix = QStringLiteral("send:");
+// The song's tempo, the master's lane: its points are the tempo map's.
+inline const QString kSongTempo = QStringLiteral("song:tempo");
 
 // The faders' range. On a volume lane the gain is the cube of the value, so the
 // lane's 1 is +6 dB, 0 dB sits at about 0.79 and 0 is silence (engine: kMaxVolumeGain).
@@ -90,9 +94,9 @@ inline const QString kDeviceOn = QStringLiteral("device:on");
 // --- Keys ---
 
 // What a key targets: ("mixer", "volume" / "pan"), ("send", return id) or
-// ("device", device id, parameter id).
+// ("device", device id, parameter id), or ("song", "tempo").
 struct Target {
-    QString kind;   // "mixer", "send" or "device"
+    QString kind;   // "mixer", "send", "device" or "song"
     QString id;     // "volume" / "pan", the return's id, or the device's id
     QString param;  // a device's parameter id ("" for the others)
 

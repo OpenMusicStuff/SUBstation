@@ -39,10 +39,9 @@ What SUBstation doesn't do yet, by area.
 ## Automation and tempo
 
 - Recording automation (writing it while playing).
-- Drawing tempo changes: the song plays them (from a Live Set, a project file or an agent),
-  and the transport's tempo box changes the tempo at the start (all of it in proportion), but
-  the arrangement has no tempo lane yet. Time signature changes are set from the ruler's
-  right-click menu.
+- Tempo curves: the master's Song Tempo lane draws the tempo as steps and straight ramps
+  (as the tempo map plays it); a segment can't be bent. Its range is 60 to 200 BPM (wider
+  if the song's tempo goes beyond), with no way to set it yet.
 - A track frozen under a tempo that changes along the song plays as it was rendered: freeze
   it again after changing the tempo.
 - Automation lanes below a track have a fixed height.
