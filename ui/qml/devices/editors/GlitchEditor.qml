@@ -91,8 +91,10 @@ Item {
     property int lastStep: -1
     // (From the display itself: its signal can come before the bindings above have followed it.)
     function note() {
-        if (!stepDisplay.active)
+        if (!stepDisplay.active) {
+            editor.lastStep = -1  // (a step coming back after a silence starts again)
             return
+        }
         const value = Math.round(stepDisplay.value)
         const step = value % editor.stepCount, kind = Math.floor(value / editor.stepCount)
         if (step !== editor.lastStep) {

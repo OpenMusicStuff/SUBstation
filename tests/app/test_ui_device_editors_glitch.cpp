@@ -167,6 +167,13 @@ private Q_SLOTS:
         // Nothing comes in: the cursor fades.
         step->advance(false, 0.0, 1.0);
         QTRY_COMPARE(cursor->opacity(), 0.0);
+        // Coming back on a step glitching as it was before the silence: it starts again.
+        const int onsets = view->property("onsets").toInt();
+        playing(step, 8, 1);
+        QCOMPARE(view->property("onsets").toInt(), onsets + 1);
+        step->advance(false, 0.0, 1.0);
+        playing(step, 8, 1);
+        QCOMPARE(view->property("onsets").toInt(), onsets + 2);
     }
 };
 
