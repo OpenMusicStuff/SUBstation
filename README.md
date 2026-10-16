@@ -158,10 +158,10 @@ rules (see [Architecture](docs/architecture.md)). It runs on Windows 10/11 and L
 You need a C++20 compiler, CMake 3.26 or newer with Ninja, and Qt 6.4 or newer
 (Core, Gui, Qml, Quick, QuickControls2, Test). On x86-64 it needs a CPU with AVX2; on arm64 it builds for the baseline (NEON).
 
-- **Windows 10/11**: Visual Studio 2022 or newer with the *Desktop development
-  with C++* workload, and Qt's *MSVC 2022 64-bit* build of a Qt 6 release (6.5 or
-  newer recommended), from Qt's online installer. Or Qt's *MinGW 64-bit* build
-  with the MinGW toolchain the installer ships with it (see
+- **Windows 10/11**: Qt's *MinGW 64-bit* build of a Qt 6 release (6.5 or newer
+  recommended) with the MinGW toolchain Qt's online installer ships with it: what
+  the releases are built with. Or Visual Studio 2022 or newer with the *Desktop
+  development with C++* workload and Qt's *MSVC 2022 64-bit* build (see
   [docs/building.md](docs/building.md#building)).
 - **Linux** (Debian/Ubuntu): GCC 13 or Clang 16, `cmake ninja-build`, and Qt's
   packages (`qt6-base-dev qt6-declarative-dev` and the QML modules the UI imports:
@@ -178,12 +178,13 @@ cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
 ninja -C build
 ```
 
-Windows, in a *Developer PowerShell for VS 2022*:
+Windows, in the *Qt 6.x (MinGW 64-bit)* command prompt (MSVC's is in
+[docs/building.md](docs/building.md#building)):
 
-```powershell
-cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:\Qt\6.8.0\msvc2022_64
+```bat
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:\Qt\6.8.0\mingw_64 -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 ninja -C build
-C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --qmldir ui\qml build\bin\substation.exe   # once
+C:\Qt\6.8.0\mingw_64\bin\windeployqt.exe --qmldir ui\qml build\bin\substation.exe   # once
 ```
 
 Re-run `ninja -C build` after changing anything (the build is incremental).

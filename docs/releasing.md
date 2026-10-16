@@ -16,7 +16,8 @@ Each release has two downloads, each with its SHA-256 beside it (`<download>.sha
 - **`SUBstation-<version>-windows-x64.zip`**, portable: a folder, `SUBstation/`, to unzip anywhere and run from.
 
 Both hold the same files: the programs (`substation.exe`, `substation-scan.exe`, `substation-plugin-host.exe`), Qt's
-libraries and QML modules (`windeployqt`), MSVC's runtime, `LICENSE.txt`, `licenses/` (the licence texts the AGPLv3
+libraries and QML modules (`windeployqt`), MinGW's runtime (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
+`libwinpthread-1.dll`), `LICENSE.txt`, `licenses/` (the licence texts the AGPLv3
 asks to ship, and where the build's source is: `licenses/README.txt`) and `VERSION.txt`. The releases are built with
 Steinberg's ASIO® SDK ([below](#asio)) and signed once code signing is set up ([below](#code-signing)).
 
@@ -50,11 +51,13 @@ compiled with them, so a nightly's stamp rebuilds one file. Help › About shows
    by hand, the one chosen), the version from `CMakeLists.txt`, the stamp, the tag. A stable release must come from its
    own tag, the same as `CMakeLists.txt`'s version: otherwise it fails. A scheduled nightly with `master` where the last
    nightly's tag is stops here.
-2. **Build** (Windows, MSVC 2022, Qt 6.8): the ASIO SDK downloaded, then `-DSUBSTATION_BUILD_TESTS=OFF
+2. **Build** (Windows, MinGW, Qt 6.8: Qt's own MinGW build and the MinGW 13.1 toolchain that comes with it, as
+   SUBstation is developed and tested, and as the Windows nightly's MinGW build tests it): the ASIO SDK downloaded,
+   then `-DSUBSTATION_BUILD_TESTS=OFF
    -DSUBSTATION_TEST_PLUGINS=OFF` and the three variables above. Then
    [tools/release/package-windows.ps1](../tools/release/package-windows.ps1), a step at a time so the signing comes
-   between: **Stage** (`dist/SUBstation`: the programs, `windeployqt`, the runtime, the licences), the programs
-   **signed**, **Archive** (the zip) and **Installer** (Inno Setup on
+   between: **Stage** (`dist/SUBstation`: the programs, `windeployqt`, MinGW's runtime from the build's compiler, the
+   licences), the programs **signed**, **Archive** (the zip) and **Installer** (Inno Setup on
    [tools/release/substation.iss](../tools/release/substation.iss)), the installer **signed**, **Checksums**. The tests
    aren't run here: CI and the Windows nightly run them ([testing.md](testing.md#ci)).
 3. **Publish** (Linux): `gh release create` with the downloads and their checksums. Stable: notes generated from the pull
@@ -65,12 +68,12 @@ The workflow needs `contents: write` (releases and tags), which it asks for itse
 
 ### ASIO
 
-The releases (and the Windows nightly's MSVC build) download Steinberg's ASIO® SDK 2.3.4
+The releases (and both of the Windows nightly's builds) download Steinberg's ASIO® SDK 2.3.4
 (`https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip`), check it against its pinned SHA-256,
 unpack it outside the checkout and point `SUBSTATION_ASIO_SDK` at it. 2.3.4 is the first SDK Steinberg offers under
 GPLv3 as well as its own licence; SUBstation takes it under GPLv3, which goes with the AGPLv3 the program is shipped
 under ([licensing.md](licensing.md)), and ships its licence text (`licenses/asio-sdk-LICENSE.txt`). A newer SDK means a
-new URL and SHA-256 in both workflows.
+new URL and SHA-256 in both workflows (three places).
 
 Steinberg's usage guidelines ask for the attribution *"ASIO is a registered trademark of Steinberg Media Technologies
 GmbH."* in the product's credits and documentation, and its *ASIO Compatible* logo in the About box and wherever ASIO
@@ -98,8 +101,8 @@ Until it is set up the releases are made unsigned, with a warning in the run. To
    `ARTIFACT_SIGNING_ACCOUNT` and `ARTIFACT_SIGNING_PROFILE`.
 
 The next release is signed (the build signs when `AZURE_CLIENT_ID` and `ARTIFACT_SIGNING_PROFILE` are set). Check one
-with `Get-AuthenticodeSignature substation.exe` or the file's Properties › Digital Signatures. Qt's and MSVC's DLLs
-keep their makers' signatures.
+with `Get-AuthenticodeSignature substation.exe` or the file's Properties › Digital Signatures. Qt's DLLs keep their
+maker's signatures; MinGW's runtime DLLs are unsigned.
 
 ### The installer
 

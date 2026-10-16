@@ -484,19 +484,24 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 ## CI
 
 [.github/workflows/ci.yml](../.github/workflows/ci.yml) builds everything (benchmarks too) and runs CTest on every push
-to `master` (and the rewrite's branch), on pull requests, and by hand, on Linux (Blacksmith's `blacksmith-4vcpu-ubuntu-2404`): GCC, Qt 6.4 from
-Ubuntu's packages, `xvfb` for the UI's tests. It configures with `-G Ninja -DCMAKE_BUILD_TYPE=Release
--DSUBSTATION_BUILD_BENCHMARKS=ON`, builds with `ninja -C build -k 0` (every error at once) and runs
-`ctest --test-dir build --output-on-failure -j4`. It has no ASIO SDK, so the ASIO tests skip there.
+to `master` (and the rewrite's branch), on pull requests, and by hand, on Linux (Blacksmith's `blacksmith-4vcpu-ubuntu-2404`), twice
+side by side: with GCC (the compiler the releases are built with, as MinGW) and with Clang (a second compiler on
+every pull request: it catches code only one compiler accepts, or that compilers read differently, before a merge,
+as MSVC in the Windows nightly would only after). Both use Qt 6.4 from Ubuntu's packages and `xvfb` for the UI's
+tests. They configure with `-G Ninja -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON` (and
+`-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++`), build with `ninja -C build -k 0` (every error at once) and
+run `ctest --test-dir build --output-on-failure -j4`. They have no ASIO SDK, so the ASIO tests skip there.
 
 Windows isn't tested on pull requests: a hosted Windows runner takes about 20 minutes a run. Build and run the tests
-locally on Windows before merging (the same configure, build and `ctest` as above, with MSVC and Qt 6.8). The UI's
+locally on Windows before merging (the same configure, build and `ctest` as above, with Qt 6.8's MinGW build: what
+the releases are built with, [building.md](building.md)). The UI's
 tests (`test_ui_*`) open windows and take the focus, so run them when the desktop can be left alone.
 
 [.github/workflows/windows-nightly.yml](../.github/workflows/windows-nightly.yml) runs the same on `windows-2022` once a
-night (07:00 UTC) on `master`, with MSVC 2022 and with MinGW (Qt 6.8's own builds of each, `install-qt-action`),
-UI tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last
-nightly is skipped.
+night (07:00 UTC) on `master`, with MinGW (the releases' Qt, toolchain and ASIO SDK) and with MSVC 2022 (a second
+compiler, keeping the code portable), Qt 6.8's own builds of each (`install-qt-action`), both with the ASIO SDK, UI
+tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last nightly is
+skipped.
 
 [.github/workflows/release.yml](../.github/workflows/release.yml) builds and publishes the releases (stable, nightly
 and canary) without running the tests: [releasing.md](releasing.md).
