@@ -145,6 +145,23 @@ ApplicationWindow {
             Session.openProject(path)
     }
 
+    // File › Backups, as it opens: the open project's backups (newest first), a
+    // separator and Show Backups Folder; with none, "No Backups Yet".
+    function fillBackupsMenu() {
+        while (backupsMenu.count > 0) {
+            const item = backupsMenu.takeItem(0)
+            if (item)
+                item.destroy()
+        }
+        const items = Session.backupMenuItems()
+        if (items.length === 0)
+            backupsMenu.addItem(backupEntry.createObject(backupsMenu.contentItem, {text: qsTr("No Backups Yet"), enabled: false}))
+        for (const entry of items)
+            backupsMenu.addItem(backupEntry.createObject(backupsMenu.contentItem, {text: entry.label, path: entry.path, tip: entry.toolTip}))
+        backupsMenu.addItem(menuSeparator.createObject(backupsMenu.contentItem))
+        backupsMenu.addItem(backupEntry.createObject(backupsMenu.contentItem, {text: qsTr("&Show Backups Folder"), showFolder: true}))
+    }
+
     // A recent project chosen: one whose file is gone is taken off the list (with a warning).
     function openRecent(path) {
         if (Session.recentProjectAvailable(path))
@@ -255,11 +272,36 @@ ApplicationWindow {
     // view, the beats its clips span are the search's area: a match with a clip
     // there opens in the clip view, the others in the arrangement.
     function findTrack() {
+        if (!trackSearchBar.visible)  // (where the search began: Ctrl+Enter goes back there)
+            trackSearchOrigin = {
+                trackId: Session.selection.trackId,
+                clipView: arrangementArea.clipViewShown,
+                clipIds: clipView.clipIds,
+                leadTrackId: clipView.trackId,
+                leadClipId: clipView.leadClipId
+            }
         if (arrangementArea.clipViewShown)
             Session.trackSearch.setArea(clipView.trackId, clipView.clipIds)
         else
             Session.trackSearch.clearArea()
         trackSearchBar.open()
+    }
+
+    // The track selected (and the clips open in the clip view) when the find bar opened.
+    property var trackSearchOrigin: null
+
+    // Ctrl+Enter in the find bar: back to the track selected before it opened,
+    // and the clip view as it was.
+    function returnFromTrackSearch() {
+        const origin = trackSearchOrigin
+        if (!origin)
+            return
+        if (origin.trackId !== "" && arrangement.revealTrack)
+            arrangement.revealTrack(origin.trackId)
+        if (origin.clipView && origin.clipIds.length > 0)
+            arrangementArea.openClips(origin.clipIds, origin.leadTrackId, origin.leadClipId)
+        else
+            arrangementArea.clipViewShown = false
     }
 
     // A match of the find bar: selected, unfolded and scrolled to in the
@@ -353,6 +395,16 @@ ApplicationWindow {
             window.saveAs(window.afterSave)
             window.afterSave = null
         }
+        // SUBstation closed last time without saving: its backup offered.
+        function onRecoveryAvailable() {
+            const backups = Session.recoverableBackups()
+            if (backups.length === 0)
+                return
+            recoveryDialog.path = backups[0].path
+            recoveryDialog.show(qsTr("SUBstation closed unexpectedly while %1 had unsaved changes.\n\n"
+                                     + "Recover them from its backup of %2?\nUntil you save, the recovered project is unsaved.")
+                                .arg(backups[0].name).arg(backups[0].time))
+        }
         function onProjectOpened() {
             if (arrangement.zoomToArrangement)
                 arrangement.zoomToArrangement()
@@ -413,6 +465,14 @@ ApplicationWindow {
                     title: qsTr("Open &Recent")
                     onAboutToShow: window.fillRecentMenu()
                     MenuItem { text: qsTr("No Recent Projects"); enabled: false }
+                }
+                // The open project's backups (made every minute while it has unsaved changes).
+                Menu {
+                    id: backupsMenu
+                    objectName: "backupsMenu"
+                    title: qsTr("&Backups")
+                    onAboutToShow: window.fillBackupsMenu()
+                    MenuItem { text: qsTr("No Backups Yet"); enabled: false }
                 }
                 Action { objectName: "importLiveSet"; shortcut: window.keyOf(objectName); text: qsTr("&Import Ableton Live Set…"); onTriggered: window.importLiveSet() }
                 MenuSeparator {}
@@ -581,7 +641,7 @@ ApplicationWindow {
                         checked = Qt.binding(() => arrangement.ioShown)
                     }
                 }
-                // The piano roll's chord lane and its notes out of the key in red.
+                // The piano roll's chord lane and its notes out of the key in red, and audio clips' chords in the arrangement.
                 Action {
                     objectName: "showHarmony"
                     text: qsTr("C&hords and Key")
@@ -801,6 +861,7 @@ ApplicationWindow {
                     y: arrangementArea.clipViewShown ? 60 : (arrangement.rulerHeight ?? 0) + 8  // (below the rulers)
                     z: 1
                     onMatchChosen: trackId => window.showTrackMatch(trackId)
+                    onReturnRequested: window.returnFromTrackSearch()
                     onClosed: {
                         if (arrangementArea.clipViewShown)
                             clipView.focusContent()
@@ -881,6 +942,22 @@ ApplicationWindow {
                 window.save(then)
             else if (value === "discard")
                 then()
+        }
+    }
+
+    // What a crash left: recovered, or not now (its backups stay: File › Backups, the backups folder).
+    MessageBox {
+        id: recoveryDialog
+        objectName: "recoveryDialog"
+        property string path
+        title: qsTr("Recover Unsaved Work")
+        icon: "question"
+        choices: [{text: qsTr("&Recover"), value: "recover"}, {text: qsTr("Not Now"), value: "no"}]
+        onAnswered: value => {
+            if (value === "recover")
+                window.confirmDiscard(() => Session.recoverBackup(recoveryDialog.path))
+            else
+                Session.dismissRecovery()
         }
     }
 
@@ -978,6 +1055,25 @@ ApplicationWindow {
         nameFilters: fileType === "mp3" ? [qsTr("MP3 Audio (*.mp3)")] : [qsTr("WAV Audio (*.wav)")]
         defaultSuffix: fileType
         onAccepted: window.exportFileChosen(FileUrls.localPath(selectedFile))
+    }
+
+    Component {
+        id: backupEntry
+
+        MenuItem {
+            property string path
+            property string tip
+            property bool showFolder: false
+            onTriggered: {
+                if (showFolder)
+                    Session.browser.showInFolder(Session.backupsFolder())
+                else if (path !== "")
+                    window.confirmDiscard(() => Session.recoverBackup(path))
+            }
+            ToolTip.visible: hovered && tip !== ""
+            ToolTip.text: tip
+            ToolTip.delay: 700
+        }
     }
 
     Component {

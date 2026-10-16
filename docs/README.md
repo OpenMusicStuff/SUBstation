@@ -28,7 +28,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
 | [Recording](guide/recording.md) | arming, inputs, monitoring, count-in, takes, resampling |
 | [Automation](guide/automation.md) | lanes, editing envelopes, locking, overrides |
-| [Browser](guide/browser.md) | places, search (by name, and by what sounds sound like), preview, the Best sort, finding similar sounds |
+| [Browser](guide/browser.md) | places, search (by name, and by what sounds sound like), preview, the Rank sort (uses a week, lately), hiding from search, finding similar sounds |
 | [Importing Ableton Live Sets](guide/ableton-import.md) | what of a Live Set comes across, and what doesn't |
 | [File Manager and hot swap](guide/file-manager.md) | the project's files, finding missing ones, replacing a file everywhere, hot-swapping samples |
 | [Audio setup](guide/audio-setup.md) | ASIO and WASAPI, sample rate, buffers, audio threads, MIDI inputs |

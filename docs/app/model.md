@@ -692,7 +692,8 @@ refused because of frozen audio are said on `refused` too. The session shows `re
 - `removeRange`, `sliceRange` (new clips holding just a range; `keepIds` for clips wholly inside), `splitClip`,
   `trimStart` (a MIDI clip revealing time before its content shifts its notes so they stay put), `trimEnd` (audio
   limited by the source), `fitToTempo` (the same clips if nothing changes; `changed` says whether anything did),
-  `consolidateMidi` (what the clips play: a deactivated clip's notes come deactivated, unless every clip is), `reverseClip` (a clip playing a reversed copy of its file: the same stretch of audio, its offset
+  `consolidateMidi` (what the clips play: a deactivated clip's notes come deactivated, unless every clip is; over an
+  `area`, the time selection's empty space too), `reverseClip` (a clip playing a reversed copy of its file: the same stretch of audio, its offset
   mirrored), `selectionSpan`.
 - `replaceFile(clip, path, totalSec)` (another file in its place: where it is, with its settings; a clip playing all
   of its file, `playsWholeFile`, plays all of the new one, one playing a stretch plays the same stretch as far as the

@@ -91,12 +91,17 @@ void ExternalItem::prepare() {
 }
 
 double Usage::rank(const UsageRecord& record, double now) const {
-    if (record.score == 0.0) return 0.0;
-    const double last = std::isnan(record.lastUsed) ? now : record.lastUsed;
-    // As Python computes it: max(0.0, now - last) / 86400.0, then 0.5 ** (days / half-life).
-    const double elapsed = now - last;
-    const double days = (0.0 < elapsed ? elapsed : 0.0) / 86400.0;
-    return record.score * std::pow(0.5, days / halfLifeDays);
+    double uses = 0.0;
+    for (const double time : record.times)
+        if (now - time < windowDays * 86400.0) uses += 1.0;
+    if (record.score != 0.0) {
+        const double last = std::isnan(record.lastUsed) ? now : record.lastUsed;
+        // As Library::rank computes it: max(0.0, now - last) / 86400.0, then 0.5 ** (days / half-life).
+        const double elapsed = now - last;
+        const double days = (0.0 < elapsed ? elapsed : 0.0) / 86400.0;
+        uses += record.score * std::pow(0.5, days / halfLifeDays);
+    }
+    return uses / (windowDays / 7.0);
 }
 
 int64_t Result::find(Kind kind, std::string_view identity) const {

@@ -13,7 +13,8 @@ The sidebar has two sections:
   *Snares*, *Claps*, *Hats*, *Cymbals*, *Toms*, *Percussion*, *Bass*, *Synths*, *Keys*,
   *Guitars*, *Vocals*, *Loops*; [below](#what-sounds-are)), *Built-in* (*Instruments*, *Audio
   Effects*), *Plug-ins* (*Instruments*, *Audio Effects*; see [plugins.md](plugins.md))
-  and *Presets* (by device; see [Presets](#presets)). The arrow at the right of an entry
+  *Presets* (by device; see [Presets](#presets)) and, while you have hidden anything,
+  *Hidden* ([below](#hiding-from-search)). The arrow at the right of an entry
   collapses or expands what is under it; *Samples* starts collapsed, and the browser
   remembers what you open or close.
 - **Places**: folders of your own, which you browse as a folder tree. The browser starts
@@ -36,24 +37,27 @@ The files listed are WAV, FLAC and MP3 files.
 
 ## Sorting
 
-Lists sort by *Best*, *Rank* or *Name*, chosen next to the search field (and by
-*Similarity* while the list shows similar sounds: [below](#find-similar-sounds)):
+Lists sort by *Rank* or *Name*, chosen next to the search field (and by *Similarity*
+while the list shows similar sounds: [below](#find-similar-sounds)):
 
-- *Best* (the first time, the sort) weighs everything together: how well an item matches
-  what you typed (by its name, or by how it sounds), how much you used it lately, and how
-  well it fits your project. A project's own sounds (the samples its clips and samplers
-  play) say what it is, "Techno, Punchy", and its key (the project's, or the one its notes
-  are in) which notes fit: the sounds most like your project's, and those in its key,
-  come first. The footer says what the browser thinks your project is ("12 items, best
-  for Techno, Punchy · A Minor"). With nothing typed, *Best* lists what you use and what
-  fits first.
-- *Rank* puts what you add most, and most recently, first, then the best name matches.
-  With nothing used yet, a search lists the names that start with what you typed first.
-  An item counts as used when it is added to the project from the browser, by
-  double-click, Enter or a drag that is dropped somewhere. The counts are kept in
+- *Rank* (the first time, the sort) puts what you have used most lately first: how many
+  times a week you added it, on average over the last four weeks, so what you use now
+  soon passes what you used a lot long ago. Then come the best matches of what you
+  typed (the exact name, then names that start with it, then those with a word that
+  does), and last the samples that only sound like it. An item counts as used when it
+  is added to the project from the browser, by double-click, Enter or a drag that is
+  dropped somewhere; its tooltip says how many times in all. The counts are kept in
   `%LOCALAPPDATA%\SUBstation\library.json` (on Linux
   `~/.local/share/SUBstation/library.json`).
 - *Name* is alphabetical.
+
+## Hiding from search
+
+Right-click anything in the list (a sample, a plug-in, a built-in device, a preset) ›
+*Hide from Search* to leave it out of every list and search from then on; right-click
+one of several selected items to hide them all. *Hidden*, under *Categories*, lists what
+you have hidden while there is some: right-click an item there › *Show in Search* to
+bring it back. What is hidden is kept with the counts, in `library.json`.
 
 ## What sounds are
 
@@ -106,7 +110,7 @@ for how well it works.
   most like it, the most similar first (the *Similarity* sort). For a clip, it is the
   part of the file the clip plays that counts: a kick cut out of a drum loop finds kicks.
 - A bar over the list says like what (its full path under the mouse); its ✕, choosing
-  *Best*, *Rank* or *Name*, or a list that isn't samples (*All*, *Built-in*, *Plug-ins*,
+  *Rank* or *Name*, or a list that isn't samples (*All*, *Built-in*, *Plug-ins*,
   *Presets*) goes back to the list as it was.
 - Typing filters the similar sounds and keeps their order: "808" for the 808s most like
   your kick. Clicking a place lists only its similar sounds (not its folder tree).

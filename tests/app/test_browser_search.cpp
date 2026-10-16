@@ -5,6 +5,7 @@
 // entries' queries.
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -125,24 +126,70 @@ private Q_SLOTS:
                  QStringLiteral("device:utility"));
     }
 
-    void usesDecayAndPersist() {
+    // The rank is a rolling average: how many times a week an item was used,
+    // over the last four weeks. The total is kept as well.
+    void ranksAreUsesAWeekLately() {
+        const double weeks = Library::kWindowDays / 7.0;
         Library library(path(), clock());
         library.recordUse({QStringLiteral("audio:a")});
         library.recordUse({QStringLiteral("audio:a")});
         QCOMPARE(library.uses(QStringLiteral("audio:a")), 2);
-        QCOMPARE(library.rank(QStringLiteral("audio:a")), 2.0);
-        now_ += Library::kHalfLifeDays * kDay;
-        QVERIFY(std::abs(library.rank(QStringLiteral("audio:a")) - 1.0) < 1e-9);
+        QCOMPARE(library.rank(QStringLiteral("audio:a")), 2.0 / weeks);
+        now_ += 10 * kDay;
         library.recordUse({QStringLiteral("audio:a")});
-        QVERIFY(std::abs(library.rank(QStringLiteral("audio:a")) - 2.0) < 1e-9);
+        QCOMPARE(library.rank(QStringLiteral("audio:a")), 3.0 / weeks);
+        // The first two leave the window: only the last counts.
+        now_ += (Library::kWindowDays - 5) * kDay;
+        QCOMPARE(library.rank(QStringLiteral("audio:a")), 1.0 / weeks);
+        now_ += 10 * kDay;
+        QCOMPARE(library.rank(QStringLiteral("audio:a")), 0.0);
+        QCOMPARE(library.uses(QStringLiteral("audio:a")), 3);  // (the total stays)
+        // Used a lot long ago, a little now: now wins.
+        library.recordUse({QStringLiteral("audio:b")});
+        QVERIFY(library.rank(QStringLiteral("audio:b")) > library.rank(QStringLiteral("audio:a")));
         QCOMPARE(library.rank(QStringLiteral("audio:never")), 0.0);
+        // Only the times in the window are kept.
+        library.recordUse({QStringLiteral("audio:a")});
+        QCOMPARE(library.records().value(QStringLiteral("audio:a")).toObject().value(QStringLiteral("times")).toArray().size(), 1);
         const Library again(path(), clock());
-        QCOMPARE(again.uses(QStringLiteral("audio:a")), 3);
-        QVERIFY(std::abs(again.rank(QStringLiteral("audio:a")) - 2.0) < 1e-9);
+        QCOMPARE(again.uses(QStringLiteral("audio:a")), 4);
+        QCOMPARE(again.rank(QStringLiteral("audio:a")), 1.0 / weeks);
         // The same key twice at once: two uses.
         library.recordUse({QStringLiteral("device:x"), QStringLiteral("device:x")});
         QCOMPARE(library.uses(QStringLiteral("device:x")), 2);
-        QCOMPARE(library.rank(QStringLiteral("device:x")), 2.0);
+        QCOMPARE(library.rank(QStringLiteral("device:x")), 2.0 / weeks);
+    }
+
+    // A record from before uses were timed: its score counts as uses in the
+    // window, fading (half every half-life); a use from then on is timed.
+    void olderRecordsFade() {
+        const double weeks = Library::kWindowDays / 7.0;
+        write(QStringLiteral(R"({"version": 1, "items": {"audio:a": {"uses": 9, "score": 4, "last_used": %1}}})").arg(now_).toUtf8());
+        Library library(path(), clock());
+        QCOMPARE(library.rank(QStringLiteral("audio:a")), 4.0 / weeks);
+        now_ += Library::kHalfLifeDays * kDay;
+        QVERIFY(std::abs(library.rank(QStringLiteral("audio:a")) - 2.0 / weeks) < 1e-9);
+        library.recordUse({QStringLiteral("audio:a")});
+        QVERIFY(std::abs(library.rank(QStringLiteral("audio:a")) - 3.0 / weeks) < 1e-9);
+        now_ += Library::kHalfLifeDays * kDay;  // (the use left the window; the score halved again)
+        QVERIFY(std::abs(library.rank(QStringLiteral("audio:a")) - 1.0 / weeks) < 1e-9);
+        QCOMPARE(library.uses(QStringLiteral("audio:a")), 10);
+    }
+
+    // Hidden from search: kept in the record, saved at once; showing it again removes the field.
+    void hiddenItems() {
+        Library library(path(), clock());
+        QVERIFY(!library.hidden(QStringLiteral("plugin:VST3:abc")));
+        library.setHidden({QStringLiteral("plugin:VST3:abc"), QStringLiteral("audio:a")}, true);
+        QVERIFY(library.hidden(QStringLiteral("plugin:VST3:abc")));
+        QCOMPARE(library.hiddenCount(), 2);
+        QVERIFY(Library(path(), clock()).hidden(QStringLiteral("audio:a")));
+        library.recordUse({QStringLiteral("audio:a")});
+        QVERIFY(library.hidden(QStringLiteral("audio:a")));  // (a use leaves it hidden)
+        library.setHidden({QStringLiteral("audio:a")}, false);
+        QVERIFY(!library.records().value(QStringLiteral("audio:a")).toObject().contains(QStringLiteral("hidden")));
+        QCOMPARE(library.uses(QStringLiteral("audio:a")), 1);
+        QCOMPARE(Library(path(), clock()).hiddenCount(), 1);
     }
 
     void unknownFieldsAreKept() {
@@ -182,13 +229,17 @@ private Q_SLOTS:
     void usageRecordsForTheBackend() {
         write(R"({"version": 1, "items": {
             "a": {"uses": 2, "score": 1.5, "last_used": 1000},
-            "b": {"hidden": true},
+            "b": {"hidden": true, "times": [5, "x", 7]},
             "c": {"score": 2},
             "d": {"score": "x"},
             "e": {"score": 1, "last_used": null}}})");
         const auto records = usageRecords(Library(path(), clock()));
         std::map<std::string, std::pair<double, double>> got;
         for (const auto& r : records) got[r.key] = {r.score, r.lastUsed};
+        for (const auto& r : records) {
+            QCOMPARE(r.hidden, r.key == "b");
+            if (r.key == "b") QVERIFY((r.times == std::vector<double>{5.0, 7.0}));  // (numbers only)
+        }
         QCOMPARE(got.size(), size_t(4));  // "d": not a number, left out
         QCOMPARE(got.at("a").first, 1.5);
         QCOMPARE(got.at("a").second, 1000.0);
@@ -258,11 +309,13 @@ private Q_SLOTS:
         QCOMPARE(pluginTag(pluginItem(PluginInfo())), QStringLiteral("Audio Effects"));
         QCOMPARE(pluginTag(audio(QStringLiteral("x.wav"))), QStringLiteral("Audio Effects"));
 
-        QCOMPARE(sortOrders().size(), 3);
-        QCOMPARE(sortOrders()[0].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("best"));
-        QCOMPARE(sortOrders()[1].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("rank"));
-        QCOMPARE(sortOrders()[2].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Name"));
-        QVERIFY(isSortOrder(QStringLiteral("name")) && isSortOrder(QStringLiteral("best")) && !isSortOrder(QStringLiteral("size")));
+        QCOMPARE(sortOrders().size(), 2);
+        QCOMPARE(sortOrders()[0].toMap().value(QStringLiteral("value")).toString(), QStringLiteral("rank"));
+        QCOMPARE(sortOrders()[1].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Name"));
+        QVERIFY(isSortOrder(QStringLiteral("name")) && isSortOrder(QStringLiteral("rank")) && !isSortOrder(QStringLiteral("best")));
+        // Hidden: everything, only what was hidden from search.
+        QCOMPARE(query({QStringLiteral("hidden")}).groups, (std::vector<int>{kBuiltinGroup, kPluginsGroup, kPresetsGroup, kAudioGroup}));
+        QVERIFY(query({QStringLiteral("hidden")}).hiddenOnly && !query({QStringLiteral("all")}).hiddenOnly);
         // Samples › a sound: the files only, those that sound like the word.
         const ScopeQuery kicks = scopeQuery({QStringLiteral("sounds"), QStringLiteral("kick")});
         QCOMPARE(kicks.groups, std::vector<int>{kAudioGroup});

@@ -406,10 +406,11 @@ private Q_SLOTS:
     }
 
     // Q: the find bar finds tracks by their names, then by what they are (their
-    // labels); typing goes to the best match, Enter on through the others (Shift:
+    // labels); typing goes to the best match, Enter on through the others (Up:
     // back); each is selected as a click on its name selects it, its group
     // unfolded, scrolled into view. What is typed goes into the field, not to the
-    // one-key shortcuts; Esc closes it, the lanes taking the keyboard back.
+    // one-key shortcuts; Esc (or Shift+Enter) closes it, the lanes taking the
+    // keyboard back; Ctrl+Enter goes back to where the search began.
     void findingTracks() {
         for (int i = 0; i < 24; ++i) editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
         const QString tower = editor().addMidiTrack(2, QStringLiteral("Bell Tower"), QStringLiteral("synth"));
@@ -454,7 +455,7 @@ private Q_SLOTS:
         QVERIFY(arrangement->scrollY() <= row->top);
         QVERIFY(row->top + row->mainHeight <= arrangement->scrollY() + arrangement->lanesHeight());
         test::screenshot(window_, QStringLiteral("main-window-find-track"));
-        key(Qt::Key_Return, Qt::ShiftModifier);
+        key(Qt::Key_Up);
         QCOMPARE(selection().trackId(), matches.at(matches.indexOf(stab) - 1));
         // After the last match, the first again.
         for (int i = 0; i < matches.size() && selection().trackId() != matches.last(); ++i) key(Qt::Key_Down);
@@ -471,13 +472,26 @@ private Q_SLOTS:
         key(Qt::Key_Escape);
         QVERIFY(!bar->isVisible());
         QTRY_VERIFY(item(QStringLiteral("lanes"))->hasActiveFocus());
-        // Q again: what was typed is selected, to type over.
+        // Q again: what was typed is selected, to type over. Ctrl+Enter goes back
+        // to the track selected when it opened, and closes it.
         key(Qt::Key_Q);
         QTRY_VERIFY(field->hasActiveFocus());
         type(QStringLiteral("glass"));
         QCOMPARE(field->property("text").toString(), QStringLiteral("glass"));
         QCOMPARE(selection().trackId(), stab);
-        QVERIFY(QMetaObject::invokeMethod(bar, "close"));
+        key(Qt::Key_Return, Qt::ControlModifier);
+        QVERIFY(!bar->isVisible());
+        QCOMPARE(selection().trackId(), tower);
+        QTRY_VERIFY(item(QStringLiteral("lanes"))->hasActiveFocus());
+        // Shift+Enter settles on the match: it stays selected, and the bar closes.
+        key(Qt::Key_Q);
+        QTRY_VERIFY(field->hasActiveFocus());
+        type(QStringLiteral("glass"));
+        QCOMPARE(selection().trackId(), stab);
+        key(Qt::Key_Return, Qt::ShiftModifier);
+        QVERIFY(!bar->isVisible());
+        QCOMPARE(selection().trackId(), stab);
+        QTRY_VERIFY(item(QStringLiteral("lanes"))->hasActiveFocus());
         session().trackSearch()->setQuery(QString());
         field->setProperty("text", QString());
     }
@@ -919,6 +933,24 @@ private Q_SLOTS:
         QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem*, entry), Q_ARG(int, 2));
         QMetaObject::invokeMethod(entry, "triggered");  // Clear List
         QCOMPARE(labels(), QStringList{QStringLiteral("No Recent Projects")});
+    }
+
+    // File › Backups: the open project's backups (none here: the tests' sessions
+    // make none), then Show Backups Folder. No crash's backup: nothing is asked.
+    void backupsMenu() {
+        auto* menu = find(QStringLiteral("backupsMenu"));
+        QVERIFY(menu);
+        call("fillBackupsMenu");
+        QStringList texts;
+        for (int i = 0; i < menu->property("count").toInt(); ++i) {
+            QQuickItem* entry = nullptr;
+            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem*, entry), Q_ARG(int, i));
+            texts << (entry->inherits("QQuickMenuSeparator") ? QStringLiteral("-") : entry->property("text").toString());
+        }
+        QCOMPARE(texts, (QStringList{QStringLiteral("No Backups Yet"), QStringLiteral("-"), QStringLiteral("&Show Backups Folder")}));
+        Q_EMIT session().recoveryAvailable();
+        QTest::qWait(50);
+        QVERIFY(!shown(QStringLiteral("recoveryDialog")));
     }
 
     // New, Open and Open Recent ask about unsaved changes: Cancel keeps them,

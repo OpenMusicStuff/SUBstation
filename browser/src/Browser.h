@@ -46,7 +46,7 @@ public:
     void setPlaces(std::vector<PlaceSpec> places) { indexer_.setPlaces(std::move(places)); }
     void rescan() { indexer_.rescan(); }
     void setExternal(int group, std::vector<ExternalItem> items);
-    void setUsage(std::vector<UsageRecord> records, double halfLifeDays);
+    void setUsage(std::vector<UsageRecord> records, double halfLifeDays, double windowDays = 28.0);
 
     // Starts a search; returns its generation.
     uint64_t search(Query query);

@@ -10,6 +10,7 @@
 #include "editor/ProjectEditor.h"
 #include "files/FileManager.h"
 #include "intelligence/AudioAnalysis.h"
+#include "intelligence/Harmony.h"
 #include "files/HotSwap.h"
 #include "input/KeyMap.h"
 #include "input/Modifiers.h"
@@ -201,6 +202,7 @@ void ArrangementLanes::connectSession(app::Session* session) {
     app::EngineBridge* bridge = session->bridge();
     connect(bridge, &app::EngineBridge::sourceReady, this, repaint);
     connect(session->audioAnalysis(), &app::AudioAnalysis::analysed, this, repaint);  // (audio clips' chords)
+    connect(session->harmony(), &app::Harmony::shownChanged, this, repaint);           // (C: shown or hidden)
     connect(bridge, &app::EngineBridge::sourceFailed, this, repaint);
     connect(bridge, &app::EngineBridge::automationStateChanged, this, repaint);
     // A parameter set by hand: lanes without an envelope draw its value.
@@ -686,8 +688,9 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
 void ArrangementLanes::drawChords(SgPainter& p, const app::Clip& clip, const QRectF& body, const QRectF& visible) {
     // The chords its file was heard to hold (AudioAnalysis), as it plays them,
     // along the bottom of its body: a name where there is room, a tick where
-    // each starts. Not on a body too short to hold them over its waveform.
-    if (body.height() < kMinChordBody) return;
+    // each starts. Not on a body too short to hold them over its waveform, nor
+    // while chords are hidden (View › Chords and Key, C).
+    if (body.height() < kMinChordBody || !session()->harmony()->shown()) return;
     const app::AudioAnalysis* analysis = session()->audioAnalysis();
     const app::AudioAnalysis::Result* heard = analysis ? analysis->result(clip.path) : nullptr;
     if (!heard || heard->chords.empty()) return;

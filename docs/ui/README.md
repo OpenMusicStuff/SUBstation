@@ -175,7 +175,7 @@ id in [KeyMap](#keys-and-profiles-keymap)), and calls the session. The keys belo
 
 | Menu | Entries (shortcut → what it calls) |
 |---|---|
-| File | New Project (Ctrl+N), Open… (Ctrl+O), Open Recent, Save (Ctrl+S), Save As… (Ctrl+Shift+S), Export Audio… (Ctrl+Shift+R), Quit (Ctrl+Q) |
+| File | New Project (Ctrl+N), Open… (Ctrl+O), Open Recent, Backups, Save (Ctrl+S), Save As… (Ctrl+Shift+S), Export Audio… (Ctrl+Shift+R), Quit (Ctrl+Q) |
 | Edit | Undo (Ctrl+Z) and Redo (Ctrl+Y, Ctrl+Shift+Z) on `Session.undoStack`, their text following `undoText`/`redoText`; Cut, Copy, Paste, Duplicate (Ctrl+D), Rename (Ctrl+R), Split (Ctrl+E), Consolidate (Ctrl+J), Reverse Clips (R), Deactivate / Activate Clips (0); Freeze / Unfreeze Track (Ctrl+Shift+F), Flatten Track, Delete (Del, Backspace), Select All (Ctrl+A); Re-Enable Automation (enabled while `Session.automationOverridden`), Solo Selected Tracks (S), Arm Selected Tracks (Ctrl+Shift+A); Play / Stop (Space), Record (F9), Record Quantization (a checkable entry per `Session.recordQuantizeChoices`, then Quantize Note Ends: `Session.recordQuantizeEnds`), Go to Start (Home), Loop (Ctrl+L), Find in Browser (Ctrl+F) |
 | Create | Insert Audio Track (Ctrl+T), Insert MIDI Track (Ctrl+Shift+T), Insert Return Track (Ctrl+Alt+T), Insert MIDI Clip (Ctrl+Shift+D, Ctrl+Shift+M: on the arrangement's grid when snapping), Group Tracks (Ctrl+G), Ungroup Tracks (Ctrl+Shift+G), Delete Selected Tracks |
 | View | Browser, Device View, Info View, Clip View (Shift+Tab), Find Track (Q: the find bar, over the arrangement or the clip view: [arrangement.md](arrangement.md#finding-tracks)), Automation (A: `editor.toggleAllAutomation()`), Chords and Key (C: `harmony.shown`, checkable), Close Plug-in Editor (Ctrl+W, where editors are windows of their own: Windows, Linux's X11), Zoom In (+, =), Zoom Out (-), Zoom to Arrangement (Z), Narrow Grid (Ctrl+1), Widen Grid (Ctrl+2), Snap to Grid (Ctrl+4) |
@@ -266,6 +266,12 @@ what it needs:
   the path as the tooltip; "No Recent Projects" when empty, and Clear List); a project whose file is gone is taken
   off the list with a warning (`recentProjectAvailable`). The list is `files/recent` in `QSettings`, at most 10,
   compared case-folded.
+- Backups is filled as it opens too (`fillBackupsMenu()`), from `Session.backupMenuItems()` (the open project's
+  backups, the newest first; "No Backups Yet" when none), then Show Backups Folder (`Session.backupsFolder()`, shown
+  by `Session.browser.showInFolder`). Choosing one asks about unsaved changes (`confirmDiscard`), then
+  `Session.recoverBackup(path)`. On `Session.recoveryAvailable` (a crash's backup found as the session started),
+  `recoveryDialog` (a `MessageBox`) asks to recover the newest of `Session.recoverableBackups()`: Recover goes on as
+  choosing a backup does, Not Now calls `Session.dismissRecovery()`.
 - Closing the window (Quit, or its close button) first asks `Session.requestClose()`: a render running is cancelled
   instead and the window stays. Then unsaved changes are asked about, and the window's state is saved.
 - A project opened shows all of it (`Session.projectOpened` → the arrangement's `zoomToArrangement()`). Its

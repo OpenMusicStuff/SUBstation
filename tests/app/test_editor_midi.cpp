@@ -258,6 +258,35 @@ private Q_SLOTS:
         QCOMPARE(f.editor.clipsAt({track}, 1.0), (ClipRefs{*a}));
         QVERIFY(f.editor.clipsAt({track}, 2.0).isEmpty());  // (at an edge)
     }
+
+    // With a time selection reaching past the clips, the joined clip fills the
+    // empty space it selects too; one clip is enough then.
+    void consolidatingFillsTheSelectedSpace() {
+        EditorFixture f;
+        const QString track = f.editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
+        const auto a = f.editor.addMidiClip(track, 2.0, 2.0);
+        const auto b = f.editor.addMidiClip(track, 6.0, 2.0);
+        f.editor.setClipNotes(*a, {Note{C, 0.5, 1.0}}, "Add Note");
+        const std::pair<double, double> area{0.0, 12.0};
+        QVERIFY(f.editor.consolidatable({*a}, std::pair<double, double>{2.0, 4.0}).isEmpty());  // (nothing around it)
+        QCOMPARE(f.editor.consolidatable({*a}, area).size(), 1);
+        const ClipRefs joined = f.editor.consolidateClips({*a, *b}, area);
+        QCOMPARE(joined.size(), 1);
+        const Clip& clip = f.track(track).clips[0];
+        QCOMPARE(f.track(track).clips.size(), size_t(1));
+        QCOMPARE(clip.startBeat, 0.0);
+        QCOMPARE(clip.endBeat(), 12.0);
+        QCOMPARE(clip.notes.size(), size_t(1));
+        QCOMPARE(clip.notes[0].start, 2.5);  // (where it played)
+        f.stack.undo();
+        // One clip, the selection around it: it grows to fill the selection.
+        const ClipRefs grown = f.editor.consolidateClips({*a}, std::pair<double, double>{1.0, 5.0});
+        QCOMPARE(grown.size(), 1);
+        const Clip& one = f.project.clip(track, grown[0].clipId);
+        QCOMPARE(one.startBeat, 1.0);
+        QCOMPARE(one.endBeat(), 5.0);
+        QCOMPARE(one.notes[0].start, 1.5);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestEditorMidi)
