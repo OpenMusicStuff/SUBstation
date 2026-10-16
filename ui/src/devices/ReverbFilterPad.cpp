@@ -141,7 +141,7 @@ void ReverbFilterPad::updateColumns() { columns_ = spectrum_.columns(std::max(2,
 void ReverbFilterPad::refreshDisplays() {
     const double seconds = tickSeconds();
     const std::vector<float> signal = readDisplay(QStringLiteral("signal"));
-    if (spectrum_.add(signal.data(), signal.size(), sampleRate())) {
+    if (spectrum_.add(signal.data(), signal.size(), sampleRate(), seconds)) {
         updateColumns();
         spectrumChanged_ = true;
     }

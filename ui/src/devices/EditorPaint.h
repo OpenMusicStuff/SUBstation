@@ -57,8 +57,9 @@ void appendCubic(std::vector<QPointF>& out, QPointF from, const QPointF& c1, con
                  int steps = 12);
 
 // --- Animation --------------------------------------------------------------------------------
-// Editors animate in refreshDisplays() (about 60 times a second, DisplayClock): they move these on
-// by the time since the last tick, then update(); paint() only reads them.
+// Editors animate in refreshDisplays() (on each DisplayClock tick, 60 times a second or as the
+// preferences have it): they move these on by the time since the last tick, then update(); paint()
+// only reads them. Nothing moves by a share a tick: it would move faster at a faster rate.
 
 // A meter's reading as the eye follows it: it rises at once, falls smoothly (`fallDbPerSecond`),
 // and its peak holds for `holdSeconds` before falling as fast. Levels in dB, floored at `floorDb`.
@@ -98,6 +99,29 @@ struct Eased {
 inline double easeFraction(double dtSeconds, double seconds) {
     return seconds <= 0.0 ? 1.0 : 1.0 - std::exp(-dtSeconds / seconds);
 }
+
+// What is left after `dtSeconds` of something shrinking to `factor` every `perSeconds` (a decay
+// first made as a factor a 16 ms tick: the same pace at any tick rate).
+inline double decayOver(double dtSeconds, double factor, double perSeconds) {
+    return std::pow(factor, dtSeconds / perSeconds);
+}
+
+// The pace of a trail of a display's last positions (where a dot was over the last few ticks, drawn
+// fading behind it): a point every kStepSeconds (16 ms, what the trails were made for: a point a
+// tick at 60 Hz), so a trail is as long in time at any tick rate. step(dt) says whether this tick
+// adds a point; between steps the newest point follows the dot instead.
+struct TrailPace {
+    static constexpr double kStepSeconds = 0.016;
+    double since = 1.0;  // seconds since the last point (the first tick adds one)
+
+    bool step(double dtSeconds) {
+        since += dtSeconds;
+        if (since < kStepSeconds - 1e-9)
+            return false;
+        since = std::fmod(std::max(since - kStepSeconds, 0.0), kStepSeconds);  // (a long tick: one point)
+        return true;
+    }
+};
 
 // 0 below 0, 1 above 1, and an S-curve between, flat at both ends (smoothstep): fades and
 // highlights that start and stop softly.

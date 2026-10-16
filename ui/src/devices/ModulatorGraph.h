@@ -30,6 +30,7 @@
 
 #include "devices/DeviceCanvas.h"
 #include "devices/DisplayPlayback.h"
+#include "devices/EditorPaint.h"
 
 #include "audio/ModulatorShapes.h"
 
@@ -64,7 +65,9 @@ public:
     static constexpr double kCurveHit = 7.0;  // px from the curve where a drag bends it
     static constexpr double kMeterWidth = 7.0;
     static constexpr double kMeterFloor = -60.0;
-    static constexpr int kTrail = 10;  // the playhead's trail, in ticks
+    static constexpr int kTrail = 10;  // the playhead's trail: points TrailPace's step apart (0.16 s)
+    static constexpr double kKeyFallDbPerSecond = 75.0;  // the key's meter falling (1.2 dB a 16 ms tick)
+    static constexpr double kFlashDecay = 0.8, kFlashDecaySeconds = 0.016;  // a trigger's light: 0.8 every 16 ms
 
     using Point = sub::app::ModulatorPoint;
 
@@ -180,6 +183,7 @@ private:
     double output_ = -1.0;
     double lastPhase_ = -1.0;
     std::vector<QPointF> trail_;  // (x, y on the curve), oldest first
+    TrailPace trailPace_;
     double level_ = kMeterFloor;  // the key's level (dB), falling back slowly
     double flash_ = 0.0;          // a trigger lights it up
     // Interaction.

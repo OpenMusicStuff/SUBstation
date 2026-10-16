@@ -34,6 +34,7 @@ public:
     // The plug-ins waiting to load are loaded by hand from here (the timer stopped).
     static void stopPluginTimer(EngineBridge& bridge);
     static void loadNextPlugin(EngineBridge& bridge);
+    // What the bridge's timers poll: the displays' (the meters, recording) and the idle one's (plug-ins, the device).
     static void pollMeters(EngineBridge& bridge);
     // The files being decoded are, in the engine's cache; the bridge hears of it from the event loop.
     static void finishDecoding(EngineBridge& bridge);

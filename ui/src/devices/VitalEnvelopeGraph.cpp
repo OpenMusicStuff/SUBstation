@@ -166,7 +166,7 @@ void VitalEnvelopeGraph::refreshDisplays() {
         stale_ = 0.0;
     } else if (count > 0 || (stale_ += seconds) > kStaleSeconds) {
         stale_ = kStaleSeconds;
-        if (!trail_.empty()) {
+        if (!trail_.empty() && shrink_.step(seconds)) {  // (shrinking a point a step)
             trail_.pop_front();
             moved = true;
         }

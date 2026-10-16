@@ -116,8 +116,8 @@ void HueSpectrum::refreshDisplays() {
     }
     const std::vector<float> in = readRecent(QStringLiteral("input"), kRecentSeconds);
     const std::vector<float> out = readRecent(QStringLiteral("output"), kRecentSeconds);
-    analyzer_.feed(EqAnalyzer::Input, in.data(), in.size(), rate);
-    analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate);
+    analyzer_.feed(EqAnalyzer::Input, in.data(), in.size(), rate, dt);
+    analyzer_.feed(EqAnalyzer::Output, out.data(), out.size(), rate, dt);
 
     moving = analyzer_.live(EqAnalyzer::Input) || analyzer_.live(EqAnalyzer::Output) || moving;
     const double fade = easeFraction(dt, kGlowSeconds);

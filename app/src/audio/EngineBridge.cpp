@@ -74,19 +74,25 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
         guarded("automationChanged", [&] { onAutomationChanged(owner, key); });
     });
 
-    d_->positionTimer.setInterval(kPositionPollMs);
+    d_->positionTimer.setInterval(kDisplayPollMs);
+    d_->positionTimer.setTimerType(Qt::PreciseTimer);
     connect(&d_->positionTimer, &QTimer::timeout, this, [this] { guarded("playhead", [&] { pollPosition(); }); });
     d_->positionTimer.start();
-    d_->meterTimer.setInterval(kMeterPollMs);
-    connect(&d_->meterTimer, &QTimer::timeout, this, [this] { guarded("meters", [&] { pollMeters(); }); });
-    d_->meterTimer.start();
+    d_->displayTimer.setInterval(kDisplayPollMs);
+    d_->displayTimer.setTimerType(Qt::PreciseTimer);
+    connect(&d_->displayTimer, &QTimer::timeout, this, [this] { guarded("meters", [&] { pollDisplays(); }); });
+    d_->displayTimer.start();
+    d_->idleTimer.setInterval(kIdlePollMs);
+    connect(&d_->idleTimer, &QTimer::timeout, this, [this] { guarded("idle", [&] { pollIdle(); }); });
+    d_->idleTimer.start();
 
     onReset();
 }
 
 EngineBridge::~EngineBridge() {
     d_->positionTimer.stop();
-    d_->meterTimer.stop();
+    d_->displayTimer.stop();
+    d_->idleTimer.stop();
     d_->pluginTimer.stop();
     // Their results come to this object, which is going: what is posted to it goes with it.
     d_->pool.waitForDone();

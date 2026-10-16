@@ -55,7 +55,7 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
   Session (app/src/session) ─ ProjectEditor ─► QUndoCommand ─► Project ─► Qt signals ─┐
        │                                                                              │
        └─ EngineBridge (app/src/audio) ─► sub::Engine (engine/src)                    │
-             positionChanged (16 ms), metersUpdated (33 ms),                          │
+             positionChanged, metersUpdated (each display tick: 16 ms at 60 Hz),     │
              automationStateChanged, plugin*, sourceReady ... ────────────────────────┤
                                                                                       ▼
                                    QML bindings re-evaluate, items update() and repaint
@@ -94,8 +94,14 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
   `liveTakes()`, `waveform(path)` (a `Waveform`: frames, channels, peaks), `loadError(path)`, parameter metadata
   (`paramSpec`, `paramGroups`, `canAutomate`, `deviceParams`), automation state (`isAutomated`, `isOverridden`,
   `currentValue`, `ownValue`), processor displays (`readProcessorDisplay`), the scope (`scopeWritten`,
-  `scopeSamples`), `cpuLoad`, `deviceStatus`. The bridge polls the playhead every 16 ms and the meters every 33 ms
-  and emits `positionChanged` and `metersUpdated`; the UI never waits on the audio thread. See
+  `scopeSamples`), `cpuLoad`, `deviceStatus`. The bridge polls the playhead and the meters every display tick (16 ms at
+  60 Hz; the display rate below) and emits `positionChanged` and `metersUpdated`; the UI never waits on the audio
+  thread.
+- **The display rate.** Everything live (the playhead, the meters, the scope, the devices' editors) refreshes at the
+  rate Preferences › Look and Feel sets (`Session.displayPreferences`: 30 to 240 Hz, 60 by default, no faster than
+  the main window's screen, [app/session.md](../app/session.md#preferences)): the bridge's polls and the UI's
+  `DisplayClock` ([device-view.md](device-view.md)) tick at its `intervalMs`, and what moves on a display moves by
+  the time since its last tick (`DisplayClock::elapsed`), never by a share a tick, so it looks the same at any rate. See
   [app/engine-bridge.md](../app/engine-bridge.md).
 - **Status text.** The session forwards what the bridge, the browser, the plug-in index, the arrangement's and the
   device view's actions, the computer keyboard and the editor's refusals (`refused`) say, as
@@ -432,7 +438,7 @@ and keep the image. Add an icon by adding its drawing to the table in [Icons.cpp
 |---|---|---|
 | `Knob` | [Knob.qml](../../ui/qml/Knob.qml) over [KnobItem](../../ui/src/controls/KnobItem.h) | Drag vertically: 600 px for the whole range (`kDragPixels`), 6000 with Shift (`kFineDragPixels`); pressing or letting go of Shift mid-drag changes the rate from there on. The wheel moves 1/50 of the range a notch (`kWheelNotches`), unless `wheel` is false (the event goes on to a scrolling list). Double-click resets to `defaultValue` (if never set: the value it was made with). `logScale` moves evenly in log(value) (when `from` > 0); `step` takes multiples of it from `from`; `bipolar` draws the arc from the middle. With a `parser`, typing a digit (the knob has the focus after a click) opens a small text field over it. `automation` "on" or "off" draws the dot (red automated, grey overridden; `drawAutomationDot()`, shared with the value box). `moved(value, gestureKey)` comes for user changes only, never for `value` set from outside; `touched()` on every left press or double-click; `relative` says whether the last change was a drag or wheel (rather than typed or reset). |
 | `ValueBox` | [ValueBox.qml](../../ui/qml/ValueBox.qml) over [ValueBoxItem](../../ui/src/controls/ValueBoxItem.h) | Ableton-style number: drag vertically, 0.25 steps a pixel (`kDragRate`), 0.025 with Shift; the wheel moves ten steps a notch, notches less than 0.6 s apart being one gesture. `choices` limits it to a list (the time signature's denominator: one choice per 10 px, or a notch). `logScale` drags and wheels in log(value) as a knob does. Double-click: with a `defaultValue` it resets (and typing a digit edits); without one it opens the text field with the value selected. `parseNumber` strips "dB", "bpm" and "%" and reads "-inf" as -70. Values are rounded to `decimals` and kept between `from` and `to`. Same signals as the knob. |
-| `Meter` | [Meter](../../ui/src/controls/Meter.h) | Stereo peak meter from -60 to +6 dB, falling 3.5 % of the scale per update (`setLevels()` about 30 times a second, from the bridge's `metersUpdated`; the fall needs every update); a clip light at full scale, cleared by a click. |
+| `Meter` | [Meter](../../ui/src/controls/Meter.h) | Stereo peak meter from -60 to +6 dB, falling `kFallPerSecond` (3.5 % of the scale every 33 ms) by the time since the last update (`setLevels()` on the bridge's `metersUpdated`; the fall needs every update; `DisplayClock::elapsed`: updates by hand count a tick each); a clip light at full scale, cleared by a click; compact, peak ticks held `kHoldSeconds` (0.99 s). |
 | `Oscilloscope` | [Oscilloscope.qml](../../ui/qml/Oscilloscope.qml) over [OscilloscopeItem](../../ui/src/controls/OscilloscopeItem.h) | [Below](#the-oscilloscope). |
 | `RoleButton` | [RoleButton.qml](../../ui/qml/RoleButton.qml) | A push button coloured by its `role`, with `iconName`, `iconColor`, `iconSize`, `tooltip` and `lit`, and `automation` (a switch's automation dot, "on" red or "off" grey, as knobs have). It never takes the keyboard focus, so Space stays play/stop. |
 | `ToggleButton` | [ToggleButton.qml](../../ui/qml/ToggleButton.qml) | A checkable `RoleButton`; `toggled()` and `clicked()` come from the user only, and `setCheckedSilently()` (or a binding) shows state from the model without them. Play and Record are `checkable: false` with `checked` bound to the bridge: their state follows the engine, never the click. |
@@ -448,15 +454,17 @@ ends it when it loses the mouse grab.
 
 The scope in the transport bar shows the master output, as FL Studio's does. Its feed is any `QObject` with a
 `quint64 scopeWritten` property (samples written so far) and `Q_INVOKABLE QList<float> scopeSamples(int frames)`:
-the bridge. Every 16 ms (`kUpdateMs`) its timer reads `scopeWritten`; only when it moved does it fetch
+the bridge. On each display tick (`DisplayClock`, at the display rate) it reads `scopeWritten`; only when it moved does it fetch
 `scopeSamples(2 * kWindow)` (neither blocks). `trigger()` finds the last rising zero crossing that still leaves a
 full `kWindow` (1024 samples, about 21 ms at 48 kHz) after it, so steady tones stand still; with none it shows the
 newest window. `trace()` turns the samples into one column per pixel (the column's highest then lowest sample),
-built when the samples change, not on every paint. When no new audio comes the trace shrinks by
-`kFadePerUpdate` (0.8 per update, 0.64 per 33 ms) and stops repainting once flat. It skips its work while hidden.
+built when the samples change, not on every paint. When no new audio comes for `kHoldSeconds` (0.144 s: longer than
+any device buffer) the trace shrinks by `kFade` every `kFadeSeconds` of the time past it (0.8 every 16 ms, by the time
+since the last update: `DisplayClock::elapsed`; at 60 Hz the tenth update without audio is the first to shrink it, as
+it always was) and stops repainting once flat. It skips its work while hidden.
 
 `kWindow` is a fixed number of samples because the engine's sample rate is behind its edit lock, which the scope
-shouldn't take 60 times a second. The glow is drawn without antialiasing (it is soft anyway); only the thin line has
+shouldn't take on every tick. The glow is drawn without antialiasing (it is soft anyway); only the thin line has
 it.
 
 ## Transport bar
@@ -512,8 +520,10 @@ application-layer object that holds the logic. What the preferences mean to the 
     searched) and the user's own (red if missing); Add Folder… and Remove (only new files are read; a removed
     folder's plug-ins leave the browser); Rescan Plug-ins; the scan's status, its failures in the tooltip. See
     [app/plugin-scanner.md](../app/plugin-scanner.md).
-  - **Look and Feel** (`LookAndFeelPage` on the `Theme` singleton): the theme, a `ChoiceBox` of `Theme.names`
-    showing `Theme.name` and setting it ([Themes](#themes)).
+  - **Look and Feel** (`LookAndFeelPage` on the `Theme` singleton and `Session.displayPreferences`): the theme, a
+    `ChoiceBox` of `Theme.names` showing `Theme.name` and setting it ([Themes](#themes)); the maximum display frame
+    rate, a `ChoiceBox` of `rateChoices` (`rateIndex`, `chooseRate(i)`), and under it `status` (what the displays
+    refresh at, capped by the screen) ([app/session.md](../app/session.md#preferences)).
   - **Keyboard** (`KeyboardPage` on the `KeyMap` singleton, [above](#keys-and-profiles-keymap)): the profile (a
     `ChoiceBox` of `KeyMap.profiles`), Reset All, a search field (a command's name, menu or keys), and every
     command in a list: its menu, its name (bold while customized), a button per key (its × takes it back:

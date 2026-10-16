@@ -28,7 +28,9 @@
 #include "session/AudioPreferences.h"
 #include "session/ComputerKeyboard.h"
 #include "session/CpuUsage.h"
+#include "devices/DisplayClock.h"
 #include "session/DeviceSelection.h"
+#include "session/DisplayPreferences.h"
 #include "session/ModulationLearn.h"
 #include "session/MidiPreferences.h"
 #include "session/PluginHostingPreferences.h"
@@ -85,9 +87,12 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<AudioPreferences>("AudioPreferences");
     registerUncreatable<MidiPreferences>("MidiPreferences");
     registerUncreatable<PluginHostingPreferences>("PluginHostingPreferences");
+    registerUncreatable<DisplayPreferences>("DisplayPreferences");
     registerUncreatable<Updater>("Updater");
     qmlRegisterUncreatableType<QUndoStack>(kUri, 1, 0, "UndoStack", kMadeByTheSession);
     qmlRegisterSingletonInstance(kUri, 1, 0, "Session", session);
+    // The displays tick at the preferences' rate.
+    DisplayClock::instance()->follow(session ? session->displayPreferences() : nullptr);
 }
 
 }  // namespace sub::ui

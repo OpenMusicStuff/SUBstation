@@ -2,6 +2,7 @@
 
 #include "audio/EqResponse.h"
 #include "controls/KnobItem.h"
+#include "devices/DisplayClock.h"
 #include "devices/EditorPaint.h"
 #include "devices/EqView.h"
 #include "sg/SgPainter.h"
@@ -74,7 +75,6 @@ EqGraph::EqGraph(QQuickItem* parent) : DeviceCanvas(parent) {
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     setActiveFocusOnTab(false);
-    animation_.setInterval(16);
     connect(&animation_, &QTimer::timeout, this, &EqGraph::animate);
     connect(&displayTimer_, &QTimer::timeout, this, [this] {
         if (alive() && isVisible())
@@ -400,13 +400,14 @@ void EqGraph::feed() {
     if (mode == 0 || !alive())
         return;
     const double rate = sampleRate();
+    const double dt = DisplayClock::instance()->elapsed(feedClock_);
     if (mode == 1 || mode == 3) {
         const std::vector<float> samples = readDisplay(QStringLiteral("input"));
-        analyzer_.feed(sub::app::analysis::EqAnalyzer::Input, samples.data(), samples.size(), rate);
+        analyzer_.feed(sub::app::analysis::EqAnalyzer::Input, samples.data(), samples.size(), rate, dt);
     }
     if (mode == 2 || mode == 3) {
         const std::vector<float> samples = readDisplay(QStringLiteral("output"));
-        analyzer_.feed(sub::app::analysis::EqAnalyzer::Output, samples.data(), samples.size(), rate);
+        analyzer_.feed(sub::app::analysis::EqAnalyzer::Output, samples.data(), samples.size(), rate, dt);
     }
     refreshAnalyzer();
     update();
@@ -719,25 +720,31 @@ double EqGraph::targetRadius(int index) const {
 }
 
 void EqGraph::animateSoon() {
-    if (!animation_.isActive())
-        animation_.start();
+    if (!animation_.isActive()) {
+        animationClock_.invalidate();  // (its first tick: a tick long)
+        animation_.start(DisplayClock::instance()->intervalMs());
+    }
 }
 
 void EqGraph::animate() {
+    // The dots grow and the ghost fades by the time the tick took: 35 % and 30 % of the way every 16 ms.
+    const double dt = DisplayClock::instance()->elapsed(animationClock_);
+    const double grow = 1.0 - decayOver(dt, 0.65, kDisplayRefreshMs / 1000.0);
+    const double fade = 1.0 - decayOver(dt, 0.7, kDisplayRefreshMs / 1000.0);
     bool settled = true;
     for (const auto& band : bands_) {
         if (!band)
             continue;
         double& current = radius_[std::size_t(band->index)];
         const double target = targetRadius(band->index);
-        current += (target - current) * 0.35;
+        current += (target - current) * grow;
         if (std::abs(target - current) < 0.05)
             current = target;
         else
             settled = false;
     }
     const double target = ghost_ ? 1.0 : 0.0;
-    ghostAlpha_ += (target - ghostAlpha_) * 0.3;
+    ghostAlpha_ += (target - ghostAlpha_) * fade;
     if (std::abs(target - ghostAlpha_) < 0.02)
         ghostAlpha_ = target;
     else

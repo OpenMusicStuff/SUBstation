@@ -52,7 +52,7 @@ class EqGraph : public DeviceCanvas {
     Q_PROPERTY(double scale READ scale NOTIFY bandsChanged)    // the gain scale, 0..2
     // px kept free at the top right (the expand and panel buttons over it).
     Q_PROPERTY(qreal rightInset READ rightInset WRITE setRightInset NOTIFY rightInsetChanged)
-    // How often the analyzer reads the displays (ms; 0: as the meters update, the device view's way).
+    // How often the analyzer reads the displays (ms; 0: on the display clock's ticks, the device view's way).
     Q_PROPERTY(int displayInterval READ displayInterval WRITE setDisplayInterval NOTIFY displayIntervalChanged)
     Q_PROPERTY(bool ghostShown READ ghostShown NOTIFY hoverChanged)
     Q_PROPERTY(QStringList types READ types CONSTANT)
@@ -236,6 +236,7 @@ private:
     std::array<double, kBands> radius_{};  // each dot's radius, easing to its target
     double ghostAlpha_ = 0.0;
     QTimer animation_;
+    QElapsedTimer animationClock_;  // since the last animate()
     qreal rightInset_ = 0.0;
     int displayInterval_ = 0;
     QTimer displayTimer_;
@@ -250,6 +251,7 @@ private:
     // How much the analyzer's lines show (0..1): they fade out while no audio comes, back in as it does.
     double inputFade_ = 0.0, outputFade_ = 0.0;
     QElapsedTimer fadeClock_;  // since the last feed()
+    QElapsedTimer feedClock_;  // the same, for the analyzer (DisplayClock::elapsed)
 };
 
 }  // namespace sub::ui

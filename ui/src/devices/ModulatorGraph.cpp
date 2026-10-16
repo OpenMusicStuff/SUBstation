@@ -286,21 +286,27 @@ void ModulatorGraph::advance(double seconds) {
         if (seed >= 0 && (seed != randomSeed_ || start != randomStart_))
             showRandom(seed, start);
     }
+    // The trail: a point a step (TrailPace), the newest following the playhead between steps.
+    const bool step = trailPace_.step(seconds);
     if (phase >= 0) {
-        trail_.push_back(QPointF(phase, curveValue(shown(), phase)));
+        const QPointF at(phase, curveValue(shown(), phase));
+        if (step || trail_.empty())
+            trail_.push_back(at);
+        else
+            trail_.back() = at;
         if (trail_.size() > std::size_t(kTrail))
             trail_.erase(trail_.begin(), trail_.end() - kTrail);
-    } else if (!trail_.empty()) {
+    } else if (!trail_.empty() && step) {
         trail_.erase(trail_.begin());
     }
     if ((!periodic_ && triggered) || (periodic_ && noted))
         flash_ = 1.0;
     else
-        flash_ *= 0.8;
+        flash_ *= decayOver(seconds, kFlashDecay, kFlashDecaySeconds);
     lastPhase_ = phase;
     if (keyed_) {
         const double level = keyPeak > 1e-6 ? 20 * std::log10(keyPeak) : kMeterFloor;
-        level_ = std::max(level, level_ - 1.2);
+        level_ = std::max(level, level_ - kKeyFallDbPerSecond * seconds);
     }
     update();
     Q_EMIT ticked();

@@ -55,7 +55,7 @@ public:
     static constexpr int kWidth = 140;
     static constexpr int kMinimumHeight = 40;
     static constexpr double kQuietSeconds = 0.3;  // with no display values this long, the dots fall
-    static constexpr int kTrail = 8;              // ticks the trail remembers
+    static constexpr int kTrail = 8;              // points the trail remembers, TrailPace's step apart
     static constexpr double kReach = 0.86;        // the curve's largest output, of the half height
 
     explicit AmpDriveGraph(QQuickItem* parent = nullptr);
@@ -138,7 +138,8 @@ private:
     QElapsedTimer lastRead_;
     MeterBallistics input_;
     Eased sag_;
-    std::array<double, kTrail> trail_{};  // the last ticks' peaks (linear), newest first
+    std::array<double, kTrail> trail_{};  // the last steps' peaks (linear), newest first
+    TrailPace trailPace_;
 };
 
 }  // namespace sub::ui

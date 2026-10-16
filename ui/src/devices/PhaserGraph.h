@@ -12,7 +12,7 @@
 //   marked along the bottom; the envelope's level is a bar at the left; In and
 //   Out meters at the right.
 // - The LFO strip under it: the shape over a cycle with the phase's dot, its
-//   comet trail (the way the dot went over the last ticks, however fast) and
+//   comet trail (the way the dot went over the last 0.16 s, however fast) and
 //   the right LFO's dot (the random shapes: a trace of their values, scrolling,
 //   started afresh when one is chosen), and a bar of the summed modulation the
 //   sweep follows.
@@ -69,7 +69,7 @@ public:
     static constexpr double kSpreadPixels = 150.0;    // dragged up this far: Spread +100 %
     static constexpr double kFeedbackPixels = 150.0;  // the same for Feedback
     static constexpr double kStaleSeconds = 0.3;      // no display values this long: not live
-    static constexpr int kTrail = 10;                 // the dot's comet trail, in ticks
+    static constexpr int kTrail = 10;                 // the dot's comet trail: points TrailPace's step apart
     static constexpr double kTrailSpan = 0.4;         // its tail's longest, in cycles
     static constexpr int kTrace = 512;                // the random shapes' trace: 2.7 s of values
     static constexpr int kMarkerSpacing = 8;          // px: comb markers closer than this are left out
@@ -109,7 +109,7 @@ public:
     double levelOut() const { return out_.level; }
     double dotOpacity() const { return dotOpacity_.value; }
     int traceLength() const { return traceCount_; }  // the random shapes' values traced so far (of kTrace)
-    double trailSpan() const { return trailSpan_; }   // how far the dot went over its trail's ticks (cycles)
+    double trailSpan() const { return trailSpan_; }   // how far the dot went over its trail's steps (cycles)
     const Playback& playback() const { return playback_; }
     int mode() const { return mode_; }
     bool live() const { return live_; }
@@ -204,7 +204,8 @@ private:
     std::array<std::vector<float>, kStreams> pending_;  // read, not yet whole frames
     std::array<Dot, kTrail> trail_{};
     int trailCount_ = 0, trailNext_ = 0, trailSettle_ = 0;
-    double trailSpan_ = 0.0;  // how far the dot went over the trail's ticks (cycles)
+    TrailPace trailPace_;
+    double trailSpan_ = 0.0;  // how far the dot went over the trail's steps (cycles)
     std::vector<float> trace_;  // the random shapes' values, a ring of kTrace
     int traceNext_ = 0, traceCount_ = 0;
     qint64 traced_ = -1;  // the last frame put in the trace

@@ -1,5 +1,6 @@
 #include "controls/OscilloscopeItem.h"
 
+#include "devices/DisplayClock.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
 
@@ -14,9 +15,7 @@ namespace sub::ui {
 
 OscilloscopeItem::OscilloscopeItem(QQuickItem* parent) : SgCanvas(parent) {
     setImplicitSize(150, 30);  // fixed, as the Python UI's oscilloscope
-    timer_.setInterval(kUpdateMs);
-    connect(&timer_, &QTimer::timeout, this, &OscilloscopeItem::poll);
-    timer_.start();
+    connect(DisplayClock::instance(), &DisplayClock::tick, this, &OscilloscopeItem::poll);
 }
 
 void OscilloscopeItem::setFeed(QObject* feed) {
@@ -68,17 +67,20 @@ std::vector<QPointF> OscilloscopeItem::trace(const float* samples, int count, do
 void OscilloscopeItem::poll() {
     if (!isVisible() || !window() || !window()->isVisible() || !feed_)
         return;
+    const double dt = DisplayClock::instance()->elapsed(sinceUpdate_);
     const quint64 written = feed_->property("scopeWritten").toULongLong();
     if (hasWritten_ && written == written_) {
         // A gap between device buffers holds the trace; only a longer one fades it.
-        if (samples_.empty() || ++staleUpdates_ < kHoldUpdates)
+        stale_ += dt;
+        if (samples_.empty() || stale_ <= kHoldSeconds + 1e-9)
             return;
+        const double fading = std::min(dt, stale_ - kHoldSeconds);  // (the time past the hold)
         float peak = 0.0f;
         for (float s : samples_)
             peak = std::max(peak, std::abs(s));
         if (peak > kSilent) {
             for (float& s : samples_)
-                s = float(s * kFadePerUpdate);
+                s = float(s * std::pow(kFade, fading / kFadeSeconds));
         } else {
             samples_.clear();  // flat: one last repaint, then idle
         }
@@ -87,7 +89,7 @@ void OscilloscopeItem::poll() {
     }
     written_ = written;
     hasWritten_ = true;
-    staleUpdates_ = 0;
+    stale_ = 0.0;
     QList<float> fetched;
     if (!QMetaObject::invokeMethod(feed_, "scopeSamples", Qt::DirectConnection, Q_RETURN_ARG(QList<float>, fetched),
                                    Q_ARG(int, 2 * kWindow)))

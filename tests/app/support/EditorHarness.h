@@ -264,6 +264,7 @@ protected:
     }
 
     sub::Engine* engine() const { return engine_.get(); }
+    Session* session() const { return session_.get(); }
     Project* project() const { return session_->project(); }
     ProjectEditor* editor() const { return session_->editor(); }
     QUndoStack* undo() const { return session_->undoStack(); }

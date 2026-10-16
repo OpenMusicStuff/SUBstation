@@ -24,7 +24,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | [PluginDeviceBody.qml](../../ui/qml/devices/PluginDeviceBody.qml), [PluginParamKnob.qml](../../ui/qml/devices/PluginParamKnob.qml), [PluginParams](../../ui/src/devices/PluginParams.h) | A plug-in's generic editor: its parameters (`PluginParams`, `PluginParam`), or why it shows none |
 | [RackDeviceBody.qml](../../ui/qml/devices/RackDeviceBody.qml), [RackMacroKnob.qml](../../ui/qml/devices/RackMacroKnob.qml), [RackMacroMappings.qml](../../ui/qml/devices/RackMacroMappings.qml), [RackChainRow.qml](../../ui/qml/devices/RackChainRow.qml), [RackChainView.qml](../../ui/qml/devices/RackChainView.qml), [RackMacro](../../ui/src/devices/RackMacro.h) (`RackMacro`, `RackMacros`), [RackChain](../../ui/src/devices/RackChain.h), [RackChains](../../ui/src/devices/RackChains.h) | A rack: its buttons, macros and chain list, a macro's mappings and their ranges, a chain's row, the chain shown beside the rack |
 | [DrumRackBody.qml](../../ui/qml/devices/DrumRackBody.qml), [DrumPad.qml](../../ui/qml/devices/DrumPad.qml), [DrumRack](../../ui/src/devices/DrumRack.h) (`DrumRack`, `DrumPadItem`) | A Drum Rack: its pads, the keys' overview, the similar-sound arrows, a pad's menu; dropping samples on pads |
-| [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h) | The base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
+| [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h), [DisplayClock](../../ui/src/devices/DisplayClock.h) | The display clock their displays tick on (at the display rate); the base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
 | [DisplayValue](../../ui/src/devices/DisplayValue.h) | A device's display as a number for QML, drawing nothing: its newest value, eased (`smoothed`), and whether any came lately (`active`), for editors drawn in QML to animate by (the Arpeggiator's, the Bitcrusher's) |
 | [editors/DeviceEditors.qml](../../ui/qml/devices/editors/DeviceEditors.qml) | The editor registry (a singleton): `editorFor(kind)` |
 | [editors/LfoEditor.qml](../../ui/qml/devices/editors/LfoEditor.qml), [editors/EnvelopeEditor.qml](../../ui/qml/devices/editors/EnvelopeEditor.qml), [editors/ModulatorTargets.qml](../../ui/qml/devices/editors/ModulatorTargets.qml), [ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), [ModulatorMappings](../../ui/src/devices/ModulatorMappings.h), [ModulatorValues](../../ui/src/devices/ModulatorValues.h) | The modulators' editors (see [Modulators](#modulators)): the curve and what it plays, what they move (Map, ranges, Invert, ×), and their values as they play for whatever draws the parameters they move |
@@ -432,9 +432,18 @@ value as it is now, set undoably, touched when pressed, the parameter's menu on 
   (`bridge.readProcessorDisplay`, a position kept per processor and display; `readDisplayAt()` with the absolute index
   of the first value; `readRecent(id, seconds)` only the newest of it, the values covering the last `seconds` at the
   display's samples per value: a read can hold a long backlog, an editor shown again after the sound stopped).
-  `refreshDisplays()` is called on each tick of the `DisplayClock` (about 60 times a second), only while the item is
-  visible. Displays are what the engine's built-in devices publish for their editors (see
+  `refreshDisplays()` is called on each tick of the `DisplayClock`, only while the item is visible. The clock
+  ([DisplayClock.h](../../ui/src/devices/DisplayClock.h), one for the application, the scope and `ModulatorValues`
+  ticking on it too) ticks every `intervalMs()`: it follows the session's `DisplayPreferences` (`follow()`, from
+  `registerSession`: the maximum display frame rate, no faster than the screen; 16 ms, 60 Hz, by default). Displays are what the engine's built-in devices publish for their editors (see
   [engine/devices.md](../engine/devices.md)).
+- Everything a display animates moves by the time since its last tick (`tickSeconds()`, the clock's `elapsed()`: at
+  least a tick, so ticks by hand count a tick each; at most 0.1 s; a tick after more than a second, hidden meanwhile),
+  never by a share a tick, so it moves as fast however often the clock ticks: easings (`easeFraction`), meters
+  (`MeterBallistics`), decays first made per 16 ms tick (`decayOver(dt, factor, 0.016)`), falls in dB a second.
+  Trails of a dot's last positions (the Sidechain's and the modulators' playheads, the Amp's drive dots, the Phaser's
+  comet, the Reverb's particles) keep a point every 16 ms (`TrailPace`), the newest following the dot between, so a
+  trail is as long in time at any rate.
 - `secondPressOfDoubleClick()`: Qt Quick delivers a double-click's second press before the double-click; items whose
   first click changes what a double-click does skip it.
 
@@ -794,10 +803,9 @@ The editors:
     `saturator::colorDesign` and `colorResponseDb`) at its sample rate (again when the audio device changes). It eases
     to new settings (τ 40 ms, the frequency in log, landing exactly on the parameters' curve) and glows in the accent
     colour while Color is on, grey while off (fading, τ 80 ms). Behind it the spectra of the displays `input`
-    (filled) and `output` (a line) through `analysis::EqAnalyzer` (as the EQ's: rising 0.55 and falling 0.09 of the
-    way per refresh), smoothed a little across columns; once a display's window is all silence and its spectrum is
+    (filled) and `output` (a line) through `analysis::EqAnalyzer` (as the EQ's), smoothed a little across columns; once a display's window is all silence and its spectrum is
     down, it isn't analysed. Every value read goes to the analyser, a backlog's too: it keeps the latest 8192 samples
-    and works out one spectrum a refresh, so a backlog only fills its window. "In" and "Out" name them at the bottom
+    and works out one spectrum a tick, so a backlog only fills its window. "In" and "Out" name them at the bottom
     right, on a dark backing (the output's line runs there). Two handles: Amt Lo's on the shelf at 60 Hz (up and down,
     following the mouse: Amt Lo moves by the distance over the shelf's slope there), the peak's at Freq and Amt Hi
     (across and up and down, from where it was pressed; Amt Hi's automation shows for a drag mostly up and down, Freq's
@@ -840,7 +848,7 @@ The editors:
     the models are level-matched far below full scale, and the shape is what shows how hard and how lopsidedly it
     clips. A faint line carries the clean gain (the slope through 0) on. The display `input` puts two dots at ± its
     peak (`MeterBallistics`: up at once, falling 18 dB/s; fading out from −54 to −72 dB), with a trail of where they
-    were over the last 8 ticks and the stretch of the curve between them lit (`drawGlowPolyline`): they sit where the
+    were over the last 8 steps of 16 ms (`TrailPace`) and the stretch of the curve between them lit (`drawGlowPolyline`): they sit where the
     tone's peaks come out. The curve is made (1.3 ms at 140 px: a tone's work for each x and −x together, the two
     exact opposites) only when what it is made from changes, the settings, the width or the rate, not at every sync:
     syncs come at every playhead move while any of the device's parameters follows automation. The sag (eased, τ
@@ -945,7 +953,7 @@ The editors:
   with the sixteenths (the right side greyed out while linked); under the sides Feedback (a small knob, its name and
   value beside it) and Freeze; a [FilterGraph](../../ui/src/devices/FilterGraph.h) (the filter's response on a
   20 Hz..20 kHz log axis, its dot dragged across for the frequency and up and down for the width, over a spectrum of
-  the display `input`: a 4096-point Hann FFT of the latest samples, falling 1 dB per refresh:
+  the display `input`: a 4096-point Hann FFT of the latest samples, falling 62.5 dB a second (1 dB a 16 ms tick):
   `analysis::FallingSpectrum`), the Filter switch, the frequency (a log-scaled value box) and width; under them, where
   Ableton's has its modulation, the Character: a title between two lines over Swing, Drive and Duck, value boxes
   (`CharacterBox`); on the right the Mode buttons and Ping Pong over Dry/Wet.
@@ -1062,7 +1070,7 @@ The editors:
     no longer sounds). The header names the mode (and the notches) and reads the sweep now ("1.24 kHz", "3.4 ms"). Under
     the plot, the LFO strip: the waveform's name; its shape over a cycle (`phaserLfoValue`, Triangle Analog at the rate
     it runs), lit up to the phase's dot (glowing discs), a comet tail along the shape behind it (the way the dot went
-    over the last ten ticks, step by step, so a fast LFO keeps a tail, at most 0.4 of a cycle), the right LFO's dot in
+    over the last ten steps of 16 ms, step by step, so a fast LFO keeps a tail, at most 0.4 of a cycle), the right LFO's dot in
     blue; the random shapes as a trace of the values that came, scrolling (started afresh when one is chosen: four
     cycles of the shape, dim, until its values come); and at its right edge a bar of the summed modulation the sweep
     follows (LFO 1, LFO 2 and the envelope; Amount 100 % reaches the edge).
@@ -1133,7 +1141,7 @@ The editors:
     per reflection the Density plays, across by its pan (times Stereo's width), down by its time (the earliest at the
     top), as big as it is loud (Shape). While the reflections sound (the display `early`), and for 2 s after Spin's
     settings change, they orbit as Spin swings them, at the phase the device publishes (display `spin`; the pans are
-    the engine's own law, `reverbSpinPan`), trailing their last six positions (started again only when the particles'
+    the engine's own law, `reverbSpinPan`), trailing their last six positions, 16 ms apart (started again only when the particles'
     homes move: Size, Shape, Density, Stereo), and light up, fading over a third of a second as the reflections do; in
     silence they ease back to rest. Switching Spin eases its swing in or out. A swing's easing is painted until no
     particle is 0.2 px from where it ends, and then ends there: the pad never rests with a way still to go, to wake in
@@ -1336,7 +1344,7 @@ The editors:
     display `notes`). Inside, an arrow from each moved note bending onto its target, sparks flowing along it while
     the note sounds in the input (steady in High Quality, wavering as Low Latency's shifter does). Within that the
     chromagram (`analysis::Chroma` of the displays `input` and `output` between Start and End as Hue clamps them,
-    measured 30 times a second): the output as a petal per note in its hue, the input as a faint outline behind, so
+    measured 30 times a second, whatever the display rate: the analysis costs, and the wheel eases between): the output as a petal per note in its hue, the input as a faint outline behind, so
     what Hue pulled into key shows against what came in; a lit note glows as it sounds; in the middle a bloom in
     the colour the sound is now (the notes' hues weighted by their levels), the key's name and HQ or LL. It repaints
     only while something moves: once the chromagram is under -66 dB and every animation has settled it rests.
@@ -1347,8 +1355,8 @@ The editors:
   start collapsed, and the sliders button over the curve's top right shows them in every EQ (the editor is wider
   then). The expand button opens the EQ bigger in a window of its own
   ([EqWindow.qml](../../ui/qml/devices/editors/EqWindow.qml), via the `EqWindows` singleton: one per device, made or
-  brought to the front; titled after the track; reading its displays on a 16 ms timer of its own
-  (`displayInterval`); closed when the device goes).
+  brought to the front; titled after the track; reading its displays on a timer of its own at the display rate
+  (`displayInterval`, bound to `Session.displayPreferences.intervalMs`); closed when the device goes).
   - `EqGraph`: 10 Hz..22 kHz, ± `EqView.range` dB (3, 6, 12 or 30); 24 bands; each band's curve and the total from the
     engine's own filter design (`sub::app::eqResponseDb`, the application layer's wrapper of the engine's
     `sub::eq::responseDb`, so the curve is the sound), the selected and hovered bands filled in their colours
@@ -1358,14 +1366,16 @@ The editors:
     pass: its Q; Ctrl: the Q), Shift finely; the wheel sets its Q (Alt, or while a cut is dragged: its slope).
     Double-click a band to switch it off and on, Alt-click it (or select it and press Delete, which takes the
     `ShortcutOverride` while a band is selected) to remove it; double-click elsewhere to add one. Dots ease between
-    sizes on a 16 ms timer that stops when they settle. Right-click a band or the background for the menus
+    sizes on a timer at the display clock's interval that stops when they settle (35 % of the way every 16 ms, by the
+    time a tick took). Right-click a band or the background for the menus
     ([EqGraphMenus.qml](../../ui/qml/devices/editors/EqGraphMenus.qml): a band's type, slope, placement, Enabled,
     Delete Band; the analyzer's mode, the range, Delete All Bands). The labels at the top switch the analyzer's mode
     and the range (`EqView`, shared by every EQ and not saved).
   - Every change goes through `editor.setDeviceParams`, so a drag (adding a band and dragging it on, too: the same
     parameters every move) is one undo step.
-  - The analyzer (`analysis::EqAnalyzer`): an 8192-point Hann FFT of the displays `input` and `output`, rising 0.55 and
-    falling 0.09 of the way per refresh, the loudest bin per column, tilted 4.5 dB/octave (the tilt fading in over
+  - The analyzer (`analysis::EqAnalyzer`): an 8192-point Hann FFT of the displays `input` and `output`, each bin's
+    power averaged over 50 ms and its level rising (τ 30 ms) and falling (τ 150 ms) by the time the samples cover (a
+    tick without any: its own time; held 0.24 s first, a gap between blocks), the loudest bin per column, tilted 4.5 dB/octave (the tilt fading in over
     18 dB above the floor, so a spectrum at or falling to the floor stays flat).
 - **Sidechain** ([SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml)): no pages, no margins: the
   curve ([CurveGraph](../../ui/src/devices/CurveGraph.h)), then [ClashView](../../ui/src/devices/ClashView.h) with Fit,
@@ -1378,7 +1388,7 @@ The editors:
     dragging it on, too) is one undo step, and Auto's fits merge into one while nothing else is done.
   - `refreshDisplays()` reads the displays `key`, `input` and `phase` together (`readDisplayAt`: by absolute index)
     into a `sidechainFit::Capture` ([SidechainFit.h](../../app/src/analysis/SidechainFit.h)), so they line up to the
-    sample. The phase gives the playhead (a trail of the latest positions riding the curve) and the hits; each hit's
+    sample. The phase gives the playhead (a trail of its positions over the last 0.22 s riding the curve) and the hits; each hit's
     kick, once it has come, is analysed over the latest `kKeepKicks` (3) into the fit, which the graph (the kick's
     envelope where it clashes, the dashed target) and `ClashView` (the spectra, the clash band) draw. Fit writes the
     points, the length (sync off) and the crossover. The hint over the curve (no sidechain while triggered by one)

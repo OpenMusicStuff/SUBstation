@@ -287,14 +287,6 @@ std::vector<float> DeviceCanvas::readRecent(const QString& displayId, double sec
     return values;
 }
 
-double DeviceCanvas::tickSeconds() {
-    constexpr double kTick = kDisplayRefreshMs / 1000.0;
-    if (!tickTimer_.isValid()) {
-        tickTimer_.start();
-        return kTick;
-    }
-    const double elapsed = double(tickTimer_.restart()) / 1000.0;
-    return elapsed > 1.0 ? kTick : std::clamp(elapsed, kTick, 0.1);  // (over a second: it was hidden)
-}
+double DeviceCanvas::tickSeconds() { return DisplayClock::instance()->elapsed(tickTimer_); }
 
 }  // namespace sub::ui

@@ -29,9 +29,9 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
   automationChanged              ─► onAutomationChanged ──────────► setTrackAutomation
   reset                          ─► onReset: everything again
 
-  QTimer 16 ms ─► pollPosition ─► positionChanged, transportChanged, countingInChanged
-  QTimer 33 ms ─► pollMeters ───► pollRecording; takeMeters → metersUpdated;
-                                  pollPlugins (Engine::idle, processor events); pollDevice
+  QTimer display tick ─► pollPosition ─► positionChanged, transportChanged, countingInChanged
+  QTimer display tick ─► pollDisplays ─► pollRecording; takeMeters → metersUpdated
+  QTimer 33 ms ───────► pollIdle ─────► pollLatencies; pollPlugins (Engine::idle, processor events); pollDevice
   QThreadPool (2 threads) ─► Engine::loadSource(path) ─► sourceReady / sourceFailed (on the GUI thread)
   QThreadPool (1 thread)  ─► Engine::setProcessorState(...) (built-in devices' states, in order)
 ```
@@ -50,7 +50,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 
 | File | What it holds |
 |---|---|
-| [EngineBridge.h](../../app/src/audio/EngineBridge.h) | `EngineBridge`: its whole API, signals and QML properties; its header comment is the design. Constants: `kComputerKeyboard`, `kFreezeTailSeconds`, `kMaxHiddenEditors`, `kPluginGapMs`, `kPluginRetryMs`, `kPositionPollMs`, `kMeterPollMs`. |
+| [EngineBridge.h](../../app/src/audio/EngineBridge.h) | `EngineBridge`: its whole API, signals and QML properties; its header comment is the design. Constants: `kComputerKeyboard`, `kFreezeTailSeconds`, `kMaxHiddenEditors`, `kPluginGapMs`, `kPluginRetryMs`, `kDisplayPollMs`, `kIdlePollMs`. |
 | [EngineBridge.cpp](../../app/src/audio/EngineBridge.cpp) | Start-up (the project's signals it listens to, its timers and pools), `shutdown()`, the ids |
 | [BridgePrivate.h](../../app/src/audio/BridgePrivate.h) | `EngineBridge::Private`: the maps from model ids to engine ids, and the last value given to the engine of everything it pushes only when it changes. What the bridge's files share: `BusyScope` (`busy` counted around a plug-in's or driver's call, however it ends), `stateBytes`/`stateData` (a processor's state as the engine and the model have it), `stringList`, `guarded`. The application layer's own (it includes `Engine.h`). |
 | [BridgeTracks.cpp](../../app/src/audio/BridgeTracks.cpp) | Engine tracks, mixers, outputs, sends, clips and notes (and a drag's preview of them), tempo and loop, audio threads |
@@ -60,7 +60,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 | [BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp) | A project's plug-ins loading after it opens, one at a time |
 | [BridgeParameters.cpp](../../app/src/audio/BridgeParameters.cpp) | Automation pushed to the engine, overrides, `ParamSpec`s for the UI |
 | [BridgeSources.cpp](../../app/src/audio/BridgeSources.cpp) | Decoding audio files in a thread pool; waveforms; file headers |
-| [BridgeTransport.cpp](../../app/src/audio/BridgeTransport.cpp) | Play, stop, locate, metronome, previews; polling the playhead and meters |
+| [BridgeTransport.cpp](../../app/src/audio/BridgeTransport.cpp) | Play, stop, locate, metronome, previews; polling the playhead, the meters, the plug-ins and the device |
 | [BridgeRecording.cpp](../../app/src/audio/BridgeRecording.cpp) | Recording takes, live takes |
 | [BridgeFreezing.cpp](../../app/src/audio/BridgeFreezing.cpp) | Frozen tracks in the engine, rendering a freeze, exporting |
 | [BridgeReversing.cpp](../../app/src/audio/BridgeReversing.cpp) | Reversed copies of files, for reversed clips |
@@ -525,17 +525,23 @@ when a file it has is asked for: their clips play once they do, in whichever pro
 
 ## Polling
 
-- **Playhead**, every `kPositionPollMs` (16 ms, about 60 times a second): the position, playing and counting in;
-  `positionChanged`, `transportChanged` and `countingInChanged` only when they changed. Also polled at once after
-  play, stop and locate.
-- **Meters**, every `kMeterPollMs` (33 ms, about 30 times a second), in this order:
+What the UI shows moving is polled every display tick: `setDisplayInterval(ms)` (the session's `DisplayPreferences`:
+the lower of the rate chosen in Preferences › Look and Feel and the screen's, [session.md](session.md#preferences));
+`kDisplayPollMs` (16 ms, 60 Hz) until told. The rest keeps its own pace, `kIdlePollMs` (33 ms):
+
+- **Playhead**, every display tick: the position, playing and counting in; `positionChanged`, `transportChanged` and
+  `countingInChanged` only when they changed. Also polled at once after play, stop and locate.
+- **Displays** (`pollDisplays`), every display tick, in this order:
   1. `pollRecording`: live takes' progress (peaks, or a MIDI take's notes so far) into `liveTakes()`,
      `recordingUpdated`; if the engine stopped recording on its own (a locate, a device change), the recording ends.
   2. `Engine::takeMeters()` into `meters()` (track id or `kMaster` → `MeterLevel`) and `chainMeters()` (rack chain id
-     → `MeterLevel`); `metersUpdated`.
-  3. `pollPlugins()`: `Engine::idle()` (the engine's GUI-thread housekeeping: freeing retired snapshots, destroying
+     → `MeterLevel`), `takeDeviceMeters()` into the devices' meters; `metersUpdated`. (The engine keeps each meter's
+     peak since the last take, so a faster poll only takes shorter peaks.)
+- **Idle** (`pollIdle`), every `kIdlePollMs` (33 ms, about 30 times a second), in this order:
+  1. `pollLatencies`: `latenciesChanged` if a track's or the output's changed.
+  2. `pollPlugins()`: `Engine::idle()` (the engine's GUI-thread housekeeping: freeing retired snapshots, destroying
      removed plug-ins a few at a time, plug-ins' main-thread work) and, unless busy, the plug-ins' reports.
-  4. Unless busy, `pollDevice` (not while a render runs in the background).
+  3. Unless busy, `pollDevice` (not while a render runs in the background).
 
 None of these wait for a render in the background (`Engine::isRendering`): it renders without the engine's lock.
 
@@ -615,7 +621,8 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 preferences ([session.md](session.md#preferences)) save them when a change opens successfully, so the program opens the
 same driver next time. Other parts keep their own keys: the session's (recent files, the last folder, the count-in:
 [session.md](session.md#settings)), the browser's (places, sort: [browser.md](../browser.md)), the plug-in folders
-([plugin-scanner.md](plugin-scanner.md)) and the UI's window state. The user-facing side is in
+([plugin-scanner.md](plugin-scanner.md)), the display rate (`ui/max_display_rate`, [session.md](session.md#settings)) and
+the UI's window state. The user-facing side is in
 [guide/audio-setup.md](../guide/audio-setup.md).
 
 ## Signals
@@ -666,7 +673,8 @@ same driver next time. Other parts keep their own keys: the session's (recent fi
 - Decoding is keyed by `pathIdentity`, so two clips of one file share one source.
 - `source(path)` hands out the engine's `AudioSource` (forward-declared): only application-layer code that includes
   the engine may use it; the UI uses `waveform(path)`.
-- The timers' intervals are 16 and 33 ms; "60 and 30 times a second" are approximate.
+- The display timers' interval is whole milliseconds (`DisplayPreferences::intervalFor`: 16 ms at 60 Hz, 62.5 times a
+  second); the idle timer's 33 ms is about 30 times a second.
 
 ## Tests
 

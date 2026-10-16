@@ -198,8 +198,8 @@ void ErosionGraph::refreshDisplays() {
     // The spectra, while sound comes or they still show some (falling back): silence costs no FFT.
     const bool wasLive = !inColumns_.empty() || !outColumns_.empty();
     if (wasLive || audible(input) || audible(output)) {
-        analyzer_.feed(EqAnalyzer::Input, input.data(), input.size(), rate);
-        analyzer_.feed(EqAnalyzer::Output, output.data(), output.size(), rate);
+        analyzer_.feed(EqAnalyzer::Input, input.data(), input.size(), rate, dt);
+        analyzer_.feed(EqAnalyzer::Output, output.data(), output.size(), rate, dt);
         inColumns_ = analyzer_.live(EqAnalyzer::Input) ? analyzer_.columns(EqAnalyzer::Input, columnFrequencies_)
                                                        : std::vector<double>();
         outColumns_ = analyzer_.live(EqAnalyzer::Output) ? analyzer_.columns(EqAnalyzer::Output, columnFrequencies_)

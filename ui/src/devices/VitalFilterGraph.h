@@ -7,7 +7,7 @@
 // two in series for 24 dB; notches, the diode's low cut, the formant's three
 // peaks, the comb's teeth, the phaser's notches: the shape Vital's own window
 // draws, not its exact curve), over the device's output spectrum (the display
-// "output", falling 1 dB a refresh). The handle at the cutoff drags across for
+// "output", falling 62.5 dB a second). The handle at the cutoff drags across for
 // the cutoff and up and down for the resonance (one undo step a drag, Shift
 // finely); double-clicking it resets both. Dimmed while the filter is off.
 

@@ -192,8 +192,10 @@ inline constexpr int kPluginGapMs = 20;
 inline constexpr int kPluginRetryMs = 50;
 // The longest a render that must have them (waitForDeviceStates) waits for plug-ins loading in sandboxes.
 inline constexpr int kSandboxLoadWaitMs = 120000;
-inline constexpr int kPositionPollMs = 16;  // the playhead, about 60 times a second
-inline constexpr int kMeterPollMs = 33;     // meters, recording, plug-ins, the device: about 30 times a second
+// The playhead, the meters and a recording's progress: every display tick (setDisplayInterval: the
+// preferences' rate, Session's DisplayPreferences); 16 ms (60 Hz) until told.
+inline constexpr int kDisplayPollMs = 16;
+inline constexpr int kIdlePollMs = 33;  // plug-ins (Engine::idle), the device's events, latencies: about 30 times a second
 
 class BridgeTestAccess;
 
@@ -308,6 +310,9 @@ public:
     // The newest `frames` samples of the master output (mono, oldest first; fewer if there aren't as many).
     Q_INVOKABLE QList<float> scopeSamples(int frames) const;
     double cpuLoad() const;  // the audio callback's time over its budget (0..1, more when late)
+    // How often the playhead, the meters and a recording's progress are polled (ms; the displays' tick).
+    void setDisplayInterval(int ms);
+    int displayInterval() const;
     // The time spent on each track and device (CpuUsage, View › CPU Usage): measured
     // only while asked for (setMeasuringCpu), as the engine's takeCpu() reads it.
     struct CpuTimes {
@@ -729,7 +734,8 @@ private:
     void onFailed(const QString& path, const QString& message);
     // Transport (BridgeTransport.cpp).
     void pollPosition();
-    void pollMeters();
+    void pollDisplays();  // a recording's progress, the meters: metersUpdated
+    void pollIdle();      // latencies, the plug-ins (Engine::idle, their reports), the device's events
     void pollLatencies();  // latenciesChanged() if a track's or the output's changed
     // Recording (BridgeRecording.cpp).
     void pollRecording();

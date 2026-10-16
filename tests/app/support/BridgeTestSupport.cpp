@@ -28,7 +28,10 @@ void BridgeTestAccess::stopPluginTimer(EngineBridge& bridge) { bridge.d_->plugin
 
 void BridgeTestAccess::loadNextPlugin(EngineBridge& bridge) { bridge.loadNextPlugin(); }
 
-void BridgeTestAccess::pollMeters(EngineBridge& bridge) { bridge.pollMeters(); }
+void BridgeTestAccess::pollMeters(EngineBridge& bridge) {
+    bridge.pollDisplays();
+    bridge.pollIdle();
+}
 
 void BridgeTestAccess::finishDecoding(EngineBridge& bridge) { bridge.d_->pool.waitForDone(); }
 

@@ -23,8 +23,9 @@ import QtQuick
 //   `sidechainMenuRequested(from)`: show the device's sidechain menu, under
 //   the item `from` (an editor's sidechain button), or without one in the
 //   editor's middle (the Sidechain's hint over its curve).
-// - It reads its displays as the meters update (EngineBridge::metersUpdated)
-//   while it is visible, and edits through the editor (undoably). Clicks it
+// - Its items read their displays on each tick of the display clock
+//   (DisplayClock: DeviceCanvas::refreshDisplays) while they are visible, at
+//   the preferences' display rate, and it edits through the editor (undoably). Clicks it
 //   doesn't take (on its background) go on to what is under it: the view's
 //   frame (selecting the device, its menu).
 QtObject {

@@ -103,6 +103,7 @@ private:
     double stale_ = 0.0;        // seconds without a voice
     Eased dot_;                 // the dot's opacity
     std::deque<QPointF> trail_;  // (phase, level), newest last
+    TrailPace shrink_;  // the pace it shrinks at, once nothing plays
 };
 
 }  // namespace sub::ui

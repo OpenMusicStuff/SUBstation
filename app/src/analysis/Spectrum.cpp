@@ -71,6 +71,10 @@ double atBin(const std::vector<float>& values, double x) {
     return values[i] + (values[i + 1] - values[i]) * f;
 }
 
+// Whether `quiet` seconds without samples are still within the hold (15 refreshes of 16 ms add up to a hair
+// over 0.24).
+bool holding(double quiet) { return quiet <= kHoldSeconds + 1e-9; }
+
 }  // namespace
 
 // --- FallingSpectrum -----------------------------------------------------------------
@@ -82,10 +86,12 @@ FallingSpectrum::FallingSpectrum()
     scale_ = 2.0 / std::accumulate(window_.begin(), window_.end(), 0.0);
 }
 
-bool FallingSpectrum::add(const float* samples, std::size_t count, double sampleRate) {
+bool FallingSpectrum::add(const float* samples, std::size_t count, double sampleRate, double seconds) {
     sampleRate_ = sampleRate;
-    quiet_ = count > 0 ? 0 : quiet_ + 1;
-    if (count == 0 && quiet_ <= kHoldRefreshes) return false;  // (between two blocks of audio: still)
+    quiet_ = count > 0 ? 0.0 : quiet_ + seconds;
+    if (count == 0 && holding(quiet_)) return false;  // (between two blocks of audio: still)
+    if (count == 0)
+        seconds = std::min(seconds, quiet_ - kHoldSeconds);  // (only the time past the hold falls)
     std::vector<float> latest(spectrum_.size(), float(kFloorDb));
     if (count > 0) {
         append(samples_, samples, count);
@@ -95,7 +101,7 @@ bool FallingSpectrum::add(const float* samples, std::size_t count, double sample
     }
     bool changed = false;
     for (std::size_t k = 0; k < spectrum_.size(); ++k) {
-        const float falling = std::max(spectrum_[k] - float(kFallDb), float(kFloorDb));
+        const float falling = std::max(spectrum_[k] - float(kFallDbPerSecond * seconds), float(kFloorDb));
         const float value = std::max(latest[k], falling);
         if (value != spectrum_[k]) {
             spectrum_[k] = value;
@@ -137,23 +143,24 @@ EqAnalyzer::EqAnalyzer() : window_(hann(kFftSize)) {
     }
 }
 
-void EqAnalyzer::feed(Channel channel, const float* samples, std::size_t count, double sampleRate) {
+void EqAnalyzer::feed(Channel channel, const float* samples, std::size_t count, double sampleRate, double seconds) {
     sampleRate_ = sampleRate;
     bool heard = false;
     for (std::size_t i = 0; i < count && !heard; ++i)
         heard = std::abs(samples[i]) > kSilentLevel;
     silentSeconds_[channel] =
-        heard ? 0.0 : silentSeconds_[channel] + (count > 0 ? double(count) / std::max(1.0, sampleRate) : kRefreshSeconds);
-    quiet_[channel] = count > 0 ? 0 : quiet_[channel] + 1;
-    if (count == 0 && quiet_[channel] <= kHoldRefreshes) return;  // (between two blocks of audio: still)
+        heard ? 0.0 : silentSeconds_[channel] + (count > 0 ? double(count) / std::max(1.0, sampleRate) : seconds);
+    quiet_[channel] = count > 0 ? 0.0 : quiet_[channel] + seconds;
+    if (count == 0 && holding(quiet_[channel])) return;  // (between two blocks of audio: still)
+    if (count == 0)
+        seconds = std::min(seconds, quiet_[channel] - kHoldSeconds);  // (only the time past the hold falls)
     std::vector<float>& levels = levels_[channel];
     std::vector<double>& power = power_[channel];
     std::vector<double> latest(levels.size(), 0.0);  // power (silence: none)
-    double seconds = kRefreshSeconds;
     if (count > 0) {
         append(samples_[channel], samples, count);
         latest = spectrumPower(samples_[channel], window_, scale_);
-        seconds = double(count) / std::max(1.0, sampleRate);
+        seconds = double(count) / std::max(1.0, sampleRate);  // (what the samples cover, rather)
     }
     const double average = 1.0 - std::exp(-seconds / kAverageSeconds);
     const double rise = 1.0 - std::exp(-seconds / kRiseSeconds);

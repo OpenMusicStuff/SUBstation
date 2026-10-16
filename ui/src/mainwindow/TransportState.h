@@ -7,6 +7,7 @@
 // the audio device's name and rate, with a tooltip. The bar's controls call
 // the session's editor and bridge themselves.
 
+#include <QElapsedTimer>
 #include <QList>
 #include <QObject>
 #include <QPointer>
@@ -39,7 +40,7 @@ class TransportState : public QObject {
     Q_PROPERTY(QString deviceToolTip READ deviceToolTip NOTIFY deviceChanged)
 
 public:
-    static constexpr int kCpuEvery = 15;      // meter updates per CPU reading shown
+    static constexpr int kCpuEveryMs = 500;    // a CPU reading shown this often (on a meter update)
     static constexpr int kDeviceNameMax = 28;  // characters of the device's name shown
 
     explicit TransportState(QObject* parent = nullptr);
@@ -78,7 +79,7 @@ private:
     QString cpuText_ = QStringLiteral("CPU 0%");
     QString deviceText_;
     QString deviceToolTip_;
-    int cpuTicks_ = 0;
+    QElapsedTimer cpuShown_;  // since the CPU reading was last shown
     QList<QMetaObject::Connection> connections_;
 };
 

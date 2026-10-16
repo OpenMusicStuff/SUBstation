@@ -53,6 +53,7 @@ private:
     double stale_ = 0.0;
     Eased dot_;
     std::deque<double> trail_;  // phases, newest last
+    TrailPace shrink_;  // the pace it shrinks at, once nothing plays
 };
 
 }  // namespace sub::ui

@@ -1,5 +1,6 @@
 #include "controls/Meter.h"
 
+#include "devices/DisplayClock.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
 
@@ -34,10 +35,12 @@ void Meter::setCompact(bool compact) {
 }
 
 void Meter::setLevels(qreal left, qreal right) {
+    const double dt = DisplayClock::instance()->elapsed(sinceUpdate_);
+    const double fall = kFallPerSecond * dt;
     bool changed = false;
     const double levels[2] = {left, right};
     for (int i = 0; i < 2; ++i) {
-        const double value = std::max(fraction(levels[i]), display_[i] - kFallPerUpdate);
+        const double value = std::max(fraction(levels[i]), display_[i] - fall);
         if (std::abs(value - display_[i]) > 1e-4) {
             display_[i] = value;
             changed = true;
@@ -46,11 +49,12 @@ void Meter::setLevels(qreal left, qreal right) {
         double held = held_[i];
         if (display_[i] >= held) {
             held = display_[i];
-            holding_[i] = kHoldUpdates;
-        } else if (holding_[i] > 0) {
-            --holding_[i];
+            holding_[i] = kHoldSeconds;
         } else {
-            held = std::max(display_[i], held - kFallPerUpdate);
+            const double past = std::clamp(dt - holding_[i], 0.0, dt);  // (the time past the hold falls)
+            holding_[i] = std::max(0.0, holding_[i] - dt);
+            if (past > 1e-9)
+                held = std::max(display_[i], held - kFallPerSecond * past);
         }
         if (std::abs(held - held_[i]) > 1e-4) {
             held_[i] = held;
@@ -71,7 +75,7 @@ void Meter::setLevels(qreal left, qreal right) {
 void Meter::reset() {
     display_[0] = display_[1] = 0.0;
     held_[0] = held_[1] = 0.0;
-    holding_[0] = holding_[1] = 0;
+    holding_[0] = holding_[1] = 0.0;
     Q_EMIT levelsChanged();
     clearClip();
     update();

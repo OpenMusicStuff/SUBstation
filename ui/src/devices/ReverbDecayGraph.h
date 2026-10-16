@@ -5,7 +5,7 @@
 // from the engine's own network (sub::app::reverbDecaySeconds: the loop of a
 // line of the active lines' mean length with its shelves), so the curve is the
 // decay that plays; behind it the tail's spectrum (the display "tail", falling
-// 1 dB a refresh) as it dies away, and beside it a meter of the tail's level.
+// 62.5 dB a second) as it dies away, and beside it a meter of the tail's level.
 //
 // Three handles: Decay (in the middle, up and down), and the shelves' (across
 // for the frequency, up and down for how long that band rings: Decay times the
