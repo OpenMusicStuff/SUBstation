@@ -358,6 +358,13 @@ int64_t Engine::renderTrackToWav(uint32_t trackId, const std::string& path, doub
     return startTrackRender(trackId, path, startBeat, endBeat, tailSeconds)->finish().value_or(0);
 }
 
+std::vector<int64_t> Engine::renderTracksToWav(const std::vector<TrackFile>& tracks, double startBeat, double endBeat,
+                                               double tailSeconds) {
+    const std::shared_ptr<RenderJob> job = startTracksRender(tracks, startBeat, endBeat, tailSeconds);
+    job->finish();
+    return job->written();
+}
+
 // ---------------------------------------------------------------------------
 // In the background
 
@@ -384,9 +391,9 @@ void Engine::endOfflineLocked() {
     resumeLiveLocked();
 }
 
-std::shared_ptr<RenderJob> Engine::startJobLocked(const std::string& path, int64_t total,
+std::shared_ptr<RenderJob> Engine::startJobLocked(std::vector<std::string> paths, int64_t total,
                                                   std::function<std::optional<int64_t>(RenderJob&)> body) {
-    std::shared_ptr<RenderJob> job(new RenderJob(this, path, total));
+    std::shared_ptr<RenderJob> job(new RenderJob(this, std::move(paths), total));
     try {
         job->start(std::move(body));
     } catch (...) {
@@ -432,7 +439,7 @@ std::shared_ptr<RenderJob> Engine::startExport(const std::string& path, double s
     }
     auto render = beginOfflineLocked(startBeat);
     const int64_t total = std::llround((endBeat - startBeat) * render->snapshot->samplesPerBeat());
-    return startJobLocked(path, total, [render, writer, total](RenderJob& job) -> std::optional<int64_t> {
+    return startJobLocked({path}, total, [render, writer, total](RenderJob& job) -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
         std::vector<float> rendered(kJobChunk * 2);
@@ -454,53 +461,88 @@ std::shared_ptr<RenderJob> Engine::startExport(const std::string& path, double s
 
 std::shared_ptr<RenderJob> Engine::startTrackRender(uint32_t trackId, const std::string& path, double startBeat,
                                                     double endBeat, double tailSeconds) {
+    return startTracksRender({{trackId, path}}, startBeat, endBeat, tailSeconds);
+}
+
+std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile>& files, double startBeat,
+                                                     double endBeat, double tailSeconds) {
+    if (files.empty()) throw std::invalid_argument("No track to render");
     if (endBeat <= startBeat) throw std::invalid_argument("Render range is empty");
     std::lock_guard lock(mutex_);
     checkNotRenderingLocked();
-    arrangementTrackLocked(trackId);  // (throws for an unknown track)
-    auto writer = std::make_shared<WavWriter>(path, ma_format_f32, sampleRate_);
+    for (const TrackFile& file : files) arrangementTrackLocked(file.trackId);  // (throws for an unknown track)
+    std::vector<std::shared_ptr<AudioFileWriter>> writers;
+    std::vector<std::string> paths;
+    for (const TrackFile& file : files) {
+        writers.push_back(std::make_shared<WavWriter>(file.path, ma_format_f32, sampleRate_));
+        paths.push_back(file.path);
+    }
     auto render = beginOfflineLocked(startBeat);
     const RenderSnapshot& snap = *render->snapshot;
-    const TrackRender* found = snap.findTrack(trackId);
-    if (!found) {
-        endOfflineLocked();
-        throw std::invalid_argument("Unknown track id " + std::to_string(trackId));
+    std::vector<int> tracks;  // by snapshot index
+    for (const TrackFile& file : files) {
+        const TrackRender* found = snap.findTrack(file.trackId);
+        if (!found) {
+            endOfflineLocked();
+            throw std::invalid_argument("Unknown track id " + std::to_string(file.trackId));
+        }
+        tracks.push_back(static_cast<int>(found - snap.tracks.data()));
     }
-    const int track = static_cast<int>(found - snap.tracks.data());
-    // Its signal before its fader lags the timeline by what feeds it (a group's
-    // bus hears its tracks that late) and its own devices: that is rendered first and dropped.
-    const int64_t lag = found->inputLatency + found->latency;
+    const bool whole = !pruneTrackRenders_;
+    render->renderer.setCaptures(snap, tracks, whole);
     const int64_t frames = std::llround((endBeat - startBeat) * snap.samplesPerBeat());
     const int64_t tail = std::llround(std::clamp(tailSeconds, 0.0, 600.0) * sampleRate_);
-    render->renderer.setCaptures(snap, {track}, !pruneTrackRenders_);
-    const std::vector<char> upstream = Renderer::upstream(snap, {track});
     const int64_t start = render->renderer.position();
-    auto capture = std::make_shared<TrackCapture>(writer, lag, frames, tail, quietWindow(snap, upstream),
-                                                  lastSounding(snap, upstream, start + frames + tail) - start);
-    return startJobLocked(path, frames + tail, [render, capture, lag, frames, tail](RenderJob& job)
-                                                   -> std::optional<int64_t> {
+    auto captures = std::make_shared<std::vector<TrackCapture>>();
+    int64_t longest = 0;  // the longest lag
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        // Its signal before its fader lags the timeline by what feeds it (a group's
+        // bus hears its tracks that late) and its own devices: that is rendered first and dropped.
+        const TrackRender& track = snap.tracks[static_cast<size_t>(tracks[i])];
+        const int64_t lag = track.inputLatency + track.latency;
+        const std::vector<char> upstream = Renderer::upstream(snap, {tracks[i]});
+        captures->emplace_back(writers[i], lag, frames, tail, quietWindow(snap, upstream),
+                               lastSounding(snap, upstream, start + frames + tail) - start);
+        longest = std::max(longest, lag);
+    }
+    return startJobLocked(std::move(paths), frames + tail, [render, captures, tracks, whole, longest, frames,
+                                                            tail](RenderJob& job) -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
-        std::vector<float> rendered(kJobChunk * 2);
-        const int64_t total = lag + frames + tail;
+        const size_t count = tracks.size();
+        std::vector<float> rendered(static_cast<size_t>(kJobChunk) * 2 * count);
+        std::vector<float*> out(count);
+        std::vector<size_t> rendering(count);  // the captures still rendering, as setCaptures() was given them
+        for (size_t i = 0; i < count; ++i) rendering[i] = i;
+        const int64_t total = longest + frames + tail;
         int64_t reported = 0;  // (progress: of the range and tail, the lag counted in)
         const auto report = [&](int64_t done) {
             const int64_t upTo = std::min(done, frames + tail);
             job.advance(upTo - reported);
             reported = upTo;
         };
-        for (int64_t done = 0; done < total && !capture->done();) {
+        for (int64_t done = 0; done < total && !rendering.empty();) {
             if (job.stopping()) return std::nullopt;
             const int64_t n = std::min(kJobChunk, total - done);
-            float* out = rendered.data();
-            render->renderer.renderCaptures(snap, &out, n);
-            capture->take(out, n);
+            for (size_t k = 0; k < rendering.size(); ++k) out[k] = rendered.data() + k * kJobChunk * 2;
+            render->renderer.renderCaptures(snap, out.data(), n);
+            for (size_t k = 0; k < rendering.size(); ++k) (*captures)[rendering[k]].take(out[k], n);
             done += n;
             report(done);
+            // Those done render no more, nor what only they need.
+            const auto finished = [&](size_t i) { return (*captures)[i].done(); };
+            if (std::any_of(rendering.begin(), rendering.end(), finished)) {
+                rendering.erase(std::remove_if(rendering.begin(), rendering.end(), finished), rendering.end());
+                std::vector<int> still;
+                for (const size_t i : rendering) still.push_back(tracks[i]);
+                if (!still.empty()) render->renderer.setCaptures(snap, still, whole);
+            }
         }
-        const int64_t written = capture->finish();
+        std::vector<int64_t> written;
+        for (TrackCapture& capture : *captures) written.push_back(capture.finish());
         report(total);  // (what is left is known to be silent)
-        return written;
+        job.written_ = written;
+        return written.front();
     });
 }
 

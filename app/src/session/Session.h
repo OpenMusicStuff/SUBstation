@@ -63,6 +63,7 @@
 #include <optional>
 
 #include "model/Device.h"  // PluginRef
+#include "model/OrderedMap.h"
 #include "model/Track.h"   // Freeze
 
 namespace sub {
@@ -466,8 +467,8 @@ public:
                                  const QString& fileType = QStringLiteral("wav"), int bitrate = 320);
 
     // --- For the tests -------------------------------------------------------------------
-    // How a track's render becomes its frozen audio (default EngineBridge::finishFreeze).
-    void setFreezeFinisher(std::function<std::optional<Freeze>(FreezeRender&)> finisher);
+    // How tracks' render becomes their frozen audio (default EngineBridge::finishFreezes).
+    void setFreezeFinisher(std::function<std::optional<OrderedMap<QString, Freeze>>(FreezeRender&)> finisher);
     // Starts a render in the background: false (and it is deleted) if one runs.
     bool startRender(Render* render);
     bool rendering() const;
@@ -550,7 +551,7 @@ private:
     PluginHostingPreferences* pluginHosting_ = nullptr;
     Updater* updates_ = nullptr;
     QPointer<Render> rendering_;
-    std::function<std::optional<Freeze>(FreezeRender&)> finishFreeze_;
+    std::function<std::optional<OrderedMap<QString, Freeze>>(FreezeRender&)> finishFreeze_;
     double playStart_ = 0.0;
     QString untitledName_;  // an imported set's name, while its project has no file
     bool automationOverridden_ = false;

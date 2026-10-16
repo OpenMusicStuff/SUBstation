@@ -269,6 +269,12 @@ struct ExportFormat {
     int bitrate = 320;
 };
 
+// A track's render into a file of its own (Engine::startTracksRender).
+struct TrackFile {
+    uint32_t trackId = 0;
+    std::string path;
+};
+
 struct DeviceStatus {
     bool open = false;
     std::string name;
@@ -726,6 +732,13 @@ public:
     // tails: docs/engine/rendering.md). Returns the frames written.
     int64_t renderTrackToWav(uint32_t trackId, const std::string& path, double startBeat, double endBeat,
                              double tailSeconds);
+    // renderTrackToWav() for several tracks at once (freezing them): one render
+    // (of what they need: the union of what feeds each), each track's signal
+    // into its own file, each file the one renderTrackToWav() writes for it, to
+    // the bit. A track done (its tail silent) renders no more. Returns the
+    // frames written to each, in order.
+    std::vector<int64_t> renderTracksToWav(const std::vector<TrackFile>& tracks, double startBeat, double endBeat,
+                                           double tailSeconds);
     // exportWav() (exportFile()) and renderTrackToWav() on a thread of their own (RenderJob.h):
     // they return at once with the job, its file created (or throw why not).
     // One job at a time. Until it is finished live output is silent, and what
@@ -737,6 +750,10 @@ public:
                                            const ExportFormat& format);
     std::shared_ptr<RenderJob> startTrackRender(uint32_t trackId, const std::string& path, double startBeat,
                                                 double endBeat, double tailSeconds);
+    // renderTracksToWav() in the background: the job's finish() returns the frames
+    // written to the first file, RenderJob::written() those written to each.
+    std::shared_ptr<RenderJob> startTracksRender(const std::vector<TrackFile>& tracks, double startBeat,
+                                                 double endBeat, double tailSeconds);
     bool isRendering();  // a job is running (or done, not finished yet)
 
     // --- Audio threads -----------------------------------------------------------
@@ -941,7 +958,7 @@ private:
     void endOfflineLocked();  // the processors reset again, live output back
     // Starts `body` as the background job (RenderJob::start) on a begun render;
     // if it can't start, the render ends.
-    std::shared_ptr<RenderJob> startJobLocked(const std::string& path, int64_t total,
+    std::shared_ptr<RenderJob> startJobLocked(std::vector<std::string> paths, int64_t total,
                                               std::function<std::optional<int64_t>(RenderJob&)> body);
     void checkNotRenderingLocked() const;  // throws std::runtime_error while a job runs
     friend class RenderJob;

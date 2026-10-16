@@ -334,13 +334,13 @@ re-enter the session meanwhile. Each render:
    busy bar meanwhile, saying what it waits for, polling `EngineBridge::devicesReady()` every 30 ms (the bridge goes on
    loading them meanwhile);
 3. starts its task(s) and follows each, its part of the progress bar, until it ends;
-4. finishes it (`finishExport`, `finishFreeze`, `finishReversed`), says what came of it (`statusMessage`, `warning`),
+4. finishes it (`finishExport`, `finishFreezes`, `finishReversed`), says what came of it (`statusMessage`, `warning`),
    ends the progress, and deletes itself.
 
 | Render | What it does |
 |---|---|
 | `ExportAudioRender` | the arrangement (the loop, the time selection) into a WAV or MP3 file, once the devices are ready (`Session::exportAudio`; playback stops first) |
-| `FreezeTracksRender` | several tracks, one after another, then frozen in one undo step: all or nothing (cancelled, or one failing, none is frozen, and the renders made so far are deleted) |
+| `FreezeTracksRender` | several tracks in one render (`startFreeze(tracks)`: a file for each, "Freezing A and B…"), then frozen in one undo step: all or nothing (cancelled, or failing, none is frozen and the renders are deleted; a render the editor then refuses, its track gone meanwhile, is deleted too) |
 | `ReverseClipsRender` | reversed copies of long files, written side by side and followed one after another; cancelled, none is used |
 
 `RenderProgress` (`Session.render`, [RenderProgress.h](../../app/src/session/RenderProgress.h)) is what the UI binds its

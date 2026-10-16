@@ -262,7 +262,7 @@ and all, and leaves the clips as edited.
   left out), `unfreezeTracks()` and `flattenTracks()` (a `ReplaceTrackCommand` per track: an audio track of the same
   id playing `Freeze::playing()` as clips named after it, no devices, no device automation). The render itself is
   the bridge's
-  (`renderFreeze()`, or `startFreeze()` and `finishFreeze()` in the background); the session does both, its progress
+  (`renderFreeze()`, or `startFreeze()` and `finishFreezes()` in the background: several tracks in one render); the session does both, its progress
   shown ([session.md](session.md#renders-in-the-background)).
 - What frozen audio holds can't change. `ProjectEditor::push()` refuses (and says why on `refused`; the checks are in
   [EditorFreezing.cpp](../../app/src/editor/EditorFreezing.cpp)) commands changing a frozen track's (or a track in a

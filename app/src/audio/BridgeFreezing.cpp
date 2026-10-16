@@ -53,43 +53,65 @@ Freeze EngineBridge::renderFreeze(const QString& trackId) {
     return *freeze;
 }
 
-std::unique_ptr<FreezeRender> EngineBridge::startFreeze(const QString& trackId) {
-    const Track* track = project_->findTrack(trackId);
-    if (track == nullptr) throw EditError(QStringLiteral("That track can't be frozen"));
-    const QString name = track->name;
-    const auto engineId = engineTrackId(trackId);
+std::unique_ptr<FreezeRender> EngineBridge::startFreeze(const QStringList& trackIds) {
     const double end = project_->endBeat();
-    if (!engineId || trackId == kMaster) throw EditError(name + QStringLiteral(" can't be frozen"));
-    if (end <= 0) throw EditError(QStringLiteral("There is nothing to freeze yet: the arrangement is empty"));
+    std::vector<sub::TrackFile> files;
+    QStringList paths;
     const QString folder = freezeFolder(*project_);
-    if (const auto problem = makeFolder(folder, QStringLiteral("the freeze folder"))) throw EditError(*problem);
-    const QString path = takePath(folder, name + QStringLiteral(" Freeze"), QDateTime::currentDateTime());
+    const QDateTime now = QDateTime::currentDateTime();
+    for (const QString& trackId : trackIds) {
+        const Track* track = project_->findTrack(trackId);
+        if (track == nullptr) throw EditError(QStringLiteral("That track can't be frozen"));
+        const QString name = track->name;
+        const auto engineId = engineTrackId(trackId);
+        if (!engineId || trackId == kMaster) throw EditError(name + QStringLiteral(" can't be frozen"));
+        if (end <= 0) throw EditError(QStringLiteral("There is nothing to freeze yet: the arrangement is empty"));
+        if (paths.isEmpty()) {
+            if (const auto problem = makeFolder(folder, QStringLiteral("the freeze folder"))) throw EditError(*problem);
+        }
+        const QString path = takePath(folder, name + QStringLiteral(" Freeze"), now, paths);
+        paths.append(path);
+        files.push_back({*engineId, path.toStdString()});
+    }
+    if (files.empty()) throw EditError(QStringLiteral("There is no track to freeze"));
     if (isPlaying()) stop();
     try {
-        std::shared_ptr<sub::RenderJob> job =
-            engine_.startTrackRender(*engineId, path.toStdString(), 0.0, end, kFreezeTailSeconds);
-        return std::make_unique<FreezeRender>(trackId, std::move(job), project_->tempo());
+        std::shared_ptr<sub::RenderJob> job = engine_.startTracksRender(files, 0.0, end, kFreezeTailSeconds);
+        return std::make_unique<FreezeRender>(trackIds, std::move(job), project_->tempo());
     } catch (const std::exception& error) {
         throw EditError(QString::fromStdString(error.what()));
     }
 }
 
-std::optional<Freeze> EngineBridge::finishFreeze(FreezeRender& render) {
-    const std::optional<qint64> frames = render.finish();
-    if (!frames) return std::nullopt;
-    const QString path = render.path();
-    // Decoded now, so that it plays as soon as the track is frozen (no gap while it loads).
-    try {
-        d_->sources.insert(pathIdentity(path), engine_.loadSource(path.toStdString()));
-    } catch (const std::exception& error) {
-        throw EditError(QString::fromStdString(error.what()));
+std::optional<OrderedMap<QString, Freeze>> EngineBridge::finishFreezes(FreezeRender& render) {
+    if (!render.finish()) return std::nullopt;
+    const QStringList paths = render.paths();
+    const QList<qint64> written = render.written();
+    OrderedMap<QString, Freeze> freezes;
+    for (qsizetype i = 0; i < paths.size(); ++i) {
+        Freeze freeze;
+        freeze.path = paths[i];
+        freeze.durationSec = static_cast<double>(written.value(i)) / engine_.sampleRate();
+        freeze.tempo = render.tempo();
+        freezes.insert(render.trackIds()[i], freeze);
     }
-    Q_EMIT sourceReady(path);
-    Freeze freeze;
-    freeze.path = path;
-    freeze.durationSec = static_cast<double>(*frames) / engine_.sampleRate();
-    freeze.tempo = render.tempo();
-    return freeze;
+    // Decoded now, so that each plays as soon as its track is frozen (no gap while it loads).
+    for (const auto& [trackId, freeze] : freezes) {
+        try {
+            d_->sources.insert(pathIdentity(freeze.path), engine_.loadSource(freeze.path.toStdString()));
+        } catch (const std::exception& error) {
+            for (const auto& [id, made] : freezes) discardFreeze(made);
+            throw EditError(QString::fromStdString(error.what()));
+        }
+        Q_EMIT sourceReady(freeze.path);
+    }
+    return freezes;
+}
+
+std::optional<Freeze> EngineBridge::finishFreeze(FreezeRender& render) {
+    const std::optional<OrderedMap<QString, Freeze>> freezes = finishFreezes(render);
+    if (!freezes || freezes->isEmpty()) return std::nullopt;
+    return freezes->begin()->second;
 }
 
 void EngineBridge::discardFreeze(const Freeze& freeze) {

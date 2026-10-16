@@ -76,6 +76,37 @@ TEST_CASE("a track rendered in the background is the same render") {
     CHECK(readBytes(later) == readBytes(now));
 }
 
+TEST_CASE("several tracks rendered in the background: their files, progress, cancelling") {
+    JobEngine e;
+    auto& engine = e.engine;
+    const uint32_t a = clipTrack(engine, dcWav(), 0.0, 0.5);
+    const uint32_t b = clipTrack(engine, rampWav());
+    const auto pathA = tempDir() / "a.wav", pathB = tempDir() / "b.wav";
+    const auto job = engine.startTracksRender({{a, pathA.string()}, {b, pathB.string()}}, 0.0, 2.0, 1.0);
+    CHECK(job->paths() == (std::vector<std::string>{pathA.string(), pathB.string()}));
+    const std::vector<double> seen = waitDone(*job);
+    CHECK(std::is_sorted(seen.begin(), seen.end()));
+    CHECK_EQ(job->progress(), 1.0);
+    CHECK(job->finish() == std::optional<int64_t>(2 * kBeat));
+    CHECK(job->written() == (std::vector<int64_t>{2 * kBeat, 2 * kBeat}));
+    CHECK(readBytes(pathA) != readBytes(pathB));
+    const auto alone = tempDir() / "alone.wav";
+    engine.renderTrackToWav(b, alone.string(), 0.0, 2.0, 1.0);
+    CHECK(readBytes(pathB) == readBytes(alone));
+
+    const auto longA = tempDir() / "long-a.wav", longB = tempDir() / "long-b.wav";
+    const auto cancelled = engine.startTracksRender({{a, longA.string()}, {b, longB.string()}}, 0.0, kTwoHours, 0.0);
+    CHECK(fileExists(longA) && fileExists(longB));  // created at once
+    cancelled->cancel();
+    CHECK(!cancelled->finish().has_value());
+    CHECK(cancelled->written().empty());
+    CHECK(!fileExists(longA) && !fileExists(longB));
+    CHECK_THROWS_AS(engine.startTracksRender({}, 0.0, 1.0, 0.0), std::invalid_argument);
+    CHECK_THROWS_AS(engine.startTracksRender({{a, longA.string()}, {12345, longB.string()}}, 0.0, 1.0, 0.0),
+                    std::invalid_argument);
+    CHECK(!fileExists(longA) && !fileExists(longB));
+}
+
 TEST_CASE("a cancelled render leaves no file") {
     JobEngine e;
     auto& engine = e.engine;

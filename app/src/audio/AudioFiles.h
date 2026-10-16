@@ -28,8 +28,10 @@ bool isAudioFile(const QString& path);
 
 QString recordingsFolder(const Project& project);
 // A new file for a take in `folder`: the track's name (characters Windows
-// forbids replaced) and the time, numbered if taken ("Vox 2026-10-01 123005 2.wav").
-QString takePath(const QString& folder, const QString& trackName, const QDateTime& when);
+// forbids replaced) and the time, numbered if taken ("Vox 2026-10-01 123005 2.wav")
+// or among `taken` (paths given out already, their files not written yet).
+QString takePath(const QString& folder, const QString& trackName, const QDateTime& when,
+                 const QStringList& taken = {});
 QString freezeFolder(const Project& project);
 QString reversedFolder(const Project& project);
 // A new file for the reversed copy of `source`: its name and " R" (numbered if taken).

@@ -354,6 +354,14 @@ latency, so that much is rendered first and dropped. `renderTrackToWav()` writes
 cut where it falls below -100 dB. `startTrackRender()` is the same in the background (freezing
 from the UI).
 
+**Several tracks** (freezing them at once: `startTracksRender()`, `renderTracksToWav()`) render
+in one pass: `setCaptures()` takes them all, renders the union of what feeds each, and
+`renderCaptures()` puts out each track's signal into a buffer of its own. Each has its own
+`TrackCapture`: its own lag dropped (the job renders the longest first), its own range, tail and
+silence; a track whose tail is done is taken out (`setCaptures()` again with those left, between two
+pieces), so what only it needed renders no more. Each file is the one rendering its track alone
+writes, to the bit: what a track's render takes depends only on what feeds it.
+
 **The tail** (`TrackCapture`, [EngineOffline.cpp](../../engine/src/EngineOffline.cpp)) is kept back
 as it renders and written up to its last frame above -100 dB. The render stops before the end of
 `tailSeconds` once the track has been silent (both channels under -100 dB) for long enough

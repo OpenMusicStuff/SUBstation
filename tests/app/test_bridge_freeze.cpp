@@ -253,6 +253,35 @@ private Q_SLOTS:
         QCOMPARE(studio.render(100).size(), size_t{200});
     }
 
+    void severalTracksInOneRender() {
+        // One render, a file for each track, each the file freezing it alone
+        // writes; two tracks of the same name get files of their own.
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        const QString a = studio.clipTrack(dcWav(dir), 1.0, QStringLiteral("A"));
+        const QString b = studio.clipTrack(dcWav(dir), 1.0, QStringLiteral("A"));
+        studio.edit.addDevice(b, QStringLiteral("utility"));
+        bridge.waitForDeviceStates();
+        std::unique_ptr<FreezeRender> render = bridge.startFreeze(QStringList{a, b});
+        QCOMPARE(render->trackIds(), (QStringList{a, b}));
+        QSignalSpy ended(render.get(), &RenderTask::ended);
+        QVERIFY(ended.wait(10000) || render->done());
+        const std::optional<OrderedMap<QString, Freeze>> freezes = bridge.finishFreezes(*render);
+        QVERIFY(freezes && freezes->keys() == (QStringList{a, b}));
+        const Freeze& first = *freezes->find(a);
+        const Freeze& second = *freezes->find(b);
+        QVERIFY(first.path != second.path);
+        QVERIFY(bridge.source(first.path) && bridge.source(second.path));  // decoded at once
+        for (const auto& [track, freeze] : *freezes) {
+            const Freeze alone = bridge.renderFreeze(track);
+            QCOMPARE(freeze.durationSec, alone.durationSec);
+            QFile together(freeze.path), single(alone.path);
+            QVERIFY(together.open(QIODevice::ReadOnly) && single.open(QIODevice::ReadOnly));
+            QCOMPARE(together.readAll(), single.readAll());
+        }
+    }
+
     void exportingInTheBackground() {
         test::TempDir dir;
         Studio studio;

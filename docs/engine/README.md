@@ -280,7 +280,10 @@ snapshot's `outputLatency()`: they render that much first and drop it.
 
 `startExport()` and `startTrackRender()` do the same on a thread of their own and return a
 `RenderJob` ([RenderJob.h](../../engine/src/RenderJob.h)) at once; `exportWav()` and
-`renderTrackToWav()` are those, waited for. Under the lock, on the calling (main) thread, they
+`renderTrackToWav()` are those, waited for. `startTracksRender()` (`renderTracksToWav()`) renders
+several tracks at once, each into its own file (`TrackFile`s; `RenderJob::paths()`, and
+`written()`: the frames written to each), the arrangement once: see
+[rendering.md](rendering.md#offline-renders). Under the lock, on the calling (main) thread, they
 create the file (an `AudioFileWriter`, [AudioFileWriter.h](../../engine/src/AudioFileWriter.h): a
 `WavWriter`, miniaudio's encoder, 16-bit with triangle dither, 24-bit or 32-bit float; or for an
 `ExportFormat` of kind `Mp3` an MP3 writer, LAME's encoder at a constant bitrate,

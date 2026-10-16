@@ -11,8 +11,10 @@
 // start of the arrangement (--seconds long) with the tail:
 //
 // - one track: a track of its own (not in the group), out of all of them;
-// - --freeze tracks, as freezing that many at once does;
-// - the group (its four tracks feeding it);
+// - --freeze tracks, as freezing that many at once does (one render), and one
+//   by one (a render each, as it was done before);
+// - the group (its four tracks feeding it); the group, its tracks and the
+//   return at once (what feeds them shared), and one by one;
 // - a short arrangement: one track of a 4-second song (chords end at 3 s), the
 //   tail being most of the render;
 // - the whole mix exported (16-bit WAV), for comparison: the code it shares.
@@ -134,14 +136,18 @@ Project build(sub::Engine& engine, int count, double beats) {
 
 double secondsSince(Clock::time_point start) { return std::chrono::duration<double>(Clock::now() - start).count(); }
 
-// Freezes these tracks as the application does: each into a WAV file of its own,
-// from the start to `beats`, with the tail. The frames written, in all.
+// Freezes these tracks as the application does: in one render, each into a WAV
+// file of its own, from the start to `beats`, with the tail (`oneByOne`: a
+// render for each, as the application did before). The frames written, in all.
 int64_t freeze(sub::Engine& engine, const std::vector<uint32_t>& tracks, double beats,
-               const std::filesystem::path& folder) {
+               const std::filesystem::path& folder, bool oneByOne = false) {
+    std::vector<sub::TrackFile> files;
+    for (const uint32_t track : tracks) files.push_back({track, (folder / ("t" + std::to_string(track) + ".wav")).string()});
     int64_t frames = 0;
-    for (const uint32_t track : tracks) {
-        frames += engine.renderTrackToWav(track, (folder / ("t" + std::to_string(track) + ".wav")).string(), 0.0, beats,
-                                          kTail);
+    if (oneByOne) {
+        for (const sub::TrackFile& file : files) frames += engine.renderTrackToWav(file.trackId, file.path, 0.0, beats, kTail);
+    } else {
+        for (const int64_t written : engine.renderTracksToWav(files, 0.0, beats, kTail)) frames += written;
     }
     return frames;
 }
@@ -221,6 +227,14 @@ int run(const Options& options) {
         const std::vector<uint32_t> several(own.begin(), own.begin() + options.freeze);
         results.push_back(measure(format("%d tracks", options.freeze), options.seconds * options.freeze,
                                   [&] { return freeze(engine, several, beats, folder.path()); }));
+        results.push_back(measure(format("%d tracks, a render each", options.freeze), options.seconds * options.freeze,
+                                  [&] { return freeze(engine, several, beats, folder.path(), true); }));
+        std::vector<uint32_t> withGroup{project.group, project.ret};
+        withGroup.insert(withGroup.end(), project.tracks.begin(), project.tracks.begin() + 4);
+        results.push_back(measure("the group, its tracks and the return", options.seconds * 6,
+                                  [&] { return freeze(engine, withGroup, beats, folder.path()); }));
+        results.push_back(measure("the same, a render each", options.seconds * 6,
+                                  [&] { return freeze(engine, withGroup, beats, folder.path(), true); }));
         results.push_back(measure("the group", options.seconds,
                                   [&] { return freeze(engine, {project.group}, beats, folder.path()); }));
         results.push_back(measure("export (the whole mix)", options.seconds, [&] {

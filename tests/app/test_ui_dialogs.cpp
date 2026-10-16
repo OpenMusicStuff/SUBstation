@@ -629,14 +629,14 @@ private Q_SLOTS:
         QVERIFY(render().cancelled());
         QCOMPARE(shown(QStringLiteral("renderLabel"))->property("text").toString(), QStringLiteral("Cancelling…"));
         QVERIFY(!shown(QStringLiteral("renderCancel"))->isEnabled());
-        render().setLabel(QStringLiteral("Freezing B (2 of 2)…"));  // (once cancelled, the label stays)
+        render().setLabel(QStringLiteral("Freezing A and B…"));  // (once cancelled, the label stays)
         QCOMPARE(shown(QStringLiteral("renderLabel"))->property("text").toString(), QStringLiteral("Cancelling…"));
         render().end();
         QTRY_VERIFY(!visible(QStringLiteral("renderDialog")));
     }
 
     // Freezing two tracks (test_freezing_shows_its_progress...): one dialog,
-    // part by part; cancelled, nothing is frozen.
+    // one render; cancelled, nothing is frozen.
     void freezing() {
         const QString a = audioTrack(QStringLiteral("A"));
         const QString b = audioTrack(QStringLiteral("B"));
@@ -652,8 +652,8 @@ private Q_SLOTS:
         QCOMPARE(object(QStringLiteral("renderDialog"))->property("title").toString(), QStringLiteral("Freeze Tracks"));
         QTRY_VERIFY_WITH_TIMEOUT(!render().active(), 30000);
         disconnect(&render(), nullptr, this, nullptr);
-        QVERIFY(labels.contains(QStringLiteral("Freezing %1 (1 of 2)…").arg(project().track(a).name)));  // ("3 A")
-        QVERIFY(labels.contains(QStringLiteral("Freezing %1 (2 of 2)…").arg(project().track(b).name)));
+        QVERIFY(labels.contains(  // ("3 A and 4 B": one render for both)
+            QStringLiteral("Freezing %1 and %2…").arg(project().track(a).name, project().track(b).name)));
         QVERIFY(project().track(a).frozen.has_value() && project().track(b).frozen.has_value());
         QTRY_VERIFY(!visible(QStringLiteral("renderDialog")));
     }

@@ -298,6 +298,28 @@ TEST_CASE("a track renders as it does with everything else") {
     }
 }
 
+TEST_CASE("several tracks render at once as each does alone") {
+    for (const int threads : {1, 3}) {
+        FreezeEngine e;
+        auto& engine = e.engine;
+        engine.setAudioThreads(threads);
+        const Graph g = graph(engine);
+        const std::vector<uint32_t> tracks{g.group, g.synth, g.ret, g.keyed, g.fed, g.input, g.rack, g.elsewhere};
+        std::vector<sub::TrackFile> together;
+        std::vector<int64_t> alone;
+        for (const uint32_t track : tracks) {
+            const auto path = tempDir() / ("alone" + std::to_string(track) + ".wav");
+            alone.push_back(engine.renderTrackToWav(track, path.string(), 0.0, 4.0, 3.0));
+            together.push_back({track, (tempDir() / ("together" + std::to_string(track) + ".wav")).string()});
+        }
+        CHECK(engine.renderTracksToWav(together, 0.0, 4.0, 3.0) == alone);
+        for (const uint32_t track : tracks) {
+            CHECK(readBytes(tempDir() / ("together" + std::to_string(track) + ".wav")) ==
+                  readBytes(tempDir() / ("alone" + std::to_string(track) + ".wav")));
+        }
+    }
+}
+
 TEST_CASE("the WAV keeps what is louder than full scale") {
     FreezeEngine e;
     auto& engine = e.engine;

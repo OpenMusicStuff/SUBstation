@@ -140,6 +140,7 @@
 #include "model/Automation.h"
 #include "model/Clip.h"
 #include "model/Device.h"
+#include "model/OrderedMap.h"
 #include "model/ParamSpec.h"
 #include "model/RecordedTake.h"
 #include "model/Track.h"
@@ -508,13 +509,18 @@ public:
     // render or the file can't be written. (The UI renders in the background:
     // startFreeze.)
     Freeze renderFreeze(const QString& trackId);
-    // renderFreeze in the background: starts the render (the devices should be
-    // ready: devicesReady) and returns at once; finishFreeze makes it the
-    // track's frozen audio. Throws as renderFreeze does.
-    std::unique_ptr<FreezeRender> startFreeze(const QString& trackId);
-    // A freeze's render, ended: its frozen audio (decoded, so that it plays as
-    // soon as the track is frozen), or none if it was cancelled (its file gone).
-    // Throws EditError if it failed.
+    // renderFreeze in the background, for these tracks at once (one render of
+    // what they need, a file for each: Engine::startTracksRender): starts it
+    // (the devices should be ready: devicesReady) and returns at once;
+    // finishFreezes makes the files their frozen audio. Throws as renderFreeze does.
+    std::unique_ptr<FreezeRender> startFreeze(const QStringList& trackIds);
+    std::unique_ptr<FreezeRender> startFreeze(const QString& trackId) { return startFreeze(QStringList{trackId}); }
+    // A freeze's render, ended: each track's frozen audio (decoded, so that it
+    // plays as soon as the track is frozen), in the render's order, or none if
+    // it was cancelled (its files gone). Throws EditError if it failed (none of
+    // its files kept).
+    std::optional<OrderedMap<QString, Freeze>> finishFreezes(FreezeRender& render);
+    // The same for a render of one track: its frozen audio.
     std::optional<Freeze> finishFreeze(FreezeRender& render);
     // A render no track plays (no undo step holds it): its decoded audio is
     // forgotten and its file deleted.
