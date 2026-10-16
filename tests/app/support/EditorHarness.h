@@ -207,6 +207,7 @@ protected:
 #endif
         options.scanPlugins = false;
         options.browserIndex = false;
+        options.backups = false;
         options.analyseAudio = false;  // (a song's audio would give it a key: Hue's Auto would follow it)
         session_ = std::make_unique<Session>(*engine_, options);
         sub::ui::registerSession(session_.get());

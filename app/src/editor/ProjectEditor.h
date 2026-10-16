@@ -326,11 +326,15 @@ public:
     // Ableton's Ctrl+D: copies land right after the selection.
     ClipRefs duplicateClips(const ClipRefs& refs);
     void splitClips(const ClipRefs& refs, double atBeat);
-    // The MIDI clips among `refs` that Consolidate joins: on each track with two or more.
-    OrderedMap<QString, std::vector<Clip>> consolidatable(const ClipRefs& refs) const;
+    // The MIDI clips among `refs` that Consolidate joins: on each track with two
+    // or more; or, with an `area` (the time selection, in beats), one that the
+    // area reaches past (there is empty space to fill).
+    OrderedMap<QString, std::vector<Clip>> consolidatable(const ClipRefs& refs,
+                                                          const std::optional<std::pair<double, double>>& area = std::nullopt) const;
     // Join the selected MIDI clips on each track into one clip spanning them
-    // (Ctrl+J), as one undo step. The new clips; none if there was nothing to join.
-    ClipRefs consolidateClips(const ClipRefs& refs);
+    // (Ctrl+J), and the empty space of `area` around and between them, as one
+    // undo step. The new clips; none if there was nothing to join.
+    ClipRefs consolidateClips(const ClipRefs& refs, const std::optional<std::pair<double, double>>& area = std::nullopt);
     // The clips on these tracks under a beat (not at their edges).
     ClipRefs clipsAt(const QStringList& trackIds, double beat) const;
     // The grid area that fully contains these clips: the earliest start to the

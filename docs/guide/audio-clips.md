@@ -114,7 +114,8 @@ key and chords are known.
   and ×2, by hand.
 - **Chords.** Audio clips name the chords they play along the bottom of their waveform
   (once the track is tall enough), as they play them: transposing a clip transposes its
-  chords. They count in the song's chords too: the piano roll's chord lane (and Generate)
+  chords. **C** (*View › Chords and Key*) hides or shows them, with the piano roll's chord
+  lane. They count in the song's chords too: the piano roll's chord lane (and Generate)
   hear your audio loops and recordings along with your MIDI, but for tracks named as
   drums.
 - **The clip view** shows what a clip's file was heard as, next to its length: *heard:

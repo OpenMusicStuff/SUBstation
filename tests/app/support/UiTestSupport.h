@@ -51,6 +51,7 @@ public:
 #endif
         options.scanPlugins = false;
         options.browserIndex = false;
+        options.backups = false;
         options.analyseSounds = analyseSounds;
         options.analyseAudio = false;
         session_ = std::make_unique<Session>(*engine_, options);

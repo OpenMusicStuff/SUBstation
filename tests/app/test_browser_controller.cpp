@@ -111,7 +111,7 @@ private Q_SLOTS:
             BrowserController browser(nullptr, options());
             QCOMPARE(browser.places(), QStringList{path(QStringLiteral("home/Music"))});
             QCOMPARE(browser.scope(), QStringList{QStringLiteral("samples")});
-            QCOMPARE(browser.sort(), QStringLiteral("best"));  // (the default)
+            QCOMPARE(browser.sort(), QStringLiteral("rank"));  // (the default)
             QStringList expected{QStringLiteral("CATEGORIES"), QStringLiteral("All"), QStringLiteral("Samples"),
                                  QStringLiteral("Built-in")};
             expected << builtinCategoryNames();
@@ -445,6 +445,49 @@ private Q_SLOTS:
         QCOMPARE(focus.count(), 1);
     }
 
+    // Anything can be hidden from search (right-click: Hide from Search): a
+    // sample, a plug-in, a built-in device. Hidden lists them, to show again.
+    void anythingCanBeHiddenFromSearch() {
+        writePlugins();
+        auto browser = make();
+        QVERIFY(settle(*browser));
+        browser->setScope({QStringLiteral("all")});
+        QVERIFY(settle(*browser));
+        ItemListModel& results = *browser->results();
+        const QString device = builtinItems().front().name;
+        QVERIFY(!sidebarTitles(*browser->sidebar()).contains(QStringLiteral("Hidden")));
+        QSignalSpy messages(browser.get(), &BrowserController::statusMessage);
+        browser->setHiddenFromSearch({rowOf(results, QStringLiteral("Kick.wav")), rowOf(results, QStringLiteral("Synth")),
+                                      rowOf(results, device)},
+                                     true);
+        QCOMPARE(messages.count(), 1);
+        QVERIFY(settle(*browser));
+        QStringList listed = names(results);
+        QVERIFY(!listed.contains(QStringLiteral("Kick.wav")));
+        QVERIFY(!listed.contains(QStringLiteral("Synth")));
+        QVERIFY(!listed.contains(device));
+        QVERIFY(listed.contains(QStringLiteral("Kick Loop.wav")));
+        browser->setSearchText(QStringLiteral("kick"));
+        QVERIFY(settle(*browser));
+        QCOMPARE(names(results), QStringList{QStringLiteral("Kick Loop.wav")});
+        browser->setSearchText({});
+        QVERIFY(Library().hidden(audioKey(lib_ + QStringLiteral("/Drums/Kick.wav"))));  // (kept in library.json)
+        // Hidden lists them, each with Show in Search.
+        QVERIFY(sidebarTitles(*browser->sidebar()).contains(QStringLiteral("Hidden")));
+        browser->setScope({QStringLiteral("hidden")});
+        QVERIFY(settle(*browser));
+        QCOMPARE(names(results), (QStringList{device, QStringLiteral("Synth"), QStringLiteral("Kick.wav")}));
+        QCOMPARE(browser->resultActions(0).last().toMap().value(QStringLiteral("action")).toString(), QStringLiteral("showInSearch"));
+        browser->setHiddenFromSearch({0, 1, 2}, false);
+        QVERIFY(settle(*browser));
+        QVERIFY(names(results).isEmpty());
+        QCOMPARE(browser->statusText(), QStringLiteral("Nothing is hidden from search"));
+        browser->setScope({QStringLiteral("all")});
+        QVERIFY(settle(*browser));
+        QVERIFY(names(results).contains(QStringLiteral("Kick.wav")));
+        QVERIFY(!sidebarTitles(*browser->sidebar()).contains(QStringLiteral("Hidden")));  // (nothing hidden, not shown)
+    }
+
     void builtInDevices() {
         auto browser = make();
         QVERIFY(settle(*browser));
@@ -517,7 +560,8 @@ private Q_SLOTS:
             return ids;
         };
         QCOMPARE(actions(browser->resultActions(0)),
-                 QStringList({QStringLiteral("renamePreset"), QStringLiteral("deletePreset"), QString(), QStringLiteral("showInFolder")}));
+                 QStringList({QStringLiteral("renamePreset"), QStringLiteral("deletePreset"), QString(), QStringLiteral("showInFolder"),
+                              QString(), QStringLiteral("hideFromSearch")}));
         QCOMPARE(browser->resultActions(0)[0].toMap().value(QStringLiteral("label")).toString(), QStringLiteral("Rename…"));
         QSignalSpy changed(browser.get(), &BrowserController::presetsChanged);
         QSignalSpy messages(browser.get(), &BrowserController::statusMessage);

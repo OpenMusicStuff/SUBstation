@@ -100,13 +100,6 @@ BrowserController::BrowserController(PluginIndex* plugins, Options options, QObj
         });
         connect(similarity_, &SoundSimilarity::tagsChanged, this, &BrowserController::soundsChanged);
     }
-    suggestions_ = options.suggestions;
-    if (suggestions_) {
-        connect(suggestions_, &SoundSuggestions::changed, this, [this] {
-            if (sort_ == kBestSort) soundsChanged();
-        });
-    }
-
     updatePluginsToolTip();
     index_->setPlaces(places_);
     buildSidebar();
@@ -163,7 +156,9 @@ void BrowserController::setScope(const QStringList& list) {
         sidebar_->setEntries(sidebarEntries());
         if (sidebar_->find(scope) < 0) return;
     }
+    const bool leftHidden = scope_.kind == QStringLiteral("hidden");
     setScopeValue(scope);
+    if (leftHidden && library_->hiddenCount() == 0) sidebar_->setEntries(sidebarEntries());  // (Hidden goes, now empty)
     if (similar_ && !showsAudioOnly()) leaveSimilar();  // (similar sounds are files: Samples or a place)
     refresh(false);
 }
@@ -267,6 +262,10 @@ std::vector<SidebarModel::Entry> BrowserController::sidebarEntries() const {
           [&](const QString& name) { entry(name, {QStringLiteral("plugins"), name}, plugin, {}, 1); });
     group(QStringLiteral("Presets"), QStringLiteral("presets"), QStringLiteral("preset"), presetsToolTip(), presetGroups_,
           [&](const QString& name) { entry(name, {QStringLiteral("presets"), name}, QStringLiteral("preset"), {}, 1); });
+    // What was hidden from search, while there is some (or it is shown): to show it again.
+    if (library_->hiddenCount() > 0 || scope_.kind == QStringLiteral("hidden"))
+        entry(QStringLiteral("Hidden"), {QStringLiteral("hidden"), {}}, QStringLiteral("search"),
+              QStringLiteral("What you hid from search: right-click an item to show it in search again"));
     section(QStringLiteral("PLACES"));
     for (const QString& place : places_) {
         const QString name = QFileInfo(place).fileName();
@@ -471,19 +470,38 @@ QVariantList BrowserController::sidebarActions(const QStringList& list) const {
 
 QVariantList BrowserController::resultActions(int row) const {
     const BrowserItem* item = results_->item(row);
+    if (!item) return {};
     auto action = [](const char* id, const QString& label) {
         return QVariantMap{{QStringLiteral("action"), QString::fromLatin1(id)}, {QStringLiteral("label"), label}};
     };
-    if (item && item->kind == ItemKind::Audio) {
-        QVariantList actions;
+    QVariantList actions;
+    if (item->kind == ItemKind::Audio) {
         if (similarity_) actions << action("findSimilar", QStringLiteral("Find Similar Sounds")) << QVariantMap();
         actions << action("showInFolder", QStringLiteral("Show in Folder")) << QVariantMap()
                 << action("toggleTags", tagsShown_ ? QStringLiteral("Hide Tags") : QStringLiteral("Show Tags"));
-        return actions;
+    } else if (item->kind == ItemKind::Preset) {
+        actions << action("renamePreset", QStringLiteral("Rename…")) << action("deletePreset", QStringLiteral("Delete"))
+                << QVariantMap() << action("showInFolder", QStringLiteral("Show in Folder"));
     }
-    if (!item || item->kind != ItemKind::Preset) return {};
-    return {action("renamePreset", QStringLiteral("Rename…")), action("deletePreset", QStringLiteral("Delete")), QVariantMap(),
-            action("showInFolder", QStringLiteral("Show in Folder"))};
+    // Anything can be hidden from search (and shown again, from Hidden).
+    if (!actions.isEmpty()) actions << QVariantMap();
+    actions << (library_->hidden(item->key()) ? action("showInSearch", QStringLiteral("Show in Search"))
+                                              : action("hideFromSearch", QStringLiteral("Hide from Search")));
+    return actions;
+}
+
+void BrowserController::setHiddenFromSearch(const QList<int>& rows, bool hidden) {
+    QStringList keys;
+    for (const BrowserItem& item : results_->items(rows)) keys << item.key();
+    if (keys.isEmpty()) return;
+    library_->setHidden(keys, hidden);
+    index_->setUsage(*library_);
+    sidebar_->setEntries(sidebarEntries());  // (Hidden comes or goes)
+    refresh(true);
+    const QString what = keys.size() == 1 ? results_->items(rows).front().name
+                                          : countText(static_cast<int>(keys.size()), QStringLiteral("item"), QStringLiteral("items"));
+    Q_EMIT statusMessage(hidden ? QStringLiteral("%1 hidden from search (the browser's Hidden shows it again)").arg(what)
+                                : QStringLiteral("%1 shown in search again").arg(what));
 }
 
 // --- Find Similar -------------------------------------------------------------------------
@@ -527,7 +545,7 @@ void BrowserController::leaveSimilar() {
     if (similarity_) similarity_->cancel();  // (a sound still being analysed for it needn't be)
     similar_.reset();
     refineTimer_.stop();
-    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : kBestSort;
+    sort_ = isSortOrder(sortBeforeSimilar_) ? sortBeforeSimilar_ : kRankSort;
     Q_EMIT sortChanged();
     Q_EMIT sortsChanged();
     Q_EMIT similarChanged();
@@ -584,9 +602,8 @@ void BrowserController::refresh(bool keep) {
         sounds.tags = similarity_->tags();
         sounds.matching = soundMatching(sounds.tags, query.sounds);
     }
-    if (suggestions_ && sort_ == kBestSort) sounds.fit = suggestions_->fit();
     index_->search(searchText_, sort_, library_->now(), query.groups, query.tag, query.placePrefix,
-                   similar_ ? similar_->result.scorer() : nullptr, std::move(sounds));
+                   similar_ ? similar_->result.scorer() : nullptr, std::move(sounds), query.hiddenOnly);
     setSearching(true);
 }
 
@@ -703,9 +720,10 @@ void BrowserController::updateStatus() {
         setStatusText(items + QStringLiteral(" (") + busy + QStringLiteral("…)"));
     } else if (kind != QStringLiteral("builtin") && index_->indexing()) {
         setStatusText(items + QStringLiteral(" (Indexing…)"));
-    } else if (sort_ == kBestSort && suggestions_ && !suggestions_->summary().isEmpty() && kind != QStringLiteral("builtin") &&
-               kind != QStringLiteral("plugins") && kind != QStringLiteral("presets")) {
-        setStatusText(items + QStringLiteral(", best for ") + suggestions_->summary());
+    } else if (kind == QStringLiteral("hidden")) {
+        setStatusText(count == 0 && !hasWords(searchText_)
+                          ? QStringLiteral("Nothing is hidden from search")
+                          : items + QStringLiteral(" hidden from search (right-click: Show in Search)"));
     } else {
         setStatusText(items);
     }

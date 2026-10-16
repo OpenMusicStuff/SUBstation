@@ -693,9 +693,9 @@ private Q_SLOTS:
     // What files sound like (the application's matcher, by the hash of their
     // paths): a term matches a file whose name or folder has it, or that is
     // heard as it; a sound filter leaves files out whatever their names; files
-    // alike by name are ordered by how well they sound like the terms. The Best
-    // sort blends matching, use and fit.
-    void soundsMatchAndBestBlends() {
+    // alike by name are ordered by how well they sound like the terms. A file
+    // hidden from search is left out, and listed only when hidden ones are asked for.
+    void soundsMatchAndHiddenFilesAreLeftOut() {
         const QString lib = tmp_->filePath(QStringLiteral("lib"));
         for (const char* name : {"Drums/a.wav", "Drums/b.wav", "Drums/c.wav", "Drums/kick 1.wav", "Other/d.wav"})
             touch(lib + QLatin1Char('/') + QString::fromLatin1(name));
@@ -732,7 +732,7 @@ private Q_SLOTS:
         matcher->files[hashOf("Drums", "b.wav")] = {0, 0.1f, true};
         matcher->files[hashOf("Other", "d.wav")] = {1, 1.0f, false};  // left out by a filter
         // (`filter`: the matcher is there with no terms too, as a sidebar's sound's is.)
-        auto run = [&](const QString& text, backend::Sort sort, std::function<float(uint64_t)> fit = {}, bool filter = true) {
+        auto run = [&](const QString& text, backend::Sort sort, bool hiddenOnly = false, bool filter = true) {
             backend::Query query;
             query.text = text.toStdString();
             query.sort = sort;
@@ -741,7 +741,7 @@ private Q_SLOTS:
                 if (terms.size() > 1 || (terms.size() == 1 && terms[0] != "kick")) qFatal("the terms aren't the query's");
                 return terms.empty() && !filter ? nullptr : matcher;
             };
-            query.fit = std::move(fit);
+            query.hiddenOnly = hiddenOnly;
             const uint64_t generation = b.native.search(std::move(query));
             if (!b.wait()) return QStringList();
             const auto result = b.native.take().result;
@@ -757,18 +757,15 @@ private Q_SLOTS:
         // No terms: everything the filter keeps.
         QCOMPARE(run({}, backend::Sort::Name),
                  (QStringList{QStringLiteral("a.wav"), QStringLiteral("b.wav"), QStringLiteral("c.wav"), QStringLiteral("kick 1.wav")}));
-        // Best, no terms: by fit (nothing used); under a sound filter, how well each sounds like its word too.
-        auto fit = [&](uint64_t hash) { return hash == hashOf("Drums", "b.wav") ? 0.9f : hash == hashOf("Drums", "a.wav") ? 0.7f : 0.2f; };
-        QCOMPARE(run({}, backend::Sort::Best, fit, false).mid(0, 2), (QStringList{QStringLiteral("b.wav"), QStringLiteral("a.wav")}));
-        QCOMPARE(run({}, backend::Sort::Best, fit).mid(0, 3),
-                 (QStringList{QStringLiteral("a.wav"), QStringLiteral("c.wav"), QStringLiteral("b.wav")}));
-        // Best with terms: matching counts most (the named one, and c, heard best, before a).
-        const QStringList bestKick = run(QStringLiteral("kick"), backend::Sort::Best, fit);
-        QCOMPARE(bestKick.size(), 3);
-        QVERIFY(bestKick.indexOf(QStringLiteral("c.wav")) < bestKick.indexOf(QStringLiteral("a.wav")));
-        // Used lately counts too: a file used ranks over one that only fits.
-        b.native.setUsage({{audioKey(lib + QStringLiteral("/Drums/c.wav")).toStdString(), 3.0, 0.0}}, 30.0);
-        QCOMPARE(run({}, backend::Sort::Best, fit, false).first(), QStringLiteral("c.wav"));
+        // A file hidden from search is left out, whatever it sounds like; listed only when hidden ones are asked for.
+        backend::UsageRecord hidden{audioKey(lib + QStringLiteral("/Drums/c.wav")).toStdString(), 0.0, 0.0};
+        hidden.hidden = true;
+        b.native.setUsage({hidden}, 30.0);
+        QCOMPARE(run(QStringLiteral("kick"), backend::Sort::Rank),
+                 (QStringList{QStringLiteral("kick 1.wav"), QStringLiteral("a.wav")}));
+        QCOMPARE(run({}, backend::Sort::Name, true, false), QStringList{QStringLiteral("c.wav")});
+        b.native.setUsage({}, 30.0);
+        QVERIFY(run({}, backend::Sort::Name, true, false).isEmpty());  // (nothing hidden)
     }
 
     void savedIndexIsCheckedNotListedAgain() {

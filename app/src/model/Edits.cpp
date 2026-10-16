@@ -327,10 +327,14 @@ std::pair<double, double> selectionSpan(const std::vector<Clip>& clips, double t
     return {start, end};
 }
 
-Clip consolidateMidi(const std::vector<Clip>& clips) {
+Clip consolidateMidi(const std::vector<Clip>& clips, const std::optional<Interval>& area) {
     std::vector<Clip> ordered = clips;
     sortByStart(ordered);
-    const auto [start, end] = selectionSpan(ordered, 0.0);
+    auto [start, end] = selectionSpan(ordered, 0.0);
+    if (area && area->second > area->first) {
+        start = std::max(0.0, std::min(start, area->first));
+        end = std::max(end, area->second);
+    }
     const bool allMuted = std::none_of(ordered.begin(), ordered.end(), [](const Clip& c) { return c.plays(); });
     std::vector<Note> played;
     for (const Clip& c : ordered) {

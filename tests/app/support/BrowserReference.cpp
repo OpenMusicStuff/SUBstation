@@ -144,6 +144,7 @@ int matchQuality(const BrowserItem& item, const std::vector<std::string>& terms)
 std::vector<BrowserItem> find(std::vector<BrowserItem> items, const QString& query, const Library& library,
                               const QString& sort) {
     const std::vector<std::string> terms = termsOf(query);
+    std::erase_if(items, [&](const BrowserItem& item) { return library.hidden(item.key()); });  // (hidden from search)
     if (!terms.empty()) {
         std::erase_if(items, [&](const BrowserItem& item) { return !matches(item, terms); });
     }

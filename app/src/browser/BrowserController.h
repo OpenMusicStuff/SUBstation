@@ -9,9 +9,10 @@
 // adds it, as a double-click does (activate()). A preview stops when the user
 // clicks anywhere outside the browser (the UI calls stopPreview()).
 //
-// Lists are sorted by Best (the default: how well items match, how much they
-// were used lately, how well they fit the project: SoundSuggestions), Rank
-// (what is used most first) or Name; see BrowserSearch.h.
+// Lists are sorted by Rank (the default: what is used most often lately first,
+// then the best matches) or Name; see BrowserSearch.h. Anything listed can be
+// hidden from search (right-click: Hide from Search, setHiddenFromSearch());
+// the sidebar's Hidden lists it, to show it again.
 //
 // Samples are found by what they sound like as well as by their names (with a
 // sound similarity: its tagger's tags, SoundSearch.h): "hard trap snare" finds
@@ -75,7 +76,6 @@
 #include "browser/Library.h"
 #include "browser/SidebarModel.h"
 #include "intelligence/SoundSimilarity.h"
-#include "intelligence/SoundSuggestions.h"
 #include "plugins/PluginIndex.h"
 
 class QFileSystemModel;
@@ -85,7 +85,7 @@ namespace sub::app {
 class BrowserController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY searchTextChanged)
-    Q_PROPERTY(QString sort READ sort WRITE setSort NOTIFY sortChanged)  // "best", "rank" or "name"; "similar" (Find Similar)
+    Q_PROPERTY(QString sort READ sort WRITE setSort NOTIFY sortChanged)  // "rank" or "name"; "similar" (Find Similar)
     Q_PROPERTY(QVariantList sorts READ sorts NOTIFY sortsChanged)        // [{value, label}]
     // Find Similar: the sound the list shows the sounds most like ("" when it
     // doesn't), and its name.
@@ -130,8 +130,6 @@ public:
         // What finds similar sounds (the session's; it analyses the files this
         // index lists). Null: Find Similar isn't offered.
         SoundSimilarity* similarity = nullptr;
-        // How files fit the project, for the Best sort (the session's). Null: they all fit alike.
-        SoundSuggestions* suggestions = nullptr;
     };
 
     static constexpr int kRefineMs = 2000;  // while the library is analysed, how often a similar list is searched again
@@ -264,8 +262,13 @@ public:
     Q_INVOKABLE QVariantList sidebarActions(const QStringList& scope) const;
     // A result's actions: for a preset "renamePreset" (the UI asks for the
     // name, then renamePreset()), "deletePreset", {}, "showInFolder"; for an
-    // audio file "findSimilar" (if offered), {}, "showInFolder".
+    // audio file "findSimilar" (if offered), {}, "showInFolder", {},
+    // "toggleTags"; then, for anything, {} and "hideFromSearch" (or, hidden,
+    // "showInSearch").
     Q_INVOKABLE QVariantList resultActions(int row) const;
+    // Hides these rows' items from search (the library remembers), or shows
+    // them again; the list is searched again, keeping its place.
+    Q_INVOKABLE void setHiddenFromSearch(const QList<int>& rows, bool hidden);
 
     // These items were used (added to the project) just now.
     void recordUse(const QStringList& keys);
@@ -350,7 +353,7 @@ private:
     mutable QFileSystemModel* folderModel_ = nullptr;  // made when the UI first asks
 
     QString searchText_;
-    QString sort_ = kBestSort;
+    QString sort_ = kRankSort;
     Scope scope_;
     QTimer searchTimer_;  // merges changes to the search text that come together
     bool searching_ = false;    // results asked for and not shown yet
@@ -376,7 +379,6 @@ private:
         SimilarSounds result;
     };
     QPointer<SoundSimilarity> similarity_;  // (the session's: it may go first when the session does)
-    QPointer<SoundSuggestions> suggestions_;
     std::optional<Similar> similar_;
     QString sortBeforeSimilar_;
     QTimer refineTimer_;

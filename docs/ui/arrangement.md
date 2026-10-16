@@ -168,7 +168,8 @@ selection's tint stops above them (`selectedAreas`). The header paints each lane
 
 `ArrangementLanes::drawChords` names an audio clip's chords (`app::AudioAnalysis::clipChords`) in a `kChordStrip`
 (12 px) band along the bottom of its body, a tick where each starts and its name where it fits, on bodies of
-`kMinChordBody` (40 px) or more; the lanes repaint on `AudioAnalysis::analysed`.
+`kMinChordBody` (40 px) or more, while `Harmony::shown()` (C, View › Chords and Key); the lanes repaint on
+`AudioAnalysis::analysed` and `Harmony::shownChanged`.
 
 ## Selection
 
@@ -214,8 +215,10 @@ which Main.qml lays over the arrangement area (the lanes' top right corner, or t
 gives its field the keyboard, what was typed selected. From the clip view, it first gives the search its area
 (`Session.trackSearch.setArea(clipView.trackId, clipView.clipIds)`: the beats the clips shown span); from the
 arrangement, none (`clearArea()`). What is typed sets `Session.trackSearch.query` (`TrackSearch`, which ranks the
-matches: [intelligence.md](../intelligence.md#finding-tracks)); Enter and Down call its `next()`, Shift+Enter and Up
-`previous()`. Each match is the bar's `matchChosen(trackId)`, which `window.showTrackMatch()` shows:
+matches: [intelligence.md](../intelligence.md#finding-tracks)); Enter and Down call its `next()`, Up `previous()`.
+Shift+Enter closes the bar on the match shown; Ctrl+Enter emits `returnRequested()` and closes it: `findTrack()`
+keeps, as the bar opens, the selected track and what the clip view showed (`trackSearchOrigin`), and
+`window.returnFromTrackSearch()` reveals that track again and opens those clips (or shows the arrangement). Each match is the bar's `matchChosen(trackId)`, which `window.showTrackMatch()` shows:
 
 - `Arrangement::revealTrack(trackId)` (the view's `revealTrack()`): the groups it is folded away in unfolded
   (`editor.setFolded`, view state: no undo step), scrolled so its row is in the middle of the lanes if it doesn't
@@ -432,7 +435,7 @@ whichever was copied last. The lanes' menus and the session's Edit commands call
 | `copyArea()` / `cutArea()` | `copyRange` / `cutRange` | (cut) the empty area stays selected |
 | `copyAutomation()` / `cutAutomation()` | `copyAutomationRange` / `cutAutomationRange` | |
 | `paste()`, `paste(atBeat, trackId)` | `paste` (clips), `pasteAutomation`, or `pasteTracks` | what is pasted is selected; the insert marker goes to its end, so pasting again appends |
-| `consolidate()` | `consolidateClips` (Ctrl+J) | the joined clips are selected |
+| `consolidate()` | `consolidateClips` (Ctrl+J), over the time selection (`consolidateArea()`: its empty space filled) | the joined clips are selected |
 | `reverseSelection()` | a reversed copy of each audio file in the range (written at once, or, for more than `kReverseInPlaceSeconds` (30 s) of audio, in the background in the render dialog, whose Cancel changes nothing; a reversed clip whose file is there goes back to it), then `reverseRange` (R) | the range stays selected |
 | `toggleActivation()` | `setRangeActive` (0): the clips in the range deactivated, or activated if they all are (`activates()`); not those of frozen tracks | the range stays selected, with its clips |
 | `insertMidiClip(trackId, beat, gridStep)` | `addMidiClipsOver` (inside the time selection) or `midiClipSpan` + `addMidiClip` | selected, opened in the piano roll |
@@ -728,7 +731,7 @@ from it. The clip view draws its waveforms without a cache ([piano-roll.md](pian
 | [test_ui_arrangement_automation.cpp](../../tests/app/test_ui_arrangement_automation.cpp) | A, parameters showing their lanes, clicking on the line, dragging and bending breakpoints, segments and steps, deleting, time ranges (clear, duplicate, move), the lanes' menus, overriding and re-enabling, controls following automation, the master's lane, lanes below tracks, saving, automation moving with a dragged clip, lane ranges dragged down over several tracks' lanes and extended with Shift-click, drags reaching up into the clips |
 | [test_ui_arrangement_clips.cpp](../../tests/app/test_ui_arrangement_clips.cpp) | Alt on a clip's edge stretching it (the cursor as Alt is pressed, heard while dragging, Shift off the grid, a MIDI clip's notes), Ctrl+Shift on its body sliding its audio or notes (by grid steps, to the file's ends, Alt freely), F showing the fade handles and dragging fades and their curves (heard as they go), double-clicks straightening and removing them, F playing a note instead while the computer MIDI keyboard is on, MIDI clips without fades |
 | [test_ui_arrangement_selection.cpp](../../tests/app/test_ui_arrangement_selection.cpp) | A group's selection shown over the rows it covers and acting on what is in it, drags over every kind of track (folded, frozen, folded groups), Shift-clicks extending clip ranges, a frozen track's stretch dragged with its frozen audio and a move off it refused |
-| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | `findingTracks`: Q, typing jumping to the best match, Enter and Shift+Enter, a match unfolded from its group and scrolled into view, letters typed into the field, Esc; `findingTracksFromTheClipView`: Q over the clip view, a match's clip in the same beats opened there, one without shown in the arrangement, Esc giving the clip view the keyboard back |
+| [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | `findingTracks`: Q, typing jumping to the best match, Enter and Up, Shift+Enter settling and Ctrl+Enter going back, a match unfolded from its group and scrolled into view, letters typed into the field, Esc; `findingTracksFromTheClipView`: Q over the clip view, a match's clip in the same beats opened there, one without shown in the arrangement, Esc giving the clip view the keyboard back |
 | [test_ui_arrangement_tracks.cpp](../../tests/app/test_ui_arrangement_tracks.cpp) | Groups (folding, the group's header and bands, dragging headers by their name bars into and out of groups, folded tracks' clips as bars and their lanes as grids, cut, copy and paste), returns and sends, following the playhead while scrolling by hand, the header's controls (volume, solo, the activator, arming, renaming in place), the In/Out column (Audio From and its channel or tap, MIDI From, the monitoring buttons, Audio To and where it goes, hiding the column, a set routed as Ableton users route theirs), sidechains greying out sends, the track menu's freezing and flattening, resizing a track by its bottom edge |
 | [test_session_edit.cpp](../../tests/app/test_session_edit.cpp) | The area commands and the clipboard as the session drives them: splitting, selecting all, duplicating and deleting the selected area, cutting, copying and pasting clips, automation and tracks, reversing (at once and in the background) |
 | [test_selection.cpp](../../tests/app/test_selection.cpp) | The selection's rules |

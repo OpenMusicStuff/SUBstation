@@ -97,22 +97,21 @@ public:
     void setItems(int group, const std::vector<std::pair<BrowserItem, QString>>& items);
     void setUsage(const Library& library);
 
-    // What a search hears in sounds, and how files fit the project (both
-    // optional): browser::Query::sounds and ::fit. `tags` labels the files of
-    // its results.
+    // What a search hears in sounds (optional): browser::Query::sounds. `tags`
+    // labels the files of its results.
     struct Sounds {
         std::shared_ptr<const intelligence::tagging::SoundTagTable> tags;
         std::function<std::shared_ptr<const browser::SoundMatcher>(const std::vector<std::string>&)> matching;
-        std::function<float(uint64_t)> fit;
     };
 
     // Starts a search (stopping any that runs); its results come as `results`.
-    // `sort` is "best", "rank", "name" or "similar" (by `score`: an indexed
-    // file's by its path in the backend's form, the highest first; files
-    // without one left out); `now` is the library's time (for how recent uses are).
+    // `sort` is "rank", "name" or "similar" (by `score`: an indexed file's by
+    // its path in the backend's form, the highest first; files without one
+    // left out); `now` is the library's time (for how recent uses are).
+    // Items hidden from search are left out; `hiddenOnly`: only they are listed.
     uint64_t search(const QString& text, const QString& sort, double now, const std::vector<int>& groups,
                     const QString& tag = {}, const std::string& placePrefix = {},
-                    std::function<double(std::string_view)> score = {}, Sounds sounds = {});
+                    std::function<double(std::string_view)> score = {}, Sounds sounds = {}, bool hiddenOnly = false);
 
     // Blocks until the index settled and no search runs (tests, benchmarks).
     bool waitIdle(double seconds = 10.0);
