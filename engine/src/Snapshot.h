@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "Processor.h"
 #include "Scheduler.h"
 #include "Warp.h"
+#include "music/TempoMap.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -189,6 +191,9 @@ struct NoteBendRender {
 struct NoteRender {
     int64_t start = 0;  // timeline samples
     int64_t end = 0;    // > start
+    // The same in beats: a new tempo map moves a sounding note's ends to these beats (Renderer::syncTempo()).
+    double startBeat = 0.0;
+    double endBeat = 0.0;
     uint8_t key = 60;
     uint8_t velocity = 100;
     std::shared_ptr<const NoteBendRender> bend;  // null: it doesn't bend
@@ -511,9 +516,11 @@ struct TrackRender : StripRender {
 
 struct RenderSnapshot {
     double sampleRate = 48000.0;
-    double tempo = 120.0;
-    int timeSigNum = 4;
-    int timeSigDen = 4;
+    // The song's tempo and time signatures (music/TempoMap.h), never null; `tempoVersion` is a
+    // new number with each new tempo map, so the renderer knows to move what it holds in samples.
+    std::shared_ptr<const TempoMap> tempoMap = std::make_shared<const TempoMap>();
+    std::shared_ptr<const MeterMap> meter = std::make_shared<const MeterMap>();
+    uint64_t tempoVersion = 0;
     int keyTonic = -1;  // the song's key (Engine::setSongKey): -1 none
     bool keyMinor = false;
     bool loopEnabled = false;
@@ -543,7 +550,24 @@ struct RenderSnapshot {
     // The output lags the timeline by this much: the tracks' latency, then the
     // master's devices. The metronome is delayed as much.
     int outputLatency() const { return maxLatency + master.latency; }
-    double samplesPerBeat() const { return sampleRate * 60.0 / tempo; }
+
+    // Beats and timeline samples, both ways, by the tempo map. A steady tempo
+    // counts as it always has (beats times samples a beat), to the bit.
+    double sampleTime(double beat) const noexcept {
+        if (tempoMap->constant()) return beat * (sampleRate * 60.0 / tempoMap->points().front().bpm);
+        return tempoMap->secondsAt(beat) * sampleRate;
+    }
+    int64_t sampleAt(double beat) const noexcept { return std::llround(sampleTime(beat)); }
+    double beatAt(double sample) const noexcept {
+        if (tempoMap->constant()) return sample / (sampleRate * 60.0 / tempoMap->points().front().bpm);
+        return tempoMap->beatAt(sample / sampleRate);
+    }
+    double tempoAt(double sample) const noexcept { return tempoMap->bpmAt(beatAt(sample)); }
+    // Samples from `beat` to `beat + beats` (fractional), where they are.
+    double samplesBetween(double beat, double beats) const noexcept {
+        if (tempoMap->constant()) return beats * (sampleRate * 60.0 / tempoMap->points().front().bpm);
+        return tempoMap->secondsBetween(beat, beat + beats) * sampleRate;
+    }
 
     // The track with this id; null if the snapshot has none.
     const TrackRender* findTrack(uint32_t id) const noexcept {

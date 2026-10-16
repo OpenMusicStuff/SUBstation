@@ -45,7 +45,7 @@ std::shared_ptr<sub::RenderSnapshot> snapshotOf(const sub::ClipRender& clip,
                                                 const std::shared_ptr<sub::WarpVoice>& voice) {
     auto snap = std::make_shared<sub::RenderSnapshot>();
     snap->sampleRate = kSampleRate;
-    snap->tempo = 120.0;
+    snap->tempoMap = std::make_shared<const sub::TempoMap>(120.0);
     sub::TrackRender track;
     track.id = 1;
     track.params = std::make_shared<sub::TrackParams>();
@@ -241,7 +241,8 @@ TEST_CASE("a tempo change while a clip plays from its render crossfades into the
         auto voice = std::make_shared<sub::WarpVoice>(before.stretchConfig, kSampleRate);
         const auto first = snapshotOf(before, voice);
         const auto second = snapshotOf(changed, voice);
-        second->tempo = 135.0;
+        second->tempoMap = std::make_shared<const sub::TempoMap>(135.0);
+        second->tempoVersion = first->tempoVersion + 1;
         sub::Renderer renderer;
         sub::SharedState shared;
         playFrom(renderer, 0);

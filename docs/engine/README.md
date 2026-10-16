@@ -140,9 +140,10 @@ catches them where the user can cause them and turns them into what the applicat
 
 `rebuildSnapshotLocked()` ([EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp)) turns the
 whole edit model into a new `RenderSnapshot` every time, in which positions are already
-converted to samples at the current tempo and sample rate. In order:
+converted to samples by the tempo map and the sample rate. In order:
 
-1. Transport values: sample rate, tempo, time signature, the loop in samples (only enabled if
+1. Transport values: sample rate, the tempo map and time signatures (`tempoMap_`, `meter_`,
+   [music.md](../music.md); `tempoVersion_` a new number with each new map), the loop in samples (only enabled if
    at least 256 samples long), the short clip fade's length (against clicks where clips cut into
    their files).
 2. The routing graph: `routeEdgesLocked()` lists every edge, `topologicalOrder()` puts each
@@ -229,7 +230,9 @@ meter timer, every 33 ms: `EngineBridge::pollPlugins()`). It:
 producer). The live renderer drains them at the start of each callback. `requestedPlaying_`
 answers `isPlaying()` at once, and `setPositionBeats()` stores the new position for immediate
 feedback; the audio thread confirms it. Tempo, time signature, loop and clip fades are snapshot
-values (a rebuild). The metronome switch is an atomic. See [rendering.md](rendering.md).
+values (a rebuild). The tempo is a map (`setTempoMap()`: steady stretches, ramps and jumps; `setTempo()`
+is a map of one tempo) and the time signature a list of changes (`setMeter()`; `setTimeSignature()`
+one throughout); pushed again unchanged, they build nothing. The metronome switch is an atomic. See [rendering.md](rendering.md).
 
 ## Transport.h: what the threads share
 

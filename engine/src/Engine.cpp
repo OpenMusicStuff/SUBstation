@@ -169,29 +169,41 @@ double Engine::positionBeats() const {
     return shared_.positionBeats.load(std::memory_order_relaxed);
 }
 
-void Engine::setTempo(double bpm) {
-    std::lock_guard lock(mutex_);
-    const double tempo = std::clamp(bpm, 20.0, 999.0);
-    if (tempo == tempo_) return;  // (the settings pushed again: nothing to build)
-    tempo_ = tempo;
-    rebuildSnapshotLocked();
-}
+void Engine::setTempo(double bpm) { setTempoMap(TempoMap(bpm)); }
 
 double Engine::tempo() {
     std::lock_guard lock(mutex_);
-    return tempo_;
+    return tempoMap_->points().front().bpm;
+}
+
+void Engine::setTempoMap(const TempoMap& map) {
+    std::lock_guard lock(mutex_);
+    if (map == *tempoMap_) return;  // (the settings pushed again: nothing to build)
+    tempoMap_ = std::make_shared<const TempoMap>(map);
+    ++tempoVersion_;
+    rebuildSnapshotLocked();
+}
+
+TempoMap Engine::tempoMap() {
+    std::lock_guard lock(mutex_);
+    return *tempoMap_;
 }
 
 void Engine::setTimeSignature(int numerator, int denominator) {
-    const bool powerOfTwo = denominator > 0 && (denominator & (denominator - 1)) == 0;
-    if (numerator < 1 || numerator > 32 || !powerOfTwo || denominator > 32) {
-        throw std::invalid_argument("Unsupported time signature");
-    }
+    if (!MeterMap::valid(numerator, denominator)) throw std::invalid_argument("Unsupported time signature");
+    setMeter(MeterMap(numerator, denominator));
+}
+
+void Engine::setMeter(const MeterMap& meter) {
     std::lock_guard lock(mutex_);
-    if (numerator == timeSigNum_ && denominator == timeSigDen_) return;
-    timeSigNum_ = numerator;
-    timeSigDen_ = denominator;
+    if (meter == *meter_) return;
+    meter_ = std::make_shared<const MeterMap>(meter);
     rebuildSnapshotLocked();
+}
+
+MeterMap Engine::meter() {
+    std::lock_guard lock(mutex_);
+    return *meter_;
 }
 
 void Engine::setSongKey(int tonic, bool minor) {

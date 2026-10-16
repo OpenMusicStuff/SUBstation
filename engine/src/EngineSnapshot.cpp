@@ -71,11 +71,11 @@ void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const s
     }
 }
 
-std::vector<AutomationNode> Engine::automationNodes(const AutomationLaneDesc& desc, double samplesPerBeat) {
+std::vector<AutomationNode> Engine::automationNodes(const AutomationLaneDesc& desc, const RenderSnapshot& snap) {
     std::vector<AutomationNode> nodes;
     nodes.reserve(desc.points.size());
     for (const AutomationPoint& point : desc.points) {
-        nodes.push_back({std::llround(std::max(0.0, point.beat) * samplesPerBeat), std::clamp(point.value, 0.f, 1.f),
+        nodes.push_back({snap.sampleAt(std::max(0.0, point.beat)), std::clamp(point.value, 0.f, 1.f),
                          std::clamp(point.curve, -1.f, 1.f)});
     }
     std::stable_sort(nodes.begin(), nodes.end(),
@@ -93,14 +93,17 @@ void ensureDelay(std::shared_ptr<DelayLine>& delay, int samples) {
 }
 
 // A note's bend in samples (null: it doesn't bend): its points sorted, its
-// vibratos' rates in cycles a sample; those that can't swing left out.
-std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, double samplesPerBeat, double sampleRate) {
+// vibratos' rates in cycles a sample; those that can't swing left out. Its times
+// are beats from the note's start, in samples where the note is (by the tempo map).
+std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, const RenderSnapshot& snap) {
+    const double start = note.startBeat;
+    const double sampleRate = snap.sampleRate;
     const bool bends = std::any_of(note.bend.begin(), note.bend.end(), [](const BendPoint& p) { return p.semitones != 0.0; });
     const auto swings = [](const VibratoSpan& v) { return v.length > 0.0 && v.depth != 0.0 && v.rate > 0.0; };
     if (!bends && std::none_of(note.vibrato.begin(), note.vibrato.end(), swings)) return nullptr;
     auto render = std::make_shared<NoteBendRender>();
     for (const BendPoint& point : note.bend) {
-        render->points.push_back({point.time * samplesPerBeat,  // (before the note's start: where it starts from)
+        render->points.push_back({snap.samplesBetween(start, point.time),  // (before the note's start: where it starts from)
                                   std::clamp(point.semitones, -kMaxBendSemitones, kMaxBendSemitones),
                                   std::clamp(point.curve, -1.0, 1.0)});
     }
@@ -108,7 +111,8 @@ std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, double samp
                      [](const BendPoint& a, const BendPoint& b) { return a.time < b.time; });
     for (const VibratoSpan& vibrato : note.vibrato) {
         if (!swings(vibrato)) continue;
-        render->vibrato.push_back({vibrato.start * samplesPerBeat, vibrato.length * samplesPerBeat,
+        render->vibrato.push_back({snap.samplesBetween(start, vibrato.start),
+                                   snap.samplesBetween(start + vibrato.start, vibrato.length),
                                    std::clamp(vibrato.depth, -kMaxBendSemitones, kMaxBendSemitones),
                                    vibrato.rate / sampleRate, vibrato.fade});
     }
@@ -131,7 +135,7 @@ void Engine::buildAutomationLocked(const StripBuild& build, int faderLatency, St
                                    : desc.param == kTrackOnLane && !master ? &strip.on
                                                                          : nullptr;
         if (!target) continue;  // (a send's: its edge's)
-        target->nodes = automationNodes(desc, build.samplesPerBeat);
+        target->nodes = automationNodes(desc, *build.snap);
         target->latency = faderLatency;
     }
 }
@@ -178,7 +182,7 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
                 if (desc.processorId != slots[s].processorId || desc.points.empty()) continue;
                 AutomationRender* target = desc.param == volume ? &render.volume : desc.param == pan ? &render.pan : nullptr;
                 if (!target) continue;
-                target->nodes = automationNodes(desc, build.samplesPerBeat);
+                target->nodes = automationNodes(desc, *build.snap);
                 target->latency = faderLatency;
             }
             buildChainLocked(model.id, build, depth + 1, snap, render);
@@ -255,7 +259,7 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
             device.lane.steps = 1;
             device.lane.insert = static_cast<int>(place - chain.inserts.begin());
             device.lane.latency = before;
-            device.lane.nodes = automationNodes(desc, build.samplesPerBeat);
+            device.lane.nodes = automationNodes(desc, *build.snap);
             // (A rack's latency is what its chains add: set as this snapshot was aligned.)
             device.latency = insertLatency(*processor);
             ensureDelay(found->second.switchDelay, device.latency);
@@ -276,7 +280,7 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
         lane.steps = info->stepCount();
         lane.insert = static_cast<int>(place - chain.inserts.begin());
         lane.latency = before;
-        lane.nodes = automationNodes(desc, build.samplesPerBeat);
+        lane.nodes = automationNodes(desc, *build.snap);
         out.automation.push_back(std::move(lane));
     }
     std::stable_sort(out.automation.begin(), out.automation.end(),
@@ -344,24 +348,26 @@ const std::shared_ptr<const RenderSnapshot>& Engine::currentSnapshotLocked() {
     return snapshotHold_;
 }
 
-NoteList Engine::renderedNotesLocked(TrackModel& track, double spb) {
-    if (!track.rendered || track.renderedSpb != spb || track.renderedRate != sampleRate_) {
+NoteList Engine::renderedNotesLocked(TrackModel& track, const RenderSnapshot& snap) {
+    if (!track.rendered || track.renderedTempo != snap.tempoVersion || track.renderedRate != sampleRate_) {
         auto notes = std::make_shared<std::vector<NoteRender>>();
         notes->reserve(track.notes.size());
         for (const NoteDesc& note : track.notes) {
             NoteRender nr;
-            nr.start = std::max<int64_t>(0, std::llround(note.startBeat * spb));
-            nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
+            nr.startBeat = std::max(0.0, note.startBeat);
+            nr.endBeat = note.startBeat + note.lengthBeats;
+            nr.start = std::max<int64_t>(0, snap.sampleAt(note.startBeat));
+            nr.end = std::max<int64_t>(nr.start + 1, snap.sampleAt(nr.endBeat));
             nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
             nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
-            nr.bend = noteBend(note, spb, sampleRate_);
+            nr.bend = noteBend(note, snap);
             notes->push_back(std::move(nr));
         }
         std::sort(notes->begin(), notes->end(), [](const NoteRender& a, const NoteRender& b) {
             return a.start != b.start ? a.start < b.start : a.key < b.key;
         });
         track.rendered = std::move(notes);
-        track.renderedSpb = spb;
+        track.renderedTempo = snap.tempoVersion;
         track.renderedRate = sampleRate_;
     }
     return NoteList(track.rendered);
@@ -374,14 +380,13 @@ void Engine::buildSnapshotLocked() {
     dropGoneOutputSidechainsLocked();
     auto snap = std::make_shared<RenderSnapshot>();
     snap->sampleRate = sampleRate_;
-    snap->tempo = tempo_;
-    snap->timeSigNum = timeSigNum_;
-    snap->timeSigDen = timeSigDen_;
+    snap->tempoMap = tempoMap_;
+    snap->tempoVersion = tempoVersion_;
+    snap->meter = meter_;
     snap->keyTonic = keyTonic_;
     snap->keyMinor = keyMinor_;
-    const double spb = snap->samplesPerBeat();
-    snap->loopStart = std::llround(loopStartBeat_ * spb);
-    snap->loopEnd = std::llround(loopEndBeat_ * spb);
+    snap->loopStart = snap->sampleAt(loopStartBeat_);
+    snap->loopEnd = snap->sampleAt(loopEndBeat_);
     snap->loopEnabled = loopEnabled_ && snap->loopEnd - snap->loopStart >= 256;
     snap->punchIn = punchIn_;
     snap->punchOut = punchOut_;
@@ -599,7 +604,7 @@ void Engine::buildSnapshotLocked() {
                 const std::string param = "send:" + std::to_string(model.to);
                 for (const AutomationLaneDesc& desc : track.automation) {
                     if (desc.processorId != 0 || desc.param != param || desc.points.empty()) continue;
-                    edge.level.nodes = automationNodes(desc, spb);
+                    edge.level.nodes = automationNodes(desc, *snap);
                     edge.level.latency = aligned.inputLatency[static_cast<size_t>(route.to)];
                 }
             }
@@ -638,7 +643,7 @@ void Engine::buildSnapshotLocked() {
                 build.sidechainOf[static_cast<size_t>(device)].push_back(edge);
             }
         }
-        build.samplesPerBeat = spb;
+        build.snap = snap.get();
         build.chainTaps = &chainTaps;
         return build;
     };
@@ -703,7 +708,7 @@ void Engine::buildSnapshotLocked() {
         buildAutomationLocked(build, render.inputLatency + render.latency, render);
         // (A track left out keeps its notes while a device elsewhere takes them.)
         const bool fed = fedTracks.count(track.id) > 0;
-        if (!silent[static_cast<size_t>(t)] || fed) render.notes = renderedNotesLocked(track, spb);
+        if (!silent[static_cast<size_t>(t)] || fed) render.notes = renderedNotesLocked(track, *snap);
         std::array<size_t, kNumStretchConfigs> stretching{};
         for (size_t i = 0; i < (idle[static_cast<size_t>(t)] ? 0 : track.clips.size()); ++i) {  // (idle: no use)
             const ClipDesc& clip = track.clips[i];
@@ -712,14 +717,17 @@ void Engine::buildSnapshotLocked() {
             const auto& source = it->second;
             ClipRender cr;
             cr.source = source;
-            cr.start = std::max<int64_t>(0, std::llround(clip.startBeat * spb));
+            cr.start = std::max<int64_t>(0, snap->sampleAt(clip.startBeat));
             cr.sourceOffset = std::clamp<int64_t>(std::llround(clip.offsetSec * sampleRate_), 0, source->frames());
             const bool warped = clip.warp && clip.segmentBpm > 0.0;
+            const double endBeat = clip.startBeat + clip.durationSec * clip.segmentBpm / 60.0;
             if (warped) {
-                // Locked to beats: both ends sit on their beats at any tempo.
-                cr.rate = tempo_ / clip.segmentBpm;
-                const double endBeat = clip.startBeat + clip.durationSec * clip.segmentBpm / 60.0;
-                cr.length = std::llround(endBeat * spb) - cr.start;
+                // Locked to beats: both ends sit on their beats at any tempo. (Under a tempo
+                // that changes along the clip, at the rate that takes it from one to the other.)
+                cr.length = snap->sampleAt(endBeat) - cr.start;
+                cr.rate = tempoMap_->constant() || cr.length <= 0
+                              ? tempoMap_->points().front().bpm / clip.segmentBpm
+                              : clip.durationSec * sampleRate_ / static_cast<double>(cr.length);
             } else {
                 cr.length = std::llround(clip.durationSec * sampleRate_);
             }
@@ -732,12 +740,15 @@ void Engine::buildSnapshotLocked() {
             // into the file, but none at the file's own start or end (a one-shot's
             // attack stays as it is). Its own are shortened in proportion where
             // together they would be longer than it; the short ones give way to them.
-            const auto fadeLength = [&](double sec) {
-                const double samples = warped ? sec * clip.segmentBpm / 60.0 * spb : sec * sampleRate_;
+            const auto fadeLength = [&](double sec, bool atEnd) {
+                const double beats = sec * clip.segmentBpm / 60.0;  // (warped: in the clip's beats, where they are)
+                const double samples = !warped ? sec * sampleRate_
+                                       : atEnd ? snap->samplesBetween(endBeat - beats, beats)
+                                               : snap->samplesBetween(clip.startBeat, beats);
                 return std::llround(std::clamp(samples, 0.0, 1e15));
             };
-            int64_t ownIn = clip.fadeInSec > 0.0 ? fadeLength(clip.fadeInSec) : 0;
-            int64_t ownOut = clip.fadeOutSec > 0.0 ? fadeLength(clip.fadeOutSec) : 0;
+            int64_t ownIn = clip.fadeInSec > 0.0 ? fadeLength(clip.fadeInSec, false) : 0;
+            int64_t ownOut = clip.fadeOutSec > 0.0 ? fadeLength(clip.fadeOutSec, true) : 0;
             if (ownIn + ownOut > cr.length) {
                 const double share = static_cast<double>(ownIn) / static_cast<double>(ownIn + ownOut);
                 ownIn = std::llround(share * static_cast<double>(cr.length));

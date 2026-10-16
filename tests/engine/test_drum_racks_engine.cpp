@@ -74,7 +74,7 @@ sub::TrackRender trackOf(std::vector<std::shared_ptr<sub::Processor>> inserts, s
 std::shared_ptr<sub::RenderSnapshot> snapshotOf(sub::TrackRender track) {
     auto snap = std::make_shared<sub::RenderSnapshot>();
     snap->sampleRate = kSampleRate;
-    snap->tempo = 120.0;
+    snap->tempoMap = std::make_shared<const sub::TempoMap>(120.0);
     snap->tracks.push_back(std::move(track));
     return snap;
 }

@@ -36,7 +36,7 @@ class Channel;
 
 namespace sub::sandbox {
 
-inline constexpr uint32_t kVersion = 4;
+inline constexpr uint32_t kVersion = 5;
 
 enum class Kind : uint32_t {
     // Engine → host. (Instance: the plug-in it is about; request: answered by a Reply with it.)
@@ -146,6 +146,7 @@ struct BlockContext {
     double tempo = 120.0;
     double loopStartBeat = 0.0;
     double loopEndBeat = 0.0;
+    double barStartBeat = 0.0;
     int32_t timeSigNum = 4;
     int32_t timeSigDen = 4;
     int32_t keyTonic = -1;

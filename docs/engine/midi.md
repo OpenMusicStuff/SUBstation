@@ -26,7 +26,7 @@ opened). Everything else on this page works the same there, including input sent
 
 - The engine bridge flattens a MIDI track's clips into the notes they play, in beats (`setTrackNotes`), keeping
   only what the clips play (notes cut at their clip's end), each with its bend (points and vibratos). The
-  snapshot converts them to samples at the current tempo.
+  snapshot converts them to samples by the tempo map.
 - Every note-on carries an id of its own; the note's note-off and bends carry it too (MIDI 2.0's per-note
   addressing; VST3's note ids). While a note sounds the renderer sends its bend along its curve: where it
   starts, then every 32 samples where it moved, and on its last sample (`NoteBend` events).
@@ -83,7 +83,8 @@ its bend: `bend` (`BendPoint`s: time in beats from the note's start, semitones, 
 `> start`), `key` (clamped to 0..127), `velocity` (clamped to 1..127), and `bend` (a shared
 `NoteBendRender`, null if it doesn't bend: its points' times in samples from its start, its vibratos'
 starts and lengths in samples and rates in cycles a sample). A track's are sorted by start, then key.
-`EngineSnapshot.cpp` rounds `beat * samplesPerBeat` for both ends; `noteBend()` leaves out vibratos that
+`EngineSnapshot.cpp` rounds where the tempo map puts both ends (`RenderSnapshot::sampleAt`), keeping them
+in beats too (`startBeat`, `endBeat`), and a bend's times are the samples from the note's start where it is; `noteBend()` leaves out vibratos that
 can't swing and a bend whose points are all 0.
 
 **`ProcessEvent`** (Processor.h): what devices get. `NoteOn`/`NoteOff` with `data[0]` the key, `data[1]`
@@ -207,9 +208,10 @@ its release.
 
 ### Tempo changes (`Renderer::syncTempo`)
 
-When the snapshot's samples per beat change (tempo, or sample rate), the playhead, the expected
-position and every active note's `end` are scaled by the ratio, so they stay on the same beat. The new
-snapshot already has the notes themselves at the new tempo.
+When the tempo map (`tempoVersion`) or the sample rate changes, the playhead, the expected position and
+every active note's start and end go back to their beats by the new map (`ActiveNote::startBeat`,
+`endBeat`), so they stay on the same beat. The new snapshot already has the notes themselves at the new
+tempo.
 
 ### Preview notes
 

@@ -376,8 +376,7 @@ void Vst2Processor::fillTime(const ProcessContext& ctx) {
     t.nanoSeconds = static_cast<double>(hostTimeNs());
     t.ppqPos = ctx.beatPos;
     t.tempo = ctx.tempo;
-    const double beatsPerBar = ctx.beatsPerBar();
-    t.barStartPos = std::floor(ctx.beatPos / beatsPerBar + 1e-9) * beatsPerBar;
+    t.barStartPos = ctx.barStart();
     t.timeSigNumerator = ctx.timeSigNum;
     t.timeSigDenominator = ctx.timeSigDen;
     t.flags = kNanosValid | kPpqPosValid | kTempoValid | kBarsValid | kTimeSigValid;

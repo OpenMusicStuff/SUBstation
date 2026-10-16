@@ -103,8 +103,9 @@ struct ProcessContext {
     int64_t samplePos = 0;   // timeline position of the block's first frame
     double beatPos = 0.0;    // the same position in quarter-note beats
     double tempo = 120.0;
-    int timeSigNum = 4;
+    int timeSigNum = 4;      // the time signature at the block's start
     int timeSigDen = 4;
+    double barStartBeat = 0.0;  // where the bar the block starts in begins (bars may differ in length)
     bool playing = false;
     bool looping = false;    // playback wraps from loopEndBeat to loopStartBeat
     double loopStartBeat = 0.0;
@@ -121,6 +122,20 @@ struct ProcessContext {
     double samplesPerBeat() const noexcept { return tempo > 0.0 ? sampleRate * 60.0 / tempo : 0.0; }
     // Beats (quarter notes) in a bar of the time signature.
     double beatsPerBar() const noexcept { return std::max(1, timeSigNum) * 4.0 / std::max(1, timeSigDen); }
+    // Where the bar the block starts in begins: barStartBeat, or (a context made without it, which can't be
+    // the one before the block) bars of this time signature from beat 0.
+    double barStart() const noexcept {
+        const double bar = beatsPerBar();
+        if (barStartBeat <= beatPos + 1e-9 && beatPos - barStartBeat < bar + 1e-9) return barStartBeat;
+        return std::floor(beatPos / bar + 1e-9) * bar;
+    }
+    // How far a grid of `step` beats is shifted from beat 0 to fall on the bar's lines (0 when bars
+    // are all alike from beat 0: a step that divides a bar falls on them already).
+    double gridOffset(double step) const noexcept {
+        if (step <= 0.0) return 0.0;
+        const double offset = std::fmod(barStart(), step);
+        return offset < 1e-9 || step - offset < 1e-9 ? 0.0 : offset;
+    }
 };
 
 // How a parameter's value is shown when that isn't the value itself, as Vital's

@@ -60,7 +60,7 @@ std::shared_ptr<sub::RenderSnapshot> snapshotOf(const std::shared_ptr<sub::Proce
                                                 std::vector<sub::NoteRender> notes) {
     auto snap = std::make_shared<sub::RenderSnapshot>();
     snap->sampleRate = kSampleRate;
-    snap->tempo = 120.0;
+    snap->tempoMap = std::make_shared<const sub::TempoMap>(120.0);
     sub::TrackRender track;
     track.id = 1;
     track.params = std::make_shared<sub::TrackParams>();
