@@ -1,16 +1,20 @@
 #pragma once
 
 // Stereo peak meter with a falling display: -60 to +6 dB, falling
-// kFallPerUpdate of the scale per update (updates come at about 30 Hz), with a
-// clip light at full scale that a click clears. Levels (linear peaks) are
-// pushed with setLevels() once per meter update, e.g. from the app layer's
-// meters signal; the fall needs every update, even unchanged ones.
+// kFallPerSecond of the scale a second, with a clip light at full scale that a
+// click clears. Levels (linear peaks) are pushed with setLevels() once per
+// meter update, e.g. from the app layer's meters signal; it falls by the time
+// since the last update (DisplayClock::elapsed: updates by hand count a
+// display tick each), so it needs every update, even unchanged ones, and falls
+// as fast however often they come.
 //
 // `compact`: as Ableton's meters between devices: two thin bars on a faint
 // track, no clip light (nor a click to clear it), each with its peak held as a
-// tick for about a second before it falls.
+// tick for kHoldSeconds before it falls.
 
 #include "sg/SgCanvas.h"
+
+#include <QElapsedTimer>
 
 #include <QtQml/qqmlregistration.h>
 
@@ -27,8 +31,8 @@ class Meter : public SgCanvas {
 public:
     static constexpr double kFloorDb = -60.0;
     static constexpr double kCeilingDb = 6.0;
-    static constexpr double kFallPerUpdate = 0.035;  // fraction of the scale per update (~30 Hz)
-    static constexpr int kHoldUpdates = 30;          // a compact meter's peak tick holds this long (~1 s)
+    static constexpr double kFallPerSecond = 0.035 / 0.033;  // of the scale (3.5 % a 33 ms update)
+    static constexpr double kHoldSeconds = 0.99;             // a compact meter's peak tick holds (30 updates)
 
     explicit Meter(QQuickItem* parent = nullptr);
 
@@ -60,7 +64,8 @@ private:
 
     double display_[2] = {0.0, 0.0};
     double held_[2] = {0.0, 0.0};  // the peak ticks (compact)
-    int holding_[2] = {0, 0};      // updates they still hold for
+    double holding_[2] = {0.0, 0.0};  // seconds they still hold for
+    QElapsedTimer sinceUpdate_;
     bool clipped_ = false;
     bool compact_ = false;
 };

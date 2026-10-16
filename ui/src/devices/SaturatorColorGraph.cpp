@@ -154,7 +154,7 @@ void SaturatorColorGraph::feed(EqAnalyzer::Channel channel, const std::vector<fl
     if (samples.empty()) {
         quiet += dt;
         if (quiet > kHoldSeconds && analyzer_.live(channel))
-            analyzer_.feed(channel, nullptr, 0, rate);  // (falls back)
+            analyzer_.feed(channel, nullptr, 0, rate, dt);  // (falls back)
         return;
     }
     quiet = 0.0;
@@ -164,7 +164,7 @@ void SaturatorColorGraph::feed(EqAnalyzer::Channel channel, const std::vector<fl
     zeros = silent ? std::min<int>(EqAnalyzer::kFftSize, zeros + int(samples.size())) : 0;
     if (zeros >= EqAnalyzer::kFftSize && !analyzer_.live(channel))
         return;
-    analyzer_.feed(channel, samples.data(), samples.size(), rate);
+    analyzer_.feed(channel, samples.data(), samples.size(), rate, dt);
 }
 
 void SaturatorColorGraph::refreshDisplays() {

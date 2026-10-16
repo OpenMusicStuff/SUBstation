@@ -25,6 +25,7 @@
 #include "controls/Meter.h"
 #include "controls/OscilloscopeItem.h"
 #include "controls/ValueBoxItem.h"
+#include "devices/DisplayClock.h"
 
 using sub::ui::KnobItem;
 using sub::ui::Meter;
@@ -453,15 +454,25 @@ private Q_SLOTS:
         QVERIFY(qAbs(meter->leftLevel() - 60.0 / 66.0) < 1e-12);
         QVERIFY(qAbs(meter->rightLevel() - Meter::fraction(0.5)) < 1e-12);
         QVERIFY(meter->clipped());  // full scale
-        // Silence: down 3.5 % of the scale an update.
+        // Silence: down 3.5 % of the scale every 33 ms, by the time since the last update (updates by hand,
+        // back to back, count a display tick each).
+        const double tick = sub::ui::DisplayClock::instance()->tickSeconds();
+        const double fall = Meter::kFallPerSecond * tick;
+        QVERIFY(qAbs(Meter::kFallPerSecond * 0.033 - 0.035) < 1e-12);
         meter->setLevels(0.0, 0.0);
-        QVERIFY(qAbs(meter->leftLevel() - (60.0 / 66.0 - 0.035)) < 1e-12);
+        QVERIFY(qAbs(meter->leftLevel() - (60.0 / 66.0 - fall)) < 1e-12);
         meter->setLevels(0.0, 0.0);
-        QVERIFY(qAbs(meter->leftLevel() - (60.0 / 66.0 - 0.07)) < 1e-12);
+        QVERIFY(qAbs(meter->leftLevel() - (60.0 / 66.0 - 2 * fall)) < 1e-12);
         // A louder peak shows at once.
         meter->setLevels(1.0, 0.0);
         QVERIFY(qAbs(meter->leftLevel() - 60.0 / 66.0) < 1e-12);
-        for (int i = 0; i < 30; ++i)
+        // Updates a while apart: it falls by the time between them (a second's worth, at most 0.1 s an update).
+        QTest::qWait(60);
+        meter->setLevels(0.0, 0.0);
+        const double after = 60.0 / 66.0 - meter->leftLevel();
+        QVERIFY2(after >= Meter::kFallPerSecond * 0.055 && after <= Meter::kFallPerSecond * 0.1 + 1e-12,
+                 qPrintable(QString::number(after)));
+        for (int i = 0; i < int(1.0 / fall) + 1; ++i)
             meter->setLevels(0.0, 0.0);
         QCOMPARE(meter->leftLevel(), 0.0);
         QVERIFY(meter->clipped());  // it stays until clicked
@@ -517,14 +528,19 @@ private Q_SLOTS:
         QVERIFY(scope->tracePoints().size() >= 148);
         const int reads = feed.reads;
         // Nothing new: no read; it holds for a while (a gap between device
-        // buffers mustn't flicker it), then shrinks by 0.8 an update.
+        // buffers mustn't flicker it), then shrinks by 0.8 every 16 ms (polls by
+        // hand, back to back, count a display tick each).
         const float before = scope->samples()[25];
-        for (int i = 1; i < OscilloscopeItem::kHoldUpdates; ++i)
+        const double tick = sub::ui::DisplayClock::instance()->tickSeconds();
+        const int holding = int(std::lround(OscilloscopeItem::kHoldSeconds / tick));
+        QCOMPARE(holding, 9);  // (at 60 Hz: the 10th update fades)
+        for (int i = 0; i < holding; ++i)
             scope->poll();
         QCOMPARE(feed.reads, reads);
         QCOMPARE(scope->samples()[25], before);
         scope->poll();
-        QVERIFY(qAbs(scope->samples()[25] - before * 0.8f) < 1e-6f);
+        const float shrunk = float(before * std::pow(OscilloscopeItem::kFade, tick / OscilloscopeItem::kFadeSeconds));
+        QVERIFY(qAbs(scope->samples()[25] - shrunk) < 1e-6f);
         for (int i = 0; i < 60 && !scope->samples().empty(); ++i)
             scope->poll();
         QVERIFY(scope->samples().empty());  // flat, then idle

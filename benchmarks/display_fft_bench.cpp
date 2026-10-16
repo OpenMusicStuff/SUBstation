@@ -139,15 +139,16 @@ int main(int argc, char** argv) {
         at = (at + perTick) % (audio.size() - perTick);
         return samples;
     };
+    const double seconds = 1.0 / rate;
     an::EqAnalyzer eq;
     const double eqTick = timeUs(std::max(1, rounds / 4), [&] {
-        eq.feed(an::EqAnalyzer::Input, next(), perTick, kSampleRate);
-        eq.feed(an::EqAnalyzer::Output, next(), perTick, kSampleRate);
+        eq.feed(an::EqAnalyzer::Input, next(), perTick, kSampleRate, seconds);
+        eq.feed(an::EqAnalyzer::Output, next(), perTick, kSampleRate, seconds);
         sink = sink + eq.levels(an::EqAnalyzer::Input)[10];
     });
     an::FallingSpectrum falling;
     const double fallingTick = timeUs(rounds, [&] {
-        falling.add(next(), perTick, kSampleRate);
+        falling.add(next(), perTick, kSampleRate, seconds);
         sink = sink + falling.levels()[10];
     });
     std::printf("\nA display tick at %.0f Hz (%zu samples a channel at 48 kHz):\n", rate, perTick);

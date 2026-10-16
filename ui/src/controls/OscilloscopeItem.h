@@ -9,9 +9,10 @@
 // kWindow after it, so steady tones stand still; with none, it shows the newest
 // window. trace() turns the samples into one column per pixel (the column's
 // highest then lowest sample), built when the samples change, not on every
-// paint. When no new audio comes for kHoldUpdates updates (longer than any
-// device buffer), the trace shrinks by kFadePerUpdate each update (0.64 per
-// 33 ms) and stops repainting once flat. Without the hold, an update that
+// paint. When no new audio comes for kHoldSeconds (longer than any device
+// buffer), the trace shrinks by kFade every kFadeSeconds of the time past it
+// (by the time since the last update, DisplayClock::elapsed: as fast however
+// often it updates) and stops repainting once flat. Without the hold, an update that
 // fell between two device buffers (a buffer longer than kUpdateMs, or the
 // timer firing twice in one buffer) faded or cleared the trace and the next
 // one restored it, so it flickered, most visibly in silence (a bright flat
@@ -33,6 +34,7 @@
 
 #include "sg/SgCanvas.h"
 
+#include <QElapsedTimer>
 #include <QList>
 #include <QPointF>
 #include <QPointer>
@@ -51,9 +53,9 @@ class OscilloscopeItem : public SgCanvas {
 public:
     static constexpr int kWindow = 1024;  // samples shown; twice as many are read to find a trigger in
     static constexpr int kUpdateMs = 16;  // ~60 fps
-    static constexpr double kFadePerUpdate = 0.8;  // while no audio comes (as fast as 0.64 per 33 ms)
+    static constexpr double kFade = 0.8, kFadeSeconds = 0.016;  // while no audio comes: 0.8 every 16 ms
     static constexpr double kSilent = 1e-4;        // below this the trace counts as flat and stops repainting
-    static constexpr int kHoldUpdates = 10;        // updates without audio before the fade (~160 ms)
+    static constexpr double kHoldSeconds = 0.144;  // without audio before the fade (the 10th update of 16 ms fades)
 
     explicit OscilloscopeItem(QQuickItem* parent = nullptr);
 
@@ -90,7 +92,8 @@ private:
     std::vector<QPointF> trace_;
     quint64 written_ = 0;
     bool hasWritten_ = false;
-    int staleUpdates_ = 0;  // updates since the feed last moved
+    double stale_ = 0.0;  // seconds since the feed last moved
+    QElapsedTimer sinceUpdate_;
 };
 
 }  // namespace sub::ui

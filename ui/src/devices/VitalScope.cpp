@@ -51,7 +51,7 @@ void VitalScope::refreshDisplays() {
         stale_ = 0.0;
         level_.target = 1.0;
         if (mode_ == QLatin1String("spectrum")) {
-            if (spectrum_.add(samples.data(), samples.size(), sampleRate()))
+            if (spectrum_.add(samples.data(), samples.size(), sampleRate(), seconds))
                 columns_ = spectrum_.columns(std::max(2, int(plot().width())), kLow, kHigh);
         } else {
             updateShown();
@@ -61,7 +61,7 @@ void VitalScope::refreshDisplays() {
         level_.target = 0.0;
         if (mode_ == QLatin1String("spectrum") && !columns_.empty()) {
             // Falling back, until nothing shows.
-            if (spectrum_.add(nullptr, 0, sampleRate())) {
+            if (spectrum_.add(nullptr, 0, sampleRate(), seconds)) {
                 columns_ = spectrum_.columns(std::max(2, int(plot().width())), kLow, kHigh);
                 moved = std::any_of(columns_.begin(), columns_.end(), [](double v) { return v > -90.0; });
             }

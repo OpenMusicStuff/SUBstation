@@ -42,16 +42,20 @@ takes about a tenth of the time of the radix-2 transform it replaced, and an ope
 ## Spectra
 
 Both analyzers keep the latest samples of a display, take a Hann-windowed FFT of them each time more come, and smooth
-the levels from one read to the next. Levels are in dB, with the window's gain taken out (`2 / sum(window)`).
+the levels from one read to the next, by the seconds the read stands for (the caller's tick, `DisplayClock::elapsed`),
+so they move as fast however often the displays refresh. A read without samples holds the spectrum for `kHoldSeconds`
+(0.24 s: the audio comes in blocks, so a refresh between two gets none while it plays); only the time past it falls.
+Levels are in dB, with the window's gain taken out (`2 / sum(window)`).
 
 - **`FallingSpectrum`** (the Delay, [FilterGraph.h](../../ui/src/devices/FilterGraph.h), display `"input"`): the
-  latest 4096 samples (`kFftSize`). A bin rises at once to a louder level and falls back by `kFallDb` (1 dB) a read,
-  never below `kFloorDb` (-90 dB); a read with no samples lets it fall. `add()` says whether anything changed, so the
+  latest 4096 samples (`kFftSize`). A bin rises at once to a louder level and falls back `kFallDbPerSecond` (62.5 dB a
+  second: 1 dB a 16 ms read), never below `kFloorDb` (-90 dB); reads without samples let it fall, after the hold. `add()` says whether anything changed, so the
   item repaints only then. `columns(n, low, high)` gives the spectrum under each of n columns on a log axis: the
   loudest bin under a column, or, low down where a bin spans several columns, the level interpolated between bins.
 - **`EqAnalyzer`** (the EQ, [EqGraph.h](../../ui/src/devices/EqGraph.h), displays `"input"` and `"output"`): the
-  latest 8192 samples of each. Each read, a level moves `kRise` (0.55) of the way up to a louder one, or `kFall` (0.09)
-  of the way down to a quieter one, as Pro-Q's analyzer does. `live()` says whether a channel shows anything above the
+  latest 8192 samples of each. Each bin's power is averaged over `kAverageSeconds` (50 ms); its level in dB follows,
+  rising with `kRiseSeconds` (30 ms) and falling with `kFallSeconds` (150 ms) as time constants, as Pro-Q's analyzer
+  does: by the time the samples that came cover, or a read's own seconds without any. `live()` says whether a channel shows anything above the
   floor. `columns(channel, freqs)` gives the level at each of the graph's frequencies (the loudest bin between a
   column and the next, or interpolated between bins), smoothed across neighbours (¼, ½, ¼), and tilted by `kTilt`
   (4.5 dB an octave around 1 kHz) so that music looks about level. The tilt fades in over the `kTiltFade` (18 dB)
@@ -143,12 +147,14 @@ while nothing else is done. Nothing is written while the user drags the curve.
 
 - [test_fft.cpp](../../tests/app/test_fft.cpp): `fft`, its inverse and `rfft` against a direct DFT and the radix-2
   transform they replaced, for every power of two from 1 to 16384; `rfft`'s padding and cutting; plans per thread.
+- [test_spectrum.cpp](../../tests/app/test_spectrum.cpp): the analyzers holding through a gap and falling as far a
+  second at 30, 60, 120, 144 and 240 reads a second.
 - [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp): the FFT against its definition, the clash where
   both are loud, the kick alone without an input, the reduction holding to the peak and never rising again, `curveAt`
   bending as automation does, `fitPoints` finding a curve again, `analyze` per character, and `Capture` handing out
   each hit. Where it checks numbers, they are values numpy computed from the same signals.
 - [test_ui_device_editors.cpp](../../tests/app/test_ui_device_editors.cpp): the Delay's spectrum (a tone peaks at its
-  frequency, then falls back 1 dB a read), the EQ's analyzer (silence stays flat, a tone peaks at its frequency), and
+  frequency, holds 0.24 s, then falls back 1 dB a 16 ms read), the EQ's analyzer (silence stays flat, a tone peaks at its frequency), and
   the Sidechain's editor fitting a kick played through the engine: *Fit* in one undo step, Loose longer than Natural,
   *Auto* merging its fits.
 

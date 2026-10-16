@@ -2,32 +2,35 @@
 // Spectra of what devices' displays stream, for their editors' analyzers: the
 // Delay's input behind its filter curve, the EQ's input and output behind its
 // bands. Each keeps the latest samples, takes a Hann-windowed FFT of them as
-// more come (a display refresh at a time), and smooths the levels over time.
-// Plain maths on the UI thread: the editors' items draw the result.
+// more come (a display refresh at a time), and smooths the levels over time:
+// by the seconds a refresh took, so they move as fast however often the
+// displays refresh. Plain maths on the UI thread: the editors' items draw the
+// result.
 
 #include <cstddef>
 #include <vector>
 
 namespace sub::app::analysis {
 
-// Refreshes without samples the spectra hold still for before they fall back
-// (about 0.25 s at 60 a second). The audio comes in blocks: at 60 refreshes a
-// second some refreshes get none while it plays, which isn't silence.
-inline constexpr int kHoldRefreshes = 15;
+// How long the spectra hold still without samples before they fall back (15
+// refreshes of 16 ms); only the time past it falls. The audio comes in blocks:
+// refreshing 60 times a second or more, some refreshes get none while it
+// plays, which isn't silence.
+inline constexpr double kHoldSeconds = 0.24;
 
 // The Delay's: the input's latest kFftSize samples, each bin's level in dB
-// rising at once and falling kFallDb per refresh.
+// rising at once and falling kFallDbPerSecond.
 class FallingSpectrum {
 public:
     static constexpr int kFftSize = 4096;
     static constexpr double kFloorDb = -90.0;
-    static constexpr double kFallDb = 1.0;  // per display refresh (~60 a second)
+    static constexpr double kFallDbPerSecond = 62.5;  // (1 dB a 16 ms refresh)
 
     FallingSpectrum();
 
-    // The input's samples since the last call: the spectrum follows them (and
-    // falls back without any). Whether it changed.
-    bool add(const float* samples, std::size_t count, double sampleRate);
+    // The input's samples since the last call, `seconds` ago: the spectrum
+    // follows them (and falls back without any). Whether it changed.
+    bool add(const float* samples, std::size_t count, double sampleRate, double seconds);
     double sampleRate() const { return sampleRate_; }
     // dB per bin (kFftSize / 2 + 1).
     const std::vector<float>& levels() const { return spectrum_; }
@@ -42,12 +45,12 @@ private:
     std::vector<double> window_;
     double scale_ = 0.0;
     std::vector<float> spectrum_;
-    int quiet_ = 0;  // refreshes since samples last came
+    double quiet_ = 0.0;  // seconds since samples last came
 };
 
 // The EQ's analyzer: spectra of the input and the output, a Hann-windowed FFT
 // of the latest samples, in two stages, timed by what the samples that came
-// cover rather than per refresh. Each bin's power is averaged briefly
+// cover (or, without any, by the refresh's seconds). Each bin's power is averaged briefly
 // (kAverageSeconds: averaging the power, not the dB, steadies what partials
 // beating against each other make each frame's levels do); the level shown
 // follows that in dB, rising quickly (kRiseSeconds) and falling as Pro-Q's
@@ -64,7 +67,6 @@ public:
     static constexpr double kAverageSeconds = 0.05;  // the power's average
     static constexpr double kRiseSeconds = 0.03;     // the level's (in dB), rising and falling
     static constexpr double kFallSeconds = 0.15;
-    static constexpr double kRefreshSeconds = 1.0 / 60;  // a refresh without samples (silence) is this long
     static constexpr double kTiltFade = 18.0;  // dB above the floor over which the tilt comes in
     static constexpr double kSilentLevel = 1e-5;     // samples this quiet (-100 dBFS) or quieter are silence
     static constexpr double kSilenceSeconds = 0.15;  // this long of it (or of nothing coming) is no audio
@@ -72,8 +74,8 @@ public:
     EqAnalyzer();
 
     double sampleRate() const { return sampleRate_; }
-    // A channel's samples since the last refresh (none: it falls back).
-    void feed(Channel channel, const float* samples, std::size_t count, double sampleRate);
+    // A channel's samples since the last refresh, `seconds` ago (none: it falls back by those seconds).
+    void feed(Channel channel, const float* samples, std::size_t count, double sampleRate, double seconds);
     // Whether it shows anything above the floor.
     bool live(Channel channel) const;
     // Whether audio comes: something above kSilentLevel within the last kSilenceSeconds.
@@ -93,7 +95,7 @@ private:
     std::vector<float> samples_[2];
     std::vector<double> power_[2];  // per bin, averaged (kAverageSeconds)
     std::vector<float> levels_[2];  // the same in dB
-    int quiet_[2] = {0, 0};  // refreshes since samples last came
+    double quiet_[2] = {0.0, 0.0};  // seconds since samples last came
     double silentSeconds_[2] = {1e9, 1e9};  // since a sample above kSilentLevel came
 };
 

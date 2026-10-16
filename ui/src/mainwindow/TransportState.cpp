@@ -76,8 +76,9 @@ void TransportState::showPosition(double beat) {
 }
 
 void TransportState::meterTick() {
-    cpuTicks_ = (cpuTicks_ + 1) % kCpuEvery;
-    if (cpuTicks_ != 0 || !session_) return;
+    if (!cpuShown_.isValid()) cpuShown_.start();
+    if (cpuShown_.elapsed() < kCpuEveryMs || !session_) return;
+    cpuShown_.restart();
     const QString text =
         QStringLiteral("CPU %1%").arg(QString::number(session_->bridge()->cpuLoad() * 100.0, 'f', 0));
     if (text == cpuText_) return;

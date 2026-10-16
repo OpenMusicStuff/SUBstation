@@ -3,7 +3,7 @@
 // The Delay's filter: the band-pass's response on a 20 Hz..20 kHz log axis, its
 // dot dragged across for the frequency and up and down for the width (one undo
 // step per drag), over a spectrum of the device's display "input" (a 4096-point
-// Hann FFT of the latest samples, falling 1 dB a refresh).
+// Hann FFT of the latest samples, falling 62.5 dB a second: 1 dB a 16 ms refresh).
 
 #include "devices/DeviceCanvas.h"
 #include "devices/EditorPaint.h"
@@ -33,8 +33,8 @@ public:
     // `width` octaves apart around `center`, as the engine has them.
     static double response(double freq, double center, double width);
 
-    // The input's samples since the last refresh (the spectrum falls back without any).
-    void addSamples(const std::vector<float>& samples, double sampleRate);
+    // The input's samples since the last refresh, `seconds` ago (the spectrum falls back without any).
+    void addSamples(const std::vector<float>& samples, double sampleRate, double seconds);
     const sub::app::analysis::FallingSpectrum& spectrum() const { return spectrum_; }
 
     QRectF plot() const;

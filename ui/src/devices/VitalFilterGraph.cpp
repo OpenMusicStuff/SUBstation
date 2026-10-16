@@ -182,7 +182,7 @@ void VitalFilterGraph::refreshDisplays() {
     const double seconds = tickSeconds();
     const std::vector<float> samples = readDisplay(QStringLiteral("output"));
     bool moved = advanceDim(seconds);
-    if (spectrum_.add(samples.data(), samples.size(), sampleRate())) {
+    if (spectrum_.add(samples.data(), samples.size(), sampleRate(), seconds)) {
         columns_ = spectrum_.columns(std::max(2, int(area().width())), kLow, kHigh);
         moved = true;
     }

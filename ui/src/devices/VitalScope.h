@@ -3,7 +3,7 @@
 // What Vital plays, live, in its editor: the device's output (its display
 // "output", mono) as an oscilloscope (the latest kWindow samples, starting at a
 // rising zero crossing so a steady tone stands still) or as a spectrum (20 Hz
-// ..20 kHz, falling 1 dB a refresh); "badge" draws the scope faint and without
+// ..20 kHz, falling 62.5 dB a second); "badge" draws the scope faint and without
 // its well or grid, behind the preset's name. It reads how many voices play
 // (the display "voices") too. Once the sound stops it eases flat and goes
 // still (nothing repaints while silent).

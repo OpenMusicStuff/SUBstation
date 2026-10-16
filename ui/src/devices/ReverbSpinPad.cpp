@@ -261,11 +261,13 @@ void ReverbSpinPad::advance(double seconds) {
         }
     }
     place();
+    const bool step = trailPace_.step(seconds);  // (a point a step; between, the latest follows the particle)
     for (std::size_t k = 0; k < at_.size(); ++k) {
         if (radius_[k] <= 0.0)
             continue;
         std::array<QPointF, kTrail>& trail = trail_[k];
-        std::rotate(trail.rbegin(), trail.rbegin() + 1, trail.rend());  // the latest first
+        if (step)
+            std::rotate(trail.rbegin(), trail.rbegin() + 1, trail.rend());  // the latest first
         trail[0] = at_[k];
         const QPointF moved = at_[k] - painted_[k], tail = trail[kTrail - 1] - at_[k];
         if (std::hypot(moved.x(), moved.y()) >= kMoved || std::hypot(tail.x(), tail.y()) >= kMoved)

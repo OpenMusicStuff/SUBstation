@@ -371,7 +371,7 @@ void ReverbDecayGraph::updateColumns() { columns_ = spectrum_.columns(std::max(2
 void ReverbDecayGraph::refreshDisplays() {
     const double seconds = tickSeconds();
     const std::vector<float> tail = readDisplay(QStringLiteral("tail"));
-    if (spectrum_.add(tail.data(), tail.size(), sampleRate())) {
+    if (spectrum_.add(tail.data(), tail.size(), sampleRate(), seconds)) {
         updateColumns();
         spectrumChanged_ = true;
     }

@@ -228,10 +228,11 @@ void AmpDriveGraph::refreshDisplays() {
         shapeCurve();  // (the power stage's part alone)
         moving = true;
     }
-    // The trail: where the dots were over the last ticks.
+    // The trail: where the dots were over the last steps (TrailPace), the newest following them between.
     const double a = amplitude(input_.level);
     const bool settled = std::all_of(trail_.begin(), trail_.end(), [a](double t) { return t == a; });
-    std::move_backward(trail_.begin(), trail_.end() - 1, trail_.end());
+    if (trailPace_.step(dt))
+        std::move_backward(trail_.begin(), trail_.end() - 1, trail_.end());
     trail_[0] = a;
     if (moving || !settled) {
         Q_EMIT levelsChanged();

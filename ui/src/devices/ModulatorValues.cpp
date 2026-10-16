@@ -52,8 +52,7 @@ void ModulatorValues::watch(sub::app::Session* session, const QString& trackId, 
     if (!ticking_) {
         clock_.start();
         ticking_ = connect(DisplayClock::instance(), &DisplayClock::tick, this, [this] {
-            const double seconds = std::clamp(clock_.restart() / 1000.0, kDisplayRefreshMs / 1000.0, 0.1);
-            tick(seconds);
+            tick(DisplayClock::instance()->elapsed(clock_));
         });
     }
 }

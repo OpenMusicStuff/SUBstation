@@ -479,14 +479,20 @@ void PhaserGraph::refreshDisplays() {
     dotOpacity_.target = live_ ? 1.0 : 0.35;
     moving |= dotOpacity_.step(easeFraction(dt, 0.08), 1e-3);
     if (live_ || trailSettle_ > 0) {
-        // How far the dot went since the last tick (forward: under half a cycle a tick at any rate
-        // the displays resolve), and so how far it went over the trail's ticks, however fast.
-        const Dot& last = trail_[size_t((trailNext_ - 1 + kTrail) % kTrail)];
-        const double step = trailCount_ > 0 ? lfoPhase_ - last.phase - std::floor(lfoPhase_ - last.phase) : 0.0;
-        trail_[size_t(trailNext_)] = {lfoPhase_, lfoValue_, step};
-        trailNext_ = (trailNext_ + 1) % kTrail;
-        trailCount_ = std::min(trailCount_ + 1, kTrail);
-        trailSettle_ = live_ ? kTrail : trailSettle_ - 1;
+        // A point a step (TrailPace), the newest following the dot between steps. How far the dot went since
+        // the point before (forward: under half a cycle a step at any rate the displays resolve), and so how
+        // far it went over the trail's steps, however fast.
+        const bool added = trailPace_.step(dt) || trailCount_ == 0;
+        const int slot = added ? trailNext_ : (trailNext_ - 1 + kTrail) % kTrail;
+        const Dot& last = trail_[size_t((slot - 1 + kTrail) % kTrail)];
+        const bool hasLast = trailCount_ > (added ? 0 : 1);
+        const double step = hasLast ? lfoPhase_ - last.phase - std::floor(lfoPhase_ - last.phase) : 0.0;
+        trail_[size_t(slot)] = {lfoPhase_, lfoValue_, step};
+        if (added) {
+            trailNext_ = (trailNext_ + 1) % kTrail;
+            trailCount_ = std::min(trailCount_ + 1, kTrail);
+            trailSettle_ = live_ ? kTrail : trailSettle_ - 1;
+        }
         trailSpan_ = 0.0;
         for (int k = 0; k + 1 < trailCount_; ++k)  // (the newest's steps: the oldest's own came before it)
             trailSpan_ += trail_[size_t((trailNext_ - 1 - k + kTrail) % kTrail)].step;

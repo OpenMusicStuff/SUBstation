@@ -25,6 +25,7 @@
 // too) is one undo step.
 
 #include "devices/DeviceCanvas.h"
+#include "devices/EditorPaint.h"
 
 #include "analysis/SidechainFit.h"
 
@@ -59,7 +60,9 @@ public:
     static constexpr double kCurveHit = 7.0;  // px from the curve where a drag bends it
     static constexpr double kMeterWidth = 6.0;
     static constexpr double kMeterFloor = -60.0;
-    static constexpr int kTrail = 14;  // the playhead's trail, in refreshes
+    static constexpr int kTrail = 14;  // the playhead's trail: points TrailPace's step apart (0.22 s)
+    static constexpr double kKeyFallDbPerSecond = 93.75;  // the key's meter falling (1.5 dB a 16 ms tick)
+    static constexpr double kFlashDecay = 0.82, kFlashDecaySeconds = 0.016;  // a hit's light: 0.82 every 16 ms
 
     using Point = sub::app::sidechainFit::FitPoint;  // (x 0..1, y: 1 untouched, 0 ducked by the depth, curve)
 
@@ -111,9 +114,9 @@ public:
     Q_INVOKABLE void setCharacter(int index);
     // The parameters a fit sets: the curve, its length (in ms) and the crossover above the clash.
     sub::app::OrderedMap<QString, double> fitValues(const sub::app::sidechainFit::Fit& fit) const;
-    // A display refresh: the playhead (where on the curve, 0..1; none: not playing one), the key's
-    // peak since the last, and whether a hit came.
-    void tick(std::optional<double> phase, double keyPeak, bool hit);
+    // A display refresh, `seconds` after the last: the playhead (where on the curve, 0..1; none: not
+    // playing one), the key's peak since the last, and whether a hit came.
+    void tick(std::optional<double> phase, double keyPeak, bool hit, double seconds);
     // Reads the displays (as the meters update; the tests call it after rendering).
     Q_INVOKABLE void readDisplays() { refreshDisplays(); }
     // The fit being worked out (the analysis runs on a worker thread: it takes about 0.1 s, which on the
@@ -183,6 +186,7 @@ private:
     QString autoGesture_;
     // Live.
     std::vector<double> trail_;  // the playhead's latest positions (x 0..1), oldest first
+    TrailPace trailPace_;
     double level_ = kMeterFloor;  // the key's level (dB), falling back slowly
     double flash_ = 0.0;          // a hit lights the meter up
     // Interaction.

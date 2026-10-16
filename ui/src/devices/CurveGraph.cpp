@@ -327,7 +327,8 @@ void CurveGraph::refreshDisplays() {
     hitsSeen_ = capture_.hitCount();
     const double phase = capture_.lastPhase();
     const double length = lengthMs_ * capture_.sampleRate() / 1000.0;
-    tick(phase >= 0 ? std::optional<double>(phase / length) : std::nullopt, capture_.takeKeyPeak(), hit);
+    tick(phase >= 0 ? std::optional<double>(phase / length) : std::nullopt, capture_.takeKeyPeak(), hit,
+         tickSeconds());
     const std::vector<sf::Capture::Hit> done = capture_.hits();
     if (!done.empty()) {
         for (const auto& [kick, input] : done)
@@ -339,18 +340,23 @@ void CurveGraph::refreshDisplays() {
     }
 }
 
-void CurveGraph::tick(std::optional<double> phase, double keyPeak, bool hit) {
-    if (phase)
-        trail_.push_back(*phase);
-    else if (!trail_.empty())
-        trail_.push_back(-1.0);
+void CurveGraph::tick(std::optional<double> phase, double keyPeak, bool hit, double seconds) {
+    // A point a step (TrailPace), the newest following the playhead between steps.
+    const bool step = trailPace_.step(seconds) || trail_.empty();
+    if (phase || !trail_.empty()) {
+        const double x = phase ? *phase : -1.0;
+        if (step)
+            trail_.push_back(x);
+        else
+            trail_.back() = x;
+    }
     if (trail_.size() > std::size_t(kTrail))
         trail_.erase(trail_.begin(), trail_.end() - kTrail);
     if (!trail_.empty() && std::all_of(trail_.begin(), trail_.end(), [](double x) { return x < 0; }))
         trail_.clear();
     const double level = keyPeak > 1e-6 ? 20 * std::log10(keyPeak) : kMeterFloor;
-    level_ = std::max(level, level_ - 1.5);
-    flash_ = hit ? 1.0 : flash_ * 0.82;
+    level_ = std::max(level, level_ - kKeyFallDbPerSecond * seconds);
+    flash_ = hit ? 1.0 : flash_ * decayOver(seconds, kFlashDecay, kFlashDecaySeconds);
     update();
     Q_EMIT ticked();
 }

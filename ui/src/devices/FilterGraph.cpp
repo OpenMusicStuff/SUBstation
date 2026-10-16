@@ -55,10 +55,12 @@ void FilterGraph::sync() {
     update();
 }
 
-void FilterGraph::refreshDisplays() { addSamples(readDisplay(QStringLiteral("input")), sampleRate()); }
+void FilterGraph::refreshDisplays() {
+    addSamples(readDisplay(QStringLiteral("input")), sampleRate(), tickSeconds());
+}
 
-void FilterGraph::addSamples(const std::vector<float>& samples, double sampleRate) {
-    if (spectrum_.add(samples.data(), samples.size(), sampleRate)) {
+void FilterGraph::addSamples(const std::vector<float>& samples, double sampleRate, double seconds) {
+    if (spectrum_.add(samples.data(), samples.size(), sampleRate, seconds)) {
         updateColumns();
         update();
     }

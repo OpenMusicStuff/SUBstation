@@ -674,19 +674,24 @@ private Q_SLOTS:
         }
 
         // The spectrum of the input shows behind the filter's curve: a 1 kHz tone peaks at 1 kHz.
-        graph->addSamples(tone(1000.0, 8192), 48000.0);
+        const double tick = kDisplayRefreshMs / 1000.0;
+        graph->addSamples(tone(1000.0, 8192), 48000.0, tick);
         std::vector<double> columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
         const auto loudest = std::max_element(columns.begin(), columns.end());
         const double peak = 20.0 * std::pow(1000.0, (double(loudest - columns.begin()) + 0.5) / 200);
         QVERIFY2(900 < peak && peak < 1100, qPrintable(QString::number(peak)));
         QVERIFY(std::abs(*loudest - 20 * std::log10(0.5)) < 1.0);
         const double loudestDb = *loudest;  // (columns is read again below: the iterator goes with it)
-        // Nothing new for a moment (between two blocks of audio): it holds; for longer, it falls back slowly.
-        for (int i = 0; i < sub::app::analysis::kHoldRefreshes; ++i) graph->addSamples({}, 48000.0);
+        // Nothing new for a moment (between two blocks of audio): it holds (0.24 s: 15 refreshes of 16 ms); for
+        // longer, it falls back at 62.5 dB a second (1 dB a 16 ms refresh).
+        const int holding = int(std::lround(sub::app::analysis::kHoldSeconds / tick));
+        QCOMPARE(holding, 15);
+        for (int i = 0; i < holding; ++i) graph->addSamples({}, 48000.0, tick);
         columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
         QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - loudestDb) < 0.01);
-        graph->addSamples({}, 48000.0);
+        graph->addSamples({}, 48000.0, tick);
         columns = graph->spectrum().columns(200, FilterGraph::kLow, FilterGraph::kHigh);
+        QCOMPARE(sub::app::analysis::FallingSpectrum::kFallDbPerSecond * tick, 1.0);
         QVERIFY(std::abs(*std::max_element(columns.begin(), columns.end()) - (loudestDb - 1.0)) < 0.01);
         QTest::qWait(50);
         save(grab(), QStringLiteral("delay-linked.png"));
@@ -990,7 +995,7 @@ private Q_SLOTS:
         // The analyzer: a 1 kHz tone peaks at 1 kHz.
         const std::vector<float> sine = tone(1000.0, sub::app::analysis::EqAnalyzer::kFftSize);
         for (int i = 0; i < 20; ++i)
-            graph->analyzer().feed(sub::app::analysis::EqAnalyzer::Output, sine.data(), sine.size(), 48000.0);
+            graph->analyzer().feed(sub::app::analysis::EqAnalyzer::Output, sine.data(), sine.size(), 48000.0, 1.0 / 60);
         const std::vector<double> freqs = graph->columnFreqs();
         const std::vector<double> levels = graph->analyzer().columns(sub::app::analysis::EqAnalyzer::Output, freqs);
         const double peak = freqs[size_t(std::max_element(levels.begin(), levels.end()) - levels.begin())];

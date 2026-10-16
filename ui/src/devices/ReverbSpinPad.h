@@ -51,7 +51,7 @@ public:
     static constexpr double kRateMin = sub::app::kReverbMinSpinRate;  // Hz: ER Spin Rate's range, across
     static constexpr double kRateMax = sub::app::kReverbMaxSpinRate;
     static constexpr int kTaps = sub::app::kReverbTaps;
-    static constexpr int kTrail = 6;  // positions kept per particle
+    static constexpr int kTrail = 6;  // positions kept per particle, TrailPace's step apart
 
     explicit ReverbSpinPad(QQuickItem* parent = nullptr);
 
@@ -132,6 +132,7 @@ private:
     Eased flash_;
     std::array<QPointF, kTaps> at_{}, painted_{};  // now, and as last painted
     std::array<std::array<QPointF, kTrail>, kTaps> trail_{};  // the latest first
+    TrailPace trailPace_;
     bool animating_ = false;
 
     // The drag (as the filter pad's).
