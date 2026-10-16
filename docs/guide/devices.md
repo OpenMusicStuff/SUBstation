@@ -10,7 +10,8 @@ their own page: [plugins.md](plugins.md).
 
 - It shows the built-in Synth and Sampler instruments, the Arpeggiator MIDI effect, the
   Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
-  Compressor, Saturator, Overdrive, Amp, Erosion, Auto Filter, Bitcrusher, Delay, Chorus-Ensemble, Phaser-Flanger,
+  Compressor, Saturator, Overdrive, Amp, Erosion, Auto Filter, Bitcrusher, Tape Stop, Glitch, Delay,
+  Chorus-Ensemble, Phaser-Flanger,
   Reverb, Vintage Hall, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ and Sidechain, the LFO
   and Envelope modulators, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only. A MIDI
@@ -45,7 +46,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   values. Frequency and time knobs turn logarithmically.
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
-  Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Delay, the
+  Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Tape
+  Stop, the Glitch, the Delay, the
   Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
   Transient Shaper, the Vocoder, the Vocal Rider, the EQ, the Sidechain, the Arpeggiator, the LFO
   and the Envelope have editors of their own (below).
@@ -1027,6 +1029,49 @@ Fewer bits and a lower sample rate: the sound of early samplers and game console
 Its editor draws one cycle of a sine as the Bitcrusher has it, as the parameters stand: the
 steps across are Rate's, the steps up and down Bits', its height Output's (whose box sits over
 it). While sound comes in the wave runs along, glowing with the input's level.
+
+### Tape Stop
+
+The sound slowing to a halt, as a tape machine or a turntable does when its motor is cut, its
+pitch falling with it; let go, it spins back up.
+
+- **Stop**: the button. Pressed, the tape slows to a stop and stays silent; pressed again, it
+  spins up. Automate it to stop on the beat (a step up in its lane where the stop starts, back
+  down where the sound comes back).
+- **Stop** time (20 ms to 4 s) and **Start** time (1 ms to 4 s): how long it takes to slow to a
+  halt, and to spin up again. Let go before it has stopped, it speeds up from where it got to.
+- **Curve** (−100 to +100 %): 0 slows it evenly; above, the speed holds and then drops off
+  late; below, it drops at once and crawls to the end. Spinning up runs back along the same curve.
+- **Tone** (0 to 100 %): how much darker it gets as it slows.
+- **Dry/Wet**.
+
+Running, it passes the sound exactly as it is. Its editor is laid out as Kilohearts' Tape Stop:
+two tape reels turning as fast as the tape goes, the Stop button between them (a play triangle
+while it runs, a square while it is stopped), and the knobs in a row underneath.
+
+### Glitch
+
+Cuts the sound up on the beat: at each step of a grid, the step may glitch, at random.
+
+- **Grid** (1/32 to 1 bar): how long each step is. Steps follow the song while it plays, and
+  run on their own at the tempo while it doesn't, so a live input glitches too.
+- **Chance** (0 to 100 %): how likely each step is to glitch.
+- **Stutter**, **Reverse**, **Tape** and **Gate** (0 to 100 % each): how often a glitch is each
+  kind, against the others (all at 0: nothing glitches).
+  - **Stutter** repeats the step's start, a half to an eighth of it, over and over.
+  - **Reverse** plays the step before backwards.
+  - **Tape** slows the step to a stop, its pitch falling.
+  - **Gate** chops the step into 4, 6 or 8, every other part silent.
+- **Var** (Variation, 0 to 99): another roll of the dice. The same place in the song always
+  glitches the same way, so what you hear is what an export has; change Variation for
+  another pattern.
+- **Dry/Wet**.
+
+Its editor shows the last sixteen steps, each coloured by what it did (the knobs are in the
+same colours), the one playing outlined. When a step glitches the editor goes with it: the
+cells jolt, the strip flashes and tears, static crackles, the kind's name flies across, and the
+step's cell splits, ghosts and moves as its kind sounds (rippling for Stutter, sweeping back for
+Reverse, sinking for Tape, blinking for Gate). Between glitches it is still.
 
 ### Chorus-Ensemble
 
