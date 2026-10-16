@@ -199,6 +199,24 @@ TEST_CASE("the tail goes on through a clip or note sounding again after silence"
     engine.addBuiltinProcessor(engine.trackChain(keys), "synth", -1);
     engine.setTrackNotes(keys, {{0.0, 0.5, 60, 100}, {8.0, 0.5, 60, 100}});
     CHECK(tailAsCut(engine, keys, 2.0, 10.0) > 3 * kSampleRate);
+    // A note of another track's that an instrument on it takes (no edge: not upstream, yet it plays).
+    const uint32_t notes = engine.addTrack();
+    engine.setTrackNotes(notes, {{0.0, 0.5, 64, 100}, {8.0, 0.5, 64, 100}});
+    const uint32_t fed = engine.addTrack();
+    engine.setProcessorMidiInput(engine.addBuiltinProcessor(engine.trackChain(fed), "synth", -1), notes);
+    CHECK(tailAsCut(engine, fed, 2.0, 10.0) > 3 * kSampleRate);
+}
+
+TEST_CASE("a track or a file named twice in one render is refused") {
+    FreezeEngine e;
+    auto& engine = e.engine;
+    const uint32_t a = engine.addTrack();
+    const uint32_t b = engine.addTrack();
+    const std::string one = (tempDir() / "twice-1.wav").string();
+    const std::string two = (tempDir() / "twice-2.wav").string();
+    CHECK_THROWS_AS(engine.renderTracksToWav({{a, one}, {a, two}}, 0.0, 1.0, 0.0), std::invalid_argument);
+    CHECK_THROWS_AS(engine.renderTracksToWav({{a, one}, {b, one}}, 0.0, 1.0, 0.0), std::invalid_argument);
+    CHECK_NOTHROW(engine.renderTracksToWav({{a, one}, {b, two}}, 0.0, 1.0, 0.0));
 }
 
 // --- Rendering only what a track needs ---------------------------------------------

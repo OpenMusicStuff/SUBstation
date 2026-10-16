@@ -218,9 +218,11 @@ int run(const Options& options) {
     TempFolder folder;
     const double beats = options.seconds * 2.0;  // 120 BPM
     std::vector<Result> results;
+    int threads = options.threads;  // (what the engine ran with, for the report)
     {
         sub::Engine engine;
         if (options.threads > 0) engine.setAudioThreads(options.threads);
+        threads = engine.audioThreads();
         std::printf("freeze_bench: %d tracks, %.0f s, %d audio threads\n", options.tracks, options.seconds,
                     engine.audioThreads());
         const Project project = build(engine, options.tracks, beats);
@@ -270,7 +272,7 @@ int run(const Options& options) {
     }
     if (!options.json.empty()) {
         Json report = Json::object();
-        report.set("tracks", options.tracks).set("seconds", options.seconds).set("threads", options.threads);
+        report.set("tracks", options.tracks).set("seconds", options.seconds).set("threads", threads);
         Json list = Json::array();
         for (const Result& result : results) {
             list.push(Json::object()

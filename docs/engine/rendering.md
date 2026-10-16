@@ -354,8 +354,8 @@ latency, so that much is rendered first and dropped. `renderTrackToWav()` writes
 cut where it falls below -100 dB. `startTrackRender()` is the same in the background (freezing
 from the UI).
 
-**Several tracks** (freezing them at once: `startTracksRender()`, `renderTracksToWav()`) render
-in one pass: `setCaptures()` takes them all, renders the union of what feeds each, and
+**Several tracks** (freezing them at once: `startTracksRender()`, `renderTracksToWav()`; a track or a
+file named twice is refused) render in one pass: `setCaptures()` takes them all, renders the union of what feeds each, and
 `renderCaptures()` puts out each track's signal into a buffer of its own. Each has its own
 `TrackCapture`: its own lag dropped (the job renders the longest first), its own range, tail and
 silence; a track whose tail is done is taken out (`setCaptures()` again with those left, between two
@@ -371,7 +371,8 @@ application plays a frozen track from it at once, without reading the file back.
 as it renders and written up to its last frame above -100 dB. The render stops before the end of
 `tailSeconds` once the track has been silent (both channels under -100 dB) for long enough
 (`quietWindow()`), and nothing feeding it sounds later: no clip or note on it or upstream of it plays
-on past that point (`lastSounding()`, the tail's end at most). Long enough is a second
+on past that point, nor one of a track whose notes a device on them takes (a `MidiFeed`, which has no
+edge) (`lastSounding()`, the tail's end at most). Long enough is a second
 (`kQuietSeconds`) plus, added up, the latency and tail (`Processor::tailSamples()`) of every
 device on the track and on the tracks feeding it, rack chains' too: a device rings on no longer than
 its tail after its input falls silent, so a silence that long within it (between a delay's echoes,

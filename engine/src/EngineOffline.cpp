@@ -158,8 +158,10 @@ private:
     void write(const float* samples, int64_t n) {
         writer_->write(samples, n);
         if (left_.empty()) {
-            left_.reserve(static_cast<size_t>(frames_) * 2);  // (room for the right channel too, in the end)
-            right_.reserve(static_cast<size_t>(frames_));
+            // Room for all it may keep (the range and the whole tail), and in the
+            // left channel's for the right channel too: source() never grows it.
+            left_.reserve(static_cast<size_t>(frames_ + tail_) * 2);
+            right_.reserve(static_cast<size_t>(frames_ + tail_));
         }
         for (int64_t f = 0; f < n; ++f) {
             left_.push_back(samples[f * 2]);
@@ -216,12 +218,31 @@ int64_t quietWindow(const RenderSnapshot& snap, const std::vector<char>& upstrea
     return unknown ? -1 : window;
 }
 
-// Where the last clip or note on these tracks that starts before `to` ends
-// (timeline samples), at most `to`; 0 if none does.
+// Where the last clip or note that starts before `to` ends (timeline samples),
+// at most `to`; 0 if none does: on these tracks, and on those whose notes a
+// device on them takes (a MidiFeed: no edge, so not upstream, yet it plays them).
 int64_t lastSounding(const RenderSnapshot& snap, const std::vector<char>& upstream, int64_t to) {
-    int64_t last = 0;
+    std::vector<char> sounding = upstream;
+    std::vector<const MidiFeed*> feeds;
+    const std::function<void(const StripRender&)> add = [&](const StripRender& strip) {
+        for (const auto& feed : strip.midiFeeds) {
+            if (feed) feeds.push_back(feed.get());
+        }
+        for (const auto& rack : strip.racks) {
+            if (!rack) continue;
+            for (const ChainRender& chain : rack->chains) add(chain);
+        }
+    };
     for (size_t t = 0; t < upstream.size(); ++t) {
-        if (!upstream[t]) continue;
+        if (upstream[t]) add(snap.tracks[t]);
+    }
+    for (const MidiFeedRender& feed : snap.midiFeeds) {
+        if (feed.source >= 0 && std::find(feeds.begin(), feeds.end(), feed.feed.get()) != feeds.end())
+            sounding[static_cast<size_t>(feed.source)] = 1;
+    }
+    int64_t last = 0;
+    for (size_t t = 0; t < sounding.size(); ++t) {
+        if (!sounding[t]) continue;
         for (const ClipRender& clip : snap.tracks[t].clips) {
             if (clip.start < to) last = std::max(last, std::min(to, clip.start + clip.length));
         }
@@ -573,7 +594,15 @@ std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile
     if (endBeat <= startBeat) throw std::invalid_argument("Render range is empty");
     std::lock_guard lock(mutex_);
     checkNotRenderingLocked();
-    for (const TrackFile& file : files) arrangementTrackLocked(file.trackId);  // (throws for an unknown track)
+    for (size_t i = 0; i < files.size(); ++i) {
+        arrangementTrackLocked(files[i].trackId);  // (throws for an unknown track)
+        for (size_t j = 0; j < i; ++j) {
+            if (files[j].trackId == files[i].trackId)
+                throw std::invalid_argument("Track " + std::to_string(files[i].trackId) + " is rendered twice");
+            if (files[j].path == files[i].path)
+                throw std::invalid_argument("Two tracks rendered to " + files[i].path);
+        }
+    }
     std::vector<std::shared_ptr<AudioFileWriter>> writers;
     std::vector<std::string> paths;
     for (const TrackFile& file : files) {

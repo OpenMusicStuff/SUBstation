@@ -190,6 +190,12 @@ private Q_SLOTS:
         } catch (const EditError& error) {
             QVERIFY(error.message().contains("can't be frozen"));
         }
+        try {  // (one file and one freeze a track: the same track twice is refused)
+            studio.bridge->startFreeze(QStringList{track, track});
+            QFAIL("froze a track twice at once");
+        } catch (const EditError& error) {
+            QVERIFY(error.message().contains("once"));
+        }
     }
 
     void aPluginComesBackAsItWas() {

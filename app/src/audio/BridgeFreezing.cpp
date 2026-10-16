@@ -62,6 +62,7 @@ std::unique_ptr<FreezeRender> EngineBridge::startFreeze(const QStringList& track
     const QString folder = freezeFolder(*project_);
     const QDateTime now = QDateTime::currentDateTime();
     for (const QString& trackId : trackIds) {
+        if (trackIds.count(trackId) > 1) throw EditError(QStringLiteral("A track is frozen once at a time"));
         const Track* track = project_->findTrack(trackId);
         if (track == nullptr) throw EditError(QStringLiteral("That track can't be frozen"));
         const QString name = track->name;
