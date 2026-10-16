@@ -985,19 +985,19 @@ private Q_SLOTS:
                                 element(QStringLiteral("DeviceChain"),
                                         element(QStringLiteral("AudioToAudioDeviceChain"),
                                                 element(QStringLiteral("Devices"),
-                                                        utility + element(QStringLiteral("Saturator"), QString())))) +
+                                                        utility + element(QStringLiteral("GlueCompressor"), QString())))) +
                                 element(QStringLiteral("MixerDevice"), param(QStringLiteral("Volume"), 0.5) +
                                                                            param(QStringLiteral("Panorama"), -1.0) +
                                                                            param(QStringLiteral("Speaker"), true)))));
-        t.devices = element(QStringLiteral("MidiArpeggiator"), QString()) + simpler + utility + eq8 + compressor +
-                    delay + rack + element(QStringLiteral("Saturator"), QString());
+        t.devices = element(QStringLiteral("MidiChord"), QString()) + simpler + utility + eq8 + compressor +
+                    delay + rack + element(QStringLiteral("GlueCompressor"), QString());
         t.envelopes = envelope(801, floatEvent(0, 1000.0) + floatEvent(2, 2000.0)) + envelope(820, floatEvent(0, -6.0));
         song.tracks = track(source) + track(t);
         auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
         const Track& bass = imported->project.tracks()[1];
         QCOMPARE(bass.devices.size(), size_t{6});
-        QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (MIDI effects aren't imported): Arpeggiator.")));
-        QVERIFY(noteSays(imported->notes, QStringLiteral("Saturator (2)")));
+        QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (MIDI effects aren't imported): Chord.")));
+        QVERIFY(noteSays(imported->notes, QStringLiteral("Glue Compressor (2)")));
 
         const Device& sampler = bass.devices[0];
         QCOMPARE(sampler.kind, QStringLiteral("sampler"));
@@ -1074,6 +1074,242 @@ private Q_SLOTS:
         QCOMPARE(wide.chains[0].pan, -1.0);
         QCOMPARE(wide.chains[0].devices.size(), size_t{1});
         QCOMPARE(wide.chains[0].devices[0].kind, QStringLiteral("utility"));
+    }
+
+    // Live's effects SUBstation has a built-in device like: each as that device, its settings in the
+    // device's units (lists mapped to the device's), its automation mapped the same way.
+    void livesEffectsAsBuiltInDevices() {
+        Song song;
+        LiveTrack source{QStringLiteral("AudioTrack"), 1, QStringLiteral("1-Key")};
+        LiveTrack t{QStringLiteral("AudioTrack"), 2, QStringLiteral("2-Gtr")};
+        const QString sidechain = element(
+            QStringLiteral("SideChain"),
+            param(QStringLiteral("OnOff"), true) +
+                element(QStringLiteral("RoutedInput"),
+                        element(QStringLiteral("Routable"),
+                                value(QStringLiteral("Target"), QStringLiteral("AudioIn/Track.1/PostFxOut"))) +
+                            param(QStringLiteral("Volume"), 0.5)) +
+                param(QStringLiteral("DryWet"), 0.25));
+        const QString overdrive =
+            element(QStringLiteral("Overdrive"),
+                    param(QStringLiteral("On"), true) + param(QStringLiteral("MidFreq"), 800.0) +
+                        param(QStringLiteral("BandWidth"), 3.0) + param(QStringLiteral("Drive"), 70.0, 901) +
+                        param(QStringLiteral("Tone"), 20.0) + param(QStringLiteral("PreserveDynamics"), 0.25) +
+                        param(QStringLiteral("DryWet"), 80.0));
+        const QString legacyFilter = element(
+            QStringLiteral("AutoFilter"),
+            param(QStringLiteral("On"), true) + param(QStringLiteral("FilterType"), QStringLiteral("1")) +
+                param(QStringLiteral("CircuitLpHp"), QStringLiteral("2")) + param(QStringLiteral("Slope"), true) +
+                param(QStringLiteral("Cutoff"), 69.0) + param(QStringLiteral("Resonance"), 0.5) +
+                param(QStringLiteral("ModHub"), -63.5) + param(QStringLiteral("LfoAmount"), 15.0) +
+                element(QStringLiteral("Lfo"), param(QStringLiteral("Type"), QStringLiteral("1")) +
+                                                   param(QStringLiteral("Frequency"), 2.0) +
+                                                   param(QStringLiteral("StereoMode"), QStringLiteral("1")) +
+                                                   param(QStringLiteral("Spin"), 0.25)) +
+                sidechain);
+        const QString autoFilter2 = element(
+            QStringLiteral("AutoFilter2"),
+            param(QStringLiteral("On"), false) + param(QStringLiteral("Filter_Type"), QStringLiteral("2")) +
+                param(QStringLiteral("Filter_Circuit"), QStringLiteral("3")) +
+                param(QStringLiteral("Filter_Frequency"), 5000.0) + param(QStringLiteral("Filter_Resonance"), 0.4) +
+                param(QStringLiteral("Envelope_Attack"), 0.01) + param(QStringLiteral("Lfo_Waveform"), QStringLiteral("7")) +
+                param(QStringLiteral("Lfo_TimeMode"), QStringLiteral("2")) +
+                param(QStringLiteral("Lfo_SyncedRate"), QStringLiteral("4")) + param(QStringLiteral("Output"), 0.5) +
+                param(QStringLiteral("DryWet"), 0.5));
+        const QString saturator11 =
+            element(QStringLiteral("Saturator"),
+                    param(QStringLiteral("On"), true) + param(QStringLiteral("PreDrive"), 6.0) +
+                        param(QStringLiteral("Type"), QStringLiteral("2")) + param(QStringLiteral("PostClip"), true) +
+                        value(QStringLiteral("Oversampling"), QStringLiteral("1")) +
+                        element(QStringLiteral("WaveShaper"), param(QStringLiteral("Drive"), 0.25)));
+        const QString saturator12 =
+            element(QStringLiteral("Saturator"),
+                    param(QStringLiteral("On"), true) + param(QStringLiteral("Type"), QStringLiteral("2")) +
+                        param(QStringLiteral("PostClip"), QStringLiteral("2")) +
+                        param(QStringLiteral("BassShaperThreshold"), -30.0) + param(QStringLiteral("WsDrive"), 0.75));
+        const QString amp = element(QStringLiteral("Amp"), param(QStringLiteral("On"), true) +
+                                                               param(QStringLiteral("AmpType"), QStringLiteral("4")) +
+                                                               param(QStringLiteral("Gain"), 7.5) +
+                                                               param(QStringLiteral("DualMono"), true) +
+                                                               param(QStringLiteral("DryWet"), 0.9));
+        const QString redux = element(QStringLiteral("Redux2"), param(QStringLiteral("On"), true) +
+                                                                    param(QStringLiteral("BitDepth"), 6.0) +
+                                                                    param(QStringLiteral("SampleRate"), 8000.0));
+        const QString chorus =
+            element(QStringLiteral("Chorus2"), param(QStringLiteral("On"), true) +
+                                                   param(QStringLiteral("Mode"), QStringLiteral("1")) +
+                                                   param(QStringLiteral("Amount"), 0.3) +
+                                                   param(QStringLiteral("OutputGain"), 1.5));
+        const QString erosion = element(QStringLiteral("Erosion"),
+                                        param(QStringLiteral("On"), true) + param(QStringLiteral("Mode"), QStringLiteral("2")) +
+                                            param(QStringLiteral("Freq"), 3000.0) + param(QStringLiteral("Amplitude"), 100.0));
+        const QString gate = element(QStringLiteral("Gate"), param(QStringLiteral("On"), true) +
+                                                                 param(QStringLiteral("Threshold"), 0.1) +
+                                                                 param(QStringLiteral("Gain"), -75.0) + sidechain);
+        const QString limiter = element(QStringLiteral("Limiter"), param(QStringLiteral("On"), true) +
+                                                                       param(QStringLiteral("Ceiling"), -1.0) +
+                                                                       param(QStringLiteral("LinkChannels"), false));
+        const QString multiband = element(QStringLiteral("MultibandDynamics"),
+                                          param(QStringLiteral("On"), true) + value(QStringLiteral("SplitLowMidOn"), false) +
+                                              param(QStringLiteral("EnvelopeIsPeak"), true) +
+                                              param(QStringLiteral("GlobalTime"), 2.0) +
+                                              param(QStringLiteral("AboveThresholdMid"), -30.0));
+        const QString phaser = element(QStringLiteral("PhaserNew"),
+                                       param(QStringLiteral("On"), true) + param(QStringLiteral("Mode"), QStringLiteral("1")) +
+                                           param(QStringLiteral("Modulation_Waveform"), QStringLiteral("7")) +
+                                           param(QStringLiteral("FlangerDelayTime"), 0.005) +
+                                           param(QStringLiteral("OutputGain"), 0.5));
+        const QString reverb = element(QStringLiteral("Reverb"), param(QStringLiteral("On"), true) +
+                                                                     param(QStringLiteral("DecayTime"), 4000.0) +
+                                                                     param(QStringLiteral("RoomType"), QStringLiteral("1")) +
+                                                                     param(QStringLiteral("MixDirect"), 0.3));
+        const QString vocoder = element(QStringLiteral("Vocoder"),
+                                        param(QStringLiteral("On"), true) +
+                                            element(QStringLiteral("FilterBank"), value(QStringLiteral("BandCount"), QStringLiteral("7"))) +
+                                            element(QStringLiteral("CarrierSource"), value(QStringLiteral("Type"), QStringLiteral("1"))) +
+                                            param(QStringLiteral("DryWet"), 0.6));
+        t.devices = overdrive + legacyFilter + autoFilter2 + saturator11 + saturator12 + amp + redux + chorus + erosion +
+                    gate + limiter + multiband + phaser + reverb + vocoder;
+        t.envelopes = envelope(901, floatEvent(0, 0.0) + floatEvent(4, 100.0));
+        song.tracks = track(source) + track(t);
+        auto imported = load(liveSet(song));
+        const Track& gtr = imported->project.tracks()[1];
+        QCOMPARE(gtr.devices.size(), size_t{15});
+        const auto at = [&](size_t i, const QString& kind) -> const Device& {
+            [&] { QCOMPARE(gtr.devices[i].kind, kind); }();
+            return gtr.devices[i];
+        };
+        const auto near = [](double a, double b) { return std::abs(a - b) < 1e-6; };
+
+        const Device& od = at(0, QStringLiteral("overdrive"));
+        QCOMPARE(od.params.value(QStringLiteral("freq")), 800.0);
+        QCOMPARE(od.params.value(QStringLiteral("width")), 3.0);
+        QCOMPARE(od.params.value(QStringLiteral("drive")), 70.0);
+        QCOMPARE(od.params.value(QStringLiteral("tone")), 20.0);
+        QCOMPARE(od.params.value(QStringLiteral("dynamics")), 25.0);
+        QCOMPARE(od.params.value(QStringLiteral("mix")), 80.0);
+        const Envelope drive = gtr.automation.value(automation::deviceKey(od.id, QStringLiteral("drive")));
+        QCOMPARE(drive.size(), size_t{2});
+        QVERIFY(near(drive[0].value, 0.0) && near(drive[1].value, 1.0));
+
+        const Device& legacy = at(1, QStringLiteral("auto_filter"));
+        QCOMPARE(legacy.params.value(QStringLiteral("type")), 1.0);     // Highpass
+        QCOMPARE(legacy.params.value(QStringLiteral("circuit")), 2.0);  // MS2
+        QCOMPARE(legacy.params.value(QStringLiteral("slope")), 1.0);
+        QVERIFY(near(legacy.params.value(QStringLiteral("freq")), 440.0));
+        QCOMPARE(legacy.params.value(QStringLiteral("resonance")), 50.0);
+        QVERIFY(near(legacy.params.value(QStringLiteral("env_amount")), -50.0));
+        QVERIFY(near(legacy.params.value(QStringLiteral("lfo_amount")), 50.0));
+        QCOMPARE(legacy.params.value(QStringLiteral("lfo_wave")), 4.0);  // Square
+        QCOMPARE(legacy.params.value(QStringLiteral("lfo_freq")), 2.0);
+        QCOMPARE(legacy.params.value(QStringLiteral("spin_on")), 1.0);
+        QCOMPARE(legacy.params.value(QStringLiteral("spin")), 25.0);
+        QVERIFY(legacy.sidechain);
+        QCOMPARE(legacy.sidechain->trackId, imported->project.tracks()[0].id);
+
+        const Device& af2 = at(2, QStringLiteral("auto_filter"));
+        QVERIFY(!af2.enabled);
+        QCOMPARE(af2.params.value(QStringLiteral("type")), 2.0);     // Bandpass
+        QCOMPARE(af2.params.value(QStringLiteral("circuit")), 4.0);  // PRD
+        QCOMPARE(af2.params.value(QStringLiteral("freq")), 5000.0);
+        QCOMPARE(af2.params.value(QStringLiteral("resonance")), 40.0);
+        QCOMPARE(af2.params.value(QStringLiteral("env_attack")), 10.0);
+        QCOMPARE(af2.params.value(QStringLiteral("lfo_wave")), 5.0);  // S&H
+        QCOMPARE(af2.params.value(QStringLiteral("lfo_sync")), 1.0);
+        QCOMPARE(af2.params.value(QStringLiteral("lfo_rate")), 4.0);
+        QVERIFY(near(af2.params.value(QStringLiteral("output")), 20.0 * std::log10(0.5)));
+        QCOMPARE(af2.params.value(QStringLiteral("mix")), 50.0);
+
+        const Device& sat11 = at(3, QStringLiteral("saturator"));
+        QCOMPARE(sat11.params.value(QStringLiteral("drive")), 6.0);
+        QCOMPARE(sat11.params.value(QStringLiteral("type")), 3.0);  // Medium Curve (Live 11 has no Bass Shaper)
+        QCOMPARE(sat11.params.value(QStringLiteral("clip")), 1.0);  // Soft
+        QCOMPARE(sat11.params.value(QStringLiteral("hq")), 1.0);
+        QCOMPARE(sat11.params.value(QStringLiteral("ws_drive")), 25.0);
+        const Device& sat12 = at(4, QStringLiteral("saturator"));
+        QCOMPARE(sat12.params.value(QStringLiteral("type")), 2.0);  // Bass Shaper
+        QCOMPARE(sat12.params.value(QStringLiteral("clip")), 2.0);  // Hard
+        QCOMPARE(sat12.params.value(QStringLiteral("threshold")), -30.0);
+        QCOMPARE(sat12.params.value(QStringLiteral("ws_drive")), 75.0);
+
+        const Device& ampDevice = at(5, QStringLiteral("amp"));
+        QCOMPARE(ampDevice.params.value(QStringLiteral("type")), 4.0);  // Lead
+        QCOMPARE(ampDevice.params.value(QStringLiteral("gain")), 7.5);
+        QCOMPARE(ampDevice.params.value(QStringLiteral("dual")), 1.0);
+        QCOMPARE(ampDevice.params.value(QStringLiteral("mix")), 90.0);
+
+        const Device& crush = at(6, QStringLiteral("bitcrusher"));
+        QCOMPARE(crush.params.value(QStringLiteral("bits")), 6.0);
+        QCOMPARE(crush.params.value(QStringLiteral("rate")), 8000.0);
+
+        const Device& ensemble = at(7, QStringLiteral("chorus"));
+        QCOMPARE(ensemble.params.value(QStringLiteral("mode")), 1.0);
+        QCOMPARE(ensemble.params.value(QStringLiteral("amount")), 30.0);
+        QVERIFY(near(ensemble.params.value(QStringLiteral("output")), 20.0 * std::log10(1.5)));
+
+        const Device& erode = at(8, QStringLiteral("erosion"));
+        QCOMPARE(erode.params.value(QStringLiteral("freq")), 3000.0);
+        QCOMPARE(erode.params.value(QStringLiteral("amount")), 50.0);
+        QCOMPARE(erode.params.value(QStringLiteral("blend")), 100.0);   // noise...
+        QCOMPARE(erode.params.value(QStringLiteral("stereo")), 100.0);  // ...wide
+
+        const Device& gateDevice = at(9, QStringLiteral("gate"));
+        QVERIFY(near(gateDevice.params.value(QStringLiteral("threshold")), -20.0));
+        QCOMPARE(gateDevice.params.value(QStringLiteral("floor")), -75.0);
+        QVERIFY(near(gateDevice.params.value(QStringLiteral("sc_gain")), 20.0 * std::log10(0.5)));
+        QCOMPARE(gateDevice.params.value(QStringLiteral("sc_mix")), 25.0);
+        QVERIFY(gateDevice.sidechain);
+
+        const Device& limit = at(10, QStringLiteral("limiter"));
+        QCOMPARE(limit.params.value(QStringLiteral("ceiling")), -1.0);
+        QCOMPARE(limit.params.value(QStringLiteral("link")), 0.0);
+
+        const Device& bands = at(11, QStringLiteral("multiband"));
+        QCOMPARE(bands.params.value(QStringLiteral("low_on")), 0.0);
+        QCOMPARE(bands.params.value(QStringLiteral("mode")), 0.0);  // Peak
+        QCOMPARE(bands.params.value(QStringLiteral("time")), 200.0);
+        QCOMPARE(bands.params.value(QStringLiteral("mid_above")), -30.0);
+        QVERIFY(noteSays(imported->notes, QStringLiteral("ratios at 1:1")));
+
+        const Device& flanger = at(12, QStringLiteral("phaser"));
+        QCOMPARE(flanger.params.value(QStringLiteral("mode")), 1.0);
+        QCOMPARE(flanger.params.value(QStringLiteral("lfo_wave")), 2.0);  // Triangle Analog
+        QVERIFY(near(flanger.params.value(QStringLiteral("flange_time")), 5.0));
+        QVERIFY(near(flanger.params.value(QStringLiteral("output")), 20.0 * std::log10(0.5)));
+
+        const Device& room = at(13, QStringLiteral("reverb"));
+        QCOMPARE(room.params.value(QStringLiteral("decay")), 4000.0);
+        QCOMPARE(room.params.value(QStringLiteral("density")), 1.0);
+        QCOMPARE(room.params.value(QStringLiteral("mix")), 30.0);
+
+        const Device& voc = at(14, QStringLiteral("vocoder"));
+        QCOMPARE(voc.params.value(QStringLiteral("bands")), 9.0);  // 40
+        QCOMPARE(voc.params.value(QStringLiteral("carrier")), 1.0);  // External
+        QCOMPARE(voc.params.value(QStringLiteral("mix")), 60.0);
+    }
+
+    // Live's Arpeggiator as SUBstation's, on its MIDI track.
+    void livesArpeggiator() {
+        Song song;
+        LiveTrack t{QStringLiteral("MidiTrack"), 1, QStringLiteral("1-Keys")};
+        t.devices = element(QStringLiteral("MidiArpeggiator"),
+                            param(QStringLiteral("On"), true) + param(QStringLiteral("Mode"), QStringLiteral("7")) +
+                                param(QStringLiteral("SyncState"), true) +
+                                param(QStringLiteral("SyncedRate"), QStringLiteral("6")) +
+                                param(QStringLiteral("Gate"), 80.0) + param(QStringLiteral("Hold"), true) +
+                                param(QStringLiteral("TransposeDistance"), 12.0) +
+                                param(QStringLiteral("TransposeSteps"), 2.0));
+        song.tracks = track(t);
+        auto imported = load(liveSet(song));
+        const Track& keys = imported->project.tracks()[0];
+        QCOMPARE(keys.devices.size(), size_t{1});
+        const Device& arp = keys.devices[0];
+        QCOMPARE(arp.kind, QStringLiteral("arpeggiator"));
+        QCOMPARE(arp.params.value(QStringLiteral("style")), 5.0);   // Diverge
+        QCOMPARE(arp.params.value(QStringLiteral("synced")), 7.0);  // 1/16
+        QCOMPARE(arp.params.value(QStringLiteral("gate")), 80.0);
+        QCOMPARE(arp.params.value(QStringLiteral("hold")), 1.0);
+        QCOMPARE(arp.params.value(QStringLiteral("octaves")), 3.0);
     }
 
     // A Drum Rack as a Drum Rack: a pad for each of Live's (its key, name,
@@ -1216,7 +1452,7 @@ private Q_SLOTS:
         song.tempo = 172.0;
         LiveTrack keys{QStringLiteral("MidiTrack"), 1, QStringLiteral("1-Keys")};
         keys.clips = midiClip(0.0, 4.0, keyTrack(60, note(0.0, 1.0)));
-        keys.devices = element(QStringLiteral("Saturator"), QString());
+        keys.devices = element(QStringLiteral("GlueCompressor"), QString());
         song.tracks = track(keys);
         const QString path = writeSet(dir, QStringLiteral("My Song.als"), liveSet(song));
         f.editor().addAudioTrack();
@@ -1231,7 +1467,7 @@ private Q_SLOTS:
         QCOMPARE(QFileInfo(s.suggestedExportPath(QStringLiteral("mp3"))).fileName(), QStringLiteral("My Song.mp3"));
         QCOMPARE(f.lastMessage(), QStringLiteral("Imported My Song.als: 1 track, 1 clip"));
         QCOMPARE(f.informations.size(), 1);
-        QVERIFY(f.informations.back().contains(QStringLiteral("Saturator")));
+        QVERIFY(f.informations.back().contains(QStringLiteral("Glue Compressor")));
         QVERIFY(s.saveProjectAs(dir.path(QStringLiteral("My Song.gilproj"))));
         QVERIFY(s.clean());
         QCOMPARE(s.title(), QStringLiteral("My Song - SUBstation"));

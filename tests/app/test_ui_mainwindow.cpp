@@ -1034,7 +1034,7 @@ private Q_SLOTS:
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Ableton MajorVersion=\"5\"><LiveSet><Tracks>"
                    "<MidiTrack Id=\"1\"><Name><EffectiveName Value=\"1-Keys\" /></Name><DeviceChain><DeviceChain><Devices>"
-                   "<Saturator /></Devices></DeviceChain></DeviceChain></MidiTrack></Tracks>"
+                   "<GlueCompressor /></Devices></DeviceChain></DeviceChain></MidiTrack></Tracks>"
                    "<MainTrack><DeviceChain><Mixer><Tempo><Manual Value=\"95\" /></Tempo></Mixer></DeviceChain></MainTrack>"
                    "</LiveSet></Ableton>");
         file.close();
@@ -1049,7 +1049,7 @@ private Q_SLOTS:
         QCOMPARE(project().tracks().size(), size_t(1));
         QCOMPARE(window_->title(), QStringLiteral("Live Song* - SUBstation"));  // (not saved yet)
         QTRY_VERIFY(shown(QStringLiteral("messageBox")));
-        QVERIFY(prop(QStringLiteral("messageBox"), "text").toString().contains(QStringLiteral("Saturator")));
+        QVERIFY(prop(QStringLiteral("messageBox"), "text").toString().contains(QStringLiteral("Glue Compressor")));
         test::screenshot(window_, QStringLiteral("live-set-imported"));
         answer(QStringLiteral("messageBox"), QStringLiteral("ok"));
         trigger(QStringLiteral("newProject"));  // it asks before the import goes

@@ -14,6 +14,7 @@
 #include <QUndoStack>
 
 #include <cmath>
+#include <functional>
 
 #include "EditorHarness.h"
 #include "devices/DisplayValue.h"
@@ -107,37 +108,44 @@ private Q_SLOTS:
         QCOMPARE(view->property("cells").toList().at(2).toInt(), 0);
         QCOMPARE(cell2->scale(), 1.0);
 
-        // Step 3 reverses: its cell takes Reverse's colour, pops and shivers; the scan line runs.
+        // Step 3 reverses: its cell takes Reverse's colour, pops and shivers; the scan line runs. (The display
+        // keeps coming while each is waited for, as the engine's would: a quarter second without it, it goes
+        // inactive.)
+        const auto whileReversing = [&](const std::function<bool()>& seen) {
+            for (int i = 0; i < 300; ++i) {
+                playing(step, 3, 2);
+                if (seen())
+                    return true;
+                QTest::qWait(10);
+            }
+            return false;
+        };
         playing(step, 3, 2);
         QCOMPARE(view->property("cells").toList().at(3).toInt(), 2);
         QQuickItem* cell3 = find(view, QStringLiteral("cell3"));
-        QTRY_VERIFY(cell3->scale() > 1.05);
-        QTRY_COMPARE(cell3->property("color").value<QColor>(), find(view, QStringLiteral("reverse"))->property("color").value<QColor>());
-        bool shivered = false;
-        for (int i = 0; i < 20 && !shivered; ++i) {
-            QTest::qWait(15);
-            shivered = cell3->property("shiver").toDouble() != 0.0;
-        }
-        QVERIFY(shivered);
-        QTRY_VERIFY(scan->opacity() > 0.1);
-        QTRY_VERIFY(scan->y() != scanAt);
+        QVERIFY(whileReversing([&] { return cell3->scale() > 1.05; }));
+        const QColor reverseColour = find(view, QStringLiteral("reverse"))->property("color").value<QColor>();
+        QVERIFY(whileReversing([&] { return cell3->property("color").value<QColor>() == reverseColour; }));
+        QVERIFY(whileReversing([&] { return cell3->property("shiver").toDouble() != 0.0; }));
+        QVERIFY(whileReversing([&] { return scan->opacity() > 0.1 && scan->y() != scanAt; }));
         // Its ghosts and tears, the static, and its name thrown across the strip.
-        QVERIFY(find(cell3, QStringLiteral("ghostCyan"))->isVisible());
-        QVERIFY(find(cell3, QStringLiteral("ghostMagenta"))->isVisible());
-        bool torn = false, crackling = false;
-        for (QQuickItem* tear : itemsNamed(strip(view), QStringLiteral("tear"))) torn = torn || tear->isVisible();
-        for (QQuickItem* dot : itemsNamed(strip(view), QStringLiteral("static"))) crackling = crackling || dot->isVisible();
-        QVERIFY(torn && crackling);
+        QVERIFY(whileReversing([&] {
+            return find(cell3, QStringLiteral("ghostCyan"))->isVisible() &&
+                   find(cell3, QStringLiteral("ghostMagenta"))->isVisible();
+        }));
+        const auto anyVisible = [&](const char* name) {
+            for (QQuickItem* item : itemsNamed(strip(view), QString::fromLatin1(name)))
+                if (item->isVisible())
+                    return true;
+            return false;
+        };
+        QVERIFY(whileReversing([&] { return anyVisible("tear") && anyVisible("static"); }));
         QQuickItem* label = find(view, QStringLiteral("kindLabel"));
         QCOMPARE(label->property("text").toString(), QStringLiteral("REVERSE"));
-        // The disorder moves: the clock runs while it glitches (the display coming all the while).
+        // The disorder moves: the clock runs while it glitches.
         const int tick = view->property("tick").toInt();
-        for (int i = 0; i < 5; ++i) {
-            playing(step, 3, 2);
-            QTest::qWait(30);
-        }
-        QVERIFY(view->property("tick").toInt() > tick);
-        QTRY_COMPARE(label->opacity(), 0.0);  // (thrown, then gone)
+        QVERIFY(whileReversing([&] { return view->property("tick").toInt() > tick; }));
+        QVERIFY(whileReversing([&] { return label->opacity() == 0.0; }));  // (thrown, then gone)
         for (int i = 0; i < 6; ++i) {  // as it plays
             playing(step, 3, 2);
             QTest::qWait(30);

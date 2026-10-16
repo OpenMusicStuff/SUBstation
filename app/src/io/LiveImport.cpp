@@ -320,6 +320,58 @@ const QString kVst2Missing = QStringLiteral("Left out (VST2 plug-ins, and neithe
 const QString kVst2OwnDefaults = QStringLiteral("VST2 plug-ins at their default settings (set them up again)");
 const QString kNotInstalled = QStringLiteral("Not installed here (they load once installed: rescan the plug-ins)");
 
+// One of a Live device's parameters as one of a built-in's: where Live keeps it under the device
+// (an element holding a Manual, or a plain Value), the built-in's parameter, and Live's value in the
+// built-in's units. Automation of it maps the same way.
+struct LiveParam {
+    QString path;
+    QString param;
+    std::function<double(double)> plain = [](double v) { return v; };
+};
+
+double same(double v) { return v; }
+double percent(double v) { return 100.0 * v; }
+double secondsToMs(double v) { return 1000.0 * v; }
+double gainDbOf(double v) { return gainToDb(v); }
+
+// A list's index in Live to the built-in's, by table (an index past it: the table's last).
+std::function<double(double)> indexed(std::vector<int> table) {
+    return [table = std::move(table)](double v) {
+        const auto i = static_cast<size_t>(std::clamp<double>(std::lround(v), 0.0, double(table.size() - 1)));
+        return double(table[i]);
+    };
+}
+
+// The value Live keeps at `path` under `device`: its Manual's, else the element's own Value
+// (Live's plain switches and lists); true and false as 1 and 0. None if there is neither.
+std::optional<double> liveValue(const Element& device, const QString& path) {
+    const Element* element = device.at(path);
+    if (!element) return std::nullopt;
+    std::optional<QString> text = element->value(u"Manual");
+    if (!text) text = element->value(u"");
+    if (!text) return std::nullopt;
+    if (*text == u"true") return 1.0;
+    if (*text == u"false") return 0.0;
+    bool ok = false;
+    const double value = text->toDouble(&ok);
+    return ok && std::isfinite(value) ? std::optional<double>(value) : std::nullopt;
+}
+
+std::optional<ParamSpec> builtinSpec(const QString& kind, const QString& paramId) {
+    const BuiltinDevice* device = builtinDevice(kind);
+    if (!device || !device->info) return std::nullopt;
+    for (const sub::ParamInfo& info : device->info->params) {
+        if (QString::fromStdString(info.id) == paramId) return ParamSpec::fromInfo(info, QString(), QString());
+    }
+    return std::nullopt;
+}
+
+// A built-in's plain value held to its parameter's range (a list's or a stepped one's rounded).
+double heldTo(const ParamSpec& spec, double value) {
+    value = std::clamp(value, spec.minimum, spec.maximum);
+    return spec.discrete() ? std::round(value) : value;
+}
+
 class Importer {
 public:
     Importer(const Element& root, const QString& setPath, const ImportOptions& options)
@@ -353,6 +405,27 @@ private:
     std::optional<QJsonObject> compressor(const Element& device, const QString& owner, const QString& id);
     std::optional<QJsonObject> delay(const Element& device, const QString& owner, const QString& id);
     std::optional<QJsonObject> sampler(const Element& device, const QString& owner, const QString& id);
+    // Live's devices that are built-in devices here, by table (mapParams): each parameter Live has that one of
+    // the built-in's is, and its automation.
+    void mapParams(const Element& device, const QString& owner, const QString& kind, const QString& id,
+                   const std::vector<LiveParam>& list, QJsonObject& params);
+    static void setParam(const QString& kind, QJsonObject& params, const QString& paramId, double value);
+    std::optional<QJsonObject> overdrive(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> autoFilter(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> saturator(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> amp(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> redux(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> chorus(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> erosion(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> gate(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> limiter(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> multiband(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> phaser(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> reverb(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> vocoder(const Element& device, const QString& owner, const QString& id);
+    std::optional<QJsonObject> arpeggiator(const Element& device, const QString& owner, const QString& id);
+    // A sidechain from a device's routed input (SideChain's, a Vocoder's carrier's), when it names a track.
+    std::optional<QJsonObject> routedSidechain(const Element* routedInput);
     std::optional<QJsonObject> sidechainOf(const Element& device);
     QJsonArray clips(const Element& track, bool midi, const std::function<std::optional<int>(int)>& pitch = {});
     std::optional<QJsonObject> midiClip(const Element& clip, const std::function<std::optional<int>(int)>& pitch);
@@ -808,6 +881,34 @@ std::optional<QJsonObject> Importer::translateDevice(const Element& device, cons
         translated = delay(device, owner, id);
     } else if (tag == u"OriginalSimpler" || tag == u"MultiSampler") {
         translated = sampler(device, owner, id);
+    } else if (tag == u"Overdrive") {
+        translated = overdrive(device, owner, id);
+    } else if (tag == u"AutoFilter" || tag == u"AutoFilter2") {
+        translated = autoFilter(device, owner, id);
+    } else if (tag == u"Saturator") {
+        translated = saturator(device, owner, id);
+    } else if (tag == u"Amp") {
+        translated = amp(device, owner, id);
+    } else if (tag == u"Redux" || tag == u"Redux2") {
+        translated = redux(device, owner, id);
+    } else if (tag == u"Chorus2") {
+        translated = chorus(device, owner, id);
+    } else if (tag == u"Erosion") {
+        translated = erosion(device, owner, id);
+    } else if (tag == u"Gate") {
+        translated = gate(device, owner, id);
+    } else if (tag == u"Limiter") {
+        translated = limiter(device, owner, id);
+    } else if (tag == u"MultibandDynamics") {
+        translated = multiband(device, owner, id);
+    } else if (tag == u"PhaserNew") {
+        translated = phaser(device, owner, id);
+    } else if (tag == u"Reverb") {
+        translated = reverb(device, owner, id);
+    } else if (tag == u"Vocoder") {
+        translated = vocoder(device, owner, id);
+    } else if (tag == u"MidiArpeggiator") {
+        translated = arpeggiator(device, owner, id);
     } else if (tag.startsWith(u"Midi") || tag == u"MxDeviceMidiEffect") {
         notes_.listed(kMidiEffects, liveDeviceName(tag));
         return std::nullopt;
@@ -1080,7 +1181,12 @@ std::optional<QJsonObject> Importer::eq(const Element& device, const QString& ow
 std::optional<QJsonObject> Importer::sidechainOf(const Element& device) {
     const Element* sidechain = device.child(u"SideChain");
     if (!sidechain || !sidechain->flag(u"OnOff/Manual")) return std::nullopt;
-    const QString target = sidechain->value(u"RoutedInput/Routable/Target").value_or(QString());
+    return routedSidechain(sidechain->child(u"RoutedInput"));
+}
+
+std::optional<QJsonObject> Importer::routedSidechain(const Element* routedInput) {
+    if (!routedInput) return std::nullopt;
+    const QString target = routedInput->value(u"Routable/Target").value_or(QString());
     if (target.isEmpty() || target == u"AudioIn/None") return std::nullopt;
     QString tap;
     if (const auto track = routedTrack(target, &tap)) {
@@ -1207,6 +1313,458 @@ std::optional<QJsonObject> Importer::sampler(const Element& device, const QStrin
             data[QStringLiteral("state")] = *state;
     }
     return data;
+}
+
+// --- Live's devices as built-in devices, by table ----------------------------------------------
+
+void Importer::mapParams(const Element& device, const QString& owner, const QString& kind, const QString& id,
+                         const std::vector<LiveParam>& list, QJsonObject& params) {
+    for (const LiveParam& p : list) {
+        const std::optional<double> value = liveValue(device, p.path);
+        const std::optional<ParamSpec> spec = builtinSpec(kind, p.param);
+        if (!value || !spec) continue;
+        params[p.param] = heldTo(*spec, p.plain(*value));
+        addBuiltinTarget(device.at(p.path), owner, kind, id, p.param, p.plain);
+    }
+}
+
+void Importer::setParam(const QString& kind, QJsonObject& params, const QString& paramId, double value) {
+    if (const std::optional<ParamSpec> spec = builtinSpec(kind, paramId)) params[paramId] = heldTo(*spec, value);
+}
+
+std::optional<QJsonObject> Importer::overdrive(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("overdrive");
+    QJsonObject params;
+    // (Drive, Tone and Dry/Wet are kept in percent, Dynamics as a fraction.)
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("MidFreq"), QStringLiteral("freq")},
+               {QStringLiteral("BandWidth"), QStringLiteral("width")},
+               {QStringLiteral("Drive"), QStringLiteral("drive")},
+               {QStringLiteral("Tone"), QStringLiteral("tone")},
+               {QStringLiteral("PreserveDynamics"), QStringLiteral("dynamics"), percent},
+               {QStringLiteral("DryWet"), QStringLiteral("mix")}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::autoFilter(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("auto_filter");
+    QJsonObject params;
+    if (device.tag == u"AutoFilter2") {
+        // Live 12.2's: flat names. Its types past Morph (DJ, Comb, Resampling, Notch+LP, Vowel) become a low-pass.
+        const int type = device.integer(u"Filter_Type/Manual", 0);
+        if (type > 4) notes_.listed(QStringLiteral("Auto Filters of types SUBstation's hasn't became low-passes"),
+                                    QStringLiteral("Auto Filter"));
+        mapParams(device, owner, kind, id,
+                  {{QStringLiteral("Filter_Type"), QStringLiteral("type"), indexed({0, 1, 2, 3, 4, 0, 0, 0, 0, 0})},
+                   // SVF, DFM, MS2, PRD
+                   {QStringLiteral("Filter_Circuit"), QStringLiteral("circuit"), indexed({0, 1, 2, 4})},
+                   {QStringLiteral("Filter_Slope"), QStringLiteral("slope")},
+                   {QStringLiteral("Filter_Frequency"), QStringLiteral("freq")},
+                   {QStringLiteral("Filter_Resonance"), QStringLiteral("resonance"), percent},
+                   {QStringLiteral("Filter_Drive"), QStringLiteral("drive"), [](double v) { return 24.0 * v; }},
+                   {QStringLiteral("Filter_Morph"), QStringLiteral("morph"), percent},
+                   {QStringLiteral("Envelope_Amount"), QStringLiteral("env_amount"), percent},
+                   {QStringLiteral("Envelope_Attack"), QStringLiteral("env_attack"), secondsToMs},
+                   {QStringLiteral("Envelope_Release"), QStringLiteral("env_release"), secondsToMs},
+                   {QStringLiteral("Lfo_Amount"), QStringLiteral("lfo_amount"), percent},
+                   // Sine, Triangle, Saw, Square, Ramp Up, Ramp Down, Wander, S&H
+                   {QStringLiteral("Lfo_Waveform"), QStringLiteral("lfo_wave"), indexed({0, 1, 3, 4, 2, 3, 6, 5})},
+                   {QStringLiteral("Lfo_Frequency"), QStringLiteral("lfo_freq")},
+                   {QStringLiteral("Lfo_SyncedRate"), QStringLiteral("lfo_rate")},
+                   {QStringLiteral("Lfo_Phase"), QStringLiteral("phase")},
+                   {QStringLiteral("Lfo_PhaseOffset"), QStringLiteral("lfo_offset")},
+                   {QStringLiteral("Lfo_StereoMode"), QStringLiteral("spin_on")},
+                   {QStringLiteral("Lfo_Spin"), QStringLiteral("spin"), percent},
+                   {QStringLiteral("Lfo_Morph"), QStringLiteral("lfo_morph"), percent},
+                   // (its quantization's modes past None: as Steps)
+                   {QStringLiteral("Lfo_QuantizationMode"), QStringLiteral("lfo_quantize"),
+                    [](double v) { return v >= 0.5 ? 1.0 : 0.0; }},
+                   {QStringLiteral("Lfo_Steps"), QStringLiteral("lfo_steps")},
+                   {QStringLiteral("SoftClipOn"), QStringLiteral("soft_clip")},
+                   {QStringLiteral("Output"), QStringLiteral("output"), gainDbOf},
+                   {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+                  params);
+        // Its rate's modes: Hz, seconds (a cycle's length), or synced (the others).
+        const int mode = device.integer(u"Lfo_TimeMode/Manual", 0);
+        if (mode == 1) {
+            setParam(kind, params, QStringLiteral("lfo_freq"), 1.0 / std::max(0.01, device.number(u"Lfo_Time/Manual", 1.0)));
+        }
+        setParam(kind, params, QStringLiteral("lfo_sync"), mode >= 2 ? 1.0 : 0.0);
+    } else {
+        // Live 9 to 12.1's: the cutoff as a MIDI note, the envelope's amount ±127, the LFO's 0..30.
+        const int type = std::clamp(device.integer(u"FilterType/Manual", 0), 0, 4);
+        mapParams(device, owner, kind, id,
+                  {{QStringLiteral("FilterType"), QStringLiteral("type")},
+                   {QStringLiteral("Slope"), QStringLiteral("slope")},
+                   {QStringLiteral("Cutoff"), QStringLiteral("freq"),
+                    [](double v) { return 440.0 * std::exp2((v - 69.0) / 12.0); }},
+                   {QStringLiteral("Resonance"), QStringLiteral("resonance"), percent},
+                   {QStringLiteral("Drive"), QStringLiteral("drive")},
+                   {QStringLiteral("Morph"), QStringLiteral("morph"), percent},
+                   {QStringLiteral("ModHub"), QStringLiteral("env_amount"), [](double v) { return v * 100.0 / 127.0; }},
+                   {QStringLiteral("Attack"), QStringLiteral("env_attack")},
+                   {QStringLiteral("Release"), QStringLiteral("env_release")},
+                   {QStringLiteral("LfoAmount"), QStringLiteral("lfo_amount"), [](double v) { return v * 100.0 / 30.0; }},
+                   // Sine, Square, Triangle, Saw Up, Saw Down, S&H
+                   {QStringLiteral("Lfo/Type"), QStringLiteral("lfo_wave"), indexed({0, 4, 1, 2, 3, 5})},
+                   {QStringLiteral("Lfo/Frequency"), QStringLiteral("lfo_freq")},
+                   {QStringLiteral("Lfo/RateType"), QStringLiteral("lfo_sync")},
+                   {QStringLiteral("Lfo/BeatRate"), QStringLiteral("lfo_rate")},
+                   {QStringLiteral("Lfo/StereoMode"), QStringLiteral("spin_on")},
+                   {QStringLiteral("Lfo/Spin"), QStringLiteral("spin"), percent},
+                   {QStringLiteral("Lfo/Phase"), QStringLiteral("phase")},
+                   {QStringLiteral("Lfo/Offset"), QStringLiteral("lfo_offset")}},
+                  params);
+        // The circuit: the low- and high-pass's own list (Clean, OSR, MS2, SMP, PRD), or the others' (Clean, OSR).
+        setParam(kind, params, QStringLiteral("circuit"),
+                 type <= 1 ? device.integer(u"CircuitLpHp/Manual", 0) : device.integer(u"CircuitBpNoMo/Manual", 0));
+        if (!device.flag(u"Lfo/IsOn/Manual", true)) setParam(kind, params, QStringLiteral("lfo_amount"), 0.0);
+    }
+    QJsonObject data = builtin(kind, id, params);
+    if (const auto sidechain = sidechainOf(device)) data[QStringLiteral("sidechain")] = *sidechain;
+    return data;
+}
+
+std::optional<QJsonObject> Importer::saturator(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("saturator");
+    // Live 12.1 added the Bass Shaper (third in its list, as in SUBstation's) and flattened the Waveshaper's
+    // names; before, its list had no Bass Shaper.
+    const bool live121 = device.child(u"WsDrive") || device.child(u"BassShaperThreshold");
+    const auto ws = [live121](const char* flat, const char* nested) {
+        return live121 ? QString::fromLatin1(flat) : QStringLiteral("WaveShaper/") + QString::fromLatin1(nested);
+    };
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("PreDrive"), QStringLiteral("drive")},
+               {QStringLiteral("Type"), QStringLiteral("type"),
+                live121 ? indexed({0, 1, 2, 3, 4, 5, 6, 7}) : indexed({0, 1, 3, 4, 5, 6, 7})},
+               {QStringLiteral("BassShaperThreshold"), QStringLiteral("threshold")},
+               {QStringLiteral("PostDrive"), QStringLiteral("output")},
+               {QStringLiteral("DryWet"), QStringLiteral("mix"), percent},
+               // A switch before 12.1 (on: soft), then Off, Soft, Hard.
+               {QStringLiteral("PostClip"), QStringLiteral("clip")},
+               {QStringLiteral("ColorOn"), QStringLiteral("color")},
+               {QStringLiteral("BaseDrive"), QStringLiteral("base")},
+               {QStringLiteral("ColorFrequency"), QStringLiteral("freq")},
+               {QStringLiteral("ColorWidth"), QStringLiteral("width"), percent},
+               {QStringLiteral("ColorDepth"), QStringLiteral("depth")},
+               {QStringLiteral("PreDcFilter"), QStringLiteral("dc")},
+               {QStringLiteral("Oversampling"), QStringLiteral("hq")},
+               {ws("WsDrive", "Drive"), QStringLiteral("ws_drive"), percent},
+               {ws("WsLin", "Lin"), QStringLiteral("ws_lin"), percent},
+               {ws("WsCurve", "Curve"), QStringLiteral("ws_curve"), percent},
+               {ws("WsDamp", "Damp"), QStringLiteral("ws_damp"), percent},
+               {ws("WsDepth", "Depth"), QStringLiteral("ws_depth"), percent},
+               {ws("WsPeriod", "Period"), QStringLiteral("ws_period"), percent}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::amp(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("amp");
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("AmpType"), QStringLiteral("type")},
+               {QStringLiteral("Gain"), QStringLiteral("gain")},
+               {QStringLiteral("Bass"), QStringLiteral("bass")},
+               {QStringLiteral("Middle"), QStringLiteral("middle")},
+               {QStringLiteral("Treble"), QStringLiteral("treble")},
+               {QStringLiteral("Presence"), QStringLiteral("presence")},
+               {QStringLiteral("Volume"), QStringLiteral("volume")},
+               {QStringLiteral("DualMono"), QStringLiteral("dual")},
+               {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::redux(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("bitcrusher");
+    QJsonObject params;
+    if (device.tag == u"Redux2") {
+        mapParams(device, owner, kind, id,
+                  {{QStringLiteral("BitDepth"), QStringLiteral("bits")},
+                   {QStringLiteral("SampleRate"), QStringLiteral("rate")},
+                   {QStringLiteral("Jitter"), QStringLiteral("dither"), percent},
+                   {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+                  params);
+    } else {
+        // Live 10's: bits (when on) and a downsampling factor of 44.1 kHz.
+        mapParams(device, owner, kind, id,
+                  {{QStringLiteral("BitDepth"), QStringLiteral("bits")},
+                   {QStringLiteral("SampleResRough"), QStringLiteral("rate"),
+                    [](double v) { return 44100.0 / std::max(1.0, v); }}},
+                  params);
+        if (!device.flag(u"BitDepthOn/Manual", true)) setParam(kind, params, QStringLiteral("bits"), 16.0);
+    }
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::chorus(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("chorus");
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Mode"), QStringLiteral("mode")},
+               {QStringLiteral("ChorusTapCount"), QStringLiteral("taps")},
+               {QStringLiteral("ChorusDelayTime"), QStringLiteral("time")},
+               {QStringLiteral("Rate"), QStringLiteral("rate")},
+               {QStringLiteral("Amount"), QStringLiteral("amount"), percent},
+               {QStringLiteral("Feedback"), QStringLiteral("feedback"), percent},
+               {QStringLiteral("InvertFeedback"), QStringLiteral("fb_invert")},
+               {QStringLiteral("Width"), QStringLiteral("width"), percent},
+               {QStringLiteral("VibratoOffset"), QStringLiteral("offset")},
+               {QStringLiteral("Shaping"), QStringLiteral("shape"), percent},
+               {QStringLiteral("Warmth"), QStringLiteral("warmth"), percent},
+               {QStringLiteral("HighpassEnabled"), QStringLiteral("hp")},
+               {QStringLiteral("HighpassFrequency"), QStringLiteral("hp_freq")},
+               {QStringLiteral("OutputGain"), QStringLiteral("output"), gainDbOf},
+               {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::erosion(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("erosion");
+    QJsonObject params;
+    // Width (0.1..2.5) spread over SUBstation's octaves; Amount's 0..200 over its 0..100 %.
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Freq"), QStringLiteral("freq")},
+               {QStringLiteral("BandQ"), QStringLiteral("width"), [](double v) { return 4.0 * v; }},
+               {QStringLiteral("Amplitude"), QStringLiteral("amount"), [](double v) { return 0.5 * v; }}},
+              params);
+    // Its modes: Sine, Noise, Wide Noise (a noise of its own each side).
+    const int mode = std::clamp(device.integer(u"Mode/Manual", 1), 0, 2);
+    setParam(kind, params, QStringLiteral("blend"), mode == 0 ? 0.0 : 100.0);
+    setParam(kind, params, QStringLiteral("stereo"), mode == 2 ? 100.0 : 0.0);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::gate(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("gate");
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Threshold"), QStringLiteral("threshold"), gainDbOf},
+               {QStringLiteral("Return"), QStringLiteral("return")},
+               {QStringLiteral("Attack"), QStringLiteral("attack")},
+               {QStringLiteral("Hold"), QStringLiteral("hold")},
+               {QStringLiteral("Release"), QStringLiteral("release")},
+               {QStringLiteral("Gain"), QStringLiteral("floor")},
+               {QStringLiteral("LookAhead"), QStringLiteral("lookahead")},
+               {QStringLiteral("FlipMode"), QStringLiteral("flip")},
+               {QStringLiteral("SideChain/RoutedInput/Volume"), QStringLiteral("sc_gain"), gainDbOf},
+               {QStringLiteral("SideChain/DryWet"), QStringLiteral("sc_mix"), percent},
+               {QStringLiteral("SideListen"), QStringLiteral("sc_listen")},
+               {QStringLiteral("SideChainEq/On"), QStringLiteral("sc_eq")},
+               {QStringLiteral("SideChainEq/Freq"), QStringLiteral("sc_eq_freq")},
+               {QStringLiteral("SideChainEq/Q"), QStringLiteral("sc_eq_q")},
+               {QStringLiteral("SideChainEq/Gain"), QStringLiteral("sc_eq_gain")}},
+              params);
+    QJsonObject data = builtin(kind, id, params);
+    if (const auto sidechain = sidechainOf(device)) data[QStringLiteral("sidechain")] = *sidechain;
+    return data;
+}
+
+std::optional<QJsonObject> Importer::limiter(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("limiter");
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Gain"), QStringLiteral("gain")},
+               {QStringLiteral("Ceiling"), QStringLiteral("ceiling")},
+               {QStringLiteral("Release"), QStringLiteral("release")},
+               {QStringLiteral("AutoRelease"), QStringLiteral("auto_release")},
+               {QStringLiteral("Lookahead"), QStringLiteral("lookahead")},
+               {QStringLiteral("Mode"), QStringLiteral("mode")},
+               {QStringLiteral("Routing"), QStringLiteral("routing")},
+               {QStringLiteral("LinkAmount"), QStringLiteral("link"), percent},
+               {QStringLiteral("LinkChannels"), QStringLiteral("link"), percent},  // (before 12.1: a switch)
+               {QStringLiteral("Maximize"), QStringLiteral("maximize")},
+               {QStringLiteral("MaximizeThreshold"), QStringLiteral("threshold")},
+               {QStringLiteral("MaximizeOutput"), QStringLiteral("output")}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::multiband(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("multiband");
+    std::vector<LiveParam> list{
+        {QStringLiteral("SplitLowMid"), QStringLiteral("xover_low")},
+        {QStringLiteral("SplitMidHigh"), QStringLiteral("xover_high")},
+        {QStringLiteral("SplitLowMidOn"), QStringLiteral("low_on")},
+        {QStringLiteral("SplitMidHighOn"), QStringLiteral("high_on")},
+        {QStringLiteral("GlobalAmount"), QStringLiteral("amount"), percent},
+        {QStringLiteral("GlobalTime"), QStringLiteral("time"), percent},
+        {QStringLiteral("OutputGain"), QStringLiteral("output")},
+        {QStringLiteral("SoftKnee"), QStringLiteral("soft_knee")},
+        {QStringLiteral("EnvelopeIsPeak"), QStringLiteral("mode"), [](double v) { return v >= 0.5 ? 0.0 : 1.0; }},
+        {QStringLiteral("SideChain/RoutedInput/Volume"), QStringLiteral("sc_gain"), gainDbOf},
+        {QStringLiteral("SideChain/DryWet"), QStringLiteral("sc_mix"), percent}};
+    for (const auto& [live, band] : {std::pair{QStringLiteral("Low"), QStringLiteral("low")},
+                                     std::pair{QStringLiteral("Mid"), QStringLiteral("mid")},
+                                     std::pair{QStringLiteral("High"), QStringLiteral("high")}}) {
+        list.push_back({QStringLiteral("Active") + live, band + QStringLiteral("_active")});
+        list.push_back({QStringLiteral("InputGain") + live, band + QStringLiteral("_in")});
+        list.push_back({QStringLiteral("Gain") + live, band + QStringLiteral("_out")});
+        list.push_back({QStringLiteral("AboveThreshold") + live, band + QStringLiteral("_above")});
+        list.push_back({QStringLiteral("BelowThreshold") + live, band + QStringLiteral("_below")});
+        list.push_back({QStringLiteral("Attack") + live, band + QStringLiteral("_attack")});
+        list.push_back({QStringLiteral("Release") + live, band + QStringLiteral("_release")});
+    }
+    QJsonObject params;
+    mapParams(device, owner, kind, id, list, params);
+    // (Live keeps its ratios in a form of its own: they start at 1:1.)
+    notes_.listed(QStringLiteral("Multiband Dynamics came with their ratios at 1:1 (set them again)"),
+                  QStringLiteral("Multiband Dynamics"));
+    QJsonObject data = builtin(kind, id, params);
+    if (const auto sidechain = sidechainOf(device)) data[QStringLiteral("sidechain")] = *sidechain;
+    return data;
+}
+
+std::optional<QJsonObject> Importer::phaser(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("phaser");
+    // Live's waveforms: Sine, Triangle, Saw Up, Saw Down, Rectangle, Random, Random S&H, Triangle Analog,
+    // Triangle 8, Triangle 16.
+    const auto wave = indexed({0, 1, 5, 6, 7, 8, 9, 2, 3, 4});
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Mode"), QStringLiteral("mode")},
+               {QStringLiteral("Notches"), QStringLiteral("notches")},
+               {QStringLiteral("CenterFrequency"), QStringLiteral("center")},
+               {QStringLiteral("Spread"), QStringLiteral("spread"), percent},
+               {QStringLiteral("ModulationBlend"), QStringLiteral("blend")},
+               {QStringLiteral("FlangerDelayTime"), QStringLiteral("flange_time"), secondsToMs},
+               {QStringLiteral("DoublerDelayTime"), QStringLiteral("doubler_time"), secondsToMs},
+               {QStringLiteral("Modulation_Amount"), QStringLiteral("amount"), percent},
+               {QStringLiteral("Feedback"), QStringLiteral("feedback"), percent},
+               {QStringLiteral("Modulation_Sync"), QStringLiteral("lfo_sync")},
+               {QStringLiteral("Modulation_Frequency"), QStringLiteral("lfo_freq")},
+               {QStringLiteral("Modulation_SyncedRate"), QStringLiteral("lfo_rate")},
+               {QStringLiteral("Modulation_Waveform"), QStringLiteral("lfo_wave"), wave},
+               {QStringLiteral("Modulation_DutyCycle"), QStringLiteral("lfo_duty"), percent},
+               {QStringLiteral("Modulation_SpinEnabled"), QStringLiteral("spin_on")},
+               {QStringLiteral("Modulation_PhaseOffset"), QStringLiteral("phase")},
+               {QStringLiteral("Modulation_Spin"), QStringLiteral("spin"), percent},
+               {QStringLiteral("Modulation_LfoBlend"), QStringLiteral("lfo2_mix"), percent},
+               {QStringLiteral("Modulation_Sync2"), QStringLiteral("lfo2_sync")},
+               {QStringLiteral("Modulation_Frequency2"), QStringLiteral("lfo2_freq")},
+               {QStringLiteral("Modulation_SyncedRate2"), QStringLiteral("lfo2_rate")},
+               {QStringLiteral("Modulation_EnvelopeEnabled"), QStringLiteral("env_on")},
+               {QStringLiteral("Modulation_EnvelopeAmount"), QStringLiteral("env_amount"), percent},
+               {QStringLiteral("Modulation_EnvelopeAttack"), QStringLiteral("env_attack"), secondsToMs},
+               {QStringLiteral("Modulation_EnvelopeRelease"), QStringLiteral("env_release"), secondsToMs},
+               {QStringLiteral("SafeBassFrequency"), QStringLiteral("safe_bass")},
+               {QStringLiteral("Warmth"), QStringLiteral("warmth"), percent},
+               {QStringLiteral("OutputGain"), QStringLiteral("output"), gainDbOf},
+               {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::reverb(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("reverb");
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("PreDelay"), QStringLiteral("predelay")},
+               {QStringLiteral("BandLowOn"), QStringLiteral("lo_cut")},
+               {QStringLiteral("BandHighOn"), QStringLiteral("hi_cut")},
+               {QStringLiteral("BandFreq"), QStringLiteral("in_freq")},
+               {QStringLiteral("BandWidth"), QStringLiteral("in_width")},
+               {QStringLiteral("SpinOn"), QStringLiteral("spin")},
+               {QStringLiteral("EarlyReflectModFreq"), QStringLiteral("spin_rate")},
+               // Live's 2..55 over 0..100 %.
+               {QStringLiteral("EarlyReflectModDepth"), QStringLiteral("spin_amount"),
+                [](double v) { return (v - 2.0) / 53.0 * 100.0; }},
+               {QStringLiteral("DiffuseDelay"), QStringLiteral("shape"), percent},
+               {QStringLiteral("RoomType"), QStringLiteral("density")},
+               {QStringLiteral("SizeSmoothing"), QStringLiteral("smooth")},
+               {QStringLiteral("RoomSize"), QStringLiteral("size")},
+               {QStringLiteral("StereoSeparation"), QStringLiteral("stereo")},
+               {QStringLiteral("ShelfLowOn"), QStringLiteral("lo_shelf")},
+               {QStringLiteral("ShelfLoFreq"), QStringLiteral("lo_freq")},
+               {QStringLiteral("ShelfLoGain"), QStringLiteral("lo_gain"), percent},
+               {QStringLiteral("ShelfHighOn"), QStringLiteral("hi_filter")},
+               {QStringLiteral("HighFilterType"), QStringLiteral("hi_type")},
+               {QStringLiteral("ShelfHiFreq"), QStringLiteral("hi_freq")},
+               {QStringLiteral("ShelfHiGain"), QStringLiteral("hi_gain"), percent},
+               {QStringLiteral("DecayTime"), QStringLiteral("decay")},
+               {QStringLiteral("FreezeOn"), QStringLiteral("freeze")},
+               {QStringLiteral("FlatOn"), QStringLiteral("flat")},
+               {QStringLiteral("CutOn"), QStringLiteral("cut")},
+               // Live's all-pass gain (0.001..0.96) and size (0.05..1) over 0..100 %.
+               {QStringLiteral("AllPassGain"), QStringLiteral("diffusion"), [](double v) { return v / 0.96 * 100.0; }},
+               {QStringLiteral("AllPassSize"), QStringLiteral("scale"),
+                [](double v) { return (v - 0.05) / 0.95 * 100.0; }},
+               {QStringLiteral("ChorusOn"), QStringLiteral("chorus")},
+               {QStringLiteral("SizeModFreq"), QStringLiteral("chorus_rate")},
+               {QStringLiteral("SizeModDepth"), QStringLiteral("chorus_amount"), [](double v) { return v / 4.0 * 100.0; }},
+               {QStringLiteral("MixReflect"), QStringLiteral("reflect"), gainDbOf},
+               {QStringLiteral("MixDiffuse"), QStringLiteral("diffuse"), gainDbOf},
+               {QStringLiteral("MixDirect"), QStringLiteral("mix"), percent}},
+              params);
+    return builtin(kind, id, params);
+}
+
+std::optional<QJsonObject> Importer::vocoder(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("vocoder");
+    // Live's band counts (4, 8, 12, 16, 20, 24, 32, 40) as SUBstation's list's (4 to 40 by 4).
+    const auto bands = indexed({0, 1, 2, 3, 4, 5, 7, 9});
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("CarrierSource/Type"), QStringLiteral("carrier")},
+               {QStringLiteral("CarrierSource/NoiseRate"), QStringLiteral("noise_rate")},
+               {QStringLiteral("CarrierSource/NoiseCrackle"), QStringLiteral("crackle"), percent},
+               {QStringLiteral("CarrierSource/OscillatorPitch"), QStringLiteral("pitch")},
+               {QStringLiteral("CarrierSource/OscillatorWaveform"), QStringLiteral("wave")},
+               {QStringLiteral("CarrierSource/DetectionLowerBound"), QStringLiteral("track_low")},
+               {QStringLiteral("CarrierSource/DetectionUpperBound"), QStringLiteral("track_high")},
+               {QStringLiteral("CarrierFlatten"), QStringLiteral("enhance")},
+               {QStringLiteral("UvdLevel"), QStringLiteral("unvoiced"), percent},
+               {QStringLiteral("UvdThreshold"), QStringLiteral("sensitivity"), percent},
+               {QStringLiteral("UvdSlow"), QStringLiteral("speed")},
+               {QStringLiteral("FilterBank/BandCount"), QStringLiteral("bands"), bands},
+               {QStringLiteral("LowFrequency"), QStringLiteral("low")},
+               {QStringLiteral("HighFrequency"), QStringLiteral("high")},
+               {QStringLiteral("FilterBandWidth"), QStringLiteral("bandwidth"), percent},
+               {QStringLiteral("Retro"), QStringLiteral("filter")},
+               {QStringLiteral("FormantShift"), QStringLiteral("formant")},
+               {QStringLiteral("LevelGate"), QStringLiteral("gate")},
+               {QStringLiteral("ModulatorAmount"), QStringLiteral("depth"), percent},
+               {QStringLiteral("EnvelopeRate"), QStringLiteral("attack")},
+               {QStringLiteral("EnvelopeRelease"), QStringLiteral("release")},
+               {QStringLiteral("MonoStereo"), QStringLiteral("channels")},
+               {QStringLiteral("OutputGain"), QStringLiteral("level")},
+               {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
+              params);
+    QJsonObject data = builtin(kind, id, params);
+    // An External carrier comes in on the sidechain.
+    if (const Element* carrier = device.child(u"CarrierSource")) {
+        if (const auto sidechain = routedSidechain(carrier->child(u"RoutedInput")))
+            data[QStringLiteral("sidechain")] = *sidechain;
+    }
+    return data;
+}
+
+std::optional<QJsonObject> Importer::arpeggiator(const Element& device, const QString& owner, const QString& id) {
+    const QString kind = QStringLiteral("arpeggiator");
+    // Live's styles (Up, Down, UpDown, DownUp, Up & Down, Down & Up, Converge, Diverge, Con & Diverge, Pinky Up,
+    // Pinky UpDown, Thumb Up, Thumb UpDown, Play Order, Chord Trigger, Random, Random Other, Random Once) as the
+    // nearest of SUBstation's (Up, Down, Up-Down, Down-Up, Converge, Diverge, Played, Random, Chord).
+    const auto style = indexed({0, 1, 2, 3, 2, 3, 4, 5, 4, 0, 2, 0, 2, 6, 8, 7, 7, 7});
+    // Its synced rates (1/128, 1/96, 1/64, 1/48, 1/32, 1/24, 1/16, 1/12, 1/8, 1/6, 1/4, 1/3, 1/2, 1, 2, 4 bars)
+    // as SUBstation's (1/1, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32).
+    const auto synced = indexed({9, 9, 9, 9, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 0});
+    QJsonObject params;
+    mapParams(device, owner, kind, id,
+              {{QStringLiteral("Mode"), QStringLiteral("style"), style},
+               {QStringLiteral("SyncState"), QStringLiteral("sync")},
+               {QStringLiteral("FreeRate"), QStringLiteral("rate"), [](double ms) { return 1000.0 / std::max(1.0, ms); }},
+               {QStringLiteral("SyncedRate"), QStringLiteral("synced"), synced},
+               {QStringLiteral("Gate"), QStringLiteral("gate")},
+               {QStringLiteral("Hold"), QStringLiteral("hold")}},
+              params);
+    // Transposed by octaves: as many octaves as steps (SUBstation's goes up to 4).
+    if (device.number(u"TransposeDistance/Manual", 0.0) == 12.0)
+        setParam(kind, params, QStringLiteral("octaves"), 1.0 + device.number(u"TransposeSteps/Manual", 0.0));
+    return builtin(kind, id, params);
 }
 
 // --- Clips ------------------------------------------------------------------------------------------

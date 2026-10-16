@@ -13,6 +13,7 @@
 #include <QUndoStack>
 
 #include <cmath>
+#include <functional>
 
 #include "EditorHarness.h"
 #include "devices/DisplayValue.h"
@@ -100,17 +101,25 @@ private Q_SLOTS:
         const double still = view->property("angle").toDouble();
         QTest::qWait(100);
         QCOMPARE(view->property("angle").toDouble(), still);
+        // The engine says the tape goes at `value`, all the while `seen` is waited for (a quarter second without
+        // it, the display goes inactive).
+        const auto whileGoing = [&](double value, const std::function<bool()>& seen) {
+            for (int i = 0; i < 300; ++i) {
+                speed->advance(true, value, 0.016);
+                if (seen())
+                    return true;
+                QTest::qWait(10);
+            }
+            return false;
+        };
         // Running at full speed: turning.
-        speed->advance(true, 1.0, 0.016);
-        QVERIFY(view->property("running").toBool());
-        QTRY_VERIFY(view->property("angle").toDouble() != still);
+        QVERIFY(whileGoing(1.0, [&] { return view->property("running").toBool(); }));
+        QVERIFY(whileGoing(1.0, [&] { return view->property("angle").toDouble() != still; }));
         // Stopped (speed 0): still, and dimmed.
-        speed->advance(true, 0.0, 0.016);
-        QVERIFY(!view->property("running").toBool());
+        QVERIFY(whileGoing(0.0, [&] { return !view->property("running").toBool(); }));
         const double stopped = view->property("angle").toDouble();
-        QTest::qWait(100);
+        QVERIFY(whileGoing(0.0, [&] { return find(view, QStringLiteral("reels"))->opacity() < 0.6; }));
         QCOMPARE(view->property("angle").toDouble(), stopped);
-        QTRY_VERIFY(find(view, QStringLiteral("reels"))->opacity() < 0.6);
         for (int i = 0; i < 10; ++i) {
             speed->advance(true, 0.6, 0.016);
             QTest::qWait(30);

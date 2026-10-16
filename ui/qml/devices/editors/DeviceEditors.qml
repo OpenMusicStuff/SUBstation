@@ -33,6 +33,7 @@ QtObject {
     readonly property var editors: ({
         "amp": "AmpEditor.qml",
         "arpeggiator": "ArpeggiatorEditor.qml",
+        "auto_filter": "AutoFilterEditor.qml",
         "bitcrusher": "BitcrusherEditor.qml",
         "chorus": "ChorusEditor.qml",
         "compressor": "CompressorEditor.qml",
@@ -48,6 +49,7 @@ QtObject {
         "lfo": "LfoEditor.qml",
         "limiter": "LimiterEditor.qml",
         "multiband": "MultibandEditor.qml",
+        "overdrive": "OverdriveEditor.qml",
         "phaser": "PhaserEditor.qml",
         "reverb": "ReverbEditor.qml",
         "sampler": "SamplerEditor.qml",
