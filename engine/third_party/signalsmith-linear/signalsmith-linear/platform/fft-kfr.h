@@ -24,6 +24,15 @@ namespace _impl {
 inline constexpr size_t kMinKfrSize = 4;
 inline constexpr size_t kMinKfrRealSize = 128;
 
+// SimpleFFT with the prefersSplit SimpleRealFFT reads (as the library's own
+// Pow2FFT on it): SimpleFFT has none, and MSVC instantiates that read with
+// SimpleRealFFT's members, so SimpleRealFFT<Sample, SimpleFFT<Sample>> breaks.
+template<typename Sample>
+struct SimplePow2FFT : SimpleFFT<Sample> {
+	static constexpr bool prefersSplit = true;
+	using SimpleFFT<Sample>::SimpleFFT;
+};
+
 template<typename Sample>
 struct KfrComplexFFT {
 	static constexpr bool prefersSplit = false;
@@ -151,7 +160,7 @@ private:
 	std::unique_ptr<kfr::dft_plan_real<Sample>> plan_;
 	std::vector<kfr::u8> temp_;
 	std::vector<Complex> freq_;
-	SimpleRealFFT<Sample, SimpleFFT<Sample>> small_;
+	SimpleRealFFT<Sample, SimplePow2FFT<Sample>> small_;
 };
 
 }  // namespace _impl

@@ -109,7 +109,7 @@ void checkReal(size_t n) {
     using C = std::complex<T>;
     INFO("real, size " + std::to_string(n) + (std::is_same_v<T, float> ? ", float" : ", double"));
     linear::Pow2RealFFT<T> kfr(n);
-    linear::SimpleRealFFT<T, linear::SimpleFFT<T>> own(n);
+    linear::SimpleRealFFT<T, linear::_impl::SimplePow2FFT<T>> own(n);
     const std::vector<T> x = randomReal<T>(n, static_cast<unsigned>(n) + 7);
     // Forward: bins 0..n/2-1, bin 0 holding DC and Nyquist.
     std::vector<C> want(n / 2), got(n / 2);

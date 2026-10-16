@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         const double kfrC = timePerCall(repeat, [&] { kfrComplex.fft(x.data(), y.data()); sink = sink + y[1].real(); });
         std::printf("%-7zu  %-28s  %12.0f  %12.0f  %7.1fx\n", n, "complex forward", ownC, kfrC, ownC / kfrC);
 
-        linear::SimpleRealFFT<float, linear::SimpleFFT<float>> ownReal(n);
+        linear::SimpleRealFFT<float, linear::_impl::SimplePow2FFT<float>> ownReal(n);
         linear::Pow2RealFFT<float> kfrReal(n);
         const double ownR = timePerCall(repeat, [&] {
             ownReal.fft(real.data(), spectrum.data());
