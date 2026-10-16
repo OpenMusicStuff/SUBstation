@@ -13,6 +13,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Building and testing only reads the repository.
+permissions:
+  contents: read
+
 # A newer push to a pull request cancels its older run; pushes to branches each finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +28,9 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
+        with:
+          # (The token isn't left in .git/config for the build and the tests, which a pull request's code runs.)
+          persist-credentials: false
       - name: Install Qt, PipeWire, ALSA, xcb and tools
         run: |
           sudo apt-get update
@@ -54,6 +61,9 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
+        with:
+          # (The token isn't left in .git/config for the build and the tests, which a pull request's code runs.)
+          persist-credentials: false
       - name: Install Qt, PipeWire, ALSA, xcb and tools
         run: |
           sudo apt-get update
