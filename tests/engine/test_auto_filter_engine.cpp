@@ -3,6 +3,7 @@
 // synced, Phase and Spin), the sidechain keying the envelope, the circuits'
 // saturation staying bounded, Dry/Wet, changes without clicks, and silence.
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <tuple>
@@ -40,7 +41,7 @@ TEST_CASE("the auto filter is listed as an audio effect with a sidechain") {
                                        "drive",      "morph",      "env_amount", "env_attack", "env_release",
                                        "lfo_amount", "lfo_wave",   "lfo_sync",  "lfo_freq",    "lfo_rate",
                                        "spin_on",    "phase",      "spin",      "lfo_offset",  "output",
-                                       "mix"};
+                                       "mix",        "lfo_morph",  "lfo_quantize", "lfo_steps", "soft_clip"};
     CHECK(paramIds(info.params) == ids);
     Standalone device("auto_filter");
     CHECK(device.processor().hasSidechain());
@@ -231,4 +232,31 @@ TEST_CASE("silence rings out to exact zeros, and plays the same in any blocks") 
     Standalone a("auto_filter", kSampleRate, settings), b("auto_filter", kSampleRate, settings);
     const Samples tone = noise(kSampleRate, 11, 0.4f);
     CHECK(a.play(tone, {}, 64) == b.play(tone, {}, 1024));
+}
+
+TEST_CASE("the LFO's Morph and Quantize, and Clip") {
+    // Quantized to 4 steps, the LFO puts the cutoff at 4 places at most.
+    Standalone quantized("auto_filter", kSampleRate,
+                         {{"lfo_amount", 50.f}, {"lfo_freq", 3.f}, {"lfo_quantize", 1.f}, {"lfo_steps", 4.f}});
+    Samples l = full(kSampleRate, 0.f), r = l;
+    quantized.play(l, r);
+    std::vector<float> cutoffs = quantized.display("cutoff_l");
+    std::sort(cutoffs.begin(), cutoffs.end());
+    std::vector<float> settled;  // (the glide's passing values left out: each level held for a while)
+    for (size_t i = 0; i < cutoffs.size();) {
+        size_t j = i;
+        while (j < cutoffs.size() && cutoffs[j] < cutoffs[i] * 1.001f) ++j;
+        if (j - i > 10) settled.push_back(cutoffs[i]);
+        i = j;
+    }
+    CHECK(settled.size() <= 4 && settled.size() >= 3);
+    // Morph leans the cycle: a sine's peak comes early (-100 %) or late (+100 %).
+    CHECK_NEAR(af::morphPhase(0.25, 0.0), 0.25, 1e-12);
+    CHECK(af::morphPhase(0.1, -0.8) > 0.25);  // well into the first half already
+    CHECK(af::morphPhase(0.4, 0.8) < 0.25);
+    CHECK_NEAR(af::quantizeLfo(0.3, 2), 1.0, 1e-12);
+    CHECK_NEAR(af::quantizeLfo(0.3, 0), 0.3, 1e-12);
+    // Clip keeps the output under full scale, however hot.
+    Standalone clipped("auto_filter", kSampleRate, {{"freq", 20000.f}, {"output", 12.f}, {"soft_clip", 1.f}});
+    CHECK(maxAbs(clipped.play(sine(200.0, 0.5, 0.9))) < 1.0);
 }

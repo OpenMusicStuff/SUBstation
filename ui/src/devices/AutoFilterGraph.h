@@ -45,7 +45,7 @@ public:
     static constexpr int kDisplaySamples = 128;  // the engine's samples per value
 
     static constexpr int kWidth = 184;
-    static constexpr int kMinimumHeight = 96;
+    static constexpr int kMinimumHeight = 60;
     static constexpr double kLow = 20.0;  // Hz across the plot
     static constexpr double kHigh = 20000.0;
     static constexpr double kTopDb = 24.0;  // dB up the plot

@@ -70,6 +70,20 @@ inline double sweepOctaves(double envelopeAmount, double envelope, double lfoAmo
     return envelopeAmount / 100.0 * kEnvelopeOctaves * envelope + lfoAmount / 100.0 * kLfoOctaves * lfo;
 }
 
+// LFO Morph (-1..1) bends the LFO's cycle: the first half of the shape takes (1 + morph) / 2 of the cycle and
+// the second half the rest (as a duty cycle does), so a sine leans into a saw and a square narrows. 0 leaves it.
+inline double morphPhase(double phase, double morph) noexcept {
+    const double knee = std::clamp(0.5 * (1.0 + morph), 0.02, 0.98);
+    return phase < knee ? 0.5 * phase / knee : 0.5 + 0.5 * (phase - knee) / (1.0 - knee);
+}
+
+// The LFO's value (-1..1) quantized to `steps` evenly spaced levels (2..64); 0 steps leaves it.
+inline double quantizeLfo(double value, int steps) noexcept {
+    if (steps < 2) return value;
+    const double last = steps - 1;
+    return std::round((std::clamp(value, -1.0, 1.0) + 1.0) * 0.5 * last) / last * 2.0 - 1.0;
+}
+
 // A section's output as a sum of its low-pass, band-pass (unity at the centre)
 // and high-pass.
 struct Weights {

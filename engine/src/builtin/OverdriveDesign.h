@@ -89,9 +89,6 @@ struct Adaa {
     }
 };
 
-// What comes out for a steady input `x` (the curve, driven): the editor's transfer curve.
-inline double transfer(double x, double drivePercent) noexcept { return shape(driveGain(drivePercent) * x); }
-
 // A Butterworth second-order section's analog response at Ω = f / fc.
 inline std::complex<double> lowpass(double omega) noexcept {
     const std::complex<double> s(0.0, omega);

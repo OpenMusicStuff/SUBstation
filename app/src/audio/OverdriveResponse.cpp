@@ -29,8 +29,6 @@ QPair<double, double> overdriveBandEdges(double frequency, double width, double 
     return {low, high};
 }
 
-double overdriveTransfer(double x, double drive) { return sub::overdrive::transfer(x, drive); }
-
 double overdriveDriveGain(double drive) { return sub::overdrive::driveGain(drive); }
 
 }  // namespace sub::app

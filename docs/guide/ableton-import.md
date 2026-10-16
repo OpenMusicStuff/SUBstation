@@ -74,7 +74,7 @@ and fades, and whether they are deactivated.
 | Compressor | Compressor (threshold, ratio, attack, release, knee, makeup, dry/wet) and its sidechain |
 | Delay | Delay: sync, sixteenths and times, offsets, link, feedback, freeze, filter, mode, ping pong, dry/wet |
 | Simpler, and a Sampler of one sample | Sampler: its sample, mode (Classic, One-Shot, Slicing), root key, transpose, detune, start and end, volume, envelope |
-| Auto Filter (Live 12.2's and the older one) | Auto Filter: type, circuit, slope, frequency, resonance, drive, morph, the envelope, the LFO (rate or synced rate, waveform, phase or spin, offset), output, dry/wet and its sidechain. Live 12.2's types SUBstation's hasn't (DJ, Comb, Resampling, Notch+LP, Vowel) come as a low-pass, and the message says so |
+| Auto Filter (Live 12.2's and the older one) | Auto Filter: type, circuit, slope, frequency, resonance, drive, morph, the envelope, the LFO (rate or synced rate, waveform, morph, quantize, phase or spin, offset), clip, output, dry/wet and its sidechain. Live 12.2's types SUBstation's hasn't (DJ, Comb, Resampling, Notch+LP, Vowel) come as a low-pass, and the message says so |
 | Overdrive | Overdrive: frequency, width, drive, tone, dynamics, dry/wet |
 | Saturator | Saturator: drive, type (Live 11's list and 12.1's, with the Bass Shaper), its threshold, output, dry/wet, post clip, color, DC, Hi-Quality and the Waveshaper's controls |
 | Amp | Amp: type, gain, bass, middle, treble, presence, volume, dual mono, dry/wet |

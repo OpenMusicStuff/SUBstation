@@ -71,6 +71,10 @@ public:
         LfoOffset,
         Output,
         Mix,
+        LfoMorph,
+        LfoQuantize,
+        LfoSteps,
+        SoftClip,
         NumParams
     };
     enum Display { CutoffL = 0, CutoffR, EnvDisplay, LfoDisplay, InputDisplay };
@@ -176,6 +180,7 @@ protected:
                     float y = tick(s.b, s.g, kB, w, x, t.circuit, limit);
                     if (driven) y /= std::sqrt(drive);
                     y *= output;
+                    if (t.softClip) y = dsp::fastTanh(y);
                     ch[c][i] = dry + mix * (y - dry);
                 }
                 publish(InputDisplay, n > 1 ? 0.5f * mono : mono);
@@ -224,6 +229,9 @@ private:
         double envAmount = 0.0, lfoAmount = 0.0;
         bool lfoOn = false;
         dsp::LfoShape wave = dsp::LfoShape::Sine;
+        double lfoMorph = 0.0;  // -1..1
+        int lfoSteps = 0;       // 0: not quantized
+        bool softClip = false;
     };
 
     Targets targets() const noexcept {
@@ -240,7 +248,20 @@ private:
         t.lfoAmount = param(LfoAmount);
         t.lfoOn = t.lfoAmount > 0.0;
         t.wave = static_cast<dsp::LfoShape>(std::clamp(choiceIndex(LfoWave), 0, 6));
+        t.lfoMorph = param(LfoMorph) / 100.0;
+        t.lfoSteps = choiceIndex(LfoQuantize) == 1 ? choiceIndex(LfoSteps) : 0;
+        t.softClip = isOn(SoftClip);
         return t;
+    }
+
+    // The LFO's value `offset` cycles on from where it is: its phase bent by Morph, its value quantized to
+    // Steps levels when Quantize is on.
+    float lfoValue(const Targets& t, double offset) const noexcept {
+        const double at = lfo_.lfo.phase() + offset;
+        const double whole = std::floor(at);
+        const double phase = autofilter::morphPhase(at - whole, t.lfoMorph);
+        const uint32_t cycle = lfo_.lfo.cycle() + static_cast<uint32_t>(static_cast<int64_t>(whole));
+        return static_cast<float>(autofilter::quantizeLfo(dsp::Lfo::shape(t.wave, phase, cycle), t.lfoSteps));
     }
 
     float gOf(double cutoff) const noexcept {
@@ -255,8 +276,8 @@ private:
         const double env = autofilter::envelopeValue(envelope_.value());
         stepLfo(ctx, at + kChunk, kChunk);
         const double offset = param(LfoOffset) / 360.0;
-        const float lfoL = lfo_.lfo.value(t.wave, offset);
-        const float lfoR = lfo_.lfo.value(t.wave, offset + lfo_.offset);
+        const float lfoL = lfoValue(t, offset);
+        const float lfoR = lfoValue(t, offset + lfo_.offset);
         for (int c = 0; c < n; ++c) {
             Channel& s = channels_[static_cast<size_t>(c)];
             const double octaves = autofilter::sweepOctaves(t.envAmount, env, t.lfoAmount, c == 0 ? lfoL : lfoR);
@@ -352,6 +373,10 @@ private:
                 {"lfo_offset", "LFO Offset", "°", 0.f, 360.f, 0.f},
                 {"output", "Output", "dB", -24.f, 12.f, 0.f},
                 {"mix", "Dry/Wet", "%", 0.f, 100.f, 100.f},
+                {"lfo_morph", "LFO Morph", "%", -100.f, 100.f, 0.f},
+                {"lfo_quantize", "LFO Quantize", "", 0.f, 1.f, 0.f, false, {"None", "Steps"}},
+                {"lfo_steps", "LFO Steps", "", 2.f, 64.f, 8.f, false, {}, 62},
+                {"soft_clip", "Soft Clip", "", 0.f, 1.f, 0.f, false, offOn},
             };
         }();
         return kInfos;

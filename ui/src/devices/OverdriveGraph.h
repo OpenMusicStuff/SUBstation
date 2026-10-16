@@ -1,15 +1,13 @@
 #pragma once
 
-// The Overdrive's display, as Ableton's: at the left the band-pass that goes
-// into the drive (Frequency, Width) on a 20 Hz..20 kHz log axis, Tone's
-// low-pass dashed over it, the input's spectrum (the display `input`) behind;
-// at the right the curve it drives into, from the engine's own maths
-// (sub::app::overdriveTransfer at Drive).
+// The Overdrive's display, as Ableton's: the band-pass that goes into the
+// drive (Frequency, Width) on a 20 Hz..20 kHz log axis, Tone's low-pass dashed
+// over it, the input's spectrum (the display `input`) behind.
 //
-// - Its subtle life: the curve lights up as far as the sound drives it (the
-//   display `drive`, eased: a bright stretch from the middle out to the level,
-//   and a dot riding the curve there), and the band glows as hard as the
-//   output (the display `output`). In silence they come to rest.
+// - Its subtle life: the band glows as hard as the output (the display
+//   `output`), and driveActivity() (from the display `drive`, eased) says how
+//   hard the sound is driven, for the editor's Drive knob to warm with. In
+//   silence they come to rest.
 // - Drag on the band (it jumps to the press) for the Frequency across and the
 //   Width up and down, one undo step per drag; double-click resets both.
 
@@ -35,8 +33,6 @@ class OverdriveGraph : public DeviceCanvas {
 public:
     static constexpr int kWidth = 236;
     static constexpr int kMinimumHeight = 96;
-    static constexpr int kCurveWidth = 72;  // the curve's square at the right (as wide as tall, at most this)
-    static constexpr int kGap = 6;
     static constexpr double kLow = 20.0;  // Hz across the band
     static constexpr double kHigh = 20000.0;
     static constexpr double kFloorDb = -30.0;  // the band's bottom
@@ -47,7 +43,6 @@ public:
     explicit OverdriveGraph(QQuickItem* parent = nullptr);
 
     QRectF bandRect() const;   // the band's plot
-    QRectF curveRect() const;  // the curve's square
     LogAxis frequencyAxis() const;
     double xOf(double freq) const;
     double freqAt(double x) const;
@@ -85,7 +80,7 @@ private:
     void setDragging(bool dragging);
 
     double freq_ = 1500.0, width_ = 6.5, drive_ = 50.0, tone_ = 50.0;
-    std::vector<QPointF> band_, tone_line_, transfer_;
+    std::vector<QPointF> band_, tone_line_;
     sub::app::analysis::FallingSpectrum spectrum_;
     std::vector<double> columns_;
     Eased driveLevel_, outputLevel_;

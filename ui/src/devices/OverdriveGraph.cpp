@@ -19,13 +19,8 @@ OverdriveGraph::OverdriveGraph(QQuickItem* parent) : DeviceCanvas(parent) {
     setCursor(Qt::SizeAllCursor);
 }
 
-QRectF OverdriveGraph::curveRect() const {
-    const double side = std::min<double>(kCurveWidth, height() - 2);
-    return {width() - 1 - side, 1 + (height() - 2 - side) / 2, side, side};
-}
-
 QRectF OverdriveGraph::bandRect() const {
-    return QRectF(1, 1, std::max(10.0, curveRect().left() - kGap - 1), height() - 2);
+    return QRectF(0, 0, width(), height()).adjusted(1, 1, -1, -1);
 }
 
 LogAxis OverdriveGraph::frequencyAxis() const {
@@ -80,15 +75,6 @@ void OverdriveGraph::updateCurves() {
         const double x = r.left() + i * r.width() / (points - 1);
         band_.emplace_back(x, y(band[i]));
         tone_line_.emplace_back(x, y(tone[i]));
-    }
-    // The curve over -1..1 in, -1..1 out.
-    const QRectF c = curveRect().adjusted(3, 3, -3, -3);
-    transfer_.clear();
-    const int steps = std::max(16, int(c.width()));
-    for (int i = 0; i <= steps; ++i) {
-        const double x = -1.0 + 2.0 * i / steps;
-        const double out = std::clamp(sub::app::overdriveTransfer(x, drive_), -1.0, 1.0);
-        transfer_.emplace_back(c.center().x() + x * c.width() / 2, c.center().y() - out * c.height() / 2);
     }
 }
 
@@ -201,9 +187,7 @@ void OverdriveGraph::dragTo(const QPointF& pos) {
 void OverdriveGraph::paint(SgPainter& p) {
     p.setAntialiasing(true);
     const QRectF r = bandRect();
-    const QRectF c = curveRect();
-    p.fillRect(r.adjusted(-1, -1, 1, 1), Theme::meterBg());
-    p.fillRect(c.adjusted(-1, -1, 1, 1), Theme::meterBg());
+    p.fillRect(QRectF(0, 0, width(), height()), Theme::meterBg());
     drawDecadeGrid(p, r, frequencyAxis());
 
     // The input's spectrum.
@@ -233,28 +217,6 @@ void OverdriveGraph::paint(SgPainter& p) {
     const QPointF at = dot();
     p.drawEllipse(QRectF(at.x() - kDotRadius, at.y() - kDotRadius, 2 * kDotRadius, 2 * kDotRadius),
                   dragging_ ? Theme::text() : Theme::accent(), 2);
-
-    // The curve: dim end to end, lit from the middle out as far as the sound drives it, a dot riding it there.
-    const QRectF inner = c.adjusted(3, 3, -3, -3);
-    p.drawLine(QPointF(inner.left(), inner.center().y()), QPointF(inner.right(), inner.center().y()),
-               withAlpha(Theme::text(), 30));
-    p.drawLine(QPointF(inner.center().x(), inner.top()), QPointF(inner.center().x(), inner.bottom()),
-               withAlpha(Theme::text(), 30));
-    if (transfer_.size() >= 2) {
-        p.drawPolyline(transfer_.data(), int(transfer_.size()), withAlpha(Theme::accent(), 90), 1.5);
-        const double reach = driveActivity();
-        if (reach > 0.005) {
-            const int n = int(transfer_.size());
-            const int half = n / 2;
-            const int span = std::max(1, int(std::lround(reach * half)));
-            const int from = std::max(0, half - span), to = std::min(n - 1, half + span);
-            p.drawPolyline(transfer_.data() + from, to - from + 1, withAlpha(Theme::accent(), 70), 4.0);
-            p.drawPolyline(transfer_.data() + from, to - from + 1, Theme::accent(), 1.5);
-            const QPointF rider = transfer_[std::size_t(to)];
-            p.fillRadialGlow(rider, 6.0, withAlpha(Theme::accent(), 120));
-            p.fillEllipse(rider, 2.0, 2.0, Theme::text());
-        }
-    }
 }
 
 }  // namespace sub::ui

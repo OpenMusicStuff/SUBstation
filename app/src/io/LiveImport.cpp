@@ -1376,6 +1376,12 @@ std::optional<QJsonObject> Importer::autoFilter(const Element& device, const QSt
                    {QStringLiteral("Lfo_PhaseOffset"), QStringLiteral("lfo_offset")},
                    {QStringLiteral("Lfo_StereoMode"), QStringLiteral("spin_on")},
                    {QStringLiteral("Lfo_Spin"), QStringLiteral("spin"), percent},
+                   {QStringLiteral("Lfo_Morph"), QStringLiteral("lfo_morph"), percent},
+                   // (its quantization's modes past None: as Steps)
+                   {QStringLiteral("Lfo_QuantizationMode"), QStringLiteral("lfo_quantize"),
+                    [](double v) { return v >= 0.5 ? 1.0 : 0.0; }},
+                   {QStringLiteral("Lfo_Steps"), QStringLiteral("lfo_steps")},
+                   {QStringLiteral("SoftClipOn"), QStringLiteral("soft_clip")},
                    {QStringLiteral("Output"), QStringLiteral("output"), gainDbOf},
                    {QStringLiteral("DryWet"), QStringLiteral("mix"), percent}},
                   params);

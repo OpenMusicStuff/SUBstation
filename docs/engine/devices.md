@@ -52,7 +52,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Erosion.cpp](../../engine/src/builtin/devices/Erosion.cpp) | Erosion: a 2 ms delay modulated by a sine or band-passed noise, Noise Blend and Stereo Width, chunked glides and ramps, displays |
 | [builtin/ErosionDesign.h](../../engine/src/builtin/ErosionDesign.h) | Erosion's maths (`erosion::band`, `noisePowerGain`, `bandMagnitude`, `bandEdges`, `excursionSamples`, `blendWeights`, `stereoSpread`, the instances' noise salts), shared with the application layer's `ErosionResponse.h` for the editor |
 | [builtin/devices/Overdrive.cpp](../../engine/src/builtin/devices/Overdrive.cpp) | Overdrive: a band-pass into an anti-aliased asymmetric soft clipper, Tone, Dynamics, chunked glides, displays |
-| [builtin/OverdriveDesign.h](../../engine/src/builtin/OverdriveDesign.h) | The Overdrive's maths (`overdrive::bandEdges`, `driveGain`, `toneHz`, `shape` and its `Adaa`, `transfer`, `bandResponseDb`, `toneResponseDb`, `dynamicsGain`), shared with the application layer's `OverdriveResponse.h` for the editor |
+| [builtin/OverdriveDesign.h](../../engine/src/builtin/OverdriveDesign.h) | The Overdrive's maths (`overdrive::bandEdges`, `driveGain`, `toneHz`, `shape` and its `Adaa`, `bandResponseDb`, `toneResponseDb`, `dynamicsGain`), shared with the application layer's `OverdriveResponse.h` for the editor |
 | [builtin/devices/AutoFilter.cpp](../../engine/src/builtin/devices/AutoFilter.cpp) | Auto Filter: a TPT state-variable filter (12 or 24 dB, five types by output weights, five circuits), its cutoff swept by an envelope follower (or the sidechain) and an LFO in chunks, glides, displays |
 | [builtin/AutoFilterDesign.h](../../engine/src/builtin/AutoFilterDesign.h) | The Auto Filter's maths (`autofilter::resonanceQ`, `cutoffHz`, `envelopeValue`, `sweepOctaves`, `weights` and `morphWeights`, the circuits' `saturate` and `stateLimit`, `responseDb`), shared with the application layer's `AutoFilterResponse.h` for the editor |
 | [builtin/devices/Delay.cpp](../../engine/src/builtin/devices/Delay.cpp) | Delay: synced or free times per side, filter, modes, ping pong, freeze |
@@ -1608,6 +1608,9 @@ A resonant filter with an envelope follower and an LFO, after Ableton's Auto Fil
 | `lfo_offset` | LFO Offset | ° | 0..360 | 0 |
 | `output` | Output | dB | -24..12 | 0 |
 | `mix` | Dry/Wet | % | 0..100 | 100 |
+| `lfo_morph` | LFO Morph | % | -100..100 | 0 |
+| `lfo_quantize`, `lfo_steps` | LFO Quantize, LFO Steps | | None, Steps; 2..64 | None, 8 |
+| `soft_clip` | Soft Clip | | Off/On | Off |
 
 - **The filter**: a TPT state-variable section (`dsp::Svf`) at Q `0.7071 + 24.29 × (res/125)²`; 24 dB
   puts a Q 0.5412 section before it and raises its Q by 1.8478 (a fourth-order Butterworth at no
@@ -1621,11 +1624,12 @@ A resonant filter with an envelope follower and an LFO, after Ableton's Auto Fil
   louder channel of the input, or of the sidechain when one is connected, read as `1 − dB / −48`
   (0..1); the LFO (`dsp::Lfo`) moved to each chunk's end, free or, synced while the song plays, at the
   song's position; the right side Phase ahead (gliding the short way round) or, with Spin, running Spin
-  faster. The cutoff is `freq × 2^(env_amount/100 × 6 × env + lfo_amount/100 × 4 × lfo)`, held to
+  faster. LFO Morph bends its cycle (`autofilter::morphPhase`: the shape's first half takes (1 + morph) / 2 of
+  it), Quantize rounds its value to Steps levels (`quantizeLfo`). The cutoff is `freq × 2^(env_amount/100 × 6 × env + lfo_amount/100 × 4 × lfo)`, held to
   20 Hz..min(20 kHz, 0.45 sr), glided in octaves (1.5 ms) and its `tan()` stepped across the chunk.
 - Type, Morph, Slope (the first section's input faded from the dry signal to its output) and Resonance
-  glide a chunk at a time (10 ms); Drive, Output and Dry/Wet ramp over 20 ms. No latency; a quarter
-  second of tail.
+  glide a chunk at a time (10 ms); Drive, Output and Dry/Wet ramp over 20 ms; Soft Clip puts the wet output
+  through `dsp::fastTanh`. No latency; a quarter second of tail.
 - **Displays**: `cutoff_l`, `cutoff_r` (Hz), `env` (0..1) and `lfo` (-1..1), one value per 128 samples;
   `input`, a value a sample.
 
@@ -2637,7 +2641,7 @@ readonly property var editors: ({
   meter; Erosion its noise band (from `erosion::bandMagnitude`) on an X-Y field of Frequency and Amount over spectra
   of `input` and `output`, shimmering with `erosion`, and a scope of `mod_l` against `mod_r`; the Delay its filter
   over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
-  modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, and the curve it drives into (`overdrive::transfer`) lit as far as `drive` reaches, the band glowing with `output`; the Auto Filter its response (from `autofilter::responseDb`) at the cutoff the engine publishes (`cutoff_l`, `cutoff_r`, played back by a `DisplayPlayback`) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom; the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
+  modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, the band glowing with `output` and the Drive knob warming with `drive`; the Auto Filter its response (from `autofilter::responseDb`) at the cutoff the engine publishes (`cutoff_l`, `cutoff_r`, played back by a `DisplayPlayback`) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom, laid out as Live 12.2's (the LFO's strip along the display's bottom, the envelope's Attack and Release in the Sidechain fold); the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
   `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
   mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from

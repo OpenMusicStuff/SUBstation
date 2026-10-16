@@ -1,7 +1,7 @@
 #pragma once
-// The Overdrive's band, Tone and curve, as its editor draws them: worked out by
+// The Overdrive's band and Tone, as its editor draws them: worked out by
 // the engine's own maths (engine/src/builtin/OverdriveDesign.h), so the band
-// drawn is the filter that plays and the curve the one it drives into.
+// drawn is the filter that plays.
 
 #include <QList>
 #include <QPair>
@@ -21,8 +21,6 @@ QList<double> overdriveBandDb(double frequency, double width, double sampleRate,
 QList<double> overdriveToneDb(double tone, double sampleRate, const QList<double>& frequencies);
 // The band's -3 dB edges (Hz).
 QPair<double, double> overdriveBandEdges(double frequency, double width, double sampleRate);
-// What a steady input `x` comes out as, driven by Drive (%).
-double overdriveTransfer(double x, double drive);
 // Drive's gain (linear): how far the band's level is pushed into the curve.
 double overdriveDriveGain(double drive);
 

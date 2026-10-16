@@ -4,9 +4,8 @@ import SUBstation
 
 // The Overdrive's editor, laid out as Ableton's, compact: the display
 // (OverdriveGraph: the band that goes into the drive, Tone dashed over it, the
-// input's spectrum behind, and the curve it drives into, lit as far as the
-// sound drives it; drag the band for Frequency and Width) with the band's
-// readout under it, then Drive and Tone, Dynamics and Dry/Wet.
+// input's spectrum behind; drag the band for Frequency and Width) with the
+// band's readout under it, then Drive and Tone, Dynamics and Dry/Wet.
 //
 // Its animations are subtle: the display's (see OverdriveGraph.h), and the
 // Drive knob's ring warming with how hard the sound is driven.
@@ -56,8 +55,7 @@ Item {
                 ToolTip.visible: graphHover.hovered && !graph.dragging
                 ToolTip.delay: 700
                 ToolTip.text: qsTr("The band that goes into the drive: drag for Frequency across and Width up "
-                                   + "and down, double-click to reset; Tone is dashed over it. At the right, the "
-                                   + "curve it drives into, lit as far as the sound goes")
+                                   + "and down, double-click to reset; Tone is dashed over it")
             }
             Row {
                 id: bandRow

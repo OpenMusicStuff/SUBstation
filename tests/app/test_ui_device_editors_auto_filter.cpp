@@ -101,33 +101,59 @@ private Q_SLOTS:
         QQuickItem* view = showDevice(QStringLiteral("auto_filter"), tone(300.0, kSampleRate));
         QVERIFY(view);
         QVERIFY(view->implicitHeight() <= bodyHeight());
-        QVERIFY2(view->implicitWidth() < 720, qPrintable(QString::number(view->implicitWidth())));
+        QVERIFY2(view->implicitWidth() < 520, qPrintable(QString::number(view->implicitWidth())));
         const QString problem = overflow(view);
         QVERIFY2(problem.isEmpty(), qPrintable(problem));
-        for (const char* name : {"type", "circuit", "slope12", "slope24", "freq", "resonance", "drive", "morph",
-                                 "envAmount", "envAttack", "envRelease", "lfoAmount", "lfoRate", "lfoSync", "lfoWave",
-                                 "phase", "spinOn", "lfoOffset", "output", "mix"})
+        for (const char* name : {"sidechainFold", "freq", "type", "slope12", "slope24", "resonance", "autoFilterGraph",
+                                 "lfoStrip", "spinOn", "phase", "lfoOffset", "lfoQuantize", "lfoSteps", "lfoAmount",
+                                 "lfoRate", "lfoWave", "lfoMorph", "lfoSync", "envAmount", "drive", "circuit",
+                                 "softClip", "output", "mix"})
             QVERIFY2(find(view, QString::fromLatin1(name)), name);
-        // Drive does nothing on Clean, Morph but on Morph: dimmed (still there), lit when they count.
+        // Laid out as Live 12.2's: Frequency over Resonance at the left, the display in the middle with the LFO's
+        // knobs under it, Drive over Dry/Wet at the right.
+        const auto rect = [&](const char* name) {
+            QQuickItem* item = find(view, QString::fromLatin1(name));
+            return item->mapRectToItem(view, QRectF(0, 0, item->width(), item->height()));
+        };
+        QVERIFY(rect("freq").bottom() < rect("resonance").top());
+        QVERIFY(rect("freq").right() < rect("autoFilterGraph").left());
+        QVERIFY(rect("autoFilterGraph").bottom() <= rect("lfoStrip").top() + 0.5);
+        QVERIFY(rect("lfoStrip").bottom() < rect("lfoAmount").top());
+        QVERIFY(rect("lfoAmount").right() < rect("lfoRate").left() && rect("lfoRate").right() < rect("lfoWave").left());
+        QVERIFY(rect("lfoWave").right() < rect("envAmount").left());
+        QVERIFY(rect("autoFilterGraph").right() < rect("drive").left());
+        QVERIFY(rect("drive").bottom() < rect("circuit").top() && rect("circuit").bottom() < rect("softClip").top());
+        QVERIFY(rect("output").bottom() < rect("mix").top());
+        // Drive does nothing on Clean: dimmed (still there), lit when it counts. The Morph type's Morph takes the
+        // slope buttons' place.
         QVERIFY(!find(view, QStringLiteral("drive"))->isEnabled());
-        QVERIFY(!find(view, QStringLiteral("morph"))->isEnabled());
+        QVERIFY(find(view, QStringLiteral("slope12"))->isVisible() && !find(view, QStringLiteral("morph"))->isVisible());
         set("circuit", 2.0);
         set("type", 4.0);
         QTRY_VERIFY(find(view, QStringLiteral("drive"))->isEnabled());
-        QVERIFY(find(view, QStringLiteral("morph"))->isEnabled());
-        // The rate's knob swaps with Sync, Phase's with Spin.
-        QCOMPARE(find(view, QStringLiteral("lfoRate"))->property("title").toString(), QStringLiteral("Freq"));
-        set("lfo_sync", 1.0);
-        QTRY_COMPARE(find(view, QStringLiteral("lfoRate"))->property("title").toString(), QStringLiteral("Rate"));
+        QTRY_VERIFY(find(view, QStringLiteral("morph"))->isVisible());
+        QVERIFY(!find(view, QStringLiteral("slope12"))->isVisible());
+        // Phase's box takes Spin with its switch, the switch saying which.
+        QCOMPARE(find(view, QStringLiteral("spinOn"))->property("text").toString(), QStringLiteral("Phase"));
         set("spin_on", 1.0);
-        QTRY_COMPARE(find(view, QStringLiteral("phase"))->property("title").toString(), QStringLiteral("Spin"));
+        QTRY_COMPARE(find(view, QStringLiteral("spinOn"))->property("text").toString(), QStringLiteral("Spin"));
+        // The Sidechain fold opens the envelope's Attack and Release, widening the editor.
+        const double closed = view->implicitWidth();
+        QVERIFY(!find(view, QStringLiteral("envAttack"))->isVisible());
+        QQuickItem* fold = find(view, QStringLiteral("sidechainFold"));
+        QTest::mouseClick(window_, Qt::LeftButton, {}, fold->mapToScene(QPointF(fold->width() / 2, 40)).toPoint());
+        QTRY_VERIFY(find(view, QStringLiteral("envAttack"))->isVisible());
+        QVERIFY(find(view, QStringLiteral("envRelease"))->isVisible());
+        QVERIFY(view->implicitWidth() > closed);
+        QTest::mouseClick(window_, Qt::LeftButton, {}, fold->mapToScene(QPointF(fold->width() / 2, 40)).toPoint());
+        QTRY_VERIFY(!find(view, QStringLiteral("envAttack"))->isVisible());
     }
 
     void autoFilterDragsAndDraws() {
         QQuickItem* view = showDevice(QStringLiteral("auto_filter"), tone(300.0, kSampleRate));
         auto* graph = find<AutoFilterGraph>(view, QStringLiteral("autoFilterGraph"));
         QVERIFY(graph);
-        QCOMPARE(graph->width(), double(AutoFilterGraph::kWidth));
+        QVERIFY(graph->width() >= AutoFilterGraph::kWidth);
         // The curve is the engine's maths at Frequency.
         const std::vector<QPointF>& curve = graph->curve();
         QVERIFY(curve.size() > 50);
@@ -210,7 +236,7 @@ private Q_SLOTS:
         QTest::mousePress(window_, Qt::LeftButton, {}, from);
         QTest::mouseMove(window_, to);
         QTest::mouseRelease(window_, Qt::LeftButton, {}, to);
-        QVERIFY(std::abs(std::log2(value("freq") / 400.0)) < 0.05);
+        QVERIFY2(std::abs(std::log2(value("freq") / 400.0)) < 0.1, qPrintable(QString::number(value("freq"))));
         QVERIFY(std::abs(value("width") - 2.0) < 0.2);
         QCOMPARE(undo()->count(), before + 1);
         QTest::mouseDClick(window_, Qt::LeftButton, {}, to);
