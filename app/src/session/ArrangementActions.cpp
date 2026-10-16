@@ -219,10 +219,16 @@ void ArrangementActions::pasteAutomationAt(const QString& owner, const QString& 
     pasteAutomation(content, selection_->insertBeat(), selected ? selection_->lanes() : QList<LaneRef>{lane});
 }
 
+// The time selection the clips are consolidated over: its empty space filled too.
+std::optional<std::pair<double, double>> ArrangementActions::consolidateArea() const {
+    if (!selection_->timeRange()) return std::nullopt;
+    return std::pair{selection_->timeRange()->start, selection_->timeRange()->end};
+}
+
 void ArrangementActions::consolidate() {
     QList<ClipRef> refs(selection_->clips().begin(), selection_->clips().end());
     std::sort(refs.begin(), refs.end());
-    const ClipRefs joined = editor_->consolidateClips(refs);
+    const ClipRefs joined = editor_->consolidateClips(refs, consolidateArea());
     if (!joined.isEmpty()) selection_->selectClips(*editor_, joined);
 }
 
@@ -235,7 +241,7 @@ void ArrangementActions::splitAt(double beat) {
 bool ArrangementActions::canConsolidate() const {
     QList<ClipRef> refs(selection_->clips().begin(), selection_->clips().end());
     std::sort(refs.begin(), refs.end());
-    return !editor_->consolidatable(refs).isEmpty();
+    return !editor_->consolidatable(refs, consolidateArea()).isEmpty();
 }
 
 std::vector<const Clip*> ArrangementActions::areaClips(bool live) const {

@@ -72,7 +72,9 @@ folding, the master, the title bar and the transport bar, and projects.
   what pastes. Paste goes to the insert marker, or, from a lane's right-click menu,
   where you right-clicked.
 - **Consolidate** (**Ctrl+J**, or the clip's right-click menu) joins the selected MIDI
-  clips on each track into one.
+  clips on each track into one. With a time selection reaching past them, the clip fills the
+  empty space it selects too (before, between and after them), so one clip and the bars around
+  it make one longer clip.
 - **Reverse** (**R**, or the clip's right-click menu) plays the selected audio clips
   backwards (just the selected part, if the selection covers part of a clip); see
   [audio-clips.md](audio-clips.md#reversing).
@@ -217,9 +219,10 @@ it, a moment after you stop. Your track's own name never changes.
 Press **Q** (or *View › Find Track*) and type: the find bar at the top right of the lanes jumps to
 the track that best matches, selects it as a click on its name would (its devices show in the
 device view) and scrolls to it, opening the groups it is folded away in. **Enter** (or **Down**)
-goes on to the next match, after the last back to the first; **Shift+Enter** (or **Up**) goes
-back. The bar says which match shows (`2 of 5`). **Esc** closes it; **Q** again selects what you
-typed, to type something else.
+goes on to the next match, after the last back to the first; **Up** goes back. The bar says
+which match shows (`2 of 5`). **Shift+Enter** settles on the match shown and closes the bar, as
+**Esc** does; **Ctrl+Enter** goes back to the track that was selected when you pressed Q (and the
+clip view as it was), and closes it. **Q** again selects what you typed, to type something else.
 
 Track names come first: tracks whose name has the words you typed at the start of its words
 (`horn` finds `Horn Stab`). Then tracks whose label has them (`Orchestral Horn`: a BBC Symphony
@@ -357,6 +360,14 @@ stops; press it again to return to the start. **Home** goes to the start.
   *Save* and *Save As…* (**Ctrl+Shift+S**).
 - *File › Import Ableton Live Set…* opens a Live Set as a new project: see
   [ableton-import.md](ableton-import.md).
+- **Backups.** While a project has unsaved changes, SUBstation backs it up every minute,
+  so a crash loses at most a minute of work. If it closes without saving (it crashed, or
+  the computer did), the next start offers to recover the project from its latest backup:
+  *Recover* opens it as the project it was (Save writes the project's own file), unsaved;
+  *Not Now* leaves the backups where they are. *File › Backups* lists the open project's
+  last 20 backups, the newest first: choosing one opens it the same way, so you can go back
+  to how the project was between saves. *Show Backups Folder* shows where they are (the
+  `Backups` folder in SUBstation's local data folder; on Windows `%LOCALAPPDATA%\SUBstation\Backups`).
 - *File › Save as Template* makes the project as it is now the one every new project
   starts as: *New Project*, and SUBstation's start without a project to open, open
   exactly that (its tracks, clips, devices and plug-ins' settings, automation, routing,

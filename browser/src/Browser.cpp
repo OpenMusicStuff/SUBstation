@@ -43,11 +43,15 @@ void Browser::setExternal(int group, std::vector<ExternalItem> items) {
     groups_[group] = std::move(prepared);
 }
 
-void Browser::setUsage(std::vector<UsageRecord> records, double halfLifeDays) {
+void Browser::setUsage(std::vector<UsageRecord> records, double halfLifeDays, double windowDays) {
     auto usage = std::make_shared<Usage>();
     usage->halfLifeDays = halfLifeDays;
+    usage->windowDays = windowDays;
     usage->records = std::move(records);
-    for (uint32_t r = 0; r < usage->records.size(); ++r) usage->byKey.emplace(usage->records[r].key, r);
+    for (uint32_t r = 0; r < usage->records.size(); ++r) {
+        usage->byKey.emplace(usage->records[r].key, r);
+        usage->anyHidden = usage->anyHidden || usage->records[r].hidden;
+    }
     std::lock_guard lock(mutex_);
     usage->version = ++usageVersion_;
     usage_ = std::move(usage);

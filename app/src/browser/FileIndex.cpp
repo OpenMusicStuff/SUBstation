@@ -1,6 +1,7 @@
 #include "browser/FileIndex.h"
 
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMetaObject>
 
@@ -93,7 +94,10 @@ std::vector<browser::UsageRecord> usageRecords(const Library& library) {
             if (!number) continue;
             last = *number;
         }
-        records.push_back({it.key().toStdString(), score, last});
+        std::vector<double> times;
+        for (const QJsonValue& value : record.value(QStringLiteral("times")).toArray())
+            if (const auto at = Library::number(value)) times.push_back(*at);
+        records.push_back({it.key().toStdString(), score, last, std::move(times), truthy(record.value(QStringLiteral("hidden")))});
     }
     return records;
 }
@@ -173,20 +177,21 @@ void FileIndex::setItems(int group, const std::vector<std::pair<BrowserItem, QSt
     backend_->setExternal(group, std::move(external));
 }
 
-void FileIndex::setUsage(const Library& library) { backend_->setUsage(usageRecords(library), Library::kHalfLifeDays); }
+void FileIndex::setUsage(const Library& library) {
+    backend_->setUsage(usageRecords(library), Library::kHalfLifeDays, Library::kWindowDays);
+}
 
 uint64_t FileIndex::search(const QString& text, const QString& sort, double now, const std::vector<int>& groups,
                            const QString& tag, const std::string& placePrefix,
-                           std::function<double(std::string_view)> score, Sounds sounds) {
+                           std::function<double(std::string_view)> score, Sounds sounds, bool hiddenOnly) {
     browser::Query query;
     query.text = text.toStdString();
     query.sort = sort == QStringLiteral("name") ? browser::Sort::Name
                  : sort == kSimilarSort         ? browser::Sort::Score
-                 : sort == kBestSort            ? browser::Sort::Best
                                                 : browser::Sort::Rank;
     query.score = std::move(score);
     query.sounds = std::move(sounds.matching);
-    query.fit = std::move(sounds.fit);
+    query.hiddenOnly = hiddenOnly;
     searchTags_ = std::move(sounds.tags);
     query.now = now;
     query.groups = groups;

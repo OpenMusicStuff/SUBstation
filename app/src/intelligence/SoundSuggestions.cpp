@@ -64,7 +64,6 @@ void SoundSuggestions::update() {
     if (harmony_)
         if (const auto k = harmony_->key()) key = tagging::ProjectKey{k->tonic, k->minor};
     fit_ = std::make_shared<const tagging::ProjectFit>(sounds, key);
-    fitFunction_ = makeFit();
     QStringList parts;
     QStringList words;
     for (const std::string& w : fit_->words()) words << QString::fromStdString(w);
@@ -73,28 +72,6 @@ void SoundSuggestions::update() {
     const QString summary = parts.join(QStringLiteral(" · "));
     summary_ = summary;
     Q_EMIT changed();
-}
-
-std::function<float(uint64_t)> SoundSuggestions::fit() const { return fitFunction_; }
-
-std::function<float(uint64_t)> SoundSuggestions::makeFit() const {
-    if (!tags_ || fit_->empty()) return {};
-    // Each file's fit, worked out the first time a search asks for it and kept
-    // while the tags and the project stay the same (a list of every sample is
-    // searched again and again: as you type, as files come).
-    auto known = std::make_shared<std::vector<std::atomic<float>>>(tags_->size());
-    for (auto& value : *known) value.store(-1.f, std::memory_order_relaxed);
-    return [fit = fit_, tags = tags_, known](uint64_t hash) {
-        const tagging::SoundTags* t = tags->find(hash);
-        if (!t) return 0.5f;
-        std::atomic<float>& slot = (*known)[tags->indexOf(t)];
-        float value = slot.load(std::memory_order_relaxed);
-        if (value < 0.f) {
-            value = fit->fit(*t);
-            slot.store(value, std::memory_order_relaxed);
-        }
-        return value;
-    };
 }
 
 }  // namespace sub::app

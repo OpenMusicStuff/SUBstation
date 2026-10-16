@@ -26,6 +26,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 #include <variant>
 
 #include "editor/ClipRef.h"
@@ -181,6 +182,8 @@ private:
     // The clips in the selected clip range (none without one); `live`: only
     // those frozen audio doesn't hold.
     std::vector<const Clip*> areaClips(bool live = false) const;
+    // The time selection (start, end), which Consolidate fills; none without one.
+    std::optional<std::pair<double, double>> consolidateArea() const;
 
     ProjectEditor* editor_;
     Project* project_;

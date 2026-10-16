@@ -52,7 +52,7 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Freeze the selected tracks (or unfreeze them, if they all are frozen) | Ctrl+Shift+F |
 | Solo the selected tracks (or unsolo every track) | S |
 | Arm the selected tracks for recording, disarming the others (or disarm them, if they all are armed) | Ctrl+Shift+A |
-| Find a track by its name or what it is (its label, its preset...); next / previous match; close (in the clip view: its clip in the same beats, if it has one) | Q, then type; Enter (or Down) / Shift+Enter (or Up); Esc |
+| Find a track by its name or what it is (its label, its preset...); next / previous match; go to this match and close; back to where you were and close; close (in the clip view: its clip in the same beats, if it has one) | Q, then type; Enter (or Down) / Up; Shift+Enter; Ctrl+Enter; Esc |
 | On a track's title bar: fold it (wheel down) or unfold it (wheel up), sweeping on to the tracks below; below it: resize the track (piano roll: the keys' rows) | Alt+wheel |
 
 ## Clips
@@ -98,7 +98,7 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Show / hide CPU Usage (what each track and device costs) | Ctrl+Alt+U |
 | End a hot swap, keeping the sample swapped in (the browser's list having the keyboard); keep the sample selected and end it | Esc; Enter (or double-click it) |
 | Show / hide the track headers' In/Out column | Ctrl+Alt+I |
-| Show / hide the piano roll's chords and the key (notes out of it in red) | C |
+| Show / hide the chords and the key: the piano roll's (notes out of it in red), and audio clips' in the arrangement | C |
 | Piano roll: bend mode (the notes' pitch bends, with the Draw tool) / the vibrato tool / the glide tool (slides) | B / V / G |
 | Piano roll, in bend mode: the notes, to edit as out of it (not with the vibrato tool) | hold Shift |
 | Search everything in the browser ("All"); Enter selects the first result, Enter again adds it | Ctrl+F |
