@@ -544,7 +544,8 @@ and canary) without running the tests: [releasing.md](releasing.md).
 
 [benchmarks/](../benchmarks) holds the benchmarks and their results: `parallel_render_bench` (render times on 1..N
 threads, offline and live through the fake ASIO driver, checked bit-identical; `--heavy N --compare-ordering` measures
-starting heavy tracks first), `browser_backend_bench` (the backend on a large synthetic library, every query checked
+starting heavy tracks first), `freeze_bench` (tracks rendered as freezing them renders them: one, several, a group,
+a short song's with its tail; an export beside them), `browser_backend_bench` (the backend on a large synthetic library, every query checked
 against `BrowserReference`), `builtin_devices_bench` (each built-in audio effect alone, as the audio thread runs it:
 what it costs a core, at its defaults or at settings given), `warp_bench` (an audio clip's playback alone: Direct,
 Re-Pitch, each stretch configuration; nanoseconds a frame) and `sound_similarity_bench` (sound similarity on a real

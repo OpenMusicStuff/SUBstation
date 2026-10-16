@@ -6,6 +6,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | | |
 |---|---|
 | [parallel_render_bench.cpp](parallel_render_bench.cpp) | Tracks rendered on one thread and on several: offline (best of three, checked bit-identical on any number of threads) and live through the fake ASIO driver. The engine alone, no Qt. |
+| [freeze_bench.cpp](freeze_bench.cpp) | Tracks rendered before their faders into WAV files with a 10 s tail, as freezing them does: one track out of many, several at once, a group, one track of a short song; and the whole mix exported, for comparison. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
 | [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
@@ -29,15 +30,16 @@ thousands of shapes).
 The benchmarks are built with `-DSUBSTATION_BUILD_BENCHMARKS=ON` (off by
 default), into the build's `bin` folder with everything else. Always in Release.
 `browser_backend_bench` needs the application layer (Qt Core, as the tests do);
-`parallel_render_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
+`parallel_render_bench`, `freeze_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
 intelligence module (no Qt either; it wants a sample library of your own).
 
 Linux:
 
 ```sh
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON
-ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench warp_bench sound_similarity_bench
+ninja -C build parallel_render_bench freeze_bench browser_backend_bench builtin_devices_bench warp_bench sound_similarity_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
+build/bin/freeze_bench --json freeze.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
 build/bin/browser_backend_bench --size 200000 --json backend.json
@@ -280,6 +282,38 @@ With 4 threads or more the render is down to about as long as the heaviest track
 takes alone. With 2 threads the order hardly matters: every track starts within
 the first few slots anyway. With 32 equal tracks both orders are the same within
 noise, and timing every track costs nothing measurable on one thread.
+
+# Freezing
+
+```
+freeze_bench [--tracks 16] [--seconds 30] [--freeze 4] [--threads N] [--json out.json]
+```
+
+The project: `--tracks` tracks of four-note chords on the built-in Synth, each through
+an EQ and a Saturator, every fourth through a Compressor too (the second track's keyed
+by the first: a sidechain). The first four go into a group with a Reverb; every track
+sends into a return with a Delay and a Reverb; the master has a Limiter. Each is
+rendered as freezing it renders it (`Engine::renderTrackToWav`: from the start of the
+arrangement to its end, then the application's 10 s tail, into a 32-bit float WAV
+file), best of three: one track of its own out of all of them, `--freeze` tracks
+(as freezing that many at once does), the group, and one track of a 4-second song
+(chords to 3 s: the tail is most of what is rendered). The whole mix exported (a
+16-bit WAV) is measured for comparison: it shares the code. Times are wall-clock, on
+the engine's default number of audio threads (`--threads`).
+
+## Results
+
+A 4-core cloud VM (Intel Xeon, 2.1 GHz), Linux, GCC, Release; 16 tracks, 30 s, 3
+audio threads. Another build ran on the machine meanwhile, so the times are only
+good to 10 or 20 %.
+
+| | before |
+|---|---|
+| One track | 3.05 s |
+| 4 tracks | 11.62 s |
+| The group | 2.70 s |
+| One track of a 4 s song | 0.76 s |
+| Export (the whole mix) | 2.31 s |
 
 # Sound similarity
 
