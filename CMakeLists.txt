@@ -72,6 +72,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_subdirectory(platform)
+add_subdirectory(music)
 add_subdirectory(engine)
 add_subdirectory(browser)
 add_subdirectory(intelligence)  # (after the engine: it decodes with its miniaudio target)

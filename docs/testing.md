@@ -293,6 +293,7 @@ Rendered offline unless the file says otherwise; the live tests play through the
 
 | File | What it covers |
 |---|---|
+| [test_tempo_map.cpp](../tests/engine/test_tempo_map.cpp) | Musical time ([music.md](music.md)): beats to seconds and back over steady tempos, jumps and ramps (against the integral in small steps), samples, bars across time signature changes. |
 | [test_batches_engine.cpp](../tests/engine/test_batches_engine.cpp) | Batches (`Engine::Batch`): one snapshot for the edits made in one (nested too), playing as the same edits unbatched do; reads in a batch see its edits; sources decoded without publishing (`decodeSource()`) heard once published, or read, or by `idle()`. |
 | [test_engine_render.cpp](../tests/engine/test_engine_render.cpp) | Clip placement to the sample, tempo, offsets, gain, pan, mute and solo, looping, the metronome, clip fades (the short ones only where a clip cuts into its file, a clip's own with their curves, in a warped clip's time), Utility and Over The Top, sources and peaks, resampling to the engine's rate, export, transport state without a device, chains, moving processors, the master's devices. |
 | [test_automation_engine.cpp](../tests/engine/test_automation_engine.cpp) | Envelopes of mixer controls (tracks and master) and of device parameters, sample by sample. |

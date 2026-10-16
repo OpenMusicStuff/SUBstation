@@ -1,4 +1,6 @@
 # The layers' boundaries, checked as a test (ctest -R boundaries):
+#  * musical time (music/src) includes nothing but the standard library and
+#    itself: every layer stands on it;
 #  * the platform layer (platform/src), the audio engine (engine/src), the
 #    browser backend (browser/src) and the intelligence module
 #    (intelligence/src) never include Qt or anything of the application or the UI;
@@ -26,6 +28,7 @@ function(_check folder pattern what)
     endforeach()
 endfunction()
 
+_check(music/src "Q[A-Za-z]+|qt|app/|ui/|platform/|core/|similarity/|harmony/|humanize/" "Qt or another layer")
 _check(platform/src "Q[A-Za-z]+|qt|app/|ui/" "Qt or the application")
 _check(engine/src "Q[A-Za-z]+|qt|app/|ui/" "Qt or the application")
 _check(browser/src "Q[A-Za-z]+|qt|app/|ui/" "Qt or the application")
@@ -44,6 +47,7 @@ if (_engine_pattern)
     _check(ui/src "(${_engine_pattern})[\">]|miniaudio|pluginterfaces|public\\.sdk" "the engine")
     _check(intelligence/src "(${_engine_pattern})[\">]|pluginterfaces|public\\.sdk" "the engine")
     _check(platform/src "(${_engine_pattern})[\">]|miniaudio|pluginterfaces|public\\.sdk" "the engine")
+    _check(music/src "(${_engine_pattern})[\">]|miniaudio|pluginterfaces|public\\.sdk" "the engine")
 endif()
 
 # The browser backend's headers, by name ("Browser.h", "Model.h"...).

@@ -3,7 +3,7 @@
 
 #include <cmath>
 
-#include "TempoMap.h"
+#include "music/TempoMap.h"
 #include "harness/Fixtures.h"
 
 using namespace subtest;
