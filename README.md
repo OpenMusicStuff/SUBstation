@@ -252,6 +252,7 @@ docs/                documentation
 - [Architecture](docs/architecture.md): layers, threads, real-time rules
 - [Building](docs/building.md) and [testing](docs/testing.md)
 - [Code reference](docs/README.md): the engine, the application layer, the UI, the browser
+- [Roadmap](ROADMAP.md): what comes next, in order
 - [Licensing](docs/licensing.md): MIT, and what Essentia's AGPLv3 asks of a build you distribute
 
 ## Licence

@@ -11,6 +11,7 @@ pages go into detail: how to use it, and how each part of the code works.
   third-party code.
 - [Testing](testing.md): the test suite, the fake ASIO driver and test plug-ins, CI,
   benchmarks.
+- [Roadmap](../ROADMAP.md): where SUBstation goes next, in order.
 - [Releasing](releasing.md): the Stable, Nightly and Canary channels, versions, the release
   workflow, making a stable release.
 
