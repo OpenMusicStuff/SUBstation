@@ -103,3 +103,43 @@ TEST_CASE("a time signature change off a bar line cuts the bar before short") {
     CHECK(late.at(0.0).numerator == 7);
     CHECK(late.changes().size() == 2);
 }
+
+TEST_CASE("a curved ramp's seconds are its tempo's integral, both ways") {
+    const auto integral = [](const TempoMap& map, double to) {  // the midpoint rule, in small steps
+        double seconds = 0.0;
+        constexpr int kSteps = 200000;
+        for (int s = 0; s < kSteps; ++s) seconds += 60.0 / map.bpmAt((s + 0.5) * to / kSteps) * to / kSteps;
+        return seconds;
+    };
+    // Its shape is an automation segment's: x along it, T0 + (T1 - T0) * expm1(a x) / expm1(a), a = -6 curve
+    // (turned round going down).
+    const TempoMap up({{0.0, 60.0, 0.5}, {8.0, 120.0}});
+    const double a = -0.5 * TempoMap::kCurvature;
+    CHECK(near(up.bpmAt(4.0), 60.0 + 60.0 * std::expm1(a * 0.5) / std::expm1(a)));
+    CHECK(up.bpmAt(4.0) > 90.0);  // bulging upward
+    const TempoMap down({{0.0, 120.0, 0.5}, {8.0, 60.0}});
+    CHECK(down.bpmAt(4.0) > 90.0);  // upward too, going down
+    CHECK(near(up.bpmAt(8.0), 120.0));
+    CHECK(near(up.bpmAt(0.0), 60.0));
+    // Speeding up, slowing down, bent either way; the widest range; nearly a pure exponential
+    // (20 to 20 e^3 BPM bent so its tempo is K e^(3x)); a slight bend.
+    const std::vector<TempoMap> maps{up,
+                                     down,
+                                     TempoMap({{0.0, 60.0, -0.8}, {8.0, 120.0}}),
+                                     TempoMap({{0.0, 120.0, -1.0}, {8.0, 60.0}}),
+                                     TempoMap({{0.0, 20.0, 0.7}, {16.0, 999.0}}),
+                                     TempoMap({{0.0, 999.0, -1.0}, {16.0, 20.0}}),
+                                     TempoMap({{0.0, 20.0, -0.5}, {12.0, 20.0 * std::exp(3.0)}}),
+                                     TempoMap({{0.0, 90.0, 0.0001}, {4.0, 100.0}})};
+    for (const TempoMap& m : maps) {
+        const double end = m.points().back().beat;
+        CHECK(near(m.secondsAt(end), integral(m, end), 1e-6 * m.secondsAt(end)));
+        CHECK(near(m.secondsAt(end / 3.0), integral(m, end / 3.0), 1e-6 * m.secondsAt(end)));
+        for (double beat = 0.0; beat < end + 4.0; beat += 0.37) CHECK(near(m.beatAt(m.secondsAt(beat)), beat, 1e-9));
+    }
+    // A curve on a point that stays steady, or after the last, changes nothing.
+    CHECK(TempoMap({{0.0, 120.0, 1.0}, {4.0, 120.0}}).constant());
+    CHECK(near(TempoMap({{0.0, 120.0, 1.0}, {4.0, 120.0}}).secondsAt(4.0), 2.0));
+    CHECK(near(TempoMap({{0.0, 60.0}, {8.0, 120.0, 1.0}}).secondsAt(9.0), 8.0 * std::log(2.0) + 0.5));
+    CHECK(TempoMap({{0.0, 60.0, 7.0}}).points()[0].curve == 1.0);  // (clamped)
+}

@@ -172,7 +172,9 @@ int toSmallInt(const QJsonValue& value) {
 QJsonValue tempoMapToJson(const Tempo& tempo) {
     if (tempo.constant()) return QJsonValue(QJsonValue::Null);
     QJsonArray points;
-    for (const TempoMap::Point& p : tempo.map().points()) points.append(QJsonArray{p.beat, p.bpm});
+    for (const TempoMap::Point& p : tempo.map().points()) {
+        points.append(p.curve != 0.0 ? QJsonArray{p.beat, p.bpm, p.curve} : QJsonArray{p.beat, p.bpm});  // (curved)
+    }
     return points;
 }
 
@@ -188,8 +190,10 @@ std::optional<Tempo> tempoMapFromJson(const QJsonValue& value) {
     if (!value.isArray()) return std::nullopt;
     std::vector<TempoMap::Point> points;
     for (const QJsonValue& point : value.toArray()) {
-        if (!point.isArray() || point.toArray().size() != 2) damaged(QStringLiteral("a tempo change is a beat and a tempo"));
-        points.push_back({point.toArray().at(0).toDouble(), point.toArray().at(1).toDouble()});
+        const qsizetype size = point.isArray() ? point.toArray().size() : 0;
+        if (size != 2 && size != 3) damaged(QStringLiteral("a tempo change is a beat and a tempo (and a curve)"));
+        const QJsonArray p = point.toArray();
+        points.push_back({p.at(0).toDouble(), p.at(1).toDouble(), size == 3 ? p.at(2).toDouble() : 0.0});
     }
     if (points.empty()) return std::nullopt;
     return Tempo(TempoMap(std::move(points)));

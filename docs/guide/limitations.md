@@ -39,9 +39,10 @@ What SUBstation doesn't do yet, by area.
 ## Automation and tempo
 
 - Recording automation (writing it while playing).
-- Tempo curves: the master's Song Tempo lane draws the tempo as steps and straight ramps
-  (as the tempo map plays it); a segment can't be bent. Its range is 60 to 200 BPM (wider
-  if the song's tempo goes beyond), with no way to set it yet.
+- The master's Song Tempo lane's range is 60 to 200 BPM (wider if the song's tempo goes
+  beyond), with no way to set it yet.
+- A Live Set's curved tempo automation comes in straight: Live bends its segments with
+  Bézier handles, which SUBstation's curve doesn't take yet.
 - Automation lanes below a track have a fixed height.
 
 ## Devices and plug-ins

@@ -3,12 +3,16 @@
 // between its beats (quarter notes), seconds and bars that follow from them.
 // No Qt: the engine, the application layer and the UI share it.
 //
-// Tempo: breakpoints (beat, BPM). Between two, the tempo goes in a straight line
-// in beats from one to the other (a ramp; the same BPM twice: steady); two at the
-// same beat are a jump. Before the first and after the last it stays as they
-// are. Seconds are the tempo's integral, worked out exactly: over a ramp from
-// T0 to T1 BPM across L beats, t(b) = 60 L / (T1 - T0) * ln(T(b) / T0), and back
-// again by its inverse, so beats -> seconds -> beats returns the same beat.
+// Tempo: breakpoints (beat, BPM, curve). Between two, the tempo goes from one to
+// the other in beats (a ramp; the same BPM twice: steady): in a straight line, or
+// bent by the first's `curve` (-1..1) as an automation segment is (the same
+// exponential shape, kCurvature: positive bulges upward, whichever way it goes).
+// Two at the same beat are a jump. Before the first and after the last it stays
+// as they are. Seconds are the tempo's integral, worked out exactly: over a
+// straight ramp from T0 to T1 BPM across L beats, t(b) = 60 L / (T1 - T0) *
+// ln(T(b) / T0); over a curved one, T = P + K e^(a x) integrates in closed form
+// too. Back again: a straight ramp's inverse, a curved one's by Newton's method,
+// so beats -> seconds -> beats returns the same beat.
 //
 // Time signature: changes (beat, numerator, denominator), each starting a bar.
 // A bar is numerator * 4 / denominator beats long; a change that doesn't fall on
@@ -25,15 +29,17 @@ public:
     struct Point {
         double beat = 0.0;
         double bpm = 120.0;
+        double curve = 0.0;  // how the ramp to the next point bends, -1..1 (0: straight)
         friend bool operator==(const Point&, const Point&) = default;
     };
     static constexpr double kMinBpm = 20.0;
     static constexpr double kMaxBpm = 999.0;
+    static constexpr double kCurvature = 6.0;  // as automation's (app automation::kCurvature)
 
     TempoMap() : TempoMap(120.0) {}
     explicit TempoMap(double bpm);
     // Points in any order (sorted by beat, stably: two at one beat are a jump in
-    // that order); BPMs clamped to kMinBpm..kMaxBpm; beats below 0 count as 0.
+    // that order); BPMs clamped to kMinBpm..kMaxBpm, curves to -1..1; beats below 0 count as 0.
     // None: 120 BPM.
     explicit TempoMap(std::vector<Point> points);
 
@@ -51,6 +57,14 @@ public:
     friend bool operator==(const TempoMap& a, const TempoMap& b) { return a.points_ == b.points_; }
 
 private:
+    // Segment `i`'s shape: BPM = p + k e^(a x) at x (0..1) along it; a == 0: a straight line.
+    struct Shape {
+        double length = 0.0;  // beats
+        double a = 0.0;
+        double p = 0.0;
+        double k = 0.0;
+    };
+    Shape shapeOf(size_t i) const;
     // Over segment `i` (from points_[i] to points_[i + 1], or after the last).
     double segmentSeconds(size_t i, double beat) const;
     double segmentBeat(size_t i, double seconds) const;

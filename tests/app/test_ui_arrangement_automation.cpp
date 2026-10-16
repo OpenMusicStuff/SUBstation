@@ -510,6 +510,11 @@ private Q_SLOTS:
         QVERIFY(near(project().tempoMap().bpmAt(4.0), (120.0 + top) / 2.0, 0.01));
         QVERIFY(project().master().automation.isEmpty());
         QVERIFY(near(*bridge().currentValue(kMaster, tempo, 8.0), top));
+        // Alt-drag bends the ramp: the tempo map's curve, as the lane draws it.
+        const double middle = (at120 + (top - 60.0) / 140.0) / 2.0;
+        drag(point(kMaster, 4.0, middle, tempo), point(kMaster, 4.0, middle, tempo) - QPoint(0, 30), Qt::AltModifier);
+        QVERIFY(project().tempoMap().map().points()[0].curve > 0.0);
+        QVERIFY(project().tempoMap().bpmAt(4.0) > (120.0 + top) / 2.0 + 1.0);
         // The engine plays it: the renderer has the map.
         QVERIFY(ui_->engine().tempoMap() == project().tempoMap().map());
         while (undo().index() > steps) undo().undo();

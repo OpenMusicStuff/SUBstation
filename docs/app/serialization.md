@@ -67,7 +67,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
-| `tempo_map` | `[[beat, bpm], ...]` | only when the tempo changes along the song (version 26): between two points it goes in a straight line, two at one beat jump; `tempo` is then its start |
+| `tempo_map` | `[[beat, bpm], ...]`, a curved ramp's point `[beat, bpm, curve]` | only when the tempo changes along the song (version 26): between two points it goes in a straight line, or bent by the first's curve (-1..1, as automation's), two at one beat jump; `tempo` is then its start |
 | `time_signatures` | `[[beat, numerator, denominator], ...]` | only when the time signature changes (version 26): each starts a bar; `time_signature` is then the first |
 | `loop` | `{"enabled", "start", "end"}`, and `"punch_in"`, `"punch_out"` (true) only when on | the loop brace, in beats (default off, 0..16), and Punch In and Out (default off) |
 | `automation_locked` | bool | Lock Envelopes |
@@ -101,7 +101,7 @@ Each entry of `tracks`:
 | `takes` | audio and MIDI tracks, only when they have take lanes: `[{"id", "name", "clips"}]`, oldest first (`Track::takes`: what each recording played; `clips` as the track's) |
 | `takes_shown` | only when true: its take lanes show below it (and only while it has some) |
 | `sends` | `{return id: {"level_db": float, "pre_fader": bool}}` |
-| `frozen` | only when frozen: `{"path", "relative_path", "duration_sec", "tempo"}` (and `"tempo_map"`, rendered under a tempo that changes: it plays unwarped), its frozen audio (the file found as a clip's is); an incomplete one loads unfrozen. Once a time selection over it was edited, also `"segments"`: what of it plays, `[{"id", "start_beat", "offset_sec", "duration_sec"}]` (`Freeze::segments`: clips into the render, the rest of each is the freeze's: its file, warped from its tempo); none plays all of it, `[]` nothing; a damaged segment is left out |
+| `frozen` | only when frozen: `{"path", "relative_path", "duration_sec", "tempo"}` (and `"tempo_map"`, rendered under a tempo that changes: its segments follow it, `Clip::sourceMap`), its frozen audio (the file found as a clip's is); an incomplete one loads unfrozen. Once a time selection over it was edited, also `"segments"`: what of it plays, `[{"id", "start_beat", "offset_sec", "duration_sec"}]` (`Freeze::segments`: clips into the render, the rest of each is the freeze's: its file, warped from its tempo); none plays all of it, `[]` nothing; a damaged segment is left out |
 
 The tracks are stored flat in arrangement order; the group tree is only the `parent` fields. On load, `repairTree`
 takes any track out of a group it can't be in (a group's tracks must follow it, together), keeping the order.

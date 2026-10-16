@@ -8,6 +8,29 @@ namespace sub {
 namespace {
 
 constexpr double kBeatEpsilon = 1e-9;  // beats this close are the same (bar lines)
+constexpr double kStraight = 1e-4;     // a curve's exponent this small: a straight line
+
+// The seconds over x (0..1) of a curved segment, BPM = p + k e^(a x), `length` beats long:
+// 60 length * integral of 1 / (p + k e^(a u)) from 0 to x.
+double curvedSeconds(double length, double a, double p, double k, double x) {
+    const double t0 = p + k;
+    if (std::abs(p) > 1e-6 * std::abs(t0)) {
+        // (1 / p) [x - ln((p + k e^(a x)) / t0) / a]
+        const double ratio = std::log1p(k * std::expm1(a * x) / t0);
+        return 60.0 * length / p * (x - ratio / a);
+    }
+    // Nearly k e^(a x): 1 / (k e^(au)) * sum of (-q e^(-au))^n, q = p / k, integrated term by term.
+    const double q = p / k;
+    double sum = 0.0;
+    double power = 1.0;
+    for (int n = 0; n < 4; ++n) {
+        const double m = (n + 1) * a;
+        sum += power * -std::expm1(-m * x) / m;
+        power *= -q;
+    }
+    return 60.0 * length / k * sum;
+}
+
 
 }  // namespace
 
@@ -20,6 +43,7 @@ TempoMap::TempoMap(std::vector<Point> points) {
     for (Point& point : points) {
         point.beat = std::isfinite(point.beat) ? std::max(0.0, point.beat) : 0.0;
         point.bpm = std::isfinite(point.bpm) ? std::clamp(point.bpm, kMinBpm, kMaxBpm) : 120.0;
+        point.curve = std::isfinite(point.curve) ? std::clamp(point.curve, -1.0, 1.0) : 0.0;
     }
     std::stable_sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a.beat < b.beat; });
     if (points.empty()) points.push_back({0.0, 120.0});
@@ -42,14 +66,33 @@ size_t TempoMap::segmentAtSeconds(double seconds) const {
     return after == seconds_.begin() ? 0 : static_cast<size_t>(after - seconds_.begin()) - 1;
 }
 
+TempoMap::Shape TempoMap::shapeOf(size_t i) const {
+    const Point& from = points_[i];
+    const Point& to = points_[i + 1];
+    Shape shape;
+    shape.length = to.beat - from.beat;
+    const double rise = to.bpm - from.bpm;
+    // The same bend as an automation segment's: its curve, turned round when it goes down.
+    const double bend = rise >= 0.0 ? from.curve : -from.curve;
+    const double a = -bend * kCurvature;
+    if (std::abs(a) < kStraight || rise == 0.0) return shape;
+    shape.a = a;
+    shape.k = rise / std::expm1(a);
+    shape.p = from.bpm - shape.k;
+    return shape;
+}
+
 double TempoMap::segmentSeconds(size_t i, double beat) const {
     const Point& from = points_[i];
     const double t0 = from.bpm;
     const double offset = beat - from.beat;
     if (i + 1 >= points_.size() || beat < from.beat) return seconds_[i] + 60.0 * offset / t0;  // steady after the last
     const Point& to = points_[i + 1];
-    const double length = to.beat - from.beat;
-    const double slope = length > 0.0 ? (to.bpm - t0) / length : 0.0;  // BPM a beat
+    const Shape shape = shapeOf(i);
+    if (shape.a != 0.0 && shape.length > 0.0) {
+        return seconds_[i] + curvedSeconds(shape.length, shape.a, shape.p, shape.k, offset / shape.length);
+    }
+    const double slope = shape.length > 0.0 ? (to.bpm - t0) / shape.length : 0.0;  // BPM a beat
     if (slope == 0.0) return seconds_[i] + 60.0 * offset / t0;
     // The integral of 60 / (t0 + slope * x) from 0 to offset.
     return seconds_[i] + 60.0 / slope * std::log1p(slope * offset / t0);
@@ -61,8 +104,25 @@ double TempoMap::segmentBeat(size_t i, double seconds) const {
     const double elapsed = seconds - seconds_[i];
     if (i + 1 >= points_.size() || elapsed < 0.0) return from.beat + elapsed * t0 / 60.0;
     const Point& to = points_[i + 1];
-    const double length = to.beat - from.beat;
-    const double slope = length > 0.0 ? (to.bpm - t0) / length : 0.0;
+    const Shape shape = shapeOf(i);
+    if (shape.a != 0.0 && shape.length > 0.0) {
+        // Newton's method on x along it, kept within what brackets it (the seconds only grow).
+        const double total = seconds_[i + 1] - seconds_[i];
+        if (elapsed >= total) return to.beat;
+        double low = 0.0, high = 1.0;
+        double x = elapsed / total;
+        for (int step = 0; step < 60; ++step) {
+            const double error = curvedSeconds(shape.length, shape.a, shape.p, shape.k, x) - elapsed;
+            (error > 0.0 ? high : low) = x;
+            const double bpm = shape.p + shape.k * std::exp(shape.a * x);
+            double next = x - error * bpm / (60.0 * shape.length);
+            if (!(next > low && next < high)) next = 0.5 * (low + high);
+            if (std::abs(next - x) <= 1e-16) break;
+            x = next;
+        }
+        return from.beat + x * shape.length;
+    }
+    const double slope = shape.length > 0.0 ? (to.bpm - t0) / shape.length : 0.0;
     if (slope == 0.0) return from.beat + elapsed * t0 / 60.0;
     return from.beat + t0 / slope * std::expm1(slope * elapsed / 60.0);
 }
@@ -72,8 +132,11 @@ double TempoMap::bpmAt(double beat) const {
     const Point& from = points_[i];
     if (i + 1 >= points_.size() || beat <= from.beat) return from.bpm;
     const Point& to = points_[i + 1];
-    const double length = to.beat - from.beat;
-    return length > 0.0 ? from.bpm + (to.bpm - from.bpm) * (beat - from.beat) / length : to.bpm;
+    const Shape shape = shapeOf(i);
+    if (shape.length <= 0.0) return to.bpm;
+    const double x = (beat - from.beat) / shape.length;
+    if (shape.a != 0.0) return shape.p + shape.k * std::exp(shape.a * x);
+    return from.bpm + (to.bpm - from.bpm) * x;
 }
 
 double TempoMap::secondsAt(double beat) const {

@@ -11,15 +11,20 @@ is in, is this library's.
 
 ## TempoMap
 
-Tempo breakpoints `(beat, bpm)`, `kMinBpm` to `kMaxBpm` (20 to 999). Between two the tempo goes in a straight line in
-beats from one to the other (a ramp; the same BPM twice: steady); two at the same beat are a jump, in their order.
+Tempo breakpoints `(beat, bpm, curve)`, `kMinBpm` to `kMaxBpm` (20 to 999). Between two the tempo goes in beats from
+one to the other (a ramp; the same BPM twice: steady): in a straight line, or bent by the first's `curve` (-1..1) in
+the shape of an automation segment (`kCurvature` 6, the same as `automation::kCurvature`: x along it,
+`T0 + (T1 - T0) * expm1(a x) / expm1(a)` with `a = -6 curve`, the curve turned round when it goes down, so positive
+bulges upward either way). Two at the same beat are a jump, in their order.
 Before the first and after the last it stays as they are, and a map whose first point is after beat 0 has that tempo
 from beat 0. Made with no points: 120 BPM.
 
 Seconds are the tempo's integral, exact: over a ramp from T0 to T1 BPM across L beats, a beat `x` into it is
 `60 L / (T1 - T0) * ln(1 + (T1 - T0) x / (L T0))` seconds in (`log1p`, so a ramp of a hundredth of a BPM is as exact
-as one of a hundred), and back by its inverse (`expm1`). Each point's seconds are worked out once, when the map is
-made; a lookup is a binary search and one segment's formula.
+as one of a hundred), and back by its inverse (`expm1`). A curved ramp's tempo is `P + K e^(a x)`, whose integral is
+closed too: `60 L / P * (x - ln(T(x) / T0) / a)`, or, where `P` is all but 0 (nearly a pure exponential, where that
+form would cancel), its series in `P / K`; back by Newton's method, kept within a bracket, to the last bit. Each
+point's seconds are worked out once, when the map is made; a lookup is a binary search and one segment's formula.
 
 | | |
 |---|---|
@@ -47,5 +52,5 @@ are left out. Made with no changes: 4/4.
 ## Tests
 
 [tests/engine/test_tempo_map.cpp](../tests/engine/test_tempo_map.cpp) (in `engine_tests`): steady tempos, jumps,
-ramps against the integral worked out in small steps, round trips (beats to seconds and back to within 1e-9 of a
+ramps and curved ramps against the integral worked out in small steps, round trips (beats to seconds and back to within 1e-9 of a
 beat, ramps speeding up and slowing down, nearly steady), samples, bars across changes, a change off a bar line.

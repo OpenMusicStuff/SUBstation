@@ -182,11 +182,11 @@ public:
     double tempo() const { return tempo_.bpm(); }
     const Tempo& tempoMap() const { return tempo_; }
     // The tempo map as the master's Song Tempo lane (automation::kSongTempo): a
-    // point for each of the map's, straight, its BPM mapped linearly over
-    // tempoRange() (so the lane's straight lines are the map's ramps).
+    // point for each of the map's, with its curve, its BPM mapped linearly over
+    // tempoRange() (so the lane's segments are the map's ramps, bent alike).
     Envelope tempoEnvelope() const;
-    // And back: a lane's points as a tempo map, BPMs to 0.01 (curves are
-    // ignored; none: the tempo at the start, throughout).
+    // And back: a lane's points as a tempo map, BPMs to 0.01 (none: the tempo
+    // at the start, throughout).
     Tempo tempoOfEnvelope(const Envelope& points) const;
     // The BPMs at the lane's bottom and top: 60 to 200, widened (never narrowed)
     // to fit every tempo the map has had, so its points never move under a drag.

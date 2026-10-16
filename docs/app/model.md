@@ -374,7 +374,7 @@ See [Automation.h](../../app/src/model/Automation.h) and, for the engine side,
     `Project::envelope(kMaster, kSongTempo)` is `tempoEnvelope()`, a straight point for each of the tempo map's, its
     BPM mapped linearly over `tempoRange()` (60 to 200 BPM, widened, never narrowed, to fit every tempo the map
     has had, so nothing moves under a drag); `tempoOfEnvelope()` turns a lane's points back into a map (BPMs to
-    0.01, curves ignored). The editor's envelope edits on it change the tempo map (`setTempoMap`: with the clip
+    0.01, curves kept: the map's ramps bend as an envelope's segments do). The editor's envelope edits on it change the tempo map (`setTempoMap`: with the clip
     trims, one undo step per drag); a range moved over it and other lanes is one `SetEnvelopesCommand` carrying
     the tempo change. Its spec is `tempoSpec(low, high)` (group *Song*), the master's second `paramGroups` group.
 - `parseKey` splits a key (a `Target`); `keyDevice`, `keySend`, `keyChain`, `keyChainControl`, `isMixerKey`,

@@ -116,9 +116,9 @@ These basics every competitor has are listed in order of everyday impact per uni
 - **Approach:** a beat↔sample mapping object used everywhere, with exhaustive tests.
 - **Status:** done. `music/TempoMap.h` (steps and linear ramps, time signature changes) runs through the engine,
   warped clips, the model, saving, Live import and MCP. In the arrangement, the master's Song Tempo lane draws and
-  edits the tempo, and the ruler's right-click menu sets time signatures. Still open (see
-  `docs/guide/limitations.md`): curved tempo segments, a settable tempo lane range, re-freezing under a changing
-  tempo, and the piano roll and harmony counting bars by the first time signature.
+  edits the tempo (steps, ramps and curves), the ruler's right-click menu sets time signatures, and frozen tracks
+  keep their beats when the tempo changes. Still open (see `docs/guide/limitations.md`): a settable tempo lane
+  range, Live's curved tempo, and the piano roll and harmony counting bars by the first time signature.
 
 ### 12. Audio editing depth. Effort: L
 - **Warp markers.** One BPM per clip today. The stretcher already works by segment, and Live import flattens Live's markers.

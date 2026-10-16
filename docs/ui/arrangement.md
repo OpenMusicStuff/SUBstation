@@ -662,7 +662,8 @@ Automation.
 The master's *Song* / *Song Tempo* (`automation::kSongTempo`) is the tempo map drawn as an envelope: its points are
 the map's (`Project::tempoEnvelope()`, linear over `tempoRange()`), so a ramp is a straight line and two points at
 one beat a jump, and every edit on it (adding, moving, deleting points, a range moved, pasted or deleted) changes the
-tempo map through the editor (see [app/model.md](../app/model.md)). Alt-drag bends nothing: the map has no curves.
+tempo map through the editor (see [app/model.md](../app/model.md)). Alt-drag bends a ramp: the map's curves are
+an envelope's, the same shape.
 Its readout is the BPM; it counts as automated (a red dot) while the tempo changes along the song.
 
 ### Showing automation

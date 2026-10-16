@@ -53,6 +53,16 @@ TEST_CASE("notes play where the tempo map puts their beats") {
     const int64_t rampOnset = firstAbove(channel(ramped.renderOffline(0.0, 5 * kSampleRate), 0), 0);
     CHECK(expected <= rampOnset);
     CHECK(rampOnset < expected + 10);
+    // And on a curved one (the map's own seconds: TempoMap's tests hold them to the integral).
+    const TempoMap curve({{0.0, 60.0, 0.6}, {8.0, 120.0}});
+    sub::Engine curved;
+    curved.setTempoMap(curve);
+    synthTrack(curved, {{4.0, 0.5, 69}});
+    const int64_t curvedExpected = curve.sampleAt(4.0, kSampleRate);
+    CHECK(curvedExpected < expected - kSampleRate / 10);  // (bulging upward: sooner than the straight ramp)
+    const int64_t curvedOnset = firstAbove(channel(curved.renderOffline(0.0, 5 * kSampleRate), 0), 0);
+    CHECK(curvedExpected <= curvedOnset);
+    CHECK(curvedOnset < curvedExpected + 10);
 }
 
 TEST_CASE("automation points land on their beats by the map") {

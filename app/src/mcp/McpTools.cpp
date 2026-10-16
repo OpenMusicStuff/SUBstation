@@ -287,13 +287,17 @@ public:
         if (!p.tempoMap().constant()) {
             QJsonArray changes;
             for (const TempoMap::Point& point : p.tempoMap().map().points()) {
-                changes.append(QJsonObject{{QStringLiteral("beat"), beat(point.beat)},
-                                           {QStringLiteral("bar"), bar(point.beat)},
-                                           {QStringLiteral("bpm"), rounded(point.bpm)}});
+                QJsonObject change{{QStringLiteral("beat"), beat(point.beat)},
+                                   {QStringLiteral("bar"), bar(point.beat)},
+                                   {QStringLiteral("bpm"), rounded(point.bpm)}};
+                if (point.curve != 0.0) change.insert(QStringLiteral("curve"), rounded(point.curve));
+                changes.append(change);
             }
             out.insert(QStringLiteral("tempoChanges"), changes);
             out.insert(QStringLiteral("tempoChangesNote"),
-                       QStringLiteral("Between two points the tempo goes in a straight line; two at one beat jump."));
+                       QStringLiteral("Between two points the tempo goes in a straight line, or bent by the first's curve (-1..1, "
+                                      "as automation's: positive bulges upward); two at one beat jump. Edit it as "
+                                      "the master's automation target song:tempo."));
         }
         if (!p.meter().constant()) {
             QJsonArray changes;

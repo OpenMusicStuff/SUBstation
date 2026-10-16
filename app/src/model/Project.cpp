@@ -193,11 +193,14 @@ void Project::setTempo(const Tempo& tempo) {
     }
 }
 
+// (The lane's curves are the map's: the same shape.)
+static_assert(automation::kCurvature == TempoMap::kCurvature);
+
 Envelope Project::tempoEnvelope() const {
     const auto [low, high] = tempoRange_;
     Envelope points;
     for (const TempoMap::Point& point : tempo_.map().points()) {
-        points.push_back({point.beat, std::clamp((point.bpm - low) / (high - low), 0.0, 1.0), 0.0});
+        points.push_back({point.beat, std::clamp((point.bpm - low) / (high - low), 0.0, 1.0), point.curve});
     }
     return points;
 }
@@ -208,7 +211,7 @@ Tempo Project::tempoOfEnvelope(const Envelope& points) const {
     std::vector<TempoMap::Point> map;
     for (const AutomationPoint& point : automation::normalize(points)) {
         const double bpm = low + std::clamp(point.value, 0.0, 1.0) * (high - low);
-        map.push_back({point.beat, std::round(bpm * 100.0) / 100.0});
+        map.push_back({point.beat, std::round(bpm * 100.0) / 100.0, point.curve});
     }
     return Tempo(TempoMap(std::move(map)));
 }

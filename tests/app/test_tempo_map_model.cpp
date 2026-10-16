@@ -133,14 +133,14 @@ private Q_SLOTS:
         const test::TempDir dir;
         Project project;
         ProjectContents contents;
-        contents.tempo = slowsAtBeat4();
+        contents.tempo = Tempo(TempoMap({{0.0, 120.0}, {4.0, 120.0}, {4.0, 60.0, -0.4}, {12.0, 90.0}}));
         contents.meter = MeterMap({{0.0, 4, 4}, {8.0, 7, 8}});
         project.replaceContents(contents);
         const QString path = dir.path(QStringLiteral("tempo.gilproj"));
         saveProject(project, path);
         Project opened;
         loadProject(opened, path);
-        QVERIFY(opened.tempoMap() == slowsAtBeat4());
+        QVERIFY(opened.tempoMap() == contents.tempo);  // (its curve too)
         QVERIFY(opened.meter() == contents.meter);
         QCOMPARE(opened.tempo(), 120.0);
         // One tempo throughout writes no map: "tempo" says it, as before.
@@ -173,9 +173,13 @@ private Q_SLOTS:
         QCOMPARE(f.project.tempoMap().bpmAt(8.0), 200.0);
         QCOMPARE(f.project.tempoMap().bpmAt(4.0), 160.0);
         QVERIFY(f.project.automation(kMaster).isEmpty());
-        // Curves don't apply: the map's ramps are straight.
+        // Bent: the map's ramp, as the lane draws it.
         f.editor.setAutomationCurve(kMaster, autom::kSongTempo, f.project.envelope(kMaster, autom::kSongTempo), 0, 0.5);
-        QVERIFY(f.project.envelope(kMaster, autom::kSongTempo)[0].curve == 0.0);
+        QCOMPARE(f.project.tempoMap().map().points()[0].curve, 0.5);
+        const Envelope bent = f.project.envelope(kMaster, autom::kSongTempo);
+        QCOMPARE(bent[0].curve, 0.5);
+        QVERIFY(near(f.project.tempoMap().bpmAt(4.0), 60.0 + 140.0 * *autom::valueAt(bent, 4.0), 1e-9));
+        f.stack.undo();
         f.stack.undo();
         QVERIFY(f.project.tempoMap().constant());
         // A tempo beyond the lane's range widens it.

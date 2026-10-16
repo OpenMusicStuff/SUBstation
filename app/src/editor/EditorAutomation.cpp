@@ -56,7 +56,6 @@ void ProjectEditor::deleteAutomationPoints(const QString& owner, const QString& 
 
 void ProjectEditor::setAutomationCurve(const QString& owner, const QString& key, const Envelope& original, int index,
                                        double curve, const QString& mergeKey) {
-    if (key == automation::kSongTempo) return;  // (the tempo map's ramps are straight)
     setEnvelope(owner, key, automation::setCurve(original, index, curve), QStringLiteral("Change Automation Curve"),
                 mergeKey);
 }
