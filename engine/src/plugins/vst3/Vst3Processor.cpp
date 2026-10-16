@@ -239,7 +239,7 @@ void Vst3Processor::prepare(double sampleRate, int maxBlockSize) {
     sampleRate_ = sampleRate;
     maxBlock_ = maxBlockSize;
     setupBuses();
-    ProcessSetup setup{kRealtime, kSample32, maxBlockSize, sampleRate};
+    ProcessSetup setup{processMode_, kSample32, maxBlockSize, sampleRate};
     processor_->setupProcessing(setup);
     allocateBuffers();
     activate();
@@ -344,7 +344,7 @@ void Vst3Processor::allocateBuffers() {
     outputChanges_.setCapacity(queues);
 
     data_ = ProcessData{};
-    data_.processMode = kRealtime;
+    data_.processMode = processMode_;
     data_.symbolicSampleSize = kSample32;
     data_.numInputs = static_cast<int32>(inputs_.size());
     data_.numOutputs = static_cast<int32>(outputs_.size());
@@ -357,9 +357,19 @@ void Vst3Processor::allocateBuffers() {
     data_.processContext = &context_;
 }
 
-void Vst3Processor::resetOffline() {
+void Vst3Processor::resetOffline(bool rendering) {
     ScopedSuspend suspend(guard_);
     deactivate();
+    // Told it renders offline (or live again): its process mode changes only
+    // while it is inactive, set up anew (VST 3: setupProcessing between
+    // setActive(false) and setActive(true)).
+    const int32 mode = rendering ? kOffline : kRealtime;
+    if (mode != processMode_) {
+        processMode_ = mode;
+        ProcessSetup setup{processMode_, kSample32, maxBlock_, sampleRate_};
+        processor_->setupProcessing(setup);
+        data_.processMode = processMode_;
+    }
     activate();
     std::memset(held_, 0, sizeof(held_));
     releaseAll_.store(false);
@@ -809,7 +819,7 @@ bool Vst3Processor::idle() {
         deactivate();
         if (flags & (kReloadComponent | kIoChanged)) {
             setupBuses();
-            ProcessSetup setup{kRealtime, kSample32, maxBlock_, sampleRate_};
+            ProcessSetup setup{processMode_, kSample32, maxBlock_, sampleRate_};
             processor_->setupProcessing(setup);
             allocateBuffers();
         }

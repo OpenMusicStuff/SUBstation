@@ -106,6 +106,23 @@ std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint
     return source;
 }
 
+std::shared_ptr<AudioSource> AudioSource::fromSamples(const std::string& utf8Path, uint32_t sampleRate,
+                                                      uint32_t channels, std::vector<float> planar) {
+    if (sampleRate == 0) throw std::invalid_argument("sample rate must be positive");
+    if (channels < 1 || channels > 2) throw std::invalid_argument("one or two channels");
+    auto source = std::shared_ptr<AudioSource>(new AudioSource());
+    source->path_ = utf8Path;
+    source->channels_ = channels;
+    source->sampleRate_ = sampleRate;
+    source->fileSampleRate_ = sampleRate;
+    source->frames_ = static_cast<int64_t>(planar.size() / channels);
+    if (source->frames_ == 0) throw std::runtime_error("Audio file '" + utf8Path + "' contains no audio");
+    planar.resize(static_cast<size_t>(source->frames_) * channels);
+    source->data_ = std::move(planar);
+    source->buildPeaks();
+    return source;
+}
+
 int AudioSource::samplesPerPeak(int level) { return kBaseSamplesPerPeak << (2 * level); }
 
 int64_t AudioSource::numPeaks(int level) const {

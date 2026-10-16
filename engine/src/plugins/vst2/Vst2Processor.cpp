@@ -216,8 +216,9 @@ void Vst2Processor::allocateBuffers() {
     automationPending_.store(false);
 }
 
-void Vst2Processor::resetOffline() {
+void Vst2Processor::resetOffline(bool rendering) {
     vst3::ScopedSuspend suspend(guard_);
+    offline_.store(rendering, std::memory_order_relaxed);
     deactivate();
     activate();
     releaseAll_.store(true);  // (suspended and resumed, not every plug-in lets its notes go: note-offs for them)
@@ -550,6 +551,9 @@ intptr_t Vst2Processor::hostCall(int32_t opcode, int32_t index, int64_t value, v
         case VST_HOST_OPCODE_GET_BLOCK_SIZE: return maxBlock_.load();
         case VST_HOST_OPCODE_GET_EFFECT_DIRECTORY: return reinterpret_cast<intptr_t>(directory_.c_str());
         case VST_HOST_OPCODE_REFRESH: displayChanged_.store(true); return 1;
+        case kProcessLevel:  // (offline while rendering offline: 4, Steinberg's kVstProcessLevelOffline)
+            if (inAudioThread() && offline_.load(std::memory_order_relaxed)) return 4;
+            return defaultHostCall(opcode, index, value, ptr, opt);
         case kBeginEdit: beginEdit(index); return 1;
         case kEndEdit: endEdit(index); return 1;
         default: return defaultHostCall(opcode, index, value, ptr, opt);

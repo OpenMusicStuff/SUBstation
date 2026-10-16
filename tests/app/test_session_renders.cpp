@@ -205,15 +205,14 @@ private Q_SLOTS:
         f.selection().selectTrack(a, true);
         f.selection().selectTrack(b, false, Selection::Mode::Toggle);
         Following following(*s.render(), QStringLiteral("Freezing"));
-        following.cancelAt = QStringLiteral("Freeze Tracks: Freezing B (2 of 2)…");  // A's is done
+        following.cancelAt = QStringLiteral("Freeze Tracks: Freezing A and B…");  // (one render for both)
         const QString undoText = f.stack().undoText();
         s.toggleFreeze();  // Ctrl+Shift+F
         QVERIFY(f.waitForRender());
-        QCOMPARE(following.seen, (QStringList{QStringLiteral("Freeze Tracks: Freezing A (1 of 2)…"),
-                                              QStringLiteral("Freeze Tracks: Freezing B (2 of 2)…")}));
+        QCOMPARE(following.seen, (QStringList{QStringLiteral("Freeze Tracks: Freezing A and B…")}));
         QVERIFY(!f.project().track(a).frozen && !f.project().track(b).frozen);
         QCOMPARE(f.stack().undoText(), undoText);
-        QVERIFY(freezeFiles(*recordings_).isEmpty());  // A's render too: no track plays it
+        QVERIFY(freezeFiles(*recordings_).isEmpty());  // neither render: no track plays it
 
         following.cancelAt.clear();
         s.toggleFreeze();
@@ -341,22 +340,44 @@ private Q_SLOTS:
         const QString a = f.clipTrack(wav, 1.0, QStringLiteral("A"));
         const QString b = f.clipTrack(wav, 1.0, QStringLiteral("B"));
         std::vector<Freeze> rendered;
-        s.setFreezeFinisher([&](FreezeRender& render) -> std::optional<Freeze> {
-            if (render.trackId() == b) {
-                render.cancel();
-                f.bridge().finishFreeze(render);
-                throw EditError(QStringLiteral("Could not write it"));
-            }
-            const auto freeze = f.bridge().finishFreeze(render);
-            rendered.push_back(*freeze);
-            return freeze;
+        QStringList renderedTracks;
+        s.setFreezeFinisher([&](FreezeRender& render) -> std::optional<OrderedMap<QString, Freeze>> {
+            renderedTracks = render.trackIds();
+            const auto freezes = f.bridge().finishFreezes(render);
+            for (const auto& [track, freeze] : *freezes) rendered.push_back(freeze);
+            f.editor().deleteTracks({b});  // (meanwhile: B's render has no track to play it)
+            return freezes;
         });
         s.freezeTracks({a, b});
         QVERIFY(f.waitForRender());
-        QCOMPARE(rendered.size(), size_t{1});
-        QVERIFY(!QFileInfo::exists(rendered[0].path));  // A's render, played by no track
-        QVERIFY(!f.project().track(a).frozen);
-        QVERIFY(f.lastMessage().contains(QStringLiteral("could not be frozen")));
+        QCOMPARE(renderedTracks, (QStringList{a, b}));  // (one render for both)
+        QCOMPARE(rendered.size(), size_t{2});
+        QVERIFY(f.project().track(a).frozen);
+        QCOMPARE(f.project().track(a).frozen->path, rendered[0].path);
+        QVERIFY(QFileInfo::exists(rendered[0].path));
+        QVERIFY(!QFileInfo::exists(rendered[1].path));  // B's render, played by no track
+    }
+
+    void aRenderThatFailsFreezesNothing() {
+        SessionFixture f;
+        Session& s = f.s();
+        TempDir dir;
+        const QString wav = dcWav(dir);
+        const QString a = f.clipTrack(wav, 1.0, QStringLiteral("A"));
+        const QString b = f.clipTrack(wav, 1.0, QStringLiteral("B"));
+        s.setFreezeFinisher([&](FreezeRender& render) -> std::optional<OrderedMap<QString, Freeze>> {
+            // (As finishFreezes fails: what it made goes.)
+            if (const auto made = f.bridge().finishFreezes(render)) {
+                for (const auto& [track, freeze] : *made) f.bridge().discardFreeze(freeze);
+            }
+            throw EditError(QStringLiteral("Could not write it"));
+        });
+        const QStringList before = freezeFiles(*recordings_);  // (other tests' frozen tracks')
+        s.freezeTracks({a, b});
+        QVERIFY(f.waitForRender());
+        QVERIFY(!f.project().track(a).frozen && !f.project().track(b).frozen);
+        QCOMPARE(freezeFiles(*recordings_), before);
+        QCOMPARE(f.lastMessage(), QStringLiteral("A and B could not be frozen: Could not write it"));
     }
 
     void closingWhileFreezingFreezesNothing() {

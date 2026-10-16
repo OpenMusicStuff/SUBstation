@@ -396,10 +396,16 @@ sandboxes (the preferences' status).
 
 `renderFreeze(track)` renders the track's signal before its fader from beat 0 to the arrangement's end (and on for up
 to `kFreezeTailSeconds`, while it sounds) into `freezeFolder()` (the project's *Freeze* folder, or one in the
-recordings folder), decodes it at once (so it plays without a gap) and returns the `Freeze`. It is
-`startFreeze(track)` (which starts the engine's `startTrackRender()` and returns a `FreezeRender`: the track, the
-engine's `RenderJob`, the tempo) and `finishFreeze(render)` (the `Freeze`, or none if it was cancelled; `EditError` if
-it failed), waited for; the session calls those two itself, showing the render's progress between them
+recordings folder), has its samples at hand at once (so it plays without a gap) and returns the `Freeze`. They are the
+render's own (`FreezeRender::sources()`, `RenderJob::sources()`: made on the render's thread, as decoding the file
+gives them), handed to the engine's cache (`Engine::cacheSource`), so the window doesn't wait for a decode after the
+render; a file is decoded only if the render had none at the engine's rate. It is
+`startFreeze(track)` and `finishFreeze(render)`, waited for. `startFreeze(tracks)` renders several tracks at once: one
+render of the engine's (`startTracksRender()`: what they need, a file for each, each the file freezing its track alone
+makes), each file named by `takePath()` (numbered past the files of the same render: two tracks may share a name). It
+returns a `FreezeRender` (the tracks, the engine's `RenderJob`, the tempo); `finishFreezes(render)` gives each track's
+`Freeze` in order (none if it was cancelled; `EditError` if it failed, its files gone), `finishFreeze(render)` the
+first's. The session calls those two itself, showing the render's progress between them
 ([session.md](session.md#renders-in-the-background)). `discardFreeze` forgets a render no track plays and deletes its
 file. While a render runs, `pollDevice` leaves the device's events for later: it can't be reopened then.
 
@@ -439,11 +445,11 @@ The session's reversing (R) turns clips to it with `ProjectEditor::reverseRange`
 ### Renders in the background: RenderTask
 
 `RenderTask` ([RenderTask.h](../../app/src/audio/RenderTask.h)) is how the UI follows a long job without waiting
-for it, and without nested event loops: `EngineRender` (an export), `FreezeRender` (a track's freeze) and `ReverseJob`
+for it, and without nested event loops: `EngineRender` (an export), `FreezeRender` (tracks' freeze: one render, a file for each) and `ReverseJob`
 each run on a thread of their own and say how far they got (`progress`, 0..1), whether their thread has ended
 (`done`), and can be cancelled (`cancel()`: their file goes). While it runs a task looks at itself every `kPollMs`
 (30 ms) on the thread that made it and emits `progressChanged` when it got further and `ended` when its thread ended;
-its owner then finishes it (`finishExport`, `finishFreeze`, `finishReversed`), which no longer waits. Meanwhile (a
+its owner then finishes it (`finishExport`, `finishFreezes`, `finishReversed`), which no longer waits. Meanwhile (a
 render of the engine's) live output is silent, and the project as it was when the render started is what renders.
 
 ### Settings and transport

@@ -10,10 +10,14 @@ target_compile_definitions(miniaudio PUBLIC
     MA_NO_ENGINE MA_NO_NODE_GRAPH MA_NO_RESOURCE_MANAGER MA_NO_GENERATION)
 set_target_properties(miniaudio PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# Signalsmith Linear's FFTs (header-only, MIT): Signalsmith Stretch's, and the
-# intelligence module's (intelligence/).
+# Signalsmith Linear's FFTs (header-only, MIT): Signalsmith Stretch's and
+# Spectral's. Their power-of-two transforms run on KFR's DFT (kfr_fft, below:
+# third_party/signalsmith-linear/signalsmith-linear/platform/fft-kfr.h), several
+# times faster than the library's own.
 add_library(signalsmith_linear INTERFACE)
 target_include_directories(signalsmith_linear SYSTEM INTERFACE third_party/signalsmith-linear)
+target_compile_definitions(signalsmith_linear INTERFACE SIGNALSMITH_USE_KFR)
+target_link_libraries(signalsmith_linear INTERFACE kfr_fft)
 if (MSVC)
     target_compile_options(miniaudio PRIVATE /W0)
 else()

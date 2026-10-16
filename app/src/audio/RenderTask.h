@@ -1,6 +1,6 @@
 #pragma once
 // Long jobs on threads of their own, which the UI follows without waiting:
-// exporting the arrangement and freezing a track (the engine's RenderJob:
+// exporting the arrangement and freezing tracks (the engine's RenderJob:
 // EngineRender, FreezeRender), and writing a reversed copy of a file
 // (ReverseJob.h). Each says how far it got (0..1), whether its thread has ended,
 // and can be cancelled (its file goes). While it runs it looks at itself every
@@ -12,14 +12,18 @@
 
 #include "model/Errors.h"
 
+#include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace sub {
+class AudioSource;
 class RenderJob;
 }
 
@@ -86,26 +90,36 @@ public:
 
 protected:
     void cancelJob() override;
+    const sub::RenderJob& job() const { return *job_; }
 
 private:
     std::shared_ptr<sub::RenderJob> job_;
     bool finished_ = false;
 };
 
-// A track's render for freezing it, in the background (EngineBridge::startFreeze).
+// Tracks' render for freezing them, in the background (EngineBridge::startFreeze):
+// one render, a file for each track.
 class FreezeRender : public EngineRender {
     Q_OBJECT
     Q_PROPERTY(QString trackId READ trackId CONSTANT)
 
 public:
-    FreezeRender(const QString& trackId, std::shared_ptr<sub::RenderJob> job, double tempo,
+    FreezeRender(const QStringList& trackIds, std::shared_ptr<sub::RenderJob> job, double tempo,
                  QObject* parent = nullptr);
 
-    QString trackId() const { return trackId_; }
+    QString trackId() const { return trackIds_.front(); }  // (the first)
+    const QStringList& trackIds() const { return trackIds_; }
+    // Each track's file, in the order of trackIds().
+    QStringList paths() const;
+    // Once finished: the frames written to each track's file (none if cancelled or failed).
+    QList<qint64> written() const;
+    // Once finished: each file's samples as decoding it gives them (the render
+    // kept them: RenderJob::sources()), in the order of trackIds().
+    std::vector<std::shared_ptr<sub::AudioSource>> sources() const;
     double tempo() const { return tempo_; }  // the project's when it started
 
 private:
-    QString trackId_;
+    QStringList trackIds_;
     double tempo_;
 };
 

@@ -126,14 +126,16 @@ void SandboxedProcessor::prepare(double sampleRate, int maxBlockSize) {
 
 void SandboxedProcessor::reset() { resetPending_.store(true, std::memory_order_release); }
 
-void SandboxedProcessor::resetOffline() {
+void SandboxedProcessor::resetOffline(bool rendering) {
     if (!loaded() || ended()) return;
     // Asked for, not waited for: the sandbox's main thread may be loading another plug-in, or stuck in one.
     const uint32_t request = Sandbox::newRequest();
     const auto deadline = std::chrono::steady_clock::now() + kResetWait;
     resetDeadline_.store(deadline.time_since_epoch().count(), std::memory_order_relaxed);
     resetRequest_.store(request, std::memory_order_release);
-    link_.sandbox->send({Kind::ResetOffline, link_.instance, request});
+    platform::ByteWriter out;
+    out.u8(rendering ? 1 : 0);
+    link_.sandbox->send({Kind::ResetOffline, link_.instance, request, std::move(out.bytes)});
 }
 
 // An offline render's first block comes after the reset asked for before it: the sandbox's main

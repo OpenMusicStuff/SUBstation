@@ -269,6 +269,12 @@ struct ExportFormat {
     int bitrate = 320;
 };
 
+// A track's render into a file of its own (Engine::startTracksRender).
+struct TrackFile {
+    uint32_t trackId = 0;
+    std::string path;
+};
+
 struct DeviceStatus {
     bool open = false;
     std::string name;
@@ -720,10 +726,19 @@ public:
     // soloed); mute isn't. Interleaved stereo.
     std::vector<float> renderTrackOffline(uint32_t trackId, double startBeat, int64_t frames);
     // The same from startBeat to endBeat, then on for up to `tailSeconds` while
-    // it isn't silent (a reverb's tail), into a new 32-bit float WAV file.
-    // Returns the frames written.
+    // it isn't silent (a reverb's tail), into a new 32-bit float WAV file: cut
+    // after its last frame above -100 dB, and rendered only until it has stayed
+    // below that for as long as what feeds it says it may ring on (its devices'
+    // tails: docs/engine/rendering.md). Returns the frames written.
     int64_t renderTrackToWav(uint32_t trackId, const std::string& path, double startBeat, double endBeat,
                              double tailSeconds);
+    // renderTrackToWav() for several tracks at once (freezing them): one render
+    // (of what they need: the union of what feeds each), each track's signal
+    // into its own file, each file the one renderTrackToWav() writes for it, to
+    // the bit. A track done (its tail silent) renders no more. Returns the
+    // frames written to each, in order.
+    std::vector<int64_t> renderTracksToWav(const std::vector<TrackFile>& tracks, double startBeat, double endBeat,
+                                           double tailSeconds);
     // exportWav() (exportFile()) and renderTrackToWav() on a thread of their own (RenderJob.h):
     // they return at once with the job, its file created (or throw why not).
     // One job at a time. Until it is finished live output is silent, and what
@@ -735,6 +750,10 @@ public:
                                            const ExportFormat& format);
     std::shared_ptr<RenderJob> startTrackRender(uint32_t trackId, const std::string& path, double startBeat,
                                                 double endBeat, double tailSeconds);
+    // renderTracksToWav() in the background: the job's finish() returns the frames
+    // written to the first file, RenderJob::written() those written to each.
+    std::shared_ptr<RenderJob> startTracksRender(const std::vector<TrackFile>& tracks, double startBeat,
+                                                 double endBeat, double tailSeconds);
     bool isRendering();  // a job is running (or done, not finished yet)
 
     // --- Audio threads -----------------------------------------------------------
@@ -756,6 +775,11 @@ public:
     // off (for benchmarks): then in routing order. Results are the same either way.
     void setCostOrdering(bool on);
     bool costOrdering() const { return renderer_.costOrdering(); }
+    // A track's render (renderTrackOffline(), freezing) renders only the track
+    // and what feeds it (Renderer::setCaptures()), unless this is off (for
+    // tests): then every track and the master, as an export does. Results are
+    // the same either way.
+    void setPruneTrackRenders(bool on);
     std::vector<TrackCost> trackCosts();
 
     // --- Housekeeping ---------------------------------------------------------
@@ -916,6 +940,7 @@ private:
     void resumeLiveLocked();
     void renderOfflineLocked(double startBeat, int64_t frames, float* out, bool loop, bool metronome);
     // Delay lines an offline render brings, so that it neither disturbs live playback nor depends on it.
+    bool pruneTrackRenders_ = true;  // setPruneTrackRenders()
     struct OfflineLines {
         WarpVoiceSet voices;
         std::vector<std::shared_ptr<DelayLine>> delays, deviceDelays, chainDelays, switchDelays;
@@ -933,7 +958,7 @@ private:
     void endOfflineLocked();  // the processors reset again, live output back
     // Starts `body` as the background job (RenderJob::start) on a begun render;
     // if it can't start, the render ends.
-    std::shared_ptr<RenderJob> startJobLocked(const std::string& path, int64_t total,
+    std::shared_ptr<RenderJob> startJobLocked(std::vector<std::string> paths, int64_t total,
                                               std::function<std::optional<int64_t>(RenderJob&)> body);
     void checkNotRenderingLocked() const;  // throws std::runtime_error while a job runs
     friend class RenderJob;
@@ -942,7 +967,7 @@ private:
     // piece at a time (interleaved stereo, and how many frames).
     void renderTrackLocked(uint32_t trackId, double startBeat, int64_t frames,
                            const std::function<void(const float*, int64_t)>& sink);
-    void resetProcessorsLocked();
+    void resetProcessorsLocked(bool rendering);  // Processor::resetOffline() for each
     void ensureWarpVoicesLocked(const std::array<size_t, kNumStretchConfigs>& needed);
     // What building a strip's part of the snapshot needs to know about it.
     struct StripBuild {

@@ -211,7 +211,7 @@ public:
 
     void prepare(double sampleRate, int maxBlockSize) override;
     void reset() override;
-    void resetOffline() override;
+    void resetOffline(bool rendering) override;
     int tailSamples() const override;
     bool idle() override;
 
@@ -465,7 +465,7 @@ void SamplerProcessor::reset() {
     filtering_ = false;
 }
 
-void SamplerProcessor::resetOffline() { updatePool(true); }  // fresh stretchers: the render comes out the same every time
+void SamplerProcessor::resetOffline(bool) { updatePool(true); }  // fresh stretchers: the render comes out the same every time
 
 int SamplerProcessor::tailSamples() const {
     return static_cast<int>(std::max(param(Release), param(FadeOut)) * 0.001 * sampleRate_);

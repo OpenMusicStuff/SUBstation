@@ -9,6 +9,8 @@
 #include <thread>
 
 #include "Engine.h"
+#include "AudioFileWriter.h"
+#include "AudioSource.h"
 #include "RenderJob.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
@@ -74,6 +76,72 @@ TEST_CASE("a track rendered in the background is the same render") {
     CHECK(job->finish() == std::optional<int64_t>(written));
     CHECK_EQ(written, 2 * kBeat);  // (no tail: silent after the clip)
     CHECK(readBytes(later) == readBytes(now));
+}
+
+TEST_CASE("several tracks rendered in the background: their files, progress, cancelling") {
+    JobEngine e;
+    auto& engine = e.engine;
+    const uint32_t a = clipTrack(engine, dcWav(), 0.0, 0.5);
+    const uint32_t b = clipTrack(engine, rampWav());
+    const auto pathA = tempDir() / "a.wav", pathB = tempDir() / "b.wav";
+    const auto job = engine.startTracksRender({{a, pathA.string()}, {b, pathB.string()}}, 0.0, 2.0, 1.0);
+    CHECK(job->paths() == (std::vector<std::string>{pathA.string(), pathB.string()}));
+    const std::vector<double> seen = waitDone(*job);
+    CHECK(std::is_sorted(seen.begin(), seen.end()));
+    CHECK_EQ(job->progress(), 1.0);
+    CHECK(job->finish() == std::optional<int64_t>(2 * kBeat));
+    CHECK(job->written() == (std::vector<int64_t>{2 * kBeat, 2 * kBeat}));
+    CHECK(readBytes(pathA) != readBytes(pathB));
+    const auto alone = tempDir() / "alone.wav";
+    engine.renderTrackToWav(b, alone.string(), 0.0, 2.0, 1.0);
+    CHECK(readBytes(pathB) == readBytes(alone));
+
+    const auto longA = tempDir() / "long-a.wav", longB = tempDir() / "long-b.wav";
+    const auto cancelled = engine.startTracksRender({{a, longA.string()}, {b, longB.string()}}, 0.0, kTwoHours, 0.0);
+    CHECK(fileExists(longA) && fileExists(longB));  // created at once
+    cancelled->cancel();
+    CHECK(!cancelled->finish().has_value());
+    CHECK(cancelled->written().empty());
+    CHECK(!fileExists(longA) && !fileExists(longB));
+    CHECK_THROWS_AS(engine.startTracksRender({}, 0.0, 1.0, 0.0), std::invalid_argument);
+    CHECK_THROWS_AS(engine.startTracksRender({{a, longA.string()}, {12345, longB.string()}}, 0.0, 1.0, 0.0),
+                    std::invalid_argument);
+    CHECK(!fileExists(longA) && !fileExists(longB));
+}
+
+TEST_CASE("a track's render hands over its samples as decoding its file gives them") {
+    JobEngine e;
+    auto& engine = e.engine;
+    const uint32_t a = clipTrack(engine, rampWav());
+    const uint32_t b = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(b), "synth", -1);
+    engine.setTrackNotes(b, {{1.5, 0.5, 60, 100}});  // (its release rings past the range: a tail)
+    const auto pathA = tempDir() / "kept-a.wav", pathB = tempDir() / "kept-b.wav";
+    const auto job = engine.startTracksRender({{a, pathA.string()}, {b, pathB.string()}}, 0.0, 2.0, 1.0);
+    job->finish();
+    REQUIRE(job->sources().size() == 2);
+    for (size_t i = 0; i < 2; ++i) {
+        const sub::AudioSource& kept = *job->sources()[i];
+        const auto decoded = sub::AudioSource::load(job->paths()[i], kSampleRate);
+        CHECK_EQ(kept.path(), job->paths()[i]);
+        CHECK_EQ(kept.frames(), job->written()[i]);
+        CHECK_EQ(kept.frames(), decoded->frames());
+        CHECK_EQ(kept.channels(), decoded->channels());
+        CHECK_EQ(kept.sampleRate(), decoded->sampleRate());
+        CHECK_EQ(kept.fileSampleRate(), decoded->fileSampleRate());
+        const auto samples = static_cast<size_t>(kept.frames()) * kept.channels();
+        CHECK(std::equal(kept.data(), kept.data() + samples, decoded->data()));
+        for (int level = 0; level < kept.numPeakLevels(); ++level) {
+            const auto peaks = static_cast<size_t>(kept.numPeaks(level)) * kept.channels() * 2;
+            CHECK_EQ(kept.numPeaks(level), decoded->numPeaks(level));
+            CHECK(std::equal(kept.peaks(level), kept.peaks(level) + peaks, decoded->peaks(level)));
+        }
+    }
+    CHECK(job->sources()[1]->frames() > 2 * kBeat);
+    // An export keeps none.
+    const auto exported = engine.startExport((tempDir() / "kept-mix.wav").string(), 0.0, 2.0, 24);
+    exported->finish();
+    CHECK(exported->sources().empty());
 }
 
 TEST_CASE("a cancelled render leaves no file") {
@@ -174,6 +242,24 @@ TEST_CASE("an export as MP3: the mix, encoded at the bitrate asked for") {
                                        sub::ExportFormat{sub::ExportFormat::Kind::Mp3, 24, 500}),
                     std::invalid_argument);
     CHECK(!fileExists(tempDir() / "bad.mp3"));
+}
+
+TEST_CASE("an MP3 export encoded on a thread of its own is the encoder's file") {
+    JobEngine e;
+    auto& engine = e.engine;
+    clipTrack(engine, rampWav());
+    const auto exported = tempDir() / "threaded.mp3", direct = tempDir() / "direct.mp3";
+    engine.exportFile(exported.string(), 0.0, 4.0, sub::ExportFormat{sub::ExportFormat::Kind::Mp3, 24, 192});
+    // The same render handed to LAME's writer on this thread, in the export's pieces.
+    const Samples mix = engine.renderOffline(0.0, 4 * kBeat);
+    {
+        const auto writer = sub::makeMp3Writer(direct.string(), kSampleRate, 192);
+        for (int64_t done = 0; done < 4 * kBeat; done += 4096) {
+            writer->write(mix.data() + done * 2, std::min<int64_t>(4096, 4 * kBeat - done));
+        }
+        writer->keep();
+    }
+    CHECK(readBytes(exported) == readBytes(direct));
 }
 
 TEST_CASE("a render that can't start says why") {

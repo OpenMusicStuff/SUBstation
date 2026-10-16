@@ -102,7 +102,7 @@ stuck in a plug-in. A crash ends it without the system's dialog (Windows: `SetEr
 Each message is a frame on the channel ([SandboxProtocol.h](../../engine/src/plugins/sandbox/SandboxProtocol.h)): its
 size, its kind, the plug-in instance it is about, the request it asks or answers (ids unique across every sandbox: a
 plug-in loaded again elsewhere is never taken for what it was), then its own fields (`ByteWriter`'s, little-endian).
-The host says `Ready` first, with the protocol's version (3: `Create` carries the plug-in's format since VST2) and the
+The host says `Ready` first, with the protocol's version (4: `Create` carries the plug-in's format since VST2 (3), `ResetOffline` whether a render follows (4)) and the
 block's size; a sandbox that speaks another isn't used. The host loads a plug-in with its format's `instantiate()`
 (`pluginFormat()`), and hands the UI's values on through `PluginProcessor` (`setControllerParam`, `queueParamChange`),
 whichever format it is ([plugins.md](plugins.md#pluginformat)).
@@ -127,7 +127,8 @@ workers asleep, and a wake-up on its counter `rung`.
 `SandboxedProcessor::process()`, on whichever thread renders the plug-in:
 
 1. If the plug-in hasn't loaded (or crashed), it returns: the audio passes by, as for a missing plug-in.
-2. Offline, the first block waits for the reset asked for before the render. `resetOffline()` sends `ResetOffline`
+2. Offline, the first block waits for the reset asked for before the render. `resetOffline()` sends `ResetOffline` (with
+   whether a render follows or one ended: the host passes it on, so a plug-in there renders in its offline mode too)
    without waiting for it (it runs on the main thread, under the engine's lock, and the sandbox's main thread may be
    loading another plug-in, or stuck in one); the host's main thread does it, its workers the blocks. The wait
    ends 10 s after the reset was asked for, and every plug-in was asked at once: a stuck sandbox costs a render 10 s,

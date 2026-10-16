@@ -280,7 +280,10 @@ snapshot's `outputLatency()`: they render that much first and drop it.
 
 `startExport()` and `startTrackRender()` do the same on a thread of their own and return a
 `RenderJob` ([RenderJob.h](../../engine/src/RenderJob.h)) at once; `exportWav()` and
-`renderTrackToWav()` are those, waited for. Under the lock, on the calling (main) thread, they
+`renderTrackToWav()` are those, waited for. `startTracksRender()` (`renderTracksToWav()`) renders
+several tracks at once, each into its own file (`TrackFile`s; `RenderJob::paths()`, and
+`written()`: the frames written to each), the arrangement once: see
+[rendering.md](rendering.md#offline-renders). Under the lock, on the calling (main) thread, they
 create the file (an `AudioFileWriter`, [AudioFileWriter.h](../../engine/src/AudioFileWriter.h): a
 `WavWriter`, miniaudio's encoder, 16-bit with triangle dither, 24-bit or 32-bit float; or for an
 `ExportFormat` of kind `Mp3` an MP3 writer, LAME's encoder at a constant bitrate,
@@ -288,7 +291,13 @@ create the file (an `AudioFileWriter`, [AudioFileWriter.h](../../engine/src/Audi
 renderer, its lines, and a `shared_ptr` to the snapshot as it is, which keeps its processors,
 sources and buffers alive whatever the UI changes meanwhile. The job's thread then renders that
 snapshot without the lock (4096 frames at a time), so the UI's calls (meters, the playhead,
-`idle()`) don't wait for it:
+`idle()`) don't wait for it. Each piece but the last tells the renderer another follows
+(`renderOffline()`'s and `renderCaptures()`'s `more`), so the scheduler's workers spin for the
+next piece while this one is written instead of going to sleep. An MP3 export's encoder runs on a
+thread of its own (`WriterThread`: the render hands it each piece, two at most waiting, and goes
+on; LAME's encoding was a fifth of the export's time): the file is the encoder's, byte for byte.
+A WAV file is still written on the render's thread: converting and writing a piece costs little
+next to rendering it (`freeze_bench`: no measurable difference), so a thread would only add a copy.
 
 - `progress()` is the frames rendered over the frames to render; `done()` says the thread has
   ended.

@@ -333,14 +333,56 @@ started with. Differences from live:
   same threads, and are bit-identical whatever their number.
 
 **One track** (freezing it): `Engine::renderTrackOffline()` and `renderTrackToWav()` render the
-whole graph the same way, but put out one track's signal after its devices, before its fader
-(`Renderer::renderTrackOffline()`: the track is copied out of `renderTrack()` as it leaves
-`processInserts()`). Solo is ignored (`ignoreSolo_`), so a group's bus is heard as if nothing
-were soloed. The signal lags the timeline by the track's `inputLatency` plus its devices'
+graph the same way, but put out one track's signal after its devices, before its fader
+(`Renderer::setCaptures()`, then `renderCaptures()`: the track is copied out of `renderTrack()` as it
+leaves `processInserts()`). Solo is ignored (`ignoreSolo_`), so a group's bus is heard as if nothing
+were soloed.
+
+Only what the track needs renders: the track and everything upstream of it (`Renderer::upstream()`:
+through every edge into it, however far back: what goes into a group or a return, sidechains, input
+edges), in a graph of their own for the scheduler (`prunedGraph_`, whose nodes are those tracks in
+snapshot order, `prunedTracks_`; `prunedWork_` counts those worth a thread as `parallelWork` does),
+and not the master's strip, nor the metronome after it. The rest of the chunk is as it was: the
+prologue still works out every track's notes, stretch voices and solo, so the state the tracks
+share (sounding notes, which voice plays which clip) is the same, and a track's render depends only
+on its own state and what comes in on its edges. A device taking another track's notes
+(`MidiFeed`) needs nothing rendered: the prologue copies them. So the track comes out the same,
+to the bit, as rendering everything makes; `Engine::setPruneTrackRenders(false)` renders
+everything instead, for the tests that compare the two. The signal lags the timeline by the track's `inputLatency` plus its devices'
 latency, so that much is rendered first and dropped. `renderTrackToWav()` writes 32-bit float
 (nothing above full scale is clipped), and renders on past the end for up to `tailSeconds`,
 cut where it falls below -100 dB. `startTrackRender()` is the same in the background (freezing
 from the UI).
+
+**Several tracks** (freezing them at once: `startTracksRender()`, `renderTracksToWav()`; a track or a
+file named twice is refused) render in one pass: `setCaptures()` takes them all, renders the union of what feeds each, and
+`renderCaptures()` puts out each track's signal into a buffer of its own. Each has its own
+`TrackCapture`: its own lag dropped (the job renders the longest first), its own range, tail and
+silence; a track whose tail is done is taken out (`setCaptures()` again with those left, between two
+pieces), so what only it needed renders no more. Each file is the one rendering its track alone
+writes, to the bit: what a track's render takes depends only on what feeds it.
+
+Each `TrackCapture` keeps what it writes, planar, and once the file is finished makes the
+`AudioSource` decoding the file would (`AudioSource::fromSamples()`: the same samples, the 32-bit
+float file holds them exactly, and the same peaks) on the job's thread: `RenderJob::sources()`. The
+application plays a frozen track from it at once, without reading the file back.
+
+**The tail** (`TrackCapture`, [EngineOffline.cpp](../../engine/src/EngineOffline.cpp)) is kept back
+as it renders and written up to its last frame above -100 dB. The render stops before the end of
+`tailSeconds` once the track has been silent (both channels under -100 dB) for long enough
+(`quietWindow()`), and nothing feeding it sounds later: no clip or note on it or upstream of it plays
+on past that point, nor one of a track whose notes a device on them takes (a `MidiFeed`, which has no
+edge) (`lastSounding()`, the tail's end at most). Long enough is a second
+(`kQuietSeconds`) plus, added up, the latency and tail (`Processor::tailSamples()`) of every
+device on the track and on the tracks feeding it, rack chains' too: a device rings on no longer than
+its tail after its input falls silent, so a silence that long within it (between a delay's echoes,
+which `Delay` counts in its tail) can't be followed by more of it, and a chain of them by no longer
+than their sum. Where a device could sound again after any silence the whole tail is rendered: a MIDI
+effect (an arpeggiator holding its notes plays on past the arrangement), or a plug-in declaring no
+tail (many do, delays among them). So the file is the same as rendering the whole tail and cutting
+it would make, to the bit, whenever the tail really dies away; it differs only for a device that
+sounds again after falling silent for longer than it declares (a generator gated by a slow LFO), whose
+later sound is left out.
 
 ## Invariants and real-time rules
 
@@ -381,6 +423,10 @@ In the engine's tests, [tests/engine](../../tests/engine):
   offsets, gain and pan, mute and solo, loop wraps, tempo changes keeping the playhead on the
   beat, transport state without a device, metronome clicks, clip fades, export matching a render.
 - [test_render_jobs.cpp](../../tests/engine/test_render_jobs.cpp): renders in the background.
+- [test_freeze_engine.cpp](../../tests/engine/test_freeze_engine.cpp): a track's render, lined up, its
+  tail (the same as cutting the whole tail), the same rendering only what feeds it as rendering
+  everything (on a graph with groups, returns, sidechains, MIDI from another track, an input edge,
+  racks, stretched clips); frozen tracks.
 - [test_groups_engine.cpp](../../tests/engine/test_groups_engine.cpp),
   [test_sends_engine.cpp](../../tests/engine/test_sends_engine.cpp): solo and mute across levels and sends,
   meters of groups and returns.

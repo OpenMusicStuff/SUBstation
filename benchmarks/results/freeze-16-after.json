@@ -1,0 +1,67 @@
+{
+  "tracks": 16,
+  "seconds": 30.0,
+  "threads": 0,
+  "results": [
+    {
+      "name": "one track",
+      "seconds": 0.2553,
+      "frames": 1446912,
+      "realtime": 117.51
+    },
+    {
+      "name": "4 tracks",
+      "seconds": 0.5141,
+      "frames": 5787625,
+      "realtime": 233.41
+    },
+    {
+      "name": "decoding the 4 files",
+      "seconds": 0.0628,
+      "frames": 5787625,
+      "realtime": 1910.11
+    },
+    {
+      "name": "4 tracks, a render each",
+      "seconds": 0.8921,
+      "frames": 5787625,
+      "realtime": 134.52
+    },
+    {
+      "name": "the group, its tracks and the return",
+      "seconds": 2.4586,
+      "frames": 8880228,
+      "realtime": 73.21
+    },
+    {
+      "name": "the same, a render each",
+      "seconds": 4.495,
+      "frames": 8880228,
+      "realtime": 40.04
+    },
+    {
+      "name": "the group",
+      "seconds": 1.1678,
+      "frames": 1491168,
+      "realtime": 25.69
+    },
+    {
+      "name": "export (the whole mix)",
+      "seconds": 2.0157,
+      "frames": 1440000,
+      "realtime": 14.88
+    },
+    {
+      "name": "export as MP3 (320 kbps)",
+      "seconds": 2.0752,
+      "frames": 1440000,
+      "realtime": 14.46
+    },
+    {
+      "name": "one track of a 4 s song",
+      "seconds": 0.0375,
+      "frames": 192000,
+      "realtime": 106.56
+    }
+  ]
+}

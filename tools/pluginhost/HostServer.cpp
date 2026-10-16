@@ -216,7 +216,7 @@ void HostServer::handleForInstance(Instance& instance, const Message& message) {
             break;
         }
         case Kind::ResetOffline:
-            processor.resetOffline();
+            processor.resetOffline(in.u8() != 0);
             reply(message, true);
             break;
         case Kind::SetParam: {
