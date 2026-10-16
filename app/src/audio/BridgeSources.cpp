@@ -3,6 +3,8 @@
 // two spellings of a file share one source); what waits for it runs on the main
 // thread when it is ready. The engine's cache holds the bridge's sources again
 // when they are decoded or asked for: a reset can let go of them there only.
+// Decoding doesn't publish the engine's snapshot (Engine::decodeSource()): the
+// main thread does, once for the files that arrive together (onLoaded()).
 
 #include <QFileInfo>
 
@@ -42,19 +44,37 @@ void EngineBridge::requestSource(const QString& path, std::function<void()> then
     const std::string utf8 = path.toStdString();
     d_->pool.start([this, path, utf8] {
         try {
-            std::shared_ptr<sub::AudioSource> loaded = engine_.loadSource(utf8);
+            std::shared_ptr<sub::AudioSource> loaded = engine_.decodeSource(utf8);
+            ++d_->arriving;
             QMetaObject::invokeMethod(this, [this, path, loaded] { onLoaded(path, loaded); }, Qt::QueuedConnection);
         } catch (const std::exception& error) {
             const QString message = QString::fromStdString(error.what());
+            ++d_->arriving;
             QMetaObject::invokeMethod(this, [this, path, message] { onFailed(path, message); }, Qt::QueuedConnection);
         } catch (...) {
             const QString message = QStringLiteral("Could not decode ") + path;
+            ++d_->arriving;
             QMetaObject::invokeMethod(this, [this, path, message] { onFailed(path, message); }, Qt::QueuedConnection);
         }
     });
 }
 
+// A file decoded (or not) has arrived. While more have arrived behind it, the
+// engine holds a batch for them all, its snapshot built when the last is in (or
+// every kArrivalsHeldMs of a long stream of them), not once a file.
+void EngineBridge::holdArrivals() {
+    Private& d = *d_;
+    const bool more = --d.arriving > 0;
+    if (d.arrivals && (!more || d.arrivalsHeld.elapsed() >= kArrivalsHeldMs)) d.arrivals.reset();  // (published)
+    if (more && !d.arrivals) {
+        d.arrivals.emplace(engine_);
+        d.arrivalsHeld.start();
+    }
+}
+
 void EngineBridge::onLoaded(const QString& path, std::shared_ptr<sub::AudioSource> source) {
+    const sub::Engine::Batch batch(engine_);  // (this file's clips, and what waited for it, heard at once)
+    holdArrivals();
     const QString key = pathIdentity(path);
     // (A reset since it was decoded may have had the engine let go of it: a project opened
     // meanwhile that uses it plays it now.)
@@ -66,6 +86,7 @@ void EngineBridge::onLoaded(const QString& path, std::shared_ptr<sub::AudioSourc
 }
 
 void EngineBridge::onFailed(const QString& path, const QString& message) {
+    holdArrivals();
     const QString key = pathIdentity(path);
     d_->loading.remove(key);
     d_->failed.insert(key, message);

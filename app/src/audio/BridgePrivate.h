@@ -19,6 +19,7 @@
 #include <QThreadPool>
 #include <QTimer>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -156,12 +157,20 @@ struct EngineBridge::Private {
     QMap<QString, QString> midiErrors;  // MIDI input -> why it couldn't be opened
 
     bool deferring = false;  // plug-ins added now wait to load (a project opening; in this process)
+    // A project opening (onReset): its tracks are added one by one, and the routes between them (outputs,
+    // sends, inputs, sidechains, MIDI inputs) pushed once they all are, not again for each.
+    bool resetting = false;
     QStringList pendingPlugins;  // device ids whose plug-ins wait to load, in the order they load
     QSet<QString> sandboxLoading;  // device ids whose plug-ins load in their sandboxes now
     int pluginsTotal = 0;  // of those, and those loaded since none was loading
     QTimer pluginTimer;
 
     QThreadPool pool;  // decoding files
+    // Files decoded that the main thread hasn't heard of yet (onLoaded(), onFailed()), and the batch
+    // the engine holds while a burst of them arrives: one snapshot for them all (BridgeSources.cpp).
+    std::atomic<int> arriving{0};
+    std::optional<sub::Engine::Batch> arrivals;
+    QElapsedTimer arrivalsHeld;
     // Built-in devices' states are restored one at a time, in the order they
     // were set, so the last one set wins.
     QThreadPool statePool;
@@ -176,6 +185,9 @@ struct EngineBridge::Private {
 // What a slot reacting to the project does, or (should something throw) says
 // so: Qt must never see an exception, and the model goes on.
 void guarded(const char* what, const std::function<void()>& body);
+// The same as one batch of the engine's (Engine::Batch): however many engine calls `body` makes, the
+// engine builds one snapshot, when it ends. For what changes the engine.
+void guardedBatch(sub::Engine& engine, const char* what, const std::function<void()>& body);
 
 // Private::busy counted up while it lives: around a plug-in's or a driver's
 // call that may run a message loop calling the bridge back. It counts down

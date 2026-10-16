@@ -193,6 +193,7 @@ void EngineBridge::reEnableAutomation(const QString& owner) {
     for (auto it = d_->overridden.begin(); it != d_->overridden.end();) {
         it = owners.contains(it->first) ? d_->overridden.erase(it) : std::next(it);
     }
+    const sub::Engine::Batch batch(engine_);
     for (const QString& o : owners) guarded("re-enable automation", [&] { pushAutomation(o); });
 }
 

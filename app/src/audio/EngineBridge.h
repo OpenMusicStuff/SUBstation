@@ -192,6 +192,8 @@ inline constexpr int kPluginGapMs = 20;
 inline constexpr int kPluginRetryMs = 50;
 // The longest a render that must have them (waitForDeviceStates) waits for plug-ins loading in sandboxes.
 inline constexpr int kSandboxLoadWaitMs = 120000;
+// Decoded files arriving one behind another are heard together (one snapshot), at least this often.
+inline constexpr int kArrivalsHeldMs = 100;
 // The playhead, the meters and a recording's progress: every display tick (setDisplayInterval: the
 // preferences' rate, Session's DisplayPreferences); 16 ms (60 Hz) until told.
 inline constexpr int kDisplayPollMs = 16;
@@ -730,6 +732,7 @@ private:
     void pushModulation(const QString& owner);
     const std::vector<sub::ParamInfo>& paramInfos(quint32 processorId);
     // Sources (BridgeSources.cpp).
+    void holdArrivals();  // a decoded file arrived (onLoaded(), onFailed())
     void onLoaded(const QString& path, std::shared_ptr<sub::AudioSource> source);
     void onFailed(const QString& path, const QString& message);
     // Transport (BridgeTransport.cpp).

@@ -116,12 +116,13 @@ void Engine::startRecording(const std::vector<RecordTarget>& targets, double cou
     // A track's output leaves it as late as its devices and what feeds it make
     // it (its edges' arrival); the master's, as late as the output's lag.
     const DeviceState state = device_.state();
-    const auto lag = static_cast<int64_t>(snapshotHold_->outputLatency());
+    const std::shared_ptr<const RenderSnapshot> snap = currentSnapshotLocked();
+    const auto lag = static_cast<int64_t>(snap->outputLatency());
     const int64_t devicePlacement = lag + state.inputLatency + state.outputLatency;
     const int64_t midiPlacement =
         lag + state.outputLatency + (midiImmediate_ ? midiBufferFrames_ / 2 : shared_.midiInputDelay.load());
-    const auto arrival = [this](uint32_t trackId) -> int64_t {  // (the track recording: where its input edge leaves its source)
-        const TrackRender* render = snapshotHold_->findTrack(trackId);
+    const auto arrival = [&snap](uint32_t trackId) -> int64_t {  // (the track recording: where its input edge leaves its source)
+        const TrackRender* render = snap->findTrack(trackId);
         return render ? render->input.arrival : 0;
     };
     std::vector<std::unique_ptr<RecordingTake>> takes;

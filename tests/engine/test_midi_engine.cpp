@@ -100,6 +100,28 @@ TEST_CASE("notes are in beats and follow the tempo") {
     CHECK(maxAbs(frames(out, 3 * kSampleRate + kSampleRate / 50)) < 1e-4);
 }
 
+// A track's notes are made for the snapshot once and kept while nothing they
+// depend on changes: a new tempo, or new notes, makes them again.
+TEST_CASE("notes kept between snapshots follow a new tempo and new notes") {
+    sub::Engine engine;
+    const uint32_t track = synthTrack(engine, {{2.0, 1.0, 60}}).first;
+    const auto firstSounding = [&] {
+        const auto sounding = above(channel(engine.renderOffline(0.0, 4 * kSampleRate), 0), 1e-6);
+        REQUIRE(!sounding.empty());
+        return sounding[0];
+    };
+    CHECK(firstSounding() < kSampleRate + 10);  // beat 2 at 120 BPM: one second in
+    engine.setLoop(true, 0.0, 8.0);             // (a snapshot that keeps them)
+    CHECK(firstSounding() < kSampleRate + 10);
+    CHECK(kSampleRate <= firstSounding());
+    engine.setTempo(60.0);
+    CHECK(2 * kSampleRate <= firstSounding());  // two seconds in now
+    CHECK(firstSounding() < 2 * kSampleRate + 10);
+    engine.setTrackNotes(track, {{1.0, 1.0, 60}});
+    CHECK(kSampleRate <= firstSounding());
+    CHECK(firstSounding() < kSampleRate + 10);
+}
+
 TEST_CASE("velocity sets the level") {
     sub::Engine engine;
     const auto [track, synth] = synthTrack(engine, {{0.0, 2.0, 60, 127}});

@@ -58,7 +58,7 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
         midiBufferFrames_ = state.bufferFrames > 0 ? static_cast<int>(state.bufferFrames) : 512;
         shared_.midiInputDelay.store(midiImmediate_ ? 0 : midiBufferFrames_);
         shared_.midiSampleRate.store(sampleRate_);
-        rebuildSnapshotLocked();
+        buildSnapshotLocked();  // at the device's rate before it starts, batch or not
         serviceTransportIfIdleLocked();
         pendingDeviceEvents_.store(0);  // about the device just closed
         dropouts_.store(0);
@@ -196,7 +196,7 @@ void Engine::audioCallback(const AudioIO& io) noexcept {
         for (uint32_t i = 0; i < io.frames; ++i) peak = std::max(peak, std::abs(io.inputs[c][i]));
         atomicStoreMax(shared_.inputPeaks[c], peak);
     }
-    // seq_cst pairs with the store/epoch-load sequence in rebuildSnapshotLocked().
+    // seq_cst pairs with the store/epoch-load sequence in buildSnapshotLocked().
     const RenderSnapshot* snap = snapshot_.load(std::memory_order_seq_cst);
     RecordingSession* recording = liveRecording_.load(std::memory_order_seq_cst);
     lastLate_ = false;

@@ -59,13 +59,16 @@ void EngineBridge::onReset() {
     stopLoadingPlugins();
     const QStringList ids = project_->owners();
     d.deferring = true;  // its plug-ins load after it shows (BridgeLoading.cpp)
+    d.resetting = true;  // (the routes between them once they are all there, below)
     try {
         for (const QString& id : ids) addEngineTrack(id);
     } catch (...) {
         d.deferring = false;
+        d.resetting = false;
         throw;
     }
     d.deferring = false;
+    d.resetting = false;
     pushOutputs();
     pushAllSends();  // (into returns added after the tracks sending to them)
     pushAllInputs();  // (from tracks added after the tracks taking them)
@@ -118,6 +121,7 @@ void EngineBridge::addEngineTrack(const QString& trackId) {
     pushClips(trackId);
     syncDevices(trackId);
     pushAutomation(trackId);
+    if (d_->resetting) return;  // (a project opening: onReset() pushes every route once)
     if (!master) pushOutputs();  // into its group, and what is in it (back) into it
     if (isReturn) {
         pushAllSends();  // its sends, and the sends into it
@@ -386,6 +390,7 @@ void EngineBridge::pushClips(const QString& trackId) {
 
 void EngineBridge::previewClips(const QMap<QString, std::vector<Clip>>& clipsByTrack,
                                 const QMap<QString, std::vector<Clip>>& frozenByTrack) {
+    const sub::Engine::Batch batch(engine_);  // (one snapshot for every track the drag moves)
     for (auto it = clipsByTrack.constBegin(); it != clipsByTrack.constEnd(); ++it) {
         const QString& trackId = it.key();
         const auto engineId = engineTrackId(trackId);
@@ -416,6 +421,7 @@ void EngineBridge::previewClips(const QMap<QString, std::vector<Clip>>& clipsByT
 }
 
 void EngineBridge::endClipPreview() {
+    const sub::Engine::Batch batch(engine_);
     const QSet<QString> previewed = std::exchange(d_->previewing, {});
     for (const QString& trackId : previewed) {
         if (project_->hasTrack(trackId)) pushClips(trackId);

@@ -84,6 +84,7 @@
 #include "model/Timebase.h"
 #include "model/Track.h"
 
+#include <QHash>
 #include <QMap>
 #include <QObject>
 #include <QSet>
@@ -423,6 +424,7 @@ Q_SIGNALS:
 
 private:
     Track& trackRef(const QString& trackId);
+    int indexIn(const std::vector<Track>& tracks, const QString& trackId) const;  // tracks_ or returns_
     // After a change of what a track holds: renamed after it if it was named so before.
     void followContents(const QString& trackId, bool followed);
     // Names the tracks from `from` on (and the returns, with `returns`) from
@@ -444,6 +446,9 @@ private:
     Track master_;
     std::vector<Track> tracks_;
     std::vector<Track> returns_;
+    // Where each track is in tracks_ and returns_ (indexIn()), until either changes.
+    mutable QHash<QString, int> trackIndex_, returnIndex_;
+    mutable bool indexDirty_ = true;
     QSet<QString> foldedDevices_;
     QSet<QString> shownChainLists_;
     QSet<QString> hiddenRackDevices_;

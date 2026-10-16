@@ -14,6 +14,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [display_fft_bench.cpp](display_fft_bench.cpp) | What the device editors' spectra cost the GUI thread: the FFT (`app/src/analysis/Fft`, KFR's) against the radix-2 transform it replaced (kept in the program), and a display tick of the EQ's analyzer (`EqAnalyzer`: two 8192-point spectra) and the Delay's (`FallingSpectrum`: one of 4096). The application layer alone, no UI. |
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [project_bench.cpp](project_bench.cpp) | A real project (a `.gilproj` of your own, with its plug-ins) played live in each plug-in hosting mode, at the pace a device asks for buffers, through the fake ASIO driver: the callback's time (what the CPU meter shows) and the CPU the engine's process and the sandboxes use (from the threads' cycle counts), thread by thread. The application layer, no UI; Windows. Leave `QT_QPA_PLATFORM` unset: plug-ins with a Qt of their own (Kontakt) read it too. |
+| [snapshot_bench.cpp](snapshot_bench.cpp) | The engine's edit side as a project grows: a synthetic project of N tracks (MIDI through the Synth and an EQ, audio, groups, sends, envelopes) opened as File › Open does, its files decoded, one edit, a drag of every clip. The time each takes and how many snapshots the engine built. The application layer, no UI. |
 | [sound_features_dump.cpp](sound_features_dump.cpp) | Essentia's descriptors of a list of files (or parts of files), optionally band-limited first: what the sound tagger is trained on ([tools/sound_tagger](../tools/sound_tagger/README.md)). Not a measure. |
 | [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints (Essentia's descriptors) on a real sample library: how fast they are made and searched, how fast the index analyses a library, and how often a sound's nearest sounds are of its kind; `--split` holds half the queries out, `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
 | [LibraryGen.h](LibraryGen.h) | Makes the synthetic sample libraries. |
@@ -766,3 +767,58 @@ window, a power's average, a level in dB: a `log10` per bin and channel), about
 180 µs of the EQ's 228. At 60 ticks a second an open EQ costs the GUI thread
 1.4 % of a core (3.3 % before); at 240 (Preferences › Look and Feel › Maximum
 display frame rate) 5.5 % (13 % before).
+
+# The engine's edit side: snapshots
+
+```
+snapshot_bench [--tracks 32,128,256] [--notes 256] [--audio-every 4] [--repeats 20] [--json out.json]
+```
+
+A synthetic project of N tracks: a quarter of them audio tracks, each playing a
+10-second WAV of its own eight times; the rest MIDI tracks with 256 notes through
+the built-in Synth and an EQ; in groups of eight, every track sending to two
+returns, with volume, pan and device on/off envelopes. Saved, then opened into a
+project with an engine bridge as *File › Open* does (no window, no plug-ins).
+*open*: until the bridge has handed the engine everything; *decoded*: then until
+every file has arrived from the decoders (these small WAVs decode while the project
+opens: real libraries take longer); *one edit*: the loop switched, a single
+snapshot; *drag*: a drag's preview of every clip a beat later, and its end;
+*close*: the bridge letting go of every track (`shutdown()`). Each
+with the snapshots the engine built (`Engine::snapshotBuilds()`, "-" before it
+counted them).
+
+## Results
+
+A Linux VM with 4 vCPUs (Intel Xeon, 2.1 GHz), GCC 13, Release. "Before" is the
+engine and bridge before batches (every engine call built the whole snapshot, and
+opening a project pushed every track's routes again for each track added); "after"
+is with them. The raw report is in `results/snapshot-batches.json`.
+
+| tracks | open, before | open, after | drag, before | drag, after | one edit |
+|---|---|---|---|---|---|
+| 32 | 121 ms | 17 ms (1 snapshot) | 16.8 ms | 2.6 ms (2) | 0.26 ms |
+| 128 | 1 722 ms | 164 ms (1) | 321 ms | 7.6 ms (2) | 1.1 ms |
+| 256 | 6 947 ms | 329 ms (1) | 1 415 ms | 14.9 ms (2) | 2.2 ms |
+
+Opening a 256-track project went from 6.9 s to a third of a second, and a drag
+over every clip from 1.4 s a mouse move to 15 ms: each is now one snapshot (the
+drag's preview and its end, one each).
+
+Then a snapshot itself. Profiled (callgrind, one edit at 256 tracks), about 85 %
+of it was the MIDI tracks' notes: each made again in samples, its bend
+worked out, and every track's sorted, for every snapshot. Now a track's notes are
+made once and shared by the snapshots after, until its notes, the tempo or the
+rate change. And the bridge letting go of every track (closing a project,
+quitting) is one batch, where it had built a snapshot for each track it removed.
+The same benchmark, before and after (`results/snapshot-notes.json`):
+
+| tracks | one edit, before | one edit, after | close, before | close, after |
+|---|---|---|---|---|
+| 32 | 0.24 ms | 0.10 ms | 5.2 ms (38 snapshots) | 0.3 ms (1) |
+| 128 | 1.66 ms | 0.35 ms | 84 ms (146) | 1.8 ms (1) |
+| 256 | 2.31 ms | 0.86 ms | 364 ms (290) | 6.4 ms (1) |
+
+What a snapshot costs now is spread thin: about 40 % allocating and freeing its
+many small lists, the rest routing, delay compensation, automation and clips,
+none of them more than a few percent. A drag still makes the notes of every
+track it moves again (they changed), 15 ms a move at 256 tracks.

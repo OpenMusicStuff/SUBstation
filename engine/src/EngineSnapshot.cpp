@@ -35,6 +35,10 @@ void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const s
     std::vector<char>& heard = liveStrips_;
     heard.assign(tracks_.size() + 1, 0);
     if (constrainLatency_ && !constrainHeld_) {
+        std::vector<std::vector<const RouteEdge*>> summedFrom(tracks_.size());  // by source
+        for (const RouteEdge& edge : edges) {
+            if (edge.sums && edge.from >= 0) summedFrom[static_cast<size_t>(edge.from)].push_back(&edge);
+        }
         std::vector<int> pending;
         for (size_t t = 0; t < tracks_.size(); ++t) {
             const TrackModel& track = tracks_[t];
@@ -46,12 +50,11 @@ void Engine::constrainLatencyLocked(const std::vector<RouteEdge>& edges, const s
         while (!pending.empty()) {
             const int from = pending.back();
             pending.pop_back();
-            for (const RouteEdge& edge : edges) {
-                if (edge.from != from || !edge.sums) continue;
-                const size_t to = edge.to < 0 ? tracks_.size() : static_cast<size_t>(edge.to);
+            for (const RouteEdge* edge : summedFrom[static_cast<size_t>(from)]) {
+                const size_t to = edge->to < 0 ? tracks_.size() : static_cast<size_t>(edge->to);
                 if (heard[to]) continue;
                 heard[to] = 1;
-                if (edge.to >= 0) pending.push_back(edge.to);
+                if (edge->to >= 0) pending.push_back(edge->to);
             }
         }
     }
@@ -300,7 +303,71 @@ void Engine::collectModulators(const StripRender& chain, const RackRender* rack,
 // ---------------------------------------------------------------------------
 // Snapshot publishing
 
+void Engine::beginBatch() {
+    std::lock_guard lock(mutex_);
+    ++batchDepth_;
+}
+
+void Engine::endBatch() noexcept {
+    std::lock_guard lock(mutex_);
+    assert(batchDepth_ > 0);
+    if (--batchDepth_ > 0) return;
+    try {
+        publishPendingLocked();
+    } catch (const std::exception&) {
+        // (Out of memory, say: it stays stale, and the next edit or read builds it.)
+    }
+}
+
+uint64_t Engine::snapshotBuilds() {
+    std::lock_guard lock(mutex_);
+    return snapshotBuilds_;
+}
+
 void Engine::rebuildSnapshotLocked() {
+    if (batchDepth_ > 0) {
+        // Tracks whose output went into a device that is gone go into the master
+        // now, as the next edit in the batch (a cycle check) expects.
+        dropGoneOutputSidechainsLocked();
+        snapshotStale_ = true;
+        return;
+    }
+    buildSnapshotLocked();
+}
+
+void Engine::publishPendingLocked() {
+    if (snapshotStale_) buildSnapshotLocked();
+}
+
+const std::shared_ptr<const RenderSnapshot>& Engine::currentSnapshotLocked() {
+    publishPendingLocked();
+    return snapshotHold_;
+}
+
+NoteList Engine::renderedNotesLocked(TrackModel& track, double spb) {
+    if (!track.rendered || track.renderedSpb != spb || track.renderedRate != sampleRate_) {
+        auto notes = std::make_shared<std::vector<NoteRender>>();
+        notes->reserve(track.notes.size());
+        for (const NoteDesc& note : track.notes) {
+            NoteRender nr;
+            nr.start = std::max<int64_t>(0, std::llround(note.startBeat * spb));
+            nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
+            nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
+            nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
+            nr.bend = noteBend(note, spb, sampleRate_);
+            notes->push_back(std::move(nr));
+        }
+        std::sort(notes->begin(), notes->end(), [](const NoteRender& a, const NoteRender& b) {
+            return a.start != b.start ? a.start < b.start : a.key < b.key;
+        });
+        track.rendered = std::move(notes);
+        track.renderedSpb = spb;
+        track.renderedRate = sampleRate_;
+    }
+    return NoteList(track.rendered);
+}
+
+void Engine::buildSnapshotLocked() {
     for (auto& [id, entry] : processors_) {
         if (!entry.rack) entry.alignedLatency = ownLatency(*entry.processor);
     }
@@ -635,22 +702,8 @@ void Engine::rebuildSnapshotLocked() {
         // (its edges are delayed after the fader, to line up where they go).
         buildAutomationLocked(build, render.inputLatency + render.latency, render);
         // (A track left out keeps its notes while a device elsewhere takes them.)
-        static const std::vector<NoteDesc> kNoNotes;
         const bool fed = fedTracks.count(track.id) > 0;
-        const std::vector<NoteDesc>& notes = silent[static_cast<size_t>(t)] && !fed ? kNoNotes : track.notes;
-        render.notes.reserve(notes.size());
-        for (const NoteDesc& note : notes) {
-            NoteRender nr;
-            nr.start = std::max<int64_t>(0, std::llround(note.startBeat * spb));
-            nr.end = std::max<int64_t>(nr.start + 1, std::llround((note.startBeat + note.lengthBeats) * spb));
-            nr.key = static_cast<uint8_t>(std::clamp(note.key, 0, 127));
-            nr.velocity = static_cast<uint8_t>(std::clamp(note.velocity, 1, 127));
-            nr.bend = noteBend(note, spb, sampleRate_);
-            render.notes.push_back(std::move(nr));
-        }
-        std::sort(render.notes.begin(), render.notes.end(), [](const NoteRender& a, const NoteRender& b) {
-            return a.start != b.start ? a.start < b.start : a.key < b.key;
-        });
+        if (!silent[static_cast<size_t>(t)] || fed) render.notes = renderedNotesLocked(track, spb);
         std::array<size_t, kNumStretchConfigs> stretching{};
         for (size_t i = 0; i < (idle[static_cast<size_t>(t)] ? 0 : track.clips.size()); ++i) {  // (idle: no use)
             const ClipDesc& clip = track.clips[i];
@@ -774,6 +827,8 @@ void Engine::rebuildSnapshotLocked() {
 
     std::shared_ptr<const RenderSnapshot> old = std::move(snapshotHold_);
     snapshotHold_ = snap;
+    snapshotStale_ = false;
+    ++snapshotBuilds_;
     // Publish, then read the epoch (both seq_cst; see DeferredReleasePool).
     snapshot_.store(snap.get(), std::memory_order_seq_cst);
     releasePool_.retire(std::move(old), audioEpoch_.load(std::memory_order_seq_cst));

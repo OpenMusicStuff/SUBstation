@@ -81,7 +81,9 @@ void Engine::setTrackClips(uint32_t trackId, const std::vector<ClipDesc>& clips)
 
 void Engine::setTrackNotes(uint32_t trackId, const std::vector<NoteDesc>& notes) {
     std::lock_guard lock(mutex_);
-    arrangementTrackLocked(trackId).notes = notes;
+    TrackModel& track = arrangementTrackLocked(trackId);
+    track.notes = notes;
+    track.rendered.reset();  // (made again with the next snapshot)
     rebuildSnapshotLocked();
 }
 
@@ -127,10 +129,18 @@ bool Engine::trackFrozen(uint32_t trackId) {
 }
 
 int Engine::trackIndexLocked(uint32_t trackId) const {
-    for (size_t i = 0; i < tracks_.size(); ++i) {
-        if (tracks_[i].id == trackId) return static_cast<int>(i);
+    // (Edges and devices look their tracks up for every snapshot: by a map, made
+    // again whenever it is out of date, rather than by going through the tracks.)
+    const auto valid = [&](int index) {
+        return index >= 0 && static_cast<size_t>(index) < tracks_.size() && tracks_[static_cast<size_t>(index)].id == trackId;
+    };
+    if (const auto found = trackIndex_.find(trackId); found != trackIndex_.end() && valid(found->second)) {
+        return found->second;
     }
-    return -1;
+    trackIndex_.clear();
+    for (size_t i = 0; i < tracks_.size(); ++i) trackIndex_.emplace(tracks_[i].id, static_cast<int>(i));
+    const auto found = trackIndex_.find(trackId);
+    return found != trackIndex_.end() ? found->second : -1;
 }
 
 std::vector<RouteEdge> Engine::routeEdgesLocked(std::vector<EdgeOrigin>* origins) const {
@@ -428,9 +438,10 @@ CpuReading Engine::takeCpu() {
 
 int Engine::trackLatency(uint32_t trackId) {
     std::lock_guard lock(mutex_);
-    if (!snapshotHold_) return 0;
-    if (trackId == kMaster) return snapshotHold_->master.latency;
-    const TrackRender* track = snapshotHold_->findTrack(trackId);
+    const auto& snap = currentSnapshotLocked();
+    if (!snap) return 0;
+    if (trackId == kMaster) return snap->master.latency;
+    const TrackRender* track = snap->findTrack(trackId);
     return track ? track->latency : 0;
 }
 
@@ -439,8 +450,9 @@ LiveLatency Engine::liveLatency(uint32_t trackId) {
     LiveLatency out;
     out.midiDelay = shared_.midiInputDelay.load();
     out.output = static_cast<int>(device_.state().outputLatency);
-    if (!snapshotHold_) return out;
-    const RenderSnapshot& snap = *snapshotHold_;
+    const std::shared_ptr<const RenderSnapshot> held = currentSnapshotLocked();
+    if (!held) return out;
+    const RenderSnapshot& snap = *held;
     const TrackRender* track = snap.findTrack(trackId);
     if (!track) return out;
     out.live = track->live;
@@ -460,7 +472,8 @@ LiveLatency Engine::liveLatency(uint32_t trackId) {
 
 int Engine::outputLatency() {
     std::lock_guard lock(mutex_);
-    return snapshotHold_ ? snapshotHold_->outputLatency() : 0;
+    const auto& snap = currentSnapshotLocked();
+    return snap ? snap->outputLatency() : 0;
 }
 
 // ---------------------------------------------------------------------------

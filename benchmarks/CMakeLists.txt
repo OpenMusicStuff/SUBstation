@@ -24,6 +24,9 @@
 #                           tick (the application layer alone)
 #   sound_features_dump     Essentia's descriptors of a list of files, to train
 #                           the sound tagger on (tools/sound_tagger)
+#   snapshot_bench          the engine's edit side as a project grows: opening it,
+#                           one edit, a drag, its files arriving (the application
+#                           layer and the tests' support: SUBSTATION_BUILD_TESTS)
 
 add_executable(parallel_render_bench parallel_render_bench.cpp Json.h)
 target_include_directories(parallel_render_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -94,6 +97,13 @@ if (SUBSTATION_BUILD_APP)
     add_executable(display_fft_bench display_fft_bench.cpp)
     target_link_libraries(display_fft_bench PRIVATE sub_app)
     sub_project_warnings(display_fft_bench)
+    # The engine's edit side as a project grows (the tests' studio: an engine, a project, the bridge).
+    if (TARGET sub_app_test_support)
+        add_executable(snapshot_bench snapshot_bench.cpp Json.h)
+        target_include_directories(snapshot_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(snapshot_bench PRIVATE sub_app sub_app_test_support)
+        sub_project_warnings(snapshot_bench)
+    endif()
     # A real project played live in each plug-in hosting mode (Windows: the fake ASIO driver).
     if (WIN32 AND TARGET sub_test_asio AND TARGET sub_app_test_support)
         add_executable(project_bench project_bench.cpp Json.h)

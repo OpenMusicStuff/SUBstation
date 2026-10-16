@@ -399,7 +399,7 @@ silence.
 
 ## Extending it
 
-- **Core Audio** (macOS): a backend of its own in `AudioBackendsPosix.cpp`, before "System" (TODO.md, macOS: deferred until there is a Mac),
+- **Core Audio** (macOS): a backend of its own in `AudioBackendsPosix.cpp`, before "System" (ROADMAP.md, macOS: deferred until there is a Mac),
   whose `workgroup()` hands over the device's I/O thread's.
 - **A new driver type** is a new `AudioBackend`: implement `name()`, `devices()`, `open()`, `start()`,
   `close()` (blocking until the callback stops), `isOpen()` and `state()`, call

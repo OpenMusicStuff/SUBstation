@@ -194,6 +194,32 @@ struct NoteRender {
     std::shared_ptr<const NoteBendRender> bend;  // null: it doesn't bend
 };
 
+// A track's notes in a snapshot, sorted by start: shared by every snapshot built
+// while they, the tempo and the sample rate stay as they are (the edit side keeps
+// them with the track: Engine::TrackModel::rendered), so a snapshot doesn't make
+// them again. Read as a vector; never null.
+class NoteList {
+public:
+    using Notes = std::vector<NoteRender>;
+    NoteList() : notes_(none()) {}
+    explicit NoteList(std::shared_ptr<const Notes> notes) : notes_(notes ? std::move(notes) : none()) {}
+    NoteList(Notes notes) : notes_(std::make_shared<const Notes>(std::move(notes))) {}  // (a list of its own)
+
+    size_t size() const noexcept { return notes_->size(); }
+    bool empty() const noexcept { return notes_->empty(); }
+    const NoteRender& operator[](size_t index) const noexcept { return (*notes_)[index]; }
+    Notes::const_iterator begin() const noexcept { return notes_->begin(); }
+    Notes::const_iterator end() const noexcept { return notes_->end(); }
+    const std::shared_ptr<const Notes>& shared() const noexcept { return notes_; }
+
+private:
+    static const std::shared_ptr<const Notes>& none() {
+        static const std::shared_ptr<const Notes> empty = std::make_shared<const Notes>();
+        return empty;
+    }
+    std::shared_ptr<const Notes> notes_;
+};
+
 // A device's MIDI input from another track (Engine::setProcessorMidiInput()):
 // what it hears instead of its own track's notes. Rendering-thread state, kept
 // with the device across snapshots: the prologue copies the source track's
@@ -480,7 +506,7 @@ struct TrackRender : StripRender {
     int clipDelay = 0;
     std::vector<ClipRender> clips;  // sorted by start
     int64_t maxClipLength = 0;      // bounds the binary search window
-    std::vector<NoteRender> notes;  // sorted by start
+    NoteList notes;  // sorted by start
 };
 
 struct RenderSnapshot {
