@@ -9,9 +9,9 @@
 #   tools/release/package-windows.ps1 -Step Checksums -Out dist
 #
 # Stage: dist/SUBstation holds the programs (substation, the plug-in scanner and the plug-in host), the Qt
-#   libraries and QML modules they use (windeployqt), MSVC's runtime (app-local, from VCToolsRedistDir: run it
-#   in a Developer shell), the licences (licenses/: the texts the AGPLv3 asks to ship, and where the source
-#   is) and VERSION.txt.
+#   libraries and QML modules they use (windeployqt), the compiler's runtime (MinGW's DLLs, from the folder of
+#   the g++ the build used; with MSVC, app-local from VCToolsRedistDir: run it in a Developer shell), the
+#   licences (licenses/: the texts the AGPLv3 asks to ship, and where the source is) and VERSION.txt.
 # Archive: dist/SUBstation-<version>-windows-x64.zip of that folder (the portable download; the updater
 #   copies it over a SUBstation unzipped by hand).
 # Installer: dist/SUBstation-<version>-windows-x64-setup.exe (Inno Setup, tools/release/substation.iss): a
@@ -91,8 +91,21 @@ switch ($Step) {
             --qmldir (Join-Path $root 'ui') (Join-Path $stage 'substation.exe')
         if ($LASTEXITCODE -ne 0) { throw "windeployqt failed ($LASTEXITCODE)." }
 
-        # MSVC's runtime, beside the programs (no installer to run first).
-        if ($env:VCToolsRedistDir) {
+        # The compiler's runtime, beside the programs (no installer to run first). MinGW's: from the folder of the
+        # g++ the build used (windeployqt brings them for substation.exe, but only if it finds that MinGW; the
+        # scanner and the plug-in host need them too). MSVC's: from its redistributable folder.
+        $cache = Join-Path $Build 'CMakeCache.txt'
+        $compiler = if (Test-Path $cache) {
+            (Select-String -Path $cache -Pattern '^CMAKE_CXX_COMPILER:[A-Z]+=(.+)$' | Select-Object -First 1).Matches.Groups[1].Value
+        } else { '' }
+        if ($compiler -match '(g\+\+|c\+\+)(\.exe)?$') {
+            $mingw = Split-Path -Parent (Get-Command $compiler).Source
+            foreach ($dll in 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll') {
+                $from = Join-Path $mingw $dll
+                if (-not (Test-Path $from)) { throw "MinGW's $dll isn't in $mingw." }
+                Copy-Item $from $stage -Force
+            }
+        } elseif ($env:VCToolsRedistDir) {
             $crt = Get-ChildItem -Path (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT' |
                 Select-Object -First 1
             if ($crt) { Copy-Item (Join-Path $crt.FullName '*.dll') $stage }
