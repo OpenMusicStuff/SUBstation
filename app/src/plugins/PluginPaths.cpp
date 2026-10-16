@@ -6,7 +6,6 @@
 #include <QSet>
 
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -14,6 +13,7 @@
 
 #include "Text.h"
 #include "browser/PathKeys.h"
+#include "platform/Files.h"
 #include "platform/Paths.h"
 #include "plugins/vst2/Vst2Format.h"
 #include "plugins/vst3/Vst3Format.h"
@@ -148,22 +148,19 @@ QString pluginBinary(const QString& path) {
 
 std::optional<std::array<int64_t, 2>> pluginSignature(const QString& path) {
     std::error_code error;
-    const std::filesystem::path file = fsPath(pluginBinary(path));
+    const QString binary = pluginBinary(path);
+    const std::filesystem::path file = fsPath(binary);
     const auto status = std::filesystem::status(file, error);
     if (error || !std::filesystem::exists(status)) return std::nullopt;
-    const auto written = std::filesystem::last_write_time(file, error);
-    if (error) return std::nullopt;
+    // Nanoseconds since 1970, as Python's st_mtime_ns (caches it wrote stay valid), the same from every compiler's
+    // build (not std::filesystem's last_write_time: MinGW's drops the fraction of a second, so a MinGW build and an
+    // MSVC one would each read every plug-in again after the other).
+    const std::optional<int64_t> ns = platform::modifiedTime(toBackendPath(binary));
+    if (!ns) return std::nullopt;
     // A folder has no size of its own (as Windows reports it).
     const uintmax_t size = std::filesystem::is_directory(status) ? 0 : std::filesystem::file_size(file, error);
     if (error) return std::nullopt;
-    // Nanoseconds since 1970, as Python's st_mtime_ns (caches it wrote stay valid).
-#ifdef _MSC_VER
-    const auto sinceEpoch = std::chrono::clock_cast<std::chrono::system_clock>(written).time_since_epoch();
-#else
-    const auto sinceEpoch = std::chrono::file_clock::to_sys(written).time_since_epoch();
-#endif
-    const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(sinceEpoch).count();
-    return std::array<int64_t, 2>{ns, static_cast<int64_t>(size)};
+    return std::array<int64_t, 2>{*ns, static_cast<int64_t>(size)};
 }
 
 QString friendlyScanReason(const QString& input) {

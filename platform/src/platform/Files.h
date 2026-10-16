@@ -23,6 +23,12 @@ struct FileStamp {
 // The file's stamp; none if it isn't there (or is a folder).
 std::optional<FileStamp> stamp(const std::string& path);
 
+// When a file or folder was last written, in nanoseconds since 1970 (UTC), as
+// precisely as the system keeps it (100 ns on Windows), whatever the compiler:
+// MinGW's std::filesystem drops the fraction of a second, MSVC's keeps it.
+// None if it isn't there.
+std::optional<int64_t> modifiedTime(const std::string& path);
+
 // Moves `from` over `to`, replacing it at once where the system allows (a file
 // is written to a temporary one first and then put in place, so a crash never
 // leaves half of one). False on failure.

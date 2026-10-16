@@ -471,7 +471,7 @@ void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId,
         checkSidechainLocked(sourceTrackId, chainLocked(entry.chainId).stripId);
     }
     if (!entry.sidechain) {
-        entry.sidechain.emplace();
+        entry.sidechain = SidechainModel{};
         entry.sidechain->state = std::make_shared<EdgeState>(Renderer::kMaxBlock);
     }
     entry.sidechain->source = sourceTrackId;

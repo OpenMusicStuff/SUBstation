@@ -12,13 +12,13 @@ are is in [architecture.md](architecture.md).
   system's default backend (PulseAudio, ALSA, JACK... via miniaudio, as the *System* driver) where PipeWire doesn't
   run, MIDI input through ALSA's sequencer, VST3 and VST2 plug-ins with their editors (X11 windows; on Wayland through
   XWayland).
-- A C++20 compiler: Visual Studio 2022 or newer (*Desktop development with C++*), MinGW-w64 GCC 13 or newer on
-  Windows (the one Qt's installer ships), or GCC 13 / Clang 16 or newer.
+- A C++20 compiler: on Windows MinGW-w64 GCC 13 or newer (the one Qt's installer ships: the releases are built with
+  it) or Visual Studio 2022 or newer (*Desktop development with C++*); elsewhere GCC 13 / Clang 16 or newer.
 - CMake 3.26 or newer, and Ninja (recommended; Visual Studio's generator works too).
 - Qt 6.4 or newer (6.5+ recommended on Windows): Core, Gui, Network (the MCP server), Qml, Quick, QuickControls2,
   and Test and QuickTest for the tests. Network is part of Qt's base, as Core and Gui are.
-  - Windows: Qt's online installer, the *MSVC 2022 64-bit* build of a Qt 6 release (or MSVC 2019's, which works
-    with VS 2022), or its *MinGW 64-bit* build with the matching MinGW toolchain.
+  - Windows: Qt's online installer, the *MinGW 64-bit* build of a Qt 6 release with the matching MinGW toolchain, or
+    its *MSVC 2022 64-bit* build (or MSVC 2019's, which works with VS 2022).
   - Debian/Ubuntu: `qt6-base-dev qt6-declarative-dev qml6-module-qtquick qml6-module-qtquick-controls
     qml6-module-qtquick-layouts qml6-module-qtquick-window qml6-module-qtquick-templates
     qml6-module-qtquick-dialogs qml6-module-qt-labs-folderlistmodel qml6-module-qtqml-workerscript qml6-module-qt-labs-settings
@@ -48,16 +48,7 @@ ninja -C build
 build/bin/substation                     # or: build/bin/substation path/to/song.gilproj
 ```
 
-Windows, in a *Developer PowerShell for VS 2022* (so MSVC and Ninja are on the path):
-
-```powershell
-cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:\Qt\6.8.0\msvc2022_64
-ninja -C build
-C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --qmldir ui\qml build\bin\substation.exe   # once: Qt's DLLs and QML modules beside it
-build\bin\substation.exe
-```
-
-Windows with Qt's MinGW build instead (the *MinGW 64-bit* Qt and the MinGW toolchain that Qt's installer ships
+Windows, with Qt's MinGW build, as the releases are built (the *MinGW 64-bit* Qt and the MinGW toolchain that Qt's installer ships
 with it, under *Developer and Designer Tools*), in the *Qt 6.x (MinGW 64-bit)* command prompt from the Start menu
 (it puts Qt's and MinGW's `bin` folders on `PATH`; CMake and Ninja can come from the same installer, in `C:\Qt\Tools\CMake_64\bin` and `C:\Qt\Tools\Ninja`):
 
@@ -68,11 +59,23 @@ C:\Qt\6.8.0\mingw_64\bin\windeployqt.exe --qmldir ui\qml build\bin\substation.ex
 build\bin\substation.exe
 ```
 
+Windows with MSVC instead, in a *Developer PowerShell for VS 2022* (so MSVC and Ninja are on the path), with Qt's
+*MSVC 2022 64-bit* build:
+
+```powershell
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:\Qt\6.8.0\msvc2022_64
+ninja -C build
+C:\Qt\6.8.0\msvc2022_64\bin\windeployqt.exe --qmldir ui\qml build\bin\substation.exe   # once: Qt's DLLs and QML modules beside it
+build\bin\substation.exe
+```
+
 `CMAKE_PREFIX_PATH` points CMake at Qt (the folder of a Qt 6 MSVC or MinGW build). `windeployqt` copies Qt's
 libraries and the QML modules the UI imports next to the executable (and, with MinGW, its runtime DLLs, which the
 plug-in scanner `substation-scan` needs too); without it, run from a prompt with Qt's `bin` folder (and MinGW's) on
 `PATH` instead. Use the compiler the Qt build was made with: MSVC for an `msvc*` Qt, Qt's own MinGW for a `mingw_64`
-one (another GCC may not match its C++ runtime). A nightly CI run builds and tests both. The build is
+one (another GCC may not match its C++ runtime). The releases are built with Qt 6.8's MinGW build and the MinGW
+toolchain that comes with it ([releasing.md](releasing.md)), so that is the build to test what ships with; MSVC is
+kept working as a second compiler, and a nightly CI run builds and tests both. The build is
 incremental: re-run `ninja -C build` after changing anything. Everything built lands in `build/bin`: `substation`,
 `substation-scan` (the plug-in scanner) and `substation-plugin-host` (the plug-in sandboxes), which the application
 starts from its own folder, the test executables, and the test plug-ins under `build/testplugins`. Both go beside

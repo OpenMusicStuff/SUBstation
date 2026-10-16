@@ -4,7 +4,6 @@
 // move little, a bass line, a progression to start from).
 
 #include <chrono>
-#include <initializer_list>
 #include <string>
 #include <vector>
 
@@ -18,7 +17,7 @@ using namespace sub::intelligence::harmony;
 namespace {
 
 // Notes sounding together from `start` for `length` beats.
-std::vector<Note> block(std::initializer_list<int> pitches, double start, double length, int velocity = 100) {
+std::vector<Note> block(const std::vector<int>& pitches, double start, double length, int velocity = 100) {
     std::vector<Note> notes;
     for (const int p : pitches) notes.push_back({p, start, start + length, velocity});
     return notes;
@@ -111,7 +110,7 @@ TEST_CASE("the key: from how long each pitch class sounds, and the bass; none fr
 
 TEST_CASE("chords: triads and sevenths in root position, where they sound") {
     struct Case {
-        std::initializer_list<int> pitches;
+        std::vector<int> pitches;
         const char* name;
     };
     for (const Case& c : {Case{{48, 52, 55}, "C"}, Case{{45, 57, 60, 64}, "Am"}, Case{{50, 62, 65, 69}, "Dm"},
@@ -134,7 +133,8 @@ TEST_CASE("chords: an inversion's bass names it, as a slash chord") {
 
 TEST_CASE("chords: a progression with its bass on another track, a chord a bar") {
     std::vector<Note> song;
-    const std::vector<std::pair<std::initializer_list<int>, int>> bars{
+    // (Vectors, not initializer_lists: those don't own their notes, which end with the statement making them.)
+    const std::vector<std::pair<std::vector<int>, int>> bars{
         {{60, 64, 67}, 36}, {{59, 62, 67}, 43}, {{60, 64, 69}, 45}, {{60, 65, 69}, 41}};
     for (size_t bar = 0; bar < bars.size(); ++bar) {
         add(song, block(bars[bar].first, 4.0 * bar, 4, 90));
@@ -213,7 +213,7 @@ TEST_CASE("chords: nothing from no notes; the key given is the key used") {
 
 TEST_CASE("chords: a long song takes next to no time") {
     std::vector<Note> song;
-    const std::vector<std::initializer_list<int>> chords{{48, 52, 55}, {43, 47, 50}, {45, 48, 52}, {41, 45, 48}};
+    const std::vector<std::vector<int>> chords{{48, 52, 55}, {43, 47, 50}, {45, 48, 52}, {41, 45, 48}};
     constexpr int kScale[] = {72, 74, 76, 77, 79, 81, 83, 84};
     for (int bar = 0; bar < 400; ++bar) {
         add(song, block(chords[static_cast<size_t>(bar % 4)], 4.0 * bar, 4));

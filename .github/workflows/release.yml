@@ -12,7 +12,8 @@
 # By hand (workflow_dispatch), any channel from the branch chosen (stable: from its tag).
 # The downloads are SUBstation-<version>-windows-x64-setup.exe (the installer) and
 # SUBstation-<version>-windows-x64.zip (portable), each with its .sha256
-# (tools/release/package-windows.ps1, tools/release/substation.iss). Built with Steinberg's
+# (tools/release/package-windows.ps1, tools/release/substation.iss). Built with MinGW (Qt
+# 6.8's own MinGW build and toolchain, as SUBstation is developed and tested), with Steinberg's
 # ASIO SDK (downloaded, pinned, under its GPLv3 option), without the tests (the CI and
 # Windows nightly workflows run them), and signed with Azure Artifact Signing once its
 # secrets are set.
@@ -99,7 +100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   windows:
-    name: Build (Windows, MSVC)
+    name: Build (Windows, MinGW)
     needs: plan
     if: needs.plan.outputs.release == 'true'
     runs-on: windows-2022
@@ -109,16 +110,21 @@ jobs:
       SIGN: ${{ secrets.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_PROFILE != '' }}
     steps:
       - uses: actions/checkout@v4
+      # The Windows nightly's MinGW build's Qt and toolchain (windows-nightly.yml): what the tests ran on.
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
-          arch: win64_msvc2022_64
+          arch: win64_mingw
+          tools: 'tools_mingw1310 tools_ninja'
           cache: true
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Use Qt's MinGW and Ninja
+        shell: pwsh
+        run: |
+          "$env:IQTA_TOOLS\mingw1310_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:IQTA_TOOLS\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
         with:
-          key: release-windows-msvc
-          variant: sccache
+          key: release-windows-mingw
           max-size: 2G
       # Steinberg's ASIO SDK 2.3.4, the first offered under GPLv3 as well as Steinberg's own licence: SUBstation
       # takes it under GPLv3 (docs/licensing.md). Pinned by its SHA-256; unpacked outside the checkout.
@@ -137,11 +143,12 @@ jobs:
       - name: Configure
         run: >
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
           -DSUBSTATION_BUILD_TESTS=OFF -DSUBSTATION_TEST_PLUGINS=OFF
           "-DSUBSTATION_RELEASE_CHANNEL=${{ needs.plan.outputs.channel }}"
           "-DSUBSTATION_VERSION_SUFFIX=${{ needs.plan.outputs.suffix }}"
           "-DSUBSTATION_UPDATE_REPOSITORY=${{ github.repository }}"
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: ninja -C build
       - name: Stage

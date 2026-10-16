@@ -54,6 +54,17 @@ std::optional<FileStamp> stamp(const std::string& path) {
     return s;
 }
 
+std::optional<int64_t> modifiedTime(const std::string& path) {
+    struct stat st {};
+    if (::stat(path.c_str(), &st) != 0) return std::nullopt;
+#ifdef __APPLE__
+    const timespec& time = st.st_mtimespec;
+#else
+    const timespec& time = st.st_mtim;
+#endif
+    return static_cast<int64_t>(time.tv_sec) * 1'000'000'000 + static_cast<int64_t>(time.tv_nsec);
+}
+
 bool replaceFile(const std::string& from, const std::string& to) { return std::rename(from.c_str(), to.c_str()) == 0; }
 
 std::FILE* openFile(const std::string& path, bool write) { return std::fopen(path.c_str(), write ? "wb" : "rb"); }

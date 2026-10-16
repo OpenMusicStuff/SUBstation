@@ -1,7 +1,10 @@
-# Builds everything and runs the tests on Linux with Qt 6.4 (Ubuntu's). Windows (the
-# product's platform) is tested locally and nightly (windows-nightly.yml), not here. Without
-# Steinberg's ASIO SDK, which isn't redistributable: the ASIO tests skip. Compiles go
-# through ccache, its cache kept between runs.
+# Builds everything and runs the tests on Linux with Qt 6.4 (Ubuntu's), with GCC and with
+# Clang. Windows (the product's platform) is tested locally and nightly (windows-nightly.yml),
+# not here. GCC is the compiler the releases are built with (MinGW's); Clang, a second
+# compiler on every pull request, catches code that only one compiler accepts or reads one
+# way (as MSVC, which the nightly builds with, often does too). Without Steinberg's ASIO
+# SDK, which isn't redistributable: the ASIO tests skip. Compiles go through ccache, its
+# cache kept between runs.
 name: CI
 
 on:
@@ -9,6 +12,10 @@ on:
     branches: [master, stack-rewrite-biiig]
   pull_request:
   workflow_dispatch:
+
+# Building and testing only reads the repository.
+permissions:
+  contents: read
 
 # A newer push to a pull request cancels its older run; pushes to branches each finish.
 concurrency:
@@ -21,6 +28,9 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: useblacksmith/checkout@v1
+        with:
+          # (The token isn't left in .git/config for the build and the tests, which a pull request's code runs.)
+          persist-credentials: false
       - name: Install Qt, PipeWire, ALSA, xcb and tools
         run: |
           sudo apt-get update
@@ -41,6 +51,39 @@ jobs:
           max-size: 2G
       - name: Configure
         run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: ninja -C build -k 0
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j4
+
+  linux-clang:
+    name: Linux (Clang, Qt 6.4)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: useblacksmith/checkout@v1
+        with:
+          # (The token isn't left in .git/config for the build and the tests, which a pull request's code runs.)
+          persist-credentials: false
+      - name: Install Qt, PipeWire, ALSA, xcb and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev qt6-declarative-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtquick-dialogs \
+            qml6-module-qtqml-workerscript qml6-module-qtquick-shapes qml6-module-qt-labs-settings \
+            qml6-module-qt-labs-folderlistmodel qml6-module-qtqml-models qml6-module-qt-labs-platform \
+            libgl-dev libxkbcommon-dev libgl1-mesa-dri xvfb xauth \
+            pkg-config libpipewire-0.3-dev pipewire pipewire-bin libasound2-dev libxcb1-dev libxcb-xtest0-dev clang
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
+        with:
+          key: linux-clang
+          # Saves are keyed linux-clang-<time>; restoring asks for the bare prefix as the primary key,
+          # which Blacksmith's cache matches exactly (never hitting). The same prefix as a restore key
+          # is matched as a prefix there too.
+          restore-keys: linux-clang
+          max-size: 2G
+      - name: Configure
+        run: cmake -G Ninja -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_BUILD_BENCHMARKS=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: ninja -C build -k 0
       - name: Test
