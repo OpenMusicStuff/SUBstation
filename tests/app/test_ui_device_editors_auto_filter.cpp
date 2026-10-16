@@ -216,6 +216,28 @@ private Q_SLOTS:
         QVERIFY(std::abs(graph->cutoffLeft() - 2000.0) < 1.0);
     }
 
+    // While the engine publishes (as it does with the transport stopped too), an edit of Frequency is drawn
+    // at once: the curve is Frequency as it is now, only its modulation the engine's (which lags its blocks).
+    void autoFilterEditsShowAtOnceWhileLive() {
+        QQuickItem* view = showDevice(QStringLiteral("auto_filter"), tone(300.0, kSampleRate));
+        auto* graph = find<AutoFilterGraph>(view, QStringLiteral("autoFilterGraph"));
+        QVERIFY(graph);
+        engine()->renderOffline(0.0, 12000);
+        refreshDisplays();
+        QVERIFY(graph->live());
+        for (const double freq : {500.0, 4000.0, 900.0}) {
+            set("freq", freq);  // (no tick between: what sync() draws)
+            QCOMPARE(graph->cutoffLeft(), freq);
+            const std::vector<QPointF>& curve = graph->curve();
+            AutoFilterCurve filter;
+            filter.cutoffHz = freq;
+            filter.resonance = 20.0;
+            const QPointF middle = curve[curve.size() / 2];
+            const double db = autoFilterResponseDb(filter, graph->sampleRate(), {graph->freqAt(middle.x())})[0];
+            QVERIFY(std::abs(middle.y() - graph->yOfDb(db)) < 0.5);
+        }
+    }
+
     void overdriveFitsDragsAndGlows() {
         QQuickItem* view = showDevice(QStringLiteral("overdrive"), tone(220.0, 4 * kSampleRate));
         QVERIFY(view);

@@ -15,10 +15,8 @@ namespace sub::ui {
 
 namespace {
 
-const QString kDisplayIds[AutoFilterGraph::kStreams] = {QStringLiteral("cutoff_l"), QStringLiteral("cutoff_r"),
+const QString kDisplayIds[AutoFilterGraph::kStreams] = {QStringLiteral("sweep_l"), QStringLiteral("sweep_r"),
                                                         QStringLiteral("env"), QStringLiteral("lfo")};
-
-double log2Of(double hz) { return std::log2(std::max(hz, 1.0)); }
 
 }  // namespace
 
@@ -26,8 +24,6 @@ AutoFilterGraph::AutoFilterGraph(QQuickItem* parent) : DeviceCanvas(parent) {
     setImplicitSize(kWidth, kMinimumHeight);
     setAcceptedMouseButtons(Qt::LeftButton);
     setCursor(Qt::SizeAllCursor);
-    cutoffLeft_.snap(log2Of(filter_.cutoffHz));
-    cutoffRight_.snap(log2Of(filter_.cutoffHz));
 }
 
 QRectF AutoFilterGraph::plot() const { return QRectF(0, 0, width(), height()).adjusted(1, 1, -1, -1); }
@@ -58,9 +54,13 @@ double AutoFilterGraph::resonanceAt(double y) const {
 
 QPointF AutoFilterGraph::dot() const { return {xOf(filter_.cutoffHz), yOfResonance(filter_.resonance)}; }
 
-double AutoFilterGraph::cutoffLeft() const { return std::exp2(cutoffLeft_.value); }
+double AutoFilterGraph::cutoffLeft() const {
+    return sub::app::autoFilterCutoffHz(filter_.cutoffHz, sweepLeft_.value, sampleRate());
+}
 
-double AutoFilterGraph::cutoffRight() const { return std::exp2(cutoffRight_.value); }
+double AutoFilterGraph::cutoffRight() const {
+    return sub::app::autoFilterCutoffHz(filter_.cutoffHz, sweepRight_.value, sampleRate());
+}
 
 std::pair<double, double> AutoFilterGraph::reach() const {
     const double rate = sampleRate();
@@ -78,16 +78,8 @@ void AutoFilterGraph::sync() {
     filter_.morph = value(QStringLiteral("morph"));
     envAmount_ = value(QStringLiteral("env_amount"));
     lfoAmount_ = value(QStringLiteral("lfo_amount"));
-    // At rest the curve glides to a new Frequency (refreshDisplays()); the first time the device is there, or
-    // hidden, it is there at once.
-    if (!live_) {
-        cutoffLeft_.target = cutoffRight_.target = log2Of(filter_.cutoffHz);
-        if (!synced_ || !isVisible()) {
-            cutoffLeft_.snap(cutoffLeft_.target);
-            cutoffRight_.snap(cutoffRight_.target);
-        }
-    }
-    synced_ = synced_ || device() != nullptr;
+    // The curve is drawn from Frequency as it is now, moved by the sweep the modulation has: an edit shows
+    // at once, whether or not the engine is publishing.
     updateCurves();
     update();
 }
@@ -109,7 +101,7 @@ std::vector<QPointF> AutoFilterGraph::curveAt(double cutoff) const {
 
 void AutoFilterGraph::updateCurves() {
     curveLeft_ = curveAt(cutoffLeft());
-    showRight_ = std::abs(cutoffRight_.value - cutoffLeft_.value) > 0.01;  // (a hundredth of an octave)
+    showRight_ = std::abs(sweepRight_.value - sweepLeft_.value) > 0.01;  // (a hundredth of an octave)
     if (showRight_)
         curveRight_ = curveAt(cutoffRight());
     else
@@ -173,21 +165,21 @@ void AutoFilterGraph::refreshDisplays() {
         live_ = false;
 
     if (live_) {
-        // Where the engine has the cutoff, eased a little (the playback is already smooth: this only rounds
-        // off coming back from rest).
+        // How far the engine's modulation has the cutoff from Frequency, eased a little (the playback is
+        // already smooth: this only rounds off coming back from rest).
         const double fraction = easeFraction(dt, 0.02);
-        cutoffLeft_.target = log2Of(playback_.logValue(0));
-        cutoffRight_.target = log2Of(playback_.logValue(1));
+        sweepLeft_.target = playback_.value(0);
+        sweepRight_.target = playback_.value(1);
         envelope_.target = std::clamp(playback_.value(2), 0.0, 1.0);
         lfo_.target = std::clamp(playback_.value(3), -1.0, 1.0);
-        moving |= cutoffLeft_.step(fraction, 1e-5) | cutoffRight_.step(fraction, 1e-5);
+        moving |= sweepLeft_.step(fraction, 1e-5) | sweepRight_.step(fraction, 1e-5);
         moving |= envelope_.step(easeFraction(dt, 0.04), 1e-4) | lfo_.step(fraction, 1e-4);
     } else {
-        // Quiet: back to where the parameters put it.
+        // Quiet: the modulation eases away, back to where the parameters put it.
         const double fraction = easeFraction(dt, 0.08);
-        cutoffLeft_.target = cutoffRight_.target = log2Of(filter_.cutoffHz);
+        sweepLeft_.target = sweepRight_.target = 0.0;
         envelope_.target = lfo_.target = 0.0;
-        moving |= cutoffLeft_.step(fraction, 1e-5) | cutoffRight_.step(fraction, 1e-5);
+        moving |= sweepLeft_.step(fraction, 1e-5) | sweepRight_.step(fraction, 1e-5);
         moving |= envelope_.step(fraction, 1e-4) | lfo_.step(fraction, 1e-4);
     }
     if (moving)

@@ -23,7 +23,9 @@
 //   rises, so nothing clicks.
 // - Then Output and Dry/Wet (ramped over 20 ms).
 //
-// Displays for its editor: `cutoff_l` and `cutoff_r` (Hz), `env` (the
+// Displays for its editor: `sweep_l` and `sweep_r` (how far the modulation
+// moves each side's cutoff from Frequency, in octaves: the editor draws them
+// from Frequency as it is now, so an edit shows at once), `env` (the
 // envelope, 0..1) and `lfo` (the left LFO's value, -1..1), one value each per
 // kDisplaySamples; and `input`, the input summed to mono, a value a sample (the
 // editor's spectrum).
@@ -77,15 +79,15 @@ public:
         SoftClip,
         NumParams
     };
-    enum Display { CutoffL = 0, CutoffR, EnvDisplay, LfoDisplay, InputDisplay };
+    enum Display { SweepL = 0, SweepR, EnvDisplay, LfoDisplay, InputDisplay };
     static constexpr int kDisplaySamples = 128;
     static constexpr int kChunk = 16;
     static constexpr double kGlideSeconds = 0.01;   // type, morph, slope and resonance
     static constexpr double kCutoffGlide = 0.0015;  // the modulated cutoff (S&H's steps rounded off)
 
     AutoFilterProcessor()
-        : BuiltinProcessor(infos(), {{"cutoff_l", kDisplaySamples},
-                                     {"cutoff_r", kDisplaySamples},
+        : BuiltinProcessor(infos(), {{"sweep_l", kDisplaySamples},
+                                     {"sweep_r", kDisplaySamples},
                                      {"env", kDisplaySamples},
                                      {"lfo", kDisplaySamples},
                                      {"input", 1}}) {}
@@ -186,8 +188,8 @@ protected:
                 publish(InputDisplay, n > 1 ? 0.5f * mono : mono);
                 if (++displayCount_ >= kDisplaySamples) {
                     displayCount_ = 0;
-                    publish(CutoffL, static_cast<float>(channels_[0].cutoff));
-                    publish(CutoffR, static_cast<float>(channels_[n > 1 ? 1 : 0].cutoff));
+                    publish(SweepL, channels_[0].octaves);
+                    publish(SweepR, channels_[n > 1 ? 1 : 0].octaves);
                     publish(EnvDisplay, envValue_);
                     publish(LfoDisplay, lfoValue_);
                 }

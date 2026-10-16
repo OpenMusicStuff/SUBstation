@@ -4,13 +4,15 @@
 // (+24..-36 dB), over a spectrum of the input (the display `input`).
 //
 // - The curve is the engine's own (sub::app::autoFilterResponseDb) at the cutoff
-//   the modulation has reached: the engine publishes it (`cutoff_l`,
-//   `cutoff_r`) with the envelope (`env`) and the LFO (`lfo`), and a
-//   DisplayPlayback plays them back at the audio's pace, so the curve sweeps
-//   smoothly as the sound does. Where the right side's cutoff differs (Phase,
+//   the modulation has reached: Frequency as it is now, moved by the sweep the
+//   engine publishes (`sweep_l`, `sweep_r`: octaves) with the envelope (`env`)
+//   and the LFO (`lfo`). A DisplayPlayback plays those back at the audio's pace,
+//   so the curve sweeps smoothly as the sound does; the parameters themselves
+//   are never taken from the engine, so an edit is drawn at once (the engine
+//   publishes while stopped too, its values arriving a block at a time and
+//   played back a little late). Where the right side's cutoff differs (Phase,
 //   Spin) its curve is drawn thin beside the left's. Without values for
-//   kStaleSeconds (stopped, silent, bypassed) the curve eases back to where the
-//   parameters put it.
+//   kStaleSeconds (bypassed, its track done) the sweep eases back to none.
 // - Its subtle life: the curve glows as hard as the envelope opens it, the
 //   dot's halo breathes with the LFO, and along the bottom a thin bar spans the
 //   cutoffs the modulation can reach, a tick riding it where the cutoff is now.
@@ -40,7 +42,7 @@ class AutoFilterGraph : public DeviceCanvas {
     Q_PROPERTY(bool dragging READ dragging NOTIFY draggingChanged)
 
 public:
-    static constexpr int kStreams = 4;  // cutoff_l, cutoff_r, env, lfo
+    static constexpr int kStreams = 4;  // sweep_l, sweep_r, env, lfo
     using Playback = DisplayPlayback<kStreams>;
     static constexpr int kDisplaySamples = 128;  // the engine's samples per value
 
@@ -110,14 +112,13 @@ private:
     std::array<std::vector<float>, kStreams> pending_;  // values read but not yet whole frames
     bool live_ = false;
     double sinceArrival_ = 1.0;
-    Eased cutoffLeft_, cutoffRight_;  // log2 Hz
+    Eased sweepLeft_, sweepRight_;  // how far the modulation moves each side's cutoff from Frequency (octaves)
     Eased envelope_, lfo_;
     std::vector<QPointF> curveLeft_, curveRight_;
     bool showRight_ = false;
     sub::app::analysis::FallingSpectrum spectrum_;
     std::vector<double> columns_;
     bool animating_ = false;
-    bool synced_ = false;  // sync() has read the device's parameters once
     bool dragging_ = false;
     QString gesture_, lastGesture_;
 };

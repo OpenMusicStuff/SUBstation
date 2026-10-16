@@ -4,8 +4,9 @@
 //
 // - The response, on a 20 Hz..20 kHz log axis, +18..-30 dB: worked out from the
 //   engine's own maths (sub::app::phaserCurvePoints, the application layer's
-//   wrapper of PhaserDesign.h) at the sweep the engine publishes, so the notches
-//   (or the comb) move as the sound does. A comb finer than the pixels (the
+//   wrapper of PhaserDesign.h) at the parameters as they are, moved by the
+//   modulation the engine publishes for each side (`mod`, `mod_r`), so the
+//   notches (or the comb) move as the sound does and an edit is drawn at once. A comb finer than the pixels (the
 //   Doubler high up) is drawn as a band between its peaks and its notches, steady
 //   as the delay sweeps, rather than a line aliasing into noise. The right
 //   channel's curve, where it differs, is drawn thin in blue; the notches are
@@ -54,7 +55,7 @@ class PhaserGraph : public DeviceCanvas {
 public:
     // The engine's displays the playback plays, a stream each (in the engine's order: displayId()); the
     // levels, `input` and `output`, go to the meters as they come.
-    static constexpr int kStreams = 9;
+    static constexpr int kStreams = 10;
     using Playback = DisplayPlayback<kStreams>;
 
     static constexpr int kWidth = 240;
@@ -165,6 +166,11 @@ private:
     void trace();
     // Whether the playhead's frame is of the mode shown (not one on its way before a mode change).
     bool frameFits() const;
+    // The sweep (log2 Hz or ms) and Q (log2) the parameters as they are give at modulation `mod`.
+    double sweepLogAt(double mod) const;
+    double qLogAt(double mod) const;
+    // The sweeps and Qs: the parameters as they are, at the modulation the playback has (each side's own).
+    void followModulation();
     // The drawn sweep catching up with the engine's over a few ticks, from where it is now.
     void startCatchUp();
     void paintResponse(SgPainter& p);

@@ -164,7 +164,7 @@ public:
     };
     enum Display {
         PhaseDisplay = 0, PhaseRightDisplay, LfoDisplay, ModDisplay, EnvDisplay, SweepLeft, SweepRight, QLeft, QRight,
-        InputLevel, OutputLevel
+        InputLevel, OutputLevel, ModRightDisplay
     };
 
     PhaserProcessor() : BuiltinProcessor(infos(), displayInfos()) {}
@@ -932,6 +932,7 @@ private:
         publish(PhaseRightDisplay, static_cast<float>(phaseRight));
         publish(LfoDisplay, static_cast<float>(lfo1_.value[0]));
         publish(ModDisplay, static_cast<float>(mod_[0].value));
+        publish(ModRightDisplay, static_cast<float>(mod_[n > 1 ? 1 : 0].value));
         publish(EnvDisplay, targets_.envOn ? static_cast<float>(envNow_) : 0.f);
         const Mode shown = modeFading_ ? modeTo_ : mode_;  // during a fade, the incoming mode's
         for (int c = 0; c < kChannels; ++c) {
@@ -1045,7 +1046,7 @@ private:
     static std::vector<DisplayInfo> displayInfos() {
         std::vector<DisplayInfo> out;
         for (const char* id : {"phase", "phase_r", "lfo", "mod", "env", "sweep_l", "sweep_r", "q_l", "q_r", "input",
-                               "output"}) {
+                               "output", "mod_r"}) {
             out.push_back({id, phaser::kDisplaySamples});
         }
         return out;

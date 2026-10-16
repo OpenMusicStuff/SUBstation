@@ -24,12 +24,13 @@ namespace sub::ui {
 namespace {
 
 // The displays the playback plays, in the engine's order (their index is the playback's stream).
-enum Stream { kPhase = 0, kPhaseRight, kLfo, kMod, kEnv, kSweepLeft, kSweepRight, kQLeft, kQRight };
+enum Stream { kPhase = 0, kPhaseRight, kLfo, kMod, kEnv, kSweepLeft, kSweepRight, kQLeft, kQRight, kModRight };
 const QString& displayId(int stream) {
     static const QString kIds[PhaserGraph::kStreams] = {
         QStringLiteral("phase"),   QStringLiteral("phase_r"), QStringLiteral("lfo"),
         QStringLiteral("mod"),     QStringLiteral("env"),     QStringLiteral("sweep_l"),
-        QStringLiteral("sweep_r"), QStringLiteral("q_l"),     QStringLiteral("q_r")};
+        QStringLiteral("sweep_r"), QStringLiteral("q_l"),     QStringLiteral("q_r"),
+        QStringLiteral("mod_r")};
     return kIds[stream];
 }
 
@@ -158,6 +159,27 @@ double PhaserGraph::staticSweepLog() const {
 
 double PhaserGraph::staticQLog() const { return log2Of(sub::app::phaserQ(spread_, blend_, 0.0)); }
 
+double PhaserGraph::sweepLogAt(double mod) const {
+    const double rate = sampleRate();
+    if (mode_ == 0)
+        return log2Of(sub::app::phaserCenterHz(center_, blend_, mod, rate));
+    return log2Of(sub::app::phaserDelayMs(mode_, mode_ == 2 ? doublerTime_ : flangeTime_, mod, rate));
+}
+
+double PhaserGraph::qLogAt(double mod) const { return log2Of(sub::app::phaserQ(spread_, blend_, mod)); }
+
+void PhaserGraph::followModulation() {
+    const double toward = catchUp_.value;
+    const auto follow = [toward](Eased& drawn, double live, double from) { drawn.snap(live + toward * (from - live)); };
+    const double modLeft = playback_.value(kMod), modRight = playback_.value(kModRight);
+    follow(sweepL_, sweepLogAt(modLeft), catchFrom_[0]);
+    follow(sweepR_, sweepLogAt(modRight), catchFrom_[1]);
+    if (mode_ == 0) {
+        follow(qL_, qLogAt(modLeft), catchFrom_[2]);
+        follow(qR_, qLogAt(modRight), catchFrom_[3]);
+    }
+}
+
 bool PhaserGraph::randomShape() const { return sub::app::phaserWaveIsRandom(wave_); }
 
 double PhaserGraph::shapeAt(double phase) const {
@@ -206,11 +228,16 @@ void PhaserGraph::sync() {
         holdUntil_ = playback_.newest() + 1 + kModeHold;
     }
     mode_ = mode;
-    // Not live (or the mode changed), the curve is where the parameters put it: an edit is drawn at once.
+    // Not live (or the mode changed), the curve is where the parameters put it; live, the parameters as they
+    // are moved by the modulation the engine has: either way an edit is drawn at once (the engine's own sweep
+    // comes a block at a time, and is played back a little late).
     if (first_ || !live_ || modeChanged) {
         for (Eased* sweep : {&sweepL_, &sweepR_}) sweep->snap(staticSweepLog());
         for (Eased* q : {&qL_, &qR_}) q->snap(staticQLog());
         catchUp_.snap(0.0);
+    } else if (fitted_ && frameFits()) {
+        catchUp_.snap(0.0);  // (an edit is not caught up with: it is where the user put it)
+        followModulation();
     }
     if (first_) {
         oldFade_.snap(0.0);
@@ -432,17 +459,9 @@ void PhaserGraph::refreshDisplays() {
             startCatchUp();
         fitted_ = fits;
         if (fits) {
-            // The engine's sweep at the playhead (catching up over a few ticks after a pause or a mode change).
-            const double toward = catchUp_.value;
-            const auto follow = [toward](Eased& drawn, double live, double from) {
-                drawn.snap(live + toward * (from - live));
-            };
-            follow(sweepL_, log2Of(playback_.logValue(kSweepLeft)), catchFrom_[0]);
-            follow(sweepR_, log2Of(playback_.logValue(kSweepRight)), catchFrom_[1]);
-            if (mode_ == 0) {
-                follow(qL_, log2Of(playback_.logValue(kQLeft)), catchFrom_[2]);
-                follow(qR_, log2Of(playback_.logValue(kQRight)), catchFrom_[3]);
-            }
+            // The parameters as they are, moved by the engine's modulation at the playhead (catching up over
+            // a few ticks after a pause or a mode change).
+            followModulation();
             catchUp_.target = 0.0;
             catchUp_.step(easeFraction(dt, 0.03), 1e-3);
         } else {

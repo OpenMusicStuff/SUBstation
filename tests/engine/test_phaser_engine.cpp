@@ -205,7 +205,7 @@ TEST_CASE("phaser-flanger: listed with its parameters") {
         CHECK_EQ(d.samplesPerValue, 256);
     }
     CHECK(ids == (std::vector<std::string>{"phase", "phase_r", "lfo", "mod", "env", "sweep_l", "sweep_r", "q_l", "q_r",
-                                           "input", "output"}));
+                                           "input", "output", "mod_r"}));
 }
 
 TEST_CASE("phaser-flanger: the phaser's notches are where its design puts them") {
@@ -1205,12 +1205,30 @@ TEST_CASE("phaser-flanger: one channel plays as either of two") {
     }
 }
 
+TEST_CASE("phaser-flanger: each side's sweep is its parameters moved by its published modulation") {
+    // What the editor draws from: Center and Blend as they are, and `mod` (`mod_r` for the right side), so an
+    // edit shows at once while the modulation comes from the engine.
+    Phaser p(kSampleRate, {{"amount", 80.f}, {"lfo_freq", 3.f}, {"phase", 90.f}, {"blend", 0.3f}});
+    Samples l = sine(440.0, 1.0), r = l;
+    p.run({&l, &r});
+    const std::vector<float> mod = p.display("mod"), modRight = p.display("mod_r");
+    const std::vector<float> left = p.display("sweep_l"), right = p.display("sweep_r");
+    REQUIRE(mod.size() == left.size() && modRight.size() == right.size() && !left.empty());
+    double apart = 0.0;
+    for (size_t k = 20; k < left.size(); ++k) {
+        CHECK_APPROX_REL(left[k], phaser::phaserCenterHz(1000.0, 0.3, mod[k], kSampleRate), 1e-4);
+        CHECK_APPROX_REL(right[k], phaser::phaserCenterHz(1000.0, 0.3, modRight[k], kSampleRate), 1e-4);
+        apart = std::max(apart, std::abs(double(mod[k]) - modRight[k]));
+    }
+    CHECK(apart > 0.1);  // (90° apart: the sides differ)
+}
+
 TEST_CASE("phaser-flanger: its displays are what plays") {
     // A second at 48 kHz: 187 values each.
     Phaser p(kSampleRate, still({{"mix", 0.f}}));
     p.play(sine(440.0, 1.0));
     for (const char* id :
-         {"phase", "phase_r", "lfo", "mod", "env", "sweep_l", "sweep_r", "q_l", "q_r", "input", "output"}) {
+         {"phase", "phase_r", "lfo", "mod", "env", "sweep_l", "sweep_r", "q_l", "q_r", "input", "output", "mod_r"}) {
         INFO(id);
         const std::vector<float> values = p.display(id);
         CHECK_EQ(values.size(), size_t{187});

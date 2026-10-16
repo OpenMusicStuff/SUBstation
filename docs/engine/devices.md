@@ -1630,7 +1630,8 @@ A resonant filter with an envelope follower and an LFO, after Ableton's Auto Fil
 - Type, Morph, Slope (the first section's input faded from the dry signal to its output) and Resonance
   glide a chunk at a time (10 ms); Drive, Output and Dry/Wet ramp over 20 ms; Soft Clip puts the wet output
   through `dsp::fastTanh`. No latency; a quarter second of tail.
-- **Displays**: `cutoff_l`, `cutoff_r` (Hz), `env` (0..1) and `lfo` (-1..1), one value per 128 samples;
+- **Displays**: `sweep_l`, `sweep_r` (how far the modulation moves each side's cutoff from Frequency, in
+  octaves), `env` (0..1) and `lfo` (-1..1), one value per 128 samples;
   `input`, a value a sample.
 
 ### Delay (`builtin:delay`, AudioEffect)
@@ -1957,8 +1958,11 @@ The ranges are Live's (its Output a gain of 0..2, here in dB down to -36). The L
   smoothed modulation, -2..2), `env` (the envelope's 0..1; 0 while Env Follow is off), `sweep_l` and `sweep_r` (Phaser:
   the stages' frequency in Hz, as tuned; Flanger and Doubler: the delay in ms; during a mode's fade, the incoming
   mode's), `q_l` and `q_r` (the stages' Q; 0 in the delay modes), `input` and `output` (the peaks, dB, floor
-  `kLevelFloorDb`, -90). The editor reads the rate (`kDisplaySamples`) and the parameters' ranges through the
-  application layer (`phaserDisplaySamples()`, `phaserRanges()`).
+  `kLevelFloorDb`, -90), and `mod_r` (the right's smoothed modulation; one channel: the left's). Each side's sweep
+  and Q are its parameters at that side's modulation (`phaserCenterHz`, `phaserQ`, `delayMs` of `mod` or `mod_r`):
+  the editor works them out so from the parameters as they are, so an edit shows at once. The editor reads the
+  rate (`kDisplaySamples`) and the parameters' ranges through the application layer (`phaserDisplaySamples()`,
+  `phaserRanges()`).
 - **Response**: what plays, as a linear filter (Warmth's saturation left out), is `phaser::transfer()` and
   `responseDb()`: the cascade's `A^N` through the feedback loop and its extra sample (`P / (1 - g z⁻¹ P)`), or the
   comb's `D / (1 - g D)`, with Warmth's low-pass, Safe Bass's bands, Dry/Wet and Output. `notchFrequencies()` puts the
@@ -2641,11 +2645,11 @@ readonly property var editors: ({
   meter; Erosion its noise band (from `erosion::bandMagnitude`) on an X-Y field of Frequency and Amount over spectra
   of `input` and `output`, shimmering with `erosion`, and a scope of `mod_l` against `mod_r`; the Delay its filter
   over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
-  modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, the band glowing with `output` and the Drive knob warming with `drive`; the Auto Filter its response (from `autofilter::responseDb`) at the cutoff the engine publishes (`cutoff_l`, `cutoff_r`, played back by a `DisplayPlayback`) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom, laid out as Live 12.2's (the LFO's strip along the display's bottom, the envelope's Attack and Release in the Sidechain fold); the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
+  modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, the band glowing with `output` and the Drive knob warming with `drive`; the Auto Filter its response (from `autofilter::responseDb`) at Frequency as it is now moved by the sweep the engine publishes (`sweep_l`, `sweep_r`, played back by a `DisplayPlayback`, so an edit is drawn at once) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom, laid out as Live 12.2's (the LFO's strip along the display's bottom, the envelope's Attack and Release in the Sidechain fold); the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
   `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
   mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from
-  `phaser::curve`) at the sweep the engine publishes (`sweep_l`, `sweep_r`, `q_l`, `q_r`), its notches marked, and
+  `phaser::curve`) at its parameters as they are moved by the modulation the engine publishes (`mod`, `mod_r`), its notches marked, and
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
   particles Spin swings (`early`, `spin`), and its decay time per frequency (from `reverb::decaySeconds`) over the
   tail's spectrum (`tail`, `diffuse`), each with handles to drag; the Disperser its group delay in ms on a fixed log
