@@ -69,6 +69,7 @@ Values Live writes, and what they become:
 | Utility gain, Compressor threshold: linear amplitude | dB |
 | Delay times: seconds; feedback, dry/wet: 0..1 | ms; percent |
 | VST3 parameters: normalized | the same (their ids are the VST3 `ParamID`s) |
+| Built-in devices' parameters (`mapParams`): a `Manual`, or a plain `Value` (a switch, a list), `true`/`false` as 1/0 | each `LiveParam`'s `plain` (fractions to percent, seconds to ms, linear gains to dB, lists by `indexed()` tables), held to the parameter's range |
 
 Clips:
 
@@ -101,6 +102,36 @@ Plug-ins:
   chunk: what Steinberg's VST2 wrapper and JUCE's VST3s read); else one of the same name
   (`plainPluginName`: lower case, letters and digits, no `x64`) at its defaults.
 
+Live's own devices: Utility, EQ Eight, Compressor, Delay and Simpler/Sampler each have a function of
+their own. The others SUBstation has a built-in like are translated by table: a `LiveParam` per
+parameter (Live's element under the device, the built-in's parameter id, Live's value in the
+built-in's units), which `mapParams` reads, holds to the parameter's range (`builtinSpec`) and enters
+in `targets_` with the same mapping, so automation follows. What a table can't say is done beside it
+(`setParam`): the legacy Auto Filter's circuit (a list per type), Auto Filter 2's LFO time mode,
+Erosion's Mode as Noise Blend and Stereo, Live 10's Redux's switched-off bits, the Arpeggiator's
+transposition as octaves. Saturators are told apart by Live 12.1's names (`WsDrive`,
+`BassShaperThreshold`): before it the Type list had no Bass Shaper.
+
+| Live (tag) | Built-in | Notes |
+|---|---|---|
+| `AutoFilter`, `AutoFilter2` | `auto_filter` | the legacy cutoff a MIDI note (`440 × 2^((v − 69)/12)`), ModHub ±127, LfoAmount 0..30; 12.2's types past Morph as Lowpass (noted), its circuits SVF, DFM, MS2, PRD as Clean, OSR, MS2, PRD; the sidechain |
+| `Overdrive` | `overdrive` | Drive, Tone and Dry/Wet in percent, PreserveDynamics a fraction |
+| `Saturator` | `saturator` | Live 11's types (no Bass Shaper) and 12.1's; PostClip a switch (Soft) or a list |
+| `Amp` | `amp` | as it is |
+| `Redux2`, `Redux` | `bitcrusher` | Jitter as Dither; Live 10's downsampling as 44.1 kHz over it |
+| `Chorus2` | `chorus` | OutputGain linear |
+| `Erosion` | `erosion` | BandQ × 4 as octaves, Amplitude ÷ 2; Mode as Noise Blend and Stereo |
+| `Gate` | `gate` | Threshold linear; Gain is the Floor; the sidechain, its gain, mix, listen and EQ (not its type) |
+| `Limiter` | `limiter` | LinkChannels (before 12.1) as Link 0 or 100 % |
+| `MultibandDynamics` | `multiband` | ratios left at 1:1 (noted: Live's encoding of them isn't known) |
+| `PhaserNew` | `phaser` | its waveforms reordered; times in seconds |
+| `Reverb` | `reverb` | ER spin depth (2..55), diffusion and scale (all-pass gain and size) spread over 0..100 % |
+| `Vocoder` | `vocoder` | Live's band counts (4..24, 32, 40) to the list's; an External carrier from `CarrierSource/RoutedInput` as the sidechain (`routedSidechain`) |
+| `MidiArpeggiator` | `arpeggiator` | the nearest style, synced rates to the list's, octaves from a 12-semitone transposition |
+
+Some of Live's lists' orders come from its manual rather than a set (Auto Filter 2's waveforms
+and circuits, the Arpeggiator's styles and rates): the tables say what they assume.
+
 ## The notes
 
 `Notes` collects what didn't come across: plain lines once (`line`), and lists with how many of
@@ -112,5 +143,6 @@ Tracks are named in them as Live shows them ("31-Audio").
 [test_live_import.cpp](../../tests/app/test_live_import.cpp) writes sets as Live does (gzip or
 XML) and checks each part: reading and damage, the song's settings, tracks, groups, returns,
 mixers and routing, MIDI loops, audio clips and warping, plug-ins (.vstpreset chunks, VST2
-replacement states, a VST2 as itself), Live's own devices, Drum Racks, automation, and `Session::importLiveSet`.
+replacement states, a VST2 as itself), Live's own devices (and those translated by table, the
+Arpeggiator among them), Drum Racks, automation, and `Session::importLiveSet`.
 `test_ui_mainwindow`'s `templatesAndImportingALiveSet` goes through the menu and its dialog.
