@@ -74,6 +74,20 @@ and fades, and whether they are deactivated.
 | Compressor | Compressor (threshold, ratio, attack, release, knee, makeup, dry/wet) and its sidechain |
 | Delay | Delay: sync, sixteenths and times, offsets, link, feedback, freeze, filter, mode, ping pong, dry/wet |
 | Simpler, and a Sampler of one sample | Sampler: its sample, mode (Classic, One-Shot, Slicing), root key, transpose, detune, start and end, volume, envelope |
+| Auto Filter (Live 12.2's and the older one) | Auto Filter: type, circuit, slope, frequency, resonance, drive, morph, the envelope, the LFO (rate or synced rate, waveform, phase or spin, offset), output, dry/wet and its sidechain. Live 12.2's types SUBstation's hasn't (DJ, Comb, Resampling, Notch+LP, Vowel) come as a low-pass, and the message says so |
+| Overdrive | Overdrive: frequency, width, drive, tone, dynamics, dry/wet |
+| Saturator | Saturator: drive, type (Live 11's list and 12.1's, with the Bass Shaper), its threshold, output, dry/wet, post clip, color, DC, Hi-Quality and the Waveshaper's controls |
+| Amp | Amp: type, gain, bass, middle, treble, presence, volume, dual mono, dry/wet |
+| Redux (Live 11's, and Live 10's) | Bitcrusher: bit depth, sample rate (Live 10's downsampling as a rate), jitter as dither, dry/wet |
+| Chorus-Ensemble | Chorus-Ensemble: mode, taps and delay time, rate, amount, feedback and invert, width, offset, shape, warmth, high-pass, output, dry/wet |
+| Erosion | Erosion: frequency, width, amount; its mode as Noise Blend and Stereo (Sine, Noise, Wide Noise) |
+| Gate | Gate: threshold, return, attack, hold, release, floor, lookahead, flip, its sidechain with gain, mix, listen and EQ |
+| Limiter | Limiter: gain, ceiling, release, auto release, lookahead, mode, routing, link, Maximize with its threshold and output |
+| Multiband Dynamics | Multiband Dynamics: crossovers and their switches, each band's activator, input, output, thresholds, attack and release, amount, time, output, soft knee, Peak or RMS, its sidechain. Their ratios come at 1:1 (the message says so) |
+| Phaser-Flanger | Phaser-Flanger: mode, notches, center, spread, blend, the delay times, amount, feedback, both LFOs, duty cycle, phase or spin, the envelope follower, Safe Bass, warmth, output, dry/wet |
+| Reverb | Reverb: everything (the input filter, early reflections and spin, density, smoothing, size, stereo, the shelves and high filter, decay, freeze, flat and cut, diffusion, scale, chorus, the levels, dry/wet) |
+| Vocoder | Vocoder: carrier (an External one from its sidechain), its noise, oscillator and pitch tracking, enhance, unvoiced, bands, range, bandwidth, Precise or Retro, formant, gate, depth, attack and release, channels, level, dry/wet |
+| Arpeggiator | Arpeggiator: its style (the nearest of SUBstation's), sync and rate, gate, hold, and transposing by octaves as Octaves |
 | Audio Effect Rack, Instrument Rack | a rack, its chains with their devices, volume, pan and activator (not its macros) |
 
 A **Drum Rack** becomes a Drum Rack on its track, with a pad for each of Live's on the
@@ -83,8 +97,8 @@ C3, so one that sent Live's devices another note is listed in the message. A com
 sidechained from a pad listens to the whole Drum Rack (its track, after the rack). To
 mix the pads on tracks of their own, *Separate Pads into Tracks* ([devices.md](devices.md#drum-rack)).
 
-Other Live devices, MIDI effects and Max for Live devices are left out; the message
-lists them.
+Other Live devices, MIDI effects but the Arpeggiator, and Max for Live devices are left
+out; the message lists them.
 
 **Automation** of the mixers (volume, pan, activator, sends, rack chains' volume and pan),
 of devices' on/off, of plug-ins' parameters and of the parameters of Live's devices that
@@ -95,10 +109,9 @@ came across, each where its target now is (a pad's on its track).
 - The Session View.
 - Tempo and time signature changes over the song.
 - Clip envelopes, grooves, follow actions, take lanes.
-- Live devices SUBstation has nothing like, and Live's Gate, Limiter, Multiband
-  Dynamics, Saturator, Amp, Erosion, Chorus-Ensemble, Phaser-Flanger and Reverb
-  (SUBstation has devices like them, but doesn't import them yet), MIDI effects, Max for
+- Live devices SUBstation has nothing like, MIDI effects but the Arpeggiator, Max for
   Live devices, racks' macros and their mappings, Drum Racks' return chains.
+- Multiband Dynamics' ratios (Live keeps them in a form of its own).
 - Frozen tracks come unfrozen (their devices are all there).
 - Curved automation segments come straight.
 

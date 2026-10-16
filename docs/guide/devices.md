@@ -10,7 +10,7 @@ their own page: [plugins.md](plugins.md).
 
 - It shows the built-in Synth and Sampler instruments, the Arpeggiator MIDI effect, the
   Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
-  Compressor, Saturator, Amp, Erosion, Bitcrusher, Delay, Chorus-Ensemble, Phaser-Flanger,
+  Compressor, Saturator, Overdrive, Amp, Erosion, Auto Filter, Bitcrusher, Delay, Chorus-Ensemble, Phaser-Flanger,
   Reverb, Vintage Hall, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ and Sidechain, the LFO
   and Envelope modulators, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only. A MIDI
@@ -45,7 +45,7 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   values. Frequency and time knobs turn logarithmically.
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
-  Spectral Compressor, the Saturator, the Amp, Erosion, the Bitcrusher, the Delay, the
+  Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Delay, the
   Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
   Transient Shaper, the Vocoder, the Vocal Rider, the EQ, the Sidechain, the Arpeggiator, the LFO
   and the Envelope have editors of their own (below).
@@ -922,6 +922,62 @@ wobbling vibrato.
   click.
 - It adds 2 ms of latency (the middle of its delay): the other tracks are delayed by as
   much, so everything stays in line.
+
+### Overdrive
+
+A pedal's drive, after Ableton's Overdrive: a band of the sound pushed into soft,
+slightly lopsided clipping (so it adds even harmonics as well as odd, as a real pedal
+does).
+
+- **Frequency** (50 Hz to 20 kHz) and **Width** (0.5 to 9 octaves): the band that goes
+  into the drive, a 12 dB/octave high-pass and low-pass around Frequency. Narrow and
+  mid-range, it is the honky sound of a classic pedal; wide, everything is driven.
+- **Drive** (0 to 100 %): how hard the band is pushed (up to 42 dB).
+- **Tone** (0 to 100 %): darker to brighter, a low-pass after the drive from 1 kHz to
+  20 kHz.
+- **Dynamics** (0 to 100 %): how much of the input's level changes come back after the
+  clipping has squashed them: at 0 % everything comes out about as loud; higher, quiet
+  parts stay quieter, as they came in.
+- **Dry/Wet**: 0 to 100 %.
+- **The display** shows the band (drag it: across for Frequency, up and down for Width;
+  double-click resets them), Tone dashed over it and the input's spectrum behind; at its
+  right, the curve the band is driven into. While sound plays, the curve lights up from
+  the middle as far as the sound drives it, a dot riding it there, and the band glows
+  with the output; the Drive knob warms with it too. In silence it all rests.
+- Every control can be automated; Frequency, Width and Tone glide (about 15 ms), Drive
+  and Dry/Wet ramp (20 ms), so they never click. No latency.
+
+### Auto Filter
+
+A resonant filter that moves by itself, after Ableton's Auto Filter: an envelope
+follower and an LFO sweep its cutoff.
+
+- **Filter type**: Lowpass, Highpass, Bandpass, Notch or **Morph** (the **Morph** knob
+  sweeps from Lowpass through Bandpass, Highpass and Notch back to Lowpass).
+- **Circuit**: **Clean** is a clean state-variable filter; **OSR**, **MS2**, **SMP** and
+  **PRD** saturate as analog filters do (the input and the ringing resonance alike: MS2
+  growls soonest, PRD is the roundest) and hear **Drive** (0 to 24 dB). Drive is dimmed on
+  Clean.
+- **Slope**: 12 or 24 dB an octave.
+- **Freq** (20 Hz to 20 kHz) and **Res** (Resonance, 0 to 125 %).
+- **Envelope**: **Env** (−100 to 100 %, at 100 % six octaves up with a full-scale sound;
+  negative closes the filter), **Attack** and **Release**. With a sidechain chosen (the
+  title bar's sidechain button) the envelope follows that instead of the input.
+- **LFO**: **LFO** (amount, at 100 % four octaves either way), **Freq** (0.01 to 40 Hz)
+  or, with the note switch (under **Shape**) on, **Rate** in note values following the
+  song, **Shape** (Sine, Triangle, Saw Up, Saw Down, Square, S&H, Smooth), **Phase** (the
+  right side's LFO this far ahead of the left's) or, with **Spin** (under Shape) on,
+  **Spin** (the right side's LFO this much faster), and **Offset** (turns both). The LFO's controls dim while its
+  amount is 0.
+- **Output** (−24 to +12 dB) and **Dry/Wet**.
+- **The display** shows the filter's curve over the input's spectrum. Drag it: across
+  for Freq, up and down for Res; double-click resets them. While sound plays the curve
+  sweeps where the envelope and the LFO take it (the right side's curve beside it, thin,
+  where Phase or Spin part them); it glows as the envelope opens it, the dot's halo
+  breathes with the LFO, and the bar along the bottom is how far they can take it, a
+  tick where the cutoff is now. In silence it eases back and rests.
+- Every control can be automated; the type, slope, morph and resonance glide (10 ms),
+  so even switching them doesn't click. No latency.
 
 ### Delay
 
