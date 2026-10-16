@@ -4,8 +4,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <deque>
+#include <exception>
 #include <functional>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 #include "AudioFileWriter.h"
@@ -227,6 +232,80 @@ int64_t lastSounding(const RenderSnapshot& snap, const std::vector<char>& upstre
     return last;
 }
 
+// A writer on a thread of its own (an MP3 export's: LAME's encoding is a fifth
+// of the export's time on the render's thread, which goes on rendering
+// meanwhile). The render hands it each piece (a copy; at most kQueued wait, then
+// the render waits for the encoder); it writes them in order, as `inner` would
+// have. What went wrong comes back from the next write() or keep(). Let go of
+// unkept, it drops what waits, and `inner` deletes its file.
+class WriterThread final : public AudioFileWriter {
+public:
+    explicit WriterThread(std::shared_ptr<AudioFileWriter> inner, std::string path)
+        : AudioFileWriter(std::move(path)), inner_(std::move(inner)), thread_([this] { run(); }) {}
+    ~WriterThread() override {
+        {
+            const std::lock_guard lock(mutex_);
+            stop_ = true;
+        }
+        changed_.notify_all();
+        thread_.join();
+    }
+    WriterThread(const WriterThread&) = delete;
+    WriterThread& operator=(const WriterThread&) = delete;
+
+    void write(const float* samples, int64_t frames) override {
+        std::unique_lock lock(mutex_);
+        changed_.wait(lock, [this] { return queue_.size() < kQueued || error_; });
+        if (error_) std::rethrow_exception(error_);
+        std::vector<float> piece = std::move(spare_);
+        piece.assign(samples, samples + frames * 2);
+        queue_.push_back(std::move(piece));
+        changed_.notify_all();
+    }
+    void keep() override {  // once all of it is written
+        std::unique_lock lock(mutex_);
+        changed_.wait(lock, [this] { return (queue_.empty() && !writing_) || error_; });
+        if (error_) std::rethrow_exception(error_);
+        inner_->keep();
+    }
+
+private:
+    static constexpr size_t kQueued = 2;
+
+    void run() {
+        std::unique_lock lock(mutex_);
+        for (;;) {
+            changed_.wait(lock, [this] { return stop_ || (!queue_.empty() && !error_); });
+            if (stop_) return;
+            std::vector<float> piece = std::move(queue_.front());
+            queue_.pop_front();
+            writing_ = true;
+            lock.unlock();
+            std::exception_ptr error;
+            try {
+                inner_->write(piece.data(), static_cast<int64_t>(piece.size() / 2));
+            } catch (...) {
+                error = std::current_exception();
+            }
+            lock.lock();
+            writing_ = false;
+            if (error) error_ = error;
+            spare_ = std::move(piece);
+            changed_.notify_all();
+        }
+    }
+
+    std::shared_ptr<AudioFileWriter> inner_;
+    std::mutex mutex_;
+    std::condition_variable changed_;
+    std::deque<std::vector<float>> queue_;
+    std::vector<float> spare_;  // a piece written, its memory for the next
+    bool writing_ = false;
+    bool stop_ = false;
+    std::exception_ptr error_;
+    std::thread thread_;  // (last: it starts once the rest is made)
+};
+
 ma_format exportFormat(int bitDepth) {
     switch (bitDepth) {
         case 16: return ma_format_s16;
@@ -311,7 +390,7 @@ void Engine::renderOfflineLocked(double startBeat, int64_t frames, float* out, b
     // With delay compensation the output lags the timeline: render the lag first and drop it.
     if (const int64_t lag = snapshotHold_->outputLatency(); lag > 0) {
         std::vector<float> discarded(static_cast<size_t>(lag) * 2);
-        offline.renderOffline(*snapshotHold_, discarded.data(), lag, loop, metronome);
+        offline.renderOffline(*snapshotHold_, discarded.data(), lag, loop, metronome, frames > 0);
     }
     offline.renderOffline(*snapshotHold_, out, frames, loop, metronome);
 }
@@ -356,11 +435,11 @@ void Engine::renderTrackLocked(uint32_t trackId, double startBeat, int64_t frame
     constexpr int64_t kChunk = 16384;
     std::vector<float> rendered(kChunk * 2);
     dropFrames(found->inputLatency + found->latency, rendered,
-               [&](float* out, int64_t n) { offline.renderCaptures(snap, &out, n); });
+               [&](float* out, int64_t n) { offline.renderCaptures(snap, &out, n, true); });
     for (int64_t done = 0; done < frames;) {
         const int64_t n = std::min(kChunk, frames - done);
         float* out = rendered.data();
-        offline.renderCaptures(snap, &out, n);
+        offline.renderCaptures(snap, &out, n, done + n < frames);
         sink(out, n);
         done += n;
     }
@@ -456,7 +535,7 @@ std::shared_ptr<RenderJob> Engine::startExport(const std::string& path, double s
     checkNotRenderingLocked();
     std::shared_ptr<AudioFileWriter> writer;
     if (mp3) {
-        writer = makeMp3Writer(path, sampleRate_, format.bitrate);
+        writer = std::make_shared<WriterThread>(makeMp3Writer(path, sampleRate_, format.bitrate), path);
     } else {
         writer = std::make_shared<WavWriter>(path, wavFormat, sampleRate_);
     }
@@ -467,12 +546,13 @@ std::shared_ptr<RenderJob> Engine::startExport(const std::string& path, double s
         const RenderSnapshot& snap = *render->snapshot;
         std::vector<float> rendered(kJobChunk * 2);
         // With delay compensation the output lags the timeline: render the lag first and drop it.
+        // (Each piece but the last followed by the next: the workers spin for it while this one is written.)
         dropFrames(snap.outputLatency(), rendered,
-                   [&](float* out, int64_t n) { render->renderer.renderOffline(snap, out, n); });
+                   [&](float* out, int64_t n) { render->renderer.renderOffline(snap, out, n, false, false, true); });
         for (int64_t done = 0; done < total;) {
             if (job.stopping()) return std::nullopt;
             const int64_t n = std::min(kJobChunk, total - done);
-            render->renderer.renderOffline(snap, rendered.data(), n);
+            render->renderer.renderOffline(snap, rendered.data(), n, false, false, done + n < total);
             writer->write(rendered.data(), n);
             done += n;
             job.advance(n);
@@ -548,7 +628,7 @@ std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile
             if (job.stopping()) return std::nullopt;
             const int64_t n = std::min(kJobChunk, total - done);
             for (size_t k = 0; k < rendering.size(); ++k) out[k] = rendered.data() + k * kJobChunk * 2;
-            render->renderer.renderCaptures(snap, out.data(), n);
+            render->renderer.renderCaptures(snap, out.data(), n, done + n < total);
             for (size_t k = 0; k < rendering.size(); ++k) (*captures)[rendering[k]].take(out[k], n);
             done += n;
             report(done);

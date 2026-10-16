@@ -198,12 +198,12 @@ void Renderer::processLive(const RenderSnapshot& snap, SharedState& shared, cons
 }
 
 void Renderer::renderOffline(const RenderSnapshot& snap, float* outStereo, int64_t frames,
-                             bool loop, bool metronome) noexcept {
+                             bool loop, bool metronome, bool more) noexcept {
     syncTempo(snap);
     int64_t done = 0;
     while (done < frames) {
         const int n = static_cast<int>(std::min<int64_t>(kMaxBlock, frames - done));
-        chunkFollows_ = done + n < frames;
+        chunkFollows_ = done + n < frames || more;
         renderChunk(snap, n, {false, loop && snap.loopEnabled, metronome});
         interleave(masterLeft_.data(), masterRight_.data(), n, outStereo + done * 2);
         done += n;
@@ -251,7 +251,8 @@ void Renderer::setCaptures(const RenderSnapshot& snap, const std::vector<int>& t
     prunedGraph_ = std::make_unique<TaskGraph>(static_cast<int>(prunedTracks_.size()), edges);
 }
 
-void Renderer::renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames) noexcept {
+void Renderer::renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames,
+                              bool more) noexcept {
     syncTempo(snap);
     capturing_ = true;
     ignoreSolo_ = true;
@@ -261,7 +262,7 @@ void Renderer::renderCaptures(const RenderSnapshot& snap, float* const* outStere
         for (int c = 0; c < numCaptures_; ++c) {  // (a track not in the snapshot: silence)
             std::fill_n(captured_.data() + static_cast<size_t>(c) * 2 * kMaxBlock, 2 * kMaxBlock, 0.f);
         }
-        chunkFollows_ = done + n < frames;
+        chunkFollows_ = done + n < frames || more;
         renderChunk(snap, n, {false, false, false});
         for (int c = 0; c < numCaptures_; ++c) {
             const float* left = captured_.data() + static_cast<size_t>(c) * 2 * kMaxBlock;

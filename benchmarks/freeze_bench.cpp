@@ -19,7 +19,7 @@
 //   tail being most of the render;
 // - decoding the --freeze tracks' files, which the window did after freezing
 //   them before their renders handed their samples over;
-// - the whole mix exported (16-bit WAV), for comparison: the code it shares.
+// - the whole mix exported (16-bit WAV, and MP3), for comparison: the code it shares.
 //
 // Qt-free: it links the engine alone.
 
@@ -252,6 +252,11 @@ int run(const Options& options) {
                                   [&] { return freeze(engine, {project.group}, beats, folder.path()); }));
         results.push_back(measure("export (the whole mix)", options.seconds, [&] {
             engine.exportWav((folder.path() / "mix.wav").string(), 0.0, beats, 16);
+            return std::llround(beats * kRate / 2.0);
+        }));
+        results.push_back(measure("export as MP3 (320 kbps)", options.seconds, [&] {
+            engine.exportFile((folder.path() / "mix.mp3").string(), 0.0, beats,
+                              sub::ExportFormat{sub::ExportFormat::Kind::Mp3, 16, 320});
             return std::llround(beats * kRate / 2.0);
         }));
     }

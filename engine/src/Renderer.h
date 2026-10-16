@@ -169,9 +169,11 @@ public:
 
     // Renders the timeline from the current position into interleaved stereo.
     // Never publishes meters or plays the preview; looping and the metronome
-    // are opt-in (exports leave them off).
+    // are opt-in (exports leave them off). `more`: the caller renders on right
+    // after (a render in pieces), so the scheduler's workers spin for it
+    // between the two instead of sleeping (Scheduler::run's runFollows).
     void renderOffline(const RenderSnapshot& snap, float* outStereo, int64_t frames,
-                       bool loop = false, bool metronome = false) noexcept;
+                       bool loop = false, bool metronome = false, bool more = false) noexcept;
 
     // Non-real-time, while the renderer doesn't run (allocates): the tracks
     // renderCaptures() puts out, by snapshot index, in `snap`. Only they and
@@ -186,8 +188,8 @@ public:
     // interleaved stereo buffer (outStereo[i] for the i-th), as they leave them
     // (a caller lining one up with the timeline drops its latency). Solo is
     // ignored: every strip is heard as if nothing were soloed. Freezing tracks
-    // renders this.
-    void renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames) noexcept;
+    // renders this. `more` as renderOffline()'s.
+    void renderCaptures(const RenderSnapshot& snap, float* const* outStereo, int64_t frames, bool more = false) noexcept;
 
     // Snapshot tracks `tracks` and everything that feeds them, however far back
     // (through outputs, sends, inputs and sidechains: what renders before

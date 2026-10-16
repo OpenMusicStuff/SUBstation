@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "Engine.h"
+#include "AudioFileWriter.h"
 #include "AudioSource.h"
 #include "RenderJob.h"
 #include "harness/Fixtures.h"
@@ -241,6 +242,24 @@ TEST_CASE("an export as MP3: the mix, encoded at the bitrate asked for") {
                                        sub::ExportFormat{sub::ExportFormat::Kind::Mp3, 24, 500}),
                     std::invalid_argument);
     CHECK(!fileExists(tempDir() / "bad.mp3"));
+}
+
+TEST_CASE("an MP3 export encoded on a thread of its own is the encoder's file") {
+    JobEngine e;
+    auto& engine = e.engine;
+    clipTrack(engine, rampWav());
+    const auto exported = tempDir() / "threaded.mp3", direct = tempDir() / "direct.mp3";
+    engine.exportFile(exported.string(), 0.0, 4.0, sub::ExportFormat{sub::ExportFormat::Kind::Mp3, 24, 192});
+    // The same render handed to LAME's writer on this thread, in the export's pieces.
+    const Samples mix = engine.renderOffline(0.0, 4 * kBeat);
+    {
+        const auto writer = sub::makeMp3Writer(direct.string(), kSampleRate, 192);
+        for (int64_t done = 0; done < 4 * kBeat; done += 4096) {
+            writer->write(mix.data() + done * 2, std::min<int64_t>(4096, 4 * kBeat - done));
+        }
+        writer->keep();
+    }
+    CHECK(readBytes(exported) == readBytes(direct));
 }
 
 TEST_CASE("a render that can't start says why") {

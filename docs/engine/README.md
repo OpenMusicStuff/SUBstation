@@ -291,7 +291,13 @@ create the file (an `AudioFileWriter`, [AudioFileWriter.h](../../engine/src/Audi
 renderer, its lines, and a `shared_ptr` to the snapshot as it is, which keeps its processors,
 sources and buffers alive whatever the UI changes meanwhile. The job's thread then renders that
 snapshot without the lock (4096 frames at a time), so the UI's calls (meters, the playhead,
-`idle()`) don't wait for it:
+`idle()`) don't wait for it. Each piece but the last tells the renderer another follows
+(`renderOffline()`'s and `renderCaptures()`'s `more`), so the scheduler's workers spin for the
+next piece while this one is written instead of going to sleep. An MP3 export's encoder runs on a
+thread of its own (`WriterThread`: the render hands it each piece, two at most waiting, and goes
+on; LAME's encoding was a fifth of the export's time): the file is the encoder's, byte for byte.
+A WAV file is still written on the render's thread: converting and writing a piece costs little
+next to rendering it (`freeze_bench`: no measurable difference), so a thread would only add a copy.
 
 - `progress()` is the frames rendered over the frames to render; `done()` says the thread has
   ended.
