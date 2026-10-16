@@ -119,6 +119,43 @@ std::shared_ptr<const NoteBendRender> noteBend(const NoteDesc& note, const Rende
     return render;
 }
 
+// A warped clip's source along it (WarpCurve), where the tempo changes under it: null if it doesn't
+// (one rate throughout). `framesPerBeat`: the source frames a beat of the clip plays. Points at the
+// clip's ends, the tempo map's points within it, and every kWarpCurveStep samples through its ramps
+// (a ramp's source position bends; straight lines that close follow it to well under a frame).
+constexpr int64_t kWarpCurveStep = 256;
+
+std::shared_ptr<const WarpCurve> warpCurve(const RenderSnapshot& snap, int64_t start, int64_t length,
+                                           double framesPerBeat) {
+    const TempoMap& map = *snap.tempoMap;
+    if (map.constant() || length <= 0) return nullptr;
+    std::vector<int64_t> ats{0, length};
+    const auto& points = map.points();
+    const auto inside = [&](int64_t at) { return at > 0 && at < length; };
+    for (size_t i = 0; i < points.size(); ++i) {
+        const int64_t at = snap.sampleAt(points[i].beat) - start;
+        if (inside(at)) ats.push_back(at);
+        if (i + 1 < points.size() && points[i + 1].beat > points[i].beat && points[i + 1].bpm != points[i].bpm) {
+            const int64_t to = std::min(length, snap.sampleAt(points[i + 1].beat) - start);
+            for (int64_t a = std::max<int64_t>(0, at) + kWarpCurveStep; a < to; a += kWarpCurveStep) ats.push_back(a);
+        }
+    }
+    std::sort(ats.begin(), ats.end());
+    ats.erase(std::unique(ats.begin(), ats.end()), ats.end());
+    const double from = snap.beatAt(static_cast<double>(start));
+    // One tempo all along the clip: its rate is enough.
+    const double ends = map.bpmAt(from), last = map.bpmAt(snap.beatAt(static_cast<double>(start + length)));
+    if (ats.size() == 2 && ends == last && map.bpmAt(snap.beatAt(static_cast<double>(start + length / 2))) == ends) {
+        return nullptr;
+    }
+    auto curve = std::make_shared<WarpCurve>();
+    curve->reserve(ats.size());
+    for (const int64_t at : ats) {
+        curve->push_back({at, (snap.beatAt(static_cast<double>(start + at)) - from) * framesPerBeat});
+    }
+    return curve;
+}
+
 // A rack chain's fader lane: "chain:<chain id>:volume" (or ":pan") of the rack.
 std::string chainLaneParam(uint32_t chainId, const char* control) {
     return "chain:" + std::to_string(chainId) + ":" + control;
@@ -728,12 +765,17 @@ void Engine::buildSnapshotLocked() {
                 cr.rate = tempoMap_->constant() || cr.length <= 0
                               ? tempoMap_->points().front().bpm / clip.segmentBpm
                               : clip.durationSec * sampleRate_ / static_cast<double>(cr.length);
+                cr.curve = warpCurve(*snap, cr.start, cr.length, 60.0 / clip.segmentBpm * sampleRate_);
+                if (!cr.curve && !tempoMap_->constant()) {  // (one tempo all along it: that tempo's rate)
+                    cr.rate = snap->tempoAt(static_cast<double>(cr.start)) / clip.segmentBpm;
+                }
             } else {
                 cr.length = std::llround(clip.durationSec * sampleRate_);
             }
             // Never play past the end of the file.
             const auto available = static_cast<double>(source->frames() - cr.sourceOffset);
-            cr.length = std::min<int64_t>(cr.length, static_cast<int64_t>(std::floor(available / cr.rate)));
+            const double playable = cr.curve ? warpcurve::timeOf(*cr.curve, available) : available / cr.rate;
+            cr.length = std::min<int64_t>(cr.length, static_cast<int64_t>(std::floor(playable)));
             if (cr.length <= 0) continue;
 
             // Its fades: its own, else a short one against clicks where it cuts
@@ -755,7 +797,9 @@ void Engine::buildSnapshotLocked() {
                 ownOut = cr.length - ownIn;
             }
             const bool atFileStart = cr.sourceOffset == 0;
-            const bool atFileEnd = static_cast<double>(cr.length + 2) * cr.rate >= available;  // (to a sample or two)
+            const bool atFileEnd =  // (to a sample or two)
+                (cr.curve ? warpcurve::sourceAt(*cr.curve, static_cast<double>(cr.length + 2))
+                          : static_cast<double>(cr.length + 2) * cr.rate) >= available;
             const int64_t declick = std::min(clipFade, cr.length / 2);
             cr.fadeIn = clip.fadeInSec > 0.0 ? ownIn : atFileStart ? 0 : std::min(declick, cr.length - ownOut);
             cr.fadeOut = clip.fadeOutSec > 0.0 ? ownOut : atFileEnd ? 0 : std::min(declick, cr.length - cr.fadeIn);
@@ -765,7 +809,7 @@ void Engine::buildSnapshotLocked() {
             cr.gain = clip.gain;
             balanceGains(clip.pan, cr.panLeft, cr.panRight);
             const bool repitch = warped && clip.warpMode == WarpMode::RePitch;
-            const bool speedChanges = std::abs(cr.rate - 1.0) > 1e-9;
+            const bool speedChanges = cr.curve || std::abs(cr.rate - 1.0) > 1e-9;
             if (repitch) {
                 cr.playback = speedChanges ? ClipRender::Playback::Resample : ClipRender::Playback::Direct;
             } else if (speedChanges || clip.transpose != 0.0) {

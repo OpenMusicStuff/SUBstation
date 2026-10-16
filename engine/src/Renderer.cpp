@@ -1850,7 +1850,7 @@ bool Renderer::soundedUpTo(const WarpRender& render, const ClipRender& clip, int
     // tempo change moves it: as WarpVoice::carriesOn()).
     const uint64_t played = render.playedBlock();
     return played != 0 && played + 1 >= blockCounter_ &&
-           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rate;
+           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rateAt(position);
 }
 
 void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live,

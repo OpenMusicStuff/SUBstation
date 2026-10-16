@@ -90,7 +90,9 @@ struct ClipRender {
     int64_t start = 0;          // timeline position, samples
     int64_t length = 0;         // timeline samples
     int64_t sourceOffset = 0;   // first source frame played
-    double rate = 1.0;          // source frames per timeline frame (project tempo / clip tempo)
+    double rate = 1.0;          // source frames per timeline frame (project tempo / clip tempo; under a curve, on average)
+    // Warped under a tempo that changes along it: its source position, point by point (null: `rate` throughout).
+    std::shared_ptr<const WarpCurve> curve;
     float gain = 1.f;
     float panLeft = 1.f;        // clip pan as balance gains
     float panRight = 1.f;
@@ -111,8 +113,14 @@ struct ClipRender {
     float fadeInCurve = 0.f;
     float fadeOutCurve = 0.f;
 
-    // Source position (fractional frames) heard at timeline sample `t`.
-    double sourceAt(int64_t t) const noexcept { return sourceOffset + static_cast<double>(t - start) * rate; }
+    // Source position (fractional frames) heard at timeline sample `t`, and how fast it moves there.
+    double sourceAt(int64_t t) const noexcept {
+        if (curve) return static_cast<double>(sourceOffset) + warpcurve::sourceAt(*curve, static_cast<double>(t - start));
+        return sourceOffset + static_cast<double>(t - start) * rate;
+    }
+    double rateAt(int64_t t) const noexcept {
+        return curve ? warpcurve::rateAt(*curve, static_cast<double>(t - start)) : rate;
+    }
 };
 
 // Delays a routing edge's signal so that it lines up with the latest one going

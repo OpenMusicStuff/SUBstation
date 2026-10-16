@@ -150,3 +150,63 @@ TEST_CASE("one tempo throughout plays as it always has") {
     const auto b = render([](sub::Engine& e) { e.setTempoMap(TempoMap({{0.0, 97.0}, {12.0, 97.0}})); });
     CHECK(a == b);
 }
+
+namespace {
+
+// A 4-second file, silent but for short clicks at these seconds.
+std::string clicksAt(const std::vector<double>& seconds) {
+    std::vector<float> samples(4 * kSampleRate, 0.f);
+    for (const double s : seconds) {
+        const auto at = static_cast<size_t>(s * kSampleRate);
+        for (size_t i = at; i < at + 8 && i < samples.size(); ++i) samples[i] = 0.9f;
+    }
+    return makeWav(samples, 1);
+}
+
+// Where the loudest sample is between two seconds.
+int64_t loudestBetween(const Samples& samples, double from, double to) {
+    const auto a = static_cast<size_t>(from * kSampleRate), b = static_cast<size_t>(to * kSampleRate);
+    size_t best = a;
+    for (size_t i = a; i < b && i < samples.size(); ++i) {
+        if (std::abs(samples[i]) > std::abs(samples[best])) best = i;
+    }
+    return static_cast<int64_t>(best);
+}
+
+Samples warpedRender(const TempoMap& map, sub::WarpMode mode, const std::string& wav) {
+    sub::Engine engine;
+    engine.setClipFadeMs(0);
+    engine.setTempoMap(map);
+    engine.loadSource(wav);
+    const uint32_t track = engine.addTrack();
+    sub::ClipDesc warped = clip(wav, 2.0, 3.0);  // three seconds of it at 120 BPM: six beats, from beat 2
+    warped.warp = true;
+    warped.segmentBpm = 120.0;
+    warped.warpMode = mode;
+    engine.setTrackClips(track, {warped});
+    return channel(engine.renderOffline(0.0, 9 * kSampleRate), 0);
+}
+
+}  // namespace
+
+TEST_CASE("a warped clip follows the tempo map within it, beat by beat") {
+    // Clicks on the clip's beats 2 and 3 (one and one and a half seconds into the file): at 120 BPM
+    // to beat 4 then 60, timeline beats 4 and 5 are at 2 and 3 seconds.
+    const std::string wav = clicksAt({1.0, 1.5});
+    const Samples repitched = warpedRender(slowsAtBeat4(), sub::WarpMode::RePitch, wav);
+    CHECK(std::abs(loudestBetween(repitched, 1.8, 2.2) - 2 * kSampleRate) <= 2);
+    CHECK(std::abs(loudestBetween(repitched, 2.8, 3.2) - 3 * kSampleRate) <= 2);
+    // Stretched (the stretcher smears a click a little): within a few milliseconds.
+    const Samples stretched = warpedRender(slowsAtBeat4(), sub::WarpMode::Standard, wav);
+    CHECK(std::abs(loudestBetween(stretched, 1.8, 2.2) - 2 * kSampleRate) <= 240);
+    CHECK(std::abs(loudestBetween(stretched, 2.8, 3.2) - 3 * kSampleRate) <= 240);
+}
+
+TEST_CASE("a warped clip follows a tempo ramp") {
+    // From 60 to 120 BPM over beats 0 to 8: beat b (up to 8) is 8 ln(1 + b / 8) seconds in. The clip's
+    // beat 2 (a second into the file) plays at timeline beat 4.
+    const TempoMap ramp({{0.0, 60.0}, {8.0, 120.0}});
+    const Samples out = warpedRender(ramp, sub::WarpMode::RePitch, clicksAt({1.0}));
+    const auto expected = static_cast<int64_t>(std::llround(8.0 * std::log(1.5) * kSampleRate));
+    CHECK(std::abs(loudestBetween(out, 3.0, 3.5) - expected) <= 2);
+}
