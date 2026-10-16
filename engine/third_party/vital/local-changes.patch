@@ -1372,3 +1372,60 @@ diff --git a/engine/third_party/vital/src/common/fourier_transform.h b/engine/th
    #elif JUCE_MODULE_AVAILABLE_juce_dsp
  
    class FourierTransform {
+@@ -120,53 +142,9 @@
+ 
+   #else
+ 
+-  #include "kissfft/kissfft.h"
+-
+-  class FourierTransform {
+-    public:
+-      FourierTransform(size_t bits) : bits_(bits), size_(1 << bits), forward_(size_, false), inverse_(size_, true) {
+-        buffer_ = std::make_unique<std::complex<float>[]>(size_);
+-      }
+-
+-      ~FourierTransform() { }
+-
+-      void transformRealForward(float* data) {
+-        for (int i = size_ - 1; i >= 0; --i) {
+-          data[2 * i] = data[i];
+-          data[2 * i + 1] = 0.0f;
+-        }
+-
+-        forward_.transform((std::complex<float>*)data, buffer_.get());
+-
+-        int num_floats = size_ * 2;
+-        memcpy(data, buffer_.get(), num_floats * sizeof(float));
+-        data[size_] = data[1];
+-        data[size_ + 1] = 0.0f;
+-        data[1] = 0.0f;
+-      }
+-
+-      void transformRealInverse(float* data) {
+-        data[0] *= 0.5f;
+-        data[1] = data[size_];
+-        inverse_.transform((std::complex<float>*)data, buffer_.get());
+-        int num_floats = size_ * 2;
+-
+-        float multiplier = 2.0f / size_;
+-        for (int i = 0; i < size_; ++i)
+-          data[i] = buffer_[i].real() * multiplier;
+-
+-        memset(data + size_, 0, size_ * sizeof(float));
+-      }
+-
+-    private:
+-      size_t bits_;
+-      size_t size_;
+-      std::unique_ptr<std::complex<float>[]> buffer_;
+-      kissfft<float> forward_;
+-      kissfft<float> inverse_;
+-
+-      JUCE_LEAK_DETECTOR(FourierTransform)
+-  };
++  // SUBstation: KISS FFT, Vital's fallback, isn't vendored: SUBSTATION_KFR_FFT
++  // (engine/CMakeLists.txt) puts FourierTransform on KFR's FFT everywhere.
++  #error "Vital's FourierTransform needs SUBSTATION_KFR_FFT"
+ 
+   #endif
+ 
