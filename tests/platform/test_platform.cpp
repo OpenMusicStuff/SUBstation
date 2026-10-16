@@ -1,7 +1,9 @@
 // The platform layer (platform/src/platform): what every layer needs from the
 // operating system, tested on whichever this is.
 
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
@@ -122,6 +124,31 @@ TEST_CASE("a file is written whole, its folder made, and read back") {
     REQUIRE(writeFileAtomically(file, "again"));
     CHECK_EQ(readFile(file).value_or(""), std::string("again"));
     CHECK(!readFile(file + ".tmp"));  // moved over the file, not left beside it
+}
+
+TEST_CASE("a file's or folder's last write in nanoseconds since 1970, the fraction of a second kept") {
+    std::string folder = fromPath(subtest::tempDir());
+    appendName(folder, std::string_view("m" + utf8(0xE9)));
+    std::string file = folder;
+    appendName(file, std::string_view("plugin.dll"));
+    CHECK(!modifiedTime(file));
+    REQUIRE(writeFileAtomically(file, "code"));
+    CHECK(modifiedTime(folder));  // a folder has one too (a plug-in bundle without its binary)
+    // 2026-10-16 12:34:56.7891234 UTC (a whole number of Windows' 100 ns).
+    const int64_t when = 1'792'154'096'789'123'400;
+    const std::chrono::sys_time<std::chrono::nanoseconds> at{std::chrono::nanoseconds(when)};
+#ifdef _MSC_VER
+    const auto written = std::chrono::clock_cast<std::chrono::file_clock>(at);
+#else
+    const auto written = std::chrono::file_clock::from_sys(at);
+#endif
+    std::filesystem::last_write_time(toPath(file), written);
+#ifdef __MINGW32__
+    // (MinGW's std::filesystem sets whole seconds, as it reads them: what modifiedTime() is for.)
+    CHECK_EQ(modifiedTime(file).value_or(0), when / 1'000'000'000 * 1'000'000'000);
+#else
+    CHECK_EQ(modifiedTime(file).value_or(0), when);
+#endif
 }
 
 TEST_CASE("real-time priority while the object lives, where the system allows, and as before after") {

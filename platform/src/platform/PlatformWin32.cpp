@@ -60,6 +60,16 @@ std::optional<FileStamp> stamp(const std::string& path) {
     return s;
 }
 
+std::optional<int64_t> modifiedTime(const std::string& path) {
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if (!GetFileAttributesExW(toWide(path).c_str(), GetFileExInfoStandard, &data)) return std::nullopt;
+    // 100 ns ticks since 1601.
+    const int64_t ticks = static_cast<int64_t>((static_cast<uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) |
+                                               data.ftLastWriteTime.dwLowDateTime);
+    constexpr int64_t kTicksTo1970 = 116'444'736'000'000'000;
+    return (ticks - kTicksTo1970) * 100;
+}
+
 bool replaceFile(const std::string& from, const std::string& to) {
     return MoveFileExW(toWide(from).c_str(), toWide(to).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
 }

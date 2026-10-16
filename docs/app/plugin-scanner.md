@@ -121,6 +121,10 @@ that is `Contents/x86_64-win/<name>.vst3` inside it on Windows, `Contents/x86_64
 `Vst3Format::binaryInBundle()`), else the path itself. A file whose signature can't be read gets none,
 which never matches.
 
+The time is the system's own (`platform::modifiedTime()`: on Windows to 100 ns), not `std::filesystem`'s, whose
+precision depends on the compiler (MinGW's drops the fraction of a second): so builds made with different compilers
+(a MinGW build and an MSVC one) share one cache, rather than each reading every plug-in again after the other.
+
 ### The child process
 
 `PluginScanner(program, cacheFile, timeout, folders, arguments)`: `program` defaults to `defaultProgram()`,
