@@ -9,6 +9,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
 | [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
+| [display_fft_bench.cpp](display_fft_bench.cpp) | What the device editors' spectra cost the GUI thread: the FFT (`app/src/analysis/Fft`, KFR's) against the radix-2 transform it replaced (kept in the program), and a display tick of the EQ's analyzer (`EqAnalyzer`: two 8192-point spectra) and the Delay's (`FallingSpectrum`: one of 4096). The application layer alone, no UI. |
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [project_bench.cpp](project_bench.cpp) | A real project (a `.gilproj` of your own, with its plug-ins) played live in each plug-in hosting mode, at the pace a device asks for buffers, through the fake ASIO driver: the callback's time (what the CPU meter shows) and the CPU the engine's process and the sandboxes use (from the threads' cycle counts), thread by thread. The application layer, no UI; Windows. Leave `QT_QPA_PLATFORM` unset: plug-ins with a Qt of their own (Kontakt) read it too. |
 | [sound_features_dump.cpp](sound_features_dump.cpp) | Essentia's descriptors of a list of files (or parts of files), optionally band-limited first: what the sound tagger is trained on ([tools/sound_tagger](../tools/sound_tagger/README.md)). Not a measure. |
@@ -40,6 +41,7 @@ ninja -C build parallel_render_bench browser_backend_bench builtin_devices_bench
 build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
+build/bin/display_fft_bench --rate 60
 build/bin/browser_backend_bench --size 200000 --json backend.json
 build/bin/sound_similarity_bench --folder ~/Samples --cache /tmp/fingerprints.bin --json similarity.json
 ```
@@ -595,3 +597,43 @@ double-precision DFT):
 
 (FFTW_PATIENT planned no faster than FFTW_MEASURE.) The built-in uses KFR: out of
 place for the inverse, in place for the forward.
+
+# Display FFT
+
+```
+display_fft_bench [--rounds 2000] [--rate 60]
+```
+
+What the device editors' live spectra cost the GUI thread, which works them out
+as it reads the displays: the EQ's (and Hue's, Erosion's and the Saturator's)
+`EqAnalyzer` takes two 8192-point spectra a display tick, the Delay's (the
+Reverb's, Vital's) `FallingSpectrum` one of 4096. Each transform alone (`rfft`,
+real input; `fft`, complex), then a whole tick of each analyzer: the samples
+that came since the last tick (`48000 / --rate`: a tone and some noise) in,
+the spectrum's levels out. Microseconds a call, the best of five batches of
+`--rounds`. The radix-2 transform the editors used before KFR's is kept in the
+program, so one run measures both.
+
+## Results
+
+Intel Xeon at 2.8 GHz (a cloud VM, AVX2, another build running beside it),
+Linux, GCC 13, Release, 60 ticks a second. *Before*: `analysis/Fft.cpp` as it
+was (radix-2 in `double`; `rfft` a complex transform of the real signal, the
+twiddles made on every call); *after*: KFR's (`kfr_fft`, in `double`, a plan per
+size kept).
+
+| | before (µs) | after (µs) | |
+|---|---|---|---|
+| `rfft` 1024 | 19.8 | **1.5** | 13× |
+| `rfft` 4096 | 90.1 | **8.8** | 10× |
+| `rfft` 8192 | 228.5 | **22.3** | 10× |
+| `rfft` 16384 | 418.7 | **45.8** | 9× |
+| `fft` 4096 (complex) | 90.1 | **11.4** | 8× |
+| `fft` 8192 (complex) | 196.6 | **30.9** | 6× |
+| an open EQ's tick (`EqAnalyzer`, input and output) | 551.6 | **227.6** | 2.4× |
+| the Delay's tick (`FallingSpectrum`) | 165.7 | **87.9** | 1.9× |
+
+The analyzers' ticks gain less than their FFTs: what is left is per bin (the
+window, a power's average, a level in dB: a `log10` per bin and channel), about
+180 µs of the EQ's 228. At 60 ticks a second an open EQ costs the GUI thread
+1.4 % of a core (3.3 % before).

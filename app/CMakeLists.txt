@@ -22,6 +22,8 @@ else()
     target_compile_options(puff PRIVATE -w)
 endif()
 target_link_libraries(sub_app PRIVATE puff)
+# KFR's DFT (the engine's kfr_fft): the editors' spectra (analysis/Fft.cpp).
+target_link_libraries(sub_app PRIVATE kfr_fft)
 # Qt's keywords (signals, slots, emit, foreach) are macros that break other
 # code's identifiers (the engine has `slots`): the app layer, and everything
 # built on it, writes Q_SIGNALS, Q_SLOTS and Q_EMIT.

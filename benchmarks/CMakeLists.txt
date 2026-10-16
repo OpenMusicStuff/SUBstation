@@ -15,6 +15,9 @@
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
 #                           library: speed, and how often a one-shot's nearest
 #                           sounds are of its kind (the intelligence module alone)
+#   display_fft_bench       the device editors' spectra: the FFT (KFR's) against
+#                           the radix-2 one it replaced, and an analyzer's display
+#                           tick (the application layer alone)
 #   sound_features_dump     Essentia's descriptors of a list of files, to train
 #                           the sound tagger on (tools/sound_tagger)
 
@@ -66,6 +69,9 @@ if (SUBSTATION_BUILD_APP)
                                ${PROJECT_SOURCE_DIR}/tests/app/support ${PROJECT_SOURCE_DIR}/tests/engine)
     target_link_libraries(browser_backend_bench PRIVATE sub_app)
     sub_project_warnings(browser_backend_bench)
+    add_executable(display_fft_bench display_fft_bench.cpp)
+    target_link_libraries(display_fft_bench PRIVATE sub_app)
+    sub_project_warnings(display_fft_bench)
     # A real project played live in each plug-in hosting mode (Windows: the fake ASIO driver).
     if (WIN32 AND TARGET sub_test_asio AND TARGET sub_app_test_support)
         add_executable(project_bench project_bench.cpp Json.h)

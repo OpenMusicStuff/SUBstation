@@ -435,6 +435,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 | [test_humanizer.cpp](../tests/app/test_humanizer.cpp) | Humanizing velocities (`Session.humanizer`): the model next to the application, each track judged with the notes it plays around the targets (where its clips play them; not deactivated notes or clips), each track keeping its level, the amount. See [intelligence.md](intelligence.md#humanizing-the-application-side). |
 | [test_plugin_index.cpp](../tests/app/test_plugin_index.cpp) | Scanning in child processes (a crashing or hanging plug-in costs only itself), the cache, finding plug-in files (Linux's `~/.vst3`, named like a plug-in, looked in), friendly messages (Windows' and Linux's), Linux's folders (a plug-in installed in `~/.vst3` found and read), the index scanning in the background over the standard and the user's folders. |
 | [test_sidechain_fit.cpp](../tests/app/test_sidechain_fit.cpp) | Fitting the Sidechain's curve to a kick: the clash, the envelope, the reduction, the points, capturing hits. |
+| [test_fft.cpp](../tests/app/test_fft.cpp) | The editors' FFT (KFR's): `fft`, its inverse and `rfft` against a direct DFT and the radix-2 transform it replaced, every power of two from 1 to 16384; padding and cutting; each thread's own plans; the Hann window. |
 
 ### The UI (`test_ui_*`, on a display)
 
@@ -546,7 +547,8 @@ and canary) without running the tests: [releasing.md](releasing.md).
 threads, offline and live through the fake ASIO driver, checked bit-identical; `--heavy N --compare-ordering` measures
 starting heavy tracks first), `browser_backend_bench` (the backend on a large synthetic library, every query checked
 against `BrowserReference`), `builtin_devices_bench` (each built-in audio effect alone, as the audio thread runs it:
-what it costs a core, at its defaults or at settings given), `warp_bench` (an audio clip's playback alone: Direct,
+what it costs a core, at its defaults or at settings given), `display_fft_bench` (the device editors' spectra: the FFT
+against the radix-2 one it replaced, and a display tick of the EQ's and the Delay's analyzers), `warp_bench` (an audio clip's playback alone: Direct,
 Re-Pitch, each stretch configuration; nanoseconds a frame) and `sound_similarity_bench` (sound similarity on a real
 sample library: speed, and how often a one-shot's nearest sounds are of its kind). They are built with
 `-DSUBSTATION_BUILD_BENCHMARKS=ON`, into `build/bin`, and run by hand; CTest doesn't run them. How to run them, what

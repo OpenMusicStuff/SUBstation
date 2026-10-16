@@ -1,8 +1,9 @@
 #pragma once
 // The Fourier transform the editors' signal maths needs (numpy.fft's, as the
-// Python had it): a radix-2 transform of a power-of-two size, in double, and
-// the Hann window. Not real-time: it runs on the UI thread as editors read
-// their displays.
+// Python had it): a transform of a power-of-two size, in double, and the Hann
+// window. KFR's (kfr_fft, as the engine's Hue has it), its plans made once per
+// size and thread. Not real-time: it runs on the UI thread as editors read
+// their displays (and on a pool's thread for the Sidechain's fit).
 
 #include <complex>
 #include <cstddef>

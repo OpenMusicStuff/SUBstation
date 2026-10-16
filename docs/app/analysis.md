@@ -28,13 +28,16 @@ thread, each time an editor reads its device's displays. The editors' scene-grap
 
 | File | What it holds |
 |---|---|
-| [Fft.h](../../app/src/analysis/Fft.h) | `sub::app::analysis`: `fft` (radix-2, in place, forward or inverse, in `double`), `rfft` (the first n / 2 + 1 bins of a real signal cut or zero-padded to n), `hann`, `isPowerOfTwo` |
+| [Fft.h](../../app/src/analysis/Fft.h) | `sub::app::analysis`: `fft` (in place, forward or inverse, in `double`, a power-of-two size), `rfft` (the first n / 2 + 1 bins of a real signal cut or zero-padded to n), `hann`, `isPowerOfTwo`. KFR's transforms (`kfr_fft`, the engine's vendored DFT): a plan per size, made once per thread and kept (`thread_local`: the Sidechain's fit runs on a pool's thread) |
 | [Spectrum.h](../../app/src/analysis/Spectrum.h) | `sub::app::analysis`: `FallingSpectrum` (the Delay's analyzer), `EqAnalyzer` (the EQ's) |
 | [Chroma.h](../../app/src/analysis/Chroma.h) | `sub::app::analysis::Chroma`: Hue's chromagram, the twelve pitch classes' levels in its input and output (a Hann-windowed FFT of the latest samples, bins of 6 Hz at most: 8192 points at 48 kHz; each bin's power shared between the two classes either side of its pitch, over the band Hue processes; a full-scale sine in one class reads 0 dB; rising at once, falling 30 dB/s) |
 | [SidechainFit.h](../../app/src/analysis/SidechainFit.h) | `sub::app::sidechainFit`: `Ring` and `Capture` (the displays and the hits), `spectra` → `Spectra`, `clashEnvelope`, `reduction`, `shape`, `curveAt`, `fitPoints` → `FitPoint`s, `analyze` → `Fit`; the constants (`kCharacters`, `kRangeDb`, `kClashDb`, ...). Its header comment is the design. |
 
 The transforms follow numpy's conventions (an unscaled forward transform, the inverse divided by n; a symmetric Hann
 window, zero at both ends), so values computed with numpy from the same signals serve as the tests' expected values.
+`rfft` is KFR's real transform (half the work of a complex one); on this machine's kind of CPU an 8192-point `rfft`
+takes about a tenth of the time of the radix-2 transform it replaced, and an open EQ's display tick less than half (`display_fft_bench`,
+[benchmarks/README.md](../../benchmarks/README.md#display-fft-benchmark)).
 
 ## Spectra
 
@@ -138,6 +141,8 @@ while nothing else is done. Nothing is written while the user drags the curve.
 
 ## Tests
 
+- [test_fft.cpp](../../tests/app/test_fft.cpp): `fft`, its inverse and `rfft` against a direct DFT and the radix-2
+  transform they replaced, for every power of two from 1 to 16384; `rfft`'s padding and cutting; plans per thread.
 - [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp): the FFT against its definition, the clash where
   both are loud, the kick alone without an input, the reduction holding to the peak and never rising again, `curveAt`
   bending as automation does, `fitPoints` finding a curve again, `analyze` per character, and `Capture` handing out
