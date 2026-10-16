@@ -9,6 +9,7 @@
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
 
+#include "AudioSource.h"
 #include "audio/AudioFiles.h"
 #include "editor/ProjectEditor.h"
 #include "io/Serialization.h"
@@ -272,7 +273,14 @@ private Q_SLOTS:
         const Freeze& first = *freezes->find(a);
         const Freeze& second = *freezes->find(b);
         QVERIFY(first.path != second.path);
-        QVERIFY(bridge.source(first.path) && bridge.source(second.path));  // decoded at once
+        QVERIFY(bridge.source(first.path) && bridge.source(second.path));  // at hand at once
+        for (const auto& [track, freeze] : *freezes) {  // (the render's samples: as decoding the file gives them)
+            const auto kept = bridge.source(freeze.path);
+            const auto decoded = sub::AudioSource::load(freeze.path.toStdString(), kept->sampleRate());
+            QCOMPARE(kept->frames(), decoded->frames());
+            QVERIFY(std::equal(kept->data(), kept->data() + kept->frames() * kept->channels(), decoded->data()));
+            QVERIFY(studio.engine.cachedSource(freeze.path.toStdString()) == kept);  // the engine plays the same
+        }
         for (const auto& [track, freeze] : *freezes) {
             const Freeze alone = bridge.renderFreeze(track);
             QCOMPARE(freeze.durationSec, alone.durationSec);

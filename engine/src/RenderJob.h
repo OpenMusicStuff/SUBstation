@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -20,6 +21,7 @@
 
 namespace sub {
 
+class AudioSource;
 class Engine;
 
 class RenderJob {
@@ -45,6 +47,10 @@ public:
     // Once finished: the frames written to each of its files, in order (none if
     // it was cancelled or failed).
     const std::vector<int64_t>& written() const noexcept { return written_; }
+    // Once finished, a render of tracks (Engine::startTracksRender): each file's
+    // samples as decoding it would give them (AudioSource::fromSamples(), made on
+    // the job's thread), so the caller needn't decode the file.
+    const std::vector<std::shared_ptr<AudioSource>>& sources() const noexcept { return sources_; }
 
 private:
     friend class Engine;
@@ -66,6 +72,7 @@ private:
     std::atomic<bool> rendered_{false};
     std::optional<int64_t> frames_;
     std::vector<int64_t> written_;
+    std::vector<std::shared_ptr<AudioSource>> sources_;
     std::exception_ptr error_;
     std::thread thread_;
 };

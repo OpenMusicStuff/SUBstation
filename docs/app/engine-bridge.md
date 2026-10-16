@@ -396,7 +396,10 @@ sandboxes (the preferences' status).
 
 `renderFreeze(track)` renders the track's signal before its fader from beat 0 to the arrangement's end (and on for up
 to `kFreezeTailSeconds`, while it sounds) into `freezeFolder()` (the project's *Freeze* folder, or one in the
-recordings folder), decodes it at once (so it plays without a gap) and returns the `Freeze`. It is
+recordings folder), has its samples at hand at once (so it plays without a gap) and returns the `Freeze`. They are the
+render's own (`FreezeRender::sources()`, `RenderJob::sources()`: made on the render's thread, as decoding the file
+gives them), handed to the engine's cache (`Engine::cacheSource`), so the window doesn't wait for a decode after the
+render; a file is decoded only if the render had none at the engine's rate. It is
 `startFreeze(track)` and `finishFreeze(render)`, waited for. `startFreeze(tracks)` renders several tracks at once: one
 render of the engine's (`startTracksRender()`: what they need, a file for each, each the file freezing its track alone
 makes), each file named by `takePath()` (numbered past the files of the same render: two tracks may share a name). It

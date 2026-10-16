@@ -362,6 +362,11 @@ silence; a track whose tail is done is taken out (`setCaptures()` again with tho
 pieces), so what only it needed renders no more. Each file is the one rendering its track alone
 writes, to the bit: what a track's render takes depends only on what feeds it.
 
+Each `TrackCapture` keeps what it writes, planar, and once the file is finished makes the
+`AudioSource` decoding the file would (`AudioSource::fromSamples()`: the same samples, the 32-bit
+float file holds them exactly, and the same peaks) on the job's thread: `RenderJob::sources()`. The
+application plays a frozen track from it at once, without reading the file back.
+
 **The tail** (`TrackCapture`, [EngineOffline.cpp](../../engine/src/EngineOffline.cpp)) is kept back
 as it renders and written up to its last frame above -100 dB. The render stops before the end of
 `tailSeconds` once the track has been silent (both channels under -100 dB) for long enough

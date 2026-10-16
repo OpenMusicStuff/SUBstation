@@ -72,6 +72,8 @@ QStringList FreezeRender::paths() const {
     return paths;
 }
 
+std::vector<std::shared_ptr<sub::AudioSource>> FreezeRender::sources() const { return job().sources(); }
+
 QList<qint64> FreezeRender::written() const {
     QList<qint64> frames;
     for (const int64_t written : job().written()) frames.append(static_cast<qint64>(written));

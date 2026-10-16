@@ -17,6 +17,8 @@
 //   return at once (what feeds them shared), and one by one;
 // - a short arrangement: one track of a 4-second song (chords end at 3 s), the
 //   tail being most of the render;
+// - decoding the --freeze tracks' files, which the window did after freezing
+//   them before their renders handed their samples over;
 // - the whole mix exported (16-bit WAV), for comparison: the code it shares.
 //
 // Qt-free: it links the engine alone.
@@ -34,6 +36,7 @@
 #include <string>
 #include <vector>
 
+#include "AudioSource.h"
 #include "Engine.h"
 #include "Json.h"
 
@@ -227,6 +230,16 @@ int run(const Options& options) {
         const std::vector<uint32_t> several(own.begin(), own.begin() + options.freeze);
         results.push_back(measure(format("%d tracks", options.freeze), options.seconds * options.freeze,
                                   [&] { return freeze(engine, several, beats, folder.path()); }));
+        // What the window waited for after such a freeze before the render handed its samples over
+        // (RenderJob::sources()): the files decoded.
+        results.push_back(measure(format("decoding the %d files", options.freeze), options.seconds * options.freeze, [&] {
+            int64_t frames = 0;
+            for (const uint32_t track : several) {
+                const auto path = (folder.path() / ("t" + std::to_string(track) + ".wav")).string();
+                frames += sub::AudioSource::load(path, kRate)->frames();
+            }
+            return frames;
+        }));
         results.push_back(measure(format("%d tracks, a render each", options.freeze), options.seconds * options.freeze,
                                   [&] { return freeze(engine, several, beats, folder.path(), true); }));
         std::vector<uint32_t> withGroup{project.group, project.ret};

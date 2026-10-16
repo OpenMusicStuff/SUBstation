@@ -20,8 +20,10 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace sub {
+class AudioSource;
 class RenderJob;
 }
 
@@ -111,6 +113,9 @@ public:
     QStringList paths() const;
     // Once finished: the frames written to each track's file (none if cancelled or failed).
     QList<qint64> written() const;
+    // Once finished: each file's samples as decoding it gives them (the render
+    // kept them: RenderJob::sources()), in the order of trackIds().
+    std::vector<std::shared_ptr<sub::AudioSource>> sources() const;
     double tempo() const { return tempo_; }  // the project's when it started
 
 private:

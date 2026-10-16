@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "Engine.h"
+#include "AudioSource.h"
 #include "RenderJob.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
@@ -105,6 +106,41 @@ TEST_CASE("several tracks rendered in the background: their files, progress, can
     CHECK_THROWS_AS(engine.startTracksRender({{a, longA.string()}, {12345, longB.string()}}, 0.0, 1.0, 0.0),
                     std::invalid_argument);
     CHECK(!fileExists(longA) && !fileExists(longB));
+}
+
+TEST_CASE("a track's render hands over its samples as decoding its file gives them") {
+    JobEngine e;
+    auto& engine = e.engine;
+    const uint32_t a = clipTrack(engine, rampWav());
+    const uint32_t b = engine.addTrack();
+    engine.addBuiltinProcessor(engine.trackChain(b), "synth", -1);
+    engine.setTrackNotes(b, {{1.5, 0.5, 60, 100}});  // (its release rings past the range: a tail)
+    const auto pathA = tempDir() / "kept-a.wav", pathB = tempDir() / "kept-b.wav";
+    const auto job = engine.startTracksRender({{a, pathA.string()}, {b, pathB.string()}}, 0.0, 2.0, 1.0);
+    job->finish();
+    REQUIRE(job->sources().size() == 2);
+    for (size_t i = 0; i < 2; ++i) {
+        const sub::AudioSource& kept = *job->sources()[i];
+        const auto decoded = sub::AudioSource::load(job->paths()[i], kSampleRate);
+        CHECK_EQ(kept.path(), job->paths()[i]);
+        CHECK_EQ(kept.frames(), job->written()[i]);
+        CHECK_EQ(kept.frames(), decoded->frames());
+        CHECK_EQ(kept.channels(), decoded->channels());
+        CHECK_EQ(kept.sampleRate(), decoded->sampleRate());
+        CHECK_EQ(kept.fileSampleRate(), decoded->fileSampleRate());
+        const auto samples = static_cast<size_t>(kept.frames()) * kept.channels();
+        CHECK(std::equal(kept.data(), kept.data() + samples, decoded->data()));
+        for (int level = 0; level < kept.numPeakLevels(); ++level) {
+            const auto peaks = static_cast<size_t>(kept.numPeaks(level)) * kept.channels() * 2;
+            CHECK_EQ(kept.numPeaks(level), decoded->numPeaks(level));
+            CHECK(std::equal(kept.peaks(level), kept.peaks(level) + peaks, decoded->peaks(level)));
+        }
+    }
+    CHECK(job->sources()[1]->frames() > 2 * kBeat);
+    // An export keeps none.
+    const auto exported = engine.startExport((tempDir() / "kept-mix.wav").string(), 0.0, 2.0, 24);
+    exported->finish();
+    CHECK(exported->sources().empty());
 }
 
 TEST_CASE("a cancelled render leaves no file") {

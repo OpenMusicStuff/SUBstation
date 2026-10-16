@@ -6,6 +6,8 @@
 #include "audio/AudioFiles.h"
 #include "audio/BridgePrivate.h"
 
+#include "AudioSource.h"
+
 #include "model/Devices.h"
 #include "model/Paths.h"
 #include "model/Project.h"
@@ -95,10 +97,21 @@ std::optional<OrderedMap<QString, Freeze>> EngineBridge::finishFreezes(FreezeRen
         freeze.tempo = render.tempo();
         freezes.insert(render.trackIds()[i], freeze);
     }
-    // Decoded now, so that each plays as soon as its track is frozen (no gap while it loads).
+    // Its samples at hand at once, so that each plays as soon as its track is frozen
+    // (no gap while it loads): those the render kept, as decoding the file gives
+    // them (the window doesn't wait for a decode), else decoded now.
+    const std::vector<std::shared_ptr<sub::AudioSource>> rendered = render.sources();
+    qsizetype i = 0;
     for (const auto& [trackId, freeze] : freezes) {
         try {
-            d_->sources.insert(pathIdentity(freeze.path), engine_.loadSource(freeze.path.toStdString()));
+            std::shared_ptr<sub::AudioSource> source = i < static_cast<qsizetype>(rendered.size()) ? rendered[i] : nullptr;
+            ++i;
+            if (source && source->sampleRate() == static_cast<uint32_t>(engine_.sampleRate())) {
+                engine_.cacheSource(source);
+            } else {
+                source = engine_.loadSource(freeze.path.toStdString());
+            }
+            d_->sources.insert(pathIdentity(freeze.path), std::move(source));
         } catch (const std::exception& error) {
             for (const auto& [id, made] : freezes) discardFreeze(made);
             throw EditError(QString::fromStdString(error.what()));

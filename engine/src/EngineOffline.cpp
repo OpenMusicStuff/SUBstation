@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "AudioFileWriter.h"
+#include "AudioSource.h"
 #include "MiniaudioFiles.h"
 #include "miniaudio.h"
 #include "plugins/sandbox/PluginSandboxes.h"
@@ -101,13 +102,14 @@ private:
 // its last frame above that. The render stops early once the track has been
 // silent long enough past the range (`quietEnough`, quietWindow()) and nothing
 // that feeds it starts again later (`settled`, frames from the range's start);
-// had it gone on, that tail would have been cut there just the same.
+// had it gone on, that tail would have been cut there just the same. What it
+// writes it keeps too, planar, for the source decoding the file would make.
 class TrackCapture {
 public:
-    TrackCapture(std::shared_ptr<AudioFileWriter> writer, int64_t lag, int64_t frames, int64_t tail,
+    TrackCapture(std::shared_ptr<AudioFileWriter> writer, std::string path, int64_t lag, int64_t frames, int64_t tail,
                  int64_t quietEnough, int64_t settled)
-        : writer_(std::move(writer)), lag_(lag), frames_(frames), tail_(tail), quietEnough_(quietEnough),
-          settled_(settled) {}
+        : writer_(std::move(writer)), path_(std::move(path)), lag_(lag), frames_(frames), tail_(tail),
+          quietEnough_(quietEnough), settled_(settled) {}
 
     // The render's next `n` frames (interleaved stereo).
     void take(const float* rendered, int64_t n) {
@@ -115,7 +117,7 @@ public:
         taken_ += n;
         int64_t at = taken_ - n + i - lag_;  // where frame i falls, from the range's start
         if (const int64_t inRange = std::clamp<int64_t>(frames_ - at, 0, n - i); inRange > 0) {
-            writer_->write(rendered + i * 2, inRange);
+            write(rendered + i * 2, inRange);
             for (const int64_t end = i + inRange; i < end; ++i) quiet_ = silent(rendered + i * 2) ? quiet_ + 1 : 0;
             at += inRange;
         }
@@ -135,18 +137,39 @@ public:
     bool done() const noexcept { return done_; }
     // The tail as far as it sounds, and the file kept: the frames written.
     int64_t finish() {
-        if (tailKept_ > 0) writer_->write(tailSamples_.data(), tailKept_);
+        if (tailKept_ > 0) write(tailSamples_.data(), tailKept_);
         writer_->keep();
         return frames_ + tailKept_;
     }
+    // Once finished: what the file holds, as decoding it would give it (made here,
+    // on the job's thread, instead of on the caller's: it needn't read the file).
+    std::shared_ptr<AudioSource> source(double sampleRate) {
+        left_.insert(left_.end(), right_.begin(), right_.end());
+        right_ = {};
+        return AudioSource::fromSamples(path_, static_cast<uint32_t>(sampleRate), 2, std::move(left_));
+    }
 
 private:
+    void write(const float* samples, int64_t n) {
+        writer_->write(samples, n);
+        if (left_.empty()) {
+            left_.reserve(static_cast<size_t>(frames_) * 2);  // (room for the right channel too, in the end)
+            right_.reserve(static_cast<size_t>(frames_));
+        }
+        for (int64_t f = 0; f < n; ++f) {
+            left_.push_back(samples[f * 2]);
+            right_.push_back(samples[f * 2 + 1]);
+        }
+    }
+
     static bool silent(const float* frame) noexcept {
         constexpr float kSilence = 1e-5f;  // -100 dB
         return std::abs(frame[0]) < kSilence && std::abs(frame[1]) < kSilence;
     }
 
     std::shared_ptr<AudioFileWriter> writer_;
+    std::string path_;
+    std::vector<float> left_, right_;  // what it wrote
     int64_t lag_, frames_, tail_;
     int64_t quietEnough_;  // -1: the whole tail is rendered
     int64_t settled_;
@@ -501,12 +524,12 @@ std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile
         const TrackRender& track = snap.tracks[static_cast<size_t>(tracks[i])];
         const int64_t lag = track.inputLatency + track.latency;
         const std::vector<char> upstream = Renderer::upstream(snap, {tracks[i]});
-        captures->emplace_back(writers[i], lag, frames, tail, quietWindow(snap, upstream),
+        captures->emplace_back(writers[i], files[i].path, lag, frames, tail, quietWindow(snap, upstream),
                                lastSounding(snap, upstream, start + frames + tail) - start);
         longest = std::max(longest, lag);
     }
-    return startJobLocked(std::move(paths), frames + tail, [render, captures, tracks, whole, longest, frames,
-                                                            tail](RenderJob& job) -> std::optional<int64_t> {
+    return startJobLocked(std::move(paths), frames + tail, [render, captures, tracks, whole, longest, frames, tail,
+                                                            rate = sampleRate_](RenderJob& job) -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
         const size_t count = tracks.size();
@@ -540,8 +563,11 @@ std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile
         }
         std::vector<int64_t> written;
         for (TrackCapture& capture : *captures) written.push_back(capture.finish());
+        std::vector<std::shared_ptr<AudioSource>> sources;
+        for (TrackCapture& capture : *captures) sources.push_back(capture.source(rate));
         report(total);  // (what is left is known to be silent)
         job.written_ = written;
+        job.sources_ = std::move(sources);
         return written.front();
     });
 }

@@ -28,6 +28,12 @@ public:
     // Decodes the whole file to float, resampled to `sampleRate`. Mono files stay
     // mono; anything with more than two channels is downmixed to stereo.
     static std::shared_ptr<AudioSource> load(const std::string& utf8Path, uint32_t sampleRate);
+    // Samples already in memory (planar: channel c at [c * frames, (c + 1) *
+    // frames), one or two channels), at `sampleRate`: what load() decodes from
+    // the 32-bit float file of them at that rate (a track's render, freezing it:
+    // RenderJob::sources()), without reading it. Throws if there are none.
+    static std::shared_ptr<AudioSource> fromSamples(const std::string& utf8Path, uint32_t sampleRate,
+                                                    uint32_t channels, std::vector<float> planar);
 
     const std::string& path() const { return path_; }
     uint32_t channels() const { return channels_; }
