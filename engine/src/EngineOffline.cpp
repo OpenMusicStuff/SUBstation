@@ -337,12 +337,12 @@ void Engine::suspendLiveLocked() {
 
 void Engine::resumeLiveLocked() { liveSuspended_.store(false, std::memory_order_seq_cst); }
 
-void Engine::resetProcessorsLocked() {
+void Engine::resetProcessorsLocked(bool rendering) {
     // Offline renders share the processors with live playback. Resetting them
     // before keeps live notes (and a plug-in's reverb tail) out of the render;
     // after, keeps the render's last notes from hanging in live playback.
     for (auto& [id, entry] : processors_) {
-        entry.processor->resetOffline();
+        entry.processor->resetOffline(rendering);
         entry.processor->requestReset();
     }
 }
@@ -382,7 +382,7 @@ void Engine::renderOfflineLocked(double startBeat, int64_t frames, float* out, b
     checkNotRenderingLocked();
     ScopedNoDenormals noDenormals;
     suspendLiveLocked();
-    resetProcessorsLocked();
+    resetProcessorsLocked(true);
     ScopeExit resume([this] { endOfflineLocked(); });
     Renderer offline;
     OfflineLines lines;
@@ -420,7 +420,7 @@ void Engine::renderTrackLocked(uint32_t trackId, double startBeat, int64_t frame
     arrangementTrackLocked(trackId);  // (throws for an unknown track)
     ScopedNoDenormals noDenormals;
     suspendLiveLocked();  // (before the snapshot is taken: it may make a new one)
-    resetProcessorsLocked();
+    resetProcessorsLocked(true);
     ScopeExit resume([this] { endOfflineLocked(); });
     const RenderSnapshot& snap = *snapshotHold_;
     const TrackRender* found = snap.findTrack(trackId);
@@ -473,7 +473,7 @@ std::vector<int64_t> Engine::renderTracksToWav(const std::vector<TrackFile>& tra
 std::shared_ptr<Engine::OfflineRender> Engine::beginOfflineLocked(double startBeat) {
     suspendLiveLocked();
     try {
-        resetProcessorsLocked();
+        resetProcessorsLocked(true);
         auto render = std::make_shared<OfflineRender>();
         render->snapshot = snapshotHold_;
         prepareOfflineLocked(*render->snapshot, render->renderer, render->lines, startBeat);
@@ -485,7 +485,7 @@ std::shared_ptr<Engine::OfflineRender> Engine::beginOfflineLocked(double startBe
 }
 
 void Engine::endOfflineLocked() {
-    resetProcessorsLocked();
+    resetProcessorsLocked(false);
     if (constrainHeld_) {
         constrainHeld_ = false;
         if (constrainLatency_) rebuildSnapshotLocked();

@@ -967,7 +967,7 @@ private:
     // piece at a time (interleaved stereo, and how many frames).
     void renderTrackLocked(uint32_t trackId, double startBeat, int64_t frames,
                            const std::function<void(const float*, int64_t)>& sink);
-    void resetProcessorsLocked();
+    void resetProcessorsLocked(bool rendering);  // Processor::resetOffline() for each
     void ensureWarpVoicesLocked(const std::array<size_t, kNumStretchConfigs>& needed);
     // What building a strip's part of the snapshot needs to know about it.
     struct StripBuild {

@@ -70,7 +70,7 @@ public:
 
     void prepare(double sampleRate, int maxBlockSize) override;
     void reset() override;
-    void resetOffline() override;
+    void resetOffline(bool rendering) override;
     void process(const ProcessContext& ctx, float* const* channels, int numChannels, int numFrames) override;
     int latencySamples() const override { return latency_.load(std::memory_order_relaxed); }
     int tailSamples() const override { return tail_.load(std::memory_order_relaxed); }

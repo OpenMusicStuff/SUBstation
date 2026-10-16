@@ -94,7 +94,7 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
 | `name()` | shown name |
 | `prepare(sampleRate, maxBlockSize)` | before the processor is first published to the audio thread, and again with audio stopped whenever the sample rate changes. `maxBlockSize` is `Renderer::kMaxBlock` (1024) |
 | `reset()` | real-time: silences the processor (notes, tails, filter state). Only the renderer calls it, before a block, when a reset was requested |
-| `resetOffline()` | clears what a real-time reset can't (a plug-in's reverb tail), not being processed; around offline renders |
+| `resetOffline(rendering)` | clears what a real-time reset can't (a plug-in's reverb tail), not being processed; around offline renders: `rendering` before one (plug-ins process in their offline mode until the next call), false after |
 | `process(ctx, channels, numChannels, numFrames)` | real-time: planar buffers in place (the renderer passes 2 channels) |
 | `latencySamples()` / `tailSamples()` | latency is compensated by delaying the other tracks (and sidechains) |
 | `params()`, `getParam()`, `setParam()` | plain (not normalized) values |

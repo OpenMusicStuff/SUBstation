@@ -58,7 +58,7 @@ public:
 
     void prepare(double sampleRate, int maxBlockSize) override;
     void reset() override;
-    void resetOffline() override;
+    void resetOffline(bool rendering) override;
     void process(const ProcessContext& ctx, float* const* channels, int numChannels, int numFrames) override;
     int latencySamples() const override { return latency_.load(std::memory_order_relaxed); }
     int tailSamples() const override { return tail_; }
@@ -137,6 +137,7 @@ private:
     bool acceptsMidi_ = false;
     bool replacing_ = true;  // it has process_float (else only the old accumulating process)
     bool active_ = false;
+    std::atomic<bool> offline_{false};  // an offline render processes it (resetOffline()): its process level says so
 
     std::atomic<double> sampleRate_{48000.0};
     std::atomic<int> maxBlock_{0};
