@@ -60,8 +60,9 @@ jobs:
             targets: engine_tests platform_tests
             tests: '^(engine|platform)$'
     env:
-      # Leaks: off for now (Qt, fontconfig and the GL drivers keep what they allocate for good).
-      ASAN_OPTIONS: detect_leaks=0:strict_string_checks=1:detect_stack_use_after_return=1
+      # Leaks: off for now (Qt, fontconfig and the GL drivers keep what they allocate for good). Not
+      # strict_string_checks: the system's libxkbcommon strndup()s unterminated buffers (legal) as Qt starts.
+      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1
       UBSAN_OPTIONS: print_stacktrace=1
       TSAN_OPTIONS: second_deadlock_stack=1
     steps:
