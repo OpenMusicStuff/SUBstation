@@ -31,6 +31,10 @@ SUBstation's (not Vital's):
     Upstream falls back on KISS FFT, which spent about 40 % of the
     instrument's time and dropped the Nyquist bin; here that fallback is an
     #error, and KISS FFT isn't vendored.
+  - src/synthesis/producers/synth_oscillator.cpp: a random phase (-1 to 1 times
+    INT_MAX) is converted to uint32_t through int32_t: a negative float straight to
+    an unsigned integer is undefined (UBSan, docs/testing.md#sanitizers). The
+    phases are the same.
 
 Not here: Vital's interface (its window, OpenGL), its plug-in and standalone
 wrappers, its presets and wavetables (under their own licence, not
