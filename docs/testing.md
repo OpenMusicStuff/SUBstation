@@ -512,7 +512,7 @@ skipped.
 
 [.github/workflows/sanitizers.yml](../.github/workflows/sanitizers.yml) builds with sanitizers and runs the tests once
 a night (06:30 UTC) on `master`, and by hand; a night with no new commits is skipped. Two jobs, both Clang with its
-sanitizer runtimes (`libclang-rt-18-dev`), `RelWithDebInfo`:
+sanitizer runtimes (`libclang-rt-18-dev`), `Release` with line tables (`-gline-tables-only`, enough for the reports' stacks):
 
 - **ASan + UBSan** (`-DSUBSTATION_SANITIZE=address,undefined`): everything, every test. Leak detection is off for now
   (`ASAN_OPTIONS=detect_leaks=0`: Qt, fontconfig and the GL drivers keep what they allocate for good).
@@ -528,7 +528,7 @@ C++ doesn't. Tests that time the CPU (a device's cost) skip in a sanitized build
 
 ```sh
 cmake -G Ninja -B build-asan -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-      -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSUBSTATION_SANITIZE=address,undefined
+      -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_SANITIZE=address,undefined
 ninja -C build-asan && ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-asan --output-on-failure
 ```
 

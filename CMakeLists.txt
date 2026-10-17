@@ -49,6 +49,13 @@ if (SUBSTATION_SANITIZE)
         message(FATAL_ERROR "SUBSTATION_SANITIZE is for Clang and GCC")
     endif()
     add_compile_options(-fsanitize=${SUBSTATION_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all)
+    # Line tables, enough for the reports' stacks: full debug information in every test program (each links
+    # the whole application) took over 20 GB.
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-gline-tables-only)
+    else()
+        add_compile_options(-g1)
+    endif()
     add_link_options(-fsanitize=${SUBSTATION_SANITIZE})
     add_compile_definitions(SUBSTATION_SANITIZED=1)  # (tests that time the CPU skip: SUBTEST_TIMED)
     message(STATUS "Sanitizers: ${SUBSTATION_SANITIZE}")
