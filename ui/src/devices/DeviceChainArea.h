@@ -8,7 +8,10 @@
 //   turns a knob or a value box here (it goes to nothing); Ctrl+Alt-drag
 //   anywhere on the chain scrolls it by hand, as in the arrangement. The press
 //   usually lands on a device or a knob, so the area watches its window's
-//   mouse events before they reach them (an event filter, as the panel's was).
+//   mouse events before they reach them (an event filter on the application:
+//   it sees them before the popups' overlay, which filters the window's while
+//   a popup or a tooltip is up). A Ctrl+Alt press on the chain reaches none of
+//   its items, a double-click's second one neither.
 // - Drops: devices and plug-ins from the browser, presets (into the device of
 //   their kind they are dropped onto, else as new devices), devices of the
 //   track dragged along its chain or into a rack's: they go to the chain

@@ -108,12 +108,17 @@ tooltip).
 
 ### Scrolling
 
-[DeviceChainArea](../../ui/src/devices/DeviceChainArea.h) scrolls the chain sideways without a scroll bar
-(`contentX`, `maxContentX`): Shift+wheel anywhere over the chain scrolls it (`kWheelScroll` 80 px a notch), and the
-wheel never turns a knob or a value box here; Ctrl+Alt-drag anywhere on the chain scrolls it by hand, as in the
-arrangement. The press usually lands on a device or a knob, so the area watches its window's mouse and wheel events
-before they reach them (an event filter on the window). A device added (not by a drop on the chain, where it is
-already in view) is scrolled to once laid out (`scrollTo()`, as `QScrollArea::ensureWidgetVisible`).
+[DeviceChainArea](../../ui/src/devices/DeviceChainArea.h) scrolls the chain sideways without a scroll bar (`contentX`,
+`maxContentX`): Shift+wheel anywhere over the chain scrolls it (`kWheelScroll` 80 px a notch), and the wheel never
+turns a knob or a value box here; Ctrl+Alt-drag anywhere on the chain scrolls it by hand, as in the arrangement. The
+press usually lands on a device or a knob, so the area watches its window's mouse and wheel events before they reach
+them (an event filter on the application, which sees them before the popups' overlay does: it filters the window's
+events while a popup is up, a tooltip included, and took the press first). A Ctrl+Alt press there never reaches the
+chain's items: a double-click's second press (a `MouseButtonDblClick`, which Qt Quick's items take as a press) pans as
+the press does, and the hit test that tells whether the press is on the chain sees through the popups' overlay (which
+covers the whole window while any popup is up, a tooltip included) and tooltips. A device added (not by a drop on the
+chain, where it is already in view) is scrolled to once laid out (`scrollTo()`, as
+`QScrollArea::ensureWidgetVisible`).
 
 QML tells the area what its items are with a `panelRole` property: "device" (a frame: `deviceId`, and `chainId` the
 chain it is in), "chain" (a `RackChainView`: `chainId`), "chainRow" (a chain list's row: `chainId`, `rackId`). The
@@ -1631,7 +1636,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_device_panel.cpp](../../tests/app/test_ui_device_panel.cpp) | Folding devices (saved, not undone; the fold button; double-clicks; several selected folding together; a folded rack hiding its chain), cut, copy, paste and duplicate with the focus, switching a device off without making the frames again; building the chain and its hint, the device's menu and the one beside the devices |
+| [test_ui_device_panel.cpp](../../tests/app/test_ui_device_panel.cpp) | Folding devices (saved, not undone; the fold button; double-clicks; several selected folding together; a folded rack hiding its chain), cut, copy, paste and duplicate with the focus, switching a device off without making the frames again; building the chain and its hint, the device's menu and the one beside the devices; Ctrl+Alt-drag scrolling, reaching no device (past a tooltip, a double-click too) |
 | [test_ui_device_panel_plugins.cpp](../../tests/app/test_ui_device_panel_plugins.cpp) | A plug-in's parameters in pages, edited undoably and following automation; devices fitting the view; the editor button, double-click and Show Editor; VST3 presets; plug-ins loading after a project opens, and missing ones; dropping plug-ins; selecting, deleting and reordering devices; dragging a device to another track |
 | [test_ui_device_panel_presets.cpp](../../tests/app/test_ui_device_panel_presets.cpp) | The save button on every kind of device (asking before replacing), a rack taking the preset's name, presets dropped between devices and onto a device of their kind (outlined; one undo step) or of another, default presets |
 | [test_ui_device_panel_racks.cpp](../../tests/app/test_ui_device_panel_racks.cpp) | Ctrl+G and Ctrl+Shift+G, macros and chains, the chain list and the chain's devices shown when asked for, the chain clicked shown beside the rack and dropped into, chain mixers, macros added and taken away, renamed in place, automated, mapping to a macro, its ranges and unmapping, Ctrl+R on a chain (its list hidden too), a chain's menu, the view's height staying put |
