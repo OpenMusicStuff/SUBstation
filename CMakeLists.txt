@@ -40,6 +40,19 @@ option(SUBSTATION_PIPEWIRE "Build PipeWire support on Linux (needs libpipewire-0
 option(SUBSTATION_ALSA "Build ALSA sequencer MIDI input on Linux (needs libasound2-dev: see docs/building.md)" ON)
 option(SUBSTATION_X11_EDITORS "Build plug-in editors on Linux, as X11 windows (needs libxcb1-dev: see docs/building.md)" ON)
 
+# Sanitizers, for the nightly runs (.github/workflows/sanitizers.yml) and by hand: "address,undefined"
+# (ASan and UBSan) or "thread" (TSan), with Clang or GCC. Every target is built with them, and a
+# report fails the test that made it. Slow: a build of its own (docs/testing.md#sanitizers).
+set(SUBSTATION_SANITIZE "" CACHE STRING "Build with sanitizers: address,undefined or thread (Clang, GCC); empty: none")
+if (SUBSTATION_SANITIZE)
+    if (MSVC)
+        message(FATAL_ERROR "SUBSTATION_SANITIZE is for Clang and GCC")
+    endif()
+    add_compile_options(-fsanitize=${SUBSTATION_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=${SUBSTATION_SANITIZE})
+    message(STATUS "Sanitizers: ${SUBSTATION_SANITIZE}")
+endif()
+
 # What this build is, for Help › About and the updater (docs/releasing.md). The project's
 # VERSION above is the next stable release's; the release workflow sets the rest. A build
 # by hand is "dev": it never checks for updates by itself.
