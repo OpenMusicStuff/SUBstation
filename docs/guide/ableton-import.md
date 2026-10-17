@@ -15,8 +15,9 @@ Then its plug-ins load, as they do for any project.
 ## What comes across
 
 **The song.** Its tempo, time signature, loop and key. A tempo or time signature that
-changes during the song changes as it does: tempo ramps and jumps, and each time signature
-change (a tempo past SUBstation's 20 to 999 BPM plays at that limit, and the message says so). The key is Live 12's scale if it is a major or minor one; Live's own C
+changes during the song changes as it does: tempo ramps and jumps come across, and so does
+each time signature change. A tempo past SUBstation's 20 to 999 BPM plays at that limit, and
+the message says so. The key is Live 12's scale if it is a major or minor one; Live's own C
 major (before a scale is chosen) leaves the key unset, so the piano roll finds the key
 the MIDI is in.
 

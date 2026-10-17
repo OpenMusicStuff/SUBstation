@@ -63,7 +63,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 25; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 26; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
