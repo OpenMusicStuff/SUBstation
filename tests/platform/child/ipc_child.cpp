@@ -10,6 +10,7 @@
 // Exits 0 when done, 2 on bad arguments.
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -61,7 +62,12 @@ int main(int argc, char** argv) {
         const char ready = 'r';
         channel->write(&ready, 1);
         for (uint32_t seen = 0; seen < count;) {
-            if (!request->wait(seen, 5000000)) return 3;  // (nothing for 5 s: the parent is gone)
+            // (A wait may end for nothing, a late wake-up: loop until it moved, or 5 s: the parent is gone.)
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (pings->request.load(std::memory_order_acquire) == seen) {
+                if (std::chrono::steady_clock::now() >= deadline) return 3;
+                request->wait(seen, 100000);
+            }
             seen = pings->request.load(std::memory_order_acquire);
             pings->payload *= 2;
             pings->answer.store(seen, std::memory_order_release);

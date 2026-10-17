@@ -102,8 +102,12 @@ TEST_CASE("shared memory and wake-ups between processes") {
         pings->payload = i;
         pings->request.store(i, std::memory_order_release);
         request->notify();
+        // (A wait may end for nothing: a wake-up for the last answer that came late. Loop, as the
+        // sandboxes do, until it moved or 5 s have gone.)
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         while (pings->answer.load(std::memory_order_acquire) != i) {
-            REQUIRE(answer->wait(i - 1, 5000000));
+            REQUIRE(std::chrono::steady_clock::now() < deadline);
+            answer->wait(i - 1, 100000);
         }
         REQUIRE(pings->payload == i * 2);
     }
