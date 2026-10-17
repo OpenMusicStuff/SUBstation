@@ -90,6 +90,11 @@ else()
     target_compile_options(kfr_fft PRIVATE -w -ffp-contract=fast)
     target_compile_options(kfr_fft PUBLIC -flax-vector-conversions)  # (KFR's headers need it)
 endif()
+# Not instrumented under SUBSTATION_SANITIZE: KFR's SIMD templates take gigabytes a file to compile with
+# ASan, and it is a library others test (our calls into it still are checked).
+if (SUBSTATION_SANITIZE)
+    target_compile_options(kfr_fft PRIVATE -fno-sanitize=all)
+endif()
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     if (MSVC)
         target_compile_options(kfr_fft PRIVATE /arch:AVX2)
