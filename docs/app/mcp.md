@@ -207,7 +207,8 @@ agent since deleted, edit a track that isn't there. So:
   everything. Regions overlap when one is the other or holds it (`overlaps()`).
 - **Time.** One clock counts the steps of both: a change's when it was made, rewound or restored last; a user
   command's when the user's stack did, undid or redid it last (followed on `QUndoStack::indexChanged`: up, those
-  done; down, those undone; the same, the top one merged; commands a push dropped are forgotten).
+  done; down, those undone; the same, the top one merged, or a push past `Session::kUndoLimit` dropping the
+  oldest; commands a push dropped are forgotten).
 - **The rule.** A step taking something back (Undo, Rewind) is refused while a step of the other history (or another
   change) on an overlapping region came after it and is in effect. A step putting something back (Redo, Restore) is
   refused while one came after it at all, taken back since or not: it was made over a state that is gone. Within the
