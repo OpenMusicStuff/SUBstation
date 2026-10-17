@@ -128,7 +128,12 @@ TEST_CASE("a tape step slows to a stop, its pitch falling") {
 }
 
 TEST_CASE("the chance glitches some steps; a variation others") {
-    const Samples dry = glitched({}, noiseInput(), false);
+    // Sixteen steps of the default grid: four seconds, of an input that lasts longer.
+    const Samples input = noise(5 * kSampleRate, 7, 0.5f);
+    const auto run = [&](const std::map<std::string, float>& values, bool withDevice = true) {
+        return glitched(values, input, withDevice, 0.0, 4.0);
+    };
+    const Samples dry = run({}, false);
     const auto changedSteps = [&](const Samples& out) {
         std::vector<int64_t> steps;
         for (int64_t step = 0; step < 16; ++step) {
@@ -140,15 +145,15 @@ TEST_CASE("the chance glitches some steps; a variation others") {
         }
         return steps;
     };
-    const Samples first = glitched({{"chance", 50.f}}, noiseInput());
-    const Samples again = glitched({{"chance", 50.f}}, noiseInput());
+    const Samples first = run({{"chance", 50.f}});
+    const Samples again = run({{"chance", 50.f}});
     CHECK(first == again);  // the same place, the same glitches
     const auto steps = changedSteps(first);
     CHECK(steps.size() >= 3);
     CHECK(steps.size() <= 13);
-    const Samples other = glitched({{"chance", 50.f}, {"variation", 1.f}}, noiseInput());
+    const Samples other = run({{"chance", 50.f}, {"variation", 1.f}});
     CHECK(other != first);
-    CHECK(changedSteps(glitched({{"chance", 100.f}}, noiseInput())).size() == 16);
+    CHECK(changedSteps(run({{"chance", 100.f}})).size() == 16);
 }
 
 TEST_CASE("a step entered partway plays as it is") {
