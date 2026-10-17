@@ -217,7 +217,9 @@ TEST_CASE("pipewire: a plug-in holding up the audio thread: what it uses is neit
     auto& engine = t.engine;
     // SUB Test Effect on the master: while `hold` exists its process() doesn't return.
     const std::filesystem::path hold = tempDir() / "hold-audio-thread";
+    const std::filesystem::path held = hold.string() + ".held";  // (made once process() holds)
     std::filesystem::remove(hold);
+    std::filesystem::remove(held);
     setenv("SUB_TEST_EFFECT_HOLD_FILE", hold.string().c_str(), 1);
     addTestPlugin(engine, engine.trackChain(sub::Engine::kMaster), "SUB Test Effect");
     unsetenv("SUB_TEST_EFFECT_HOLD_FILE");
@@ -233,8 +235,9 @@ TEST_CASE("pipewire: a plug-in holding up the audio thread: what it uses is neit
     CHECK(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(sub::kCallbackWaitMs));
 
     std::ofstream(hold).put('x');
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // a callback is in its process() now
-    const double held = engine.positionBeats();
+    // A callback is in its process() (not merely about to be: an offline render would then hold too).
+    REQUIRE(waitUntil([&] { return std::filesystem::exists(held); }));
+    const double heldAt = engine.positionBeats();
     // An offline render would share its processors, a new scheduler would be swapped under it: refused.
     started = std::chrono::steady_clock::now();
     CHECK_THROWS_MATCHING(engine.renderOffline(0.0, 64), std::runtime_error, "audio thread is busy");
@@ -243,13 +246,14 @@ TEST_CASE("pipewire: a plug-in holding up the audio thread: what it uses is neit
     // The recording stops all the same, with its take; its session is kept until that callback is done.
     CHECK_EQ(engine.stopRecording().size(), size_t{1});
     engine.idle();
-    CHECK_EQ(engine.positionBeats(), held);
+    CHECK_EQ(engine.positionBeats(), heldAt);
 
     std::filesystem::remove(hold);
-    CHECK(waitUntil([&] { return engine.positionBeats() > held + 0.1; }));
+    CHECK(waitUntil([&] { return engine.positionBeats() > heldAt + 0.1; }));
     engine.idle();  // (frees the session)
     CHECK_NOTHROW(engine.renderOffline(0.0, 64));
     CHECK_NOTHROW(engine.setAudioThreads(threads));
+    std::filesystem::remove(held);
 }
 
 #endif  // SUBSTATION_HAS_PIPEWIRE

@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -102,8 +103,9 @@ public:
     tresult PLUGIN_API setProcessing(TBool) override { return kResultOk; }
 
     tresult PLUGIN_API process(ProcessData& data) override {
-        while (!holdFile_.empty() && std::filesystem::exists(holdFile_)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (!holdFile_.empty() && std::filesystem::exists(holdFile_)) {
+            std::ofstream(holdFile_ + ".held").put('x');  // (it is held: the test can go on)
+            while (std::filesystem::exists(holdFile_)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         if (IParameterChanges* changes = data.inputParameterChanges) {
             for (int32 i = 0; i < changes->getParameterCount(); ++i) {
