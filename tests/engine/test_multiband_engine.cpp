@@ -1018,7 +1018,7 @@ TEST_CASE("multiband: its displays show each band's level in and out and its gai
 }
 
 TEST_CASE("multiband: what it costs") {
-#ifdef NDEBUG
+#if SUBTEST_TIMED
     // 10 s of stereo at 48 kHz, every band's sides working, in this thread's CPU time (what else the machine
     // runs doesn't count), the best of three. A bound for pathologies only: it takes about 0.07 s.
     double best = 1e9;

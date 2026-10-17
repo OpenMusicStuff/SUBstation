@@ -184,6 +184,7 @@ doesn't link Qt Quick.
 | `SUB_TEST_PLUGIN_CRASH`, `SUB_TEST_PLUGIN_HANG` | `1`: the test plug-ins' module kills the process, or hangs, as it loads | the scanner's tests |
 | `SUB_TEST_PLUGIN_SLOW_LOAD_MS` | SUB Test Crasher takes that long to initialize (a big plug-in loading) | the sandboxes' tests (a sandbox started meanwhile inherits it) |
 | `SUB_TEST_EFFECT_SLOW_LOAD_MS` | SUB Test Effect takes that long to initialize | the sandboxes' tests (a state set while it loads) |
+| `SUB_TEST_EFFECT_HOLD_FILE` | SUB Test Effect's `process()` doesn't return while that file exists (read as it loads) | `test_pipewire` (a plug-in holding up the audio thread) |
 | `SUBSTATION_PLUGIN_HOSTING` | the plug-in hosting mode without a saved one (`prepareApplication()` sets `within`) | the application's tests |
 | `SUBSTATION_PLUGIN_HOST` | the plug-in sandboxes' program (also a compile definition: its path in the build) | the sandboxes' tests |
 | `SUBSTATION_UPDATE_FEED` | the updates' list of releases (any URL, `file:` too) instead of GitHub's ([app/updates.md](app/updates.md)) | a file that isn't there (`prepareApplication`); `test_ui_dialogs` gives one of its own |
@@ -241,7 +242,7 @@ output the tests can predict exactly. They cover the host's code paths rather th
 | Plug-in | What it is |
 |---|---|
 | **SUB Test Synth** (instrument; [test_plugins.cpp](../tests/vst3_plugins/test_plugins.cpp)) | A processor with a separate edit controller. Each held note adds velocity/127 (*DC* mode) or a sine at the note's pitch, times *Gain*; a note expression "tuning" for a note (by its id) bends that note's sine, and, as a synth reusing a voice can, a new note keeps the tuning of the last note to end until a tuning of its own comes. It reports the transport it was given (tempo, playing, beat, loop) back as read-only parameters, and has ten *Macro* parameters that only its controller keeps (in its own state); last, *Offline* (read-only): 1 when it was set up and processed in VST3's offline mode, 0 in the real-time one (0.5: the two disagree). |
-| **SUB Test Effect** ([test_effect.cpp](../tests/vst3_plugins/test_effect.cpp)) | A single-component effect (processor and controller in one object, like most JUCE plug-ins): *Gain*, a *Latency* parameter that delays the audio and reports it (up to 4096 samples), a bypass parameter, state, and on Windows a Win32 editor that can resize itself and edit a parameter on request (elsewhere it has no editor); with `SUB_TEST_EFFECT_SLOW_LOAD_MS` it takes that long to initialize. |
+| **SUB Test Effect** ([test_effect.cpp](../tests/vst3_plugins/test_effect.cpp)) | A single-component effect (processor and controller in one object, like most JUCE plug-ins): *Gain*, a *Latency* parameter that delays the audio and reports it (up to 4096 samples), a bypass parameter, state, and on Windows a Win32 editor that can resize itself and edit a parameter on request (elsewhere it has no editor); with `SUB_TEST_EFFECT_SLOW_LOAD_MS` it takes that long to initialize, with `SUB_TEST_EFFECT_HOLD_FILE` its `process()` holds the audio thread up while that file exists. |
 | **SUB Test Mono** | Mono in, mono out, no edit controller. |
 | **SUB Test Note Effect** | An effect with an event input (as a vocoder or a pitch corrector has), no edit controller: its output is its input plus, for each held note, velocity/127. What takes another track's notes. |
 | **SUB Test Crasher** (by "SUB Crash Works", a maker of its own) | An effect with an event input that doubles its input, and misbehaves on demand, for the plug-in sandboxes' tests: a note-on of key 0 ends the process as it plays (a crash), key 1 makes `process()` hang for good, a state that says "crash" ends the process as it is restored; with `SUB_TEST_PLUGIN_SLOW_LOAD_MS` it takes that long to initialize. |
@@ -506,6 +507,30 @@ night (07:00 UTC) on `master`, with MinGW (the releases' Qt, toolchain and ASIO 
 compiler, keeping the code portable), Qt 6.8's own builds of each (`install-qt-action`), both with the ASIO SDK, UI
 tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last nightly is
 skipped.
+
+### Sanitizers
+
+[.github/workflows/sanitizers.yml](../.github/workflows/sanitizers.yml) builds with sanitizers and runs the tests once
+a night (06:30 UTC) on `master`, and by hand; a night with no new commits is skipped. Two jobs, both Clang with its
+sanitizer runtimes (`libclang-rt-18-dev`), `Release` with line tables (`-gline-tables-only`, enough for the reports' stacks):
+
+- **ASan + UBSan** (`-DSUBSTATION_SANITIZE=address,undefined`): everything, every test. Leak detection is off for now
+  (`ASAN_OPTIONS=detect_leaks=0`: Qt, fontconfig and the GL drivers keep what they allocate for good).
+- **TSan** (`-DSUBSTATION_SANITIZE=thread`): `engine_tests` and `platform_tests` only. The lock-free engine (epochs,
+  SPSC rings, shared memory with the plug-in sandboxes) is where data races hide; Qt isn't built for TSan, so the
+  application's tests would only report Qt's own.
+
+`SUBSTATION_SANITIZE` (the top `CMakeLists.txt`) adds `-fsanitize=<value> -fno-omit-frame-pointer
+-fno-sanitize-recover=all` to every target, so a report fails the test that made it. KFR (`kfr_fft`) is left
+uninstrumented: its SIMD templates take gigabytes a file to compile with ASan. Vital, Essentia and LAME, vendored nearly
+as they are upstream, are checked by ASan but not by UBSan (Vital, Essentia) or its shift check (LAME): they do what compilers define and
+C++ doesn't. Tests that time the CPU (a device's cost) skip in a sanitized build (`SUBTEST_TIMED`, harness/Test.h). By hand, in a build folder of its own:
+
+```sh
+cmake -G Ninja -B build-asan -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_SANITIZE=address,undefined
+ninja -C build-asan && ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-asan --output-on-failure
+```
 
 [.github/workflows/release.yml](../.github/workflows/release.yml) builds and publishes the releases (stable, nightly
 and canary) without running the tests: [releasing.md](releasing.md).

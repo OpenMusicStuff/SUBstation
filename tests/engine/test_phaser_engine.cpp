@@ -1248,8 +1248,8 @@ TEST_CASE("phaser-flanger: its displays are what plays") {
 }
 
 TEST_CASE("phaser-flanger: it is cheap enough") {
-#ifndef NDEBUG
-    SKIP("timing needs an optimized build");
+#if !SUBTEST_TIMED
+    SKIP("timing needs an optimized build without sanitizers");
 #else
     // Timed in the thread's CPU time, not the wall clock's: a busy machine (a parallel build, the
     // other tests) takes the core away, not the device's cost.

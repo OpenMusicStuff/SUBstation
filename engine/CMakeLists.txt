@@ -68,6 +68,11 @@ else()
     target_compile_options(mp3lame PRIVATE -w)
     target_link_libraries(mp3lame PRIVATE m)
 endif()
+# (Its bit writing shifts negative values left: defined by every compiler we build with, but undefined in
+# C. Not checked by UBSan under SUBSTATION_SANITIZE; ASan still checks it.)
+if (SUBSTATION_SANITIZE MATCHES "undefined")
+    target_compile_options(mp3lame PRIVATE -fno-sanitize=shift)
+endif()
 
 # --- KFR (GPLv2+): the real FFT the built-in Vital's oscillators run -------------
 # Vendored in third_party/kfr (see its VERSION.txt): KFR's DFT alone, built as its
@@ -89,6 +94,11 @@ if (MSVC)
 else()
     target_compile_options(kfr_fft PRIVATE -w -ffp-contract=fast)
     target_compile_options(kfr_fft PUBLIC -flax-vector-conversions)  # (KFR's headers need it)
+endif()
+# Not instrumented under SUBSTATION_SANITIZE: KFR's SIMD templates take gigabytes a file to compile with
+# ASan, and it is a library others test (our calls into it still are checked).
+if (SUBSTATION_SANITIZE)
+    target_compile_options(kfr_fft PRIVATE -fno-sanitize=all)
 endif()
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     if (MSVC)
@@ -131,6 +141,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     else()
         target_compile_options(vital PRIVATE -mavx2 -mfma)
     endif()
+endif()
+# Under SUBSTATION_SANITIZE, ASan checks Vital but UBSan doesn't: it does what compilers define and C++
+# doesn't (offsets to a null buffer it doesn't read, float conversions it relies on wrapping), and it is
+# vendored nearly as it is upstream.
+if (SUBSTATION_SANITIZE MATCHES "undefined")
+    target_compile_options(vital PRIVATE -fno-sanitize=undefined)
 endif()
 
 # --- VST3 SDK (MIT; the parts we use are vendored in third_party/vst3sdk) --------

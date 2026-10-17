@@ -264,7 +264,8 @@ replacing what was under them, a take recorded round the loop a clip and a take 
   stereo frames).
 - One producer and one consumer per queue: the audio thread writes rings, gaps, peaks and MIDI events;
   the writer reads rings and gaps; the edit side (under the engine's lock) reads peaks and MIDI events.
-- The session is freed only after the audio thread can no longer see it (`waitForCallbackLocked`).
+- The session is freed only after the audio thread can no longer see it (`waitForCallbackLocked`); if a
+  plug-in holds a callback up past the wait, the session is finished anyway and retired to the release pool.
 - A take is always in time: overruns become silence of the same length, failed writes still count.
 - Monitoring is never delay-compensated; recorded takes are placed by their own latency instead.
 - The master's output is recorded after its fader and before the metronome, so clicks are never in a

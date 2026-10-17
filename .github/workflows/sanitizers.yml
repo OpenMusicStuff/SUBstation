@@ -1,0 +1,96 @@
+# Builds everything with sanitizers and runs the tests, once a night on master and by hand:
+# AddressSanitizer with UndefinedBehaviorSanitizer (every test), and ThreadSanitizer (the
+# engine's and the platform layer's tests: a lock-free engine with epochs, SPSC rings and
+# shared memory is where data races hide; Qt isn't built for TSan, so the application's
+# tests would only report Qt's own). Clang, with its sanitizer runtimes (libclang-rt-18-dev).
+# A report fails the test that made it (-fno-sanitize-recover). Not on pull requests: a
+# sanitized build and run take far longer than CI's. A night with no new commits on master is
+# skipped (by hand, it always runs). See docs/testing.md#sanitizers.
+name: Sanitizers
+
+on:
+  schedule:
+    - cron: '30 6 * * *'  # 06:30 UTC
+  workflow_dispatch:
+
+# Checkout, and reading this workflow's past runs (whether master moved since the last).
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  # Whether master has moved since the last nightly that ran.
+  changed:
+    name: New commits?
+    runs-on: ubuntu-24.04
+    outputs:
+      any: ${{ steps.check.outputs.any }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != schedule ]; then echo any=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          last=$(gh api "repos/${{ github.repository }}/actions/workflows/sanitizers.yml/runs?event=schedule&status=completed&per_page=20" --jq '[.workflow_runs[] | select(.conclusion != "skipped" and .conclusion != "cancelled")][0].head_sha // ""')
+          if [ "$last" = "${{ github.sha }}" ]; then echo "master is still at $last: nothing new"; echo any=false >> "$GITHUB_OUTPUT"
+          else echo any=true >> "$GITHUB_OUTPUT"; fi
+
+  sanitizers:
+    name: ${{ matrix.name }}
+    needs: changed
+    if: needs.changed.outputs.any == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ASan + UBSan (Clang)
+            sanitize: address,undefined
+            key: sanitize-asan
+            targets: ''  # everything
+            tests: ''    # every test
+          - name: TSan (Clang)
+            sanitize: thread
+            key: sanitize-tsan
+            targets: engine_tests platform_tests
+            tests: '^(engine|platform)$'
+    env:
+      # Leaks: off for now (Qt, fontconfig and the GL drivers keep what they allocate for good). Not
+      # strict_string_checks: the system's libxkbcommon strndup()s unterminated buffers (legal) as Qt starts.
+      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1
+      UBSAN_OPTIONS: print_stacktrace=1
+      TSAN_OPTIONS: second_deadlock_stack=1
+    steps:
+      - uses: useblacksmith/checkout@v1
+        with:
+          persist-credentials: false
+      - name: Install Qt, PipeWire, ALSA, xcb, Clang and its sanitizers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev qt6-declarative-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtquick-dialogs \
+            qml6-module-qtqml-workerscript qml6-module-qtquick-shapes qml6-module-qt-labs-settings \
+            qml6-module-qt-labs-folderlistmodel qml6-module-qtqml-models qml6-module-qt-labs-platform \
+            libgl-dev libxkbcommon-dev libgl1-mesa-dri xvfb xauth \
+            pkg-config libpipewire-0.3-dev pipewire pipewire-bin libasound2-dev libxcb1-dev libxcb-xtest0-dev \
+            clang libclang-rt-18-dev
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2
+        with:
+          key: ${{ matrix.key }}
+          restore-keys: ${{ matrix.key }}
+          max-size: 2G
+      - name: Configure
+        run: >
+          cmake -G Ninja -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=Release -DSUBSTATION_SANITIZE=${{ matrix.sanitize }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: ninja -C build -k 0 ${{ matrix.targets }}
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j2 --timeout 1800 ${{ matrix.tests && format('-R "{0}"', matrix.tests) || '' }}

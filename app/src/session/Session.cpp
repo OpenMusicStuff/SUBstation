@@ -52,6 +52,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     : QObject(parent), engine_(engine), options_(std::move(options)) {
     project_ = new Project(this);
     undoStack_ = new QUndoStack(this);
+    undoStack_->setUndoLimit(kUndoLimit);  // (only while it is empty)
     editor_ = new ProjectEditor(project_, undoStack_, this);
     agents_ = new AgentHistory(project_, undoStack_, this);
     selection_ = new Selection(this);

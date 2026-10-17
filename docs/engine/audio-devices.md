@@ -173,7 +173,8 @@ On the real-time thread, with denormals off:
    smoothed into `shared_.cpuLoad`.
 4. Counts dropouts ([below](#dropouts)).
 5. Advances `audioEpoch_`, which the edit side uses to know a callback has passed
-   (`waitForCallbackLocked`, retired snapshots).
+   (`waitForCallbackLocked`, retired snapshots). It counted itself begun (`callbacksBegun_`) before
+   step 1, so the edit side also knows when none is under way.
 
 `processLive()` renders in chunks of at most `Renderer::kMaxBlock` (1024) frames. **Output channel
 selection**: the master goes to the first two open outputs; any others are silent; with only one output
@@ -456,7 +457,9 @@ silence.
   its outputs back to its inputs, and a four-channel sink): the driver types, devices and the default, status
   and capabilities, the buffer size and rate asked for, playing and the inputs coming back, output channels and
   the errors of channels a device hasn't, the default output followed, dropouts (the daemon frozen for a
-  while), the device and the daemon going away (and the daemon back). Skipped without PipeWire or without the
+  while), the device and the daemon going away (and the daemon back), a plug-in holding up the audio thread
+  (SUB Test Effect held in its `process()`: an offline render and a new scheduler refused, a recording still
+  stopped, all going on once it returns). Skipped without PipeWire or without the
   `pipewire` program. [tests/app/test_bridge_pipewire.cpp](../../tests/app/test_bridge_pipewire.cpp): a device
   that went away opening again when it is back, a track's input opening the device again with it.
 - [tests/engine/test_recording.cpp](../../tests/engine/test_recording.cpp) checks that a device change

@@ -103,7 +103,7 @@ double aliasDb(const Samples& x, double freq, double rate = kSampleRate) {
 
 int64_t frameAt(double seconds, double rate = kSampleRate) { return static_cast<int64_t>(std::lround(seconds * rate)); }
 
-#ifdef NDEBUG  // (the timed tests are Release only)
+#if SUBTEST_TIMED  // (the timed tests: optimized, unsanitized builds only)
 // What an amp with `values` costs over `left` and `right` (after playing `before`, untimed): the
 // best of three runs, in CPU seconds, and in the thread clock's ticks to compare two costs by. (On
 // Windows the seconds count at the scheduler's tick, about 16 ms: a run shorter than one can read
@@ -1192,7 +1192,7 @@ TEST_CASE("the amp's displays show its input, each stage's drive, the sag and it
     CHECK(allEqual(a.display(Sag), 0.0));
 }
 
-#ifdef NDEBUG
+#if SUBTEST_TIMED
 TEST_CASE("the amp's cost stays bounded") {
     const Samples n = noise(static_cast<size_t>(10 * kSampleRate), 28, 0.25f);
     const Cost dual = bestOfThree(model(amp::Lead, {{"gain", 10.f}, {"dual", 1.f}}), n, n, {});
@@ -1288,7 +1288,7 @@ TEST_CASE("the amp plays the same in any block size") {
 }
 
 TEST_CASE("an amp at rest sleeps through silence and wakes as a fresh one") {
-#ifdef NDEBUG
+#if SUBTEST_TIMED
     // It sleeps: silence after noise costs a fraction of what the noise did. (Asleep or
     // awake, it puts out the same exact zeros: only the time tells; asleep measured 0.04
     // to 0.06.)

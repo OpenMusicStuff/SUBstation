@@ -34,7 +34,8 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 
 ## What it owns
 
-`Session(engine, options)` makes, in order: the `Project`, the `QUndoStack`, the `ProjectEditor`, the `Selection`, the
+`Session(engine, options)` makes, in order: the `Project`, the `QUndoStack` (its history the latest `kUndoLimit`,
+500, steps: older ones go as new ones come; set while it is empty, as Qt requires), the `ProjectEditor`, the `Selection`, the
 `EngineBridge` (on the engine it is given, which outlives it), the `PluginHostingPreferences` and the
 `DisplayPreferences` (which the bridge follows from the start), the `PluginIndex`, the `SoundSimilarity` (which
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the

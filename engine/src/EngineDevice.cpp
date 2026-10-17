@@ -182,6 +182,8 @@ void Engine::deviceEvent(DeviceEvent event) noexcept {
 }
 
 void Engine::audioCallback(const AudioIO& io) noexcept {
+    // Counted begun before it reads anything (waitForCallbackLocked()), finished at its end.
+    callbacksBegun_.fetch_add(1, std::memory_order_seq_cst);
     ScopedNoDenormals noDenormals;
     const auto started = std::chrono::steady_clock::now();
     shared_.clock.update(io.hostTimeNs, io.sampleTime);
@@ -217,13 +219,19 @@ void Engine::audioCallback(const AudioIO& io) noexcept {
     audioEpoch_.fetch_add(1, std::memory_order_seq_cst);
 }
 
-void Engine::waitForCallbackLocked() {
-    if (!deviceRunning_) return;
+bool Engine::waitForCallbackLocked() {
+    if (!deviceRunning_) return true;
     const uint64_t start = audioEpoch_.load(std::memory_order_seq_cst);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-    while (audioEpoch_.load(std::memory_order_seq_cst) <= start && std::chrono::steady_clock::now() < deadline) {
+    // None running: one that begins later counted itself begun after this load, so it reads
+    // what the caller published before calling (seq_cst throughout).
+    if (callbacksBegun_.load(std::memory_order_seq_cst) == start) return true;
+    // One is: once it has finished, any that read the state from before is done.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kCallbackWaitMs);
+    while (audioEpoch_.load(std::memory_order_seq_cst) <= start) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    return true;
 }
 
 }  // namespace sub

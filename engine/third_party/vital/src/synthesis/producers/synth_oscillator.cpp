@@ -580,8 +580,12 @@ namespace vital {
     for (int v = 0; v < kNumVoicesPerProcess; ++v) {
       if (reset_mask[v * 2]) {
         for (int i = 0; i < kNumPolyPhase; ++i) {
-          uint32_t random_phase_left = random_generator_.next() * random_amount[2 * v] * INT_MAX;
-          uint32_t random_phase_right = random_generator_.next() * random_amount[2 * v + 1] * INT_MAX;
+          // SUBstation: through int32_t, as the random value is -1 to 1 (a negative float to an
+          // unsigned integer is undefined; this wraps it, as the compilers' code did).
+          uint32_t random_phase_left = static_cast<uint32_t>(
+              static_cast<int32_t>(random_generator_.next() * random_amount[2 * v] * INT_MAX));
+          uint32_t random_phase_right = static_cast<uint32_t>(
+              static_cast<int32_t>(random_generator_.next() * random_amount[2 * v + 1] * INT_MAX));
           phases_[i].set(2 * v, random_phase_left);
           phases_[i].set(2 * v + 1, random_phase_right);
 

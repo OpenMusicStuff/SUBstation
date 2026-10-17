@@ -173,9 +173,15 @@ void Engine::startRecording(const std::vector<RecordTarget>& targets, double cou
 void Engine::finishRecordingLocked() {
     if (!recording_) return;
     liveRecording_.store(nullptr, std::memory_order_seq_cst);
-    waitForCallbackLocked();  // the audio thread no longer sees it
+    const bool unseen = waitForCallbackLocked();  // the audio thread no longer sees it
+    // Finished either way: what the audio thread writes to (rings, queues, counters) is lock-free.
     auto takes = recording_->finish();
-    recording_.reset();
+    if (unseen) {
+        recording_.reset();
+    } else {  // a callback held up by a plug-in may still write to it: freed once that one is done
+        releasePool_.retire(std::shared_ptr<const void>(std::move(recording_)),
+                            audioEpoch_.load(std::memory_order_seq_cst));
+    }
     for (auto& take : takes) finishedTakes_.push_back(std::move(take));
 }
 

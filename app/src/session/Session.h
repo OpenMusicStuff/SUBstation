@@ -211,6 +211,9 @@ public:
     };
 
     static constexpr int kMaxRecent = 10;
+    // The undo history's length: older steps go as new ones come (each holds what it changed,
+    // whole clip lists or device states, so an unbounded history grows without end).
+    static constexpr int kUndoLimit = 500;
     static constexpr int kStatusTimeoutMs = 8000;
     inline static const QString kRecentKey = QStringLiteral("files/recent");
     inline static const QString kLastFolderKey = QStringLiteral("files/last_dir");

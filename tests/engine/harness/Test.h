@@ -169,3 +169,11 @@ public:
     } while (0)
 
 #define SKIP(reason) throw ::subtest::Skipped{reason}
+
+// Whether tests that time the CPU mean anything: an optimized build, without sanitizers (which make
+// it several times slower). Timed tests are inside #if SUBTEST_TIMED.
+#if defined(NDEBUG) && !defined(SUBSTATION_SANITIZED)
+#define SUBTEST_TIMED 1
+#else
+#define SUBTEST_TIMED 0
+#endif

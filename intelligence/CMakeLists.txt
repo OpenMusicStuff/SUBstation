@@ -91,6 +91,11 @@ if (MSVC)
 else()
     target_compile_options(essentia PRIVATE -w)
 endif()
+# Under SUBSTATION_SANITIZE, ASan checks Essentia but UBSan doesn't: vendored as it is upstream, it copies
+# every member of a Parameter, the bool of one that isn't a bool left unset (harmless, undefined).
+if (SUBSTATION_SANITIZE MATCHES "undefined")
+    target_compile_options(essentia PRIVATE -fno-sanitize=undefined)
+endif()
 target_link_libraries(essentia PUBLIC Threads::Threads)
 # KISS FFT's real transforms, for the audio analysis (audio/AudioAnalysis.cpp):
 # compiled into Essentia's library above, its headers the module's own to use.

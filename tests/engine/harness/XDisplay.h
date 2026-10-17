@@ -143,8 +143,9 @@ public:
                                    nullptr);
         std::string value;
         if (reply) {
+            // (The length is in bytes already: value_len items of format / 8 bytes.)
             value.assign(static_cast<const char*>(xcb_get_property_value(reply)),
-                         size_t(xcb_get_property_value_length(reply)) * (reply->format / 8));
+                         size_t(xcb_get_property_value_length(reply)));
             std::free(reply);
         }
         return value;

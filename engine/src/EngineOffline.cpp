@@ -345,9 +345,13 @@ void Engine::suspendLiveLocked() {
     finishRecordingLocked();  // its input would have a hole
     if (deviceRunning_) {
         liveSuspended_.store(true, std::memory_order_seq_cst);
-        // Once the epoch advances, any callback that started before the flag was
-        // visible has finished; later callbacks output silence.
-        waitForCallbackLocked();
+        // Once any callback that started before the flag was visible has finished,
+        // later ones output silence. One held up by a plug-in would be rendering with
+        // the processors an offline render is about to use: refuse rather than share them.
+        if (!waitForCallbackLocked()) {
+            liveSuspended_.store(false, std::memory_order_seq_cst);
+            throw std::runtime_error(kAudioThreadBusy);
+        }
     }
     // Offline renders hear every device, bypassed live or not (setConstrainLatency()).
     if (!constrainHeld_) {

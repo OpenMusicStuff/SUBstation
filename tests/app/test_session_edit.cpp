@@ -143,6 +143,18 @@ private Q_SLOTS:
         QVERIFY(maxAbs(quiet, 2 * kRate + 1000, 3 * kRate) > 0.1);
     }
 
+    // The undo history keeps the latest kUndoLimit steps; the agents' history follows it as steps go.
+    void theUndoHistoryIsBounded() {
+        SessionFixture f(true);
+        Session& s = f.s();
+        for (int i = 1; i <= Session::kUndoLimit + 10; ++i) f.editor().setTempo(60.0 + i);
+        QCOMPARE(s.undoStack()->count(), Session::kUndoLimit);
+        while (s.undoStack()->canUndo()) s.undoStack()->undo();
+        QCOMPARE(f.project().tempo(), 70.0);  // the first ten steps went
+        s.undoStack()->redo();
+        QCOMPARE(f.project().tempo(), 71.0);
+    }
+
     void editCommands() {
         SessionFixture f(true);
         TempDir dir;

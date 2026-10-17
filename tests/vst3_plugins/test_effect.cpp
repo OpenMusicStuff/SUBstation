@@ -20,6 +20,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -60,6 +62,8 @@ public:
         if (const char* slow = std::getenv("SUB_TEST_EFFECT_SLOW_LOAD_MS")) {
             std::this_thread::sleep_for(std::chrono::milliseconds(std::atoi(slow)));
         }
+        // While this file exists, process() doesn't return: a plug-in holding up the audio thread.
+        if (const char* hold = std::getenv("SUB_TEST_EFFECT_HOLD_FILE")) holdFile_ = hold;
         addAudioInput(STR16("Input"), SpeakerArr::kStereo);
         addAudioOutput(STR16("Output"), SpeakerArr::kStereo);
         parameters.addParameter(new RangeParameter(STR16("Gain"), kFxGain, STR16("x"), 0.0, 2.0, 1.0));
@@ -99,6 +103,10 @@ public:
     tresult PLUGIN_API setProcessing(TBool) override { return kResultOk; }
 
     tresult PLUGIN_API process(ProcessData& data) override {
+        if (!holdFile_.empty() && std::filesystem::exists(holdFile_)) {
+            std::ofstream(holdFile_ + ".held").put('x');  // (it is held: the test can go on)
+            while (std::filesystem::exists(holdFile_)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         if (IParameterChanges* changes = data.inputParameterChanges) {
             for (int32 i = 0; i < changes->getParameterCount(); ++i) {
                 IParamValueQueue* queue = changes->getParameterData(i);
@@ -188,6 +196,7 @@ public:
 private:
     std::atomic<int32> latency_{0};
     std::string presetName_;
+    std::string holdFile_;  // SUB_TEST_EFFECT_HOLD_FILE
     double gain_ = 1.0;
     bool bypass_ = false;
     std::vector<float> delay_[2];

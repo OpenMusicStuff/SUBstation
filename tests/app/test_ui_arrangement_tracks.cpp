@@ -1271,7 +1271,8 @@ private Q_SLOTS:
         // A return the track sends to can't be its source.
         editor().setSend(b, ret, 0.0);
         h_->settle();
-        const arr::MenuEntry* sent = header(b)->inputMenu().find(retName + QStringLiteral(" (it takes this track's output)"));
+        const arr::MenuEntries inputs = header(b)->inputMenu();  // (kept while its entry is read)
+        const arr::MenuEntry* sent = inputs.find(retName + QStringLiteral(" (it takes this track's output)"));
         QVERIFY(sent && !sent->enabled);
     }
 
@@ -1368,7 +1369,8 @@ private Q_SLOTS:
         QVERIFY(innerMenu.find(groupName)->checked && !innerMenu.find(QStringLiteral("Main"))->checked);
         editor().setTrackOutput(bus, sub::app::Output::track(inGroup));
         h_->settle();
-        const arr::MenuEntry* cycle = header(inGroup)->outputMenu().find(QStringLiteral("Bus (it feeds this track)"));
+        const arr::MenuEntries outputs = header(inGroup)->outputMenu();  // (kept while its entry is read)
+        const arr::MenuEntry* cycle = outputs.find(QStringLiteral("Bus (it feeds this track)"));
         QVERIFY(cycle && !cycle->enabled);
         QVERIFY(header(inGroup)->outputMenu().triggerText(QStringLiteral("Main")));
         h_->settle();
@@ -1506,7 +1508,8 @@ private Q_SLOTS:
         // An input that isn't connected (now) can still be chosen, and shows as such.
         editor().setTrackMidiInput(track, sub::app::MidiInput{QStringLiteral("Old Keyboard"), 0});
         h_->settle();
-        const arr::MenuEntry* old = header(track)->inputMenu().find(QStringLiteral("Old Keyboard (not connected)"));
+        const arr::MenuEntries inputs = header(track)->inputMenu();  // (kept while its entry is read)
+        const arr::MenuEntry* old = inputs.find(QStringLiteral("Old Keyboard (not connected)"));
         QVERIFY(old && old->checked);
     }
 
