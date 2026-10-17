@@ -7,6 +7,9 @@
 #if SUBSTATION_HAS_PIPEWIRE
 
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <thread>
 
@@ -207,6 +210,46 @@ TEST_CASE("pipewire: the daemon going away, and back") {
     engine.openDevice(pipeWire());
     CHECK_EQ(engine.deviceStatus().name, std::string("Test Duplex"));
     engine.closeDevice();
+}
+
+TEST_CASE("pipewire: a plug-in holding up the audio thread: what it uses is neither freed nor shared") {
+    PipeWireTest t;
+    auto& engine = t.engine;
+    // SUB Test Effect on the master: while `hold` exists its process() doesn't return.
+    const std::filesystem::path hold = tempDir() / "hold-audio-thread";
+    std::filesystem::remove(hold);
+    setenv("SUB_TEST_EFFECT_HOLD_FILE", hold.string().c_str(), 1);
+    addTestPlugin(engine, engine.trackChain(sub::Engine::kMaster), "SUB Test Effect");
+    unsetenv("SUB_TEST_EFFECT_HOLD_FILE");
+    const uint32_t track = engine.addTrack();
+    engine.setTrackInput(track, {0});
+    engine.openDevice(pipeWire("Test Duplex", 48000, 256, {0, 1}));
+    engine.startRecording({{track, (tempDir() / "held.wav").string()}});
+    REQUIRE(waitUntil([&] { return engine.positionBeats() > 0.1; }));
+    // Nothing held up: a change that waits for the audio thread goes through at once.
+    const int threads = engine.audioThreads();
+    auto started = std::chrono::steady_clock::now();
+    engine.setAudioThreads(threads == 1 ? 2 : 1);
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(sub::kCallbackWaitMs));
+
+    std::ofstream(hold).put('x');
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // a callback is in its process() now
+    const double held = engine.positionBeats();
+    // An offline render would share its processors, a new scheduler would be swapped under it: refused.
+    started = std::chrono::steady_clock::now();
+    CHECK_THROWS_MATCHING(engine.renderOffline(0.0, 64), std::runtime_error, "audio thread is busy");
+    CHECK(std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(sub::kCallbackWaitMs));
+    CHECK_THROWS_MATCHING(engine.setAudioThreads(threads), std::runtime_error, "audio thread is busy");
+    // The recording stops all the same, with its take; its session is kept until that callback is done.
+    CHECK_EQ(engine.stopRecording().size(), size_t{1});
+    engine.idle();
+    CHECK_EQ(engine.positionBeats(), held);
+
+    std::filesystem::remove(hold);
+    CHECK(waitUntil([&] { return engine.positionBeats() > held + 0.1; }));
+    engine.idle();  // (frees the session)
+    CHECK_NOTHROW(engine.renderOffline(0.0, 64));
+    CHECK_NOTHROW(engine.setAudioThreads(threads));
 }
 
 #endif  // SUBSTATION_HAS_PIPEWIRE

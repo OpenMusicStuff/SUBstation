@@ -201,8 +201,18 @@ call (the main thread in practice, but `loadSource()` runs on the bridge's decod
 Freeing a snapshot never destroys a plug-in: removed processors wait in `graveyard_`.
 
 When a device runs and the engine must be sure the audio thread is out of something (switching
-the scheduler, rendering offline), `waitForCallbackLocked()` waits until the epoch moves (at
-most 500 ms), after setting `liveSuspended_` so later callbacks output silence.
+the scheduler, rendering offline, ending a recording), it publishes the change first (setting
+`liveSuspended_` so later callbacks output silence, or clearing the live recording), then calls
+`waitForCallbackLocked()`. Each callback also counts itself begun (`callbacksBegun_`) before it
+reads anything, so the wait knows whether one is under way: with none (begun equals finished)
+it returns at once, since any later one sees the change; with one, it waits for the epoch to
+move, at most `kCallbackWaitMs` (500 ms). It returns false when a callback is still running
+then (a plug-in not returning), and nothing it may use is freed or shared:
+
+- Switching the scheduler and starting an offline render throw `kAudioThreadBusy` ("try again
+  in a moment"), changing nothing (`liveSuspended_` restored).
+- A recording is finished all the same (what the audio thread writes to is lock-free), and its
+  session is retired to the release pool instead of freed, so it goes once that callback is done.
 
 ## idle()
 

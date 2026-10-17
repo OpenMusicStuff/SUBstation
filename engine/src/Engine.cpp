@@ -287,7 +287,10 @@ void Engine::setAudioThreads(int threads) {
     // scratch) while they change: it outputs silence meanwhile. A recording goes
     // on (the playhead waits as well).
     const bool suspended = liveSuspended_.exchange(true, std::memory_order_seq_cst);
-    waitForCallbackLocked();
+    if (!waitForCallbackLocked()) {  // (it may be in the scheduler: leave it be)
+        if (!suspended) resumeLiveLocked();
+        throw std::runtime_error(kAudioThreadBusy);
+    }
     auto old = std::exchange(scheduler_, std::make_unique<Scheduler>(threads));
     scheduler_->setWorkgroup(device_.workgroup());
     renderer_.setScheduler(scheduler_.get());

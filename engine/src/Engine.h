@@ -295,6 +295,12 @@ struct DeviceStatus {
     uint64_t dropouts = 0;
 };
 
+// How long an edit waits for an audio callback under way to finish, and what it throws when one
+// is held up (a plug-in not returning) longer: nothing changed; it may be tried again.
+inline constexpr int kCallbackWaitMs = 500;
+inline constexpr const char* kAudioThreadBusy =
+    "The audio thread is busy (a plug-in isn't returning): try again in a moment";
+
 class Engine final : private AudioCallback {
 public:
     Engine();
@@ -987,7 +993,10 @@ private:
     void closeDeviceLocked();
     void reloadSourcesLocked();
     std::shared_ptr<AudioSource> loadSourceImpl(const std::string& path, bool publish);
-    void waitForCallbackLocked();
+    // Waits until no audio callback that may have seen the state from before the call is still
+    // running (none is: at once). False if one still is after kCallbackWaitMs (a plug-in is
+    // holding it up): what it may be using must then be neither freed nor shared.
+    bool waitForCallbackLocked();
     InputEdge inputEdgeLocked(const TrackModel& track) const;
     void finishRecordingLocked();
     void suspendLiveLocked();
@@ -1115,7 +1124,8 @@ private:
     std::vector<int> openInputChannels_;             // which they are (device channels, callback order)
     std::atomic<uint32_t> pendingDeviceEvents_{0};  // DeviceEvent flags
     std::atomic<bool> liveSuspended_{false};
-    std::atomic<uint64_t> audioEpoch_{0};
+    std::atomic<uint64_t> audioEpoch_{0};        // audio callbacks finished
+    std::atomic<uint64_t> callbacksBegun_{0};    // and begun (one more than finished: one is running)
     // Dropouts (DeviceStatus::dropouts); the sample time the next callback
     // should start at (-1: none yet) and whether the last one ran late: the audio thread's.
     std::atomic<uint64_t> dropouts_{0};
