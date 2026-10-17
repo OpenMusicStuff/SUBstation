@@ -234,6 +234,7 @@ BlockContext BlockContext::from(const ProcessContext& ctx) noexcept {
     out.tempo = ctx.tempo;
     out.loopStartBeat = ctx.loopStartBeat;
     out.loopEndBeat = ctx.loopEndBeat;
+    out.barStartBeat = ctx.barStartBeat;
     out.timeSigNum = ctx.timeSigNum;
     out.timeSigDen = ctx.timeSigDen;
     out.keyTonic = ctx.keyTonic;
@@ -252,6 +253,7 @@ ProcessContext BlockContext::context() const noexcept {
     ctx.tempo = tempo;
     ctx.loopStartBeat = loopStartBeat;
     ctx.loopEndBeat = loopEndBeat;
+    ctx.barStartBeat = barStartBeat;
     ctx.timeSigNum = timeSigNum;
     ctx.timeSigDen = timeSigDen;
     ctx.keyTonic = keyTonic;

@@ -154,18 +154,18 @@ SetTempoCommand::SetTempoCommand(Project* project, TempoState old, TempoState nw
     : MergeableCommand(project, QStringLiteral("Change Tempo"), 0, std::move(old), std::move(nw),
                        std::move(mergeKey)) {}
 
-void SetTempoCommand::apply(const TempoState& state) {
-    project_->updateSettings({{SettingsField::Tempo, state.tempo}});
+void SetTempoCommand::apply(Project* project, const TempoState& state) {
+    project->updateSettings({{SettingsField::TempoMap, state.tempo}});
     for (auto it = state.clips.constBegin(); it != state.clips.constEnd(); ++it) {
-        if (project_->hasTrack(it.key()) && project_->track(it.key()).clips != it.value()) {
-            project_->setClips(it.key(), it.value());
+        if (project->hasTrack(it.key()) && project->track(it.key()).clips != it.value()) {
+            project->setClips(it.key(), it.value());
         }
     }
 }
 
-void SetTempoCommand::redo() { apply(new_); }
+void SetTempoCommand::redo() { apply(project_, new_); }
 
-void SetTempoCommand::undo() { apply(old_); }
+void SetTempoCommand::undo() { apply(project_, old_); }
 
 UpdateSettingsCommand::UpdateSettingsCommand(Project* project, SettingsValues old, SettingsValues nw,
                                              const QString& text, QString mergeKey)
@@ -300,19 +300,30 @@ void SetDeviceMidiFromCommand::undo() { project_->setDeviceMidiFrom(trackId(), d
 // --- Automation ---
 
 SetEnvelopesCommand::SetEnvelopesCommand(Project* project, QMap<LaneRef, Envelope> old, QMap<LaneRef, Envelope> nw,
-                                         const QString& text, QString mergeKey)
-    : MergeableCommand(project, text, nw.keys(), std::move(old), nw, std::move(mergeKey)) {}
+                                         const QString& text, QString mergeKey,
+                                         std::optional<std::pair<TempoState, TempoState>> tempo)
+    : MergeableCommand(project, text, nw.keys(), std::move(old), nw, std::move(mergeKey)), tempo_(std::move(tempo)) {}
 
 void SetEnvelopesCommand::redo() {
     for (auto it = new_.constBegin(); it != new_.constEnd(); ++it) {
         project_->setEnvelope(it.key().first, it.key().second, it.value());
     }
+    if (tempo_) SetTempoCommand::apply(project_, tempo_->second);
 }
 
 void SetEnvelopesCommand::undo() {
     for (auto it = old_.constBegin(); it != old_.constEnd(); ++it) {
         project_->setEnvelope(it.key().first, it.key().second, it.value());
     }
+    if (tempo_) SetTempoCommand::apply(project_, tempo_->first);
+}
+
+bool SetEnvelopesCommand::mergeWith(const QUndoCommand* other) {
+    const auto* next = dynamic_cast<const SetEnvelopesCommand*>(other);
+    if (next == nullptr || next->tempo_.has_value() != tempo_.has_value()) return false;
+    if (!MergeableCommand::mergeWith(other)) return false;
+    if (tempo_) tempo_->second = next->tempo_->second;  // (from where the drag began)
+    return true;
 }
 
 SetEnvelopeCommand::SetEnvelopeCommand(Project* project, const QString& owner, const QString& key, Envelope old,

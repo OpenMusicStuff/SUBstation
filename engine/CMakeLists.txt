@@ -389,7 +389,7 @@ target_include_directories(sub_engine PUBLIC src)
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
 target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital fastpitch)  # (kfr_fft: Hue's FFTs)
-target_link_libraries(sub_engine PUBLIC sub_platform miniaudio vst3_hosting vst2sdk)
+target_link_libraries(sub_engine PUBLIC sub_platform sub_music miniaudio vst3_hosting vst2sdk)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)
     target_compile_definitions(sub_engine PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)

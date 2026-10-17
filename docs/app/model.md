@@ -86,9 +86,17 @@ both kinds are edited alike.
 
 - **Audio**: `path`, `startBeat`, and in **source seconds** `offsetSec`, `durationSec` and `sourceDurationSec`;
   clip-view settings `gainDb`, `warp`, `warpMode`, `segmentBpm`, `transpose` (semitones), `detune` (cents), `pan`.
-  Unwarped audio plays at its own speed, so the clip's length in beats follows the tempo; warped (`isWarped()`:
-  `warp` and `segmentBpm > 0`), the audio is taken to be at `segmentBpm`, so its length in beats is fixed.
-  `sourceTempo()`, `beatsToSource()` and `sourceToBeats()` convert between the two. `segmentBpm` 0 means "not set"
+  Unwarped audio plays at its own speed, so the clip's length in beats follows the tempo, where it is (under a tempo
+  that changes, two seconds may be four beats at one place and two at another); warped (`isWarped()`: `warp` and
+  `segmentBpm > 0`), the audio is taken to be at `segmentBpm`, so its length in beats is fixed. A warped clip whose
+  source has a tempo that changes along it (a track frozen under a tempo map) has `sourceMap`: where the file's
+  seconds fall in its beats; the clip's offset plays at its start beat and its beats follow the map's from there
+  (the engine's `ClipDesc::sourceMap`, sent only when it isn't one tempo). `sourceTempo()`,
+  `beatsToSource()` and `sourceToBeats()` convert between the two, from the clip's start (`beatsToSourceFrom()`,
+  `sourceToBeatsFrom()`: from another beat; a fade-out's beats count back from its end). They take a `Tempo`
+  ([Timebase.h](../../app/src/model/Timebase.h)): the song's tempo map (music/TempoMap.h, [music.md](../music.md)),
+  made from a BPM implicitly where one tempo is all there is; one tempo throughout converts as a single BPM always
+  did, to the bit. Every clip edit (`edits::`) takes one too. `segmentBpm` 0 means "not set"
   (shown as the project tempo). A reversed clip plays a reversed copy of a file (its `path`, written by the
   bridge); `reversedFrom` is the file it was made from (reversing again goes back to it), empty for a clip that
   isn't reversed. Its fades, `fadeInSec` and `fadeOutSec`, are measured in its audio too (so they stretch with it;
@@ -243,7 +251,10 @@ Device ids are unique in the whole project, so a device is found wherever it sit
 ### Freezing
 
 A track, group or return can be frozen: `Track::frozen` is a `Freeze` (its frozen audio's `path`, `durationSec`, and
-the `tempo` it was rendered at; `Freeze::clip()` is the warped clip that plays all of it from beat 0).
+the `tempo` it was rendered at; `Freeze::clip()` is the warped clip that plays all of it from beat 0). Rendered under a
+tempo that changes along the song, it keeps that tempo map (`Freeze::map`), and its clip and segments follow it
+(`Clip::sourceMap`): they keep the beats the render was made on whatever the song's tempo becomes, as any warped
+clip does.
 `Project::setFrozen()` emits `freezeChanged`; `updateTrack()` can't set it (there is no `TrackField` for it).
 
 What of the render plays are its **segments**: `Freeze::segments`, audio clips into the render file (warped from its
@@ -359,6 +370,13 @@ See [Automation.h](../../app/src/model/Automation.h) and, for the engine side,
   - `device:<device id>:<param id>` (`deviceKey`)
   - `device:<device id>:device:on` (`deviceOnKey`, `kDeviceOn`): a device's (or a rack's) on/off
   - `device:<rack id>:chain:<chain id>:volume` / `:pan` (`chainKey`): a rack chain's fader, a target of its rack
+  - `song:tempo` (`kSongTempo`), on the master only: the Song Tempo lane. It is never stored as an envelope:
+    `Project::envelope(kMaster, kSongTempo)` is `tempoEnvelope()`, a straight point for each of the tempo map's, its
+    BPM mapped linearly over `tempoRange()` (60 to 200 BPM, widened, never narrowed, to fit every tempo the map
+    has had, so nothing moves under a drag); `tempoOfEnvelope()` turns a lane's points back into a map (BPMs to
+    0.01, curves kept: the map's ramps bend as an envelope's segments do). The editor's envelope edits on it change the tempo map (`setTempoMap`: with the clip
+    trims, one undo step per drag); a range moved over it and other lanes is one `SetEnvelopesCommand` carrying
+    the tempo change. Its spec is `tempoSpec(low, high)` (group *Song*), the master's second `paramGroups` group.
 - `parseKey` splits a key (a `Target`); `keyDevice`, `keySend`, `keyChain`, `keyChainControl`, `isMixerKey`,
   `isSwitchKey` (an activator or an on/off), `isKey` classify it.
 - Switches are 0 (off) or 1 (on): `switchSpec` describes them (*Track Activator* in `mixerSpecs`, *Device On*:
@@ -437,7 +455,9 @@ Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: 
 
 ## The Project object and its signals
 
-`Project` ([Project.h](../../app/src/model/Project.h)) holds `tempo`, `timeSignature`, `key`, the loop
+`Project` ([Project.h](../../app/src/model/Project.h)) holds the tempo (`tempoMap()`, a `Tempo`: one throughout, or
+changing along the song; `tempo()` is the one at its start), the time signature (`meter()`, a `MeterMap` of changes,
+each starting a bar; `timeSignature()` the first), `key`, the loop
 (`loopEnabled`, `loopStart`, `loopEnd`, beats; `punchIn`, `punchOut`: recording kept only inside the loop brace), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
 `shownChainLists` (the racks whose chain list shows: hidden by default), `hiddenRackDevices` (the racks whose
 chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
@@ -503,7 +523,7 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `UpdateTrackCommand` | one track setting (also `Sends`, `InputTrack`, `MidiInput`, `Monitor`) |
 | `UpdateTrackFieldsCommand` | several settings of one track as one change (input channels and input track) |
 | `UpdateTracksCommand` | one mixer setting on several tracks |
-| `SetTempoCommand` | tempo plus the clip trims that keep unwarped clips from overlapping (`TempoState`) |
+| `SetTempoCommand` | tempo (one, or a tempo map) plus the clip trims that keep unwarped clips from overlapping (`TempoState`) |
 | `UpdateSettingsCommand` | time signature, key, loop |
 | `SetDevicesCommand` | a track's whole device tree |
 | `SetChainsCommand` | several tracks' devices at once (a device moving between tracks stays the same device) |
@@ -513,7 +533,7 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `SetDeviceStateCommand` | a device's state (a plug-in preset, a sampler's sample) |
 | `ReplaceFilesCommand` | other files in some files' place: the clip lists of the tracks playing them and the states of the built-in devices naming them (`DeviceStates`), together; merging per hot swap (the same tracks and devices); `relink` for files only found somewhere else (frozen tracks take those) |
 | `SetDeviceEnabledCommand`, `SetDeviceSidechainCommand`, `SetDeviceMidiFromCommand` | on/off; sidechain; MIDI input (`Device::midiFrom`, "Change MIDI Input" / "Remove MIDI Input") |
-| `SetEnvelopeCommand`, `SetEnvelopesCommand` | one envelope; several (a range moved on several lanes) |
+| `SetEnvelopeCommand`, `SetEnvelopesCommand` | one envelope; several (a range moved on several lanes; with the Song Tempo lane among them, its tempo change as `SetTempoCommand`'s, merged alike) |
 
 How it fits together:
 

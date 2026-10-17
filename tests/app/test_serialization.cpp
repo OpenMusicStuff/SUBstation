@@ -78,7 +78,7 @@ QJsonObject setIn(const QJsonObject& data, const QVariantList& path, const QJson
 ProjectContents makeContents(const QString& audioPath) {
     ProjectContents p;
     p.tempo = 97.5;
-    p.timeSignature = {6, 8};
+    p.meter = sub::MeterMap(6, 8);
     p.loopEnabled = true;
     p.loopStart = 3.0;
     p.loopEnd = 9.0;

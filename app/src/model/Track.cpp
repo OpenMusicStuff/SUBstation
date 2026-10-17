@@ -65,6 +65,7 @@ Clip Freeze::segment(const QString& id, double startBeat, double offsetSec, doub
     played.warp = true;
     played.warpMode = kDefaultWarpMode;
     played.segmentBpm = tempo;
+    if (map) played.sourceMap = *map;  // (rendered under a changing tempo: its beats are that map's)
     return played;
 }
 

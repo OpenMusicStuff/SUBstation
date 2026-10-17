@@ -5,8 +5,9 @@
 // from where tracks come in and drop out. The project keeps no markers, so
 // this is all an agent has of "the chorus" or "the drop".
 //
-// Bars are the project's time signature's (one for the whole song), counted
-// from 1: bar b is beats (b - 1) * beatsPerBar up to b * beatsPerBar.
+// Bars are the project's time signatures', counted from 1 (barNumberAt(): one
+// time signature throughout, bar b is beats (b - 1) * beatsPerBar up to
+// b * beatsPerBar; where it changes, each bar is as long as its own).
 
 #include <QString>
 #include <QStringList>

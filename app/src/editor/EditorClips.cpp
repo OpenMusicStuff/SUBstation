@@ -34,7 +34,7 @@ std::vector<double> beats(const std::set<double>& edges) { return {edges.begin()
 // empty parts too, as a stretch of frozen audio does. Clips across its edges
 // are split there; those wholly inside a moved stretch keep their ids.
 std::vector<Clip> movedBlock(const std::vector<Clip>& clips, double start, double end, double delta, bool copy,
-                             double tempo) {
+                             const Tempo& tempo) {
     std::vector<Clip> pieces = edits::sliceRange(clips, start, end, tempo, !copy);
     std::vector<Clip> kept = copy ? clips : edits::removeRange(clips, start, end, tempo);
     kept = edits::removeRange(kept, start + delta, end + delta, tempo);
@@ -191,14 +191,14 @@ ClipRefs ProjectEditor::addClips(const QString& trackId, double startBeat,
         target = addAudioTrack(trackIndex);  // (named by the clips: "3 Kick")
         if (target.isEmpty()) return {};
     }
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     std::vector<Clip> clips = p.track(target).clips;
     QSet<QString> newIds;
     double position = std::max(0.0, startBeat);
     for (const auto& [path, duration] : sources) {
         const QFileInfo file(path);
         Clip clip = Clip::audio(newId(), path, file.completeBaseName(), position, duration, 0.0, duration);
-        clipSettings(file.fileName(), duration, tempo, p.key()).applyTo(clip);
+        clipSettings(file.fileName(), duration, tempo.bpmAt(position), p.key()).applyTo(clip);
         newIds.insert(clip.id);
         refs.append({target, clip.id});
         position = clip.endBeat(tempo);
@@ -213,7 +213,7 @@ bool ProjectEditor::warpToDetectedTempo(const QString& trackId, const std::vecto
     const Project& p = *project_;
     const Track* track = p.findTrack(trackId);
     if (track == nullptr || added.empty()) return false;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     std::vector<Clip> clips = track->clips;
     QSet<QString> placed;
     double position = added.front().startBeat;
@@ -242,7 +242,7 @@ std::optional<ClipRef> ProjectEditor::addMidiClip(const QString& trackId, double
     std::vector<Clip> clips = track->clips;
     clips.push_back(clip);
     commitClips(QStringLiteral("Insert MIDI Clip"),
-                {{trackId, edits::resolveOverlaps(clips, {clip.id}, project_->tempo())}});
+                {{trackId, edits::resolveOverlaps(clips, {clip.id}, project_->tempoMap())}});
     if (project_->findClip(trackId, clip.id) == nullptr) return std::nullopt;  // (not on a frozen track)
     return ClipRef{trackId, clip.id};
 }
@@ -257,14 +257,14 @@ ClipRefs ProjectEditor::addMidiClipsOver(double startBeat, double endBeat, const
 }
 
 std::pair<double, double> ProjectEditor::midiClipSpan(const QString& trackId, double beat, double gridStep) const {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     const auto& clips = project_->track(trackId).clips;
     beat = std::max(0.0, beat);
     double start = gridStep > 0 ? std::floor(beat / gridStep + 1e-9) * gridStep : beat;
     for (const Clip& c : clips) {  // not reaching back over the clip before
         if (c.endBeat(tempo) <= beat + edits::kEps) start = std::max(start, c.endBeat(tempo));
     }
-    double end = start + project_->timeSignature().beatsPerBar();
+    double end = start + project_->meter().at(start).beatsPerBar();  // (a bar of the time signature there)
     for (const Clip& c : clips) {
         if (c.startBeat > start + edits::kEps) end = std::min(end, c.startBeat);
     }
@@ -309,7 +309,7 @@ int ProjectEditor::clampTrackDelta(const ClipRefs& refs, int trackDelta) const {
 
 ClipRefs ProjectEditor::moveClips(const ClipRefs& refs, double deltaBeats, int trackDelta, bool copyClips) {
     const Project& p = *project_;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     std::vector<std::pair<QString, Clip>> moving;
     for (const ClipRef& ref : refs) moving.emplace_back(ref.trackId, p.clip(ref.trackId, ref.clipId));
     if (moving.empty()) return {};
@@ -359,7 +359,7 @@ void ProjectEditor::replaceClip(const QString& trackId, const Clip& clip, const 
     for (Clip& c : clips) {
         if (c.id == clip.id) c = clip;
     }
-    commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project_->tempo())}});
+    commitClips(text, {{trackId, edits::resolveOverlaps(clips, {clip.id}, project_->tempoMap())}});
 }
 
 void ProjectEditor::updateClips(const ClipRefs& refs, const std::function<Clip(const Clip&)>& change,
@@ -375,7 +375,7 @@ void ProjectEditor::updateClips(const ClipRefs& refs, const std::function<Clip(c
     if (!mergeKey.isEmpty() && last != nullptr && last->mergeKey() == mergeKey && last->before().keys() == current.keys()) {
         baseline = last->before();
     }
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     ClipLists after;
     for (auto it = baseline.constBegin(); it != baseline.constEnd(); ++it) {
         const QSet<QString> changing = ids.value(it.key());
@@ -398,12 +398,12 @@ ClipRefs ProjectEditor::duplicateClips(const ClipRefs& refs) {
     std::vector<Clip> clips;
     for (const ClipRef& ref : refs) clips.push_back(project_->clip(ref.trackId, ref.clipId));
     if (clips.empty()) return {};
-    const auto [start, end] = edits::selectionSpan(clips, project_->tempo());
+    const auto [start, end] = edits::selectionSpan(clips, project_->tempoMap());
     return moveClips(refs, end - start, 0, true);
 }
 
 void ProjectEditor::splitClips(const ClipRefs& refs, double atBeat) {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QMap<QString, std::vector<Clip>> after;
     for (const ClipRef& ref : refs) {
         std::vector<Clip> clips = after.contains(ref.trackId) ? after.value(ref.trackId) : project_->track(ref.trackId).clips;
@@ -440,7 +440,7 @@ OrderedMap<QString, std::vector<Clip>> ProjectEditor::consolidatable(const ClipR
 }
 
 ClipRefs ProjectEditor::consolidateClips(const ClipRefs& refs, const std::optional<std::pair<double, double>>& area) {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QMap<QString, std::vector<Clip>> after;
     ClipRefs joined;
     for (const auto& [trackId, clips] : consolidatable(refs, area)) {
@@ -457,7 +457,7 @@ ClipRefs ProjectEditor::consolidateClips(const ClipRefs& refs, const std::option
 }
 
 ClipRefs ProjectEditor::clipsAt(const QStringList& trackIds, double beat) const {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     ClipRefs refs;
     for (const QString& id : trackIds) {
         const Track* track = project_->findTrack(id);
@@ -487,12 +487,12 @@ std::optional<TimeRange> ProjectEditor::clipsArea(const ClipRefs& refs) const {
         if (top < 0) {
             top = bottom = row;
             start = clip->startBeat;
-            end = clip->endBeat(p.tempo());
+            end = clip->endBeat(p.tempoMap());
         } else {
             top = std::min(top, row);
             bottom = std::max(bottom, row);
             start = std::min(start, clip->startBeat);
-            end = std::max(end, clip->endBeat(p.tempo()));
+            end = std::max(end, clip->endBeat(p.tempoMap()));
         }
     }
     if (top < 0) return std::nullopt;
@@ -502,7 +502,7 @@ std::optional<TimeRange> ProjectEditor::clipsArea(const ClipRefs& refs) const {
 }
 
 QSet<ClipRef> ProjectEditor::clipsInRange(double start, double end, const QStringList& trackIds) const {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QSet<ClipRef> refs;
     for (const QString& id : trackIds) {
         const Track* track = project_->findTrack(id);
@@ -533,7 +533,7 @@ QMap<LaneRef, Envelope> ProjectEditor::clearedAutomation(double start, double en
 }
 
 bool ProjectEditor::deleteRange(double start, double end, const QStringList& trackIds) {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QStringList tracks;
     QMap<QString, std::vector<Clip>> after;
     for (const QString& id : trackIds) {
@@ -551,7 +551,7 @@ bool ProjectEditor::deleteRange(double start, double end, const QStringList& tra
 
 QMap<QString, std::vector<Clip>> ProjectEditor::frozenWithout(const QStringList& trackIds, double start,
                                                               double end) const {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QMap<QString, std::vector<Clip>> frozen;
     for (const QString& holder : frozenRenders(trackIds)) {
         frozen.insert(holder, edits::removeRange(frozenSegments(holder), start, end, tempo));
@@ -561,7 +561,7 @@ QMap<QString, std::vector<Clip>> ProjectEditor::frozenWithout(const QStringList&
 
 std::optional<ClipRefs> ProjectEditor::duplicateRange(double start, double end, const QStringList& trackIds) {
     const Project& p = *project_;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     const double length = end - start;
     QStringList tracks;
     QMap<QString, std::vector<Clip>> after;
@@ -601,7 +601,7 @@ std::optional<ClipRefs> ProjectEditor::duplicateRange(double start, double end, 
 
 std::optional<ClipboardContent> ProjectEditor::copyRange(double start, double end, const QStringList& trackIds) const {
     const Project& p = *project_;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     if (end <= start) return std::nullopt;
     QStringList ids;
     for (const QString& id : trackIds) {
@@ -652,7 +652,7 @@ std::optional<ClipboardContent> ProjectEditor::cutRange(double start, double end
     }
     auto content = copyRange(start, end, trackIds);
     if (!content) return std::nullopt;
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QMap<QString, std::vector<Clip>> after;
     QMap<LaneRef, Envelope> envelopes;
     for (const CopiedTrack& copied : content->tracks) {
@@ -692,7 +692,7 @@ std::optional<TimeRange> ProjectEditor::paste(const ClipboardContent& content, d
     const Project& p = *project_;
     const auto dests = pasteTargets(content, trackId);
     if (!dests) return std::nullopt;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     const double at = std::max(0.0, atBeat);
     // Into frozen tracks (and what is in frozen groups) only what was copied
     // from them, with their frozen audio (the same render), onto the tracks it
@@ -777,7 +777,7 @@ std::optional<TimeRange> ProjectEditor::paste(const ClipboardContent& content, d
 MovedRange ProjectEditor::movedRange(double start, double end, const QStringList& trackIds, double deltaBeats,
                                      int trackDelta, bool copyClips) const {
     const Project& p = *project_;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     MovedRange moved;
     moved.deltaBeats = std::max(deltaBeats, -start);
     ClipRefs refs;
@@ -863,7 +863,7 @@ QMap<QString, std::vector<Clip>> ProjectEditor::changedInRange(double start, dou
                                                                const std::function<bool(const Clip&)>& chosen,
                                                                const std::function<Clip(const Clip&)>& change,
                                                                ClipRefs& changed) const {
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QMap<QString, std::vector<Clip>> after;
     for (const QString& id : trackIds) {
         if (!project_->hasTrack(id)) continue;

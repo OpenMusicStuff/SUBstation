@@ -103,6 +103,7 @@ protected:
         if (n <= 0) return;
         const double samplesPerBeat = ctx.samplesPerBeat() > 0.0 ? ctx.samplesPerBeat() : sampleRate_ * 0.5;
         const double stepBeats = gridBeats(choiceIndex(Grid), ctx.beatsPerBar());
+        const double gridOffset = ctx.playing ? ctx.gridOffset(stepBeats) : 0.0;  // (steps on the bar's lines)
         mix_.setTarget(param(Mix) / 100.f);
 
         for (int i = 0; i < numFrames; ++i) {
@@ -113,7 +114,7 @@ protected:
             }
             const double beat = ctx.playing ? ctx.beatPos + i / samplesPerBeat : freeBeat_;
             freeBeat_ = beat + 1.0 / samplesPerBeat;
-            const double steps = beat / stepBeats;
+            const double steps = (beat - gridOffset) / stepBeats;
             const auto step = static_cast<int64_t>(std::floor(steps + 1e-9));
             if (step != step_) {
                 const double into = (steps - static_cast<double>(step)) * stepBeats * samplesPerBeat;

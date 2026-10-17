@@ -90,20 +90,32 @@ void Renderer::setScheduler(Scheduler* scheduler) {
 }
 
 void Renderer::syncTempo(const RenderSnapshot& snap) noexcept {
-    // Tempo (or sample rate) changed: keep the playhead, and the ends of the
-    // sounding notes, on the same beat.
-    const double spb = snap.samplesPerBeat();
-    if (samplesPerBeat_ > 0.0 && spb != samplesPerBeat_) {
-        const double ratio = spb / samplesPerBeat_;
-        const auto rescale = [ratio](int64_t t) { return std::llround(static_cast<double>(t) * ratio); };
-        position_ = rescale(position_);
-        if (expectedPosition_ >= 0) expectedPosition_ = rescale(expectedPosition_);
+    // A new tempo map (or sample rate): keep the playhead, and the ends of the
+    // sounding notes, on the same beat. Their beats were taken by the map before
+    // (the old one may be gone already: only the snapshot rendering is safe to read).
+    if (tempoRate_ > 0.0 && (snap.tempoVersion != tempoVersion_ || snap.sampleRate != tempoRate_)) {
+        position_ = std::max<int64_t>(0, snap.sampleAt(positionBeat_));
+        if (expectedPosition_ >= 0) expectedPosition_ = snap.sampleAt(expectedBeat_);
         for (int i = 0; i < numActiveNotes_; ++i) {
-            activeNotes_[i].end = rescale(activeNotes_[i].end);
-            activeNotes_[i].start = rescale(activeNotes_[i].start);
+            activeNotes_[i].end = snap.sampleAt(activeNotes_[i].endBeat);
+            activeNotes_[i].start = snap.sampleAt(activeNotes_[i].startBeat);
         }
     }
-    samplesPerBeat_ = spb;
+    tempoSnap_ = &snap;
+    tempoVersion_ = snap.tempoVersion;
+    tempoRate_ = snap.sampleRate;
+    rememberBeats();
+}
+
+void Renderer::rememberBeats() noexcept {
+    if (!tempoSnap_) return;
+    positionBeat_ = tempoSnap_->beatAt(static_cast<double>(position_));
+    expectedBeat_ = expectedPosition_ >= 0 ? tempoSnap_->beatAt(static_cast<double>(expectedPosition_)) : 0.0;
+}
+
+void Renderer::setPosition(int64_t samples) noexcept {
+    position_ = samples < 0 ? 0 : samples;
+    rememberBeats();
 }
 
 void Renderer::drainCommands(SharedState& shared) noexcept {
@@ -120,8 +132,15 @@ void Renderer::applyCommand(const TransportCommand& command) noexcept {
     switch (command.type) {
         case TransportCommand::Type::Play:
             chasePending_ = chasePending_ || !playing_;  // (live playback only: offline renders start clean)
-            if (!playing_ && command.countInBeats > 0.0 && samplesPerBeat_ > 0.0) {
-                countIn_ = countInTotal_ = std::llround(command.countInBeats * samplesPerBeat_);
+            if (!playing_ && command.countInBeats > 0.0 && tempoSnap_) {
+                // At the tempo and in the time signature where playback starts.
+                const RenderSnapshot& snap = *tempoSnap_;
+                const double beat = snap.beatAt(static_cast<double>(position_));
+                const MeterMap::Change& meter = snap.meter->at(beat);
+                const double samplesPerBeat = snap.sampleRate * 60.0 / snap.tempoMap->bpmAt(beat);
+                countIn_ = countInTotal_ = std::llround(command.countInBeats * samplesPerBeat);
+                countInTick_ = samplesPerBeat * 4.0 / meter.denominator;
+                countInPerBar_ = meter.numerator;
             }
             playing_ = true;
             break;
@@ -130,7 +149,7 @@ void Renderer::applyCommand(const TransportCommand& command) noexcept {
             countIn_ = 0;
             break;
         case TransportCommand::Type::Locate:
-            setPosition(std::llround(std::max(0.0, command.beat) * samplesPerBeat_));
+            if (tempoSnap_) setPosition(tempoSnap_->sampleAt(std::max(0.0, command.beat)));
             break;
     }
 }
@@ -146,7 +165,8 @@ void Renderer::discardPreviewNotes(SharedState& shared) noexcept { shared.previe
 
 void Renderer::publishTransport(SharedState& shared) const noexcept {
     shared.positionSamples.store(position_, std::memory_order_relaxed);
-    shared.positionBeats.store(samplesPerBeat_ > 0.0 ? position_ / samplesPerBeat_ : 0.0, std::memory_order_relaxed);
+    shared.positionBeats.store(tempoSnap_ ? tempoSnap_->beatAt(static_cast<double>(position_)) : 0.0,
+                               std::memory_order_relaxed);
     shared.locatesPublished.store(shared.locatesDrained.load(std::memory_order_relaxed), std::memory_order_release);
     shared.playing.store(playing_, std::memory_order_relaxed);
     shared.countingIn.store(playing_ && countIn_ > 0, std::memory_order_relaxed);
@@ -339,22 +359,18 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         wrapNext_ = false;
         looped_ = false;
     }
+    rememberBeats();  // (where the playhead goes on from, in beats)
 
-    const double spb = snap.samplesPerBeat();
     ProcessContext& context = chunkContext_;
     context = {};
     context.sampleRate = snap.sampleRate;
-    context.samplePos = chunkStart;
-    context.beatPos = chunkStart / spb;
-    context.tempo = snap.tempo;
-    context.timeSigNum = snap.timeSigNum;
-    context.timeSigDen = snap.timeSigDen;
+    placeContext(snap, context, chunkStart);
     context.keyTonic = snap.keyTonic;
     context.keyMinor = snap.keyMinor;
     context.playing = playing_;
     context.looping = flags.loop;
-    context.loopStartBeat = snap.loopStart / spb;
-    context.loopEndBeat = snap.loopEnd / spb;
+    context.loopStartBeat = snap.beatAt(static_cast<double>(snap.loopStart));
+    context.loopEndBeat = snap.beatAt(static_cast<double>(snap.loopEnd));
     context.offline = !flags.live;
 
     recordSegments_ = 0;
@@ -1035,9 +1051,27 @@ void Renderer::routeMidiInput(const TrackRender& track, bool hears, MidiRecordin
 }
 
 void Renderer::scheduleCountIn(const RenderSnapshot& snap, int length) noexcept {
-    // A tick every beat (of the time signature) from the count-in's start, the
-    // first of each bar accented; it ends where the playhead starts.
-    scheduleTicks(snap, countInTotal_ - countIn_, length, 0, countInTotal_);
+    // A tick every beat (of the time signature where playback starts) from the
+    // count-in's start, the first of each bar accented; it ends where the playhead starts.
+    scheduleGridTicks(snap, countInTotal_ - countIn_, length, 0, countInTotal_, countInTick_, countInPerBar_);
+}
+
+void Renderer::placeContext(const RenderSnapshot& snap, ProcessContext& context, int64_t sample) noexcept {
+    context.samplePos = sample;
+    context.beatPos = snap.beatAt(static_cast<double>(sample));
+    context.tempo = snap.tempoMap->constant() ? snap.tempoMap->points().front().bpm : snap.tempoMap->bpmAt(context.beatPos);
+    if (snap.meter->constant()) {  // (bars from beat 0, all alike)
+        const MeterMap::Change& meter = snap.meter->changes().front();
+        context.timeSigNum = meter.numerator;
+        context.timeSigDen = meter.denominator;
+        const double bar = meter.beatsPerBar();
+        context.barStartBeat = std::floor(context.beatPos / bar + 1e-9) * bar;
+    } else {
+        const MeterMap::Bar bar = snap.meter->barAt(context.beatPos);
+        context.timeSigNum = bar.numerator;
+        context.timeSigDen = bar.denominator;
+        context.barStartBeat = bar.start;
+    }
 }
 
 namespace {
@@ -1423,7 +1457,6 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
                              WorkerScratch& scratch, EventOutput* out, Slices* outSlices) noexcept {
     Processor& insert = *chain.inserts[i];
     const auto measuredFrom = measureChunk_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-    const double samplesPerBeat = snap.samplesPerBeat();
     static const std::vector<int> kNone;
     const std::vector<int>& keys = i < chain.sidechains.size() ? chain.sidechains[i] : kNone;
     insert.setSidechainConnected(!keys.empty());
@@ -1473,8 +1506,7 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
         const Slice& slice = slices.slice[static_cast<size_t>(s)];
         float* channels[2] = {left + slice.offset, right + slice.offset};
         if (keyL) insert.setSidechain(keyL + slice.offset, keyR + slice.offset);
-        context.samplePos = slice.position;
-        context.beatPos = slice.position / samplesPerBeat;
+        placeContext(snap, context, slice.position);
         if (feed) {
             const auto [first, end] = fed[static_cast<size_t>(s)];
             context.inEvents = {feed->events.data() + first, static_cast<size_t>(end - first)};
@@ -1818,7 +1850,7 @@ bool Renderer::soundedUpTo(const WarpRender& render, const ClipRender& clip, int
     // tempo change moves it: as WarpVoice::carriesOn()).
     const uint64_t played = render.playedBlock();
     return played != 0 && played + 1 >= blockCounter_ &&
-           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rate;
+           std::abs(clip.sourceAt(position) - render.playedTo()) <= 2.0 + 2.0 * clip.rateAt(position);
 }
 
 void Renderer::assignVoices(const TrackRender& track, const WarpVoiceSet& voices, bool live,
@@ -1949,7 +1981,8 @@ bool Renderer::startNote(const TrackRender& track, size_t index, int32_t offset,
             bend = 0.f;
         }
     }
-    activeNotes_[numActiveNotes_++] = {track.id, note.key, note.end, on.noteId, note.start, static_cast<int>(index), bend};
+    activeNotes_[numActiveNotes_++] = {track.id,  note.key, note.end,      on.noteId, note.start, static_cast<int>(index),
+                                       bend,      note.startBeat, note.endBeat};
     return true;
 }
 
@@ -2184,18 +2217,49 @@ void Renderer::forgetNotesOfRemovedTracks(const RenderSnapshot& snap) noexcept {
 
 void Renderer::scheduleTicks(const RenderSnapshot& snap, int64_t position, int length, int offset,
                              int64_t end) noexcept {
-    const double tickLength = snap.samplesPerBeat() * 4.0 / snap.timeSigDen;
+    if (snap.tempoMap->constant() && snap.meter->constant()) {  // one grid from beat 0
+        const MeterMap::Change& meter = snap.meter->changes().front();
+        const double samplesPerBeat = snap.sampleRate * 60.0 / snap.tempoMap->points().front().bpm;
+        scheduleGridTicks(snap, position, length, offset, end, samplesPerBeat * 4.0 / meter.denominator, meter.numerator);
+        return;
+    }
+    // A tick on each beat of each bar's time signature, the first of a bar accented, where the tempo map puts it.
+    const double from = snap.beatAt(static_cast<double>(position));
+    MeterMap::Bar bar = snap.meter->barAt(from);
+    double step = 4.0 / bar.denominator;
+    int64_t k = std::max<int64_t>(0, static_cast<int64_t>(std::ceil((from - bar.start) / step - 1e-9)));
+    while (numPendingTicks_ < kMaxPendingTicks) {
+        const double beat = bar.start + static_cast<double>(k) * step;
+        if (beat >= bar.start + bar.length - 1e-9) {  // on into the next bar
+            bar = snap.meter->barAt(bar.start + bar.length);
+            step = 4.0 / bar.denominator;
+            k = 0;
+            continue;
+        }
+        const int64_t t = snap.sampleAt(beat);
+        if (t >= position + length || t >= end) break;
+        if (t >= position) pushTick(snap, t - position, offset, k == 0);
+        ++k;
+    }
+}
+
+void Renderer::scheduleGridTicks(const RenderSnapshot& snap, int64_t position, int length, int offset, int64_t end,
+                                 double tickLength, int perBar) noexcept {
     if (tickLength <= 0.0) return;
     for (int64_t k = static_cast<int64_t>(std::ceil(position / tickLength - 1e-9));; ++k) {
         const int64_t t = std::llround(k * tickLength);
         if (t < position) continue;
         if (t >= position + length || t >= end) break;
         if (numPendingTicks_ == kMaxPendingTicks) break;
-        // Heard when the tracks' audio for this position is: after the compensation delay
-        // and the master's devices.
-        const int64_t time = outputTime_ + offset + (t - position) + snap.outputLatency();
-        pendingTicks_[(pendingTickStart_ + numPendingTicks_++) % kMaxPendingTicks] = {time, k % snap.timeSigNum == 0};
+        pushTick(snap, t - position, offset, k % std::max(1, perBar) == 0);
     }
+}
+
+void Renderer::pushTick(const RenderSnapshot& snap, int64_t at, int offset, bool accent) noexcept {
+    // Heard when the tracks' audio for this position is: after the compensation delay
+    // and the master's devices.
+    const int64_t time = outputTime_ + offset + at + snap.outputLatency();
+    pendingTicks_[(pendingTickStart_ + numPendingTicks_++) % kMaxPendingTicks] = {time, accent};
 }
 
 void Renderer::renderTicks(int frames) noexcept {

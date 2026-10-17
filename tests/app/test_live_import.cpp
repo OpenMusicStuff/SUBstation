@@ -483,7 +483,8 @@ private Q_SLOTS:
         QVERIFY(imported->notes.isEmpty());
 
         // C major is Live's own scale until one is chosen: no key. An automated
-        // tempo starts at its first value; its changes are noted.
+        // tempo starts at its first value, and changes as it does (a ramp from 150 at
+        // the start to 160 at beat 64).
         song.extra =
             element(QStringLiteral("ScaleInformation"), value(QStringLiteral("Root"), QStringLiteral("0")) +
                                                             value(QStringLiteral("Name"), QStringLiteral("0"))) +
@@ -492,14 +493,15 @@ private Q_SLOTS:
         imported = load(liveSet(song));
         QCOMPARE(imported->project.keyName(), QString());
         QCOMPARE(imported->project.tempo(), 150.0);
-        QVERIFY(noteSays(imported->notes,
-                         QStringLiteral("The tempo changes during the song; SUBstation has one tempo: 150 BPM.")));
+        QVERIFY(!imported->project.tempoMap().constant());
+        QCOMPARE(imported->project.tempoMap().bpmAt(32.0), 155.0);
+        QCOMPARE(imported->project.tempoMap().bpmAt(100.0), 160.0);
 
-        // Past SUBstation's tempos: the one it has is said.
+        // Past SUBstation's tempos: they play at its limit, and that is said.
         song.masterEnvelopes = envelope(8, floatEvent(-63072000, 1200) + floatEvent(64, 160));
         imported = load(liveSet(song));
         QCOMPARE(imported->project.tempo(), 999.0);
-        QVERIFY(noteSays(imported->notes, QStringLiteral("SUBstation has one tempo: 999 BPM.")));
+        QVERIFY(noteSays(imported->notes, QStringLiteral("SUBstation's tempos (20 to 999 BPM)")));
 
         // A tempo without an automation target, and an envelope without one: nothing is taken for the tempo.
         song.settingTargets = false;

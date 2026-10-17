@@ -594,8 +594,7 @@ void Vst3Processor::fillContext(const ProcessContext& ctx) {
     c.continousTimeSamples = continuousSamples_;
     c.systemTime = hostTimeNs();
     c.projectTimeMusic = ctx.beatPos;
-    const double beatsPerBar = ctx.beatsPerBar();
-    c.barPositionMusic = std::floor(ctx.beatPos / beatsPerBar + 1e-9) * beatsPerBar;
+    c.barPositionMusic = ctx.barStart();
     c.tempo = ctx.tempo;
     c.timeSigNumerator = ctx.timeSigNum;
     c.timeSigDenominator = ctx.timeSigDen;

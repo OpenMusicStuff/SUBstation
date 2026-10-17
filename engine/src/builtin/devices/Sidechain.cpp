@@ -137,7 +137,8 @@ protected:
         if (trigger > 0 && ctx.playing && ctx.tempo > 0.0) {
             const double every = kTriggerBeats[trigger] < 0.0 ? ctx.beatsPerBar() : kTriggerBeats[trigger];
             const double samplesPerBeat = sampleRate_ * 60.0 / ctx.tempo;
-            const double first = std::ceil(ctx.beatPos / every - 1e-9) * every;
+            const double offset = ctx.gridOffset(every);  // (hits on the bar's lines)
+            const double first = std::ceil((ctx.beatPos - offset) / every - 1e-9) * every + offset;
             nextBeatHit = std::max(0.0, (first - ctx.beatPos) * samplesPerBeat);
             everySamples = every * samplesPerBeat;
         }

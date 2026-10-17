@@ -45,7 +45,7 @@ std::shared_ptr<sub::RenderSnapshot> snapshotOf(const sub::ClipRender& clip,
                                                 const std::shared_ptr<sub::WarpVoice>& voice) {
     auto snap = std::make_shared<sub::RenderSnapshot>();
     snap->sampleRate = kSampleRate;
-    snap->tempo = 120.0;
+    snap->tempoMap = std::make_shared<const sub::TempoMap>(120.0);
     sub::TrackRender track;
     track.id = 1;
     track.params = std::make_shared<sub::TrackParams>();
@@ -241,7 +241,8 @@ TEST_CASE("a tempo change while a clip plays from its render crossfades into the
         auto voice = std::make_shared<sub::WarpVoice>(before.stretchConfig, kSampleRate);
         const auto first = snapshotOf(before, voice);
         const auto second = snapshotOf(changed, voice);
-        second->tempo = 135.0;
+        second->tempoMap = std::make_shared<const sub::TempoMap>(135.0);
+        second->tempoVersion = first->tempoVersion + 1;
         sub::Renderer renderer;
         sub::SharedState shared;
         playFrom(renderer, 0);
@@ -270,4 +271,34 @@ TEST_CASE("a tempo change while a clip plays from its render crossfades into the
     const size_t end = at + fadeFrames;
     CHECK_EQ(maxDifference(std::vector<float>(faded.begin() + end, faded.end()), cut.data() + end, faded.size() - end),
              0.0);
+}
+
+TEST_CASE("a clip warped along a curve has a render of its own, kept for the same curve") {
+    sub::WarpCache cache(sub::WarpCache::kDefaultBudget, std::chrono::milliseconds(0));
+    sub::ClipRender clip = stretched(sineSource(), 0.75, kSampleRate);
+    // Slower in its second half: at 1 for half a second, then 0.5.
+    const auto curve = [](double second) {
+        return std::make_shared<const sub::WarpCurve>(sub::WarpCurve{
+            {0, 0.0}, {kSampleRate / 2, kSampleRate / 2.0}, {kSampleRate, kSampleRate / 2.0 + kSampleRate / 2.0 * second}});
+    };
+    clip.curve = curve(0.5);
+    const auto render = renderOf(cache, clip);
+    REQUIRE(render);
+    REQUIRE(render->ready());
+    CHECK_APPROX(render->frameOf(kSampleRate * 0.625), kSampleRate * 0.75);  // (the inverse, on the slower part)
+    // What a voice plays along the curve.
+    sub::WarpVoice voice(clip.stretchConfig, kSampleRate);
+    std::vector<float> left(static_cast<size_t>(clip.length)), right(left.size());
+    for (int64_t at = 0; at < clip.length; at += 1024) {
+        const auto n = static_cast<int>(std::min<int64_t>(1024, clip.length - at));
+        voice.render(clip, at, n, at > 0, left.data() + at, right.data() + at);
+    }
+    CHECK_EQ(maxDifference(left, render->left(), left.size()), 0.0);
+    // The same curve again (another copy of it): the same render; another curve: another.
+    sub::ClipRender same = clip;
+    same.curve = curve(0.5);
+    CHECK(renderOf(cache, same) == render);
+    sub::ClipRender other = clip;
+    other.curve = curve(0.25);
+    CHECK(renderOf(cache, other) != render);
 }

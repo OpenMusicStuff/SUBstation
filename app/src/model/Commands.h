@@ -309,10 +309,10 @@ public:
     TrackField field() const { return target_.first; }
 };
 
-// A tempo and the clips that go with it (the trims that keep unwarped clips
-// from overlapping).
+// A tempo (one, or a tempo map) and the clips that go with it (the trims that
+// keep unwarped clips from overlapping).
 struct TempoState {
-    double tempo = 120.0;
+    Tempo tempo;
     ClipLists clips;  // track id -> its clips
 
     friend bool operator==(const TempoState&, const TempoState&) = default;
@@ -328,8 +328,8 @@ public:
     void redo() override;
     void undo() override;
 
-private:
-    void apply(const TempoState& state);
+    // Puts a tempo and its clips in place.
+    static void apply(Project* project, const TempoState& state);
 };
 
 // Changes project settings; old and new map fields to values. Target: the fields.
@@ -539,15 +539,24 @@ public:
 
 // Replaces several envelopes at once, {(owner, key): envelope} (moving a time
 // range on several lanes). With a merge key, one drag is one undo step.
-// Target: the lanes.
+// Target: the lanes. The Song Tempo lane among them is a tempo change made
+// with them (`tempo`: before and after, as SetTempoCommand's), which merges
+// as they do.
 class SetEnvelopesCommand
     : public MergeableCommand<SetEnvelopesCommand, QList<LaneRef>, QMap<LaneRef, Envelope>> {
 public:
     SetEnvelopesCommand(Project* project, QMap<LaneRef, Envelope> old, QMap<LaneRef, Envelope> nw,
-                        const QString& text, QString mergeKey = {});
+                        const QString& text, QString mergeKey = {},
+                        std::optional<std::pair<TempoState, TempoState>> tempo = std::nullopt);
 
     void redo() override;
     void undo() override;
+    bool mergeWith(const QUndoCommand* other) override;
+
+    const std::optional<std::pair<TempoState, TempoState>>& tempo() const { return tempo_; }
+
+private:
+    std::optional<std::pair<TempoState, TempoState>> tempo_;
 };
 
 // Replaces one automation envelope (an empty one: no automation). Dragging

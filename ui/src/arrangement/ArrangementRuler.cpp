@@ -30,7 +30,7 @@ QColor mixed(const QColor& a, const QColor& b) {
 }  // namespace
 
 ArrangementRuler::ArrangementRuler(QQuickItem* parent) : ArrangementItem(parent) {
-    setAcceptedMouseButtons(Qt::LeftButton);
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     setImplicitHeight(kHeight);
 }
@@ -62,16 +62,33 @@ void ArrangementRuler::paint(SgPainter& p) {
     const double every = timeline::labelStep(view, step);
     const QFont font = uiFont(8);
     const QColor ink = mixed(Theme::text(), Theme::textDim());
-    const app::TimeSignature ts = project.timeSignature();
+    const MeterMap ts = view.meter();
     for (const timeline::GridLine& line : timeline::gridLines(view, rect.left() - 60, rect.right() + 1, step)) {
         const double x = app::roundHalfEven(line.x);
         p.fillRect(QRectF(x, bandTop, 1, bandBottom - bandTop), ground.darker(122));
         if (line.kind != timeline::LineKind::Bar) continue;
-        if (std::abs(line.beat / every - std::round(line.beat / every)) < 1e-6) {
+        if (timeline::labelled(view, line, every)) {
             p.fillRect(QRectF(x, bandTop - 8, 1, 8), ink);
             p.drawText(QPointF(x + 3, bandTop - 4), app::formatBarLabel(line.beat, ts), ink, font);
         } else {
             p.fillRect(QRectF(x, bandTop - 3, 1, 3), ink.darker(150));
+        }
+    }
+
+    // Where the time signature changes: its new one, beside the bar's number (or where it would be).
+    const MeterMap& meter = project.meter();
+    if (!meter.constant()) {
+        const QFont bold = uiFont(8, true);
+        const double every = timeline::labelStep(view, step);
+        for (const MeterMap::Change& change : meter.changes()) {
+            const double x = app::roundHalfEven(view.beatToX(change.beat));
+            if (x < rect.left() - 80 || x > rect.right()) continue;
+            const timeline::GridLine line{x, change.beat, timeline::LineKind::Bar, meter.barAt(change.beat).index};
+            const double numberWidth =
+                timeline::labelled(view, line, every) ? SgPainter::textWidth(app::formatBarLabel(change.beat, ts), font) + 4 : 0;
+            p.fillRect(QRectF(x, 2, 1, bandTop - 2), Theme::accent());
+            p.drawText(QPointF(x + 3 + numberWidth, bandTop - 4),
+                       QStringLiteral("%1/%2").arg(change.numerator).arg(change.denominator), Theme::accent(), bold);
         }
     }
 
@@ -130,8 +147,48 @@ ArrangementRuler::Zone ArrangementRuler::loopZone(double x) const {
     return Zone::None;
 }
 
+arrangement::MenuEntries ArrangementRuler::contextMenu(double x) const {
+    arrangement::MenuEntries menu;
+    if (!ready()) return menu;
+    app::ProjectEditor* editor = session()->editor();
+    const MeterMap& meter = session()->project()->meter();
+    const MeterMap::Bar bar = meter.barAt(std::max(0.0, arrangement()->view().xToBeat(x)));
+    // The bar's time signature, from it on.
+    arrangement::MenuList signatures(menu.addSubmenu(QStringLiteral("Time Signature From Bar %1").arg(bar.index + 1)).children);
+    static constexpr std::pair<int, int> kCommon[] = {{2, 4}, {3, 4}, {4, 4}, {5, 4}, {6, 4}, {7, 4},
+                                                       {3, 8}, {5, 8}, {6, 8}, {7, 8}, {9, 8}, {12, 8}};
+    for (const auto& [n, d] : kCommon) {
+        arrangement::MenuEntry& entry = signatures.add(QStringLiteral("%1/%2").arg(n).arg(d), [editor, bar, n, d] {
+            if (bar.index == 0) {
+                editor->setTimeSignature(n, d);
+            } else {
+                editor->setTimeSignatureAt(bar.start, n, d);
+            }
+        });
+        entry.checkable = true;
+        entry.checked = bar.numerator == n && bar.denominator == d;
+    }
+    const bool changesHere = bar.index > 0 && std::any_of(meter.changes().begin(), meter.changes().end(), [&](const auto& c) {
+                                                   return std::abs(c.beat - bar.start) < 1e-9;
+                                               });
+    arrangement::MenuEntry& remove = menu.add(QStringLiteral("Remove Time Signature Change"),
+                                              [editor, start = bar.start] { editor->removeTimeSignatureAt(start); });
+    remove.enabled = changesHere;
+    return menu;
+}
+
+void ArrangementRuler::triggerMenu(int id) {
+    const arrangement::MenuEntries menu = menu_;
+    menu.trigger(id);
+}
+
 void ArrangementRuler::mousePressEvent(QMouseEvent* event) {
     if (event->flags() & Qt::MouseEventCreatedDoubleClick) return;  // (the double-click stands for it)
+    if (event->button() == Qt::RightButton && ready()) {
+        menu_ = contextMenu(event->position().x());
+        if (!menu_.isEmpty()) Q_EMIT menuRequested(menu_.toVariant(), event->position());
+        return;
+    }
     if (event->button() != Qt::LeftButton || !ready()) return;
     const QPointF pos = event->position();
     const double beat = arrangement()->view().xToBeat(pos.x());

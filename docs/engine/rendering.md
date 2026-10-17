@@ -24,8 +24,11 @@ graph is spread over threads in [scheduler.md](scheduler.md).
 
 `RenderSnapshot` holds everything a chunk needs, with every position in samples:
 
-- `sampleRate`, `tempo`, `timeSigNum`/`timeSigDen`, `samplesPerBeat()`, and the song's key (`keyTonic`,
-  `keyMinor`: `Engine::setSongKey`), handed to every device in its `ProcessContext`.
+- `sampleRate`, the tempo map and time signatures (`tempoMap`, `meter`, never null; `tempoVersion`, a new
+  number with each new map) and the song's key (`keyTonic`, `keyMinor`: `Engine::setSongKey`), handed to every
+  device in its `ProcessContext`. `sampleAt(beat)`, `beatAt(sample)`, `tempoAt(sample)` and
+  `samplesBetween(beat, beats)` convert by the map; one tempo throughout converts as it always has (beats
+  times samples a beat), to the bit.
 - The loop (`loopEnabled`, `loopStart`, `loopEnd`): enabled only if the loop is at least 256
   samples long.
 - `tracks`: `TrackRender`s in routing order, every track after those that feed it.
@@ -112,18 +115,22 @@ processed in two parts, and tempo-synced plug-ins stay in time. A device process
 chunk (slice by slice) before the next device starts, so a rack can run its chains over the
 whole chunk too.
 
-`ProcessContext` carries the sample rate, sample and beat position, tempo, time signature,
-playing, looping (recording too), the loop in beats, whether the render is offline, and
+`ProcessContext` carries the sample rate, sample and beat position, the tempo and time signature
+there and where its bar starts (`barStartBeat`: bars needn't be alike from beat 0; `barStart()`,
+`gridOffset()` for devices with a bar grid), set for each slice by `placeContext()`, playing, looping (recording too), the loop in beats, whether the render is offline, and
 the slice's events. See [devices.md](devices.md) for how processors use it.
 
 ### Transport in the renderer
 
 Only one thread drives a renderer at a time: the audio thread while a device runs, otherwise the
 engine under its mutex (`serviceTransportIfIdleLocked()`). `applyCommand()` handles Play (a
-count-in only if stopped), Stop (cancels a count-in) and Locate (in beats, at the current tempo).
-`syncTempo()` notices a new tempo (or sample rate) and rescales the playhead, the expected
-position and the ends of sounding notes, so they stay on the same beat; a tempo change keeps
-clips playing without a re-seek ([warp.md](warp.md)).
+count-in only if stopped: at the tempo and in the time signature where playback starts), Stop
+(cancels a count-in) and Locate (in beats, by the tempo map). `syncTempo()` notices a new tempo
+map (`tempoVersion`) or sample rate and moves the playhead, the expected position and the ends of
+sounding notes back to their beats, so they stay on the same beat; a tempo change keeps clips
+playing without a re-seek ([warp.md](warp.md)). Their beats are taken by the map before
+(`rememberBeats()`, after every chunk and locate): the renderer never reads a map but the
+snapshot's it renders, as the one before may be gone.
 
 ## Rendering a track
 
@@ -281,7 +288,9 @@ the accented one and 1046.5 Hz at 0.45 for the others. `start()` replaces the cl
 `renderUntil()` adds it into a range of the buffer.
 
 Ticks fall on every beat of the time signature's denominator (a quarter-note tick at 4/4, an
-eighth at 6/8), the first of each bar accented. `scheduleTicks()` (while playing with the
+eighth at 6/8), the first of each bar accented: on each bar of each time signature where the
+tempo map puts it (`scheduleTicks()`; one grid from sample 0 when tempo and time signature are
+the same throughout, and for the count-in: `scheduleGridTicks()`). `scheduleTicks()` (while playing with the
 metronome on) and `scheduleCountIn()` put them into a ring of pending ticks (256), stamped in
 output samples, **delayed by the snapshot's `outputLatency()`**: the click is heard when the
 tracks' audio for that position is, after delay compensation and the master's devices.

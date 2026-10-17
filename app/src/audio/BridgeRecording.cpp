@@ -72,9 +72,9 @@ QString EngineBridge::startRecording(double countInBeats) {
     d_->recording.clear();
     d_->liveTakes.clear();
     // The punch region as it is now (the loop's, by Punch In and Out), for the takes.
-    const double secondsPerBeat = 60.0 / project_->tempo();
-    d_->punchInSec = project_->punchIn() ? std::optional<double>(project_->loopStart() * secondsPerBeat) : std::nullopt;
-    d_->punchOutSec = project_->punchOut() ? std::optional<double>(project_->loopEnd() * secondsPerBeat) : std::nullopt;
+    const Tempo& tempo = project_->tempoMap();
+    d_->punchInSec = project_->punchIn() ? std::optional<double>(tempo.secondsAt(project_->loopStart())) : std::nullopt;
+    d_->punchOutSec = project_->punchOut() ? std::optional<double>(tempo.secondsAt(project_->loopEnd())) : std::nullopt;
     const double rate = engine_.sampleRate();
     for (size_t i = 0; i < targets.size(); ++i) {
         const QString& trackId = tracks[static_cast<qsizetype>(i)];

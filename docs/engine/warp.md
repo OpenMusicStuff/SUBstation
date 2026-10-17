@@ -16,8 +16,9 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 - An `AudioSource` is a whole file decoded to 32-bit float at the engine's sample rate, planar, with six levels of
   min/max peaks for drawing waveforms. It is immutable once loaded, so the UI, snapshots and the audio thread share
   it freely. Long files are not streamed from disk: sources are decoded into memory.
-- The snapshot turns each clip's beats into samples at the current tempo. A warped clip's two ends sit on their
-  beats, and it plays at `tempo / segment BPM` speed.
+- The snapshot turns each clip's beats into samples by the tempo map ([music.md](../music.md)). A warped clip's two
+  ends sit on their beats, and it plays at `tempo / segment BPM` speed: under a tempo that changes along it, the
+  tempo where it is, by its `WarpCurve`.
 - Clips that need it are time-stretched on the audio thread by Signalsmith Stretch (MIT, header-only; vendored with
   its FFT library). Nothing else is needed to build it.
 - Stretchers keep state from block to block, so they live in *voices* (`WarpVoice`). These are allocated on the edit
@@ -140,10 +141,20 @@ saved with the earlier Ableton-style names load into the equivalent mode (a mode
 When the snapshot is built (`rebuildSnapshotLocked`, see [rendering.md](rendering.md)), each `ClipDesc` becomes a
 `ClipRender`:
 
-- `start` = `llround(startBeat * samplesPerBeat)`; `sourceOffset` = `offsetSec` in samples.
+- `start` = the sample the tempo map puts `startBeat` at (`RenderSnapshot::sampleAt`); `sourceOffset` = `offsetSec`
+  in samples.
 - **Warped** (`warp` and `segmentBpm > 0`): `rate = tempo / segmentBpm`; the end sits on its beat:
   `endBeat = startBeat + durationSec * segmentBpm / 60`, and `length` runs from start to `endBeat` in samples. Both
-  ends follow the tempo.
+  ends follow the tempo. Where the tempo changes along the clip it has a `curve` (`WarpCurve`, Warp.h: points
+  (timeline samples from its start, source frames from its offset), straight between): its source plays each of
+  its beats where the map puts that beat. The points are its ends, the map's points within it, and every 256
+  samples through a ramp (`warpCurve()`, EngineSnapshot.cpp); `rate` is then its average. One tempo all along it:
+  no curve, that tempo's rate.
+- **Warped from a source map** (`ClipDesc::sourceMap`: a track frozen under a tempo map): the source's own beats
+  are that map's (its seconds from the file's start), so `endBeat = startBeat + map.beatAt(offset + duration) -
+  map.beatAt(offset)`, and it always has a curve: each point's source frame is where the source map has the clip's
+  beat at that sample (the song's points and the source map's within it, steps through either's ramps). Fades
+  count their beats by the source map too.
 - **Unwarped**: `rate` 1, and the length is `durationSec` in samples, so its length in beats follows the tempo.
 - The length is cut so the clip never plays past the end of the file.
 - Playback:
@@ -156,8 +167,10 @@ When the snapshot is built (`rebuildSnapshotLocked`, see [rendering.md](renderin
 - `fadeIn` / `fadeOut`: its fades in timeline samples (its own, in source seconds, at its speed; or the short one
   against clicks where an edge cuts into the file), and their curves: see [rendering.md](rendering.md).
 
-`ClipRender::sourceAt(t)` = `sourceOffset + (t - start) * rate`: the fractional source frame heard at timeline
-sample `t`.
+`ClipRender::sourceAt(t)` = `sourceOffset + (t - start) * rate` (or along the curve): the fractional source frame
+heard at timeline sample `t`; `rateAt(t)` how fast it goes there. The stretcher's lead and seek, the tolerance a
+voice carries on within and Re-Pitch's anti-aliasing (the fastest it goes in the block) take the rate where the
+clip is.
 
 ## Stretch voices
 
@@ -244,10 +257,12 @@ instead of a few hundred; see [What it costs](#what-it-costs)).
 - **A render** (`WarpRender`) is a clip's output over its whole length, stereo float: frame `n` is what a fresh voice
   starting at the clip's first frame plays `n` frames later. The cache's thread makes it with a fresh `WarpVoice`
   (the fixed seed) fed in blocks of 1024, so a render is the same every time. It depends only on what shapes the
-  output: the source, `sourceOffset`, `length`, `rate`, the stretch configuration, `transpose`, `preserveFormants`
-  and the sample rate. Where the clip sits on the timeline, its gain, pan and fades don't matter (the renderer
-  applies those as for any clip), so moving a clip, or changing its gain, keeps its render. A change of tempo
-  changes the rate of the warped clips, so they are rendered again.
+  output: the source, `sourceOffset`, `length`, `rate`, its curve (by what it holds: relative to the clip), the
+  stretch configuration, `transpose`, `preserveFormants` and the sample rate. Where the clip sits on the timeline,
+  its gain, pan and fades don't matter (the renderer applies those as for any clip), so moving a clip, or changing
+  its gain, keeps its render, unless it moves to where the tempo changes differently under it. A change of tempo
+  changes the rate (or curve) of the warped clips, so they are rendered again. `WarpRender::frameOf()` finds the
+  frame that played a source position (a voice taking over mid-way fades from there).
 - **Asking.** Each snapshot build brackets its clips with `beginBuild()` and `endBuild()`, and asks for each
   stretched clip's render (`request()`), which the `ClipRender` carries (`rendered`). A render asked for before is
   shared; a new one is queued. `endBuild()` forgets the renders no clip asked for: an unfinished one stops (it
@@ -332,9 +347,9 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
   `stretchConfigFor()`, and if it needs another block size add a `StretchConfig` and a `kTimings` entry
   (`kNumStretchConfigs` grows with it). Anything that changes the stretcher's settings per clip goes in
   `ClipRender` and is applied at the top of `WarpVoice::render()`.
-- **Warp markers** (warping within a clip) are not implemented: a warped clip has one segment BPM. They would turn
-  `ClipRender::rate` and `sourceAt()` into a piecewise mapping; `WarpVoice::render()` already feeds input by
-  absolute source position, so it would follow.
+- **Warp markers** (warping within a clip) are not implemented: a warped clip has one segment BPM. Its source
+  position is already a piecewise mapping under a changing tempo (`WarpCurve`): markers would add their points
+  to it.
 - **Streaming long files** is not implemented; `AudioSource` would need a different storage behind `channelData()`.
 
 ## Gotchas
@@ -358,7 +373,9 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
   bit), live playback plays a ready render (and offline renders don't), a stretch under way goes on and the render
   takes over at a locate, a tempo change while a clip plays from its render crossfades into the stretcher (without the
   fade it clicks), renders no snapshot asks for are forgotten and the budget holds, an engine's renders finish and
-  leave exports as they were.
+  leave exports as they were, a clip warped along a curve is rendered by it (and kept for an equal curve).
+- [tests/engine/test_tempo_engine.cpp](../../tests/engine/test_tempo_engine.cpp): warped clips on their beats
+  through a tempo jump and a ramp, Re-Pitch and stretched.
 - [benchmarks/warp_bench.cpp](../../benchmarks/warp_bench.cpp) (not a test): what each playback costs, from a render
   too (the `-cached` cases).
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,

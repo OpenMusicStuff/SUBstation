@@ -21,7 +21,7 @@ What the user does with it: [guide/arrangement.md](../guide/arrangement.md),
 | [RowModels](../../ui/src/arrangement/RowModels.h) | `TrackRowModel` (a header per track, where it sits) and `ReturnRowModel` (a lane and a header per return) |
 | [Timeline](../../ui/src/timeline/Timeline.h) (`ui/src/timeline`) | `timeline::Timeline`, `gridLines()`, `labelStep()`, `drawGrid()`, `drawLoopRegion()`, `drawPlayhead()`: shared with the piano roll |
 | [ArrangementItem](../../ui/src/arrangement/ArrangementItem.h) | The base of the drawn parts: `session` and `arrangement` properties, `repaint()` |
-| [ArrangementRuler](../../ui/src/arrangement/ArrangementRuler.h) | The loop brace and the scrub area |
+| [ArrangementRuler](../../ui/src/arrangement/ArrangementRuler.h) | The loop brace, the scrub area, the time signature markers and menu |
 | [ArrangementLanes](../../ui/src/arrangement/ArrangementLanes.h) | The track lanes: painting clips, group summaries, the selection, markers; hit-testing; mouse, wheel, keys, context menus, drops |
 | [ClipGestures](../../ui/src/arrangement/ClipGestures.h), [Gesture.h](../../ui/src/arrangement/Gesture.h) | The clip gestures: `MoveRangeGesture`, and the one-clip edits on `ClipEditGesture`: `TrimGesture`, `StretchGesture` (Alt on an edge), `SlipGesture` (Ctrl+Shift on a body), `FadeGesture` and `FadeCurveGesture` (F held) (all heard as they drag); `TimeSelectGesture`, `ExtendGesture` (Shift-click), `PanGesture`, `selectRows()`; the `Gesture` base. A `MoveRangeGesture` of one audio clip moved down past the arrangement (onto the device view) ends there (`ArrangementLanes::dragClipOut`: the move cancelled) and becomes a drag of its part of its file (`MoveRangeGesture::draggedAudio()`, `clipMimeData()` in [BrowserMime.h](../../app/src/browser/BrowserMime.h)), for a Sampler or a Drum Rack's pad |
 | [Envelopes](../../ui/src/arrangement/Envelopes.h) | Automation lanes drawn and edited: `EnvelopeArea`, `Hover`, `EnvelopeLook`, `LanesHost`, and in `envelopes::` hit-testing, `trace()`, `press()`, `hover()`, the menu, drawing; the automation gestures |
@@ -94,10 +94,12 @@ It emits `viewChanged` (zoom or horizontal scroll), `vscrollChanged`, `gridChang
   shows, else around the middle. `zoomToArrangement()` (Z, and every project opened) fits the arrangement, at least
   8 bars, plus 5 %, to the lanes' width.
 - `gridStep()` is the adaptive grid: the smallest step, among musical subdivisions of the bar (1/32 to 2 beats, only
-  those that divide the bar) and multiples of the bar, that is at least `gridMinPixels(level)` wide (6, 11, 20, 40 or
+  those that divide the bar; the bar is the first time signature's) and multiples of the bar, that is at least `gridMinPixels(level)` wide (6, 11, 20, 40 or
   80 px for levels -2 to 2). Ctrl+1 and Ctrl+2 change the level; the step also changes with zoom. `gridLabel` is what
   the corner shows ("Grid 1/16", "Grid 2 Bars", " (off)" while not snapping).
-- `snapBeat(beat, bypass)` rounds to the grid unless snapping is off or `bypass` (Alt held) is true.
+- `snapBeat(beat, bypass)` rounds to the grid unless snapping is off or `bypass` (Alt held) is true. The grid counts
+  from the start of the bar the beat is in (`meter()`, the project's `MeterMap`, set by `setProject`), so a step that
+  doesn't divide a later bar's length still lands on its bar lines; a step of bars counts that bar's own.
 - **Following**: while playing with `follow` on, `onPosition()` scrolls so the playhead stays between 4 % and 96 % of
   the lanes' width (`kFollowMargin`). Scrolling by hand (the wheel, the ruler, a Ctrl+Alt drag:
   `scrollByHand()`) sets `followPaused` until playback stops or starts again.
@@ -236,7 +238,9 @@ shortcuts and the computer MIDI keyboard do.
 ## The grid and the ruler
 
 [Timeline.cpp](../../ui/src/timeline/Timeline.cpp): `gridLines(view, x0, x1, step)` gives `(x, beat, kind)` with kind
-`Bar`, `Beat` or `Sub` against the time signature. `drawGrid(..., overClip = true)` draws faint dark lines instead,
+`Bar`, `Beat` or `Sub` against the time signatures (each line's `bar` is its bar's index: a bar line where a new
+time signature starts falls where that bar starts, and the beats count that bar's beat unit). `drawGridBands()`
+shades every other bar (or group of bars) by the same bars. `drawGrid(..., overClip = true)` draws faint dark lines instead,
 so the grid shows through a clip body of any colour. `labelStep()` picks how often the ruler labels: the grid step
 or a coarser musical unit, at least 44 px apart. `drawLoopRegion()` tints the loop while it is on. `drawPlayhead()`
 draws the playhead (a line, or a triangle on a ruler) for `ArrangementPlayhead` and `RollPlayhead` alike.
@@ -246,7 +250,8 @@ draws the playhead (a line, or a triangle on a ruler) for `ArrangementPlayhead` 
 right of a tick down to the band, the others a short tick), then a band with the grid's lines (darker than the
 ground) holding the loop brace and the start marker (a triangle pointing down at its foot). The brace is
 `loopColor()`, its edges `loopEdgeColor()`, with a hollow triangle inside each end, pointing in; the edges run on
-down the band, and `ArrangementLanes` draws them on down the lanes.
+down the band, and `ArrangementLanes` draws them on down the lanes. A bar where the time signature changes (and
+bar 1, once any later bar changes it) shows its signature ("3/4") in `Theme.accent` right of its number.
 
 - The brace's strip (`kLoopTop`, `kLoopStrip` 11 px: `inLoopStrip(y)`). `loopZone(x)` says start edge, end edge (`kEdgeGrab` 6 px) or
   body. Dragging edits the loop through `editor.setLoop(enabled, start, end, key)` with one key per drag (one undo
@@ -256,6 +261,10 @@ down the band, and `ArrangementLanes` draws them on down the lanes.
   decides once, on its first 3 px, whether it pans (mostly horizontal: `scrollByHand`) or zooms (mostly vertical:
   `zoomAt` by 1.012 per pixel, around where it was pressed).
 - The playhead is an `ArrangementPlayhead` over it (`ruler: true`: a triangle at its foot).
+- A right-click opens its menu (`contextMenu(x)`, shown by `ArrangementMenu.qml` through `menuRequested`, run by
+  `triggerMenu(id)`): **Time Signature From Bar N** (twelve common signatures, the bar's own checked:
+  `editor.setTimeSignatureAt(bar start, n, d)`, or `setTimeSignature` for bar 1) and **Remove Time Signature Change**
+  (enabled where one starts: `editor.removeTimeSignatureAt`).
 
 ## The lanes
 
@@ -648,6 +657,15 @@ moved point ended up (several points override what they land on, so indices shif
 Envelope, Re-Enable Automation (if overridden), Remove Lane (lanes below), Show Automation in New Lane, Hide
 Automation.
 
+### The Song Tempo lane
+
+The master's *Song* / *Song Tempo* (`automation::kSongTempo`) is the tempo map drawn as an envelope: its points are
+the map's (`Project::tempoEnvelope()`, linear over `tempoRange()`), so a ramp is a straight line and two points at
+one beat a jump, and every edit on it (adding, moving, deleting points, a range moved, pasted or deleted) changes the
+tempo map through the editor (see [app/model.md](../app/model.md)). Alt-drag bends a ramp: the map's curves are
+an envelope's, the same shape.
+Its readout is the BPM; it counts as automated (a red dot) while the tempo changes along the song.
+
 ### Showing automation
 
 What shows is view state on each owner's `automationView` (`shown`, `key`, `lanes`), saved but not undone. `A` is
@@ -661,7 +679,7 @@ lane (`editor.showAutomation(owner, key)`), if `bridge.canAutomate` says it can 
 (`[{lane, device, param}]`), a device chooser, a parameter chooser and **+** (`addLane()`) for the own lane, and a
 device chooser, a parameter chooser and **−** (`removeLane(lane)`) for each lane below, centred in it. A chooser
 ([AutomationChooser.qml](../../ui/qml/arrangement/AutomationChooser.qml)) shows its text and asks for its menu:
-`deviceMenu(lane)` lists `bridge.paramGroups(owner)` (*Mixer*, then each device, rack chains included), each
+`deviceMenu(lane)` lists `bridge.paramGroups(owner)` (*Mixer*, *Song* on the master, then each device, rack chains included), each
 choosing the group's first automated parameter (or its first); `paramMenu(lane)` lists the current group's
 parameters. Automated ones get a red dot. Choosing calls `editor.setAutomationLane(owner, lane, key)`.
 

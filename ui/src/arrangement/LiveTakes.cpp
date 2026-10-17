@@ -64,14 +64,14 @@ void LiveTakes::paint(SgPainter& p) {
 void LiveTakes::drawTake(SgPainter& p, const QColor& trackColor, const app::LiveTake& take, double rowTop,
                          int rowHeight, bool folded, const QRectF& visible) const {
     const double rate = std::max(1.0, session()->bridge()->sampleRate());
-    const double tempo = session()->project()->tempo();
+    const app::Tempo& tempo = session()->project()->tempoMap();  // (samples are the timeline's: beats by the map)
     const timeline::Timeline& view = arrangement()->view();
     // In recording time, moved back to the timeline by the loop's wraps so far:
     // only the pass under way shows (LiveTake::passStart), from the loop's start.
     const qint64 offset = take.passOffset();
-    const double start = static_cast<double>(take.startSample - offset) / rate * tempo / 60.0;
+    const double start = tempo.beatAt(static_cast<double>(take.startSample - offset) / rate);
     // And only inside the punch region (Punch In and Out): nothing yet before it, no more after it.
-    const auto beatOf = [&](qint64 sample) { return static_cast<double>(sample) / rate * tempo / 60.0; };
+    const auto beatOf = [&](qint64 sample) { return tempo.beatAt(static_cast<double>(sample) / rate); };
     double passStart = beatOf(take.passStart() - offset);
     if (take.punchIn) passStart = std::max(passStart, beatOf(*take.punchIn));
     double end = beatOf(take.startSample + take.frames - offset);
@@ -134,7 +134,8 @@ void LiveTakes::drawNotes(SgPainter& p, const app::LiveTake& take, double takeEn
     // A MIDI take's notes while it records, laid out as a clip's (held ones reach its end).
     if (take.notes.empty() || area.height() < 3) return;
     const double rate = std::max(1.0, session()->bridge()->sampleRate());
-    const double beatsPerSample = session()->project()->tempo() / 60.0 / rate;
+    const app::Tempo& tempo = session()->project()->tempoMap();
+    const auto beatOf = [&](double sample) { return tempo.beatAt(sample / rate); };
     const qint64 offset = take.passOffset(), passStart = take.passStart();  // (the pass under way: as drawTake)
     int low = take.notes.front().key, high = low;
     for (const app::LiveNote& note : take.notes) {
@@ -147,8 +148,8 @@ void LiveTakes::drawNotes(SgPainter& p, const app::LiveTake& take, double takeEn
     const timeline::Timeline& view = arrangement()->view();
     for (const app::LiveNote& note : take.notes) {
         if (note.end >= 0 && note.end <= passStart) continue;  // (an earlier pass's)
-        const double x0 = view.beatToX(static_cast<double>(std::max(note.start, passStart) - offset) * beatsPerSample);
-        const double x1 = view.beatToX(note.end >= 0 ? static_cast<double>(note.end - offset) * beatsPerSample : takeEnd);
+        const double x0 = view.beatToX(beatOf(static_cast<double>(std::max(note.start, passStart) - offset)));
+        const double x1 = view.beatToX(note.end >= 0 ? beatOf(static_cast<double>(note.end - offset)) : takeEnd);
         if (x1 >= visible.left() && x0 <= visible.right())
             p.fillRect(QRectF(x0, top + (high - note.key) * row, std::max(1.0, x1 - x0 - gap), std::max(1.0, row - gap)),
                        Theme::waveform());

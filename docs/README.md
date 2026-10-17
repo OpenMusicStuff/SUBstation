@@ -95,6 +95,14 @@ operating system.
 |---|---|
 | [Platform layer](platform.md) | paths in the system's form and their keys, files, binary fields and checksums, threads' priorities, child processes, shared memory and wake-ups between processes; one file per system |
 
+### Musical time
+
+[music/src](../music/src), no Qt, under every layer.
+
+| Page | Covers |
+|---|---|
+| [Musical time](music.md) | the tempo map (steady tempos, ramps, jumps) and time signature changes; beats, seconds, samples and bars, both ways |
+
 ### Browser
 
 [browser/src](../browser/src), no Qt, and its application side in [app/src/browser](../app/src/browser).

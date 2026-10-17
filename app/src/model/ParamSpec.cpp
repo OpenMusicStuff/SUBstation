@@ -166,6 +166,19 @@ std::vector<ParamSpec> mixerSpecs(bool master, const std::vector<std::pair<QStri
     return specs;
 }
 
+ParamSpec tempoSpec(double low, double high) {
+    ParamSpec spec;
+    spec.key = automation::kSongTempo;
+    spec.name = QStringLiteral("Song Tempo");
+    spec.group = QStringLiteral("Song");
+    spec.minimum = low;
+    spec.maximum = high;
+    spec.defaultValue = 120.0;
+    spec.unit = QStringLiteral("BPM");
+    spec.text = [](double bpm) { return QStringLiteral("%1 BPM").arg(bpm, 0, 'f', 2); };
+    return spec;
+}
+
 ParamSpec switchSpec(const QString& key, const QString& name, const QString& group) {
     ParamSpec spec;
     spec.key = key;

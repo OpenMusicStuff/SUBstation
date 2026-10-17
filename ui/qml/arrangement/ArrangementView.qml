@@ -116,6 +116,7 @@ FocusScope {
         clip: true
         session: Session
         arrangement: arrangementState
+        onMenuRequested: (entries, pos) => arrangementMenu.show(entries, ruler, ruler, pos.x, pos.y)
 
         ArrangementPlayhead {
             anchors.fill: parent

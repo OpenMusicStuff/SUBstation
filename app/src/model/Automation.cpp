@@ -126,6 +126,7 @@ std::optional<Target> parseKey(const QString& key) {
     const QString rest = colon < 0 ? QString() : key.mid(colon + 1);
     if (kind == u"mixer" && kMixerKeys.contains(key)) return Target{kind, rest, {}};
     if (kind == u"send" && !rest.isEmpty()) return Target{kind, rest, {}};
+    if (key == kSongTempo) return Target{kind, rest, {}};
     if (kind == u"device") {
         const qsizetype separator = rest.indexOf(u':');
         if (separator > 0) return Target{kind, rest.left(separator), rest.mid(separator + 1)};

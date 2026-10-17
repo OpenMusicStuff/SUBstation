@@ -395,7 +395,7 @@ void Engine::prepareOfflineLocked(const RenderSnapshot& snap, Renderer& offline,
     offline.setWarpVoices(&lines.voices);
     offline.setDelayLines(&lines.delays, &lines.deviceDelays, &lines.chainDelays, &lines.switchDelays);
     offline.syncTempo(snap);
-    offline.setPosition(std::llround(std::max(0.0, startBeat) * snap.samplesPerBeat()));
+    offline.setPosition(snap.sampleAt(std::max(0.0, startBeat)));
     offline.setPlaying(true);
 }
 
@@ -563,7 +563,10 @@ std::shared_ptr<RenderJob> Engine::startExport(const std::string& path, double s
         writer = std::make_shared<WavWriter>(path, wavFormat, sampleRate_);
     }
     auto render = beginOfflineLocked(startBeat);
-    const int64_t total = std::llround((endBeat - startBeat) * render->snapshot->samplesPerBeat());
+    const RenderSnapshot& timed = *render->snapshot;
+    const int64_t total = timed.tempoMap->constant()
+                              ? std::llround((endBeat - startBeat) * timed.samplesBetween(0.0, 1.0))
+                              : timed.sampleAt(endBeat) - timed.sampleAt(startBeat);
     return startJobLocked({path}, total, [render, writer, total](RenderJob& job) -> std::optional<int64_t> {
         ScopedNoDenormals noDenormals;
         const RenderSnapshot& snap = *render->snapshot;
@@ -624,7 +627,8 @@ std::shared_ptr<RenderJob> Engine::startTracksRender(const std::vector<TrackFile
     }
     const bool whole = !pruneTrackRenders_;
     render->renderer.setCaptures(snap, tracks, whole);
-    const int64_t frames = std::llround((endBeat - startBeat) * snap.samplesPerBeat());
+    const int64_t frames = snap.tempoMap->constant() ? std::llround((endBeat - startBeat) * snap.samplesBetween(0.0, 1.0))
+                                                     : snap.sampleAt(endBeat) - snap.sampleAt(startBeat);
     const int64_t tail = std::llround(std::clamp(tailSeconds, 0.0, 600.0) * sampleRate_);
     const int64_t start = render->renderer.position();
     auto captures = std::make_shared<std::vector<TrackCapture>>();

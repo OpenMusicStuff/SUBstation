@@ -32,14 +32,17 @@ What SUBstation doesn't do yet, by area.
   instrument wherever it sits in the chain (it can't be put before the instrument).
 - Note bends edit pitch only: MIDI 2.0's other per-note expressions (pressure,
   brightness, per-note controllers) can't be drawn.
-- Chords and the key are worked out from MIDI only, not from audio clips, and the
-  project has one time signature for them to follow. Generate writes block chords and
+- Chords and the key are worked out from MIDI only, not from audio clips, and they
+  count bars of the song's first time signature. Generate writes block chords and
   bass lines; melodies and accompaniment with rhythms of their own are to come.
 
 ## Automation and tempo
 
 - Recording automation (writing it while playing).
-- Tempo changes over time.
+- The master's Song Tempo lane's range is 60 to 200 BPM (wider if the song's tempo goes
+  beyond), with no way to set it yet.
+- A Live Set's curved tempo automation comes in straight: Live bends its segments with
+  Bézier handles, which SUBstation's curve doesn't take yet.
 - Automation lanes below a track have a fixed height.
 
 ## Devices and plug-ins

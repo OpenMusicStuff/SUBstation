@@ -87,6 +87,7 @@ std::optional<sub::AutomationLaneDesc> EngineBridge::engineLane(const QString& o
         if (!returnId) return std::nullopt;
         return sub::AutomationLaneDesc{0, "send:" + std::to_string(*returnId), enginePoints};
     }
+    if (target->kind == u"song") return std::nullopt;  // (the tempo map: the engine has it as a setting)
     const auto processorId = engineDeviceId(owner, target->id);
     if (const auto control = automation::keyChainControl(key)) {  // a rack chain's fader
         const auto chain = engineChainId(control->chainId);
@@ -271,6 +272,10 @@ std::vector<ParamSpec> EngineBridge::mixerSpecs(const QString& owner) const {
 std::vector<ParamGroup> EngineBridge::paramGroups(const QString& owner) {
     std::vector<ParamGroup> groups;
     groups.push_back({QStringLiteral("mixer"), QStringLiteral("Mixer"), mixerSpecs(owner)});
+    if (owner == kMaster) {
+        const auto [low, high] = project_->tempoRange();
+        groups.push_back({QStringLiteral("song"), QStringLiteral("Song"), {tempoSpec(low, high)}});
+    }
     if (!project_->hasOwner(owner)) return groups;  // (one that went: its mixer, as any owner's)
     std::vector<Device> devices;
     for (const Device* device : iterDevices(project_->track(owner).devices)) devices.push_back(*device);
@@ -291,6 +296,11 @@ bool EngineBridge::canAutomate(const QString& owner, const QString& key) {
 }
 
 std::optional<ParamSpec> EngineBridge::paramSpec(const QString& owner, const QString& key) {
+    if (key == automation::kSongTempo) {
+        if (owner != kMaster) return std::nullopt;
+        const auto [low, high] = project_->tempoRange();
+        return tempoSpec(low, high);
+    }
     if (automation::kMixerKeys.contains(key)) {  // no need to work out its sends (the master has no activator: none)
         for (const ParamSpec& spec : sub::app::mixerSpecs(owner == kMaster)) {
             if (spec.key == key) return spec;
@@ -327,6 +337,7 @@ std::optional<ParamSpec> EngineBridge::paramSpec(const QString& owner, const QSt
 
 std::optional<double> EngineBridge::ownValue(const QString& owner, const QString& key) {
     if (!project_->hasOwner(owner)) return std::nullopt;
+    if (key == automation::kSongTempo) return owner == kMaster ? std::optional(project_->tempo()) : std::nullopt;
     const Track& track = project_->track(owner);
     if (key == automation::kMixerVolume) return track.volumeDb;
     if (key == automation::kMixerPan) return track.pan;
@@ -358,6 +369,7 @@ std::optional<double> EngineBridge::ownValue(const QString& owner, const QString
 }
 
 std::optional<double> EngineBridge::currentValue(const QString& owner, const QString& key, std::optional<double> beat) {
+    if (key == automation::kSongTempo && owner == kMaster) return project_->tempoMap().bpmAt(beat ? *beat : position());
     const auto spec = paramSpec(owner, key);
     if (spec && isAutomated(owner, key)) {
         const auto moved = d_->macroMoved.value(owner).constFind(key);  // (it follows its macro's automation)

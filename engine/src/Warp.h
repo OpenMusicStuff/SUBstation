@@ -11,12 +11,54 @@
 //    Live playback reads a stretched clip's whole render instead once the
 //    background has made it (WarpCache.h).
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
 namespace sub {
+
+// A warped clip's source position along it where the tempo changes under it:
+// (timeline samples from the clip's start, source frames from its sourceOffset),
+// sorted by both, straight from one to the next and on past the ends at the end
+// segments' slopes. Exact at the tempo map's points, a few hundred samples apart
+// through its ramps (EngineSnapshot.cpp, warpCurve()).
+struct WarpPoint {
+    int64_t at = 0;
+    double source = 0.0;
+    friend bool operator==(const WarpPoint&, const WarpPoint&) = default;
+};
+using WarpCurve = std::vector<WarpPoint>;
+
+namespace warpcurve {
+
+// The segment `t` is on: the index of its first point (at least two points).
+inline size_t segment(const WarpCurve& curve, double t) noexcept {
+    const auto after = std::upper_bound(curve.begin() + 1, curve.end() - 1, t,
+                                        [](double v, const WarpPoint& p) { return v < static_cast<double>(p.at); });
+    return static_cast<size_t>(after - curve.begin()) - 1;
+}
+inline double slope(const WarpCurve& curve, size_t i) noexcept {
+    const double span = static_cast<double>(curve[i + 1].at - curve[i].at);
+    return span > 0.0 ? (curve[i + 1].source - curve[i].source) / span : 0.0;
+}
+inline double sourceAt(const WarpCurve& curve, double t) noexcept {
+    const size_t i = segment(curve, t);
+    return curve[i].source + (t - static_cast<double>(curve[i].at)) * slope(curve, i);
+}
+inline double rateAt(const WarpCurve& curve, double t) noexcept { return slope(curve, segment(curve, t)); }
+// The inverse: the time (from the clip's start) its source reaches `source`.
+inline double timeOf(const WarpCurve& curve, double source) noexcept {
+    const auto after = std::upper_bound(curve.begin() + 1, curve.end() - 1, source,
+                                        [](double v, const WarpPoint& p) { return v < p.source; });
+    const size_t i = static_cast<size_t>(after - curve.begin()) - 1;
+    const double s = slope(curve, i);
+    return static_cast<double>(curve[i].at) + (s > 0.0 ? (source - curve[i].source) / s : 0.0);
+}
+
+}  // namespace warpcurve
+
 
 struct ClipRender;
 class WarpRender;

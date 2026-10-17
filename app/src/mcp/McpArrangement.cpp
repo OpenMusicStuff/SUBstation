@@ -24,13 +24,14 @@ double jaccard(const QSet<int>& a, const QSet<int>& b) {
 constexpr double kNewSection = 0.6;
 constexpr double kSameSection = 0.75;
 
-// Raises `cells`' characters over [from, to) beats (cells `cellBeats` long from `origin`) to `mark`.
-void mark(QString& cells, double origin, double cellBeats, double from, double to, QChar mark) {
+// Raises `cells`' characters over [from, to) to `mark`: in bars from the song's start (barNumberAt() less
+// one: bars of any length), cells `cellBars` long from bar `origin`.
+void mark(QString& cells, double origin, double cellBars, double from, double to, QChar mark) {
     constexpr double kEps = 1e-9;
     if (to <= from) return;
     const int count = static_cast<int>(cells.size());
-    const int first = std::max(0, static_cast<int>(std::floor((from - origin) / cellBeats + kEps)));
-    const int last = std::min(count - 1, static_cast<int>(std::ceil((to - origin) / cellBeats - kEps)) - 1);
+    const int first = std::max(0, static_cast<int>(std::floor((from - origin) / cellBars + kEps)));
+    const int last = std::min(count - 1, static_cast<int>(std::ceil((to - origin) / cellBars - kEps)) - 1);
     for (int i = first; i <= last; ++i) {
         // '#' wins over '-', which wins over '.'.
         if (cells[i] == kCellPlays || (cells[i] == kCellSilent && mark == kCellEmpty)) continue;
@@ -56,19 +57,21 @@ bool heard(const Project& project, const Track& track) {
 
 ArrangementMap arrangementMap(const Project& project, int firstBar, int lastBar, int barsPerCell) {
     ArrangementMap map;
-    map.beatsPerBar = project.timeSignature().beatsPerBar();
-    const double bpb = map.beatsPerBar;
-    const int songLastBar = std::max(1, static_cast<int>(std::ceil(project.endBeat() / bpb - 1e-9)));
+    map.beatsPerBar = project.timeSignature().beatsPerBar();  // (the song's first bars')
+    const MeterMap& meter = project.meter();
+    const auto barOf = [&](double beat) { return barNumberAt(beat, meter) - 1.0; };  // (from 0)
+    const int songLastBar = std::max(1, static_cast<int>(std::ceil(barOf(project.endBeat()) - 1e-9)));
     map.firstBar = std::max(1, firstBar);
     map.lastBar = std::max(map.firstBar, lastBar > 0 ? lastBar : songLastBar);
     const int bars = map.lastBar - map.firstBar + 1;
     map.barsPerCell = barsPerCell > 0 ? barsPerCell : (bars + kDefaultMaxCells - 1) / kDefaultMaxCells;
     map.barsPerCell = std::max(map.barsPerCell, (bars + kMaxCells - 1) / kMaxCells);
     const int cells = (bars + map.barsPerCell - 1) / map.barsPerCell;
-    const double origin = (map.firstBar - 1) * bpb;
-    const double cellBeats = map.barsPerCell * bpb;
-    const double end = map.lastBar * bpb;
-    const double tempo = project.tempo();
+    const double origin = map.firstBar - 1;  // (in bars)
+    const double cellBars = map.barsPerCell;
+    const double end = beatOfBarNumber(map.lastBar + 1, meter);
+    const double originBeat = beatOfBarNumber(map.firstBar, meter);
+    const Tempo& tempo = project.tempoMap();
 
     // Each track's line; groups' after, from what they hold.
     const std::vector<const Track*> tracks = project.allTracks();
@@ -77,17 +80,18 @@ ArrangementMap arrangementMap(const Project& project, int firstBar, int lastBar,
         if (!track->hasClips()) continue;
         QString line(cells, kCellEmpty);
         for (const Clip& clip : track->clips) {
-            const double from = std::max(clip.startBeat, origin);
+            const double from = std::max(clip.startBeat, originBeat);
             const double to = std::min(clip.endBeat(tempo), end);
             if (to <= from) continue;
-            mark(line, origin, cellBeats, from, to, kCellSilent);
+            mark(line, origin, cellBars, barOf(from), barOf(to), kCellSilent);
             if (!clip.plays()) continue;
             if (clip.isAudio()) {
-                mark(line, origin, cellBeats, from, to, kCellPlays);
+                mark(line, origin, cellBars, barOf(from), barOf(to), kCellPlays);
                 continue;
             }
             for (const PlayedNote& note : clip.heardNotes()) {
-                mark(line, origin, cellBeats, std::max(note.start, from), std::min(note.end, to), kCellPlays);
+                mark(line, origin, cellBars, barOf(std::max(note.start, from)), barOf(std::min(note.end, to)),
+                     kCellPlays);
             }
         }
         lines.insert(track->id, line);

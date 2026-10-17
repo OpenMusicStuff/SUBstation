@@ -101,7 +101,7 @@ protected:
     void update(const app::Clip& result);
     // The track the clip is on (none: gone meanwhile).
     const app::Track* track() const;
-    double tempo() const;
+    const app::Tempo& tempo() const;
 
     LanesHost& host_;
     QString trackId_;

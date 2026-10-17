@@ -78,6 +78,9 @@ struct ParamSpec {
 std::vector<ParamSpec> mixerSpecs(bool master = false, const std::vector<std::pair<QString, QString>>& sends = {});
 // A switch: Off (0) or On (1), on by default (a track's activator, a device's on/off).
 ParamSpec switchSpec(const QString& key, const QString& name, const QString& group);
+// The master's Song Tempo lane (automation::kSongTempo): BPM, linear from `low` to `high`
+// (Project::tempoRange()), in the group "Song".
+ParamSpec tempoSpec(double low, double high);
 // A device's on/off ("Device On"), of the device named `group`.
 ParamSpec deviceOnSpec(const QString& deviceId, const QString& group);
 // A send's level to a return (lettered as it shows), automated as a volume is.

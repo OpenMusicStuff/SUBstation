@@ -80,7 +80,7 @@ std::unique_ptr<FreezeRender> EngineBridge::startFreeze(const QStringList& track
     if (isPlaying()) stop();
     try {
         std::shared_ptr<sub::RenderJob> job = engine_.startTracksRender(files, 0.0, end, kFreezeTailSeconds);
-        return std::make_unique<FreezeRender>(trackIds, std::move(job), project_->tempo());
+        return std::make_unique<FreezeRender>(trackIds, std::move(job), project_->tempoMap());
     } catch (const std::exception& error) {
         throw EditError(QString::fromStdString(error.what()));
     }
@@ -95,7 +95,8 @@ std::optional<OrderedMap<QString, Freeze>> EngineBridge::finishFreezes(FreezeRen
         Freeze freeze;
         freeze.path = paths[i];
         freeze.durationSec = static_cast<double>(written.value(i)) / engine_.sampleRate();
-        freeze.tempo = render.tempo();
+        freeze.tempo = render.tempo().bpm();
+        if (!render.tempo().constant()) freeze.map = render.tempo();
         freezes.insert(render.trackIds()[i], freeze);
     }
     // Its samples at hand at once, so that each plays as soon as its track is frozen

@@ -1345,7 +1345,13 @@ namespace {
 QString groupOf(const QString& key) {
     if (key.isEmpty()) return {};
     if (automation::isMixerKey(key)) return QStringLiteral("mixer");
+    if (key == automation::kSongTempo) return QStringLiteral("song");
     return automation::keyDevice(key).value_or(QString());
+}
+
+// Whether a key has automation: an envelope, or (the Song Tempo lane) a tempo that changes.
+bool hasAutomation(const app::Project& project, const app::EnvelopeMap& automated, const QString& key) {
+    return automated.contains(key) || (key == automation::kSongTempo && !project.tempoMap().constant());
 }
 
 }  // namespace
@@ -1364,7 +1370,7 @@ MenuEntries TrackHeaderItem::deviceMenu(int lane) {
         QString key = group.specs.front().key;
         bool anyAutomated = false;
         for (const app::ParamSpec& spec : group.specs) {
-            if (automated.contains(spec.key)) {
+            if (hasAutomation(*project(), automated, spec.key)) {
                 if (!anyAutomated) key = spec.key;
                 anyAutomated = true;
             }
@@ -1393,7 +1399,7 @@ MenuEntries TrackHeaderItem::paramMenu(int lane) {
                 MenuEntry& entry = list.add(spec.name, [this, lane, chosen] { chooseLane(lane, chosen); });
                 entry.checkable = true;
                 entry.checked = spec.key == key;
-                if (automated.contains(spec.key)) entry.dot = Theme::automationOn();
+                if (hasAutomation(*project(), automated, spec.key)) entry.dot = Theme::automationOn();
             }
         };
         if (group.specs.size() > kSearchFrom) {

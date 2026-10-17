@@ -89,7 +89,8 @@ VST3's own.
   Otherwise `param` is the processor's parameter id, or `kDeviceOnLane` (`"device:on"`, its on/off); for a rack,
   `"chain:<chain id>:volume"` or `":pan"` (the chain's fader).
 - `AutomationNode {time, value, curve}`: the same in timeline samples. `Engine::automationNodes()` converts at the
-  current tempo (`llround(beat * samplesPerBeat)`, beats below 0 clamped), clamps value and curve, and
+  sample the tempo map puts the beat at (`RenderSnapshot::sampleAt`, beats below 0 clamped; a curve is
+  drawn between two nodes in samples, so under a tempo ramp it is the same shape in time, not in beats), clamps value and curve, and
   stable-sorts by time, so two points at one time (a step) keep their order.
 - `AutomationRender` ([Snapshot.h](../../engine/src/Snapshot.h)): the nodes plus where they go: `processor` (null for
   a mixer control), `param` (index), `steps` (its `stepCount()`), `insert` (its place in the strip's chain) and

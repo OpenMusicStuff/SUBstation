@@ -87,6 +87,9 @@ struct ClipDesc {
     // the tempo of the source audio, and they play at tempo / segmentBpm speed.
     bool warp = false;
     double segmentBpm = 0.0;
+    // Warped, a source whose tempo changes along it (a track frozen under a tempo map): where its
+    // seconds, from the file's start, fall in its beats. Null: segmentBpm throughout.
+    std::shared_ptr<const TempoMap> sourceMap;
     WarpMode warpMode = WarpMode::Standard;
     double transpose = 0.0;     // semitones (fractions for detune); ignored by Re-Pitch
     std::string id;             // stable clip identity, so edits don't interrupt a stretching clip
@@ -713,9 +716,18 @@ public:
     // thread plays from there (not where it was a moment before: no flash back).
     double positionBeats() const;
     void setPositionBeats(double beat);
+    // The song's tempo: one throughout (setTempo()), or a tempo map (setTempoMap(): steady stretches,
+    // ramps and jumps, music/TempoMap.h). tempo() is the tempo at beat 0; tempoMap() the whole map.
+    // Positions everywhere stay in beats; what they are in samples follows the map.
     void setTempo(double bpm);
     double tempo();
+    void setTempoMap(const TempoMap& map);
+    TempoMap tempoMap();
+    // The time signature: one throughout, or changes (setMeter(), each starting a bar). Throws
+    // std::invalid_argument for one SUBstation doesn't play (MeterMap::valid()).
     void setTimeSignature(int numerator, int denominator);
+    void setMeter(const MeterMap& meter);
+    MeterMap meter();
     // The song's key, for the devices that follow the harmony (ProcessContext::keyTonic, keyMinor): its tonic's
     // pitch class (0 = C), or -1 when none is known. Throws std::invalid_argument for a tonic past 11.
     void setSongKey(int tonic, bool minor);
@@ -833,10 +845,10 @@ private:
         std::vector<ClipDesc> clips;
         std::vector<std::string> clipKeys;  // sourceKey() of each clip's path
         std::vector<NoteDesc> notes;
-        // Its notes as snapshots play them, made at `renderedSpb` samples a beat and `renderedRate`: made
+        // Its notes as snapshots play them, made by tempo map `renderedTempo` (its version) at `renderedRate`: made
         // again only when its notes (setTrackNotes()), the tempo or the rate change. Null: not made yet.
         std::shared_ptr<const std::vector<NoteRender>> rendered;
-        double renderedSpb = 0.0;
+        uint64_t renderedTempo = 0;
         double renderedRate = 0.0;
         uint32_t chainId = 0;               // its main chain
         uint32_t output = 0;                // where its output goes: kMaster, a track (a routing edge) or kNoOutput
@@ -967,7 +979,7 @@ private:
     void publishPendingLocked();  // builds the snapshot if it is stale
     void buildSnapshotLocked();   // builds and publishes it, now
     // A track's notes for the snapshot: TrackModel::rendered, made again if out of date.
-    NoteList renderedNotesLocked(TrackModel& track, double samplesPerBeat);
+    NoteList renderedNotesLocked(TrackModel& track, const RenderSnapshot& snap);
     bool pushCommandLocked(const TransportCommand& command);  // false: the queue was full
     void serviceTransportIfIdleLocked();
     void collectGarbageLocked();
@@ -1022,7 +1034,7 @@ private:
         const std::vector<std::vector<int>>* chainEnd = nullptr;
         const std::vector<std::vector<int>>* chainCompensation = nullptr;
         std::vector<std::vector<int>> sidechainOf;  // per slot: the snapshot edges into its sidechain input
-        double samplesPerBeat = 0.0;
+        const RenderSnapshot* snap = nullptr;  // the one being built: its tempo map, its rate
         // Rack chain -> the snapshot edges taken after its devices (StripRender::deviceTaps).
         const std::unordered_map<uint32_t, std::vector<int>>* chainTaps = nullptr;
     };
@@ -1041,7 +1053,7 @@ private:
     static void collectModulators(const StripRender& chain, const RackRender* rack, int chainIndex,
                                   std::vector<ModulatorRender>& out);
     // An envelope's breakpoints in samples, sorted.
-    static std::vector<AutomationNode> automationNodes(const AutomationLaneDesc& desc, double samplesPerBeat);
+    static std::vector<AutomationNode> automationNodes(const AutomationLaneDesc& desc, const RenderSnapshot& snap);
     // The routing graph's edges, as indices into tracks_ (-1: the master): each
     // track's output (into a track, or into a device's sidechain), then its
     // sends; then the input edges; then the sidechains, by destination and
@@ -1126,9 +1138,9 @@ private:
     std::atomic<double> locateBeat_{0.0};     // the last one's beat
 
     double sampleRate_ = 48000.0;
-    double tempo_ = 120.0;
-    int timeSigNum_ = 4;
-    int timeSigDen_ = 4;
+    std::shared_ptr<const TempoMap> tempoMap_ = std::make_shared<const TempoMap>();
+    uint64_t tempoVersion_ = 1;  // RenderSnapshot::tempoVersion: one more with each new map
+    std::shared_ptr<const MeterMap> meter_ = std::make_shared<const MeterMap>();
     int keyTonic_ = -1;
     bool keyMinor_ = false;
     bool loopEnabled_ = false;

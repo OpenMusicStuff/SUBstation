@@ -249,7 +249,7 @@ bool WarpVoice::carriesOn(const ClipRender& clip, int64_t position) const noexce
     const double playing = static_cast<double>(st.inputPos) - st.lead;  // where the output is now
     // A tempo change rescales timeline positions but keeps the source position
     // (to within a frame or two), so it carries on without a re-seek.
-    const double tolerance = 2.0 + 2.0 * clip.rate;
+    const double tolerance = 2.0 + 2.0 * clip.rateAt(position);
     return st.primed && std::abs(clip.sourceAt(position) - playing) <= tolerance;
 }
 
@@ -257,9 +257,8 @@ void WarpVoice::fadeFrom(const WarpRender& render, const ClipRender& clip, int64
     State& st = *state_;
     const int64_t last = render.length() - 1;
     for (size_t i = 0; i < st.fadeLeft.size(); ++i) {
-        // The render's frame for this source position (at its own rate), between two frames.
-        const double at = (clip.sourceAt(position + static_cast<int64_t>(i)) - static_cast<double>(render.sourceOffset())) /
-                          render.rate();
+        // The render's frame for this source position (at its own rate, or by its curve), between two frames.
+        const double at = render.frameOf(clip.sourceAt(position + static_cast<int64_t>(i)));
         const auto k = static_cast<int64_t>(std::floor(at));
         if (k < 0 || k >= last) {  // past its ends
             st.fadeLeft[i] = st.fadeRight[i] = 0.f;
@@ -287,8 +286,8 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
     }
 
     // Input runs ahead of the output by the stretcher's latency: inputLatency()
-    // source frames, plus outputLatency() timeline frames' worth at this rate.
-    const double rate = clip.rate;
+    // source frames, plus outputLatency() timeline frames' worth at this rate (here, under a curve).
+    const double rate = clip.rateAt(position);
     const double lead = stretch.inputLatency() + rate * stretch.outputLatency();
     if (!continuing || !carriesOn(clip, position)) {
         // outputSeek() pre-computes the pre-roll so the very next output frame is
@@ -333,7 +332,9 @@ void renderResampled(const ClipRender& clip, int64_t position, int frames, float
 
     // Speeding up moves content above the output Nyquist: lower the cutoff (and
     // widen the kernel) by the rate so it is filtered out instead of aliasing.
-    const double cutoff = 1.0 / std::clamp(clip.rate, 1.0, kMaxRateFiltered);
+    // (Under a curve, the fastest it goes in the block.)
+    const double fastest = clip.curve ? std::max(clip.rateAt(position), clip.rateAt(position + frames)) : clip.rate;
+    const double cutoff = 1.0 / std::clamp(fastest, 1.0, kMaxRateFiltered);
     const double reach = kHalfWidth / cutoff;
     const auto gainScale = static_cast<float>(cutoff);
     const bool phased = cutoff == 1.0;  // at most the source's speed: the phase table

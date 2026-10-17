@@ -208,7 +208,8 @@ public:
     void drainPreviewNotes(SharedState& shared) noexcept;
     static void discardPreviewNotes(SharedState& shared) noexcept;
 
-    void setPosition(int64_t samples) noexcept { position_ = samples < 0 ? 0 : samples; }
+    // (After syncTempo() with the snapshot it renders: its beat is remembered by that one's map.)
+    void setPosition(int64_t samples) noexcept;
     int64_t position() const noexcept { return position_; }
     void setPlaying(bool playing) noexcept { playing_ = playing; }
     bool playing() const noexcept { return playing_; }
@@ -312,6 +313,8 @@ private:
         int64_t start;   // timeline sample of its note-on (finds its NoteRender again, in any snapshot)
         int index;       // where its NoteRender was last found in its track's notes (a hint)
         float bend;      // the bend last sent (semitones)
+        double startBeat;  // start and end in beats (a new tempo map moves them there)
+        double endBeat;
     };
     struct InputEvent {  // a MIDI input message due in this chunk
         int offset;
@@ -492,6 +495,14 @@ private:
     // Whether `render` was sounding in the block before, up to where `clip` is at `position`.
     bool soundedUpTo(const WarpRender& render, const ClipRender& clip, int64_t position) const noexcept;
     WarpVoice* acquireVoice(const WarpVoiceSet& voices, const ClipRender& clip, bool& continuing) noexcept;
+    // Ticks every `tickLength` samples from sample 0, every `perBar`th accented (a steady tempo and
+    // time signature, and the count-in); and one tick's place in the pending ones.
+    void scheduleGridTicks(const RenderSnapshot& snap, int64_t position, int length, int offset, int64_t end,
+                           double tickLength, int perBar) noexcept;
+    void pushTick(const RenderSnapshot& snap, int64_t at, int offset, bool accent) noexcept;
+    // Where a block (or a slice of one) is: its sample, beat, tempo, time signature and bar's start.
+    static void placeContext(const RenderSnapshot& snap, ProcessContext& context, int64_t sample) noexcept;
+    void rememberBeats() noexcept;  // positionBeat_, expectedBeat_ by the map syncTempo() last saw
     // The metronome's ticks on the time signature's beats in [position, position + length), before `end`,
     // the first of each bar accented, heard when the tracks' audio of their position is: `offset` into
     // this callback, then the compensation delay and the master's devices.
@@ -537,7 +548,14 @@ private:
     void forgetNotesOfRemovedTracks(const RenderSnapshot& snap) noexcept;
 
     double sampleRate_ = 48000.0;
-    double samplesPerBeat_ = 0.0;
+    // The tempo map of the snapshot syncTempo() last saw (its version, and its rate: 0 before any), and
+    // the beats of what is held in samples, as that map had them: a new map moves each back to its beat.
+    // The map itself is the snapshot's, and is only read while that snapshot is the one rendering.
+    const RenderSnapshot* tempoSnap_ = nullptr;
+    uint64_t tempoVersion_ = 0;
+    double tempoRate_ = 0.0;
+    double positionBeat_ = 0.0;
+    double expectedBeat_ = 0.0;
     int64_t position_ = 0;
     int64_t expectedPosition_ = -1;  // where playback continues if the playhead doesn't jump
     int64_t chunkFrom_ = -1;  // where the last chunk ended (-1: it didn't play): what a jump at this one's start left
@@ -545,6 +563,9 @@ private:
     bool chasePending_ = false;  // playback just started: its first segment chases notes
     int64_t countIn_ = 0;        // samples of count-in still to come before the playhead moves
     int64_t countInTotal_ = 0;
+    // The count-in's clicks: one a beat of the time signature where playback starts, at the tempo there.
+    double countInTick_ = 0.0;   // samples between two
+    int countInPerBar_ = 4;
 
     // The live callback's inputs, and what records them (live renders only).
     const float* const* inputs_ = nullptr;

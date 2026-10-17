@@ -250,7 +250,7 @@ labels::DeviceFact TrackLabels::deviceFacts(const QString& trackId, const Device
 std::vector<labels::TrackFacts> TrackLabels::facts() const {
     std::vector<labels::TrackFacts> out;
     if (!project_) return out;
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     const auto add = [&](const Track& track) {
         labels::TrackFacts facts;
         facts.id = utf8(track.id);

@@ -22,26 +22,81 @@ void ProjectEditor::setTempo(double bpm, const QString& mergeKey) {
     const Project& p = *project_;
     const double tempo = std::clamp(formatFixed(bpm, 2).toDouble(), 20.0, 999.0);  // (rounded as Python's round(bpm, 2))
     if (tempo == p.tempo()) return;
+    if (p.tempoMap().constant()) {
+        setTempoMap(Tempo(tempo), mergeKey);
+        return;
+    }
+    // A tempo that changes along the song: all of it in proportion, so it starts at this one.
+    const double scale = tempo / p.tempo();
+    std::vector<TempoMap::Point> points = p.tempoMap().map().points();
+    for (TempoMap::Point& point : points) point.bpm *= scale;
+    setTempoMap(Tempo(TempoMap(std::move(points))), mergeKey);
+}
+
+std::pair<TempoState, TempoState> ProjectEditor::tempoChange(const Tempo& tempo, const QString& mergeKey) const {
+    const Project& p = *project_;
     ClipLists current;
     for (const Track& t : p.tracks()) current.insert(t.id, t.clips);
     // Within one drag, fit from the clips as they were when the drag began, so
     // going up and back down doesn't leave clips trimmed.
     ClipLists baseline = current;
     const int index = undoStack_->index();
-    const auto* last = index > 0 ? dynamic_cast<const SetTempoCommand*>(undoStack_->command(index - 1)) : nullptr;
-    if (!mergeKey.isEmpty() && last != nullptr && last->mergeKey() == mergeKey &&
-        last->oldValue().clips.keys() == current.keys()) {
-        baseline = last->oldValue().clips;
+    const QUndoCommand* last = index > 0 ? undoStack_->command(index - 1) : nullptr;
+    std::optional<TempoState> began;
+    if (const auto* set = dynamic_cast<const SetTempoCommand*>(last); set && set->mergeKey() == mergeKey) {
+        began = set->oldValue();
+    } else if (const auto* lanes = dynamic_cast<const SetEnvelopesCommand*>(last);
+               lanes && lanes->mergeKey() == mergeKey && lanes->tempo()) {
+        began = lanes->tempo()->first;
     }
+    if (!mergeKey.isEmpty() && began && began->clips.keys() == current.keys()) baseline = began->clips;
     ClipLists fitted;
     for (auto it = baseline.constBegin(); it != baseline.constEnd(); ++it) {
         fitted.insert(it.key(), edits::fitToTempo(it.value(), tempo));
     }
-    push(std::make_unique<SetTempoCommand>(project_, TempoState{p.tempo(), current}, TempoState{tempo, fitted}, mergeKey));
+    return {TempoState{p.tempoMap(), current}, TempoState{tempo, fitted}};
+}
+
+void ProjectEditor::setTempoMap(const Tempo& tempo, const QString& mergeKey) {
+    if (tempo == project_->tempoMap()) return;
+    auto [old, nw] = tempoChange(tempo, mergeKey);
+    push(std::make_unique<SetTempoCommand>(project_, std::move(old), std::move(nw), mergeKey));
+}
+
+void ProjectEditor::setMeter(const MeterMap& meter) {
+    if (meter == project_->meter()) return;
+    setSettings(QStringLiteral("Change Time Signature"), {{SettingsField::Meter, meter}});
+}
+
+void ProjectEditor::setTimeSignatureAt(double beat, int numerator, int denominator) {
+    if (!MeterMap::valid(numerator, denominator)) return;
+    // At the start of the bar it is in: a change starts a bar.
+    const MeterMap& meter = project_->meter();
+    const double at = meter.barAt(std::max(0.0, beat)).start;
+    std::vector<MeterMap::Change> changes = meter.changes();
+    std::erase_if(changes, [&](const MeterMap::Change& c) { return std::abs(c.beat - at) < 1e-9; });
+    changes.push_back({at, numerator, denominator});
+    setMeter(MeterMap(std::move(changes)));
+}
+
+void ProjectEditor::removeTimeSignatureAt(double beat) {
+    std::vector<MeterMap::Change> changes = project_->meter().changes();
+    if (changes.size() < 2 || beat < 1e-9) return;  // (the song's own, at its start, stays)
+    std::erase_if(changes, [&](const MeterMap::Change& c) { return std::abs(c.beat - beat) < 1e-9; });
+    setMeter(MeterMap(std::move(changes)));
 }
 
 void ProjectEditor::setTimeSignature(const TimeSignature& timeSignature) {
-    setSettings(QStringLiteral("Change Time Signature"), {{SettingsField::TimeSignature, timeSignature}});
+    const MeterMap& meter = project_->meter();
+    if (meter.constant()) {
+        setSettings(QStringLiteral("Change Time Signature"), {{SettingsField::TimeSignature, timeSignature}});
+        return;
+    }
+    // Changes along the song: the one at its start.
+    std::vector<MeterMap::Change> changes = meter.changes();
+    changes.front().numerator = timeSignature.numerator;
+    changes.front().denominator = timeSignature.denominator;
+    setSettings(QStringLiteral("Change Time Signature"), {{SettingsField::Meter, MeterMap(std::move(changes))}});
 }
 
 void ProjectEditor::setTimeSignature(int numerator, int denominator) {

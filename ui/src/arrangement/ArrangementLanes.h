@@ -133,7 +133,8 @@ struct FadeHandles {
     QRectF in, out;
     std::optional<QPointF> inCurve, outCurve;
 };
-FadeHandles fadeHandles(const app::Clip& clip, const QRectF& rect, const QRectF& body, double pxPerBeat, double tempo);
+FadeHandles fadeHandles(const app::Clip& clip, const QRectF& rect, const QRectF& body, double pxPerBeat,
+                        const app::Tempo& tempo);
 }  // namespace arrangement
 
 class ArrangementLanes : public ArrangementItem, public arrangement::LanesHost {

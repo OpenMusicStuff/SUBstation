@@ -15,8 +15,9 @@ Then its plug-ins load, as they do for any project.
 ## What comes across
 
 **The song.** Its tempo, time signature, loop and key. A tempo or time signature that
-changes during the song takes its value at the start (SUBstation has one of each): the
-message says so. The key is Live 12's scale if it is a major or minor one; Live's own C
+changes during the song changes as it does: tempo ramps and jumps come across, and so does
+each time signature change. A tempo past SUBstation's 20 to 999 BPM plays at that limit, and
+the message says so. The key is Live 12's scale if it is a major or minor one; Live's own C
 major (before a scale is chosen) leaves the key unset, so the piano roll finds the key
 the MIDI is in.
 
@@ -107,7 +108,6 @@ came across, each where its target now is (a pad's on its track).
 ## What doesn't
 
 - The Session View.
-- Tempo and time signature changes over the song.
 - Clip envelopes, grooves, follow actions, take lanes.
 - Live devices SUBstation has nothing like, MIDI effects but the Arpeggiator, Max for
   Live devices, racks' macros and their mappings, Drum Racks' return chains.

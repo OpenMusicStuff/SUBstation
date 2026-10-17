@@ -60,7 +60,7 @@ void Arrangement::setSession(app::Session* session) {
     }
     session_ = session;
     setHeaderSelected({});
-    view_.setProject(session ? session->project() : nullptr);
+    view_.setProject(session ? session->project() : nullptr, true);  // (the song's beats: its bars)
     if (session) connectSession();
     Q_EMIT sessionChanged();
     onReset();
@@ -440,7 +440,7 @@ bool Arrangement::selectTrackContent(const QString& trackId) {
     if (!p || !s || !editor() || !p->hasTrack(trackId)) return false;
     QStringList tracks{trackId};
     for (const app::Track* track : p->descendants(trackId)) tracks.append(track->id);
-    const double tempo = p->tempo();
+    const app::Tempo& tempo = p->tempoMap();
     std::optional<std::pair<double, double>> span;
     const auto take = [&span](double start, double end) {
         span = span ? std::make_pair(std::min(span->first, start), std::max(span->second, end)) : std::make_pair(start, end);
@@ -464,7 +464,7 @@ QString Arrangement::revealNearestClip(const QString& trackId) {
     app::Selection* s = selection();
     if (!p || !s || !editor() || !p->hasTrack(trackId)) return {};
     const double beat = playhead_ ? *playhead_ : s->insertBeat();
-    const double tempo = p->tempo();
+    const app::Tempo& tempo = p->tempoMap();
     QString clipId;
     double start = 0.0, end = 0.0, nearest = 0.0;
     for (const app::Clip& clip : p->track(trackId).clips) {  // (sorted by start: the earliest wins a tie)

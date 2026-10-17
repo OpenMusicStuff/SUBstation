@@ -30,7 +30,8 @@ struct ClipRender;
 
 // A stretched clip's output over its whole length: frame n is what a voice
 // starting at the clip's first frame plays n frames later, source frame
-// sourceOffset() + n * rate(). Written by the cache's thread; read-only, from
+// sourceOffset() + n * rate() (or, under a tempo that changes along the clip,
+// where its curve has it: frameOf() is the inverse). Written by the cache's thread; read-only, from
 // any thread, once ready() (but for the live renderer's note of where it
 // played it last).
 class WarpRender {
@@ -41,6 +42,11 @@ public:
     int64_t length() const noexcept { return length_; }
     int64_t sourceOffset() const noexcept { return sourceOffset_; }
     double rate() const noexcept { return rate_; }
+    // The frame (fractional) that played source frame `source`.
+    double frameOf(double source) const noexcept {
+        const double from = source - static_cast<double>(sourceOffset_);
+        return curve_ ? warpcurve::timeOf(*curve_, from) : from / rate_;
+    }
 
     // The live renderer's note (its thread alone): the block it last played
     // this render in, and the source position it got to. When a clip goes
@@ -59,6 +65,7 @@ private:
     int64_t length_ = 0;
     int64_t sourceOffset_ = 0;
     double rate_ = 1.0;
+    std::shared_ptr<const WarpCurve> curve_;
     std::atomic<bool> ready_{false};
     std::atomic<bool> wanted_{true};  // false once forgotten: an unfinished render stops
     mutable std::atomic<uint64_t> playedBlock_{0};  // 0: never played
@@ -97,6 +104,7 @@ private:
         int64_t sourceOffset = 0;
         int64_t length = 0;
         double rate = 1.0;
+        std::shared_ptr<const WarpCurve> curve;  // (compared by what it holds: the curve relative to the clip)
         StretchConfig config = StretchConfig::Standard;
         float transpose = 0.f;
         bool formants = false;

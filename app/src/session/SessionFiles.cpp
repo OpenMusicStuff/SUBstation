@@ -353,7 +353,7 @@ QVariantList Session::exportRangeChoices() const {
                                    {QStringLiteral("value"), QStringLiteral("loop")}});
     }
     if (selection_->hasTimeRange() && selection_->rangeEnd() > selection_->rangeStart()) {
-        const TimeSignature ts = project_->timeSignature();
+        const MeterMap& ts = project_->meter();
         choices.append(QVariantMap{
             {QStringLiteral("label"), QStringLiteral("Time Selection (%1 to %2)")
                                           .arg(formatPosition(selection_->rangeStart(), ts),

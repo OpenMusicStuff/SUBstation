@@ -336,7 +336,7 @@ void ArrangementActions::reverseSelection() {
         return;
     }
     const TimeRange range = *selection_->timeRange();
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     std::vector<Clip> clips;
     for (const QString& trackId : range.trackIds) {
         if (!project_->hasTrack(trackId)) continue;

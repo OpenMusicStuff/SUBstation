@@ -32,7 +32,7 @@ bool ProjectEditor::compTake(const QString& trackId, const QString& laneId, doub
     const TakeLane* lane = track == nullptr ? nullptr : findLane(*track, laneId);
     startBeat = std::max(0.0, startBeat);
     if (lane == nullptr || endBeat <= startBeat + edits::kEps) return false;
-    const double tempo = p.tempo();
+    const Tempo& tempo = p.tempoMap();
     // What plays there now goes; the take's clips there (its silence too) take its place.
     std::vector<Clip> clips = edits::removeRange(track->clips, startBeat, endBeat, tempo);
     QSet<QString> chosen;

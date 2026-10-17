@@ -117,7 +117,7 @@ QString TrackSearch::step(int by) {
 void TrackSearch::setArea(const QString& trackId, const QVariantList& clipIds) {
     area_.reset();
     if (!project_) return;
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     for (const QVariant& entry : clipIds) {
         QString track = trackId;
         QString clipId = entry.toString();
@@ -136,7 +136,7 @@ void TrackSearch::setArea(const QString& trackId, const QVariantList& clipIds) {
 
 QString TrackSearch::clipInArea(const QString& trackId) const {
     if (!project_ || !area_ || !project_->hasTrack(trackId)) return {};
-    const double tempo = project_->tempo();
+    const Tempo& tempo = project_->tempoMap();
     QString best;
     double most = 0.0;
     for (const Clip& clip : project_->track(trackId).clips) {  // (sorted by start: the earliest wins a tie)

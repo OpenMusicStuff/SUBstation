@@ -220,7 +220,7 @@ MIDI clips, and the piano roll's notes, sample-accurately):
 ### Transport
 
 `fillContext()` gives the plug-in, per block: tempo, time signature, position in samples (`projectTimeSamples`) and in
-beats (`projectTimeMusic`), bar position (the last bar start, from the time signature), playing state, the loop
+beats (`projectTimeMusic`), bar position (the last bar start: `ProcessContext::barStart()`, by the time signature changes), playing state, the loop
 (`kCycleActive`, cycle start and end in beats) when looping, the sample rate, a continuous sample count and the system
 time. Blocks are split where the loop wraps (the renderer's slices), so tempo-synced plug-ins stay in time.
 

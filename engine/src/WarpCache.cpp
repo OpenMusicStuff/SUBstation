@@ -19,7 +19,8 @@ constexpr int kRenderBlock = 1024;  // frames per render() call: fixed, so a ren
 bool WarpCache::Entry::matches(const ClipRender& clip, double rate) const noexcept {
     return source.get() == clip.source.get() && sourceOffset == clip.sourceOffset && length == clip.length &&
            this->rate == clip.rate && config == clip.stretchConfig && transpose == clip.transpose &&
-           formants == clip.preserveFormants && sampleRate == rate;
+           formants == clip.preserveFormants && sampleRate == rate &&
+           (curve == clip.curve || (curve && clip.curve && *curve == *clip.curve));
 }
 
 WarpCache::WarpCache(size_t budget, std::chrono::milliseconds settle)
@@ -57,6 +58,7 @@ std::shared_ptr<const WarpRender> WarpCache::request(const ClipRender& clip, dou
     entry.sourceOffset = clip.sourceOffset;
     entry.length = clip.length;
     entry.rate = clip.rate;
+    entry.curve = clip.curve;
     entry.config = clip.stretchConfig;
     entry.transpose = clip.transpose;
     entry.formants = clip.preserveFormants;
@@ -66,6 +68,7 @@ std::shared_ptr<const WarpRender> WarpCache::request(const ClipRender& clip, dou
     entry.render->length_ = entry.length;
     entry.render->sourceOffset_ = entry.sourceOffset;
     entry.render->rate_ = entry.rate;
+    entry.render->curve_ = entry.curve;
     entry.asked = Clock::now();
     entry.askedThisBuild = true;
     buildBytes_ += entry.bytes();
@@ -131,6 +134,7 @@ bool WarpCache::renderEntry(const Entry& entry) {
     clip.length = entry.length;
     clip.sourceOffset = entry.sourceOffset;
     clip.rate = entry.rate;
+    clip.curve = entry.curve;
     clip.playback = ClipRender::Playback::Stretch;
     clip.stretchConfig = entry.config;
     clip.transpose = entry.transpose;

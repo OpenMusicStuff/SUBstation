@@ -61,7 +61,7 @@ double arrangement::clipTitleHeight(double clipHeight, bool folded) {
 }
 
 FadeHandles arrangement::fadeHandles(const app::Clip& clip, const QRectF& rect, const QRectF& body, double pxPerBeat,
-                                     double tempo) {
+                                     const app::Tempo& tempo) {
     const double top = body.top() + 1, bottom = body.bottom() - 1;
     const double inWidth = clip.fadeInBeats(tempo) * pxPerBeat, outWidth = clip.fadeOutBeats(tempo) * pxPerBeat;
     // The squares stay inside the clip (at its corners while it has no fades).
@@ -252,7 +252,7 @@ std::optional<int> ArrangementLanes::rowIndexAt(double y, bool clamp) const {
 QRectF ArrangementLanes::clipRect(const app::Clip& clip, double rowTop, int rowHeight) const {
     const timeline::Timeline& view = arrangement()->view();
     const double x0 = view.beatToX(clip.startBeat);
-    const double x1 = view.beatToX(clip.endBeat(session()->project()->tempo()));
+    const double x1 = view.beatToX(clip.endBeat(session()->project()->tempoMap()));
     return QRectF(x0, rowTop + 1, std::max(2.0, x1 - x0), rowHeight - 3);
 }
 
@@ -332,7 +332,8 @@ std::optional<ArrangementLanes::FadeHit> ArrangementLanes::hitFade(const QPointF
     if (row.bars || pos.y() >= top + row.mainHeight) return std::nullopt;  // (a folded track's bars have no body)
     const app::Track* track = session()->project()->findTrack(row.trackId);
     if (!track) return std::nullopt;
-    const double tempo = session()->project()->tempo(), px = arrangement()->pxPerBeat();
+    const app::Tempo& tempo = session()->project()->tempoMap();
+    const double px = arrangement()->pxPerBeat();
     for (auto it = track->clips.rbegin(); it != track->clips.rend(); ++it) {
         if (!it->isAudio()) continue;
         const QRectF rect = clipRect(*it, top, row.mainHeight);
@@ -616,7 +617,8 @@ void ArrangementLanes::drawFades(SgPainter& p, const app::Clip& clip, const QRec
     // full level (its top), every few pixels, with a veil over what it takes
     // away; with F held, the handles that drag them.
     if (!clip.isAudio() || body.height() < 4) return;
-    const double tempo = session()->project()->tempo(), px = arrangement()->pxPerBeat();
+    const app::Tempo& tempo = session()->project()->tempoMap();
+    const double px = arrangement()->pxPerBeat();
     const double top = body.top() + 1, bottom = body.bottom() - 1;
     p.save();
     p.setAntialiasing(true);
@@ -670,7 +672,7 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
         const QRectF wave = body.adjusted(0, 1, 0, -1);
         p.save();
         p.setClipRect(wave.intersected(visible));
-        const double tempo = session()->project()->tempo();
+        const app::Tempo& tempo = session()->project()->tempoMap();
         waveforms_.draw(p, source, wave, rect.left(), clip.offsetSec,
                         arrangement()->view().framesPerPixel(source.sampleRate(), clip.sourceTempo(tempo)),
                         contentColor(clip), wave.height() >= 44, visible, app::dbToGain(clip.gainDb));
@@ -750,7 +752,7 @@ void ArrangementLanes::drawTakeLane(SgPainter& p, const app::Track& track, const
     p.fillRect(QRectF(visible.left(), y - 1, visible.width(), 1), Theme::gridBar());
     if (take.index < 0 || take.index >= static_cast<int>(track.takes.size())) return;
     const app::TakeLane& lane = track.takes[static_cast<size_t>(take.index)];
-    const double tempo = session()->project()->tempo();
+    const app::Tempo& tempo = session()->project()->tempoMap();
     const timeline::Timeline& view = arrangement()->view();
     const QColor trackColor = Theme::trackColor(track.color);
     const std::vector<app::edits::Interval> comped = app::edits::compedSpans(track.clips, lane.clips, tempo);
@@ -795,7 +797,7 @@ void ArrangementLanes::drawGroupSummary(SgPainter& p, const QString& groupId, do
     }
     if (tracks.empty()) return;
     const timeline::Timeline& view = arrangement()->view();
-    const double tempo = project.tempo();
+    const app::Tempo& tempo = project.tempoMap();
     const double share = area.height() / static_cast<double>(std::max(tracks.size(), size_t(kGroupSummaryRows)));
     const double gap = share >= 3.0 ? 1.0 : 0.0;  // a line between the rows, while they have room for one
     p.save();
@@ -853,9 +855,10 @@ void ArrangementLanes::drawDropPreview(SgPainter& p) const {
         height = row.mainHeight;
     }
     double x = a.view().beatToX(dropPreview_->beat);
-    const double tempo = session()->project()->tempo();
+    const app::Tempo& tempo = session()->project()->tempoMap();
     for (const DropPreview::Source& source : dropPreview_->sources) {
-        const double width = source.duration * tempo / 60.0 * a.pxPerBeat();
+        // (Its seconds, from where it would start: what the tempo makes them there.)
+        const double width = tempo.beatsFor(a.view().xToBeat(x), source.duration) * a.pxPerBeat();
         const QRectF rect(x, top + 1, std::max(2.0, width), height - 3);
         QColor fill = Theme::accent();
         fill.setAlpha(70);
@@ -1124,7 +1127,7 @@ void ArrangementLanes::mouseDoubleClickEvent(QMouseEvent* event) {
     if (fadeKey_ && !isPanModifier(event->modifiers())) {
         // On a fade's dot: a straight line again; on its square: no fade.
         if (const auto fade = hitFade(pos)) {
-            const double tempo = session()->project()->tempo();
+            const app::Tempo& tempo = session()->project()->tempoMap();
             const app::Clip changed = fade->curve ? app::edits::curveFade(fade->clip, fade->out, 0.0)
                                                   : app::edits::fadeClip(fade->clip, fade->out, 0.0, tempo);
             if (changed != fade->clip) {
@@ -1369,7 +1372,7 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
             if (!track) return;
             for (const app::TakeLane& lane : track->takes) {
                 if (lane.id != laneId || lane.clips.empty()) continue;
-                const auto [start, end] = app::edits::selectionSpan(lane.clips, s->project()->tempo());
+                const auto [start, end] = app::edits::selectionSpan(lane.clips, s->project()->tempoMap());
                 s->editor()->compTake(trackId, laneId, start, end);
             }
         });

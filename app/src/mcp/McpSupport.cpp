@@ -90,12 +90,12 @@ const QString kNoEdits = QStringLiteral(
 const Project& ToolContext::project() const { return *session_.project(); }
 
 double ToolContext::beatsPerBar() const { return project().timeSignature().beatsPerBar(); }
-// A beat as a bar: 1 + beats / beats a bar, so bar 17 is 17 and halfway through it 17.5.
-double ToolContext::bar(double beatValue) const { return beat(1.0 + beatValue / beatsPerBar()); }
+// A beat as a bar: bar 17 is 17 and halfway through it 17.5 (bars of each time signature, where it changes).
+double ToolContext::bar(double beatValue) const { return beat(barNumberAt(beatValue, project().meter())); }
 // A stretch as the user reads it: "bars 17 to 24" (whole bars), "bar 5", else "beats 3.5 to 6".
 QString ToolContext::stretch(double from, double to) const {
-    const double first = from / beatsPerBar();
-    const double last = to / beatsPerBar();
+    const double first = barNumberAt(from, project().meter()) - 1.0;
+    const double last = barNumberAt(to, project().meter()) - 1.0;
     const auto whole = [](double v) { return std::abs(v - std::round(v)) < 1e-6; };
     if (!whole(first) || !whole(last)) return QStringLiteral("beats %1 to %2").arg(number(from, 3), number(to, 3));
     const int a = static_cast<int>(std::round(first)) + 1;
@@ -125,9 +125,9 @@ Span ToolContext::span(const QJsonObject& arguments, bool required) const {
     }
     if (!out.error.isEmpty()) return out;
     if (startBeat.isDouble()) out.from = startBeat.toDouble();
-    if (startBar.isDouble()) out.from = (startBar.toDouble() - 1.0) * beatsPerBar();
+    if (startBar.isDouble()) out.from = beatOfBarNumber(startBar.toDouble(), project().meter());
     if (endBeat.isDouble()) out.to = endBeat.toDouble();
-    if (endBar.isDouble()) out.to = (endBar.toDouble() - 1.0) * beatsPerBar();
+    if (endBar.isDouble()) out.to = beatOfBarNumber(endBar.toDouble(), project().meter());
     if (out.to <= out.from) out.error = QStringLiteral("The end must come after the start.");
     return out;
 }
