@@ -522,7 +522,9 @@ sanitizer runtimes (`libclang-rt-18-dev`), `RelWithDebInfo`:
 
 `SUBSTATION_SANITIZE` (the top `CMakeLists.txt`) adds `-fsanitize=<value> -fno-omit-frame-pointer
 -fno-sanitize-recover=all` to every target, so a report fails the test that made it. KFR (`kfr_fft`) is left
-uninstrumented: its SIMD templates take gigabytes a file to compile with ASan. By hand, in a build folder of its own:
+uninstrumented: its SIMD templates take gigabytes a file to compile with ASan. Vital and LAME, vendored nearly as they
+are upstream, are checked by ASan but not by UBSan (Vital) or its shift check (LAME): they do what compilers define and
+C++ doesn't. Tests that time the CPU (a device's cost) skip in a sanitized build (`SUBTEST_TIMED`, harness/Test.h). By hand, in a build folder of its own:
 
 ```sh
 cmake -G Ninja -B build-asan -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \

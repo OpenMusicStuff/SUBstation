@@ -142,6 +142,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
         target_compile_options(vital PRIVATE -mavx2 -mfma)
     endif()
 endif()
+# Under SUBSTATION_SANITIZE, ASan checks Vital but UBSan doesn't: it does what compilers define and C++
+# doesn't (offsets to a null buffer it doesn't read, float conversions it relies on wrapping), and it is
+# vendored nearly as it is upstream.
+if (SUBSTATION_SANITIZE MATCHES "undefined")
+    target_compile_options(vital PRIVATE -fno-sanitize=undefined)
+endif()
 
 # --- VST3 SDK (MIT; the parts we use are vendored in third_party/vst3sdk) --------
 set(VST3_SDK ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vst3sdk CACHE INTERNAL "The vendored VST 3 SDK")
