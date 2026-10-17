@@ -40,15 +40,15 @@ The goals below are in the order to do them. Effort: **S** = days, **M** = 1–2
 Cheap work that keeps everything after it from turning into firefighting.
 
 ### 1. A real safety net in CI. Effort: S–M
-- **Sanitizers.** There is no ASan, UBSan or TSan anywhere in CMake or CI. A lock-free engine with epochs, SPSC rings and shared memory is exactly where TSan pays off. Add a nightly Clang job running TSan and ASan/UBSan.
+- **Sanitizers (done).** `SUBSTATION_SANITIZE` and a nightly workflow (`sanitizers.yml`): every test under ASan and UBSan, the engine's and platform layer's under TSan. Their first runs found two bugs in the application (a downcast at window teardown, three tests reading a freed menu), one in Vital (fixed in its local patch), and over-reads and a lost wake-up's mishandling in tests; all pass now (docs/testing.md#sanitizers). Leak detection is still off.
 - **Real-time allocation trap.** In `engine_tests`, hook `operator new` and the locks on render threads, or use Clang's RTSan (`[[clang::nonblocking]]`). Today the engine's real-time rule ("no allocations, no locks") is enforced only by review.
 - **Windows CI on every PR.** Per-PR CI is Linux only, yet Windows is the product. The ASIO live tests (`test_parallel_live`, `test_recording`, `test_midi_input`) run only nightly.
 - **Fuzz the untrusted parsers.** Add libFuzzer targets for `.gilproj`, `.als`, `.vital`, `.vstpreset` and the sandbox protocol.
 
 ### 2. Fix the known crash and stall bugs. Effort: S each
-- **`Engine::waitForCallbackLocked()` (`engine/src/EngineDevice.cpp:220`).** It gives up silently after 500 ms, and its callers then free the `Scheduler` (`Engine.cpp:258`), reset the recorder, or start an offline render on shared processors. An in-process plug-in that stalls one callback can turn that into a use-after-free. Return whether the wait succeeded, and on a timeout defer the destruction to the release pool.
-- **Undo history.** It has no limit (`setUndoLimit` is never called), and each step stores whole snapshots: whole clip lists with all their notes, and whole device trees with base64 plug-in states. Add a memory-based limit now. Later, store big states copy-on-write.
-- **CPU check.** The engine is built for AVX2 everywhere with no check at startup, so a pre-Haswell CPU crashes with an illegal instruction. Add a CPUID check that shows a friendly message.
+- **`Engine::waitForCallbackLocked()` (done).** It gave up silently after 500 ms, and its callers then freed the scheduler, the recording session, or rendered offline with processors a stalled callback was running. It now knows whether a callback is under way (returning at once when none is) and reports a stall: switching the scheduler and offline renders refuse (`kAudioThreadBusy`), a recording's session is retired to the release pool.
+- **Undo history (done, by count).** 500 steps (`Session::kUndoLimit`). `QUndoStack` takes only a count; a limit by memory needs a stack of our own. Still to do: store big states (clip lists, plug-in states) copy-on-write, so a step costs what it changed.
+- **CPU check (done).** `platform::cpuRunsEngine()` first thing in `main()`: a message, not an illegal instruction.
 - **Swallowed bridge errors.** `EngineBridge::guarded()` (`app/src/audio/EngineBridge.cpp:17`) only logs, so a half-applied push leaves the engine out of step with the model, silently. Report it in the status line and resync that track.
 - **Crash dumps.** Add a crash handler that writes minidumps. There is no SEH or signal handling for in-process plug-ins today, so crashes in the wild can't be diagnosed.
 
