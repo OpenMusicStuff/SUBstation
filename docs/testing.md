@@ -508,6 +508,28 @@ compiler, keeping the code portable), Qt 6.8's own builds of each (`install-qt-a
 tests included, and by hand from the Actions tab. A night with no new commits on `master` since the last nightly is
 skipped.
 
+### Sanitizers
+
+[.github/workflows/sanitizers.yml](../.github/workflows/sanitizers.yml) builds with sanitizers and runs the tests once
+a night (06:30 UTC) on `master`, and by hand; a night with no new commits is skipped. Two jobs, both Clang with its
+sanitizer runtimes (`libclang-rt-18-dev`), `RelWithDebInfo`:
+
+- **ASan + UBSan** (`-DSUBSTATION_SANITIZE=address,undefined`): everything, every test. Leak detection is off for now
+  (`ASAN_OPTIONS=detect_leaks=0`: Qt, fontconfig and the GL drivers keep what they allocate for good).
+- **TSan** (`-DSUBSTATION_SANITIZE=thread`): `engine_tests` and `platform_tests` only. The lock-free engine (epochs,
+  SPSC rings, shared memory with the plug-in sandboxes) is where data races hide; Qt isn't built for TSan, so the
+  application's tests would only report Qt's own.
+
+`SUBSTATION_SANITIZE` (the top `CMakeLists.txt`) adds `-fsanitize=<value> -fno-omit-frame-pointer
+-fno-sanitize-recover=all` to every target, so a report fails the test that made it. KFR (`kfr_fft`) is left
+uninstrumented: its SIMD templates take gigabytes a file to compile with ASan. By hand, in a build folder of its own:
+
+```sh
+cmake -G Ninja -B build-asan -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSUBSTATION_SANITIZE=address,undefined
+ninja -C build-asan && ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-asan --output-on-failure
+```
+
 [.github/workflows/release.yml](../.github/workflows/release.yml) builds and publishes the releases (stable, nightly
 and canary) without running the tests: [releasing.md](releasing.md).
 
