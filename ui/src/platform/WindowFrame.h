@@ -110,6 +110,9 @@ private:
     void setMaximizeState(bool hovered, bool pressed);
 
     QPointer<QQuickWindow> window_;
+    // The same, to compare with what the filter sees: never cast, as window_ would be (its surface
+    // is destroyed in ~QWindow, when it isn't a QQuickWindow any more).
+    const QObject* watched_ = nullptr;
     QPointer<QQuickItem> titleBar_;
     QPointer<QQuickItem> maximizeButton_;
     QPointer<QQuickItem> overlay_;

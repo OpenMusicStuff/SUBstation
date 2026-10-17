@@ -94,6 +94,7 @@ void WindowFrame::setWindow(QQuickWindow* window) {
     if (window_) window_->removeEventFilter(this);
     detach();
     window_ = window;
+    watched_ = window;
     if (window_) {
         window_->installEventFilter(this);
         if (window_->handle()) attach();  // (made already: else when it is)
@@ -146,7 +147,7 @@ void WindowFrame::toggleMaximized() {
 }
 
 bool WindowFrame::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == window_ && event->type() == QEvent::PlatformSurface) {
+    if (event->type() == QEvent::PlatformSurface && watched == watched_) {
         const auto type = static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType();
         if (type == QPlatformSurfaceEvent::SurfaceCreated)
             attach();
