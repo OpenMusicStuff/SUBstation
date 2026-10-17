@@ -1181,7 +1181,7 @@ TEST_CASE("spectral: engine latency") {
     CHECK(maxAbs(slice(right, 0, through[0])) < 1e-4);
 }
 
-#ifdef NDEBUG
+#if SUBTEST_TIMED
 TEST_CASE("spectral: cost") {
     // 10 s of stereo pink noise at the defaults in well under half a second of the thread's CPU time: catches a
     // transform per sample or an allocation storm, not a benchmark. Then how the work falls into audio callbacks.

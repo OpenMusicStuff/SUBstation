@@ -50,6 +50,7 @@ if (SUBSTATION_SANITIZE)
     endif()
     add_compile_options(-fsanitize=${SUBSTATION_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all)
     add_link_options(-fsanitize=${SUBSTATION_SANITIZE})
+    add_compile_definitions(SUBSTATION_SANITIZED=1)  # (tests that time the CPU skip: SUBTEST_TIMED)
     message(STATUS "Sanitizers: ${SUBSTATION_SANITIZE}")
 endif()
 

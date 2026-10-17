@@ -1336,7 +1336,7 @@ TEST_CASE("the reverb's displays") {
     }
 }
 
-#ifdef NDEBUG
+#if SUBTEST_TIMED
 TEST_CASE("the reverb costs little") {
     // 10 s of stereo noise at the defaults (High, Spin and Chorus on), timed in the thread's CPU time (a busy
     // machine takes the core away, not the device's cost), the best of two: well under a tenth of real time

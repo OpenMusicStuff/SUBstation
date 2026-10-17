@@ -68,6 +68,11 @@ else()
     target_compile_options(mp3lame PRIVATE -w)
     target_link_libraries(mp3lame PRIVATE m)
 endif()
+# (Its bit writing shifts negative values left: defined by every compiler we build with, but undefined in
+# C. Not checked by UBSan under SUBSTATION_SANITIZE; ASan still checks it.)
+if (SUBSTATION_SANITIZE MATCHES "undefined")
+    target_compile_options(mp3lame PRIVATE -fno-sanitize=shift)
+endif()
 
 # --- KFR (GPLv2+): the real FFT the built-in Vital's oscillators run -------------
 # Vendored in third_party/kfr (see its VERSION.txt): KFR's DFT alone, built as its
