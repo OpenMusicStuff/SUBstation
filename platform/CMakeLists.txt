@@ -6,7 +6,7 @@
 # stand on it (cmake/CheckBoundaries.cmake). Each system's code is in files of
 # its own: PlatformWin32.cpp and IpcWin32.cpp on Windows, PlatformPosix.cpp and
 # IpcPosix.cpp elsewhere. Headers are included by their folder: "platform/Paths.h".
-add_library(sub_platform STATIC src/platform/Files.cpp src/platform/Unicode.cpp)
+add_library(sub_platform STATIC src/platform/Cpu.cpp src/platform/Files.cpp src/platform/Unicode.cpp)
 if (WIN32)
     target_sources(sub_platform PRIVATE src/platform/PlatformWin32.cpp src/platform/IpcWin32.cpp)
     target_compile_definitions(sub_platform PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)

@@ -33,7 +33,9 @@ are is in [architecture.md](architecture.md).
   GCC can't align the stack for AVX on 64-bit Windows). On arm64 the engine builds with the CPU's baseline (NEON),
   no flags. Not with fast math (`/fp:fast`, `-ffast-math`): the results mustn't
   depend on the compiler reordering arithmetic or assuming there is no NaN or infinity. Denormals are flushed to
-  zero where audio renders (`ScopedNoDenormals`), not by a compiler flag.
+  zero where audio renders (`ScopedNoDenormals`), not by a compiler flag. Started on a CPU without AVX2 and FMA,
+  SUBstation says so and quits (`platform::cpuRunsEngine()`, first thing in `ui/main.cpp`; `platform/` is built
+  without AVX), rather than crashing on an illegal instruction.
 - Optional: Steinberg's ASIO SDK, for ASIO (see [ASIO SDK](#asio-sdk)).
 
 Nothing else needs installing: the engine's third-party code is vendored (see [Third-party code](#third-party-code)).

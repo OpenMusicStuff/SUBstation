@@ -14,6 +14,7 @@
 #include "app/AppTypes.h"
 #include "Engine.h"
 #include "Ui.h"
+#include "platform/Cpu.h"
 #include "session/DisplayPreferences.h"
 #include "session/Session.h"
 #include "update/Updater.h"
@@ -26,6 +27,11 @@
 Q_IMPORT_QML_PLUGIN(SUBstationPlugin)
 
 int main(int argc, char* argv[]) {
+    // Before anything built for AVX2 (the engine) runs: a message, not an "illegal instruction" crash.
+    if (!sub::platform::cpuRunsEngine()) {
+        sub::platform::reportUnsupportedCpu();
+        return 1;
+    }
 #ifdef _WIN32
     // The taskbar groups the windows under our own icon, not the executable's host.
     SetCurrentProcessExplicitAppUserModelID(L"SUBstation.DAW");

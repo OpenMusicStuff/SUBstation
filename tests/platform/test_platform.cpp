@@ -14,6 +14,7 @@
 
 #include "harness/Test.h"
 #include "platform/Bytes.h"
+#include "platform/Cpu.h"
 #include "platform/Files.h"
 #include "platform/Paths.h"
 #include "platform/Threads.h"
@@ -30,6 +31,14 @@ std::string utf8(uint32_t c) {
 }
 
 }  // namespace
+
+TEST_CASE("the processor check agrees with the compiler's") {
+    // (The engine and these tests are built for AVX2: on a machine that runs them, it's there.)
+#if (defined(__x86_64__) || defined(_M_X64)) && (defined(__GNUC__) || defined(__clang__))
+    CHECK_EQ(sub::platform::cpuRunsEngine(), __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma"));
+#endif
+    CHECK(sub::platform::cpuRunsEngine());
+}
 
 TEST_CASE("WTF-8 and UTF-16 both ways, unpaired surrogates too") {
     const std::string text = "Kick " + utf8(0xE9) + utf8(0x3A3) + utf8(0x1F941);  // é Σ 🥁
