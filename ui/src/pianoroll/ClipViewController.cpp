@@ -2,6 +2,7 @@
 
 #include "editor/ProjectEditor.h"
 #include "intelligence/AudioAnalysis.h"
+#include "model/Edits.h"
 #include "model/Errors.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
@@ -444,11 +445,7 @@ void ClipViewController::setWarpMode(int index) {
 
 void ClipViewController::setSegmentBpm(double bpm, const QString& gestureKey) {
     update(
-        [bpm](const app::Clip& clip) {
-            app::Clip changed = clip;
-            changed.segmentBpm = bpm;
-            return changed;
-        },
+        [bpm](const app::Clip& clip) { return app::edits::setWarpTempo(clip, bpm); },
         QStringLiteral("Change Segment BPM"), gestureKey);
 }
 
@@ -456,10 +453,8 @@ void ClipViewController::scaleBpm(double factor) {
     const double tempo = project() ? project()->tempo() : 120.0;
     update(
         [factor, tempo](const app::Clip& clip) {
-            app::Clip changed = clip;
             const double bpm = clip.segmentBpm ? clip.segmentBpm : tempo;
-            changed.segmentBpm = round2(std::clamp(bpm * factor, kMinBpm, kMaxBpm));
-            return changed;
+            return app::edits::setWarpTempo(clip, round2(std::clamp(bpm * factor, kMinBpm, kMaxBpm)));
         },
         QStringLiteral("Change Segment BPM"));
 }

@@ -53,6 +53,17 @@ inline const QString kDefaultWarpMode = QStringLiteral("Standard");
 // The segment BPMs a clip can have (the clip view's box, and stretching).
 inline constexpr double kMinSegmentBpm = 20.0;
 inline constexpr double kMaxSegmentBpm = 999.0;
+// A warped clip's warp marker: the moment `sec` into its file (from the file's start) on its own
+// beat `beat`. Only the distances between markers' beats count, not where their beats start. Between
+// two the audio plays at the tempo that takes it from one to the other (60 * beats / seconds); before
+// the first and after the last, at the tempo of the stretch next to it.
+struct WarpMarker {
+    double sec = 0.0;
+    double beat = 0.0;
+
+    friend bool operator==(const WarpMarker&, const WarpMarker&) = default;
+};
+
 // Names used by earlier versions, mapped to the mode that plays the same way.
 // (Unknown: the name itself.)
 QString legacyWarpMode(const QString& name);
@@ -146,6 +157,9 @@ struct Clip {
     // seconds fall in its beats, from the file's start (its BPM there is segmentBpm). None: segmentBpm
     // throughout. Its beats are locked to the timeline's as any warped clip's are.
     std::optional<Tempo> sourceMap;
+    // Its warp markers: none, or two or more, both their seconds and beats rising (setWarpMarkers()).
+    // With them, sourceMap is theirs and segmentBpm their first stretch's tempo.
+    std::vector<WarpMarker> warpMarkers;
     int transpose = 0;  // semitones
     double detune = 0.0;  // cents
     double pan = 0.0;
@@ -174,6 +188,18 @@ struct Clip {
 
     // Warped: warp on and a segment BPM set (MIDI clips never are).
     bool isWarped() const;
+    // Sets its warp markers (sorted by seconds; a marker that doesn't go on in both seconds and beats
+    // is left out, and fewer than two are none), and with them sourceMap and segmentBpm. Their
+    // stretches' tempos are held to kMinSegmentBpm..kMaxSegmentBpm by the editing that makes them.
+    void setWarpMarkers(std::vector<WarpMarker> markers);
+    // The tempo of each stretch between its markers (one fewer than them).
+    std::vector<double> warpTempos() const;
+    // Its audio's tempo times `factor`: segmentBpm, and its markers' beats (each stretch as much).
+    void scaleWarp(double factor);
+    // The beat of its own (as its markers count them) at `sec` into its file, and back. Without
+    // markers, from segmentBpm (the beats from the file's start).
+    double warpBeatAt(double sec) const;
+    double warpSecondsAt(double beat) const;
     // The tempo at which this clip's audio maps onto beats: its segment BPM when
     // warped, otherwise the song's tempo where it starts (it plays at its own speed).
     double sourceTempo(const Tempo& tempo) const;

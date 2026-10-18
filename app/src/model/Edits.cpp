@@ -209,6 +209,19 @@ Clip trimEnd(const Clip& clip, double newEndBeat, const Tempo& tempo) {
     return trimmed;
 }
 
+Clip setWarpTempo(const Clip& clip, double bpm) {
+    Clip changed = clip;
+    if (clip.warpMarkers.empty() || clip.segmentBpm <= 0) {
+        changed.segmentBpm = std::clamp(bpm, kMinSegmentBpm, kMaxSegmentBpm);
+        return changed;
+    }
+    const std::vector<double> tempos = clip.warpTempos();
+    const double slowest = *std::min_element(tempos.begin(), tempos.end());
+    const double fastest = *std::max_element(tempos.begin(), tempos.end());
+    changed.scaleWarp(std::clamp(bpm / clip.segmentBpm, kMinSegmentBpm / slowest, kMaxSegmentBpm / fastest));
+    return changed;
+}
+
 Clip stretchClip(const Clip& clip, double edgeBeat, bool left, const Tempo& tempo) {
     const double start = clip.startBeat, end = clip.endBeat(tempo);
     double length = left ? std::min(end - edgeBeat, end) : edgeBeat - start;  // (not before beat 0)
@@ -224,6 +237,18 @@ Clip stretchClip(const Clip& clip, double edgeBeat, bool left, const Tempo& temp
         }
         stretched.offsetBeats = clip.offsetBeats * factor;
         stretched.durationBeats = length;
+    } else if (!clip.warpMarkers.empty()) {
+        // Its warp markers' beats scale with it, each stretch as much (its tempos within the range).
+        const std::vector<double> tempos = clip.warpTempos();
+        const double slowest = *std::min_element(tempos.begin(), tempos.end());
+        const double fastest = *std::max_element(tempos.begin(), tempos.end());
+        stretched.warp = true;  // (its length by its markers, warped)
+        const double was = stretched.lengthBeats(tempo);
+        if (was <= 0) return clip;
+        double factor = std::clamp(length / was, kMinSegmentBpm / slowest, kMaxSegmentBpm / fastest);
+        if (left) factor = std::min(factor, end / was);
+        stretched.scaleWarp(factor);
+        length = stretched.lengthBeats(tempo);
     } else {
         if (clip.durationSec <= 0) return clip;
         double bpm = std::clamp(length * 60.0 / clip.durationSec, kMinSegmentBpm, kMaxSegmentBpm);
@@ -281,6 +306,11 @@ Clip reverseClip(const Clip& clip, const QString& path, double totalSec) {
     reversed.sourceDurationSec = totalSec;
     reversed.durationSec = std::min(clip.durationSec, totalSec - offset);
     reversed.reversedFrom = back ? QString() : clip.path;
+    if (!clip.warpMarkers.empty()) {  // (the same moments, the file the other way round: beats too)
+        std::vector<WarpMarker> markers;
+        for (const WarpMarker& m : clip.warpMarkers) markers.push_back({totalSec - m.sec, -m.beat});
+        reversed.setWarpMarkers(std::move(markers));
+    }
     return reversed;
 }
 
@@ -356,7 +386,9 @@ bool sameContent(const Clip& a, const Clip& b, const Tempo& tempo) {
     if (a.kind != b.kind) return false;
     if (a.isMidi()) return std::abs((a.startBeat - a.offsetBeats) - (b.startBeat - b.offsetBeats)) < 1e-6 && a.notes == b.notes;
     if (a.path != b.path || a.isWarped() != b.isWarped() || a.transpose != b.transpose || a.detune != b.detune) return false;
-    if (a.isWarped() && (std::abs(a.segmentBpm - b.segmentBpm) > 1e-9 || a.sourceMap != b.sourceMap)) return false;
+    if (a.isWarped() && (std::abs(a.segmentBpm - b.segmentBpm) > 1e-9 || a.sourceMap != b.sourceMap ||
+                         a.warpMarkers != b.warpMarkers))
+        return false;
     // Where each has its file's start: the same place, the same content.
     return std::abs((a.startBeat + a.sourceToBeats(-a.offsetSec, tempo)) -
                     (b.startBeat + b.sourceToBeats(-b.offsetSec, tempo))) < 1e-6;

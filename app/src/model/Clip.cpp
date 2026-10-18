@@ -6,6 +6,7 @@
 #include "NoteBend.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace sub::app {
 
@@ -53,6 +54,66 @@ Clip Clip::midi(const QString& id, const QString& name, double startBeat, double
 }
 
 bool Clip::isWarped() const { return isAudio() && warp && segmentBpm > 0; }
+
+void Clip::setWarpMarkers(std::vector<WarpMarker> markers) {
+    std::sort(markers.begin(), markers.end(), [](const WarpMarker& a, const WarpMarker& b) { return a.sec < b.sec; });
+    std::vector<WarpMarker> kept;
+    for (const WarpMarker& m : markers) {
+        if (!std::isfinite(m.sec) || !std::isfinite(m.beat)) continue;
+        if (kept.empty() || (m.sec > kept.back().sec + 1e-9 && m.beat > kept.back().beat + 1e-9)) kept.push_back(m);
+    }
+    const bool hadMarkers = !warpMarkers.empty();
+    if (kept.size() < 2) {
+        warpMarkers.clear();
+        if (hadMarkers) sourceMap.reset();  // (a frozen track's map is its own: kept)
+        return;
+    }
+    warpMarkers = std::move(kept);
+    const std::vector<double> tempos = warpTempos();
+    segmentBpm = tempos.front();
+    // As a tempo map from the file's start: its beat 0 at second 0 (the first stretch's tempo going
+    // back to it), a jump at each marker to the next stretch's tempo, the last's after the last.
+    const double origin = warpMarkers.front().beat - warpMarkers.front().sec * tempos.front() / 60.0;
+    std::vector<TempoMap::Point> points;
+    for (size_t i = 0; i < tempos.size(); ++i) {
+        points.push_back({warpMarkers[i].beat - origin, tempos[i]});
+        points.push_back({warpMarkers[i + 1].beat - origin, tempos[i]});
+    }
+    sourceMap = Tempo(TempoMap(std::move(points)));
+}
+
+std::vector<double> Clip::warpTempos() const {
+    std::vector<double> tempos;
+    for (size_t i = 0; i + 1 < warpMarkers.size(); ++i) {
+        const WarpMarker& a = warpMarkers[i];
+        const WarpMarker& b = warpMarkers[i + 1];
+        tempos.push_back(60.0 * (b.beat - a.beat) / (b.sec - a.sec));
+    }
+    return tempos;
+}
+
+void Clip::scaleWarp(double factor) {
+    if (!(factor > 0.0)) return;
+    segmentBpm *= factor;
+    if (warpMarkers.empty()) return;
+    std::vector<WarpMarker> scaled = warpMarkers;
+    for (WarpMarker& m : scaled) m.beat *= factor;
+    setWarpMarkers(std::move(scaled));
+}
+
+double Clip::warpBeatAt(double sec) const {
+    if (warpMarkers.empty()) return segmentBpm > 0 ? secondsToBeats(sec, segmentBpm) : 0.0;
+    const TempoMap& map = sourceMap->map();
+    const double origin = warpMarkers.front().beat - map.beatAt(warpMarkers.front().sec);
+    return map.beatAt(sec) + origin;
+}
+
+double Clip::warpSecondsAt(double beat) const {
+    if (warpMarkers.empty()) return segmentBpm > 0 ? beatsToSeconds(beat, segmentBpm) : 0.0;
+    const TempoMap& map = sourceMap->map();
+    const double origin = warpMarkers.front().beat - map.beatAt(warpMarkers.front().sec);
+    return map.secondsAt(beat - origin);
+}
 
 double Clip::sourceTempo(const Tempo& tempo) const { return isWarped() ? segmentBpm : tempo.bpmAt(startBeat); }
 

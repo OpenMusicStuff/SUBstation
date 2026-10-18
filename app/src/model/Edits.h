@@ -55,6 +55,9 @@ std::optional<std::pair<Clip, Clip>> splitClip(const Clip& clip, double atBeat, 
 Clip trimStart(const Clip& clip, double newStartBeat, const Tempo& tempo);
 // Move the right edge, limited by the end of the source file (MIDI clips can grow freely).
 Clip trimEnd(const Clip& clip, double newEndBeat, const Tempo& tempo);
+// An audio clip's tempo (its segment BPM) set to `bpm`: with warp markers, every stretch's scales as
+// much (held so all stay within kMinSegmentBpm..kMaxSegmentBpm), the first's becoming `bpm`.
+Clip setWarpTempo(const Clip& clip, double bpm);
 // Stretch the clip by an edge (Alt-dragging it): that edge (`left`: the start)
 // goes to `edgeBeat`, the other stays, and the clip plays the same audio (or
 // notes) faster or slower to fill the new length. An audio clip is warped to
