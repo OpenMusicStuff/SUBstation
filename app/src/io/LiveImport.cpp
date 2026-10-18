@@ -254,6 +254,32 @@ public:
         return a.sec + (beat - a.beat) * (b.sec - a.sec) / (b.beat - a.beat);
     }
 
+    // The beat at `sec` into the file (the inverse of secondsAt()).
+    double beatAt(double sec) const {
+        size_t i = 0;
+        while (i + 2 < markers_.size() && sec >= markers_[i + 1].sec) ++i;
+        const Marker& a = markers_[i];
+        const Marker& b = markers_[i + 1];
+        return a.beat + (sec - a.sec) * (b.beat - a.beat) / (b.sec - a.sec);
+    }
+
+    // Its markers as SUBstation's (WarpMarker: seconds, beat), if SUBstation can play them as they
+    // are: their seconds rising with their beats, every stretch's tempo within kMinSegmentBpm to
+    // kMaxSegmentBpm. Else none (the clip is cut into stretches, each at a tempo, held to the range).
+    std::optional<std::vector<WarpMarker>> playable() const {
+        std::vector<WarpMarker> out;
+        for (size_t i = 0; i < markers_.size(); ++i) {
+            if (i > 0) {
+                const double seconds = markers_[i].sec - markers_[i - 1].sec;
+                if (seconds <= 1e-9) return std::nullopt;
+                const double bpm = 60.0 * (markers_[i].beat - markers_[i - 1].beat) / seconds;
+                if (bpm < kMinSegmentBpm || bpm > kMaxSegmentBpm) return std::nullopt;
+            }
+            out.push_back({markers_[i].sec, markers_[i].beat});
+        }
+        return out;
+    }
+
     // The markers' beats strictly between two beats.
     std::vector<double> beatsBetween(double from, double to) const {
         std::vector<double> beats;
@@ -1913,7 +1939,8 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
     QString name = clip.value(u"Name").value_or(QString()).trimmed();
     if (name.isEmpty()) name = QFileInfo(path).completeBaseName();
 
-    // Each stretch it plays at a tempo of its own: (timeline beat, file offset, seconds, tempo; 0: unwarped).
+    // Each stretch it plays at a tempo of its own: (timeline beat, file offset, seconds, tempo; 0: unwarped),
+    // or, warped with markers SUBstation plays as they are, each pass of it.
     struct Piece {
         double beat;
         double offset;
@@ -1923,17 +1950,32 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
     std::vector<Piece> pieces;
     bool cut = false;
     bool clamped = false;
+    std::optional<WarpMap> map;
+    std::optional<std::vector<WarpMarker>> markers;
     if (warped) {
-        const WarpMap map(clip, tempo_);
+        map.emplace(clip, tempo_);
+        markers = map->playable();
+    }
+    if (markers) {
+        // One clip a pass (round its loop), its warp markers Live's: within the file.
+        for (const Span& span : clipSpans(clip, length, &cut)) {
+            double b0 = span.from, b1 = span.to;
+            if (map->secondsAt(b0) < 0) b0 = map->beatAt(0.0);
+            if (sourceSec > 0 && map->secondsAt(b1) > sourceSec) b1 = map->beatAt(sourceSec);
+            const double s0 = map->secondsAt(b0), s1 = map->secondsAt(b1);
+            if (b1 - b0 <= 1e-9 || s1 - s0 <= 1e-9) continue;
+            pieces.push_back({start + span.at + (b0 - span.from), s0, s1 - s0, 0.0});
+        }
+    } else if (warped) {
         for (const Span& span : clipSpans(clip, length, &cut)) {
             std::vector<double> edges{span.from};
-            for (const double b : map.beatsBetween(span.from, span.to)) edges.push_back(b);
+            for (const double b : map->beatsBetween(span.from, span.to)) edges.push_back(b);
             edges.push_back(span.to);
             for (size_t i = 0; i + 1 < edges.size(); ++i) {
                 double b0 = edges[i];
                 double b1 = edges[i + 1];
-                double s0 = map.secondsAt(b0);
-                double s1 = map.secondsAt(b1);
+                double s0 = map->secondsAt(b0);
+                double s1 = map->secondsAt(b1);
                 if (b1 - b0 <= 1e-9 || s1 - s0 <= 1e-9) continue;
                 double bpm = 60.0 * (b1 - b0) / (s1 - s0);
                 if (bpm < kMinSegmentBpm || bpm > kMaxSegmentBpm) {
@@ -2005,17 +2047,29 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
                          {QStringLiteral("gain_db"), gainDb},
                          {QStringLiteral("warp"), warped},
                          {QStringLiteral("warp_mode"), warpMode(clip.integer(u"WarpMode", 4))},
-                         {QStringLiteral("segment_bpm"), warped ? piece.bpm : 0.0},
+                         {QStringLiteral("segment_bpm"), warped ? (markers ? 0.0 : piece.bpm) : 0.0},
                          {QStringLiteral("transpose"), std::clamp(clip.integer(u"PitchCoarse"), -48, 48)},
                          {QStringLiteral("detune"), std::clamp(clip.number(u"PitchFine"), -50.0, 50.0)},
                          {QStringLiteral("pan"), 0.0}};
-        const double toSeconds = warped ? 60.0 / piece.bpm : 1.0;
+        if (markers) {  // (its segment BPM is its markers' first stretch's)
+            QJsonArray pins;
+            for (const WarpMarker& m : *markers) pins.append(QJsonArray{m.sec, m.beat});
+            data[QStringLiteral("warp_markers")] = pins;
+        }
+        // Fades are in beats if it is warped: as many seconds as those beats are where they are.
+        const auto fadeSeconds = [&](double beats, bool atEnd) {
+            if (!warped) return beats;
+            if (!markers) return beats * 60.0 / piece.bpm;
+            const double b0 = map->beatAt(piece.offset), b1 = map->beatAt(piece.offset + piece.seconds);
+            return atEnd ? piece.offset + piece.seconds - map->secondsAt(b1 - beats)
+                         : map->secondsAt(b0 + beats) - piece.offset;
+        };
         if (i == 0 && fadeIn > 0) {
-            data[QStringLiteral("fade_in_sec")] = std::min(fadeIn * toSeconds, piece.seconds);
+            data[QStringLiteral("fade_in_sec")] = std::min(fadeSeconds(fadeIn, false), piece.seconds);
             data[QStringLiteral("fade_in_curve")] = std::clamp(clip.number(u"Fades/FadeInCurveSlope"), -1.0, 1.0);
         }
         if (i + 1 == pieces.size() && fadeOut > 0) {
-            data[QStringLiteral("fade_out_sec")] = std::min(fadeOut * toSeconds, piece.seconds);
+            data[QStringLiteral("fade_out_sec")] = std::min(fadeSeconds(fadeOut, true), piece.seconds);
             data[QStringLiteral("fade_out_curve")] = std::clamp(clip.number(u"Fades/FadeOutCurveSlope"), -1.0, 1.0);
         }
         if (clip.flag(u"Disabled")) data[QStringLiteral("muted")] = true;
