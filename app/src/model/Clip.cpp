@@ -102,6 +102,7 @@ void Clip::scaleWarp(double factor) {
 }
 
 double Clip::warpBeatAt(double sec) const {
+    if (warpMarkers.empty() && sourceMap) return sourceMap->beatAt(sec);
     if (warpMarkers.empty()) return segmentBpm > 0 ? secondsToBeats(sec, segmentBpm) : 0.0;
     const TempoMap& map = sourceMap->map();
     const double origin = warpMarkers.front().beat - map.beatAt(warpMarkers.front().sec);
@@ -109,6 +110,7 @@ double Clip::warpBeatAt(double sec) const {
 }
 
 double Clip::warpSecondsAt(double beat) const {
+    if (warpMarkers.empty() && sourceMap) return sourceMap->secondsAt(beat);
     if (warpMarkers.empty()) return segmentBpm > 0 ? beatsToSeconds(beat, segmentBpm) : 0.0;
     const TempoMap& map = sourceMap->map();
     const double origin = warpMarkers.front().beat - map.beatAt(warpMarkers.front().sec);

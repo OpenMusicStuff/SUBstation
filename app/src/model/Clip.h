@@ -197,7 +197,7 @@ struct Clip {
     // Its audio's tempo times `factor`: segmentBpm, and its markers' beats (each stretch as much).
     void scaleWarp(double factor);
     // The beat of its own (as its markers count them) at `sec` into its file, and back. Without
-    // markers, from segmentBpm (the beats from the file's start).
+    // markers, the beats from the file's start (by its sourceMap, else segmentBpm).
     double warpBeatAt(double sec) const;
     double warpSecondsAt(double beat) const;
     // The tempo at which this clip's audio maps onto beats: its segment BPM when

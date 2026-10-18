@@ -729,7 +729,12 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   content plays faster or slower to fill it: an audio clip is warped to the segment BPM that makes it that long
   (within `kMinSegmentBpm`..`kMaxSegmentBpm`, 20..999; a clip with warp markers has every stretch's tempo scaled
   as much, all held to that range), a MIDI clip's notes and offset are scaled; never before beat 0.
-  `setWarpTempo(clip, bpm)` sets an audio clip's segment BPM, its markers' stretches scaled with it. `slipClip(clip, deltaBeats, tempo)` (Ctrl+Shift-dragging the body): the clip stays, its content moves by
+  `setWarpTempo(clip, bpm)` sets an audio clip's segment BPM, its markers' stretches scaled with it.
+  `addWarpMarker(clip, sec)` marks a moment on the beat it plays now (the first also marks the clip's start and end),
+  `moveWarpMarker(clip, index, sec)` moves one keeping its beat (held where its stretches' tempos stay in range, and
+  to the file), `removeWarpMarker(clip, index)` removes one; moving and removing keep the clip on the beats of its own
+  it played, so it stays where it is and as long, the audio moving under it. Unwarped clips, and a frozen track's
+  clip (a source map without markers), take none. `slipClip(clip, deltaBeats, tempo)` (Ctrl+Shift-dragging the body): the clip stays, its content moves by
   the delta (audio within its file; a MIDI clip's notes anywhere, shifted as `trimStart` does when the offset would
   go below 0). `fadeClip(clip, out, beats, tempo)` and `curveFade(clip, out, curve)` set a fade (held to what the
   other leaves) and its curve.

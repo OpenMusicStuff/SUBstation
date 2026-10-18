@@ -222,6 +222,83 @@ Clip setWarpTempo(const Clip& clip, double bpm) {
     return changed;
 }
 
+namespace {
+
+// Whether warp markers can be edited on a clip.
+bool takesWarpMarkers(const Clip& clip) {
+    return clip.isAudio() && clip.isWarped() && (!clip.warpMarkers.empty() || !clip.sourceMap);
+}
+
+// `changed` (its markers edited) playing the beats of its own `clip` played, held to its file.
+Clip onTheSameBeats(const Clip& clip, Clip changed) {
+    const double from = clip.warpBeatAt(clip.offsetSec);
+    const double to = clip.warpBeatAt(clip.offsetSec + clip.durationSec);
+    const double start = std::max(0.0, changed.warpSecondsAt(from));
+    double end = changed.warpSecondsAt(to);
+    if (clip.sourceDurationSec > 0) end = std::min(end, clip.sourceDurationSec);
+    if (end - start < kMinClipSec) return clip;
+    changed.offsetSec = start;
+    changed.durationSec = end - start;
+    changed.fitFades();
+    return changed;
+}
+
+}  // namespace
+
+Clip addWarpMarker(const Clip& clip, double sec) {
+    if (!takesWarpMarkers(clip) || sec < 0 || (clip.sourceDurationSec > 0 && sec > clip.sourceDurationSec))
+        return clip;
+    std::vector<WarpMarker> markers = clip.warpMarkers;
+    if (markers.empty()) {
+        for (double at : {clip.offsetSec, clip.offsetSec + clip.durationSec}) markers.push_back({at, clip.warpBeatAt(at)});
+    }
+    const bool taken = std::any_of(markers.begin(), markers.end(), [sec](const WarpMarker& m) {
+        return std::abs(m.sec - sec) < kMinWarpMarkerGapSec;
+    });
+    if (!taken) markers.push_back({sec, clip.warpBeatAt(sec)});
+    Clip changed = clip;
+    changed.setWarpMarkers(std::move(markers));
+    return changed;
+}
+
+Clip moveWarpMarker(const Clip& clip, int index, double sec) {
+    const auto& markers = clip.warpMarkers;
+    if (!takesWarpMarkers(clip) || index < 0 || static_cast<size_t>(index) >= markers.size()) return clip;
+    const auto i = static_cast<size_t>(index);
+    const WarpMarker& marker = markers[i];
+    double lo = std::min(0.0, marker.sec);
+    double hi = clip.sourceDurationSec > 0 ? std::max(clip.sourceDurationSec, marker.sec) : sec;
+    if (i > 0) {  // (60 * beats / seconds within the range)
+        const WarpMarker& prev = markers[i - 1];
+        const double beats = marker.beat - prev.beat;
+        lo = std::max(lo, prev.sec + std::max(kMinWarpMarkerGapSec, 60.0 * beats / kMaxSegmentBpm));
+        hi = std::min(hi, prev.sec + 60.0 * beats / kMinSegmentBpm);
+    }
+    if (i + 1 < markers.size()) {
+        const WarpMarker& next = markers[i + 1];
+        const double beats = next.beat - marker.beat;
+        lo = std::max(lo, next.sec - 60.0 * beats / kMinSegmentBpm);
+        hi = std::min(hi, next.sec - std::max(kMinWarpMarkerGapSec, 60.0 * beats / kMaxSegmentBpm));
+    }
+    if (lo > hi) return clip;
+    std::vector<WarpMarker> moved = markers;
+    moved[i].sec = std::clamp(sec, lo, hi);
+    if (moved[i].sec == marker.sec) return clip;
+    Clip changed = clip;
+    changed.setWarpMarkers(std::move(moved));
+    return onTheSameBeats(clip, std::move(changed));
+}
+
+Clip removeWarpMarker(const Clip& clip, int index) {
+    if (!takesWarpMarkers(clip) || index < 0 || static_cast<size_t>(index) >= clip.warpMarkers.size()) return clip;
+    std::vector<WarpMarker> markers = clip.warpMarkers;
+    markers.erase(markers.begin() + index);
+    Clip changed = clip;
+    changed.setWarpMarkers(std::move(markers));
+    // (Two made one tempo, which the clip keeps: its beats are counted from its file's start now.)
+    return changed.warpMarkers.empty() ? changed : onTheSameBeats(clip, std::move(changed));
+}
+
 Clip stretchClip(const Clip& clip, double edgeBeat, bool left, const Tempo& tempo) {
     const double start = clip.startBeat, end = clip.endBeat(tempo);
     double length = left ? std::min(end - edgeBeat, end) : edgeBeat - start;  // (not before beat 0)

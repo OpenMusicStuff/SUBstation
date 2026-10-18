@@ -1,7 +1,8 @@
 // Audio clips' warp markers (Clip::warpMarkers): moments of the file pinned to
 // beats, the audio between two at the tempo that joins them; a clip's beats and
-// seconds through them, the edits that keep them in step (split, stretch, the
-// segment BPM, reversing), saving them, and the engine given them.
+// seconds through them, adding, moving and removing them, the edits that keep
+// them in step (split, stretch, the segment BPM, reversing), saving them, and
+// the engine given them.
 
 #include "EditorFixture.h"
 #include "TestSupport.h"
@@ -15,6 +16,7 @@
 #include <cmath>
 
 using namespace sub::app;
+using sub::TempoMap;
 using test::EditorFixture;
 
 namespace {
@@ -96,6 +98,57 @@ private Q_SLOTS:
         const Clip reversed = edits::reverseClip(clip, QStringLiteral("r.wav"), 3.0);
         QCOMPARE(reversed.warpTempos(), (std::vector<double>{60.0, 120.0}));
         QVERIFY(near(reversed.lengthBeats(tempo), 4.0));
+    }
+
+    void markersAddedMovedAndRemoved() {
+        const Tempo tempo(100.0);
+        // A clip at 120 BPM playing a second and a half from half a second in: marked at its start
+        // and end and where asked, on the beats they play now.
+        Clip plain = test::audioClip(QStringLiteral("p"), 4.0, 1.5);
+        plain.sourceDurationSec = 3.0;
+        plain.offsetSec = 0.5;
+        plain.warp = true;
+        plain.segmentBpm = 120.0;
+        const Clip added = edits::addWarpMarker(plain, 1.0);
+        QCOMPARE(added.warpMarkers, (std::vector<WarpMarker>{{0.5, 1.0}, {1.0, 2.0}, {2.0, 4.0}}));
+        QCOMPARE(added.warpTempos(), (std::vector<double>{120.0, 120.0}));
+        QVERIFY(near(added.lengthBeats(tempo), 3.0));
+        QCOMPARE(edits::addWarpMarker(plain, 0.5).warpMarkers.size(), size_t{2});  // (at its start: one)
+        QVERIFY(edits::addWarpMarker(plain, 4.0).warpMarkers.empty());              // (past the file)
+        Clip unwarped = plain;
+        unwarped.warp = false;
+        QVERIFY(edits::addWarpMarker(unwarped, 1.0).warpMarkers.empty());
+        Clip frozen = plain;  // (a frozen track's: the tempo it was rendered under)
+        frozen.sourceMap = Tempo(TempoMap({{0.0, 120.0}, {2.0, 90.0}}));
+        QVERIFY(edits::addWarpMarker(frozen, 1.0).warpMarkers.empty());
+        QVERIFY(near(frozen.warpBeatAt(1.0), frozen.sourceMap->beatAt(1.0)));
+
+        // The middle one moved to 1.5 s, still on beat 2: the first stretch slower, the second faster,
+        // the clip on the same beats and as long.
+        const Clip moved = edits::moveWarpMarker(added, 1, 1.5);
+        QCOMPARE(moved.warpMarkers[1], (WarpMarker{1.5, 2.0}));
+        QCOMPARE(moved.warpTempos(), (std::vector<double>{60.0, 240.0}));
+        QVERIFY(near(moved.offsetSec, 0.5));
+        QVERIFY(near(moved.durationSec, 1.5));
+        QVERIFY(near(moved.lengthBeats(tempo), 3.0));
+        // Held where its stretches stay within the range: the first can't go faster than 999 BPM.
+        const Clip fast = edits::moveWarpMarker(added, 1, 0.0);
+        QVERIFY(near(fast.warpTempos()[0], kMaxSegmentBpm));
+        // The first moved: the clip starts on its beat still, so further into the file.
+        const Clip first = edits::moveWarpMarker(added, 0, 0.75);
+        QVERIFY(near(first.offsetSec, 0.75));
+        QVERIFY(near(first.lengthBeats(tempo), 3.0));
+
+        // Removed: the clip on the same beats; down to one, none (at the tempo the two made).
+        const Clip removed = edits::removeWarpMarker(moved, 1);
+        QCOMPARE(removed.warpMarkers.size(), size_t{2});
+        QCOMPARE(removed.warpTempos(), (std::vector<double>{120.0}));
+        QVERIFY(near(removed.lengthBeats(tempo), 3.0));
+        const Clip none = edits::removeWarpMarker(removed, 0);
+        QVERIFY(none.warpMarkers.empty());
+        QVERIFY(!none.sourceMap.has_value());
+        QCOMPARE(none.segmentBpm, 120.0);
+        QVERIFY(near(none.lengthBeats(tempo), 3.0));
     }
 
     void savedAndPlayed() {
