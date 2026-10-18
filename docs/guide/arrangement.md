@@ -39,7 +39,10 @@ folding, the master, the title bar and the transport bar, and projects.
   where you drag it to straight away; the move itself is one undo step, when you let go.
 - **Drag an audio clip out** of the arrangement, down onto the device view: the move stops
   (the clip stays where it was) and the clip's part of its file goes with the mouse, to drop
-  on a Sampler or a Drum Rack's pad (or onto the desktop, as its file).
+  on a Sampler or a Drum Rack's pad (or onto the desktop, as its file). The device view
+  stays on the track it showed while you press and drag the clip, so you can select the MIDI
+  track with the Sampler or Drum Rack first, then drag a clip of an audio track onto it; it
+  shows the clip's track only once you let go of a click or a move.
 - **Trim** either edge by dragging it (heard as you drag, too).
 - **Stretch** a clip by holding **Alt** over either edge (the cursor shows a two-headed
   arrow, the edge lights up orange) and dragging it: the other edge stays, and the clip plays

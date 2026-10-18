@@ -12,7 +12,10 @@
 // last clicked in its chain list: shownChain(), else its first), and so on
 // inside: shownDevices(). A rack's chain list shows only when asked for
 // (toggleChainList()), its devices unless hidden (toggleRackDevices()).
-// A frozen track (or one in a frozen group) shows none (hint()).
+// A frozen track (or one in a frozen group) shows none (hint()). While held
+// (holdTrack(): a clip of another track pressed in the arrangement), it keeps
+// showing the track it shows, so the clip can be dragged onto a Sampler or a
+// Drum Rack's pad there.
 //
 // Selecting (selectDevice): a click selects a device, Ctrl adds or removes it,
 // Shift selects the range from the last one clicked (the anchor); a selection
@@ -120,6 +123,14 @@ public:
     Q_INVOKABLE QStringList dragDevices(const QString& deviceId) const;
     // Selects these devices (in chain order), for the tests and the view.
     void setSelected(const QStringList& deviceIds);
+    // A press on a clip in the arrangement: the track shown stays shown,
+    // whatever the selection does, until letGoTrack().
+    void holdTrack() { held_ = true; }
+    // The press is over. With `keep` (the clip went onto the device view) the
+    // track shown becomes the selection's track (Selection::selectTrack) and
+    // stays; otherwise the device view follows the selection again.
+    void letGoTrack(bool keep = false);
+    bool holdsTrack() const { return held_; }
 
     // --- Acting on them ---
     // Delete: the selected devices (one undo step). False if there were none.
@@ -254,6 +265,7 @@ private:
     Selection* selection_;
     EngineBridge* bridge_;
     QString trackId_;
+    bool held_ = false;  // holdTrack()
     QStringList selected_;
     QString anchor_;
     QString clickedRack_;

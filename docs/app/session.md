@@ -264,7 +264,10 @@ menus, drops), and the session dispatches the Edit menu's commands to it.
 device view without its widgets. It shows the selected track's chain (`trackId`: a track, a return or the master), and
 after each rack, unless it is folded or hides its devices, the chain it shows (the one last clicked in its chain list:
 `shownChain()`, else its first), and so on inside: `shownDevices`. A frozen track (or one in a frozen group) shows none
-(`hint`). `toggleChainList(rack)` and `toggleRackDevices(rack)` show or hide a rack's chain list (hidden by default)
+(`hint`). A press on a clip in the arrangement holds the track shown (`holdTrack()`) while the selection moves to the
+clip, so the clip can be dragged onto a Sampler or a Drum Rack's pad there; `letGoTrack()` (the release) follows the
+selection again, `letGoTrack(true)` (the clip dragged out) selects the track shown instead (`Selection::selectTrack`,
+the clips staying selected). `toggleChainList(rack)` and `toggleRackDevices(rack)` show or hide a rack's chain list (hidden by default)
 and its chain's devices (shown by default): view state (`ProjectEditor::setChainListShown`, `setRackDevicesShown`).
 Clicking a chain (`clickChain`) shows its rack's devices again.
 
