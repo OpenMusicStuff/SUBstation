@@ -46,9 +46,10 @@ and fades, and whether they are deactivated.
   moved or copied). Those found in neither place keep the path the set has, and the
   [File Manager](file-manager.md) lists them, to find them again.
 - A clip without warping plays at its own speed, as in Live.
-- A warped clip plays at the tempo its warp markers give it. SUBstation's clips have
-  one tempo each, so each stretch between two markers where the tempo changes becomes a
-  clip of its own (a clip warped with Live's two default markers stays one clip).
+- A warped clip keeps its warp markers and plays at the tempo they give it, one clip
+  as in Live. Markers set so far apart or so close that a stretch would play slower
+  than 20 BPM or faster than 999 can't be kept: that clip is cut into a clip per
+  stretch instead, each at its own tempo.
 - A looping clip is written out loop after loop, like a MIDI one.
 - Warp modes: *Beats* and *REX* become *Transients*, *Texture* *Smooth*, *Re-Pitch*
   *Re-Pitch*, *Complex Pro* *Formants*, and *Tones* and *Complex* *Standard*.
