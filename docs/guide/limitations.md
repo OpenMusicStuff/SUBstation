@@ -73,8 +73,10 @@ What SUBstation doesn't do yet, by area.
 
 ## Audio clips
 
-- Warp markers (warping within a clip) and automatic tempo detection: a warped clip has
-  one segment BPM, and you set it.
+- Automatic tempo detection and Live's automatic warp markers (at transients): you set
+  a clip's segment BPM and place its warp markers yourself.
+- Warp markers are edited one clip at a time, and there is no zooming into the clip
+  view's waveform to place them closer than the whole file at its width allows.
 - Streaming long files from disk: sources are decoded into memory.
 
 ## Audio devices

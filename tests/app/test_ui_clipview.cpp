@@ -1,6 +1,6 @@
 // The clip view with audio clips, driven the way a user would: one clip opened,
 // its settings and waveform; several clips edited in unison; warping and
-// transposing reaching the audio; the clip gain making the waveform taller;
+// transposing reaching the audio; warp markers on the waveform; the clip gain making the waveform taller;
 // which clips open with a MIDI clip among them; going back (Esc, ×, the clips
 // deleted, the project reset). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
@@ -448,6 +448,52 @@ private Q_SLOTS:
         editor().deleteTracks({clips_[0].trackId});
         QCOMPARE(controller()->refs(), ClipRefs{clips_[1]});
         QCOMPARE(closing.count(), 1);
+    }
+
+    void warpMarkersAreAddedDraggedAndRemovedOnTheWaveform() {
+        threeTracks();
+        open({clips_[0]});  // tone0: 2 s, beats 0..4
+        QQuickItem* waveform = item("clipWaveform");
+        const auto atSec = [&](double sec) {
+            return test::at(waveform, QPointF(sec / 2.0 * waveform->width(), waveform->height() / 2));
+        };
+        const auto near = [](double a, double b) { return std::abs(a - b) < 0.01; };
+        // Unwarped: no markers to set.
+        test::doubleClick(window_, atSec(1.0));
+        QVERIFY(clip(0).warpMarkers.empty());
+
+        // Warped, a double-click marks the moment on the beat it plays now, with the clip's start and end.
+        controller()->setWarp(true);
+        test::doubleClick(window_, atSec(1.0));
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.0));
+        QVERIFY(near(clip(0).warpMarkers[1].beat, 2.0));
+        QCOMPARE(controller()->warpMarkers().size(), 3);
+        QCOMPARE(undo().undoText(), QStringLiteral("Add Warp Marker"));
+        QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
+
+        // Dragged to 1.5 s, still on beat 2: the first half slower, the second faster; one undo step.
+        const int steps = undo().count();
+        test::drag(window_, atSec(clip(0).warpMarkers[1].sec), atSec(1.5));
+        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.5));
+        QVERIFY(near(clip(0).warpTempos()[0], 80.0));
+        QVERIFY(std::abs(clip(0).warpTempos()[1] - 240.0) < 6.0);
+        QCOMPARE(undo().count(), steps + 1);
+        QCOMPARE(undo().undoText(), QStringLiteral("Move Warp Marker"));
+        QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
+        test::screenshot(window_, QStringLiteral("clip-view-warp-markers"));
+
+        // Double-clicked: gone.
+        test::doubleClick(window_, atSec(clip(0).warpMarkers[1].sec));
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{2});
+        QCOMPARE(undo().undoText(), QStringLiteral("Remove Warp Marker"));
+        undo().undo();
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+
+        // With several clips open they are only shown.
+        open({clips_[0], clips_[1]});
+        test::doubleClick(window_, test::at(waveform, QPointF(waveform->width() / 4, 10)));
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
     }
 
     void severalClipsAreStackedInBands() {

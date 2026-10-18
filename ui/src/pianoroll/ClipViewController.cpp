@@ -419,6 +419,12 @@ void ClipViewController::update(const std::function<app::Clip(const app::Clip&)>
     edit([&] { session_->editor()->updateClips(refs_, change, text, mergeKey); });
 }
 
+void ClipViewController::updateLead(const std::function<app::Clip(const app::Clip&)>& change, const QString& text,
+                                    const QString& mergeKey) {
+    if (midi_) return;
+    edit([&] { session_->editor()->updateClips({refs_.first()}, change, text, mergeKey); });
+}
+
 void ClipViewController::setWarp(bool on) {
     const double tempo = project() ? project()->tempo() : 120.0;
     update(
@@ -457,6 +463,29 @@ void ClipViewController::scaleBpm(double factor) {
             return app::edits::setWarpTempo(clip, round2(std::clamp(bpm * factor, kMinBpm, kMaxBpm)));
         },
         QStringLiteral("Change Segment BPM"));
+}
+
+QVariantList ClipViewController::warpMarkers() const {
+    QVariantList markers;
+    if (audioClips_.empty()) return markers;
+    for (const app::WarpMarker& m : audioClips_.front().first.warpMarkers)
+        markers.append(QVariantMap{{QStringLiteral("sec"), m.sec}, {QStringLiteral("beat"), m.beat}});
+    return markers;
+}
+
+void ClipViewController::addWarpMarker(double sec) {
+    updateLead([sec](const app::Clip& clip) { return app::edits::addWarpMarker(clip, sec); },
+               QStringLiteral("Add Warp Marker"));
+}
+
+void ClipViewController::moveWarpMarker(int index, double sec, const QString& gestureKey) {
+    updateLead([index, sec](const app::Clip& clip) { return app::edits::moveWarpMarker(clip, index, sec); },
+               QStringLiteral("Move Warp Marker"), gestureKey);
+}
+
+void ClipViewController::removeWarpMarker(int index) {
+    updateLead([index](const app::Clip& clip) { return app::edits::removeWarpMarker(clip, index); },
+               QStringLiteral("Remove Warp Marker"));
 }
 
 void ClipViewController::nudge(const QString& knob, double value, const QString& gestureKey) {
