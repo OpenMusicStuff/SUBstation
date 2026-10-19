@@ -11,6 +11,7 @@
 #include "io/Serialization.h"
 #include "model/Edits.h"
 
+#include <QJsonArray>
 #include <QTest>
 
 #include <cmath>
@@ -177,6 +178,20 @@ private Q_SLOTS:
         steady.setWarpMarkers({{0.0, 0.0}, {1.0, 2.0}});  // (one tempo: none needed)
         QVERIFY(clipDesc(steady).sourceMap == nullptr);
         QCOMPARE(steady.segmentBpm, 120.0);
+
+        // A file whose markers make a stretch faster than 999 BPM (written by hand) is damaged.
+        QJsonObject data = projectToJson(f.project);
+        QJsonArray tracks = data[QStringLiteral("tracks")].toArray();
+        QJsonObject t = tracks[0].toObject();
+        QJsonArray clips = t[QStringLiteral("clips")].toArray();
+        QJsonObject c = clips[0].toObject();
+        c[QStringLiteral("warp_markers")] = QJsonArray{QJsonArray{0.0, 0.0}, QJsonArray{1.0, 100.0}};
+        clips[0] = c;
+        t[QStringLiteral("clips")] = clips;
+        tracks[0] = t;
+        data[QStringLiteral("tracks")] = tracks;
+        Project damaged;
+        QVERIFY_THROWS_EXCEPTION(std::exception, loadInto(damaged, data));
     }
 };
 

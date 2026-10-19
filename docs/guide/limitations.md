@@ -73,10 +73,11 @@ What SUBstation doesn't do yet, by area.
 
 ## Audio clips
 
-- Automatic tempo detection and auto-warping: you set a clip's segment BPM, and drag its
-  warp markers (Mark Transients places them) onto the beat yourself. There is no
-  quantizing of warp markers to the grid, and no setting for how weak a transient is
-  still marked.
+- Auto-warping within a clip: a file's tempo is detected (see
+  [audio-clips.md](audio-clips.md#tempo-and-chords-detected)), but a performance that
+  drifts from it is lined up by dragging its warp markers (Mark Transients places them)
+  onto the beat yourself. There is no quantizing of warp markers to the grid, and no
+  setting for how weak a transient is still marked.
 - Warp markers are edited one clip at a time, and there is no zooming into the clip
   view's waveform to place them closer than the whole file at its width allows.
 - Streaming long files from disk: sources are decoded into memory.

@@ -124,7 +124,7 @@ These basics every competitor has are listed in order of everyday impact per uni
 - **Warp markers.** Done: a clip's markers (`Clip::warpMarkers`, saved since version 27) play through its source map,
   the clip view's waveform adds, drags and removes them, and Live import keeps Live's (cutting the clip into stretches
   only where a stretch's tempo is out of range). Mark Transients puts markers on the clip's transients (the Sampler's detection), drawn as ticks to snap to. Still
-  open: quantizing markers to the grid, tempo detection and auto-warping, MCP tools.
+  open: quantizing markers to the grid, auto-warping a drifting performance, MCP tools.
 - **Crossfades** between overlapping clips; comp seams click today.
 - **Audio bounce in place / consolidate** of a selection. Consolidate is MIDI-only today (`EditorClips.cpp:428`).
 - **Clip gain envelopes.**

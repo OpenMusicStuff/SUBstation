@@ -60,7 +60,9 @@ small tabs. With one warped clip open:
 Between two markers the audio plays at the tempo that joins them; *Seg. BPM* shows the
 first stretch's tempo, and changing it, :2, ×2 or Alt-stretching the clip speed up or slow
 down every stretch alike. A frozen track's clip follows the tempo it was rendered under
-and takes no markers. Ableton Live sets keep their warp markers when imported.
+and takes no markers. Ableton Live sets keep their warp markers when imported, unless a
+stretch between two would play slower than 20 BPM or faster than 999 BPM: such a clip
+is cut into a clip per stretch instead.
 
 ## Fades
 

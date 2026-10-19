@@ -128,7 +128,7 @@ Each entry of `returns` has `id`, `kind` (`"return"`), `name`, `color`, `volume_
 | `duration_sec`, `offset_sec`, `source_duration_sec` | the window onto the source, in source seconds |
 | `gain_db`, `pan` | clip gain and pan |
 | `warp`, `warp_mode`, `segment_bpm` | warping (`segment_bpm` 0: not set) |
-| `warp_markers` | only for a clip with warp markers: `[[seconds, beat], ...]`, seconds into its file and its own beat there (version 27); on load those that don't go on in both are left out (`Clip::setWarpMarkers`), and `segment_bpm` becomes the first stretch's tempo |
+| `warp_markers` | only for a clip with warp markers: `[[seconds, beat], ...]`, seconds into its file and its own beat there (version 27); on load those that don't go on in both are left out (`Clip::setWarpMarkers`), and `segment_bpm` becomes the first stretch's tempo; a stretch outside 20..999 BPM makes the file damaged |
 | `transpose`, `detune` | semitones (int), cents |
 | `fade_in_sec`, `fade_in_curve`, `fade_out_sec`, `fade_out_curve` | only where the clip has that fade: its length in source seconds, and its curve (-1..1, 0 a straight line). On load they are held to the clip (`Clip::fitFades`) |
 | `reversed_from`, `reversed_from_relative` | only for a reversed clip: the file `path` (its reversed copy) was made from, absolute and relative |
