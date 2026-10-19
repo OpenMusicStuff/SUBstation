@@ -33,6 +33,7 @@
 #include "model/Clip.h"
 #include "model/Project.h"
 #include "session/ArrangementActions.h"
+#include "session/DeviceSelection.h"
 #include "session/Selection.h"
 
 using sub::app::Clip;
@@ -704,6 +705,28 @@ private Q_SLOTS:
         image = window()->grabWindow();
         QVERIFY(image.pixelColor(h_->at(body)) != highlighted);
         QCOMPARE(image.pixelColor(h_->at(title)), titleColor);
+    }
+
+    void pressingAClipLeavesTheDeviceViewUntilTheRelease() {
+        // (So a clip can be dragged onto a Sampler or a Drum Rack's pad on the track it shows.)
+        threeTracks();
+        const auto& rows = arrangement()->layout().rows();
+        const QString b = trackId(1), c = trackId(2);
+        const sub::app::DeviceSelection& devices = *session().deviceSelection();
+        selection().selectTrack(c);
+        QCOMPARE(devices.trackId(), c);
+        const QPoint title = h_->at(QPointF(h_->x(5.0), rows[1].top - arrangement()->scrollY() + 6));
+        test::press(window(), title);
+        QCOMPARE(selection().trackId(), b);  // the clip is selected...
+        QCOMPARE(devices.trackId(), c);      // ...but the device view stays
+        test::moveTo(window(), title + QPoint(20, 0));
+        QCOMPARE(devices.trackId(), c);  // (moving it too)
+        test::release(window(), title + QPoint(20, 0));
+        QCOMPARE(devices.trackId(), b);
+        QVERIFY(!devices.holdsTrack());
+        selection().selectTrack(c);
+        test::click(window(), title);  // a click: its track once the button is up
+        QCOMPARE(devices.trackId(), b);
     }
 
     void draggingAClipRangeMovesIt() {
