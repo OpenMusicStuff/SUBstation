@@ -135,6 +135,38 @@ private Q_SLOTS:
         QCOMPARE(view.selected(), QStringList{synth});
     }
 
+    void aPressedClipLeavesTheDeviceViewWhereItWas() {
+        // A clip of another track pressed in the arrangement: the device view
+        // stays on its track (a Sampler there to drag the clip onto) until the press is over.
+        SessionFixture f;
+        DeviceSelection& view = *f.s().deviceSelection();
+        const QString audio = f.s().insertAudioTrack();
+        const QString keys = f.editor().addMidiTrack(-1, {}, QStringLiteral("sampler"));
+        f.selection().selectTrack(keys);
+        const QString sampler = f.project().track(keys).devices[0].id;
+        view.selectDevice(sampler);
+        view.holdTrack();
+        f.selection().setTimeRange(0.0, 4.0, {audio}, QSet<ClipRef>());
+        QCOMPARE(f.selection().trackId(), audio);
+        QCOMPARE(view.trackId(), keys);
+        QVERIFY(view.selected().isEmpty());  // (the focus went to the clips)
+        // A click (or a move in the arrangement): the clip's track, once the button is up.
+        view.letGoTrack();
+        QVERIFY(!view.holdsTrack());
+        QCOMPARE(view.trackId(), audio);
+        // Dragged out onto the device view: its track stays, and is the selected one.
+        f.selection().selectTrack(keys);
+        view.holdTrack();
+        f.selection().setTimeRange(0.0, 4.0, {audio}, QSet<ClipRef>());
+        view.letGoTrack(true);
+        QCOMPARE(view.trackId(), keys);
+        QCOMPARE(f.selection().trackId(), keys);
+        QCOMPARE(f.selection().rangeTrackIds(), QStringList{audio});  // (what was pressed stays selected)
+        // Not held: it follows the selection.
+        f.selection().selectTrack(audio);
+        QCOMPARE(view.trackId(), audio);
+    }
+
     void whatTheDeviceViewSays() {
         SessionFixture f;
         DeviceSelection& view = *f.s().deviceSelection();

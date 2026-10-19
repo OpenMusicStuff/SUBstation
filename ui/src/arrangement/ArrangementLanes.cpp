@@ -22,6 +22,7 @@
 #include "model/Timebase.h"
 #include "session/ArrangementActions.h"
 #include "session/ComputerKeyboard.h"
+#include "session/DeviceSelection.h"
 #include "session/Selection.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
@@ -891,6 +892,7 @@ void ArrangementLanes::mousePressEvent(QMouseEvent* event) {
         gesture_.reset();
         session()->bridge()->endClipPreview();
     }
+    session()->deviceSelection()->letGoTrack();
     const Qt::KeyboardModifiers mods = event->modifiers();
     if (isPanModifier(mods)) {
         gesture_ = std::make_unique<PanGesture>(*this, pos);
@@ -968,6 +970,9 @@ void ArrangementLanes::click(const QPointF& pos, Qt::KeyboardModifiers mods, con
         // another selects the area that fully contains both (and the tracks between).
         // (A folded track's clips are all title: its bars.)
         const app::ClipRef ref{hit->trackId, hit->clip.id};
+        // The device view stays on its track until the release, so the clip
+        // can be dragged onto a Sampler or a Drum Rack's pad there.
+        session()->deviceSelection()->holdTrack();
         if ((mods & Qt::ShiftModifier) && clipAnchor_) {
             selection.selectClips(editor, {*clipAnchor_, ref}, hit->trackId);
         } else {
@@ -1022,7 +1027,11 @@ void ArrangementLanes::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) return;
     edgeScroll_.stop();
     std::unique_ptr<Gesture> gesture = std::move(gesture_);
-    if (gesture) gesture->finish();
+    if (gesture) {
+        gesture->finish();
+        // (The device view shows the clip's track now. A clip dragged out has no gesture: its drag lets go.)
+        if (ready()) session()->deviceSelection()->letGoTrack();
+    }
     gesture_.reset();  // (a click in a clip range selects as elsewhere: no gesture follows it)
     if (ready()) updateHover(event->position(), event->modifiers());
     repaint();
@@ -1037,13 +1046,19 @@ void ArrangementLanes::dragClipOut(const app::Clip& clip) {
     const QPointer<ArrangementLanes> self(this);
     QTimer::singleShot(0, this, [self, clip] {
         // (Not if the button went up meanwhile: the drag would wait for a release that came already.)
-        if (!self || !(QGuiApplication::mouseButtons() & Qt::LeftButton)) return;
+        if (!self || !self->ready()) return;
+        if (!(QGuiApplication::mouseButtons() & Qt::LeftButton)) {
+            self->session()->deviceSelection()->letGoTrack();
+            return;
+        }
         std::unique_ptr<QMimeData> mime = app::clipMimeData(clip.path, clip.offsetSec, clip.durationSec,
                                                             clip.sourceDurationSec);
         QPointer<QDrag> drag = new QDrag(self.data());
         drag->setMimeData(mime.release());
         drag->exec(Qt::CopyAction);
         if (drag) drag->deleteLater();
+        // The device view keeps the track it showed (the one the clip went to).
+        if (self && self->ready()) self->session()->deviceSelection()->letGoTrack(true);
     });
 }
 
@@ -1053,6 +1068,7 @@ void ArrangementLanes::mouseUngrabEvent() {
     if (!gesture_) return;
     std::unique_ptr<Gesture> gesture = std::move(gesture_);
     gesture->cancel();
+    if (ready()) session()->deviceSelection()->letGoTrack();
     repaint();
 }
 

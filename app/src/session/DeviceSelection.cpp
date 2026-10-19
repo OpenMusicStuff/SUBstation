@@ -169,7 +169,21 @@ void DeviceSelection::showTrack(const QString& given) {
 
 void DeviceSelection::rebuild() { showTrack(trackId_); }
 
+void DeviceSelection::letGoTrack(bool keep) {
+    if (!held_) return;
+    held_ = false;
+    if (keep && !trackId_.isEmpty() && selection_->trackId() != trackId_) {
+        selection_->selectTrack(trackId_);  // (onSelectionChanged: still this track)
+        return;
+    }
+    onSelectionChanged();
+}
+
 void DeviceSelection::onSelectionChanged() {
+    if (held_) {
+        if (selection_->focus() != Selection::Focus::Devices && !selected_.isEmpty()) applySelected({});
+        return;
+    }
     if (selection_->trackId() != trackId_) {
         showTrack(selection_->trackId());
     } else if (selection_->focus() != Selection::Focus::Devices && !selected_.isEmpty()) {
