@@ -52,6 +52,10 @@ small tabs. With one warped clip open:
   stops where a stretch would play slower than 20 BPM or faster than 999 BPM. The clip
   stays where it is and as long.
 - **Double-click** a marker to remove it.
+- **Mark Transients** (under :2 and ×2) puts a marker on every transient the clip plays:
+  the attacks of its hits and notes, shown as short ticks along the waveform's top. Drag
+  the ones that are early or late onto the beat. A marker added by double-clicking close
+  to a tick goes exactly on it.
 
 Between two markers the audio plays at the tempo that joins them; *Seg. BPM* shows the
 first stretch's tempo, and changing it, :2, ×2 or Alt-stretching the clip speed up or slow

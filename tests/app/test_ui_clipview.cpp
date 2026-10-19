@@ -1,8 +1,9 @@
 // The clip view with audio clips, driven the way a user would: one clip opened,
 // its settings and waveform; several clips edited in unison; warping and
-// transposing reaching the audio; warp markers on the waveform; the clip gain making the waveform taller;
-// which clips open with a MIDI clip among them; going back (Esc, ×, the clips
-// deleted, the project reset). Runs on a display (xvfb here). With
+// transposing reaching the audio; warp markers on the waveform and at
+// transients; the clip gain making the waveform taller; which clips open with
+// a MIDI clip among them; going back (Esc, ×, the clips deleted, the project
+// reset). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
 #include <QQuickItem>
@@ -48,6 +49,20 @@ std::vector<float> tone(double seconds, double freq) {
         const double t = static_cast<double>(i) / kRate;
         samples[size_t(2 * i)] = static_cast<float>(0.5 * std::sin(2 * std::numbers::pi * freq * t));
         samples[size_t(2 * i + 1)] = static_cast<float>(0.3 * std::sin(2 * std::numbers::pi * freq * 1.5 * t));
+    }
+    return samples;
+}
+
+// Clicks: `seconds` of stereo silence with a short decaying 1 kHz burst at each of `at`.
+std::vector<float> clicks(double seconds, const std::vector<double>& at) {
+    std::vector<float> samples(static_cast<size_t>(2 * static_cast<int>(seconds * kRate)));
+    for (double start : at) {
+        const auto first = static_cast<size_t>(start * kRate);
+        for (size_t i = 0; i < size_t(kRate / 20) && 2 * (first + i) + 1 < samples.size(); ++i) {
+            const double t = static_cast<double>(i) / kRate;
+            const auto v = static_cast<float>(0.8 * std::exp(-t * 60) * std::sin(2 * std::numbers::pi * 1000 * t));
+            samples[2 * (first + i)] = samples[2 * (first + i) + 1] = v;
+        }
     }
     return samples;
 }
@@ -494,6 +509,37 @@ private Q_SLOTS:
         open({clips_[0], clips_[1]});
         test::doubleClick(window_, test::at(waveform, QPointF(waveform->width() / 4, 10)));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+    }
+
+    void transientsAreMarkedAndSnappedTo() {
+        const QString path = test::writeWav(dir_->path(QStringLiteral("clicks.wav")), clicks(2.0, {0.25, 0.75, 1.25}), 2);
+        const ClipRefs refs = editor().addClips(QString(), 0.0, {{path, 2.0}}, 0);
+        clips_ = refs;
+        QTRY_VERIFY(!session().bridge()->waveform(path).isNull());
+        open(refs);
+        QQuickItem* button = item("markTransients");
+        QVERIFY(!button->isEnabled());  // (unwarped)
+        controller()->setWarp(true);
+        QVERIFY(button->isEnabled());
+        // Found where the clicks start (just before them, at a zero crossing).
+        const std::vector<double>& found = controller()->transients(path);
+        QCOMPARE(found.size(), size_t{3});
+        for (size_t i = 0; i < 3; ++i) QVERIFY(std::abs(found[i] - (0.25 + 0.5 * i)) < 0.005);
+
+        // Marked: one on each, with the clip's start and end, nothing moving.
+        test::click(window_, test::centerOf(button));
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{5});
+        for (size_t i = 0; i < 3; ++i) QCOMPARE(clip(0).warpMarkers[i + 1].sec, found[i]);
+        QCOMPARE(undo().undoText(), QStringLiteral("Mark Transients"));
+        QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
+        test::screenshot(window_, QStringLiteral("clip-view-transients"));
+
+        // A double-click near one puts the marker on it.
+        undo().undo();
+        QQuickItem* waveform = item("clipWaveform");
+        test::doubleClick(window_, test::at(waveform, QPointF(found[1] / 2.0 * waveform->width() + 3, 60)));
+        QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+        QCOMPARE(clip(0).warpMarkers[1].sec, found[1]);
     }
 
     void severalClipsAreStackedInBands() {

@@ -1,5 +1,7 @@
 #include "pianoroll/ClipViewController.h"
 
+#include "audio/EngineBridge.h"
+#include "audio/SampleSlices.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/AudioAnalysis.h"
 #include "model/Edits.h"
@@ -236,6 +238,7 @@ void ClipViewController::forget() {
     refs_.clear();
     midi_ = false;
     baseline_.reset();
+    transients_.clear();
     if (pianoRoll_) pianoRoll_->setClip({}, {});
     refresh();
 }
@@ -298,6 +301,7 @@ void ClipViewController::refresh() {
         warp_ = false;
         warpModeIndex_ = -1;
         repitch_ = false;
+        warpMarkable_ = false;
     } else {
         const app::Project* p = project();
         const app::Clip& lead = *clips.front();
@@ -354,6 +358,7 @@ void ClipViewController::refresh() {
         segmentBpm_ = lead.segmentBpm ? lead.segmentBpm : p->tempo();
         repitch_ = std::all_of(clips.begin(), clips.end(),
                                [](const app::Clip* c) { return c->isWarped() && c->warpMode == kRePitch; });
+        warpMarkable_ = !midi_ && clips.size() == 1 && lead.isWarped() && (!lead.warpMarkers.empty() || !lead.sourceMap);
         if (!midi_) {
             for (const Shown& shown : items)
                 audioClips_.emplace_back(*shown.clip, Theme::trackColor(p->track(shown.trackId).color));
@@ -471,6 +476,35 @@ QVariantList ClipViewController::warpMarkers() const {
     for (const app::WarpMarker& m : audioClips_.front().first.warpMarkers)
         markers.append(QVariantMap{{QStringLiteral("sec"), m.sec}, {QStringLiteral("beat"), m.beat}});
     return markers;
+}
+
+const std::vector<double>& ClipViewController::transients(const QString& path) const {
+    static const std::vector<double> none;
+    if (const auto it = transients_.constFind(path); it != transients_.constEnd()) return *it;
+    if (!session_) return none;
+    const app::Waveform waveform = session_->bridge()->waveform(path);
+    if (waveform.isNull() || waveform.frames() <= 0) return none;
+    std::vector<double> seconds;
+    for (const auto& transient : app::sampleSlices::transients(waveform, false)) {
+        if (transient.strength >= kMinTransientStrength)
+            seconds.push_back(static_cast<double>(transient.frame) / waveform.sampleRate());
+    }
+    return *transients_.insert(path, std::move(seconds));
+}
+
+void ClipViewController::markTransients() {
+    if (!warpMarkable_) return;
+    const app::Clip& lead = audioClips_.front().first;
+    std::vector<double> seconds;
+    for (double sec : transients(lead.path)) {
+        if (sec > lead.offsetSec && sec < lead.offsetSec + lead.durationSec) seconds.push_back(sec);
+    }
+    if (seconds.empty()) {
+        Q_EMIT statusMessage(QStringLiteral("No transients in the clip to mark"));
+        return;
+    }
+    updateLead([&seconds](const app::Clip& clip) { return app::edits::addWarpMarkers(clip, seconds); },
+               QStringLiteral("Mark Transients"));
 }
 
 void ClipViewController::addWarpMarker(double sec) {

@@ -11,7 +11,9 @@
 // one warped clip open they are edited there: double-clicking the waveform adds
 // one (on the beat the audio plays there now: nothing moves), dragging one moves
 // that moment of the file (its beat kept: one undo step a drag), double-clicking
-// one removes it (ClipViewController::addWarpMarker and the rest).
+// one removes it (ClipViewController::addWarpMarker and the rest). Its file's
+// transients show then as short ticks under the ruler, as in Live; a marker
+// added by double-clicking near one goes on it.
 
 #include "audio/Waveform.h"
 #include "model/Clip.h"
@@ -76,6 +78,7 @@ private:
         QColor color;
         app::Waveform source;
         QString loadError;
+        std::vector<double> transients;  // seconds: while its warp markers can be edited
     };
 
     void refreshBands();
@@ -88,6 +91,8 @@ private:
     double secAt(double x) const;
     // The warp marker under `x` (-1: none).
     int markerAt(double x) const;
+    // Where a marker added at `x` goes: the transient near it, else there.
+    double snappedSecAt(double x) const;
 
     QPointer<app::Session> session_;
     QPointer<ClipViewController> controller_;

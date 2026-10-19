@@ -730,7 +730,8 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   (within `kMinSegmentBpm`..`kMaxSegmentBpm`, 20..999; a clip with warp markers has every stretch's tempo scaled
   as much, all held to that range), a MIDI clip's notes and offset are scaled; never before beat 0.
   `setWarpTempo(clip, bpm)` sets an audio clip's segment BPM, its markers' stretches scaled with it.
-  `addWarpMarker(clip, sec)` marks a moment on the beat it plays now (the first also marks the clip's start and end),
+  `addWarpMarker(clip, sec)` marks a moment on the beat it plays now (the first also marks the clip's start and end;
+  `addWarpMarkers(clip, seconds)` several, a clip's transients),
   `moveWarpMarker(clip, index, sec)` moves one keeping its beat (held where its stretches' tempos stay in range, and
   to the file), `removeWarpMarker(clip, index)` removes one; moving and removing keep the clip on the beats of its own
   it played, so it stays where it is and as long, the audio moving under it. Unwarped clips, and a frozen track's

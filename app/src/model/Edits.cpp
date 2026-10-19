@@ -245,17 +245,23 @@ Clip onTheSameBeats(const Clip& clip, Clip changed) {
 
 }  // namespace
 
-Clip addWarpMarker(const Clip& clip, double sec) {
-    if (!takesWarpMarkers(clip) || sec < 0 || (clip.sourceDurationSec > 0 && sec > clip.sourceDurationSec))
-        return clip;
+Clip addWarpMarker(const Clip& clip, double sec) { return addWarpMarkers(clip, {sec}); }
+
+Clip addWarpMarkers(const Clip& clip, const std::vector<double>& seconds) {
+    const auto inFile = [&](double sec) {
+        return sec >= 0 && (clip.sourceDurationSec <= 0 || sec <= clip.sourceDurationSec);
+    };
+    if (!takesWarpMarkers(clip) || std::none_of(seconds.begin(), seconds.end(), inFile)) return clip;
     std::vector<WarpMarker> markers = clip.warpMarkers;
     if (markers.empty()) {
         for (double at : {clip.offsetSec, clip.offsetSec + clip.durationSec}) markers.push_back({at, clip.warpBeatAt(at)});
     }
-    const bool taken = std::any_of(markers.begin(), markers.end(), [sec](const WarpMarker& m) {
-        return std::abs(m.sec - sec) < kMinWarpMarkerGapSec;
-    });
-    if (!taken) markers.push_back({sec, clip.warpBeatAt(sec)});
+    for (double sec : seconds) {
+        const bool taken = std::any_of(markers.begin(), markers.end(), [sec](const WarpMarker& m) {
+            return std::abs(m.sec - sec) < kMinWarpMarkerGapSec;
+        });
+        if (inFile(sec) && !taken) markers.push_back({sec, clip.warpBeatAt(sec)});
+    }
     Clip changed = clip;
     changed.setWarpMarkers(std::move(markers));
     return changed;

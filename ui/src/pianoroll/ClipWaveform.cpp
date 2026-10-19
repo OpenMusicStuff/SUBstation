@@ -70,7 +70,9 @@ void ClipWaveform::refreshBands() {
     if (controller_ && session_) {
         const app::EngineBridge* bridge = session_->bridge();
         for (const auto& [clip, color] : controller_->audioClips())
-            bands_.push_back({clip, color, bridge->waveform(clip.path), bridge->loadError(clip.path)});
+            bands_.push_back({clip, color, bridge->waveform(clip.path), bridge->loadError(clip.path), {}});
+        if (controller_->warpMarkable() && bands_.size() == 1)
+            bands_.front().transients = controller_->transients(bands_.front().clip.path);
     }
     update();
 }
@@ -155,6 +157,11 @@ double ClipWaveform::drawBand(SgPainter& p, const Band& band, const QRectF& area
         p.drawText(flag, Qt::AlignCenter, label, Theme::accentText(), font);
     }
 
+    // Transients: ticks along the top.
+    QColor tick = Theme::text();
+    tick.setAlpha(110);
+    for (double sec : band.transients) p.fillRect(QRectF(app::roundHalfEven(xAt(sec)), area.top(), 1, 5), tick);
+
     // Warp markers: a line through the waveform under a tab.
     if (clip.isWarped()) {
         QColor line = Theme::accent();
@@ -200,6 +207,20 @@ int ClipWaveform::markerAt(double x) const {
     return best;
 }
 
+double ClipWaveform::snappedSecAt(double x) const {
+    const double totalSec = editableSec();
+    double best = secAt(x);
+    double nearest = kMarkerTab / 2.0 + 1;
+    for (double sec : bands_.front().transients) {
+        const double distance = std::abs(sec / totalSec * width() - x);
+        if (distance <= nearest) {
+            nearest = distance;
+            best = sec;
+        }
+    }
+    return best;
+}
+
 void ClipWaveform::mousePressEvent(QMouseEvent* event) {
     if (event->flags() & Qt::MouseEventCreatedDoubleClick) return;  // (the double-click stands for it)
     const int index = markerAt(event->position().x());
@@ -224,7 +245,7 @@ void ClipWaveform::mouseDoubleClickEvent(QMouseEvent* event) {
     if (const int index = markerAt(x); index >= 0)
         controller_->removeWarpMarker(index);
     else
-        controller_->addWarpMarker(secAt(x));
+        controller_->addWarpMarker(snappedSecAt(x));
 }
 
 void ClipWaveform::hoverMoveEvent(QHoverEvent* event) {

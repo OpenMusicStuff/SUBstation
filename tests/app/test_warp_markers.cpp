@@ -114,6 +114,11 @@ private Q_SLOTS:
         QCOMPARE(added.warpTempos(), (std::vector<double>{120.0, 120.0}));
         QVERIFY(near(added.lengthBeats(tempo), 3.0));
         QCOMPARE(edits::addWarpMarker(plain, 0.5).warpMarkers.size(), size_t{2});  // (at its start: one)
+        // Several at once (a clip's transients): those in the file, each once.
+        const Clip several = edits::addWarpMarkers(plain, {1.25, 1.0, 1.0005, 5.0});
+        QCOMPARE(several.warpMarkers,
+                 (std::vector<WarpMarker>{{0.5, 1.0}, {1.0, 2.0}, {1.25, 2.5}, {2.0, 4.0}}));
+        QVERIFY(edits::addWarpMarkers(plain, {5.0}).warpMarkers.empty());
         QVERIFY(edits::addWarpMarker(plain, 4.0).warpMarkers.empty());              // (past the file)
         Clip unwarped = plain;
         unwarped.warp = false;

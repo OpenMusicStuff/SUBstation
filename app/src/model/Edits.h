@@ -65,6 +65,9 @@ inline constexpr double kMinWarpMarkerGapSec = 0.001;
 // A marker at `sec` into its file, on the beat it plays there now: nothing moves. A clip without
 // markers gets them at its start and end too.
 Clip addWarpMarker(const Clip& clip, double sec);
+// ... at each of `seconds` (those outside its file left out): a transient's, so the audio can be
+// lined up with the grid by dragging them.
+Clip addWarpMarkers(const Clip& clip, const std::vector<double>& seconds);
 // Its marker `index` moved to `sec`, keeping its beat: the audio around it plays faster on one side
 // and slower on the other. It is held where the stretches either side keep their tempos within
 // kMinSegmentBpm..kMaxSegmentBpm, and to the file. The clip plays the beats of its own it played (as

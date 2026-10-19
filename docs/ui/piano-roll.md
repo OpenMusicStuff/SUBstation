@@ -90,7 +90,12 @@ clip to new clip:
   `edits::setWarpTempo`, so a clip with warp markers has every stretch scaled alike.
 - Warp markers are the lead clip's alone (`warpMarkers`: {sec, beat} maps; `addWarpMarker(sec)`,
   `moveWarpMarker(index, sec, gestureKey)`, `removeWarpMarker(index)`, through `edits::addWarpMarker` and the rest,
-  [model.md](../app/model.md)).
+  [model.md](../app/model.md)), while `warpMarkable` (one clip open, warped, not a frozen track's). *Mark Transients*
+  (`markTransients()`) puts one on each transient between the clip's start and end (`edits::addWarpMarkers`). A
+  file's transients (`transients(path)`: seconds, those at least `kMinTransientStrength` (0.25) of the strongest)
+  are the Sampler's slicing's (`sampleSlices::transients`,
+  [SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h)), found once the file is decoded and kept while the
+  view is open.
 - The knobs (`knobs`: a map per knob of caption, range, default, value, text, differs) sit on the first clip's value
   and their readout shows the range when the clips differ. Turning one (`nudge(knob, value, gestureKey)`) moves
   every clip by the lead's change, measured from where the gesture started (the baseline keeps each clip's value at
@@ -109,7 +114,8 @@ A warped clip's warp markers stand on its waveform: a line under a `kMarkerTab` 
 one clip open whose markers can be edited (warped, and not a frozen track's clip with a source map of its own:
 `editableSec()`), double-clicking adds one where the mouse is, double-clicking within half a tab of one removes it,
 and pressing one drags it (`moveWarpMarker` with one gesture key a drag: one undo step), the cursor a horizontal
-resize over them.
+resize over them. The file's transients are 5 px ticks along the top then; a double-click within half a tab of one
+adds the marker on it (`snappedSecAt`).
 
 Warping and its modes in the engine: [engine/warp.md](../engine/warp.md).
 
@@ -487,5 +493,5 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 |---|---|
 | [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
-| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform; the clip gain making the waveform taller; which clips open with a MIDI clip among them; going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them; going back (Esc, ×, the clips deleted, the project reset) |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |
