@@ -199,6 +199,13 @@ private Q_SLOTS:
         tracks[0] = t;
         data[QStringLiteral("tracks")] = tracks;
         QVERIFY_THROWS_EXCEPTION(std::exception, loadInto(damaged, data));
+        // ... and one whose time isn't a number (not taken as 0).
+        c[QStringLiteral("warp_markers")] = QJsonArray{QJsonArray{QStringLiteral("bad"), 0.0}, QJsonArray{1.0, 2.0}};
+        clips[0] = c;
+        t[QStringLiteral("clips")] = clips;
+        tracks[0] = t;
+        data[QStringLiteral("tracks")] = tracks;
+        QVERIFY_THROWS_EXCEPTION(std::exception, loadInto(damaged, data));
     }
 };
 

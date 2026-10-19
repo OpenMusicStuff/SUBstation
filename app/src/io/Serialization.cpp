@@ -693,7 +693,7 @@ Clip audioClipFromJson(const QJsonValue& value, const QString& base) {
         std::vector<WarpMarker> read;
         for (const QJsonValue& m : markers.toArray()) {
             if (!m.isArray() || m.toArray().size() != 2) damaged(QStringLiteral("a warp marker is a time and a beat"));
-            read.push_back({m.toArray().at(0).toDouble(), m.toArray().at(1).toDouble()});
+            read.push_back({toFloat(m.toArray().at(0)), toFloat(m.toArray().at(1))});
         }
         clip.setWarpMarkers(std::move(read));
         // (Editing keeps every stretch's tempo in range, and the edits that scale them rely on it.)
