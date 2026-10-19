@@ -698,7 +698,7 @@ Clip audioClipFromJson(const QJsonValue& value, const QString& base) {
         clip.setWarpMarkers(std::move(read));
         // (Editing keeps every stretch's tempo in range, and the edits that scale them rely on it.)
         for (const double bpm : clip.warpTempos()) {
-            if (bpm < kMinSegmentBpm * (1 - 1e-6) || bpm > kMaxSegmentBpm * (1 + 1e-6))
+            if (!std::isfinite(bpm) || bpm < kMinSegmentBpm * (1 - 1e-6) || bpm > kMaxSegmentBpm * (1 + 1e-6))
                 damaged(QStringLiteral("a warp marker's stretch isn't within 20..999 BPM"));
         }
     }

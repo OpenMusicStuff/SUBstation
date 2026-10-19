@@ -192,6 +192,13 @@ private Q_SLOTS:
         data[QStringLiteral("tracks")] = tracks;
         Project damaged;
         QVERIFY_THROWS_EXCEPTION(std::exception, loadInto(damaged, data));
+        // ... and one whose stretch's tempo can't be worked out (the differences overflow).
+        c[QStringLiteral("warp_markers")] = QJsonArray{QJsonArray{-1e308, -1e308}, QJsonArray{1e308, 1e308}};
+        clips[0] = c;
+        t[QStringLiteral("clips")] = clips;
+        tracks[0] = t;
+        data[QStringLiteral("tracks")] = tracks;
+        QVERIFY_THROWS_EXCEPTION(std::exception, loadInto(damaged, data));
     }
 };
 
