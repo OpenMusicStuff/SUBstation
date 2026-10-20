@@ -26,7 +26,10 @@ ListView {
     property int pendingRow: -1
     // Called first with each key pressed (return true: taken), for keys of a list's own.
     property var keyHandler: null
-    readonly property int rowHeight: count > 0 && itemAtIndex(0) ? itemAtIndex(0).height : 20
+    readonly property int rowHeight: count > 0 && itemAtIndex(0) ? itemAtIndex(0).height : Theme.listRowHeight
+    // What selected rows are drawn on while the list hasn't the keyboard: a wash
+    // of the accent (with it, they are in the accent itself).
+    readonly property color selectionWash: Qt.tint(Theme.panel, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.14))
 
     // Return/Enter (byKey) or a double-click on a row.
     signal activated(int row, bool byKey)
