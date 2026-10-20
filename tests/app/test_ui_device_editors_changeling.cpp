@@ -123,7 +123,11 @@ private Q_SLOTS:
             QVERIFY2(std::abs(dial->value() - value) < 1e-4, name);
         }
         QVERIFY(knob(view, "glide")->logScale());
-        QVERIFY(knob(view, "pitch")->bipolar());
+        // The knobs centred on 0 drawn from the middle, the others from their start.
+        for (const char* name : {"pitch", "formant", "output", "harmonics", "interval"})
+            QVERIFY2(knob(view, name)->bipolar(), name);
+        for (const char* name : {"glide", "drive", "mix", "twin", "detune", "width", "smear"})
+            QVERIFY2(!knob(view, name)->bipolar(), name);
         QCOMPARE(readout(view, "pitch"), QStringLiteral("0 st"));
         editor()->setDeviceParam(shown.track, shown.device, QStringLiteral("pitch"), 2.4);
         QCOMPARE(readout(view, "pitch"), QStringLiteral("+2.40 st"));

@@ -220,6 +220,7 @@ Item {
             y: Math.round((parent.height - height) / 2)
             param: p.get("pitch")
             title: qsTr("Pitch")
+            knob.bipolar: true  // (±24: 0 is the middle, as for each knob centred on 0)
             tooltip: qsTr("Pitch: moves the voice up or down, in semitones and their hundredths, its formants\n"
                           + "kept (Robot: the note, from C4)")
         }
@@ -242,6 +243,7 @@ Item {
             y: pitchCell.y
             param: p.get("formant")
             title: qsTr("Formant")
+            knob.bipolar: true
             tooltip: qsTr("Formant: moves the voice's formants (its size, its character), its pitch kept.\n"
                           + "Down: bigger, darker; up: smaller, brighter")
         }
@@ -280,6 +282,7 @@ Item {
                 objectName: "output"
                 param: p.get("output")
                 title: qsTr("Output")
+                knob.bipolar: true
                 tooltip: qsTr("Output: the level out")
             }
         }
@@ -301,6 +304,7 @@ Item {
             objectName: "harmonics"
             param: p.get("harmonics")
             title: qsTr("Harmonics")
+            knob.bipolar: true
             tooltip: qsTr("Harmonics: shifts the voice's harmonics up or down by that many of them, its pitch\n"
                           + "kept: up thins it (the lowest are gone), down folds it. Between whole ones it rings")
         }
@@ -317,6 +321,7 @@ Item {
             objectName: "interval"
             param: p.get("interval")
             title: qsTr("Interval")
+            knob.bipolar: true
             tooltip: qsTr("Interval: the twin's distance from the voice, in semitones")
         }
         Knob {

@@ -282,6 +282,17 @@ TEST_CASE("changeling: transpose lands on the frequency") {
         CHECK(std::abs(cents(peakFrequency(y, 24000, 24000, want), want)) < 0.01);
         if (std::abs(pitch) <= 7.0) CHECK(std::abs(levelDb(y, 24000, 60000) - levelDb(x, 24000, 60000)) < 2.0);
     }
+    // From the start (a reset), a long Glide doesn't scoop into the first note: Transpose and Robot are on it at once
+    const auto x = harmonic(steady(hz(57.0), 1.0), kRate);
+    for (const auto mode : {cl::Mode::Transpose, cl::Mode::Robot}) {
+        INFO(std::to_string(static_cast<int>(mode)));
+        cl::Controls c;
+        c.mode = mode;
+        c.pitch = 5.0;
+        c.glideMs = 400.0;
+        const double want = mode == cl::Mode::Robot ? 65.0 : 62.0;
+        CHECK(std::abs(pitchAt(shift(x, kRate, c).left, 0.1, want) - want) < 0.02);
+    }
 }
 
 TEST_CASE("changeling: quantize and robot") {

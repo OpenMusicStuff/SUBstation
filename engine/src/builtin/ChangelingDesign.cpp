@@ -187,6 +187,7 @@ struct Shifter::Impl {
     dsp::Glide shiftGlide, noteGlide;
     int target = -1;
     bool wasVoiced = false;
+    bool robotSung = false;  // Robot has sung a frame since the reset (its first starts on its note)
     std::array<Midi, kMidiEvents> midi{};
     int midiCount = 0, midiHead = 0;
     int midiBefore = -1;  // the note held before the oldest one kept
@@ -277,6 +278,7 @@ struct Shifter::Impl {
         noteGlide.snap(kRobotNote);
         target = -1;
         wasVoiced = false;
+        robotSung = false;
         midiCount = midiHead = 0;
         midiBefore = -1;
         // a mark before the start, and one at it (both unvoiced: the input before the start is silence)
@@ -422,6 +424,9 @@ struct Shifter::Impl {
         const int note = midiAt(frame.index * hop);
         const double k = glideCoefficient();
         const double transpose = controls.pitch + (note >= 0 && controls.mode != Mode::Robot ? note - kRobotNote : 0);
+        // From a reset (playback starting, an offline render) the glides start where they are going: no scoop into
+        // the first note.
+        if (controlCount == 0) shiftGlide.snap(transpose);
         const double shift = shiftGlide.next(transpose, k, 1e-6);
         Control c;
         if (frame.voiced) {
@@ -435,6 +440,8 @@ struct Shifter::Impl {
                 held = target;
             } else if (controls.mode == Mode::Robot) {
                 const double robot = (note >= 0 ? note : kRobotNote) + controls.pitch;
+                if (!robotSung) noteGlide.snap(robot);
+                robotSung = true;
                 out = noteGlide.next(robot, k, 1e-6);
                 held = static_cast<int>(std::lround(robot));
             }
