@@ -351,6 +351,7 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
   position is already a piecewise mapping under a changing tempo (`WarpCurve`): markers would add their points
   to it.
 - **Streaming long files** is not implemented; `AudioSource` would need a different storage behind `channelData()`.
+  The design is [streaming.md](streaming.md).
 
 ## Gotchas
 

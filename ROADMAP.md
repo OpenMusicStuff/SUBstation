@@ -212,7 +212,7 @@ This is what sets SUBstation apart. Start goal 13 alongside Phase 1, because it 
 - **Piano roll:** pad names from the Drum Rack, and folding to the rows in use.
 
 ### 22. Big-project scalability, part two. Effort: L–XL
-- **Disk streaming.**
+- **Disk streaming.** The design: [docs/engine/streaming.md](docs/engine/streaming.md).
   - The problem: sources are float32 in RAM at the engine rate, about 2.2× a 16-bit WAV and about 20× an MP3. 32 stereo tracks × 5 minutes is about 3.7 GB.
   - Steps on the way: decode in place without the second copy, and store sources at native rate or in 16 bits.
 - **Anticipative rendering** (as REAPER does) for tracks that aren't live-monitored. It needs the separate processors from goal 13.

@@ -459,5 +459,6 @@ state without a device, chains and moves), [test_render_jobs.cpp](../../tests/en
 | [midi.md](midi.md) | MIDI playback (notes to events, note-offs, preview queue) and MIDI input |
 | [automation.md](automation.md) | `Automation.h`, `ParamInfo`'s normalized mapping, `Processor::automate`, faders, sends, overrides |
 | [warp.md](warp.md) | `Warp.cpp`, stretch voices, the Re-Pitch resampler, `AudioSource` decoding and peaks |
+| [streaming.md](streaming.md) | the design for streaming long files from disk (not implemented): the stream cache, the disk threads, `SourceCursor` |
 | [devices.md](devices.md) | `Processor.h`, `BuiltinProcessor`, `BuiltinRegistry`, the built-in devices; adding a device |
 | [plugins.md](plugins.md) | VST3 hosting, the threading handshake, state, latency, the CLAP plan |
