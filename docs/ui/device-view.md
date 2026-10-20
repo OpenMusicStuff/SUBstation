@@ -230,9 +230,13 @@ and editor, its sidechain, its MIDI input) reading the project again whenever th
   tracks, groups and returns it can come from, those that would close a cycle disabled, then, with a sidechain, where
   it is taken (`tapChoices()`: Pre FX, *After* each of the source's effects along its signal, those in a rack's chains
   before the rack and named by it, "After Rack › Chain › Device" (the chain only if the rack has several), Post FX,
-  Post Mixer; devices with the same name in a chain are numbered). `tapOf()` shows a tap after a device that left the
-  source as Post FX, and after its instrument as Pre FX, as the engine treats them. Choosing calls `editor.trySetDeviceSidechain`, which reports a refusal (the
-  source went meanwhile) as a status message. Engine side: [engine/routing.md](../engine/routing.md).
+  Post Mixer; devices with the same name in a chain are numbered), then a submenu for each Drum Rack pad on it
+  (`{submenu: name, children}`; "Rack › Pad" with several Drum Racks) with the pad's own taps (`TapChoice::chain`
+  the pad): Pre FX, *After* each of its effects (not listed with the track's), Post FX, Post Mixer. `tapOf()` shows a
+  tap after a device (or from a pad) that left the source as Post FX, and after its instrument (a pad's) as Pre FX
+  (the pad's), as the engine treats them; `tapLabel()` names it for the tooltip ("Kick › Post Mixer"). Choosing calls
+  `editor.trySetDeviceSidechain(track, device, source, tap, chain)`, which reports a refusal (the source went
+  meanwhile) as a status message. Engine side: [engine/routing.md](../engine/routing.md).
 - **MIDI From** (`midiFromButton`, the `note` icon): the button exists when the device plays notes
   (`DeviceInfo.acceptsMidi`, from `bridge.acceptsMidi(track, device)`: an instrument, or an effect with a MIDI input,
   as a vocoder or a pitch corrector has; not while a plug-in isn't loaded). It is lit while the device takes another

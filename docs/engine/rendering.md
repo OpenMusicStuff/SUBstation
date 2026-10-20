@@ -52,7 +52,7 @@ adds a track's id, its edges (`incoming`, `outgoing`, `inputCount`), `inputLaten
 `TrackBuffers`, input, MIDI route, monitor mode and arm state, its clips (`ClipRender`, sorted by
 start, with `maxClipLength` to bound the search) and notes (a `NoteList` of `NoteRender`s, sorted by start then
 key, shared by the snapshots built while they don't change). The master is a plain `StripRender`. A rack's chain is a `ChainRender`: a strip inside a
-strip, with its id and its line-up delay.
+strip, with its id, its line-up delay, and the edges leaving after its fader (`faderTaps`: a pad's Post Mixer).
 
 **State outside the snapshot.** The edit side allocates these with their track or edge and
 keeps them across snapshots, so a snapshot swap loses nothing:
@@ -255,7 +255,7 @@ latency.
 (`WorkerScratch::racks`, one per depth up to `kMaxRackDepth` = 8): the chain's devices (never as
 monitored: a chain skipping its waits would play early against chains lined up to it), its
 fader (muted, or left out when another chain of the rack is soloed; solo is read once per rack
-so its chains agree), then its line-up delay (`ChainRender::compensation`). The rack puts out the
+so its chains agree), its taps after the fader (`faderTaps`), then its line-up delay (`ChainRender::compensation`). The rack puts out the
 sum. An empty rack passes its input on. Every chain's devices get the strip's note events (as the
 strip's MIDI effects played them; a chain's own MIDI effects then play them for that chain), which
 is what layers instruments in an Instrument Rack; a Drum Rack's pad gets its key's, as C3 (`padNotes()`), and

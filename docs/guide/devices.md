@@ -1869,7 +1869,11 @@ key, which its devices hear as C3: a Sampler on a pad plays its sample at its ow
   The Drum Rack's track becomes their group, keeping its mixer, sends and the effects
   after the rack, so the drums sound as they did. Or drag one pad out into the arrangement:
   it becomes a track after the one you drop it on (or last, below the tracks), and leaves
-  the rack, taking its notes with it. Both undo in one step.
+  the rack, taking its notes with it. Both undo in one step. A sidechain taken from a pad
+  is then taken from its track.
+- **A pad as a sidechain**: each pad has taps of its own (Pre FX, after its effects, Post
+  FX, Post Mixer), in a submenu of the pad in a sidechain menu: a bass ducked by the kick
+  pad alone. See [mixing.md](mixing.md#from-a-drum-racks-pad).
 - A Drum Rack is an instrument even while empty: it goes first on a MIDI track. Its
   presets load into Drum Racks only.
 

@@ -471,7 +471,9 @@ private:
     void addBuiltinTarget(const Element* parameter, const QString& owner, const QString& kind, const QString& deviceId,
                           const QString& paramId, std::function<double(double)> toPlain);
     void readAutomation(const Element& track);
-    std::optional<QString> routedTrack(const QString& target, QString* tap);
+    // `chain`: the pad a Drum Rack's pad's target names ("" if it names none, or none of a Drum Rack on the
+    // track); without, a pad's target is the whole track's.
+    std::optional<QString> routedTrack(const QString& target, QString* tap, QString* chain = nullptr);
     QString trackName(const Element& track, const QString& fallback) const;
     // Its name as Live shows it ("4-Serum"), for the notes.
     static QString liveName(const Element& track);
@@ -489,6 +491,10 @@ private:
     std::vector<MeterMap::Change> signatureChanges_;
     Tempo song_;
     QHash<QString, QString> ids_;             // a Live track's Id -> its id here
+    // The pads of the Drum Racks on the tracks' own chains, their ids here: by Live's names for them as
+    // routing sources ("<track Id>/DeviceOut.<device>.B<branch>"), and by their branch elements.
+    QHash<QString, QString> padIds_;
+    QHash<const Element*, QString> branchIds_;
     QStringList returnIds_;                   // the return tracks' ids, in order
     QHash<QString, Target> targets_;          // Live's AutomationTarget Id -> where its automation goes
     QSet<QString> settingTargets_;            // the tempo's and the time signature's (readSettings)
@@ -647,6 +653,20 @@ void Importer::assignIds() {
     for (const Element* track : tracks->all()) {
         const QString liveId = track->attribute(u"Id");
         const QString id = newId();
+        // Its Drum Racks' pads, which sidechains may come from (Importer::rack() gives them these ids).
+        if (const Element* devices = track->at(u"DeviceChain/DeviceChain/Devices")) {
+            int index = 0;
+            for (const Element* device : devices->all()) {
+                const Element* branches = device->tag == u"DrumGroupDevice" ? device->child(u"Branches") : nullptr;
+                int branch = 0;
+                for (const Element* pad : branches ? branches->all(u"DrumBranch") : std::vector<const Element*>{}) {
+                    const QString padId = newId();
+                    padIds_.insert(QStringLiteral("%1/DeviceOut.%2.B%3").arg(liveId).arg(index).arg(branch++), padId);
+                    branchIds_.insert(pad, padId);
+                }
+                ++index;
+            }
+        }
         if (track->tag == u"ReturnTrack") {
             returnIds_.append(id);
             ids_.insert(liveId, id);
@@ -883,9 +903,9 @@ void Importer::addSends(const Element& mixer, const QString& owner, QJsonObject&
 }
 
 // A routing target naming a track ("AudioIn/Track.40/PostFxOut", "AudioOut/Track.40/TrackIn",
-// a Drum Rack pad's "AudioIn/Track.38/DeviceOut.0.B2,PreFxOut"): the track here, and
-// where in it ("post", "pre", "pre-fx").
-std::optional<QString> Importer::routedTrack(const QString& target, QString* tap) {
+// a Drum Rack pad's "AudioIn/Track.38/DeviceOut.0.B2,PreFxOut": its track's device 0, branch 2):
+// the track here, and where in it ("post", "pre", "pre-fx"; a pad's, with `chain`).
+std::optional<QString> Importer::routedTrack(const QString& target, QString* tap, QString* chain) {
     static const QRegularExpression track(QStringLiteral("^Audio(?:In|Out)/Track\\.(\\d+)(?:/(.*))?$"));
     const QRegularExpressionMatch match = track.match(target);
     if (!match.hasMatch()) return std::nullopt;
@@ -893,7 +913,15 @@ std::optional<QString> Importer::routedTrack(const QString& target, QString* tap
     const QString where = match.captured(2);
     if (!ids_.contains(liveId)) return std::nullopt;
     if (tap) *tap = where.contains(u"PreFx") ? kPreFx : where.contains(u"PostFx") ? kPreFader : kPostFader;
-    // A Drum Rack pad's ("DeviceOut.0.B2"): its whole track, after the rack.
+    if (chain) chain->clear();
+    // A Drum Rack pad's ("DeviceOut.0.B2"): that pad's (one of a Drum Rack on the track's own chain),
+    // else its whole track, after the rack.
+    static const QRegularExpression ownPad(QStringLiteral("^DeviceOut\\.\\d+\\.B\\d+(?=,|$)"));
+    const QString padKey = liveId + u'/' + ownPad.match(where).captured(0);
+    if (chain && padIds_.contains(padKey)) {
+        *chain = padIds_.value(padKey);
+        return ids_.value(liveId);
+    }
     static const QRegularExpression pad(QStringLiteral("DeviceOut\\.\\d+\\.B\\d+"));
     if (pad.match(where).hasMatch() && tap) {
         *tap = kPreFx;
@@ -1175,7 +1203,7 @@ std::optional<QJsonObject> Importer::rack(const Element& device, const QString& 
     QJsonArray chains;
     if (const Element* branches = device.child(u"Branches")) {
         for (const Element* branch : branches->all(branchTag)) {
-            const QString chainId = newId();
+            const QString chainId = branchIds_.value(branch, newId());  // (a pad sidechains may name)
             QString name = branch->value(u"Name/UserName").value_or(QString()).trimmed();
             if (name.isEmpty()) name = branch->value(u"Name/EffectiveName").value_or(QString()).trimmed();
             // A pad's key (Live keeps it upside down: 128 - the note; none: the loader gives it a free one).
@@ -1295,9 +1323,11 @@ std::optional<QJsonObject> Importer::routedSidechain(const Element* routedInput)
     if (!routedInput) return std::nullopt;
     const QString target = routedInput->value(u"Routable/Target").value_or(QString());
     if (target.isEmpty() || target == u"AudioIn/None") return std::nullopt;
-    QString tap;
-    if (const auto track = routedTrack(target, &tap)) {
-        return QJsonObject{{QStringLiteral("track"), *track}, {QStringLiteral("tap"), tap}};
+    QString tap, chain;
+    if (const auto track = routedTrack(target, &tap, &chain)) {
+        QJsonObject sidechain{{QStringLiteral("track"), *track}, {QStringLiteral("tap"), tap}};
+        if (!chain.isEmpty()) sidechain[QStringLiteral("chain")] = chain;  // (a pad's)
+        return sidechain;
     }
     if (target == u"AudioIn/Main" || target == u"AudioIn/Master") {
         return QJsonObject{{QStringLiteral("track"), kMaster}, {QStringLiteral("tap"), kPostFader}};

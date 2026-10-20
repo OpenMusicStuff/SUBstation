@@ -462,7 +462,8 @@ private:
     // alone, so live and offline renders agree). Stopped, as at the playhead.
     void fillSwitch(const RenderSnapshot& snap, const AutomationRender& lane, int frames, float* out,
                     WorkerScratch& scratch) const noexcept;
-    // A rack, in place: its chains (each from its input) summed.
+    // A rack, in place: its chains (each from its input) summed. A chain's taps
+    // after its fader (ChainRender::faderTaps) take its signal there.
     // The notes a Drum Rack's pad hears: only those of its key, as C3 (raw MIDI
     // goes on to it too), into `out` (TrackBuffers::kMaxEvents long), slice by slice.
     static void padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
@@ -497,7 +498,7 @@ private:
     // A chain skipped (none of its devices on): each one's meter takes what goes past it.
     void meterSkipped(const StripRender& chain, const float* left, const float* right, int frames) noexcept;
     // A rack its switch passes by: the taps after the devices in it (in its
-    // chains, and in racks in them) take what it passes on.
+    // chains, and in racks in them) and after its chains' faders take what it passes on.
     static void tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack, const float* left,
                                const float* right, int frames) noexcept;
     DelayLine* chainDelayLine(const ChainRender& chain) const noexcept;

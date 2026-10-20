@@ -34,11 +34,12 @@
 namespace sub::app {
 
 // The sidechain the engine gives a processor: (source engine track, tap, the
-// source's processor it is taken after).
+// source's processor it is taken after, the source's rack chain it is taken from).
 struct EngineBridge::SidechainState {
     quint32 source = 0;
     sub::SidechainTap tap = sub::SidechainTap::PostFader;
     quint32 tapProcessor = 0;
+    quint32 tapChain = 0;
 
     friend bool operator==(const SidechainState&, const SidechainState&) = default;
 };

@@ -3,12 +3,15 @@
 // before its devices or after one of them; cycles refused, sidechains that
 // would close one dropped when tracks move into groups or devices to other
 // tracks, a source going takes the sidechains from it along (one undo step),
-// and saving.
+// saving; and sidechains taken from a Drum Rack's pad (its own Pre FX, Post FX,
+// Post Mixer): refused from what isn't a pad of the source, saved, copied with
+// their source, keeping it from being frozen.
 
 #include "EditorFixture.h"
 #include "TestSupport.h"
 
 #include "io/Serialization.h"
+#include "model/Devices.h"
 #include "model/Errors.h"
 
 #include <QJsonArray>
@@ -209,6 +212,95 @@ private Q_SLOTS:
         QVERIFY(loaded.track(b).devices.back().sidechain == sidechain(ret, kPreFader));
         QVERIFY(loaded.track(ret).devices.back().sidechain == sidechain(a));
         QVERIFY(loaded.track(kMaster).devices.back().sidechain == sidechain(ret));
+    }
+
+    void aSidechainFromAPad() {
+        EditorFixture f;
+        Project& p = f.project;
+        const QString drums = f.editor.addMidiTrack(-1, "Drums", kDrumRackKind);
+        const QString rack = f.track(drums).devices.at(0).id;
+        const QString kick = f.editor.loadDrumPad(drums, rack, 36, QStringLiteral("/s/Kick.wav"));
+        const QString snare = f.editor.loadDrumPad(drums, rack, 38, QStringLiteral("/s/Snare.wav"));
+        const QString bass = f.editor.addAudioTrack(-1, "Bass");
+        const QString comp = device(f, bass);
+        QVERIFY(!p.freezeProblem(drums));
+        for (const QString& tap : {kPostFader, kPreFader, kPreFx}) {
+            f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, tap, kick});
+            QCOMPARE(p.device(bass, comp).sidechain, std::optional<Sidechain>(Sidechain{drums, tap, kick}));
+        }
+        QCOMPARE(f.stack.undoText(), QStringLiteral("Change Sidechain"));
+        f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, kPostFader, snare});
+        f.stack.undo();
+        QCOMPARE(p.device(bass, comp).sidechain, std::optional<Sidechain>(Sidechain{drums, kPreFx, kick}));
+        // Refused: no such pad on the source, a pad of another track, a pad's tap after a device.
+        const QString other = f.editor.addMidiTrack(-1, "Other", kDrumRackKind);
+        const QString otherPad =
+            f.editor.loadDrumPad(other, f.track(other).devices.at(0).id, 36, QStringLiteral("/s/Kick.wav"));
+        QVERIFY_THROWS_EXCEPTION(EditError, f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, kPostFader, "gone"}));
+        QVERIFY_THROWS_EXCEPTION(EditError, f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, kPostFader, otherPad}));
+        const QString sampler = padSampler(*findChain(f.track(drums).devices, kick).chain)->id;
+        QVERIFY_THROWS_EXCEPTION(EditError, f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, sampler, kick}));
+        f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, sampler});  // (after its Sampler, as a device)
+        QVERIFY(f.editor.trySetDeviceSidechain(bass, comp, drums, kPreFader, snare));
+        QCOMPARE(p.device(bass, comp).sidechain, std::optional<Sidechain>(Sidechain{drums, kPreFader, snare}));
+        QVERIFY(!f.editor.trySetDeviceSidechain(bass, comp, drums, kPreFader, otherPad));
+        // Its frozen audio has no pads.
+        QVERIFY(p.freezeProblem(drums));
+        QVERIFY(p.freezeProblem(drums)->contains(QStringLiteral("pads")));
+        // The pad deleted: the sidechain keeps it (the bridge takes the track's own Post FX meanwhile), undone: back.
+        f.editor.removeRackChains(drums, {snare});
+        QCOMPARE(p.device(bass, comp).sidechain, std::optional<Sidechain>(Sidechain{drums, kPreFader, snare}));
+        f.stack.undo();
+        QVERIFY(findChain(f.track(drums).devices, snare).chain != nullptr);
+
+        // Saved with its pad, and loaded.
+        const QJsonObject data = projectToJson(p);
+        QJsonObject saved;
+        for (const QJsonValue track : data["tracks"].toArray()) {
+            if (track.toObject()["id"].toString() == bass)
+                saved = track.toObject()["devices"].toArray()[0].toObject()["sidechain"].toObject();
+        }
+        QCOMPARE(saved["track"].toString(), drums);
+        QCOMPARE(saved["tap"].toString(), kPreFader);
+        QCOMPARE(saved["chain"].toString(), snare);
+        Project loaded;
+        loadInto(loaded, data);
+        QCOMPARE(loaded.device(bass, comp).sidechain, std::optional<Sidechain>(Sidechain{drums, kPreFader, snare}));
+        // A track's own taps save no chain.
+        f.editor.setDeviceSidechain(bass, comp, Sidechain{drums, kPreFader});
+        QJsonObject plain;
+        for (const QJsonValue track : projectToJson(p)["tracks"].toArray()) {
+            if (track.toObject()["id"].toString() == bass)
+                plain = track.toObject()["devices"].toArray()[0].toObject()["sidechain"].toObject();
+        }
+        QVERIFY(!plain.contains("chain"));
+    }
+
+    void copiesTakeTheirCopiedSourcesPadsAndDevices() {
+        // Copied together, the keyed track's copy takes the source's copy's pad
+        // (and a tap after a device, the copy's device); copied alone, its own source's.
+        EditorFixture f;
+        const QString drums = f.editor.addMidiTrack(-1, "Drums", kDrumRackKind);
+        const QString rack = f.track(drums).devices.at(0).id;
+        const QString kick = f.editor.loadDrumPad(drums, rack, 36, QStringLiteral("/s/Kick.wav"));
+        const QString eq = f.editor.addDevice(drums, "utility");
+        const QString bass = f.editor.addAudioTrack(-1, "Bass");
+        const QString onPad = device(f, bass);
+        const QString onEq = device(f, bass);
+        f.editor.setDeviceSidechain(bass, onPad, Sidechain{drums, kPostFader, kick});
+        f.editor.setDeviceSidechain(bass, onEq, Sidechain{drums, eq});
+        const QStringList both = f.editor.duplicateTracks({drums, bass});
+        QCOMPARE(both.size(), 2);
+        const Track& drumsCopy = f.track(both[0]);
+        const Track& bassCopy = f.track(both[1]);
+        const QString kickCopy = drumsCopy.devices.at(0).chains.at(0).id;
+        QVERIFY(kickCopy != kick);
+        QCOMPARE(bassCopy.devices.at(0).sidechain, std::optional<Sidechain>(Sidechain{both[0], kPostFader, kickCopy}));
+        QCOMPARE(bassCopy.devices.at(1).sidechain,
+                 std::optional<Sidechain>(Sidechain{both[0], drumsCopy.devices.at(1).id}));
+        const QStringList alone = f.editor.duplicateTracks({bass});
+        QCOMPARE(f.track(alone[0]).devices.at(0).sidechain, std::optional<Sidechain>(Sidechain{drums, kPostFader, kick}));
+        QCOMPARE(f.track(alone[0]).devices.at(1).sidechain, std::optional<Sidechain>(Sidechain{drums, eq}));
     }
 };
 

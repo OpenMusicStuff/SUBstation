@@ -208,7 +208,7 @@ This is what sets SUBstation apart. Start goal 13 alongside Phase 1, because it 
 
 ### 21. Sampler and Drum Rack depth. Effort: L
 - **Sampler:** multisampling (zones by key and velocity), manual slices, and filter and pitch envelopes.
-- **Drum Rack:** choke groups, return chains, per-pad sends, and a sidechain on a single pad.
+- **Drum Rack:** choke groups, return chains and per-pad sends. (A sidechain from a single pad is done: each pad has its own taps.)
 - **Piano roll:** pad names from the Drum Rack, and folding to the rows in use.
 
 ### 22. Big-project scalability, part two. Effort: L–XL

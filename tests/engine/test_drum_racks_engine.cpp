@@ -1,6 +1,7 @@
 // Drum Racks in the engine: a rack chain given a key to receive (a pad:
 // Engine::setChainReceiveNote) hears only that key's notes, as C3, so each
-// pad's Sampler plays its sample at its own pitch; and, constrained, a live
+// pad's Sampler plays its sample at its own pitch, and a sidechain taken from a
+// pad hears that pad alone; and, constrained, a live
 // track's own clips' notes played late by TrackRender::clipDelay (only its
 // input comes early), across a loop's wrap too. The renderer's events are
 // watched with a device of the test's own, in snapshots made by hand.
@@ -156,6 +157,37 @@ TEST_CASE("a Drum Rack's Samplers play their samples at their own pitch") {
     engine.setChainReceiveNote(low, -1);  // every note again: C1 two octaves down
     CHECK_APPROX_REL(dominantFreq(heard(36)), 110, 1e-2);
     CHECK_THROWS_AS(engine.setChainReceiveNote(engine.trackChain(track), 36), std::invalid_argument);
+}
+
+TEST_CASE("a sidechain taken from a Drum Rack's pad hears that pad alone") {
+    requireTestPlugins();
+    sub::Engine engine;
+    const uint32_t track = engine.addTrack();
+    const uint32_t rack = engine.addRack(engine.trackChain(track), -1);
+    const auto pad = [&](int key, double freq) {
+        const uint32_t chain = engine.addRackChain(rack, -1);
+        engine.setChainReceiveNote(chain, key);
+        const uint32_t sampler = engine.addBuiltinProcessor(chain, "sampler", -1);
+        setParam(engine, sampler, "velocity", 0.f);
+        setParam(engine, sampler, "release", 1.f);
+        engine.setProcessorState(sampler, sampleState(makeWav(sine(freq, 1.0))));
+        return chain;
+    };
+    const uint32_t kick = pad(36, 440.0);
+    const uint32_t snare = pad(38, 660.0);
+    engine.setTrackNotes(track, {{0.0, 1.0, 36, 127}, {0.0, 1.0, 38, 127}});  // both at once
+    engine.setTrackGain(track, 0.f);  // heard only through the sidechain
+    const uint32_t keyed = addTestPlugin(engine, engine.trackChain(engine.addTrack()), "SUB Test Sidechain");
+    const auto heard = [&](uint32_t chain, sub::SidechainTap tap) {
+        engine.setProcessorSidechain(keyed, track, tap, 0, chain);
+        return channel(frames(engine.renderOffline(0.0, kSampleRate / 2), 1000, kSampleRate / 2), 0);
+    };
+    CHECK_APPROX_REL(dominantFreq(heard(kick, sub::SidechainTap::PreFader)), 440, 1e-3);
+    CHECK_APPROX_REL(dominantFreq(heard(snare, sub::SidechainTap::PostFader)), 660, 1e-3);
+    engine.setChainMute(snare, true);
+    CHECK(maxAbs(heard(snare, sub::SidechainTap::PostFader)) < 1e-6);  // a muted pad keys nothing after its fader
+    CHECK_APPROX_REL(dominantFreq(heard(snare, sub::SidechainTap::PreFader)), 660, 1e-3);  // but still before it
+    CHECK(maxAbs(heard(kick, sub::SidechainTap::PreFx)) < 1e-6);  // before its Sampler: the rack's input, silence
 }
 
 TEST_CASE("a live track's clips' notes play clipDelay late") {
