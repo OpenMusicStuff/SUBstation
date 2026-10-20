@@ -161,12 +161,13 @@ std::vector<RouteEdge> Engine::routeEdgesLocked(std::vector<EdgeOrigin>* origins
         }
         return found->second;
     };
-    // Where a tap leaves its source's devices (RouteEdge::tap).
-    const auto tapOf = [&](int source, SidechainTap where, uint32_t tapProcessor) {
-        if (where == SidechainTap::PostFader || where == SidechainTap::PreFader) return -1;
+    // Where a tap leaves its source's devices (RouteEdge::tap; a rack's chain's: tapRack, tapChain too).
+    const auto tapOf = [&](RouteEdge& edge, SidechainTap where, uint32_t tapProcessor, uint32_t tapChain = 0) {
+        if (tapChain != 0) return chainTapLocked(where, tapChain, stripSlots(edge.from), edge);
+        if (where == SidechainTap::PostFader || where == SidechainTap::PreFader) return;
         EdgeRender::Tap tap;
-        const int slot = sidechainTapLocked(where, tapProcessor, stripSlots(source), tap);
-        return tap == EdgeRender::Tap::AfterDevice ? slot + 1 : -1;
+        const int slot = sidechainTapLocked(where, tapProcessor, stripSlots(edge.from), tap);
+        edge.tap = tap == EdgeRender::Tap::AfterDevice ? slot + 1 : -1;
     };
     for (size_t t = 0; t < tracks_.size(); ++t) {
         const TrackModel& track = tracks_[t];
@@ -197,7 +198,7 @@ std::vector<RouteEdge> Engine::routeEdgesLocked(std::vector<EdgeOrigin>* origins
         const TrackModel& track = tracks_[t];
         if (!track.inputTrack || *track.inputTrack == kMaster) continue;
         RouteEdge edge{trackIndexLocked(*track.inputTrack), static_cast<int>(t), false};
-        edge.tap = tapOf(edge.from, track.inputTap, track.inputTapProcessor);
+        tapOf(edge, track.inputTap, track.inputTapProcessor);
         edges.push_back(edge);
         if (origins) origins->push_back({static_cast<int>(t), kInputEdge});
     }
@@ -214,7 +215,7 @@ std::vector<RouteEdge> Engine::routeEdgesLocked(std::vector<EdgeOrigin>* origins
             const SidechainModel& sidechain = *found->second.sidechain;
             RouteEdge edge{trackIndexLocked(sidechain.source), to, false};
             if (edge.from < 0) continue;  // (its source went: removeTrack() takes it away)
-            edge.tap = tapOf(edge.from, sidechain.tap, sidechain.tapProcessor);
+            tapOf(edge, sidechain.tap, sidechain.tapProcessor, sidechain.tapChain);
             edge.device = slots[d].enabled ? static_cast<int>(d) : -1;  // one switched off isn't lined up
             edges.push_back(edge);
             if (origins) origins->push_back({to, kSidechainEdge, found->first, static_cast<int>(d)});
@@ -269,6 +270,31 @@ int Engine::sidechainTapLocked(SidechainTap where, uint32_t tapProcessor, const 
     return slot;
 }
 
+void Engine::chainTapLocked(SidechainTap where, uint32_t chainId, const std::vector<StripSlot>& slots,
+                            RouteEdge& edge) const {
+    edge.tap = -1;  // (a chain that left the source: before its fader)
+    const auto chain = chains_.find(chainId);
+    if (chain == chains_.end() || chain->second.parentRack == 0) return;
+    const uint32_t rackId = chain->second.parentRack;
+    const auto place = std::find_if(slots.begin(), slots.end(),
+                                    [&](const StripSlot& slot) { return slot.processorId == rackId; });
+    if (place == slots.end()) return;
+    const int rack = static_cast<int>(place - slots.begin());
+    // A rack switched off passes its input on, without running its chains: after the outermost such rack.
+    int off = -1;
+    for (int at = rack; at >= 0; at = slots[static_cast<size_t>(at)].rack) {
+        if (!slots[static_cast<size_t>(at)].processor->isActive()) off = at;
+    }
+    if (off >= 0) {
+        edge.tap = off + 1;
+        return;
+    }
+    const std::vector<uint32_t>& chains = processors_.at(rackId).chains;
+    edge.tapRack = rack;
+    edge.tapChain = static_cast<int>(std::find(chains.begin(), chains.end(), chainId) - chains.begin());
+    edge.tap = where == SidechainTap::PreFx ? 0 : -1;
+}
+
 void Engine::checkSidechainLocked(uint32_t source, uint32_t strip) const {
     if (strip == kMaster) return;  // everything goes into the master: nothing it feeds feeds a track
     if (wouldCycle(static_cast<int>(tracks_.size()), routeEdgesLocked(), trackIndexLocked(source),
@@ -287,6 +313,17 @@ uint32_t Engine::tapProcessorLocked(SidechainTap tap, uint32_t tapProcessorId, u
                                     std::to_string(source));
     }
     return tapProcessorId;
+}
+
+uint32_t Engine::tapChainLocked(SidechainTap tap, uint32_t tapChainId, uint32_t source) {
+    if (tapChainId == 0) return 0;
+    const auto found = chains_.find(tapChainId);
+    if (tap == SidechainTap::AfterDevice || found == chains_.end() || found->second.parentRack == 0 ||
+        found->second.stripId != source) {
+        throw std::invalid_argument("Chain " + std::to_string(tapChainId) + " is not a rack's chain on track " +
+                                    std::to_string(source));
+    }
+    return tapChainId;
 }
 
 void Engine::checkRouteLocked(uint32_t from, uint32_t to, const char* what) const {

@@ -102,11 +102,12 @@ bool ProjectEditor::trySetTrackMidiInput(const QString& trackId, bool enabled, c
 }
 
 bool ProjectEditor::trySetDeviceSidechain(const QString& trackId, const QString& deviceId,
-                                          const QString& sourceTrackId, const QString& tap) {
+                                          const QString& sourceTrackId, const QString& tap, const QString& chain) {
     if (!project_->hasDevice(trackId, deviceId)) return false;
     return reportRefusal([&] {
         setDeviceSidechain(trackId, deviceId,
-                           sourceTrackId.isEmpty() ? std::nullopt : std::optional<Sidechain>(Sidechain{sourceTrackId, tap}));
+                           sourceTrackId.isEmpty() ? std::nullopt
+                                                   : std::optional<Sidechain>(Sidechain{sourceTrackId, tap, chain}));
     });
 }
 

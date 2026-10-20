@@ -137,6 +137,10 @@ selected bend points, Ctrl+A selects them all, and holding Shift shows the notes
 edit as out of it. See
 [midi.md](midi.md#the-piano-roll).
 
+In the progression ideas beside the piano roll (*Generate ▾ › Progressions…*), once you
+have clicked in them, Up and Down try the idea above or below in the clip, Enter tries
+the one you are on, and Esc closes them ([midi.md](midi.md#progression-ideas)).
+
 ## Plug-in editors
 
 The Ctrl/Alt shortcuts also work while a plug-in's editor window has the focus, except

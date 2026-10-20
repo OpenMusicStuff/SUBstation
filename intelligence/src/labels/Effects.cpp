@@ -404,6 +404,7 @@ Effect classify(const DeviceFact& device) {
         {"transient", E::Transient},  {"vintage_hall", E::Reverb},  {"hue", E::PitchCorrection},
         {"gigatune", E::PitchCorrection}, {"vocoder", E::Vocoder},  {"vocal_rider", E::Rider},
         {"tape_stop", E::Glitch},     {"glitch", E::Glitch},      {"vintage_delay", E::Delay},
+        {"changeling", E::PitchShift},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {

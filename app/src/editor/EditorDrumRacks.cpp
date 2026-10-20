@@ -57,6 +57,14 @@ bool isMidiEffect(const Device& device) {
     return builtin != nullptr && builtin->midiEffect;
 }
 
+// A pad, and every device and rack chain in it (a Drum Rack's pads in it), to
+// the track the pad becomes (the sidechains taken from them are taken there).
+void addPadTrack(QHash<QString, QString>& padTracks, const Chain& pad, const QString& trackId) {
+    padTracks.insert(pad.id, trackId);
+    for (const Device* device : iterDevices(pad.devices)) padTracks.insert(device->id, trackId);
+    for (const ConstRackChain& inner : iterChains(pad.devices)) padTracks.insert(inner.chain->id, trackId);
+}
+
 // A pad of `drums`' Drum Rack as a MIDI track of its own (its group and place
 // are the caller's): the pad's devices, then copies of the track's MIDI
 // effects; its fader; its automation on the track (its chain's faders as the
@@ -236,6 +244,37 @@ void ProjectEditor::renamePadsFollowing(const QString& trackId, const QList<QPai
 
 // --- Pads as tracks ---------------------------------------------------------------------------
 
+void ProjectEditor::padSidechainsToTracks(const QString& trackId, const QHash<QString, QString>& padTracks,
+                                          const QString& text) {
+    struct Keyed {
+        QString trackId, deviceId;
+        Sidechain sidechain;
+    };
+    // What a sidechain is taken from: a pad (its own taps), or a device (after it).
+    const auto from = [](const Sidechain& sidechain) {
+        return sidechain.chain.isEmpty() ? sidechain.tapDevice().value_or(QString()) : sidechain.chain;
+    };
+    std::vector<Keyed> keyed;
+    for (const Track* owner : project_->allTracks()) {
+        for (const Device* device : iterDevices(owner->devices)) {
+            const auto& sidechain = device->sidechain;
+            if (sidechain && sidechain->trackId == trackId && padTracks.contains(from(*sidechain)))
+                keyed.push_back({owner->id, device->id, *sidechain});
+        }
+    }
+    for (const Keyed& k : keyed) {
+        // (A device keeps its id on the pad's track: a tap after it stays after it. So does a pad of a Drum
+        // Rack in the pad: its own taps stay its own; the pad that became the track has the track's.)
+        const QString to = padTracks.value(from(k.sidechain));
+        const bool inner =
+            !k.sidechain.chain.isEmpty() && findChain(project_->track(to).devices, k.sidechain.chain).chain != nullptr;
+        const Sidechain moved{to, k.sidechain.tap, inner ? k.sidechain.chain : QString()};
+        // (The same signal, where it went: frozen tracks take it too.)
+        push(std::make_unique<SetDeviceSidechainCommand>(project_, k.trackId, k.deviceId, k.sidechain, moved, text,
+                                                         true));
+    }
+}
+
 QStringList ProjectEditor::separatePads(const QString& trackId, const QString& rackId) {
     const Project& p = *project_;
     const Track* drums = p.findTrack(trackId);
@@ -249,9 +288,11 @@ QStringList ProjectEditor::separatePads(const QString& trackId, const QString& r
     }
     const Track before = *drums;
     std::vector<Track> pads;
+    QHash<QString, QString> padTracks;  // a pad, and each device in it -> the pad's track
     for (const Chain& pad : rack->chains) {
         pads.push_back(padTrack(before, pad));
         showAutomationAsTheRest(pads.back());
+        addPadTrack(padTracks, pad, pads.back().id);
     }
     // The track as a group: its mixer, sends and routing, and its devices but
     // the rack and the MIDI effects (each pad's track has those), with their automation.
@@ -298,6 +339,7 @@ QStringList ProjectEditor::separatePads(const QString& trackId, const QString& r
         ids << pad.id;
         push(std::make_unique<InsertTrackCommand>(project_, std::move(pad), index++, text));
     }
+    padSidechainsToTracks(trackId, padTracks, text);
     return ids;
 }
 
@@ -320,6 +362,9 @@ QString ProjectEditor::padToTrack(const QString& trackId, const QString& chainId
     Macro macro(undoStack_, text);
     const QString id = insertTrack(std::move(track), at.index.value_or(-1), at.parent, text);
     if (id.isEmpty()) return {};
+    QHash<QString, QString> padTracks;
+    addPadTrack(padTracks, *findChain(before.devices, chainId).chain, id);
+    padSidechainsToTracks(trackId, padTracks, text);
     // The pad leaves the rack (its automation with it: setDevices), and its notes the clips.
     std::vector<Device> after = before.devices;
     RackChain into = findChain(after, chainId);

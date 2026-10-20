@@ -161,7 +161,10 @@ struct AudioClockStatus {
 
 // Where a sidechain takes its source's signal: after its fader (and pan), before
 // it (after all its devices), after one of its devices, or before all of them
-// (PreFx: the strip's own input, as its devices hear it).
+// (PreFx: the strip's own input, as its devices hear it). Taken from one of the
+// chains of a rack on it (a Drum Rack's pad: SidechainInfo::tapChainId), all but
+// AfterDevice are that chain's: after its fader (its pan, mute and solo among
+// the rack's chains), before it, or before its devices (what the rack hears).
 enum class SidechainTap : uint8_t { PostFader, PreFader, AfterDevice, PreFx };
 
 // A device's sidechain (Engine::processorSidechain()).
@@ -169,6 +172,7 @@ struct SidechainInfo {
     uint32_t trackId = 0;  // its source
     SidechainTap tap = SidechainTap::PostFader;
     uint32_t tapProcessorId = 0;  // AfterDevice: the source's device it is taken after
+    uint32_t tapChainId = 0;      // a rack's chain on the source whose signal it is (0: the source's own)
 };
 
 // A track's send (Engine::trackSends()).
@@ -653,16 +657,24 @@ public:
     // after one of its devices (`tapProcessorId`, in the track's main chain or in
     // a chain of a rack there, before that chain's fader; in a rack switched off,
     // after that rack; should that device leave the track, the tap is before the
-    // fader), or before all of them (PreFx). It is lined up
+    // fader), or before all of them (PreFx). With `tapChainId`, a chain of a
+    // rack on the track (a Drum Rack's pad), the tap is that chain's: after its
+    // fader (PostFader: its pan, mute and solo among the rack's chains, before
+    // the delay lining it up with the others), before it (PreFader: after its
+    // devices) or before its devices (PreFx: as the rack hears its input); in a
+    // rack switched off (or in a rack inside one), after the outermost such
+    // rack; should the chain leave the track, before the track's fader. It is lined up
     // with the signal at the device: delayed, or that signal is (just before the
     // device). Throws std::invalid_argument for an unknown device or track, a
-    // device without a sidechain input, the master, or a sidechain that would
+    // device without a sidechain input, the master, a tap after a device or of a
+    // chain that isn't on the track (or a chain with AfterDevice), or a sidechain that would
     // close a cycle (its own track, or one its track feeds: through outputs,
     // sends, inputs and sidechains alike). It stays with the device when the
     // device moves (moveProcessor refuses a move that would make it a cycle);
     // when its track goes, it goes too.
     void setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId,
-                               SidechainTap tap = SidechainTap::PostFader, uint32_t tapProcessorId = 0);
+                               SidechainTap tap = SidechainTap::PostFader, uint32_t tapProcessorId = 0,
+                               uint32_t tapChainId = 0);
     void clearProcessorSidechain(uint32_t processorId);
     std::optional<SidechainInfo> processorSidechain(uint32_t processorId);
     // A device's MIDI input from another track (acceptsMidi in its ProcessorInfo:
@@ -956,6 +968,7 @@ private:
         uint32_t source = 0;  // the track
         SidechainTap tap = SidechainTap::PostFader;
         uint32_t tapProcessor = 0;  // AfterDevice: the source's device
+        uint32_t tapChain = 0;      // a rack's chain on the source whose tap it is (0: the source's own)
         std::shared_ptr<EdgeState> state;
         std::shared_ptr<DelayLine> delay;  // the sidechain's
     };
@@ -1101,8 +1114,10 @@ private:
         const std::vector<std::vector<int>>* chainCompensation = nullptr;
         std::vector<std::vector<int>> sidechainOf;  // per slot: the snapshot edges into its sidechain input
         const RenderSnapshot* snap = nullptr;  // the one being built: its tempo map, its rate
-        // Rack chain -> the snapshot edges taken after its devices (StripRender::deviceTaps).
+        // Rack chain -> the snapshot edges taken after its devices (StripRender::deviceTaps),
+        // and those taken after its fader (ChainRender::faderTaps).
         const std::unordered_map<uint32_t, std::vector<int>>* chainTaps = nullptr;
+        const std::unordered_map<uint32_t, std::vector<int>>* chainFaderTaps = nullptr;
     };
     // A strip's mixer envelopes in the snapshot, in samples, as late as
     // `faderLatency` (delay compensation comes after the fader, on the strip's
@@ -1145,6 +1160,13 @@ private:
     // device that isn't on the source (any more) is before the fader.
     int sidechainTapLocked(SidechainTap where, uint32_t tapProcessor, const std::vector<StripSlot>& slots,
                            EdgeRender::Tap& tap) const;
+    // Where a tap of a rack's chain (`chainId`) leaves the source whose devices
+    // are `slots`, into `edge` (RouteEdge::tap, tapRack, tapChain): the chain's
+    // input (PreFx) or its fader (the others). In a rack switched off (or in a
+    // rack inside one): after the outermost such rack, which passes its input
+    // on. A chain that isn't on the source (any more): before its fader.
+    void chainTapLocked(SidechainTap where, uint32_t chainId, const std::vector<StripSlot>& slots,
+                        RouteEdge& edge) const;
     // Where a device is: its strip (as an index into tracks_; -1: the master)
     // and its slot there. None: no such device.
     std::optional<std::pair<int, int>> deviceSlotLocked(uint32_t processorId, const ProcessorIds& ids) const;
@@ -1156,6 +1178,9 @@ private:
     // for an AfterDevice tap, which must be on that track (in its chain or a rack's there; else
     // std::invalid_argument), 0 for any other.
     uint32_t tapProcessorLocked(SidechainTap tap, uint32_t tapProcessorId, uint32_t source);
+    // The rack's chain a sidechain from track `source` is taken from: `tapChainId`, which must be
+    // a chain of a rack on that track and the tap not AfterDevice (else std::invalid_argument); 0 for none.
+    uint32_t tapChainLocked(SidechainTap tap, uint32_t tapChainId, uint32_t source);
     // The same for every sidechained device in a rack's chains (it moves to `strip`).
     void checkRackSidechainsLocked(uint32_t rackId, uint32_t strip);
     // Throws std::invalid_argument if an edge from `from` into `to` would close a cycle.

@@ -282,8 +282,8 @@ void SetDeviceEnabledCommand::undo() { project_->setDeviceEnabled(trackId_, devi
 
 SetDeviceSidechainCommand::SetDeviceSidechainCommand(Project* project, const QString& trackId,
                                                      const QString& deviceId, std::optional<Sidechain> old,
-                                                     std::optional<Sidechain> nw, const QString& text)
-    : ValueCommand(project, text, {trackId, deviceId}, std::move(old), std::move(nw)) {}
+                                                     std::optional<Sidechain> nw, const QString& text, bool follows)
+    : ValueCommand(project, text, {trackId, deviceId}, std::move(old), std::move(nw)), follows_(follows) {}
 
 void SetDeviceSidechainCommand::redo() { project_->setDeviceSidechain(trackId(), deviceId(), new_); }
 

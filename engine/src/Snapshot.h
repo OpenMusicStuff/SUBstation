@@ -325,6 +325,9 @@ struct ChainRender : StripRender {
     std::shared_ptr<DelayLine> delay;  // for the live renderer
     // A Drum Rack's pad: the key whose notes alone its devices hear, as C3 (60); -1: every note.
     int receiveNote = -1;
+    // The edges leaving it after its fader (its pan, mute and solo), before
+    // the delay lining it up: its strip's source's sidechains (a pad's Post Mixer).
+    std::vector<int> faderTaps;
 };
 
 // A rack as the renderer runs it (Renderer::processRack). Without chains it
@@ -376,7 +379,8 @@ struct EdgeRender {
     Kind kind = Kind::Output;
     Tap tap = Tap::PostFader;
     // AfterDevice: the insert it is taken after (-1: before the first), in the
-    // source's own chain or in the rack chain whose deviceTaps list it.
+    // source's own chain or in the rack chain whose deviceTaps list it. (One a
+    // rack chain's faderTaps list is taken after that chain's fader.)
     int tapDevice = -1;
     int compensation = 0;              // samples it is delayed to line up with the latest edge into `to`
     std::shared_ptr<DelayLine> delay;  // for the live renderer (offline renders bring their own)

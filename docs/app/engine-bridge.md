@@ -333,12 +333,15 @@ wait for them first. See [engine/devices.md](../engine/devices.md).
 ### Sidechains
 
 `pushSidechains` (after device syncs, outputs, track changes) works out every device's wanted sidechain
-(`wantedSidechain`) as (source engine track, `sub::SidechainTap`, tap processor):
+(`wantedSidechain`) as (source engine track, `sub::SidechainTap`, tap processor, tap chain):
 
 - `kPostFader` → `SidechainTap::PostFader`; `kPreFader` → `PreFader`;
 - `kPreFx` → `PreFx`, except on a MIDI track whose first device is an instrument (or instrument rack): after that
   instrument (a MIDI track's own audio is its instrument's);
-- a device id → after its processor (`AfterDevice`); while that device isn't on the source, `PreFader`.
+- a device id → after its processor (`AfterDevice`); while that device isn't on the source, `PreFader`;
+- from a rack's chain (`Sidechain::chain`, a Drum Rack's pad: `engineChainTap`), the same three of that engine
+  chain: `kPreFx` after the pad's instrument if it starts with one; while the engine hasn't that chain on the
+  source (the pad deleted, or moved with its rack), the track's `PreFader`.
 
 None for a device without a sidechain input (`processorInfo(...).hasSidechain`), a source the engine hasn't, or the
 master. Changing ones are cleared first (`clearProcessorSidechain`), then the rest set; one the engine refuses for now

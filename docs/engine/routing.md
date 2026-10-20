@@ -70,13 +70,14 @@ indices into `tracks_` (-1: the master): each track's output (`kOutputEdge`, or
 `kOutputSidechainEdge` into a device) then its sends; then the input edges; then the
 sidechains, by destination (the tracks, then the master's devices) and device slot.
 `RouteEdge::sums` is false for input, Track In and sidechain edges; `tap` says where along
-the source's chain it leaves; `device` which slot of the destination a sidechain goes into.
+the source's chain it leaves (`tapRack` and `tapChain`, of a rack's chain: a pad's taps);
+`device` which slot of the destination a sidechain goes into.
 
 The model behind them, per track (`TrackModel`): `output` (or `kNoOutput`),
 `outputProcessor` (a device whose sidechain it goes into instead), `inMonitored` (what goes
 into it is its input), `outputState`, `delay` (the output edge's line), `sends` (`SendModel`:
 destination, pre-fader, `EdgeState`, `DelayLine`), `inputTrack`, `inputTap`,
-`inputTapProcessor` and `inputState`. Per device: `SidechainModel` (source, tap, tap device,
+`inputTapProcessor` and `inputState`. Per device: `SidechainModel` (source, tap, tap device, tap chain,
 `EdgeState`, its own delay line) and `ProcessorEntry::sidechainWait` (the device's own
 signal's line, waiting for whatever comes into its sidechain). These outlive snapshots; the
 snapshot's `EdgeRender`s point at them. A device's sidechain edges are summed into a
@@ -213,6 +214,22 @@ devices (`RouteEdge::tap` counts slots, depth first, so devices in its racks' ch
 after a device that has left the source is before the fader until the device comes back. One
 after a device in a rack switched off (or in a rack inside one) is taken after the outermost such
 rack, which passes its input on.
+
+**Taps of a rack's chain** (a Drum Rack's pad: `tapChainId`, `SidechainModel::tapChain`).
+`PostFader`, `PreFader` and `PreFx` are then that chain's: after its fader (its pan, mute and
+solo among the rack's chains), after its devices, or before them (as the rack hears its input);
+`AfterDevice` takes no chain (`tapChainLocked()` refuses it, and a chain that isn't a rack's on
+the source). `chainTapLocked()` turns it into the edge's tap: `RouteEdge::tapRack` (the rack's
+slot) and `tapChain` (its place among the rack's chains), with `tap` 0 before its devices and -1
+at its fader. In a rack switched off (or in one inside one) it is taken after the outermost such
+rack; with the chain gone from the source, before the source's fader. Delay compensation sees
+it leave as the chain's input does (the rack's slot's `deviceLatency`) or as its fader hears it
+(`chainEnd`): before the delay lining the chain up with the others, after its fader or before.
+In the snapshot it is an `AfterDevice` edge: before or after the chain's devices it is in that
+chain's `deviceTaps` (`tapDevice` -1, or its last device), which `processChain()` writes as for a
+device; after its fader in its `ChainRender::faderTaps`, which `processRack()` writes after
+`applyFader()`. A rack its automation switches off writes both with what it passes on
+(`tapSkippedRack()`).
 
 **Taps in racks.** A tap after a device in a rack's chain takes that chain's signal as it leaves
 the device: before the chain's fader, without the other chains, and before the delay that lines
@@ -358,8 +375,11 @@ In the engine's tests, [tests/engine](../../tests/engine):
   waiting device, cycles, the source going, mute and solo, silence flagged, workers.
 - [test_racks_engine.cpp](../../tests/engine/test_racks_engine.cpp): chains summing, faders, latency not
   smearing, nested automation, instrument racks, sidechains in racks and taken after devices in
-  them (levels, alignment, racks switched off), moves, nesting limits, cycles through racks,
-  workers.
+  them (levels, alignment, racks switched off), taken from a chain itself (before its devices,
+  after them, after its fader with its mute and solo; alignment; racks switched off; the chain
+  gone; refusals), moves, nesting limits, cycles through racks, workers.
+- [test_drum_racks_engine.cpp](../../tests/engine/test_drum_racks_engine.cpp): a sidechain taken from a
+  Drum Rack's pad hears that pad alone.
 - [test_resampling_engine.cpp](../../tests/engine/test_resampling_engine.cpp): input edges and their
   cycles.
 - [test_freeze_engine.cpp](../../tests/engine/test_freeze_engine.cpp): a track's signal before its fader

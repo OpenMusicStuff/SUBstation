@@ -128,6 +128,23 @@ sources in the same menu. Sources that would close a cycle (the group the device
 track is in, a return it sends to) are greyed out; the master's devices can take any
 track's.
 
+### From a Drum Rack's pad
+
+A source with a Drum Rack has a submenu for each of its pads, below its own taps, with
+the pad's own taps: duck the bass under the kick alone, with the whole kit on one
+track. The tooltip names the pad (*Sidechain: Drums, Kick › Post Mixer*).
+
+| Pad tap | What the device hears |
+|---|---|
+| *Pre FX* | The pad's own sound, from its instrument (its Sampler), before its effects |
+| *After* one of its effects | The pad's signal after that effect |
+| *Post FX* | After all its devices, before the pad's volume |
+| *Post Mixer* | After the pad's volume and pan, as the rack hears it: nothing while the pad is muted (its activator off), or while another pad is soloed |
+
+The other pads aren't heard in it, and it lines up as any sidechain does. The pad's
+effects are listed in its submenu, not with the track's. A track with a pad taken as a
+sidechain can't be frozen (its frozen audio has no pads).
+
 ### Timing
 
 The sidechain lines up with the device's own signal sample for sample: whichever comes
@@ -147,8 +164,11 @@ fader.
 Deleting the source turns the sidechain off (in the same undo step), as does moving
 tracks into groups, or the device to another track, where it would close a cycle;
 otherwise a device moved to another track keeps its sidechain. Should the device a
-sidechain is taken after leave its track, it is taken Post FX until the device comes
-back.
+sidechain is taken after (or the pad it is taken from) leave its track, it is taken
+Post FX until it comes back. A pad separated into a track of its own (*Separate Pads
+into Tracks*, or dragged out) takes its sidechains along: they are taken from its track,
+where they were taken in the pad. Duplicated together with its source, a device takes
+its sidechain from the source's copy, after the same device or from the same pad.
 
 A sidechain into a device in a rack lines up with the signal there (see
 [devices.md](devices.md#racks)).

@@ -65,7 +65,9 @@ The complete corresponding source of this build:
 The other files here are the licences of the libraries SUBstation includes (named after where they are in
 the source). Qt is used under the GNU LGPLv3 (https://www.qt.io/licensing). The sound tagger's model was
 trained on NSynth, TinySOL, LibriSpeech and VocalSet (CC BY 4.0) and Freesound sounds (CC0 and CC BY 3.0):
-see tools/sound_tagger/README.md in the source.
+see tools/sound_tagger/README.md in the source. The piano roll's progression ideas start from free-midi-chords'
+progressions (MIT: intelligence-third_party-free-midi-chords-LICENSE.txt) and draw on chord changes counted from the
+McGill Billboard Project's annotations (CC0; Burgoyne, Wild and Fujinaga, ISMIR 2011).
 $asio
 VST is a registered trademark of Steinberg Media Technologies GmbH.
 "@ | Set-Content -Path (Join-Path $To 'README.txt') -Encoding utf8

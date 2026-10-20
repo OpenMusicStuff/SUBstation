@@ -621,7 +621,8 @@ private Q_SLOTS:
               "setChainParam(QString,QString,QString,double,QString)", "setMacro(QString,QString,int,double,QString)",
               "setDeviceParam(QString,QString,QString,double,QString)", "addAutomationPoint(QString,QString,double,double,QString)",
               "deleteAutomationPoints(QString,QString,QList<int>)", "toggleAllAutomation()", "unfreezeTracks(QStringList)",
-              "trySetDeviceSidechain(QString,QString,QString,QString)", "tryMapMacro(QString,QString,int,QString,QString,double,double)"}) {
+              "trySetDeviceSidechain(QString,QString,QString,QString)",
+              "trySetDeviceSidechain(QString,QString,QString,QString,QString)", "tryMapMacro(QString,QString,int,QString,QString,double,double)"}) {
             QVERIFY2(meta->indexOfMethod(QMetaObject::normalizedSignature(signature)) >= 0, signature);
         }
         QVERIFY(meta->indexOfSignal("refused(QString)") >= 0);

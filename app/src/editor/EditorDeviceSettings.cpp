@@ -155,9 +155,12 @@ void ProjectEditor::setDeviceSidechain(const QString& trackId, const QString& de
             throw EditError(QStringLiteral("%1 can't take its sidechain from that track").arg(deviceName(device)));
         }
         if (const auto tapped = sidechain->tapDevice()) {  // in its own chain, or in a rack's there
-            if (findDevice(p.track(source).devices, *tapped) == nullptr) {
+            if (findDevice(p.track(source).devices, *tapped) == nullptr || !sidechain->chain.isEmpty()) {
                 throw EditError(QStringLiteral("A sidechain can only be taken after one of its source's devices"));
             }
+        }
+        if (!sidechain->chain.isEmpty() && findChain(p.track(source).devices, sidechain->chain).chain == nullptr) {
+            throw EditError(QStringLiteral("A sidechain can only be taken from a pad of its source's racks"));
         }
     }
     if (sidechain != device.sidechain) {

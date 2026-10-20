@@ -83,7 +83,8 @@ What SUBstation doesn't do yet, by area.
   analog-modelled circuits, or Spread.
 - The Drum Rack has no return chains, choke groups or per-pad send levels, and a pad
   plays its key as C3 (there is no separate "play" key, nor key or velocity zones). A
-  sidechain can't hear one pad alone: it hears the whole rack.
+  track's input (*Audio From*) can't take one pad alone, as a sidechain can: it takes
+  the whole rack.
 
 ## Audio clips
 

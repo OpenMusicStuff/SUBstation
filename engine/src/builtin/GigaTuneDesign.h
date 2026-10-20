@@ -49,6 +49,8 @@
 //   comes out at its frequency exactly, whatever error the tracker made. With nothing to do (Strength 0,
 //   Pitch and Formant 0) the output is the input exactly, latency() samples later.
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -152,12 +154,21 @@ public:
     // Real-time: how the pitch is heard (Low Latency at first). A change starts the tracker again.
     void setQuality(Quality quality) noexcept;
     Quality quality() const noexcept;
+    // Real-time (Low Latency; off at first): a frame the path decodes as unvoiced is voiced all the same where pYIN
+    // finds it likely voiced on its own (a chance of 0.25 or more) and the refinement finds its period clearly
+    // (kRescuePeriodicity) near the path's pitch: short notes between rests, which the path's switches cost too much
+    // to take. For shifting a voice (Changeling), where a note left unvoiced comes out unshifted.
+    void setRescue(bool rescue) noexcept;
     // Host samples after a frame's centre it is decided by, at the most, with a quality.
     int delay(Quality quality) const noexcept;
 
     // Real-time: the next input sample. True when a frame was decided with it: decided() is that frame.
     bool push(double x) noexcept;
     const PitchFrame& decided() const noexcept;
+    // The samples pushed so far, and one of them low-passed as the refinement reads it (still kept: the latest
+    // few hundred milliseconds), for finding a voice's pulses (Changeling's grains are centred on them too).
+    int64_t written() const noexcept;
+    double lowAt(int64_t n) const noexcept;
 
     // Not real-time: the frames not yet decided whose centres the input has reached, decided as if it ended
     // here (traced back from the best state of the last frame), appended to `out`. The tracker is then reset.
@@ -167,6 +178,19 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// Reading between samples: a Kaiser-windowed sinc (beta 9, kSincHalf zero crossings each side), tabulated for
+// linear interpolation. Zero at every whole number but 0, so a read at a whole sample is that sample.
+inline constexpr int kSincHalf = 16;
+inline constexpr int kSincResolution = 1024;  // table points a sample
+const double* sincTable();                    // kSincHalf * kSincResolution + 2 values over [0, kSincHalf]
+inline double sincAt(const double* table, double x) noexcept {
+    const double position = std::abs(x) * kSincResolution;
+    if (!(position < kSincHalf * kSincResolution)) return 0.0;
+    const auto i = static_cast<size_t>(position);
+    const double f = position - static_cast<double>(i);
+    return table[i] + (table[i + 1] - table[i]) * f;
+}
 
 // fastpitch's offline pYIN (librosa.pyin's result) of a whole signal with the tracker's frame and hop, f0 as
 // the candidate in the decoded bin (refine_f0): what the tracker gives with a lag past the end (Low Latency), for tests.

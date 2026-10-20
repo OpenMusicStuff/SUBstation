@@ -162,7 +162,8 @@ Rectangle {
 
     // A device's sidechain menu: No Sidechain, the tracks it can come from
     // (those that would close a cycle greyed out) under a search field that
-    // has the keyboard as it opens, then where it is taken.
+    // has the keyboard as it opens, then where it is taken, and a submenu for
+    // each of the source's Drum Rack pads, where it is taken in the pad.
     function showSidechainMenu(frame, at, x, y) {
         const trackId = frame.trackId
         const id = frame.deviceId
@@ -179,10 +180,21 @@ Rectangle {
                             source => Session.editor.trySetDeviceSidechain(trackId, id, source.source, source.tap))
                 continue
             }
-            menu.entry(entry.text, () => Session.editor.trySetDeviceSidechain(trackId, id, entry.source, entry.tap),
-                       entry.checked, entry.enabled)
+            if (entry.submenu !== undefined) {  // a Drum Rack pad's own taps
+                const pad = menu.submenu(entry.submenu)
+                for (const child of entry.children)
+                    sidechainEntry(trackId, id, child, pad)
+                continue
+            }
+            sidechainEntry(trackId, id, entry)
         }
         menu.popup(at, x, y)
+    }
+
+    function sidechainEntry(trackId, id, entry, target) {
+        menu.entry(entry.text,
+                   () => Session.editor.trySetDeviceSidechain(trackId, id, entry.source, entry.tap, entry.chain),
+                   entry.checked, entry.enabled, target)
     }
 
     // A device's MIDI From menu: Own Track, then the MIDI tracks whose notes

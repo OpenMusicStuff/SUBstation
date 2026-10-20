@@ -14,7 +14,9 @@
 #                them, and the index of a sample library kept up to date in the
 #                background
 #   harmony/     chords and keys: inferring them from notes, block chords and
-#                bass lines from them
+#                bass lines from them, progression ideas in a mood (from
+#                free-midi-chords' progressions and the Billboard songs' chord
+#                changes: tools/progressions; compiled in: ProgressionData.inc)
 #   humanize/    a part's velocities from HUMANBRO's model (models/velocity.hbm)
 #   labels/      what each track is, in a few words ("Washed Out Serum Pluck"),
 #                from its names, presets, notes, effects and mixer
@@ -28,6 +30,7 @@ add_library(sub_intelligence STATIC
     src/harmony/Accompaniment.cpp
     src/harmony/ChordInference.cpp
     src/harmony/Chords.cpp
+    src/harmony/Progressions.cpp
     src/humanize/VelocityModel.cpp
     src/labels/Effects.cpp
     src/labels/NoteProfile.cpp

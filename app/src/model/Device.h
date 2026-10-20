@@ -76,9 +76,15 @@ inline const QString kPreFx = QStringLiteral("pre-fx");
 // (`tap`: that device's id; one in a rack's chain too, before that chain's
 // fader; before the fader while that device isn't on the track). It isn't heard
 // on its own, so the source's mute and solo silence it only after the fader.
+// From a rack's chain on the track (`chain`: a Drum Rack's pad), `tap` is that
+// chain's: after its fader (kPostFader: its pan, mute and solo among the rack's
+// chains), before it (kPreFader, after its devices), or before its devices
+// (kPreFx: after its instrument, if it starts with one; else what the rack
+// hears); before the track's fader while that chain isn't on the track.
 struct Sidechain {
     QString trackId;
     QString tap = kPostFader;
+    QString chain;  // the rack's chain it is taken from ("": the track itself)
 
     // The device it is taken after (none: after the fader, before it, or before the devices).
     std::optional<QString> tapDevice() const;

@@ -30,6 +30,8 @@ This page is about the code.
 | [BendTools.qml](../../ui/qml/pianoroll/BendTools.qml) | The bend bar, at the grid's top right in bend mode (not in the Shift view): Draw, Vibrato and Glide, a new vibrato's rate, depth and ramp, with the glide tool a new slide's curve, Clear |
 | [PianoKeys](../../ui/src/pianoroll/PianoKeys.h), [PianoRuler](../../ui/src/pianoroll/PianoRuler.h), [VelocityLane](../../ui/src/pianoroll/VelocityLane.h), [RollPlayhead](../../ui/src/pianoroll/RollPlayhead.h) | The keyboard, the ruler, the velocities, and the playhead over each |
 | [ChordLane](../../ui/src/pianoroll/ChordLane.h) | The song's chords along the top of the notes |
+| [ProgressionPanel.qml](../../ui/qml/clipview/ProgressionPanel.qml) | Progression ideas beside the piano roll (Generate ▾ › Progressions…): the mood, the length, 7ths, Bass, New Ideas and the key; a row per idea (its chords, ▶, ★, ≈), the swap menu ([below](#progression-ideas)) |
+| [ProgressionIdeas](../../ui/src/pianoroll/ProgressionIdeas.h) | The ideas the panel shows (a list model): made, locked, kept, swapped and varied by the intelligence module's [harmony/Progressions.h](../../intelligence/src/harmony/Progressions.h), and tried in the lead clip (`PianoRoll::writeProgression`) |
 | [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) | The floating bar with Legato, ×2, ÷2, Quantize, Groove (Swing, the project's grooves, their amounts) and Humanize (Velocity, Timing) |
 | [NoteSet.h](../../ui/src/pianoroll/NoteSet.h) | `ClipNote` (a note of one of the clips shown); sets of notes and of ClipNotes as sorted vectors (`noteSet`, `clipNoteSet`, `contains`, `united`, `without`, `byTime`, `notesOf`, `tagged`, `clipsOf`) |
 
@@ -483,12 +485,53 @@ buttons: clicks reach the notes under it. `NoteGrid` tints notes out of the key 
 or natural minor, scale).
 
 The clip view's header shows the key (`keyLabel`: "Key: A Minor", "(inferred)" when the project has none) and
-*Generate ▾*, a menu of *Chords* and *Bass*: `generateChords()` and `generateBass()`. Each writes into the lead clip:
+*Generate ▾*, a menu of *Chords*, *Bass* and *Progressions…* ([below](#progression-ideas)): `generateChords()` and
+`generateBass()`. Each writes into the lead clip:
 it takes the song's chords over the part it plays (a progression in the key, C major without one, where there are none:
 `starterProgression`), writes the part (`chordPart`, `bassPart`; bars on the timeline's) in content beats, and commits
 the clip's notes with them as one undo step ("Generate Chords", "Generate Bass"), the written notes selected. The
 clip's own notes win: a written note overlapping one on its key is shortened or left out (`notes::resolveOverlaps`
 with the clip's notes as winners), and nothing is committed if nothing would change (Generate again).
+
+### Progression ideas
+
+*Generate ▾ › Progressions…* shows [ProgressionPanel.qml](../../ui/qml/clipview/ProgressionPanel.qml) at the clip
+view's right (the roll narrower by its width; `wanted` keeps it there with the roll, × and Esc clear it) and calls its
+`open()`: ideas made if there are none, the keys to it. Its model is the clip view's
+[ProgressionIdeas](../../ui/src/pianoroll/ProgressionIdeas.h) (`progressionIdeas`, on the roll), a list model of
+`kIdeas` (6) ideas: each `Row` holds the intelligence module's `Idea` (its chords, and the mood's own progression it
+came from), the key and mood it was made in, a lock per chord and whether it is kept. Its roles are `chords` (each
+{name, numeral, locked}, as played: with `sevenths`, `withSeventh()` of each), `kept`, `tried` and `source` (its
+origin, for ▶'s tooltip); `publish()` compares each row's with what QML last had and sends `dataChanged` for those
+that changed only, so the other rows' delegates (and the chips under the mouse) stay.
+
+- **The key** (`settings()`): the harmony's (`Session.harmony.key()`: the project's, else inferred), else A minor
+  (`keySource`: "project", "inferred", "assumed"). Each idea keeps the key it was made in: its numerals are in it,
+  and redrawing or varying it stays in it.
+- **New Ideas** (`newIdeas()`; also on a change of `mood` or `length` once there are ideas): kept rows stay; a row
+  with locked chords is drawn again round them (`redrawIdea()`) in its key; the rest, and missing rows, come from `progressionIdeas()`,
+  avoiding the chords of the rows that stay. **More Like This** (`moreLike(row)`): `ideaVariations()` of that row in
+  place of every row but it and the kept ones, its locks carried over. **Swap** (`alternatives(row, chord)`, then
+  `swap(row, chord, index)`): `chordColours()`, then `chordAlternatives()` (`kAlternatives`), without those that
+  would play as the chord already does or as one before them in the list. The seed starts random and goes up by one a
+  call (`seedRandom()` for tests).
+- **Try** (`tryIdea(row)`): `PianoRoll::writeProgression(chords, bass, base, mergeKey)` writes the played chords
+  over `base` (the clip's notes and length besides): `layOut()` from the clip's start, a chord a bar on the timeline's
+  bars, round and round to the clip's end, the clip made long enough to play every chord once (to the bar line that
+  many bars on from the one it starts in) and never shorter; `chordPart()` (and `bassPart()`), in content beats; the
+  base's notes win overlaps (`notes::resolveOverlaps`). It commits the notes and the length together through
+  `ProjectEditor::updateClips` ("Try Progression", merge key `kMergeKey` + the clip's track and id), the written
+  notes selected. Each clip's last try is kept (`tries_`, by `clipKey()`: what it wrote over and what it left), so
+  tries in another clip in between don't count. The base: if the clip is as its last try left it, the base that try
+  had, so a run of tries is one undo step that each writes over the clip as it was before the first (as
+  `updateClips` does with a merged step); otherwise the clip now, without the notes its last try wrote (by value,
+  where they still are). `tried()` is the row whose played chords (and Bass) were written while the clip
+  is still as written (`clipChanged()`, on the roll's `contentChanged` and `clipChanged`); a change to that row (a
+  swap, 7ths, Bass) tries it again. `step(delta)` (↑ ↓) tries the next row.
+
+The panel claims ↑, ↓ and Return over the window's shortcuts while it has the focus (`Keys.onShortcutOverride`); its
+buttons never take the focus, so Space stays play and stop. A chord chip toggles its lock on a click and opens the
+swap menu (a `Popup` of the colours, then the alternatives) on a right-click.
 
 ### Hearing notes
 
@@ -531,6 +574,10 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 - Notes are compared by value: two identical notes on the same key and time are one in a set (`noteLess` is
   `notes::lessFull`, bends included). `notes::place` decides how overlaps resolve.
 - A bend edit makes a new note: hold a `ClipNote` across a bend gesture only as `commitBend()` returns it.
+- `ProjectEditor::updateClips` with a merge key applies the change to the clips as they were before the merged step
+  began, and merges by the tracks changed: a run of tries must write the clip whole (notes and length), and its key
+  must name the clip (another clip's run on the same track would undo the first's).
+- A chord chip in the panel is made again when its row's chords change (a lock): find it again after a click.
 
 ## Tests
 
@@ -539,4 +586,5 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 | [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
 | [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them; an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_progressions.cpp](../../tests/app/test_ui_progressions.cpp) | Progression ideas through the clip view: Generate › Progressions… opening the panel beside the roll with ideas in the song's key (A minor without one), × and Esc; trying an idea writing its chords (the clip made four bars long), ↑ and ↓, a click on a row, a run of tries one undo step; the clip's own notes kept, and an edit between tries; each clip's last try replaced in it after a try in another; Bass and 7ths writing the tried idea again; locked chords and kept ideas staying for New Ideas; a chord swapped from the right-click menu; More Like This; eight bars, another mood, the project's key |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |

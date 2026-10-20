@@ -26,7 +26,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Devices](guide/devices.md) | the device view, built-in devices, racks, macros and presets, MIDI from another track |
 | [Plug-ins](guide/plugins.md) | VST3 and VST2: finding, using, editors, presets, latency |
 | [Audio clips](guide/audio-clips.md) | the clip view, warping, transposing, tempo and key from file names |
-| [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
+| [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, chords and key, Generate and progression ideas, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
 | [Grooves](guide/grooves.md) | swing and feel: the Groove device, clips' grooves, Apply Groove, the project's grooves and their editor, the default groove |
 | [Recording](guide/recording.md) | arming, inputs, monitoring, count-in, takes, resampling |
 | [Automation](guide/automation.md) | lanes, editing envelopes, locking, overrides |

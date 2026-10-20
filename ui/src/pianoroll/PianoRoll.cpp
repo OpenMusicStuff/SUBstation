@@ -831,6 +831,54 @@ void PianoRoll::generate(bool bass) {
     commit(notes, bass ? QStringLiteral("Generate Bass") : QStringLiteral("Generate Chords"), {}, written);
 }
 
+std::optional<PianoRoll::ClipBody> PianoRoll::leadBody() const {
+    const app::Clip* c = clip();
+    if (!c) return std::nullopt;
+    return ClipBody{c->notes, c->durationBeats};
+}
+
+std::optional<PianoRoll::ClipBody> PianoRoll::writeProgression(const std::vector<intelligence::harmony::Chord>& chords,
+                                                               bool bass, const ClipBody& base, const QString& mergeKey) {
+    namespace harmony = intelligence::harmony;
+    const app::Clip* c = clip();
+    if (!c || chords.empty()) return std::nullopt;
+    const double barBeats = project()->timeSignature().beatsPerBar();
+    const double from = c->startBeat;
+    // Every chord once: to the bar line as many bars on from the one the clip starts in.
+    const double through = (std::floor(from / barBeats + 1e-9) + static_cast<double>(chords.size())) * barBeats;
+    const double length = std::max(base.lengthBeats, through - from);
+    const std::vector<harmony::ChordSpan> spans = harmony::layOut(chords, from, from + length, barBeats);
+    std::vector<harmony::GeneratedNote> parts = harmony::chordPart(spans, barBeats);
+    if (bass) {
+        const std::vector<harmony::GeneratedNote> line = harmony::bassPart(spans, barBeats);
+        parts.insert(parts.end(), line.begin(), line.end());
+    }
+    std::vector<Note> all = base.notes;
+    for (const harmony::GeneratedNote& n : parts)
+        all.push_back({n.pitch, n.start - from + c->offsetBeats, n.length, n.velocity});
+    const std::vector<Note> notes = notes::normalize(notes::resolveOverlaps(all, base.notes));
+    const std::vector<Note> before = roll::noteSet(base.notes);
+    std::vector<Note> written;
+    for (const Note& note : notes) {
+        if (!roll::contains(before, note)) written.push_back(note);
+    }
+    selected_ = roll::clipNoteSet(roll::tagged(written, 0));
+    span_.reset();
+    Q_EMIT selectionChanged();
+    // (updateClips: the notes and the length in one step; a merged step starts again from the clip before it.)
+    editor()->updateClips(
+        {clips_.front()},
+        [&](const app::Clip& clip) {
+            app::Clip out = clip;
+            out.notes = notes;
+            out.durationBeats = length;
+            return out;
+        },
+        QStringLiteral("Try Progression"), mergeKey);
+    repaintAll();
+    return leadBody();
+}
+
 // --- Geometry ------------------------------------------------------------------------------
 
 double PianoRoll::pitchTop(int pitch) const { return (127 - pitch) * rowHeight_ - view_.scrollY(); }

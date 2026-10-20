@@ -543,6 +543,7 @@ std::optional<Sidechain> sidechainFromJson(const QJsonValue& value) {
     Sidechain sidechain;
     sidechain.trackId = data.value(QStringLiteral("track")).toString();
     sidechain.tap = (tap.isString() && !tap.toString().isEmpty()) ? tap.toString() : kPostFader;
+    sidechain.chain = data.value(QStringLiteral("chain")).toString();
     return sidechain;
 }
 
@@ -867,8 +868,10 @@ QJsonObject deviceToJson(const Device& device) {
         data[QStringLiteral("state")] = *device.state;
     }
     if (device.sidechain) {
-        data[QStringLiteral("sidechain")] = QJsonObject{{QStringLiteral("track"), device.sidechain->trackId},
-                                                        {QStringLiteral("tap"), device.sidechain->tap}};
+        QJsonObject sidechain{{QStringLiteral("track"), device.sidechain->trackId},
+                              {QStringLiteral("tap"), device.sidechain->tap}};
+        if (!device.sidechain->chain.isEmpty()) sidechain[QStringLiteral("chain")] = device.sidechain->chain;
+        data[QStringLiteral("sidechain")] = sidechain;
     }
     if (!device.midiFrom.isEmpty()) data[QStringLiteral("midi_from")] = device.midiFrom;
     if (!device.modulations.empty()) {

@@ -114,13 +114,19 @@ std::vector<GeneratedNote> bassPart(const std::vector<ChordSpan>& chords, double
 std::vector<ChordSpan> starterProgression(const Key& key, double start, double end, double barBeats) {
     static constexpr std::array<int, 4> kMajor{0, 4, 5, 3};  // I V vi IV
     static constexpr std::array<int, 4> kMinor{0, 5, 2, 6};  // i VI III VII
-    const auto& degrees = key.minor ? kMinor : kMajor;
+    std::vector<Chord> chords;
+    for (const int degree : key.minor ? kMinor : kMajor) chords.push_back(key.triad(degree));
+    return layOut(chords, start, end, barBeats);
+}
+
+std::vector<ChordSpan> layOut(const std::vector<Chord>& chords, double start, double end, double barBeats) {
     std::vector<ChordSpan> spans;
+    if (chords.empty()) return spans;
     if (barBeats <= 0.0) barBeats = 4.0;
     size_t bar = 0;
     for (double at = start; at < end - kEps; ++bar) {
         const double next = std::min(end, (std::floor(at / barBeats + kEps) + 1.0) * barBeats);
-        spans.push_back({at, next, key.triad(degrees[bar % degrees.size()])});
+        spans.push_back({at, next, chords[bar % chords.size()]});
         at = next;
     }
     return spans;

@@ -511,17 +511,23 @@ private:
     bool enabled_;
 };
 
-// A device's sidechain (none: none).
+// A device's sidechain (none: none). `follows`: the same signal, taken where
+// it went (a pad become a track of its own), so frozen tracks may take it.
 class SetDeviceSidechainCommand : public ValueCommand<DeviceTarget, std::optional<Sidechain>> {
 public:
     SetDeviceSidechainCommand(Project* project, const QString& trackId, const QString& deviceId,
-                              std::optional<Sidechain> old, std::optional<Sidechain> nw, const QString& text);
+                              std::optional<Sidechain> old, std::optional<Sidechain> nw, const QString& text,
+                              bool follows = false);
 
     void redo() override;
     void undo() override;
 
     const QString& trackId() const { return target_.first; }
     const QString& deviceId() const { return target_.second; }
+    bool follows() const { return follows_; }
+
+private:
+    bool follows_;
 };
 
 // A device's MIDI input: the MIDI track whose notes it plays ("": its own track's).
