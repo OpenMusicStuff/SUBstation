@@ -57,6 +57,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Vocoder: [VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml), [VocoderGraph](../../ui/src/devices/VocoderGraph.h), the application layer's [VocoderResponse.h](../../app/src/audio/VocoderResponse.h) | |
 | Vocal Rider: [VocalRiderEditor.qml](../../ui/qml/devices/editors/VocalRiderEditor.qml), [VocalRiderGraph](../../ui/src/devices/VocalRiderGraph.h) | |
 | Sidechain: [SidechainEditor.qml](../../ui/qml/devices/editors/SidechainEditor.qml), [CurveGraph](../../ui/src/devices/CurveGraph.h), [ClashView](../../ui/src/devices/ClashView.h) | |
+| Snarl: [SnarlEditor.qml](../../ui/qml/devices/editors/SnarlEditor.qml), [SnarlScope](../../ui/src/devices/SnarlScope.h), [SnarlWobble](../../ui/src/devices/SnarlWobble.h), the application layer's [SnarlResponse.h](../../app/src/audio/SnarlResponse.h) | |
 | Sampler: [SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml), [SampleView](../../ui/src/devices/SampleView.h), the application layer's [SampleSlices.h](../../app/src/audio/SampleSlices.h) | |
 | Vital: [VitalEditor.qml](../../ui/qml/devices/editors/VitalEditor.qml), [VitalPatchInfo](../../ui/src/devices/VitalPatchInfo.h) (its patch besides its parameters: the modulations, the wavetables' and LFO shapes' names, the preset's name, author and macros' names; the matrix's and the wavetables' edits, through the editor), its panels: [VitalGraph](../../ui/src/devices/VitalGraph.h) (their base), [VitalWavetableGraph](../../ui/src/devices/VitalWavetableGraph.h), [VitalEnvelopeGraph](../../ui/src/devices/VitalEnvelopeGraph.h), [VitalLfoGraph](../../ui/src/devices/VitalLfoGraph.h), [VitalFilterGraph](../../ui/src/devices/VitalFilterGraph.h), [VitalScope](../../ui/src/devices/VitalScope.h) | |
 | [PanelMenu.qml](../../ui/qml/devices/PanelMenu.qml), [DynamicMenu.qml](../../ui/qml/devices/DynamicMenu.qml), [ParamArea.qml](../../ui/qml/devices/ParamArea.qml), [ParamKnob.qml](../../ui/qml/devices/ParamKnob.qml), [ParamBox.qml](../../ui/qml/devices/ParamBox.qml), [ParamButton.qml](../../ui/qml/devices/ParamButton.qml), [ParamChoice.qml](../../ui/qml/devices/ParamChoice.qml), [DeviceHeaderButton.qml](../../ui/qml/devices/DeviceHeaderButton.qml) | Menus filled when they open; the editors' parameter-bound knobs, boxes, buttons and drop-downs; a title bar's buttons |
@@ -401,6 +402,7 @@ readonly property var editors: ({
     "sampler": "SamplerEditor.qml",
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
+    "snarl": "SnarlEditor.qml",
     "spectral": "SpectralEditor.qml",
     "transient": "TransientEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
@@ -418,7 +420,7 @@ readonly property var editors: ({
   `implicitWidth` is the body's width (Compressor 658, Gate 568, or 837 with its sidechain section, Limiter 610,
   Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 454, Bitcrusher 380, Tape Stop 310, Glitch 332, Arpeggiator 404, Groove 472, Chorus-Ensemble
   534, Phaser-Flanger 732, or 906 with More open, Reverb 1023, Disperser 544, EQ 580, or 756 with its band controls,
-  Sidechain 720, Sampler 760, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Bitcrusher's, Tape Stop's, Glitch's, Arpeggiator's, Groove's, Disperser's, EQ's, Sidechain's and
+  Sidechain 720, Sampler 760, Snarl 847, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Bitcrusher's, Tape Stop's, Glitch's, Arpeggiator's, Groove's, Disperser's, EQ's, Sidechain's and
   Sampler's are their widths in the default font as the tests' host has it (Inter standing in for Segoe UI): their parts
   are as wide as their texts need, so they follow the font. It gets the body's whole height and grows its graphs into it
   (6 px from the top and the bottom), while its knobs stay at the top; `implicitHeight` is the least it needs.
@@ -1439,6 +1441,30 @@ The editors:
     envelope where it clashes, the dashed target) and `ClashView` (the spectra, the clash band) draw. Fit writes the
     points, the length (sync off) and the crossover. The hint over the curve (no sidechain while triggered by one)
     asks the frame for the sidechain menu.
+- **Snarl** ([SnarlEditor.qml](../../ui/qml/devices/editors/SnarlEditor.qml)): no pages, compact (its knobs at 28 px,
+  in cells as wide as the widest caption or readout any of them shows: `EditorTextsWidth`; the lists as their
+  longest names with the arrow, so nothing moves as they change). At its left the mouth: the styles (`styles`, six
+  `RoleButton`s three a row: each a patch of every parameter but Volume, set by `applyStyle()` in one undo step named
+  after it through `Session.editor.setDeviceParams`, the chip lit while it is the last chosen, `style`, view state)
+  over the scope ([SnarlScope](../../ui/src/devices/SnarlScope.h), a `DeviceCanvas`: the display `scope`'s latest
+  whole cycle, found by its absolute index (the device publishes 64 values a cycle, so each starts at a multiple of
+  64), drawn twice across, each point eased to the next cycle (`Eased`, 50 ms), scaled by an eased peak, filled
+  faintly to the middle under a glowing line (`drawGlowPolyline`) whose colour runs with the display `growl` from
+  the accent through acid green to magenta (`colorFor`); it fades and flattens 150 ms after the last cycle and then
+  stops repainting; `punch()` swells it over 0.4 s), the dice in its corner (a `Rectangle` with pips for its `face`,
+  tumbling a turn as it rolls: `roll()` sets a new bass from ranges, or with Shift nudges the knobs there by up to
+  15 % of their ranges, one undo step either way) and, with the Vowel filter, the vowel (`vowelText()` of the
+  display `filter`, or of Freq while nothing plays) faint behind the trace. Then the sections in a row with lines
+  between, each a `Section` (its name over it, lit in its tint as hard as its `glow`, and a rule after it): OSC
+  (Octave's box over Wave, Unison, Detune, Width), SUB, GROWL (its mode's list over Growl and Ratio; Ratio dimmed
+  but settable outside FM and Ring; Growl's knob in the scope's colour), FILTER (its type over Freq, which reads
+  the vowel with Vowel, and Res), DIRT (its type over Drive and Squash), WOBBLE (Rate, Shape and the R switch over
+  its three amounts, and under them [SnarlWobble](../../ui/src/devices/SnarlWobble.h): a cycle of the shape from
+  `snarlWobble()`, the engine's own (Random as four of its held steps), filled faintly, and while the displays
+  `phase` and `lfo` come a dot riding it with a short trail and a playhead, fading 150 ms after they stop) and AMP.
+  The `GlowKnob`s (Sub, Growl, Freq, Drive, Squash and the wobble's three) carry a halo ring in the knob behind its
+  dial, as bright as what they do now: the growl as it plays (`growl`), the wobble times its amount (`lfo`), the
+  level times Drive's or Squash's (`level`), all through `DisplayValue`s, and none while nothing plays.
 - **Sampler** ([SamplerEditor.qml](../../ui/qml/devices/editors/SamplerEditor.qml)), laid out as Ableton's Simpler:
   two pages named in the title bar (`pageNames`: Sample, Controls).
   - *Sample*: the mode tabs (Classic, 1-Shot, Slice: a `RoleButton` each, its icon over its name) beside the display: a
@@ -1682,5 +1708,6 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_editors_transient.cpp](../../tests/app/test_ui_device_editors_transient.cpp) | The Transient Shaper's editor: fitting the body (its parts inside it side by side, the editor as wide as they are and its margin; every caption and every text a readout takes whole), the defaults, only Attack, Sustain and Output bipolar, the times log, Attack and Sustain signed; Clip undoable, the lookahead reaching the engine's latency; the shape's handles (up and down for the amount, across for the time, never both; Shift; one undo step each, named; the curve following a drag at once; double-click resetting a handle's two; presses off them the frame's; the right button the amount's menu); the curve being the engine's hit (exactly, once settled), morphing to a new shape, the handles at the peak and on the tail; the displays reaching both graphs (the history, the gain's parts, sparks, rings and a playhead at a recent transient, none for a backlog's), and both coming to rest |
 | [test_ui_device_editors_vocoder.cpp](../../tests/app/test_ui_device_editors_vocoder.cpp) | The Vocoder's editor: fitting the body; every control there, the boxes' texts whole (`EditorBoxWidth`); Noise's and Pitch Tracking's own settings shown only for their carrier; the bank (`bandCount()`, `bandCentre()`) following Bands and Low; what the engine rendered reaching the bars (the band nearest a 1 kHz tone the loudest, falling once nothing comes) and the pitch tracked |
 | [test_ui_device_editors_vocal_rider.cpp](../../tests/app/test_ui_device_editors_vocal_rider.cpp) | The Vocal Rider's editor: fitting the body; every control there, Target's box whole; the ride and the level as the device made them (a -30 dB tone ridden up 12 dB); the target line dragged up (one undo step) and reset by a double-click |
+| [test_ui_device_editors_snarl.cpp](../../tests/app/test_ui_device_editors_snarl.cpp) | Snarl's editor: compact and fitting the view, every control there and bound (undoably), every knob's caption and readout whole and the cells as wide as those need, the sections inside it and apart, the lists as wide as their longest names (nothing moving as they change), Ratio dimmed but settable outside FM and Ring; the vowel behind the scope and on the Freq knob with the Vowel filter (one, or the two it is between); a style setting its whole patch in one undo step (named, its chip lit, the trace swelling), every style's patch within the parameters' ranges; the dice rolling (one step, the face tumbling) and nudging (the lists kept); what the engine plays reaching the scope (its cycle, its colour with the growl), the wobble's dot and the Growl knob's halo, then all of it coming to rest; the wobble's shape the engine's |
 | [test_session_devices.cpp](../../tests/app/test_session_devices.cpp) | `DeviceSelection` through the session: selecting, the focus, the clipboard, folding, racks, drops, presets |
 | [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) | The Sidechain's fit |

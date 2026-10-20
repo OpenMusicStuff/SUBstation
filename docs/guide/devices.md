@@ -8,7 +8,7 @@ their own page: [plugins.md](plugins.md).
 
 ## The device view
 
-- It shows the built-in Synth and Sampler instruments, the Arpeggiator and Groove MIDI effects, the
+- It shows the built-in Synth, Snarl and Sampler instruments, the Arpeggiator and Groove MIDI effects, the
   Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
   Compressor, Saturator, Overdrive, Amp, Erosion, Auto Filter, Bitcrusher, Tape Stop, Glitch, Delay,
   Chorus-Ensemble, Phaser-Flanger,
@@ -45,7 +45,7 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 - Each parameter gets a knob, or a list for parameters that choose between named
   values. Frequency and time knobs turn logarithmically.
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
-  others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
+  others. Snarl, the Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Tape
   Stop, the Glitch, the Delay, the
   Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
@@ -178,6 +178,57 @@ Vital's engine anew in the background; the notes held are struck again on it whi
 sound fades out over 10 ms. What Vital's own window has that this editor doesn't yet: the wavetable editor, drawing
 LFO shapes and modulation curves (presets keep theirs), loading a sample, tunings (presets
 keep theirs) and the effects' order.
+
+### Snarl
+
+A bass synth for dubstep, brostep, tearout and riddim: growls, reeses, wubs and screeches
+from a handful of knobs, its sound made as bass music makes it:
+
+```
+oscillators → growl → filter → amp → dirt → split → squash ─┐
+sub (a clean sine at the note) ──────────────────────────────┴→ volume
+```
+
+and a **wobble** on the song's note values moving the filter, the growl and the pitch.
+
+- **One voice**, as a bass plays: a note played while another is held glides there
+  (**Glide**), its envelope and wobble carrying on; letting go of it glides back to the
+  one still held. A note with none held starts again: the same hit every time. Velocity
+  doesn't change the level. Each note follows its bend
+  ([midi.md](midi.md#pitch-bends-vibrato-and-slides)).
+- **The styles**, at the top left: **Growl**, **Reese**, **Wub**, **Screech**,
+  **Riddim** and **Tearout** each set the whole sound (all but Volume) to start from, in
+  one undo step; the one chosen stays lit.
+- **The dice**, in the scope's corner: a click rolls a new bass from the ranges bass
+  music lives in (the sub, the split and the amp as they are), **Shift+click** nudges
+  the one there a little (the lists stay). One undo step each: undo for the last one back.
+- **The scope** shows what it plays: its latest cycles, at the note's pitch (standing
+  still on any note), coloured by the growl as it plays: the accent when clean, acid
+  green, then magenta. With the Vowel filter, the vowel it speaks shows behind it.
+
+| Section | Controls |
+|---|---|
+| OSC | **Octave** (−1 to +2: the oscillators' octave; the sub stays at the note), **Wave** (sine, triangle, saw, square, a narrow pulse, morphing between them), **Unison** (1 to 7 oscillators), **Detune** (the unison spread in pitch, up to 100 cents either way: the reese's beating), **Width** (the unison spread across the stereo field) |
+| SUB | **Sub** (a clean sine at the note, in the middle), **Split** (20 to 500 Hz: everything but the sub high-passed there, 24 dB an octave, so the sub owns the lows) |
+| GROWL | Its mode: **FM** (the oscillators' phase pushed by a sine at Ratio times the note), **Sync** (a copy up to 8 times as fast, restarted and faded in and out each cycle: a formant rising through it), **Fold** (into a wavefolder) or **Ring** (multiplied by a sine at Ratio times the note); **Growl** (how hard); **Ratio** (0.5 to 7: FM's and Ring's, dimmed for the others) |
+| FILTER | Its type: **Low** (24 dB, resonant), **Band**, **Vowel** (three formants: the frequency picks the vowel, U O A E I from dark to bright; Freq reads the vowel) or **Comb** (tuned to the frequency, ringing with Res); **Freq** (30 Hz to 18 kHz), **Res** |
+| DIRT | Its type: **Tube** (lopsided: even harmonics too), **Hard** (a clip), **Rectify** (folded upward: an octave up) or **Crush** (fewer levels, samples held); **Drive** (up to +32 dB into it); **Squash** (Over The Top's multiband compression, after the split, made up as it squashes: turned up, the bass gets denser, not quieter) |
+| WOBBLE | **Rate** (1/1 to 1/32, dotted D and triplets T), **Shape** (Sine, Triangle, Ramp Down, Ramp Up, Square, Random: a new level each cycle), **R** (Retrig: each note starts it again; off, it follows the song, a 1/4 wobble on every beat), **> Filter** (opens the filter up to 6 octaves from Freq; with Vowel, along the vowels), **> Growl** (adds growl), **> Pitch** (−24 to +24 semitones); its shape, a dot riding it as it plays |
+| AMP | **Glide** (0 to 1000 ms), **Attack** (0.5 to 1000 ms), **Release** (5 ms to 4 s), **Volume** |
+
+Everything but Volume runs oversampled (4x at 44.1 and 48 kHz, 2x up to 96 kHz), so FM,
+folding and the dirt alias little; its 18 samples of latency (at 4x) are compensated. A soft
+clip after the squash keeps the body's peaks under −2.5 dBFS (the sub stays clean); the
+styles all come out about as loud as each other.
+Turning a knob glides it over 10 ms; changing a list crossfades over 3 ms, so neither
+clicks while it plays. The wobble's sine, triangle and ramps start from Freq (the filter
+closed) and rise; Random's levels repeat exactly (from each note with Retrig, from the
+song's position without), so an export is what you heard. Every
+control can be automated and modulated (an LFO or Envelope on the track moving Freq is
+another wobble). While it sounds, its knobs show what they do: the Growl, Freq and Drive
+knobs, and the wobble's three, glow as hard as each works.
+
+A track with Snarl on it is labelled a bass ("Snarl Bass").
 
 ### Sampler
 

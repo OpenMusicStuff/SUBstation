@@ -394,6 +394,7 @@ double fraction(const ParamFact& param) {
 Effect classify(const DeviceFact& device) {
     static const std::map<std::string, Effect, std::less<>> kBuiltins = {
         {"synth", E::Instrument},     {"sampler", E::Instrument}, {"vital", E::Instrument},
+        {"snarl", E::Instrument},
         {"compressor", E::Compressor},
         {"delay", E::Delay},          {"eq", E::Eq},              {"ott", E::Ott},
         {"sidechain", E::Ducking},    {"utility", E::Utility},    {"reverb", E::Reverb},

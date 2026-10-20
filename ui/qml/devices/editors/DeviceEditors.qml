@@ -56,6 +56,7 @@ QtObject {
         "sampler": "SamplerEditor.qml",
         "saturator": "SaturatorEditor.qml",
         "sidechain": "SidechainEditor.qml",
+        "snarl": "SnarlEditor.qml",
         "spectral": "SpectralEditor.qml",
         "tape_stop": "TapeStopEditor.qml",
         "transient": "TransientEditor.qml",

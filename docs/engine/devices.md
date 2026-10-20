@@ -24,11 +24,14 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`), and what the editor draws (`wavetableFrames()`, `lfoShape()`) |
 | [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
 | [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
+| [builtin/devices/Snarl.cpp](../../engine/src/builtin/devices/Snarl.cpp) | the Snarl instrument: a bass synth (one voice, gliding; unison, growl, filter, dirt, split, squash, a sub; a wobble), oversampled; its displays |
+| [builtin/SnarlDesign.h](../../engine/src/builtin/SnarlDesign.h) | Snarl's maths (`snarl::`): its lists' names and values (the growl's modes, the FM ratios, the filters, the dirt, the wobble's rates and shapes), the oscillator's shapes and Wave's morph (`shapeAt`, `morph`), the growl (`growled`), the vowels (`formantsAt`, `vowelPosition`, `freqPosition`), the wobble (`wobble`), shared with the application layer's [SnarlResponse.h](../../app/src/audio/SnarlResponse.h) for the editor |
+| [builtin/OttDesign.h](../../engine/src/builtin/OttDesign.h) | Over The Top's squash (`ott::Squash`: the three bands, their detectors and gain law, fitted to Live's OTT preset), shared by the Over The Top device and Snarl's Squash |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
 | [builtin/devices/Groove.cpp](../../engine/src/builtin/devices/Groove.cpp) | the Groove device, a MIDI effect: the notes reaching it moved in time with a groove (`groove::place()`, [music/Groove.h](../../music/src/music/Groove.h); [groove.md](../groove.md)), held and played later, or placed both ways when the renderer hands them over early |
 | [builtin/SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h) / [.cpp](../../engine/src/builtin/SampleSlicing.cpp) | The Sampler's slicing (`detectOnsets`, `sliceStarts`) and Snap (`nearestZeroCrossing`), shared with the application layer's `sampleSlices` ([app/src/audio/SampleSlices.h](../../app/src/audio/SampleSlices.h)) for the editor |
 | [builtin/devices/Utility.cpp](../../engine/src/builtin/devices/Utility.cpp) | Utility: gain, pan, width |
-| [builtin/devices/Ott.cpp](../../engine/src/builtin/devices/Ott.cpp) | Over The Top: multiband upward/downward compression |
+| [builtin/devices/Ott.cpp](../../engine/src/builtin/devices/Ott.cpp) | Over The Top: multiband upward/downward compression (`ott::Squash`, OttDesign.h) |
 | [builtin/devices/Compressor.cpp](../../engine/src/builtin/devices/Compressor.cpp) | Compressor, with sidechain and displays |
 | [builtin/devices/Gate.cpp](../../engine/src/builtin/devices/Gate.cpp) | Gate: threshold, return, hold, attack and release, floor, flip, lookahead; keyed by its input or a sidechain through an EQ; listening to the key; displays |
 | [builtin/GateDesign.h](../../engine/src/builtin/GateDesign.h) | The Gate's maths (`gate::floorGain`, `closeDb`, `pass`, `gain`, `lookaheadSamples`, `keyFilter`, `keyFilterDb`, the key EQ's types, the parameters' ranges), shared with the application layer's [GateResponse.h](../../app/src/audio/GateResponse.h) for the editor's meter, key EQ curve and drags; and, not shared with it, how a key EQ filter starts warm (`kWarmSeconds`, `kWarmPace`, `warmFrames`: the device's and its tests') |
@@ -405,6 +408,100 @@ oscillator's wavetable as its engine does (`WavetableCreator::render()`: its fra
 to as many points as asked) and `lfoShape()` an LFO's values across a cycle and its points. The application layer reads and writes presets and edits the
 patch through these ([app/model.md](../app/model.md#vital)).
 
+### Snarl (`builtin:snarl`, Instrument)
+
+A bass synth for dubstep, brostep, tearout and riddim: one voice through the chain bass music uses, with a clean sub
+under it and a wobble on the song's note values. What the user sees is in
+[guide/devices.md](../guide/devices.md#snarl).
+
+```
+unison oscillators → growl → filter → amp → dirt → DC → split → squash → clip ─┐
+sub (a sine at the note, × the amp) ────────────────────────────────────────────┴→ (down to the base rate) → volume
+```
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `wave` | Wave | % | 0..100 (0 Sine, 25 Triangle, 50 Saw, 75 Square, 100 Pulse) | 50 |
+| `unison` | Unison | | 1..7, whole | 3 |
+| `detune` | Detune | ct | 0..100 | 15 |
+| `width` | Width | % | 0..100 | 50 |
+| `octave` | Octave | | -1..2, whole | 0 |
+| `sub` | Sub | % | 0..100 | 60 |
+| `split` | Split | Hz | 20..500, log | 100 |
+| `growl_mode` | Growl Mode | | FM, Sync, Fold, Ring (a list) | FM |
+| `growl` | Growl | % | 0..100 | 30 |
+| `ratio` | FM Ratio | | 0.5, 1, 1.5, 2, 3, 4, 5, 7 (a list) | 2 |
+| `filter_type` | Filter Type | | Low, Band, Vowel, Comb (a list) | Low |
+| `cutoff` | Filter Freq | Hz | 30..18000, log | 700 |
+| `resonance` | Resonance | % | 0..100 | 30 |
+| `dirt_type` | Dirt Type | | Tube, Hard, Rectify, Crush (a list) | Tube |
+| `drive` | Drive | % | 0..100 | 35 |
+| `wobble_rate` | Wobble Rate | | 1/1, 1/2, 1/2T, 1/4D, 1/4, 1/4T, 1/8D, 1/8, 1/8T, 1/16, 1/16T, 1/32 (a list) | 1/8 |
+| `wobble_shape` | Wobble Shape | | Sine, Triangle, Ramp Down, Ramp Up, Square, Random (a list) | Sine |
+| `wobble_filter` | Wobble > Filter | % | 0..100 | 50 |
+| `wobble_growl` | Wobble > Growl | % | 0..100 | 0 |
+| `wobble_pitch` | Wobble > Pitch | st | -24..24 | 0 |
+| `wobble_retrig` | Wobble Retrig | | Off, On | On |
+| `squash` | Squash | % | 0..100 | 40 |
+| `glide` | Glide | ms | 0..1000 | 30 |
+| `attack` | Attack | ms | 0.5..1000, log | 2 |
+| `release` | Release | ms | 5..4000, log | 80 |
+| `volume` | Volume | dB | -60..6 | 0 |
+
+- **Oversampled.** Everything but Volume runs at 4x up to 50 kHz, 2x up to 100 kHz, 1x above: the oscillators are
+  made at the high rate and brought down by an `Oversampler`'s half-band filters (only its `down()`), one per channel.
+  The latency is the down-sampling's, half what up and down together delay (`latencyFor() / 2`, rounded: 18 samples at
+  4x, 16 at 2x); it changes only with the rate (`prepare()`).
+- **The voice.** Held notes are a stack (16): the newest sounds. A note-on with none held starts the amplitude
+  envelope again from its level (a linear attack to 1, held, an exponential release to -60 dB over Release, ending at
+  -80 dB) and, with Retrig, the wobble; from silence (the level under -80 dB) it also restarts the oscillators' phases
+  (the unison's at the golden ratio's multiples), so each hit is the same. A note-on with another held is legato: the
+  pitch glides there (a one-pole in semitones, 95 % of the way in Glide; at once without), nothing restarts. A
+  note-off of the newest glides back to the one before; of the last, releases. Bends follow the note sounding (by its
+  id, else its key), gliding as the Synth's (`dsp::kBendGlideSeconds`). Velocity is ignored.
+- **Unison.** Detune spreads the oscillators evenly from -Detune to +Detune cents; Width pans them evenly across
+  ±Width (equal power), each at √(2 / Unison), so any number is as loud as one.
+- **The growl** (`snarl::growled`, SnarlDesign.h), Growl plus the wobble's share, 0..1: FM is phase modulation by a
+  sine at Ratio times the oscillator, up to 8 radians, the BLEPs taking the bent phase's step; Sync reads a copy 1 + 7
+  Growl times as fast, restarted each cycle under a Hann window over the cycle (windowed sync: no click at the
+  restart), the window faded in over the first third of Growl; Fold drives the wave into a sine folder (up to 8x),
+  faded in the same way; Ring multiplies by a sine at Ratio, from none to all of it. Each modulator has its own phase
+  per unison oscillator. At Growl 0 every mode is the oscillator as it is.
+- **The filter**, its frequency gliding in octaves and moved by the wobble up to 6 octaves (`kWobbleOctaves`), its
+  coefficients worked out each base-rate sample: Low, two state-variable sections (damping 1.848, then 0.765 down to
+  0.055 with Resonance); Band, one (damping 1.4 down to 0.08), at unity at its peak, made up as it narrows; Vowel,
+  three band-passes at the formants of the vowel the frequency's place along 30 Hz..18 kHz picks (`formantsAt`:
+  U, O, A, E, I, gliding between them in octaves; Q 3 to 20, each at its formant's level); Comb, a feedback comb
+  (`DelayLine`, Hermite reads) a period of the frequency long, its feedback 0.3 to 0.98 with Resonance through a
+  one-pole damping, its output scaled by 1 - feedback.
+- **The amp** multiplies the filter's output (and the sub) by the envelope, before the dirt.
+- **Dirt.** Drive 0..100 % is a gain of x1 to x40 into Tube (`fastTanh` with a bias of 0.3 Drive, its offset taken
+  out), Hard (a clip at ±1), Rectify (twice the rectified `fastTanh`) or Crush (a sample held for up to 12 Drive²
+  base samples' worth, quantized to 1024 down to 4 levels a side). A DC blocker (10 Hz) follows: Rectify's DC.
+- **Split** is two Butterworth state-variable high-passes (24 dB), then **Squash** is Over The Top's `ott::Squash`
+  (OttDesign.h) at the oversampled rate, linked stereo, Squash its depth. Over The Top brings a hot sound down
+  towards its thresholds, some 22 dB on a driven bass at full depth, so Squash makes up `kSquashMakeupDb` (21 dB)
+  times its depth: turning it up makes the sound denser, not quieter. Then a soft clip, x / (1 + (x / 3)⁴)^¼ (within
+  0.15 dB of x up to half its ceiling of 3), holds the peaks that get past the squash's quick detectors.
+- **The sub**, a sine at the note (its bend and the wobble's pitch, not Octave), at Sub x 0.45 and the envelope, is
+  added after it; the body at 0.25 (its ceiling -2.5 dBFS). The editor's styles all come out about -13 dBFS RMS.
+- **The wobble**: the shape (`snarl::wobble`, 0..1) at the rate's cycle (`rateBeats`); following the song while it
+  plays with Retrig off (its phase from the song's beat), else running at the tempo from where it was (Retrig: from 0
+  at each note that starts again). A one-pole of 1.5 ms smooths its jumps. It moves the filter (Wobble > Filter x 6
+  octaves), the growl (adds Wobble > Growl) and the pitch (Wobble > Pitch semitones), each in proportion to its level.
+- **Glides and crossfades.** Wave, Detune, Width, Sub, Split, Growl, Freq (in octaves), Resonance, Drive and Squash
+  glide to where they are set (a one-pole of 10 ms, per base sample); Volume ramps (`SmoothedValue`, 20 ms). A change
+  of the growl's mode, the filter's type or the dirt's crossfades from the old over 3 ms (the old filter running on
+  meanwhile, the new one's state cleared as it comes in).
+- **Sleep.** 0.5 s after the envelope ends it sleeps: everything that rings out cleared, the glides where they are
+  set, exact zeros out, nothing run until a note. `tailSamples()` is the release and 0.3 s.
+
+**Displays** (its editor's): `scope`, the output's mid over its latest whole cycle at the note's pitch (between the
+last two times the sub's phase wrapped, counted in output samples with the latency), resampled to 64 values, every
+512 samples while it sounds (`samplesPerValue` 8, so a cycle starts at a multiple of 64 in the display); and every 256
+samples `lfo` (the wobble, 0..1), `phase` (its phase), `level` (the output's peak since the last), `growl` (Growl and
+the wobble's share, 0..1) and `filter` (the filter's frequency, the wobble's share in it, along 30 Hz..18 kHz, 0..1).
+
 ### Sampler (`builtin:sampler`, Instrument)
 
 Plays one audio file as Ableton's Simpler does, in one of three modes. Up to 32 voices
@@ -713,6 +810,8 @@ phase, see below).
 
 - Depth scales each band's whole gain in dB (its make-up too), as Live's Amount does: 50 % is half the change in dB,
   not half the processed signal, and 0 % is 0 dB. The output trim applies last.
+- The squash itself (the bands, the detectors, the gain law) is `ott::Squash` in
+  [OttDesign.h](../../engine/src/builtin/OttDesign.h), a sample at a time; Snarl's Squash is the same.
 - The settings are fitted to renders of Live's OTT preset (Multiband Dynamics) on drums, a dubstep growl and a piano
   at Amount 25, 50 and 100 %: each band's level, 10 ms at a time, is within 0.7 dB of Live's on average (the earlier
   settings, the preset's panel values with slow detectors and a linear blend, were 2.8 dB off). Live's ratios fit
@@ -2771,6 +2870,7 @@ readonly property var editors: ({
     "sampler": "SamplerEditor.qml",
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
+    "snarl": "SnarlEditor.qml",
     "spectral": "SpectralEditor.qml",
     "tape_stop": "TapeStopEditor.qml",
     "transient": "TransientEditor.qml",
@@ -2787,7 +2887,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are thirty-two. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+- Today there are thirty-three. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
   playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
   threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
   The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
@@ -2831,7 +2931,10 @@ readonly property var editors: ({
   playhead from `phase` and its fit to the kick (`key`, against `input`); the Sampler the sample's waveform as it plays
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and
   the playhead from `position` (drop or double-click to load a sample; loading is an undoable state change through
-  `ProjectEditor::setDeviceState()`, the path kept in the device's state); Vital nine pages of its parameters and its
+  `ProjectEditor::setDeviceState()`, the path kept in the device's state); Snarl its latest cycles (`scope`) eased
+  one into the next, coloured by `growl`, the wobble's shape (from `snarl::wobble`) with a dot riding it (`phase`,
+  `lfo`), and halos on the knobs as hard as they work (`growl`, `lfo`, `level`), with its styles and dice setting many
+  parameters in one undo step (`ProjectEditor::setDeviceParams`); Vital nine pages of its parameters and its
   modulation matrix (see [ui/device-view.md](../ui/device-view.md#device-editors)).
 
 The Arpeggiator's, the Delay's and the LFO's editors have a **Groove** button: Follow Groove.
@@ -3208,6 +3311,15 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   the engine (the pitch holding); sleeping to exact zeros and waking; reset; presets written and read back, older ones
   upgraded, others refused; the sources and destinations; wavetables of shapes, from wavetable files (with their `clm `
   chunk), vocoded and pitched, from `.vitaltable` files; LFO shapes heard; through the engine.
+- [test_snarl_engine.cpp](../../tests/engine/test_snarl_engine.cpp): Snarl's listing and lists; silent until a note,
+  asleep to exact zeros after it, stereo; notes at their pitch (Octave moving the body, the sub at the note, a bend);
+  one voice (legato with no retrigger, Glide's slide, back to the note held, a note after silence not gliding); its
+  latency by the rate and its pitch at 44.1 to 192 kHz; the wobble following the song (its phase and period) or
+  restarted by a note, moving the pitch, the filter (the highs it lets through, the `filter` display six octaves up)
+  and the growl; every growl mode, filter and dirt finite and bounded; each growl mode its own sound, all the
+  oscillator at Growl 0, FM's sidebands; the same output for any blocks; a list's change crossfading without a
+  click; random automation of everything finite and bounded; its displays (the scope's cycles 64 values each, the
+  level the output's peak); the design's shapes (no DC), vowels and wobbles; through the engine.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
 - [test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp): the Synth and the Sampler play a
   note's bend at its bent pitch, and the Synth bends only the note a bend names.
@@ -3230,5 +3342,6 @@ the Disperser, the EQ, the Sidechain) and what the editors share (`EditorKnob` a
 [the Chorus-Ensemble's](../../tests/app/test_ui_device_editors_chorus.cpp),
 [the Phaser-Flanger's](../../tests/app/test_ui_device_editors_phaser.cpp),
 [the Reverb's](../../tests/app/test_ui_device_editors_reverb.cpp) and
-[the Groove device's](../../tests/app/test_ui_device_editors_groove.cpp); and
+[the Groove device's](../../tests/app/test_ui_device_editors_groove.cpp),
+[Snarl's](../../tests/app/test_ui_device_editors_snarl.cpp); and
 [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) the Sidechain's fit.

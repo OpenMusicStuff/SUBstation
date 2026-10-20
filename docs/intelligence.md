@@ -699,6 +699,7 @@ harmony is: the same project always gives the same labels, and the details say w
 | Its audio files' names, by how much each plays; a sampler's sample | pack codes, tempos and keys left out | 2.5 × its share | 0.5 × its share |
 | The instrument's own name ("Originals - Cinematic Soft Piano", "Superior Drummer"), its VST3 category ("Instrument\|Drum") | what a sample library plays | 2.0, 1.5 | 0.45 |
 | A built-in synth's envelope | a quick decay to silence plucks; a slow attack, held, swells into a pad | 1.4 | |
+| Snarl, the built-in bass synth | a bass, whatever it is set to ("Snarl Bass") | 2.0 | |
 | Its notes | the part they play | up to 1.3 | |
 | Its effects, its sends, its fader and pan | how it sounds | | 0.15–0.9, by kind and amount |
 

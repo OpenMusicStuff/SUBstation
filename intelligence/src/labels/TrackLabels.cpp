@@ -293,9 +293,9 @@ bool contains(const DeviceFact& rack, const DeviceFact* target) {
 void readInstrument(Description& d, const DeviceFact& device) {
     const KnownInstrument* known = device.kind == "plugin" ? knownInstrument(device.name) : nullptr;
     const std::string name = device.name.empty() ? titleCase(device.kind) : device.name;
-    if (device.kind == "synth" || device.kind == "vital") {
+    if (device.kind == "synth" || device.kind == "vital" || device.kind == "snarl") {
         d.synth = true;
-        d.source = device.kind == "vital" ? "Vital" : "Synth";
+        d.source = device.kind == "vital" ? "Vital" : (device.kind == "snarl" ? "Snarl" : "Synth");
     } else if (device.kind == "sampler") {
         d.source = "Sampler";
     } else {
@@ -305,6 +305,7 @@ void readInstrument(Description& d, const DeviceFact& device) {
         d.source = known && !known->source.empty() ? std::string(known->source) : shortName(device.name);
     }
     if (known && !known->noun.empty()) addReading(d, readWords(known->noun, Source::Name), kInstrumentNouns, 0.0);
+    if (device.kind == "snarl") addReading(d, readWords("bass", Source::Name), kInstrumentNouns, 0.0);  // (made for it)
     if (known && !known->adjective.empty()) addTrait(d, std::string(known->adjective), kKnownAdjective);
     addReading(d, readWords(device.name, Source::Name), kInstrumentNouns, kInstrumentAdjectives);
     const std::string category = lowered(device.category);

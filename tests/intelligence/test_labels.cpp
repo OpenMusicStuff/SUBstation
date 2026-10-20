@@ -378,6 +378,11 @@ TEST_CASE("instruments, presets and samples name what plays") {
     vital.preset = "BS - Dirty Fat BASS";
     CHECK_EQ(only(track("1", kMidi, {vital})).label, std::string("Dirty Vital Bass"));
     CHECK_EQ(only(track("1", kMidi, {vital})).family, std::string("bass"));
+    // Snarl, made for bass, is one whatever it is set to.
+    const DeviceFact snarl = builtin("snarl", "Snarl", {}, true);
+    CHECK(classify(snarl) == Effect::Instrument);
+    CHECK_EQ(only(track("1", kMidi, {snarl})).label, std::string("Snarl Bass"));
+    CHECK_EQ(only(track("1", kMidi, {snarl})).family, std::string("bass"));
     // A rack named by the user says what it holds.
     DeviceFact rack = builtin("rack", "Big Bed Bass");
     rack.chains = {{serum("- Init -")}};
