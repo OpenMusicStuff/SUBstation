@@ -372,11 +372,14 @@ nodes made): the tests read it.
 `accent`, ...), the arrangement's (`lane`, `gridBar`, `playhead`, `insertMarker`, `selection`, `waveform`, ...), the
 piano roll's (`keyWhite`, `blackKeyRow`, `outsideClip`, ...) and the controls' (`activatorOn`, `soloOn`, `meterLow`,
 `scopeLine`, `display` (the transport bar's displays and the scope), `frozen`, `knob`, `scrollHandle`, `automationOn`,
-...). Fonts: `uiFont(pt, bold)`
-(Segoe UI, 9 pt by default), `monoFont(pt)` (Consolas), and for QML `Theme.font`, `Theme.smallFont` (8 pt, the
-buttons with a role), `Theme.listFont` (10 pt: the browser's lists, as Qt Quick draws small text smaller than the
-widgets did at the same size) and `Theme.listHeadingFont` (8.5 pt bold, the sidebar's headings), `Theme.uiFont()`. Metrics: `radius` (3), `controlHeight` (26, the transport bar's displays and
-buttons), `scrollBarWidth` (12), `iconSize` (14). `setUpApplication()` applies the font, the theme last chosen and
+...). Fonts: `uiFont(pt, bold)` and `uiFont(pt, weight)`
+(Inter, bundled in [ui/fonts](../../ui/fonts) in its Regular, Medium, SemiBold and Bold weights; 9 pt by default),
+`monoFont(pt)` (Consolas), and for QML `Theme.font`, `Theme.smallFont` (8 pt, the buttons with a role),
+`Theme.listFont` (10 pt: the browser's lists, as Qt Quick draws small text smaller than the widgets did at the same
+size), `Theme.listHeadingFont` (8 pt semibold, its letters spaced 0.6 px apart: the sidebar's and the File Manager's
+headings), `Theme.titleFont` (9 pt semibold: the titles of devices and panels), `Theme.uiFont()`. Metrics: `radius` (3: boxes, line edits, combo boxes), `controlHeight` (26, the
+transport bar's displays and buttons), `listRowHeight` (22, the least a row of the browser's lists is),
+`scrollBarWidth` (12), `iconSize` (14). `setUpApplication()` applies the font, the theme last chosen and
 a palette from its colours.
 
 ### Themes
@@ -428,7 +431,7 @@ Basic style. A style `Button` is a `RoleButton` that takes the focus, as a dialo
 asked for, so they stay sharp at any scale and pixel ratio: play, stop, record, metronome, loop, follow,
 re_enable_automation, lock_envelopes, headphones, folder, waveform, plugin, preset, plugin_window, sidechain,
 snowflake, keyboard (the computer MIDI keyboard: four piano keys), save, link, infinity, expand, sliders, fold, search,
-app_icon. QML gets them from the image provider,
+close (a cross: clearing a search, stopping a hot swap), app_icon. QML gets them from the image provider,
 `image://icons/<name>[?color=%23rrggbb][&state=on][&mode=disabled][&theme=<name>]` (`Icons.url()` builds it; `Icon { name; color;
 checked; size }` wraps it): `state=on` picks the On picture of `lock_envelopes` (closed) and `fold` (pointing right:
 folded), `mode=disabled` draws it in `Theme::textDisabled()`. C++ items draw them with `Icons::image()` on the GUI thread

@@ -406,6 +406,12 @@ const std::map<QString, Icon>& icons() {
                                            p.drawEllipse(QRectF(10, 10, 30, 30));
                                            p.drawLine(QPointF(37, 37), QPointF(54, 54));
                                        }};
+        // A cross: close, clear, stop.
+        t[QStringLiteral("close")] = {dim, [](QPainter& p, const QColor& c, bool) {
+                                          p.setPen(pen(c, 6, Qt::RoundCap));
+                                          p.drawLine(QPointF(18, 18), QPointF(46, 46));
+                                          p.drawLine(QPointF(46, 18), QPointF(18, 46));
+                                      }};
         // Two arrows, one each way: a hot swap (what the browser selects plays in its place).
         t[QStringLiteral("hotswap")] = {text, [](QPainter& p, const QColor& c, bool) {
                                             p.setPen(pen(c, 5, Qt::RoundCap, Qt::RoundJoin));
