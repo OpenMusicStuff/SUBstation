@@ -145,7 +145,7 @@ detected (below).
 ### Key
 
 A key in the name (`Am`, `F#m`, `Eb`, `G minor`, `Cmaj`) transposes the clip to the
-**project key**, chosen next to the metronome in the transport bar.
+**project key**, chosen in the transport bar (*Key*, after the swing).
 
 - A minor key and its relative major count as the same (an A minor loop stays put in C
   major), and the clip takes the shortest shift (at most 6 semitones).

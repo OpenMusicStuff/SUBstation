@@ -306,7 +306,35 @@ void ValueBoxItem::setFillColor(const QColor& color) {
     Q_EMIT lookChanged();
 }
 
+void ValueBoxItem::setBare(bool bare) {
+    if (bare == bare_) return;
+    bare_ = bare;
+    update();
+    Q_EMIT lookChanged();
+}
+
+void ValueBoxItem::setBottomPadding(qreal padding) {
+    if (padding == bottomPadding_) return;
+    bottomPadding_ = padding;
+    update();
+    Q_EMIT lookChanged();
+}
+
 void ValueBoxItem::paint(SgPainter& p) {
+    // Where the value goes: above the bottom padding.
+    const QRectF valueRect(0, 0, width(), std::max(0.0, height() - bottomPadding_));
+    if (bare_) {
+        // A field of a display: the display is behind it; a tint while it is under the mouse or dragged.
+        p.setAntialiasing(true);
+        if (hovered_ || dragging()) {
+            QColor tint = Theme::text();
+            tint.setAlphaF(0.07f);
+            p.fillRoundedRect(QRectF(0, 0, width(), height()).adjusted(1, 1, -1, -1), 2, 2, tint);
+        }
+        p.drawText(valueRect, Qt::AlignCenter, text_, dragging() ? Theme::accent() : Theme::text(), font_);
+        drawAutomationDot(p, automation_, QPointF(5.0, valueRect.center().y()));
+        return;
+    }
     if (flat_) {
         // A track header's box: tighter corners, the slider's fill under the value.
         p.setAntialiasing(true);
@@ -322,8 +350,8 @@ void ValueBoxItem::paint(SgPainter& p) {
             }
         }
         p.drawRoundedRect(rect, 2, 2, Theme::border());
-        p.drawText(rect, Qt::AlignCenter, text_, dragging() ? Theme::accent() : Theme::text(), font_);
-        drawAutomationDot(p, automation_, QPointF(4.0, rect.center().y()));
+        p.drawText(valueRect, Qt::AlignCenter, text_, dragging() ? Theme::accent() : Theme::text(), font_);
+        drawAutomationDot(p, automation_, QPointF(4.0, valueRect.center().y()));
         return;
     }
     p.setAntialiasing(true);
@@ -331,8 +359,8 @@ void ValueBoxItem::paint(SgPainter& p) {
     const bool active = hovered_ || dragging();
     p.fillRoundedRect(rect, 3, 3, active ? Theme::surfaceHover() : Theme::surface());
     p.drawRoundedRect(rect, 3, 3, Theme::border());
-    p.drawText(rect, Qt::AlignCenter, text_, dragging() ? Theme::accent() : Theme::text(), font_);
-    drawAutomationDot(p, automation_, QPointF(6.0, rect.center().y()));
+    p.drawText(valueRect, Qt::AlignCenter, text_, dragging() ? Theme::accent() : Theme::text(), font_);
+    drawAutomationDot(p, automation_, QPointF(6.0, valueRect.center().y()));
 }
 
 void ValueBoxItem::hoverEnterEvent(QHoverEvent*) {

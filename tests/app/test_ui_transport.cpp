@@ -2,7 +2,7 @@
 // changes the project, the bridge or the session (tempo, time signature,
 // metronome, key, computer keyboard, play/stop/record, count-in, lock
 // envelopes, loop, follow) and shows what they have, whoever changed it; the
-// position, the CPU and the device. The checked state of Play and Record
+// position, the CPU (its readings and their graph) and the device. The checked state of Play and Record
 // follows the bridge, never the click; no control takes the keyboard. Runs on
 // a display (xvfb here). With $SUBSTATION_SCREENS set, it saves a screenshot.
 
@@ -95,17 +95,42 @@ private Q_SLOTS:
         QVERIFY(left("tempo") < left("numerator") && left("numerator") < left("metronome"));
         QVERIFY(left("computerKeys") < left("position") && left("position") < left("play"));
         QVERIFY(left("play") < left("stop") && left("stop") < left("record") && left("record") < left("reEnable"));
+        // The key: the song display's last field, before the metronome.
+        QVERIFY(left("swing") < left("key") && left("key") < left("metronome"));
         // The count-in: a drop-down attached to the metronome's right, as Live's.
-        QVERIFY(left("metronome") < left("countIn") && left("countIn") < left("key"));
+        QVERIFY(left("metronome") < left("countIn") && left("countIn") < left("computerKeys"));
         QVERIFY(std::abs(left("countIn") - (left("metronome") + item("metronome")->width())) <= 1.0);
         QVERIFY(left("reEnable") < left("scope") && left("scope") < left("punchIn"));
         QVERIFY(left("punchIn") < left("loop") && left("loop") < left("punchOut") && left("punchOut") < left("follow"));
         QVERIFY(!item("lockEnvelopes"));  // (in the arrangement's corner, as Ableton's)
+        // The transport in the middle of the window.
+        const double deckRight = left("scope") + item("scope")->width();
+        QVERIFY(std::abs((left("position") + deckRight) / 2 - bar_->width() / 2) <= 1.0);
         QVERIFY(left("loop") < left("follow") && left("follow") < left("cpu") && left("cpu") < left("device"));
         QCOMPARE(text("position"), QStringLiteral("  1. 1. 1"));
         QCOMPARE(text("cpu"), QStringLiteral("CPU 0%"));
         QCOMPARE(text("device"), QStringLiteral("No audio device"));
         test::screenshot(window_, QStringLiteral("transport-bar"), QRect(0, 0, window_->width(), 40));
+    }
+
+    // In a narrow window the transport moves aside, never over the groups either
+    // side of it; with too little room, the scope goes.
+    void narrowWindows() {
+        const int wide = window_->width();
+        auto left = [&](const char* name) { return item(name)->mapToScene(QPointF(0, 0)).x(); };
+        auto right = [&](const char* name) { return left(name) + item(name)->width(); };
+        for (int width : {1300, 1180, 1100, 1024}) {
+            window_->setWidth(width);
+            QTRY_COMPARE(bar_->width(), qreal(width));
+            QVERIFY2(left("position") >= right("constrainLatency") + 16, qPrintable(QString::number(width)));
+            const char* last = item("scope")->isVisible() ? "scope" : "reEnable";
+            QVERIFY2(right(last) + 16 <= left("punchIn"), qPrintable(QString::number(width)));
+            QVERIFY(right("device") <= width - 8);
+        }
+        QVERIFY(!item("scope")->isVisible());
+        window_->setWidth(wide);
+        QTRY_COMPARE(bar_->width(), qreal(wide));
+        QVERIFY(item("scope")->isVisible());
     }
 
     // Tempo and time signature: the value boxes edit the project and show it.
@@ -257,6 +282,30 @@ private Q_SLOTS:
         QCOMPARE(text("cpu"), QStringLiteral("CPU 0%"));
         Q_EMIT bridge().metersUpdated();
         QCOMPARE(text("cpu"), QStringLiteral("CPU %1%").arg(QString::number(bridge().cpuLoad() * 100, 'f', 0)));
+
+        // A reading every kCpuEveryMs, kept for the graph behind it (one bar each), the same or not.
+        auto* state = bar_->property("transportState").value<TransportState*>();
+        auto* graph = bar_->findChild<QObject*>(QStringLiteral("cpuGraph"));
+        QVERIFY(state && graph);
+        QTest::qWait(TransportState::kCpuEveryMs + 20);
+        Q_EMIT bridge().metersUpdated();
+        const qsizetype readings = state->cpuHistory().size();
+        QVERIFY(readings >= 1);
+        QCOMPARE(state->cpuLoad(), bridge().cpuLoad());
+        Q_EMIT bridge().metersUpdated();  // (too soon)
+        QCOMPARE(state->cpuHistory().size(), readings);
+        QTest::qWait(TransportState::kCpuEveryMs + 20);
+        Q_EMIT bridge().metersUpdated();
+        QCOMPARE(state->cpuHistory().size(), readings + 1);
+        QCOMPARE(graph->property("count").toInt(), int(readings + 1));
+        QCOMPARE(item("cpu")->property("value").toString(),
+                 QStringLiteral("%1%").arg(qRound(bridge().cpuLoad() * 100)));
+
+        // No device: its name and rate are none, and it says so.
+        QCOMPARE(state->deviceName(), QString());
+        QCOMPARE(state->deviceRate(), QString());
+        QCOMPARE(item("device")->property("value").toString(), QStringLiteral("No device"));
+        QCOMPARE(item("device")->property("caption").toString(), QStringLiteral("Audio off"));
 
         QSignalSpy preferences(bar_, SIGNAL(preferencesRequested()));
         click("device");

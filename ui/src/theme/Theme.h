@@ -98,6 +98,7 @@ class Theme : public QObject {
     Q_PROPERTY(QColor scopeLine READ scopeLine NOTIFY changed)
     Q_PROPERTY(QColor scopeGlow READ scopeGlow NOTIFY changed)
     Q_PROPERTY(QColor scopeAxis READ scopeAxis NOTIFY changed)
+    Q_PROPERTY(QColor display READ display NOTIFY changed)
     Q_PROPERTY(QColor frozen READ frozen NOTIFY changed)
     Q_PROPERTY(QColor frozenTint READ frozenTint NOTIFY changed)
     Q_PROPERTY(QColor knob READ knob NOTIFY changed)
@@ -120,7 +121,7 @@ class Theme : public QObject {
 
     // Metrics the stylesheet used everywhere.
     Q_PROPERTY(int radius READ radius CONSTANT)                  // boxes, line edits: 3 px corners (buttons are square)
-    Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)    // the transport bar's boxes and buttons
+    Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)    // the transport bar's displays and buttons
     Q_PROPERTY(int scrollBarWidth READ scrollBarWidth CONSTANT)  // 12 px
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)              // a button's icon: 14 px
 
@@ -211,6 +212,8 @@ public:
     static QColor scopeLine() { return colors().scopeLine; }
     static QColor scopeGlow() { return colors().scopeGlow; }
     static QColor scopeAxis() { return colors().scopeAxis; }
+    // The transport bar's displays and the scope.
+    static QColor display() { return colors().display; }
     static QColor frozen() { return colors().frozen; }
     static QColor frozenTint() { return colors().frozenTint; }
     static QColor knob() { return colors().knob; }
