@@ -231,13 +231,13 @@ its seed, so exports are the same every time and the same as what was heard.
 
 ### Follow Groove
 
-A switch, `follow_groove` (Off by default; a **Groove** button in their editors), on three devices that play on the
+A switch, `follow_groove` (Off by default; a **Groove** button in their editors), on the devices that play on the
 beat, following the project's default groove (`ProcessContext::groove`; without one, they play as they would):
 
 - **The Arpeggiator**: synced while the song plays, its steps where the groove puts them (`groove::place()` of each
   step's beat), each step's notes as loud as the groove makes them, in place of Swing.
-- **The Delay**: its Swing is the groove's: every other echo as late as the groove's offbeat steps are on average,
-  as a share of that side's time.
+- **The Delay** (and the Vintage Delay, its engine with the Tape character): its Swing is the groove's: every other
+  echo as late as the groove's offbeat steps are on average, as a share of that side's time.
 - **The LFO**: synced and following the song, it plays its straight time where the groove puts it, so a 1/16 LFO
   swings with the hats.
 

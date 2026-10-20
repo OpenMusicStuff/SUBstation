@@ -1884,7 +1884,9 @@ A resonant filter with an envelope follower and an LFO, after Ableton's Auto Fil
 
 ### Delay (`builtin:delay`, AudioEffect)
 
-A stereo delay after Ableton's.
+A stereo delay after Ableton's, which sounds as Valhalla Delay's Digital mode at its default preset (its
+Digital character, below). The engine is [DelayDevice.h](../../engine/src/builtin/DelayDevice.h), shared with
+the Vintage Delay; the characters are [DelayCharacter.h](../../engine/src/builtin/DelayCharacter.h).
 
 | id | Name | Unit | Range | Default |
 |---|---|---|---|---|
@@ -1912,19 +1914,30 @@ A stereo delay after Ableton's.
   (`kMaxDelaySeconds`); each delay line is that long (rounded up to a power of two),
   allocated in `prepare()`. Read with 4-point Hermite interpolation.
 - **Per side, two lines in a loop** (stages A and B, `stageOf(side, part)`): each is read
-  (`echo`), filtered and driven (`wet`); A is written with the input plus feedback × B's
+  (`echo`, at the time plus the character's modulation), given the character, filtered and driven (`wet`); A is written with the input plus feedback × B's
   wet, B with feedback × A's wet; the side's output is the sum of both wets. **Swing**
   reads A at the time × (1 + s) and B at the time × (1 − s), s = 0.5 × Swing / 100
   (`kMaxSwing`), so echoes come at T(1 + s), 2T, 3T(1 + s)…: without swing, exactly a
   single line of time T (A longer than a line holds reads at the line's end). Ping
   pong: the input summed to mono goes into the left's A, which feeds the right's B,
   which feeds the left's A (the left's B and the right's A rest). Frozen, each line is
-  written with the other's unfiltered echo (an exact loop) and the input is ignored;
+  written with the other's echo as it was read (an exact loop) and the input is ignored;
   feedback is 1.
 - **Follow Groove**: with the project's groove (`ctx.groove`), s is the groove's: how late
   its offbeat steps are on average (its default lane's odd steps, their timing in beats
   plus their milliseconds at the tempo), as a share of the side's time in beats, held to
   0..0.5. So a 16th's echoes swing as the groove's 16ths do. Without one, Swing as set.
+- **Digital character** (Valhalla Delay's Digital mode, Era Past, Age 50 %, its modulation at 0.5 Hz and
+  50 %, measured from renders of it): the read swings ±2.667 ms on a 0.5 Hz triangle rounded by a 2 Hz
+  one-pole, starting at its middle, rising (`DigitalModulation`); each echo goes through high-passes at 5,
+  10 and 10 Hz (one-poles) and the plug-in's band-limit (about 7.8 kHz, a droop of 1.3 dB at 5 kHz; its
+  impulse response measured at 44.1, 48, 88.2 and 96 kHz, `DelayCharacterTables.h`, others resampled; 112
+  taps at 48 kHz, peaking 11 samples late); then a compressor on each side's echoes together (the plug-in's
+  one line holds every repeat at once): an RMS level of them through a high shelf (+12.5 dB above
+  3.75 kHz; 2 ms up, 0.94 ms down) and the gain (1 + (level / 0.847)^1.97)^(-1/1.97) on each. What goes
+  into the lines is rounded to 16 bits. Against the plug-in (time-aligned: its own time is off by up to
+  half a sample), the difference is -45 dB on music at moderate levels, -30 dB driven hot at 85 % feedback.
+- **Dry/Wet** crosses over at equal power: the dry × cos(90° × mix), the wet × sin(90° × mix).
 - **Drive**: after the filter, in the loop, `tanh(g·y) / g` with g = 1 + 7 × Drive / 100
   (`dsp::fastTanh`): unity for quiet echoes, loud ones rounded off; bypassed at 0.
 - **Duck**: the input's peak (the louder channel; 2 ms attack, 250 ms release:
@@ -1940,6 +1953,31 @@ A stereo delay after Ableton's.
   60 dB, at most 60 s.
 - **Display**: `input`, one value per sample: the input summed to mono. The editor
   draws its spectrum behind the filter curve.
+
+### Vintage Delay (`builtin:vintage_delay`, AudioEffect)
+
+The Delay's engine, parameters and editor (`DelayEditor.qml`) with the Tape character: Valhalla Delay's Tape
+mode at its default preset (Era Past, Age 50 %, Wow and Flutter 50 %), measured from renders of it. In
+[DelayCharacter.h](../../engine/src/builtin/DelayCharacter.h):
+
+- **The tape's speed** follows the time: slowdown k = time / 200 ms, kept in 1..3. Each echo's playback EQ
+  is a curve scaled down in frequency by k (a low shelf, a broad bump, the treble's roll-off), after a fixed
+  10 Hz high-pass and a fixed cut-off just under 24 kHz, 4.86 samples late; a shelf above 9 kHz follows the
+  plug-in's treble steps at the times measured (interpolated between). It follows the echo's time as it is
+  (gliding in Repitch), recomputed a block.
+- **Wander** (the same for both sides): cubic B-splines through random values (fixed seeds, so renders
+  repeat): a drift (a new value every 8.3 s, 2.6 ms RMS), wow (5 Hz, 0.32 ms RMS × (1 + 0.86 (k − 1))) and
+  flutter (33 Hz, 0.064 ms RMS × (1 + 0.5 (k − 1))); and the splice: once a pass of the 10 s × k loop (the
+  first 9.3 s in), the time bumps up 7.32 ms × k and settles (exponentials of 0.1875 and 0.125 s), the echo
+  dipping 12 % at the bump's height.
+- **Saturation**, on each side's echoes together: a fast compressor (an RMS level through +20 dB above
+  10 kHz, 0.48 ms up, 0.23 ms down; (1 + (level / 0.476)^1.92)^(-1/1.92), smoothed over 0.04 ms), then a
+  tanh well off centre (drive 0.368, bias -1.15), as a gain on each echo.
+- **Feedback path**: each echo fed back goes through a 100 Hz one-pole high-pass and +2 dB at 8.5 kHz, so
+  the repeats thin out at the bottom.
+- Against the plug-in: the wander's depth band by band, and the level band by band within 0.5 dB below
+  4 kHz (up to 2 dB above 8 kHz with feedback). Not modelled: what the plug-in's tape buffer puts above
+  14 kHz that isn't the input (images), and its quiet modulation noise.
 
 ### Chorus-Ensemble (`builtin:chorus`, AudioEffect)
 
@@ -2880,6 +2918,7 @@ readonly property var editors: ({
     "supersaw": "SupersawEditor.qml",
     "tape_stop": "TapeStopEditor.qml",
     "transient": "TransientEditor.qml",
+    "vintage_delay": "DelayEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
     "vital": "VitalEditor.qml",
     "vocal_rider": "VocalRiderEditor.qml",

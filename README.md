@@ -107,7 +107,7 @@ Claude Code can read and edit your song while you watch.
 - **Colour and distortion**: Saturator, Amp, Erosion.
 - **Glitch**: Tape Stop (the sound slowing to a halt and spinning up again, along a curve), Glitch
   (steps on the beat stuttered, reversed, slowed to a stop or chopped, at random but the same each time).
-- **Time and modulation**: Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall,
+- **Time and modulation**: Delay, Vintage Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall,
   Disperser.
 - **Pitch**: GigaTune (pitch correction for a voice: a key's notes, retune speed, pitch and
   formant shifts), Hue.

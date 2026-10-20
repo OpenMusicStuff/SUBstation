@@ -60,6 +60,7 @@ QtObject {
         "supersaw": "SupersawEditor.qml",
         "tape_stop": "TapeStopEditor.qml",
         "transient": "TransientEditor.qml",
+        "vintage_delay": "DelayEditor.qml",  // the Delay's, Tape in place of Digital
         "vintage_hall": "VintageHallEditor.qml",
         "vital": "VitalEditor.qml",
         "vocal_rider": "VocalRiderEditor.qml",
