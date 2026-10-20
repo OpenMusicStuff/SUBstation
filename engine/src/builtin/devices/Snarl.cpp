@@ -24,14 +24,18 @@
 // - Unison: up to 7 oscillators, Detune spreading them (cents either way) and
 //   Width across the stereo field (equal power), at the level of one.
 // - The growl's four modes, Wave's shapes and the vowels: SnarlDesign.h.
-// - The filter: Low, two state-variable sections (24 dB), the second resonant;
-//   Band, one; Vowel, three band-passes at the vowel's formants, the frequency
-//   choosing the vowel; Comb, a feedback comb (damped) at the frequency, its
-//   level held. The wobble moves the frequency up to 6 octaves.
-// - Dirt: Drive from none (x1) to +32 dB into Tube (tanh, biased: even
-//   harmonics), Hard (a clip), Rectify (folded upward: an octave up) or Crush
-//   (fewer levels and samples held), then a DC blocker (Rectify's DC, which
-//   Split's high-pass takes the rest of).
+// - The filter: Low, two state-variable sections (24 dB), the second resonant
+//   (its passband made up half the resonant peak's rise); Band, one; Vowel,
+//   three band-passes at the vowel's formants, alternately signed (so they add
+//   between their peaks rather than cancel), the frequency choosing the vowel;
+//   Comb, a feedback comb (damped) at the frequency, its level held. The wobble
+//   moves the frequency up to 6 octaves.
+// - Dirt: a 20 kHz low-pass first (nothing ultrasonic into it), then Drive from
+//   x1 to x16 (+24 dB), with 6 dB of headroom, into Tube (tanh, biased: even
+//   harmonics), Hard (a clip), Rectify (1 - sech: an octave up, rounded at 0) or
+//   Crush (fewer levels and samples held), each but Crush anti-aliased
+//   (SnarlDesign.h); then a DC blocker (Rectify's DC, which Split's high-pass
+//   takes the rest of).
 // - Split: a 24 dB high-pass on everything but the sub, so the sub owns the lows.
 // - Squash: Over The Top's (OttDesign.h), its depth, and made up as much as it
 //   brings a driven bass down (21 dB at 100 %): denser as it turns, not quieter.
@@ -147,6 +151,8 @@ private:
         float combDamp = 0.f;
         float held = 0.f;  // Crush: the sample held
         int holdLeft = 0;
+        double dirtIn = 0.0;  // the dirt's last input (u), what its anti-aliasing averages from
+        std::array<dsp::Svf, 2> band20k;  // the 20 kHz low-pass before the dirt
         dsp::DcBlocker dc;
         std::array<dsp::Svf, 2> split;
         void reset() noexcept {
@@ -156,6 +162,8 @@ private:
             comb.reset();
             combDamp = held = 0.f;
             holdLeft = 0;
+            dirtIn = 0.0;
+            for (dsp::Svf& s : band20k) s.reset();
             dc.reset();
             for (dsp::Svf& s : split) s.reset();
         }
@@ -174,6 +182,7 @@ private:
         std::array<dsp::SvfCoefficients, 2> low;
         dsp::SvfCoefficients band;
         float bandGain = 1.f;
+        float lowGain = 1.f;
         std::array<dsp::SvfCoefficients, snarl::kFormants> formants;
         std::array<float, snarl::kFormants> formantGains{};
         float combDelay = 2.f;
@@ -216,7 +225,8 @@ private:
     void start(const Held& note, bool legato);
     void renderFrames(const ProcessContext& ctx, int from, int to);
     float filter(Channel& ch, FilterType type, const FilterSettings& s, float x) noexcept;
-    float dirt(Channel& ch, DirtType type, float x, float drive) noexcept;
+    // The dirt of `type` on `u` (the sound times half Drive's gain), anti-aliased from the channel's last u.
+    float dirt(Channel& ch, DirtType type, double u, float drive) noexcept;
     // The body's soft clip: x / (1 + (x / ceiling)^4)^(1/4), within 0.15 dB of x up to half the ceiling,
     // never past it. (What gets past the squash's quick detectors, made up, would peak far over.)
     static float bodyClip(float x) noexcept {
@@ -247,6 +257,8 @@ private:
     double bendTarget_ = 0.0;
     std::array<double, kMaxUnison> phases_{};
     std::array<double, kMaxUnison> modPhases_{};
+    std::array<double, kMaxUnison> foldIns_{};  // Fold's last input, each oscillator's
+    bool primeFold_ = true;  // Fold's inputs to be set where the oscillators are (a new mode, phases restarted)
     double subPhase_ = 0.0;
     bool sleeping_ = true;
     int64_t quietSamples_ = 0;
@@ -269,6 +281,7 @@ private:
     std::array<Channel, 2> channels_{};
     ott::Squash squasher_;
     std::array<dsp::Oversampler, 2> downsamplers_;
+    std::array<dsp::SvfCoefficients, 2> band20k_;  // a 4-pole Butterworth low-pass at 20 kHz (oversampled rate)
     std::array<std::vector<float>, 2> oversampled_;  // a block at the oversampled rate, each channel
     std::vector<float> monoRight_;                   // the right brought down, with one channel out
 
@@ -352,6 +365,10 @@ void SnarlProcessor::prepare(double sampleRate, int maxBlockSize) {
         ch.dc.prepare(osRate_, 10.0);
     }
     squasher_.prepare(osRate_);
+    {
+        const auto g = static_cast<float>(std::tan(dsp::kPi * std::min(20000.0, 0.24 * osRate_) / osRate_));
+        band20k_ = {dsp::SvfCoefficients(g, 1.848f), dsp::SvfCoefficients(g, 0.765f)};
+    }
     smooth_ = static_cast<float>(1.0 - onePoleCoefficient(kSmoothSeconds, sampleRate));
     wobbleSmooth_ = static_cast<float>(1.0 - onePoleCoefficient(0.0015, sampleRate));
     bendGlide_ = 1.0 - onePoleCoefficient(dsp::kBendGlideSeconds, sampleRate);
@@ -372,6 +389,8 @@ void SnarlProcessor::reset() {
     bend_ = bendTarget_ = 0.0;
     phases_.fill(0.0);
     modPhases_.fill(0.0);
+    foldIns_.fill(0.0);
+    primeFold_ = true;
     subPhase_ = 0.0;
     wobbleTotal_ = 0.0;
     wobble_ = 0.f;
@@ -420,6 +439,7 @@ void SnarlProcessor::start(const Held& note, bool legato) {
     if (level_ < dsp::kSilent) {  // from silence: the same hit every time
         for (int u = 0; u < kMaxUnison; ++u) {
             phases_[static_cast<size_t>(u)] = u == 0 ? 0.0 : snarl::wrap(u * 0.6180339887);
+            primeFold_ = true;
             modPhases_[static_cast<size_t>(u)] = 0.0;
         }
         subPhase_ = 0.0;
@@ -489,11 +509,12 @@ SnarlProcessor::FilterSettings SnarlProcessor::filterSettings(FilterType type, d
     case FilterType::Low:
         s.low[0] = dsp::SvfCoefficients(g(hz), 1.848f);
         s.low[1] = dsp::SvfCoefficients(g(hz), 0.765f - 0.71f * resonance);
+        s.lowGain = std::sqrt(s.low[1].k / 0.765f);  // (the resonant peak's rise half made up for in the passband)
         break;
     case FilterType::Band: {
         const float k = 1.4f - 1.32f * resonance;
         s.band = dsp::SvfCoefficients(g(hz), k);
-        s.bandGain = k * (1.f + 2.f * resonance);  // (unity at its peak, made up as it narrows)
+        s.bandGain = k * (1.f + resonance);  // (unity at its peak, made up a little as it narrows)
         break;
     }
     case FilterType::Vowel: {
@@ -501,7 +522,10 @@ SnarlProcessor::FilterSettings SnarlProcessor::filterSettings(FilterType type, d
         const float q = 3.f + 17.f * resonance;
         for (int f = 0; f < snarl::kFormants; ++f) {
             s.formants[static_cast<size_t>(f)] = dsp::SvfCoefficients(g(formants[static_cast<size_t>(f)].hz), 1.f / q);
-            s.formantGains[static_cast<size_t>(f)] = static_cast<float>(2.0 * formants[static_cast<size_t>(f)].gain / q);
+            // Alternate signs: summed, two band-passes cancel between their peaks (each a quarter cycle the other way
+            // there), which notches the sound and, as the vowel moves, phases it; opposite signs add there instead.
+            const double sign = f % 2 == 0 ? 1.0 : -1.0;
+            s.formantGains[static_cast<size_t>(f)] = static_cast<float>(sign * 2.0 * formants[static_cast<size_t>(f)].gain / q);
         }
         break;
     }
@@ -515,7 +539,7 @@ SnarlProcessor::FilterSettings SnarlProcessor::filterSettings(FilterType type, d
 
 float SnarlProcessor::filter(Channel& ch, FilterType type, const FilterSettings& s, float x) noexcept {
     switch (type) {
-    case FilterType::Low: return ch.low[1].tick(s.low[1], ch.low[0].tick(s.low[0], x).low).low;
+    case FilterType::Low: return ch.low[1].tick(s.low[1], ch.low[0].tick(s.low[0], x).low).low * s.lowGain;
     case FilterType::Band: return ch.band.tick(s.band, x).band * s.bandGain;
     case FilterType::Vowel: {
         float sum = 0.f;
@@ -535,26 +559,25 @@ float SnarlProcessor::filter(Channel& ch, FilterType type, const FilterSettings&
     return x;
 }
 
-float SnarlProcessor::dirt(Channel& ch, DirtType type, float x, float drive) noexcept {
-    const float gain = fastmath::exp(3.684f * drive);  // x1 .. x40 (+32 dB)
+float SnarlProcessor::dirt(Channel& ch, DirtType type, double u, float drive) noexcept {
     switch (type) {
     case DirtType::Tube: {
-        const float bias = 0.3f * drive;  // (lopsided: even harmonics)
-        return dsp::fastTanh(gain * x + bias) - dsp::fastTanh(bias);
+        const double bias = 0.3 * drive;  // (lopsided: even harmonics)
+        return static_cast<float>(2.0 * (snarl::dirtAveraged(type, u + bias, ch.dirtIn + bias) - std::tanh(bias)));
     }
-    case DirtType::Hard: return std::clamp(gain * x, -1.f, 1.f);
-    case DirtType::Rectify: return 2.f * std::abs(dsp::fastTanh(gain * x));  // (its DC: the blocker's)
+    case DirtType::Hard: return static_cast<float>(2.0 * snarl::dirtAveraged(type, u, ch.dirtIn));
+    case DirtType::Rectify: return static_cast<float>(3.0 * snarl::dirtAveraged(type, u, ch.dirtIn));  // (its DC: the blocker's)
     case DirtType::Crush: {
         if (ch.holdLeft <= 0) {
             const float levels = fastmath::exp2(10.f - 8.f * drive);  // 1024 .. 4 levels a side
-            ch.held = std::round(std::clamp((1.f + 2.f * drive) * x, -1.f, 1.f) * levels) / levels;
+            ch.held = 2.f * std::round(std::clamp(static_cast<float>(u) * (1.f + drive), -1.f, 1.f) * levels) / levels;
             ch.holdLeft = 1 + static_cast<int>(drive * drive * 12.f * static_cast<float>(factor_));
         }
         --ch.holdLeft;
         return ch.held;
     }
     }
-    return x;
+    return static_cast<float>(u);
 }
 
 // --- Rendering ---------------------------------------------------------------------------
@@ -582,7 +605,7 @@ void SnarlProcessor::renderFrames(const ProcessContext& ctx, int from, int to) {
     const float splitTo = param(Split), growlTo = param(Growl), resonanceTo = param(Resonance);
     const float driveTo = param(Drive), squashTo = param(Squash);
     const auto cutoffTo = static_cast<float>(std::log2(param(Cutoff)));
-    mode_.set(choice<GrowlMode>(GrowlModeParam), fadeLength_);
+    if (mode_.set(choice<GrowlMode>(GrowlModeParam), fadeLength_)) primeFold_ = true;
     if (filterType_.set(choice<FilterType>(FilterTypeParam), fadeLength_)) {
         for (Channel& ch : channels_) ch.resetFilter(filterType_.current);
     }
@@ -637,6 +660,7 @@ void SnarlProcessor::renderFrames(const ProcessContext& ctx, int from, int to) {
         const float cutoffOct = cutoffOct_.next(cutoffTo, c);
         const float resonance = resonance_.next(resonanceTo, c) / 100.f;
         const float drive = drive_.next(driveTo, c) / 100.f;
+        const double driveGain = snarl::driveGain(drive);
         const float squashDepth = squash_.next(squashTo, c) / 100.f;
         const float squashMakeup = dbToGain(kSquashMakeupDb * squashDepth);
 
@@ -663,6 +687,12 @@ void SnarlProcessor::renderFrames(const ProcessContext& ctx, int from, int to) {
             gainsR[static_cast<size_t>(u)] = static_cast<float>(std::sin(angle)) * norm;
         }
         const double subStep = subHz / osRate_;
+        if (primeFold_) {  // Fold averages from where each oscillator is now, not from a stale input
+            for (int u = 0; u < kMaxUnison; ++u)
+                foldIns_[static_cast<size_t>(u)] = snarl::morph(position, phases_[static_cast<size_t>(u)],
+                                                                std::max(steps[static_cast<size_t>(u)], 1e-9));
+            primeFold_ = false;
+        }
         const FilterSettings now = filterSettings(filterType_.current, filterHz, resonance);
         const FilterSettings before =
             filterType_.left > 0 ? filterSettings(filterType_.old, filterHz, resonance) : now;
@@ -678,10 +708,11 @@ void SnarlProcessor::renderFrames(const ProcessContext& ctx, int from, int to) {
             for (int u = 0; u < unison; ++u) {
                 const size_t v = static_cast<size_t>(u);
                 const double dt = steps[v];
-                double y = snarl::growled(mode_.current, growl, position, phases_[v], dt, modPhases_[v], ratio);
+                double y = snarl::growled(mode_.current, growl, position, phases_[v], dt, modPhases_[v], ratio,
+                                          foldIns_[v]);
                 if (modeOld > 0.f) {
-                    y += modeOld *
-                         (snarl::growled(mode_.old, growl, position, phases_[v], dt, modPhases_[v], ratio) - y);
+                    y += modeOld * (snarl::growled(mode_.old, growl, position, phases_[v], dt, modPhases_[v], ratio,
+                                                   foldIns_[v]) - y);
                 }
                 body[0] += static_cast<float>(y) * gainsL[v];
                 body[1] += static_cast<float>(y) * gainsR[v];
@@ -695,9 +726,14 @@ void SnarlProcessor::renderFrames(const ProcessContext& ctx, int from, int to) {
                 Channel& s = channels_[static_cast<size_t>(ch)];
                 float y = filter(s, filterType_.current, now, body[ch]);
                 if (filterOld > 0.f) y += filterOld * (filter(s, filterType_.old, before, body[ch]) - y);
+                // Nothing above the audible band into the dirt: the oscillators' ultrasonic harmonics (a Comb
+                // passes them all) would come out of it as products past the oversampled Nyquist, folding back.
+                y = s.band20k[1].tick(band20k_[1], s.band20k[0].tick(band20k_[0], y).low).low;
                 y *= env;
-                float d = dirt(s, dirtType_.current, y, drive);
-                if (dirtOld > 0.f) d += dirtOld * (dirt(s, dirtType_.old, y, drive) - d);
+                const double u = 0.5 * driveGain * y;
+                float d = dirt(s, dirtType_.current, u, drive);
+                if (dirtOld > 0.f) d += dirtOld * (dirt(s, dirtType_.old, u, drive) - d);
+                s.dirtIn = u;
                 d = s.dc.process(d);
                 const dsp::Svf::Outputs a = s.split[0].tick(split0, d);
                 const float high = d - split0.k * a.band - a.low;

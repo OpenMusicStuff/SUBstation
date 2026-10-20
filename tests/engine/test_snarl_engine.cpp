@@ -85,6 +85,29 @@ bool finite(const Samples& x) {
     return std::all_of(x.begin(), x.end(), [](float v) { return std::isfinite(v); });
 }
 
+// Of x[from, from + 16384)'s energy from 500 Hz to 18 kHz (what is heard; the decimator's own transition band lies
+// above), the share more than 12 Hz from any harmonic of `f0` (aliasing: a
+// held note's sound is harmonic, what folds back mostly isn't), in dB. A 4-term Blackman-Harris window (sidelobes at
+// -92 dB) keeps the harmonics' own leakage out of the count.
+double inharmonicDb(const Samples& x, double f0, int64_t from, double rate = kRate) {
+    constexpr size_t n = 16384;
+    std::vector<double> window(n);
+    for (size_t i = 0; i < n; ++i) {
+        const double t = 2.0 * kPi * static_cast<double>(i) / static_cast<double>(n - 1);
+        window[i] = 0.35875 - 0.48829 * std::cos(t) + 0.14128 * std::cos(2 * t) - 0.01168 * std::cos(3 * t);
+    }
+    const std::vector<double> s = spectrum(slice(x, from, from + static_cast<int64_t>(n)), window);
+    double between = 0.0, all = 0.0;
+    for (size_t k = 0; k < s.size(); ++k) {
+        const double f = static_cast<double>(k) * rate / static_cast<double>(n);
+        if (f < 500.0 || f > 18000.0) continue;
+        const double e = s[k] * s[k];
+        all += e;
+        if (std::abs(f / f0 - std::round(f / f0)) * f0 > 12.0) between += e;
+    }
+    return 10.0 * std::log10(between / std::max(all, 1e-300) + 1e-300);
+}
+
 }  // namespace
 
 TEST_CASE("snarl: listed as an instrument, its parameters and lists") {
@@ -369,6 +392,72 @@ TEST_CASE("snarl: each growl mode sounds its own, and none at growl 0 but the os
     // FM's sidebands: a sine carrier at 110 Hz, Ratio 2: energy at 330 Hz (110 + 220) that a sine hasn't.
     CHECK(windowedAmplitude(outs[0], 3 * hz(45), 4800, 16384) > 0.02);
     CHECK(windowedAmplitude(first, 3 * hz(45), 4800, 16384) < windowedAmplitude(outs[0], 3 * hz(45), 4800, 16384));
+}
+
+TEST_CASE("snarl: the Vowel filter's formants add between their peaks") {
+    // A saw at 43.65 Hz through the vowel A (the middle of the range): its harmonics by the first formant (730 Hz)
+    // and between it and the second (1090 Hz). Summed with one sign, the formants' band-passes cancelled there (a
+    // notch some 20 dB under the first; moving with the vowel, a phaser); with alternate signs they add.
+    const ParamValues vowel = with(kClean, {{"wave", 50.f}, {"filter_type", 2.f}, {"resonance", 45.f},
+                                            {"cutoff", static_cast<float>(std::sqrt(30.0 * 18000.0))}});
+    Standalone device("snarl", kRate, vowel);
+    Timeline t;
+    t.note(0, 48000, 29);
+    const Samples left = play(device, t, 48000).first;
+    const double f0 = hz(29);
+    const double first = windowedAmplitude(left, 17 * f0, 8000, 32768);   // 742 Hz
+    const double between = windowedAmplitude(left, 21 * f0, 8000, 32768);  // 917 Hz
+    CHECK(db(between / first) - db(17.0 / 21.0) > -12.0);  // (the saw's own fall between the two taken out)
+}
+
+TEST_CASE("snarl: folding and hard driving alias little") {
+    // A held square folded hard into a band-pass and the Hard dirt driven well up (Riddim's way): what folds back
+    // between the harmonics stays far under them.
+    const ParamValues riddim = with(kClean, {{"wave", 75.f}, {"growl_mode", 2.f}, {"growl", 60.f}, {"filter_type", 1.f},
+                                             {"cutoff", 650.f}, {"resonance", 50.f}, {"dirt_type", 1.f}, {"drive", 70.f}});
+    Standalone device("snarl", kRate, riddim);
+    Timeline t;
+    t.note(0, 48000, 29);
+    const Samples left = play(device, t, 48000).first;
+    CHECK(inharmonicDb(left, hz(29), 12000) < -38.0);
+    // Each dirt clean for a quiet sound at Drive 0 (6 dB of headroom): little but the harmonics, and as loud.
+    for (int dirt = 0; dirt < 3; ++dirt) {
+        INFO(std::to_string(dirt));
+        Standalone clean("snarl", kRate, with(kClean, {{"wave", 50.f}, {"dirt_type", static_cast<float>(dirt)}}));
+        Timeline c;
+        c.note(0, 48000, 29);
+        const Samples out = play(clean, c, 48000).first;
+        CHECK(inharmonicDb(out, hz(29), 12000) < -50.0);
+    }
+}
+
+TEST_CASE("snarl: the dirt's curves and their anti-aliasing") {
+    using snarl::DirtType;
+    for (const DirtType type : {DirtType::Tube, DirtType::Hard, DirtType::Rectify}) {
+        INFO(std::to_string(static_cast<int>(type)));
+        // The averaged curve over a line is the mean of the curve along it (a numerical integral), for lines
+        // short and long, either way, across the knees.
+        for (const auto& [u0, u] : std::vector<std::pair<double, double>>{{-3.0, 2.5}, {0.2, 0.9}, {0.9, 1.4},
+                                                                          {-1.2, -0.7}, {5.0, -6.0}, {0.3, 0.3}}) {
+            double mean = 0.0;
+            constexpr int steps = 20000;
+            for (int i = 0; i < steps; ++i)
+                mean += snarl::dirtCurve(type, u0 + (u - u0) * (i + 0.5) / steps) / steps;
+            CHECK_NEAR(snarl::dirtAveraged(type, u, u0), mean, 1e-6);
+        }
+    }
+    CHECK_NEAR(snarl::logCosh(0.0), 0.0, 1e-15);
+    CHECK_NEAR(snarl::logCosh(1.5), std::log(std::cosh(1.5)), 1e-14);
+    CHECK_NEAR(snarl::logCosh(-800.0), 800.0 - std::log(2.0), 1e-9);  // (no overflow)
+    CHECK(snarl::driveGain(0.0) == 1.0);
+    CHECK_NEAR(snarl::driveGain(1.0), 16.0, 1e-5);
+    // The folder averaged the same way.
+    for (const auto& [x0, x] : std::vector<std::pair<double, double>>{{-1.0, 1.0}, {0.1, 0.4}, {0.5, 0.5}}) {
+        const double a = 7.0;
+        double mean = 0.0;
+        for (int i = 0; i < 20000; ++i) mean += std::sin(a * (x0 + (x - x0) * (i + 0.5) / 20000)) / 20000;
+        CHECK_NEAR(snarl::foldAveraged(a, x, x0), mean, 1e-6);
+    }
 }
 
 TEST_CASE("snarl: the same output whatever the blocks") {

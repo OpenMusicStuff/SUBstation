@@ -123,7 +123,9 @@ inline double morph(double position, double t, double dt) noexcept {
 // - Sync: a copy kSyncRange times as fast at most, restarted each cycle, faded
 //   in and out over the cycle (a Hann window: windowed sync), so the restart
 //   doesn't click and a formant rises through the sound as it turns.
-// - Fold: driven into a sine wavefolder, up to kMaxFold times.
+// - Fold: driven into a sine wavefolder, up to kMaxFold times, anti-aliased
+//   (first-order antiderivative anti-aliasing: the folder averaged over the line
+//   from the last sample to this one, half a sample late).
 // - Ring: multiplied by a sine at Ratio times its frequency.
 inline constexpr double kMaxFmIndex = 8.0;
 inline constexpr double kSyncRange = 7.0;  // Sync's copy runs 1 + 7 times as fast at 100 %
@@ -133,11 +135,22 @@ inline constexpr double kMaxFold = 8.0;
 // so both start from the oscillator as it is at 0.
 inline double growlBlend(double growl) noexcept { return std::clamp(3.0 * growl, 0.0, 1.0); }
 
-// One oscillator through the growl: `t` its phase, `dt` its step, `mod` the
-// modulator's phase (FM, Ring) at `ratio` times its frequency, `position`
-// Wave's place among the shapes.
-inline double growled(GrowlMode mode, double growl, double position, double t, double dt, double mod,
-                      double ratio) noexcept {
+// The folder sin(a x) averaged over the line from x0 to x: (cos(a x0) - cos(a x)) / (a (x - x0)), or at their
+// midpoint where they are too close for the division.
+inline double foldAveraged(double a, double x, double x0) noexcept {
+    const double d = x - x0;
+    if (std::abs(d) < 1e-6) return std::sin(a * 0.5 * (x + x0));
+    return (std::cos(a * x0) - std::cos(a * x)) / (a * d);
+}
+
+// One oscillator through the growl: `read(t, dt)` the wave at phase `t` (0..1)
+// stepping `dt` a sample (Wave's shapes, or a wavetable's frame), `t` and `dt`
+// the oscillator's, `mod` the modulator's phase (FM, Ring) at `ratio` times its
+// frequency. `foldIn` is Fold's last input (what it averages from): Fold
+// updates it; another mode leaves it, so a switch to Fold primes it first.
+template <typename Read>
+double growled(GrowlMode mode, double growl, double t, double dt, double mod, double ratio, double& foldIn,
+               Read&& read) noexcept {
     switch (mode) {
     case GrowlMode::FM: {
         double sine, cosine;
@@ -145,27 +158,81 @@ inline double growled(GrowlMode mode, double growl, double position, double t, d
         const double index = kMaxFmIndex * growl;
         // The step the bent phase takes, the carrier's and the modulation's together, for the BLEPs.
         const double step = dt * (1.0 + index * ratio * cosine);
-        return morph(position, wrap(t + index * sine / dsp::kTwoPi), std::abs(step));
+        return read(wrap(t + index * sine / dsp::kTwoPi), std::abs(step));
     }
     case GrowlMode::Sync: {
         const double speed = 1.0 + kSyncRange * growl;
         const double blend = growlBlend(growl);
         const double window = 0.5 - 0.5 * fastmath::cos(dsp::kTwoPi * t);
-        return morph(position, wrap(t * speed), dt * speed) * ((1.0 - blend) + blend * window);
+        return read(wrap(t * speed), dt * speed) * ((1.0 - blend) + blend * window);
     }
     case GrowlMode::Fold: {
-        const double x = morph(position, t, dt);
+        const double x = read(t, dt);
         const double blend = growlBlend(growl);
-        const double gain = 1.0 + (kMaxFold - 1.0) * growl;
-        return (1.0 - blend) * x + blend * fastmath::sin(0.5 * dsp::kPi * gain * x);
+        const double a = 0.5 * dsp::kPi * (1.0 + (kMaxFold - 1.0) * growl);
+        const double y = (1.0 - blend) * x + blend * foldAveraged(a, x, foldIn);
+        foldIn = x;
+        return y;
     }
     case GrowlMode::Ring: {
-        const double x = morph(position, t, dt);
+        const double x = read(t, dt);
         return x * ((1.0 - growl) + growl * fastmath::sin(dsp::kTwoPi * mod));
     }
     }
     return 0.0;
 }
+
+// The same through Wave's shapes, at `position` among them.
+inline double growled(GrowlMode mode, double growl, double position, double t, double dt, double mod, double ratio,
+                      double& foldIn) noexcept {
+    return growled(mode, growl, t, dt, mod, ratio, foldIn,
+                   [position](double at, double step) { return morph(position, at, step); });
+}
+
+// --- The dirt ----------------------------------------------------------------------------
+// Each curve takes u, the sound times half of Drive's gain (6 dB of headroom: a
+// full-scale sound bends only gently at Drive 0), and is anti-aliased as Fold is:
+// the curve averaged over the line from the last u to this one. Tube is tanh
+// (biased, its offset taken out), Hard a clip at ±1, Rectify 1 - sech 2u: a
+// full-wave rectifier (even: an octave up) rounded at 0 (2u² there) where |u|
+// would have a corner, whose harmonics alias, and saturating at 1.
+
+inline constexpr double kLn2 = 0.69314718055994531;
+
+// ln cosh x, without overflow: |x| + ln(1 + e^(-2|x|)) - ln 2.
+inline double logCosh(double x) noexcept {
+    const double a = std::abs(x);
+    return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
+}
+
+inline double dirtCurve(DirtType type, double u) noexcept {
+    switch (type) {
+    case DirtType::Tube: return std::tanh(u);
+    case DirtType::Hard: return std::clamp(u, -1.0, 1.0);
+    case DirtType::Rectify: return 1.0 - 1.0 / std::cosh(std::min(std::abs(2.0 * u), 700.0));
+    case DirtType::Crush: return u;
+    }
+    return u;
+}
+// Its antiderivative.
+inline double dirtIntegral(DirtType type, double u) noexcept {
+    switch (type) {
+    case DirtType::Tube: return logCosh(u);
+    case DirtType::Hard: return std::abs(u) <= 1.0 ? 0.5 * u * u : std::abs(u) - 0.5;
+    case DirtType::Rectify: return u - std::atan(std::tanh(u));  // (d/du atan tanh u = sech 2u)
+    case DirtType::Crush: return 0.5 * u * u;
+    }
+    return 0.5 * u * u;
+}
+// The curve averaged over the line from u0 to u (at their midpoint where they are too close for the division).
+inline double dirtAveraged(DirtType type, double u, double u0) noexcept {
+    const double d = u - u0;
+    if (std::abs(d) < 1e-6) return dirtCurve(type, 0.5 * (u + u0));
+    return (dirtIntegral(type, u) - dirtIntegral(type, u0)) / d;
+}
+
+// Drive (0..1) as a gain: x1 to x16 (+24 dB).
+inline double driveGain(double drive) noexcept { return std::exp(2.7725887 * std::clamp(drive, 0.0, 1.0)); }
 
 // --- The Vowel filter --------------------------------------------------------------------
 // Three formants per vowel (a man's voice, Peterson and Barney's averages),

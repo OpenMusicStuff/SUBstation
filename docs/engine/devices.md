@@ -465,19 +465,33 @@ sub (a sine at the note, × the amp) ──────────────�
   sine at Ratio times the oscillator, up to 8 radians, the BLEPs taking the bent phase's step; Sync reads a copy 1 + 7
   Growl times as fast, restarted each cycle under a Hann window over the cycle (windowed sync: no click at the
   restart), the window faded in over the first third of Growl; Fold drives the wave into a sine folder (up to 8x),
-  faded in the same way; Ring multiplies by a sine at Ratio, from none to all of it. Each modulator has its own phase
-  per unison oscillator. At Growl 0 every mode is the oscillator as it is.
+  faded in the same way and anti-aliased (`foldAveraged`: the folder averaged over the line from the last input,
+  first-order antiderivative anti-aliasing; each oscillator keeps its last input, set afresh where the oscillators
+  are when the mode changes or their phases restart); Ring multiplies by a sine at Ratio, from none to all of it.
+  Each modulator has its own phase per unison oscillator. The growl reads the wave through a callable
+  (`growled(..., read)`), so any source (Wave's shapes) goes through it. At Growl 0 every mode is the oscillator as
+  it is.
 - **The filter**, its frequency gliding in octaves and moved by the wobble up to 6 octaves (`kWobbleOctaves`), its
   coefficients worked out each base-rate sample: Low, two state-variable sections (damping 1.848, then 0.765 down to
-  0.055 with Resonance); Band, one (damping 1.4 down to 0.08), at unity at its peak, made up as it narrows; Vowel,
-  three band-passes at the formants of the vowel the frequency's place along 30 Hz..18 kHz picks (`formantsAt`:
-  U, O, A, E, I, gliding between them in octaves; Q 3 to 20, each at its formant's level); Comb, a feedback comb
+  0.055 with Resonance), its output times √(k / 0.765) (half the resonant peak's rise made up in the passband, so
+  Resonance doesn't drive the dirt into the ground); Band, one (damping 1.4 down to 0.08), at unity at its peak,
+  made up (1 + Resonance) as it narrows; Vowel, three band-passes at the formants of the vowel the frequency's place
+  along 30 Hz..18 kHz picks (`formantsAt`: U, O, A, E, I, gliding between them in octaves; Q 3 to 20, each at its
+  formant's level), alternately signed: two band-passes of one sign cancel between their peaks (each a quarter cycle
+  the other way there), a notch some 20 dB under the first formant that, moving with the vowel, phases the sound;
+  of opposite signs they add there; Comb, a feedback comb
   (`DelayLine`, Hermite reads) a period of the frequency long, its feedback 0.3 to 0.98 with Resonance through a
   one-pole damping, its output scaled by 1 - feedback.
 - **The amp** multiplies the filter's output (and the sub) by the envelope, before the dirt.
-- **Dirt.** Drive 0..100 % is a gain of x1 to x40 into Tube (`fastTanh` with a bias of 0.3 Drive, its offset taken
-  out), Hard (a clip at ±1), Rectify (twice the rectified `fastTanh`) or Crush (a sample held for up to 12 Drive²
-  base samples' worth, quantized to 1024 down to 4 levels a side). A DC blocker (10 Hz) follows: Rectify's DC.
+- **Dirt.** First a 4-pole Butterworth low-pass at 20 kHz (at the oversampled rate): the oscillators' ultrasonic
+  harmonics (a Comb passes them all) would otherwise come out of the curves as products past the oversampled
+  Nyquist and fold back. Then u, the sound times half of Drive's gain (`driveGain`: x1 to x16, +24 dB; the half is 6
+  dB of headroom, so a full-scale sound bends only gently at Drive 0), into Tube (2 (tanh(u + b) - tanh b), b = 0.3
+  Drive), Hard (2 × a clip at ±1), Rectify (3 (1 - sech 2u): a full-wave rectifier rounded at 0, where |u|'s corner
+  would alias) or Crush (a sample held for up to 12 Drive² base samples' worth, quantized to 1024 down to 4 levels a
+  side, twice). All but Crush are anti-aliased (`dirtAveraged`: the curve averaged over the line from the last u,
+  from its antiderivative: ln cosh, the clip's, u - atan(tanh u)); the last u is each channel's, the same for a
+  crossfade's two curves. A DC blocker (10 Hz) follows: Rectify's DC.
 - **Split** is two Butterworth state-variable high-passes (24 dB), then **Squash** is Over The Top's `ott::Squash`
   (OttDesign.h) at the oversampled rate, linked stereo, Squash its depth. Over The Top brings a hot sound down
   towards its thresholds, some 22 dB on a driven bass at full depth, so Squash makes up `kSquashMakeupDb` (21 dB)
@@ -3317,7 +3331,10 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   latency by the rate and its pitch at 44.1 to 192 kHz; the wobble following the song (its phase and period) or
   restarted by a note, moving the pitch, the filter (the highs it lets through, the `filter` display six octaves up)
   and the growl; every growl mode, filter and dirt finite and bounded; each growl mode its own sound, all the
-  oscillator at Growl 0, FM's sidebands; the same output for any blocks; a list's change crossfading without a
+  oscillator at Growl 0, FM's sidebands; the Vowel filter's formants adding between their peaks (no notch); folding
+  and hard driving aliasing little (the energy between a held note's harmonics, 500 Hz to 18 kHz, through a
+  Blackman-Harris window), and each dirt clean at Drive 0; the dirt's and the folder's anti-aliasing against
+  numerical integrals of their curves; the same output for any blocks; a list's change crossfading without a
   click; random automation of everything finite and bounded; its displays (the scope's cycles 64 values each, the
   level the output's peak); the design's shapes (no DC), vowels and wobbles; through the engine.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
