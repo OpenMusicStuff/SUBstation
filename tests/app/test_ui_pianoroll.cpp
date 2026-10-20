@@ -1170,6 +1170,21 @@ private Q_SLOTS:
         QVERIFY(!clipNotes().empty());
         for (const Note& n : clipNotes())
             QVERIFY2(std::abs(n.start - 0.25) < 1e-9 || std::abs(n.start - 0.75) < 1e-9, qPrintable(QString::number(n.start)));
+        undo().undo();
+
+        // Legato 16ths swung: a late one ends where the next on its key starts (no overlap left).
+        session().editor()->setClipNotes(ref, {note(60, 0.0, 0.25), note(60, 0.25, 0.25), note(60, 0.5, 0.25),
+                                               note(60, 0.75, 0.25)},
+                                         QStringLiteral("setup"));
+        roll()->setSelection({});
+        roll()->setGrooveQuantize(0.0);
+        roll()->setGrooveSwing(75.0);
+        roll()->applyGroove(QStringLiteral("swing"));
+        const std::vector<Note> legato = sortedBy(clipNotes());
+        QCOMPARE(legato.size(), size_t(4));
+        QVERIFY(std::abs(legato[1].start - 0.375) < 1e-9);
+        for (size_t i = 0; i + 1 < legato.size(); ++i)
+            QVERIFY2(legato[i].end() <= legato[i + 1].start + 1e-9, qPrintable(QString::number(i)));
     }
 };
 

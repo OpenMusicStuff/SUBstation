@@ -485,24 +485,34 @@ void PianoRoll::applyGroove(const QString& choice) {
     }
     const groove::Amounts amounts{grooveTiming_ / 100.0, grooveVelocity_ / 100.0, grooveRandom_ / 100.0,
                                   grooveQuantize_ / 100.0, 0.0, rng_.generate()};
-    const double origin = origin_;  // roll beats to the timeline's: the groove's cycle is the song's
     const app::Tempo& tempo = p->tempoMap();
-    applyOnRoll(
-        toolTargets(),
-        [&](const std::vector<Note>& notes) {
-            // Note for note, in order (each clip resolves overlaps as its notes go back into it).
-            std::vector<Note> placed;
-            placed.reserve(notes.size());
-            for (Note n : notes) {
-                n.start += origin;
-                const std::vector<Note> one = notes::grooved({n}, *plays, amounts, tempo);
-                if (!one.empty()) n = one.front();
-                n.start = std::max(0.0, n.start - origin);
-                placed.push_back(n);
-            }
-            return placed;
-        },
-        QStringLiteral("Apply Groove"));
+    // Clip by clip, its notes grooved together on the timeline (the groove's cycle is the song's), untangled
+    // as a MIDI clip's groove plays them: a note grooved into the next on its key ends where that one starts.
+    const std::vector<ClipNote> targets = toolTargets();
+    std::map<int, std::vector<Note>> changes;
+    std::vector<ClipNote> placed;  // (selected afterwards, if they were)
+    for (const int index : roll::clipsOf(targets)) {
+        const app::Clip* c = clipAt(index);
+        if (!c) continue;
+        const double toTimeline = shift(index) + origin_;  // the clip's content beats to the timeline's
+        std::vector<Note> removed, onTimeline;
+        for (const ClipNote& target : targets) {
+            if (target.clip != index) continue;
+            removed.push_back(target.note);
+            Note note = target.note;
+            note.start += toTimeline;
+            onTimeline.push_back(note);
+        }
+        std::vector<Note> added = notes::grooved(onTimeline, *plays, amounts, tempo);
+        for (Note& note : added) {
+            note.start = std::max(0.0, note.start - toTimeline);
+            placed.push_back({index, note});
+        }
+        changes[index] = notes::place(c->notes, removed, added);
+    }
+    if (changes.empty()) return;
+    commitNotes(changes, QStringLiteral("Apply Groove"), {},
+                selected_.empty() ? std::vector<ClipNote>() : placed);
 }
 
 void PianoRoll::setGrooveSwing(double percent) {

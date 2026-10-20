@@ -380,12 +380,14 @@ velocities to their own (nothing changes if the model can't be loaded: the statu
 the roll's properties: `quantizeGrid`, `quantizeAmount`, `humanizeVelocityAmount` (how far velocities move toward the
 model's), `humanizeTimingAmount` (at 100 %, notes move by up to `humanizeBeats`, a 32nd note).
 
-`applyGroove(choice)` (Apply Groove) is a tool too ("Apply Groove", through `applyOnRoll()`): `choice` is "swing"
+`applyGroove(choice)` (Apply Groove) is a tool too ("Apply Groove", one undo step): `choice` is "swing"
 (`groove::swing(grooveSwing)`, on 16ths), "project" (the default groove; without one the roll's `statusMessage` says
 so, which the clip view passes on, and nothing changes) or a library groove's id; "" is the last one applied
 (`grooveChoice`, "swing" at first: Ctrl+Shift+U). The notes are placed on the timeline (roll beats plus `origin_`), so
 the groove's cycle counts from the song's start whatever clip they are in, by `notes::grooved` at the menu's amounts
-and a new Random seed each time (from the roll's generator).
+and a new Random seed each time (from the roll's generator). Each clip's notes are grooved together, so they are
+untangled as the clip's groove would play them (a note grooved into the next on its key ends where that one starts),
+and go back in with `notes::place`.
 
 ### Bends, vibrato and slides
 

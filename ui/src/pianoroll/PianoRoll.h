@@ -320,9 +320,10 @@ public:
     // Humanize › Timing's random numbers start over from `seed` (for tests).
     Q_INVOKABLE void seedRandom(quint32 seed) { rng_.seed(seed); }
     // Apply Groove (notes::grooved, on the timeline: the groove's cycle counts from the song's
-    // start): "swing", "project" (the project's default groove) or a library groove's id; "": the
-    // last one (Ctrl+Shift+U). Random's seed is new each time. Nothing (the status line says why) if
-    // there is no such groove.
+    // start; each clip's notes together, untangled as its groove would play them): "swing",
+    // "project" (the project's default groove) or a library groove's id; "": the last one
+    // (Ctrl+Shift+U). Random's seed is new each time. Nothing (the status line says why) if there
+    // is no such groove.
     Q_INVOKABLE void applyGroove(const QString& choice = {});
 
     static QStringList quantizeGrids();
