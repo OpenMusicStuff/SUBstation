@@ -9,6 +9,7 @@
 #include <QFileInfo>
 
 #include "audio/BridgePrivate.h"
+#include "audio/SampleSlices.h"
 #include "model/Paths.h"
 
 namespace sub::app {
@@ -18,6 +19,25 @@ std::shared_ptr<const sub::AudioSource> EngineBridge::source(const QString& path
 }
 
 Waveform EngineBridge::waveform(const QString& path) const { return Waveform(source(path)); }
+
+std::vector<std::pair<double, float>> EngineBridge::transients(const QString& path) const {
+    const QString key = pathIdentity(path);
+    const std::shared_ptr<const sub::AudioSource> decoded = d_->sources.value(key);
+    if (!decoded) return {};
+    if (const auto known = d_->transients.constFind(key);
+        known != d_->transients.constEnd() && known->from.lock() == decoded) {
+        return known->found;
+    }
+    const Waveform file(decoded);
+    if (file.isNull() || file.frames() <= 0) return {};
+    std::vector<std::pair<double, float>> found;
+    for (const sampleSlices::Transient& transient : sampleSlices::transients(file, false)) {
+        if (transient.strength >= sampleSlices::kMarkStrength) {
+            found.emplace_back(static_cast<double>(transient.frame) / file.sampleRate(), transient.strength);
+        }
+    }
+    return d_->transients.insert(key, {decoded, std::move(found)})->found;
+}
 
 bool EngineBridge::isLoading(const QString& path) const { return d_->loading.contains(pathIdentity(path)); }
 

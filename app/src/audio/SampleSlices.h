@@ -20,6 +20,9 @@ struct Transient {
     float strength = 0.f;
 };
 
+// The transients Mark Transients marks (and audio clips' grooves move): at least this strong.
+inline constexpr float kMarkStrength = 0.25f;
+
 // The sample's transients, played forwards or `reversed`. Reads the whole
 // sample: worth keeping.
 std::vector<Transient> transients(const Waveform& waveform, bool reversed);

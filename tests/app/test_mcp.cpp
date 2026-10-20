@@ -31,6 +31,9 @@
 #include <QTest>
 #include <QUndoCommand>
 
+#include <cmath>
+#include <vector>
+
 using namespace sub::app;
 using test::SessionFixture;
 namespace mcp = sub::app::mcp;
@@ -1198,6 +1201,65 @@ private Q_SLOTS:
     }
 
     // --- Edits of notes, automation, tracks and devices ----------------------------------------
+
+    void editNotesInAGroove() {
+        SessionFixture f;
+        mcp::Protocol& protocol = f.s().mcp()->protocol();
+        AgentHistory& history = *f.s().agentChanges();
+        const QString drums = f.editor().addMidiTrack(-1, QStringLiteral("Drums"), QStringLiteral("synth"));
+        const auto clip = f.editor().addMidiClip(drums, 0, 4);
+        QVERIFY(clip);
+        f.editor().setClipNotes(*clip, {{42, 0, 0.2, 100}, {42, 0.25, 0.2, 100}, {42, 0.5, 0.2, 100}, {42, 0.75, 0.2, 100}},
+                                QStringLiteral("Notes"));
+        const auto groove = [&](const QJsonObject& op) {
+            QJsonObject all = op;
+            all.insert(QStringLiteral("type"), QStringLiteral("groove"));
+            return call(protocol, QStringLiteral("edit_notes"),
+                        {{QStringLiteral("track_id"), drums}, {QStringLiteral("operations"), QJsonArray{all}}});
+        };
+        const auto starts = [&] {
+            std::vector<double> out;
+            for (const Note& note : f.project().clip(drums, clip->clipId).notes) out.push_back(note.start);
+            return out;
+        };
+
+        // Swing at 75 %: every other 16th half a 16th late.
+        QVERIFY(!groove({{QStringLiteral("groove"), QStringLiteral("swing")}, {QStringLiteral("swing"), 75}})
+                     .value(QStringLiteral("isError")).toBool());
+        QCOMPARE(starts(), (std::vector<double>{0.0, 0.375, 0.5, 0.875}));
+        QVERIFY(history.changes().back().text.contains(QStringLiteral("groove (swing 75")));
+        QVERIFY(history.rewindAll().isEmpty());
+
+        // A groove of the project's, by name; half its timing.
+        f.editor().addBuiltinGroove(QStringLiteral("builtin:shuffle-16t"));
+        QVERIFY(!groove({{QStringLiteral("groove"), QStringLiteral("triplet shuffle 16")}, {QStringLiteral("timing"), 0.5}})
+                     .value(QStringLiteral("isError")).toBool());
+        QVERIFY(std::abs(starts()[1] - (0.25 + 0.25 / 6)) < 1e-9);
+        QVERIFY(history.rewindAll().isEmpty());
+
+        // Random from its seed, any 32-bit one: the same seed, the same nudges; another, others.
+        const auto randomly = [&](double seed) {
+            groove({{QStringLiteral("groove"), QStringLiteral("swing")}, {QStringLiteral("swing"), 50},
+                    {QStringLiteral("random"), 1.0}, {QStringLiteral("seed"), seed}});
+            const std::vector<double> moved = starts();
+            history.rewindAll();
+            return moved;
+        };
+        const std::vector<double> big = randomly(4000000000.0);
+        QVERIFY(big != (std::vector<double>{0.0, 0.25, 0.5, 0.75}));
+        QCOMPARE(randomly(4000000000.0), big);
+        QVERIFY(randomly(0.0) != big);
+
+        // Wrong: no such groove (the library's named), no default, swing out of range.
+        const QJsonObject unknown = groove({{QStringLiteral("groove"), QStringLiteral("Bouncy")}});
+        QVERIFY(unknown.value(QStringLiteral("isError")).toBool());
+        QVERIFY(unknown.value(QStringLiteral("content")).toArray()[0].toObject().value(QStringLiteral("text")).toString()
+                    .contains(QStringLiteral("Triplet Shuffle 16")));
+        QVERIFY(groove({{QStringLiteral("groove"), QStringLiteral("project")}}).value(QStringLiteral("isError")).toBool());
+        QVERIFY(groove({{QStringLiteral("groove"), QStringLiteral("swing")}, {QStringLiteral("swing"), 90}})
+                    .value(QStringLiteral("isError")).toBool());
+        QCOMPARE(starts(), (std::vector<double>{0.0, 0.25, 0.5, 0.75}));
+    }
 
     void editNotesWhereTheyAre() {
         SessionFixture f;

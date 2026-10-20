@@ -343,4 +343,29 @@ void ArrangeTracksCommand::redo() { project_->arrangeTracks(new_); }
 
 void ArrangeTracksCommand::undo() { project_->arrangeTracks(old_); }
 
+SetGroovesCommand::SetGroovesCommand(Project* project, GroovesState before, GroovesState after, const QString& text,
+                                     QString grooveId, QString mergeKey)
+    : MergeableCommand(project, text, std::move(grooveId), std::move(before), std::move(after), std::move(mergeKey)) {}
+
+void SetGroovesCommand::redo() { apply(new_); }
+void SetGroovesCommand::undo() { apply(old_); }
+
+void SetGroovesCommand::apply(const GroovesState& state) {
+    project_->setGrooves(state.library);
+    for (auto it = state.clips.constBegin(); it != state.clips.constEnd(); ++it) project_->setClips(it.key(), it.value());
+    for (auto it = state.takes.constBegin(); it != state.takes.constEnd(); ++it) project_->setTakeLanes(it.key(), it.value());
+    for (auto it = state.devices.constBegin(); it != state.devices.constEnd(); ++it) {
+        project_->setDeviceState(it.key().first, it.key().second, it.value());
+    }
+    if (state.defaultGroove) project_->setDefaultGroove(*state.defaultGroove);
+}
+
+SetDefaultGrooveCommand::SetDefaultGrooveCommand(Project* project, std::optional<GrooveSource> before,
+                                                 std::optional<GrooveSource> after, QString mergeKey)
+    : MergeableCommand(project, QStringLiteral("Change Default Groove"), 0, std::move(before), std::move(after),
+                       std::move(mergeKey)) {}
+
+void SetDefaultGrooveCommand::redo() { project_->setDefaultGroove(new_); }
+void SetDefaultGrooveCommand::undo() { project_->setDefaultGroove(old_); }
+
 }  // namespace sub::app

@@ -78,6 +78,7 @@
 #include "model/Automation.h"
 #include "model/Clip.h"
 #include "model/Device.h"
+#include "model/GrooveTypes.h"
 #include "model/Keys.h"
 #include "model/OrderedMap.h"
 #include "model/Routing.h"
@@ -153,6 +154,8 @@ struct ProjectContents {
     QSet<QString> foldedDevices;
     QSet<QString> shownChainLists;
     QSet<QString> hiddenRackDevices;
+    std::vector<LibraryGroove> grooves;
+    std::optional<GrooveSource> defaultGroove;
     QString path;  // the file it was opened from ("": none)
 };
 
@@ -212,6 +215,15 @@ public:
     SettingsValue setting(SettingsField field) const;
     // The file it was saved to or opened from ("": none yet).
     QString path() const { return path_; }
+
+    // --- Grooves (Grooves.h) ---
+    // The project's groove library, in order: grooves the Groove device, clips and Apply Groove play
+    // (by id: edit one, and everything playing it follows).
+    const std::vector<LibraryGroove>& grooves() const { return grooves_; }
+    const LibraryGroove* findGroove(const QString& grooveId) const;
+    // The project's default groove (the Edit menu's, the transport's Swing): what the Groove device's
+    // Project source and Follow Groove play; none: straight. (Never Project itself.)
+    const std::optional<GrooveSource>& defaultGroove() const { return defaultGroove_; }
 
     // --- Queries ---
     const Track& master() const { return master_; }
@@ -397,6 +409,9 @@ public:
     void setChainListShown(const QString& trackId, const QString& rackId, bool shown);
     void setRackDevicesShown(const QString& trackId, const QString& rackId, bool shown);
     void updateSettings(const SettingsValues& values);
+    // The groove library, all of it (groovesChanged), and the default groove (defaultGrooveChanged).
+    void setGrooves(std::vector<LibraryGroove> grooves);
+    void setDefaultGroove(const std::optional<GrooveSource>& source);
     // Replace an envelope; an empty one removes the target's automation.
     void setEnvelope(const QString& owner, const QString& key, const Envelope& points);
     void setAutomationView(const QString& owner, const AutomationView& view);
@@ -434,6 +449,10 @@ Q_SIGNALS:
     void freezeChanged(const QString& trackId);
     // Tempo, time signature, key, loop, automation lock (after reset too).
     void settingsChanged();
+    // The groove library: a groove added, removed, renamed or edited (after reset too).
+    void groovesChanged();
+    // The default groove (after reset too).
+    void defaultGrooveChanged();
     // An envelope was set or removed (owner: a track id or kMaster).
     void automationChanged(const QString& owner, const QString& key);
     // What an owner's automation shows.
@@ -478,6 +497,8 @@ private:
     QSet<QString> foldedDevices_;
     QSet<QString> shownChainLists_;
     QSet<QString> hiddenRackDevices_;
+    std::vector<LibraryGroove> grooves_;
+    std::optional<GrooveSource> defaultGroove_;
     QString path_;
 };
 
