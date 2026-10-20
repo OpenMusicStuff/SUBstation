@@ -504,7 +504,9 @@ struct Shifter::Impl {
             const double t1 = periodOf(here.out + v.offset);
             const At mid = at(s + 0.5 * t1);
             double t2 = mid.voiced ? periodOf(mid.out + v.offset) : unvoicedPeriod;  // (as the analysis marks step)
-            if (controls.smear > 0.0) t2 *= 1.0 + controls.smear * kSmearJitter * (2.0 * v.random.next() - 1.0);
+            // (moved in proportion, up or down alike: the pitch it averages to is the voice's)
+            if (controls.smear > 0.0)
+                t2 *= std::exp2(controls.smear * std::log2(1.0 + kSmearJitter) * (2.0 * v.random.next() - 1.0));
             next = s + t2;
             stepVoiced = mid.voiced ? 1 : 0;
             exact = exact && mid.exact;
@@ -908,8 +910,13 @@ constexpr std::array<DriveShape, 11> kDriveShapes = {{
 }};
 // Above 6 LAB's drive compresses: the gain before the clipper is 1 / (1 + kappa (rms - kCompressFrom)) of an input
 // at `rms` (RMS), kappa rising as kCompressMost ((drive - 6) / 4)^1.5.
-constexpr double kCompressFrom = 0.05;
-constexpr double kCompressMost = 7.8;
+// LAB's wet path's colour, fitted to noise through it at Drive 0 (within 0.6 dB RMS from 25 Hz to 22 kHz): a
+// first-order high-pass at 22 Hz, a shelf of +1.6 dB from 5.3 kHz, and a low-pass at 22 kHz, as RBJ's at 48 kHz.
+constexpr double kColourHighPassHz = 22.2;
+constexpr double kColourShelfHz = 5277.0, kColourShelfQ = 0.83, kColourShelfDb = 1.6;
+constexpr double kColourTopHz = 22022.0, kColourTopQ = 0.30;
+constexpr double kCompressFrom = 0.07;
+constexpr double kCompressMost = 5.0;
 constexpr double kCompressAttackMs = 30.0, kCompressReleaseMs = 200.0;
 
 double clip(double u, double h) noexcept {
@@ -965,6 +972,9 @@ void Drive::prepare(double sampleRate, int maxBlock) {
     }
     latency_ = dsp::Oversampler::latencyFor(1);
     for (auto& d : delays_) d.prepare(maxBlock + latency_ + 4);
+    highPass_ = dsp::onePoleCutoff(kColourHighPassHz, sampleRate);
+    shelf_ = dsp::BiquadCoefficients::highShelf(kColourShelfHz, kColourShelfQ, kColourShelfDb, sampleRate);
+    top_ = dsp::BiquadCoefficients::lowpass(kColourTopHz, kColourTopQ, sampleRate);
     attack_ = std::exp(-1.0 / (kCompressAttackMs * 0.001 * 2.0 * sampleRate));
     release_ = std::exp(-1.0 / (kCompressReleaseMs * 0.001 * 2.0 * sampleRate));
     reset();
@@ -974,6 +984,9 @@ void Drive::reset() noexcept {
     for (auto& o : oversamplers_) o.reset();
     for (auto& d : delays_) d.reset();
     for (auto& d : dc_) d.reset();
+    for (auto& b : shelves_) b.reset();
+    for (auto& b : tops_) b.reset();
+    for (auto& l : lows_) l.reset();
     power_ = {};
 }
 
@@ -992,6 +1005,18 @@ void Drive::process(float* const* channels, int numChannels, int numFrames) noex
         dsp::Oversampler& os = oversamplers_[static_cast<size_t>(c)];
         // The oversampling runs at 0 too (its output unused), so turning the drive up starts it with its history.
         for (int i = 0; i < numFrames; ++i) delay.push(io[i]);
+        // LAB's colour (before the clipper: nearer LAB at high drives than after it), in as the drive comes up
+        // from 0 to 1, kept running at 0 so it starts with its history
+        dsp::Biquad& shelf = shelves_[static_cast<size_t>(c)];
+        dsp::Biquad& top = tops_[static_cast<size_t>(c)];
+        dsp::OnePole& low = lows_[static_cast<size_t>(c)];
+        for (int i = 0; i < numFrames; ++i) {
+            const float x = io[i];
+            const float coloured = top.process(top_, shelf.process(shelf_, low.highpass(x, highPass_)));
+            const double d = before + (active_ - before) * (static_cast<double>(i + 1) / numFrames);
+            const float share = static_cast<float>(std::min(1.0, d));
+            io[i] = x + share * (coloured - x);
+        }
         float* up = os.up(io, numFrames);
         double& power = power_[static_cast<size_t>(c)];
         dsp::DcBlocker& dc = dc_[static_cast<size_t>(c)];

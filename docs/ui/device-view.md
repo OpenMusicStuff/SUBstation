@@ -47,6 +47,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Chorus-Ensemble: [ChorusEditor.qml](../../ui/qml/devices/editors/ChorusEditor.qml), [ChorusGraph](../../ui/src/devices/ChorusGraph.h), the application layer's [ChorusVoices.h](../../app/src/audio/ChorusVoices.h) | |
 | Phaser-Flanger: [PhaserEditor.qml](../../ui/qml/devices/editors/PhaserEditor.qml), [PhaserGraph](../../ui/src/devices/PhaserGraph.h), [DisplayPlayback.h](../../ui/src/devices/DisplayPlayback.h) (display values played back at the audio's pace, for any editor), the application layer's [PhaserResponse.h](../../app/src/audio/PhaserResponse.h) | |
 | Reverb: [ReverbEditor.qml](../../ui/qml/devices/editors/ReverbEditor.qml), [ReverbFilterPad](../../ui/src/devices/ReverbFilterPad.h), [ReverbSpinPad](../../ui/src/devices/ReverbSpinPad.h), [ReverbDecayGraph](../../ui/src/devices/ReverbDecayGraph.h), the application layer's [ReverbResponse.h](../../app/src/audio/ReverbResponse.h) | |
+| Changeling: [ChangelingEditor.qml](../../ui/qml/devices/editors/ChangelingEditor.qml), [ChangelingScope](../../ui/src/devices/ChangelingScope.h) | |
 | Disperser: [DisperserEditor.qml](../../ui/qml/devices/editors/DisperserEditor.qml), [DispersionGraph](../../ui/src/devices/DispersionGraph.h) | |
 | EQ: [EqEditor.qml](../../ui/qml/devices/editors/EqEditor.qml), [EqWindow.qml](../../ui/qml/devices/editors/EqWindow.qml), [EqWindows.qml](../../ui/qml/devices/editors/EqWindows.qml), [EqBandPanel.qml](../../ui/qml/devices/editors/EqBandPanel.qml), [EqCorner.qml](../../ui/qml/devices/editors/EqCorner.qml), [EqGraphMenus.qml](../../ui/qml/devices/editors/EqGraphMenus.qml), [EqGraph](../../ui/src/devices/EqGraph.h), [EqView](../../ui/src/devices/EqView.h), [EqTypeIcon](../../ui/src/devices/EqTypeIcon.h) | |
 | GigaTune: [GigaTuneEditor.qml](../../ui/qml/devices/editors/GigaTuneEditor.qml), [GigaTuneMeter](../../ui/src/devices/GigaTuneMeter.h), the application layer's [GigaTuneScale.h](../../app/src/audio/GigaTuneScale.h) | |
@@ -383,6 +384,7 @@ device's kind (its engine id):
 ```js
 readonly property var editors: ({
     "amp": "AmpEditor.qml",
+    "changeling": "ChangelingEditor.qml",
     "chorus": "ChorusEditor.qml",
     "compressor": "CompressorEditor.qml",
     "delay": "DelayEditor.qml",
@@ -1308,6 +1310,8 @@ The editors:
     and fade (τ 250 ms); the in-tune band's glow eases (τ 120 ms); while no voice is heard everything but the scale
     fades out (τ 220 ms; back in τ 60 ms), the name dimming to the last note heard. It repaints only while
     something moves.
+- **Changeling** ([ChangelingEditor.qml](../../ui/qml/devices/editors/ChangelingEditor.qml)): two pages (`pages`, `pageNames` Shift and Mutate, named in the title bar). Along the top of both the three modes (`ParamButton`s over Mode, a `choice` each), Quantize's Key and Scale drop-downs (as GigaTune's: Song's named with the song's key once known; dimmed and disabled but in Quantize) and at the right the qualities Live, Studio and HQ (`ParamButton`s over Quality). Down the left of both its display ([ChangelingScope](../../ui/src/devices/ChangelingScope.h), 220 px). Shift: Pitch and Formant as large `EditorKnob`s (44 px) with Link (a `ParamButton` switch) between them, and Glide, Drive, Mix and Output in a grid beside them; Mutate: Harmonics, Twin and Interval over Detune, Width and Smear.
+  - The display: the last 3 s scrolling right to left (as the Vocal Rider's graph: rings by absolute index, a steady lag behind the newest value, columns of whole buckets) on a pitch axis, a line a semitone where there is room (4 px or more), the C's brighter and named; the pitch heard (`pitch`) as a dim line and the pitch out (`out`) as the accent's, glowing, both broken where unvoiced; where Quantize or Robot holds the voice (`note`), that note as a faint band a semitone wide; in the top right corner the note out now and its cents. The axis eases (τ 350 ms) to take in the history shown with 2.5 semitones either side, `kLeastSpan` (19) at the least, and stays put while nothing is heard; nothing for `kSilentSeconds` (250 ms) counts as no voice.
 - **Vocoder** ([VocoderEditor.qml](../../ui/qml/devices/editors/VocoderEditor.qml)), laid out as Ableton's: down the
   left the Carrier drop-down and, under it, the chosen carrier's own settings (Noise: Rate and Crackle; Pitch
   Tracking: the wave, Pitch, and Low and High boxes; External and Modulator: a line on what they take), Enhance at

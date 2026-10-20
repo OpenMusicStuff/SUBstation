@@ -35,6 +35,7 @@ QtObject {
         "arpeggiator": "ArpeggiatorEditor.qml",
         "auto_filter": "AutoFilterEditor.qml",
         "bitcrusher": "BitcrusherEditor.qml",
+        "changeling": "ChangelingEditor.qml",
         "chorus": "ChorusEditor.qml",
         "compressor": "CompressorEditor.qml",
         "delay": "DelayEditor.qml",

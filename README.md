@@ -108,7 +108,9 @@ Claude Code can read and edit your song while you watch.
 - **Time and modulation**: Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Vintage Hall,
   Disperser.
 - **Pitch**: GigaTune (pitch correction for a voice: a key's notes, retune speed, pitch and
-  formant shifts), Hue.
+  formant shifts), Changeling (a voice's pitch and formants shifted, quantized or held on a note,
+  Little AlterBoy's controls and drive with Manipulator's harmonic shift, twin, detune, width and
+  smear), Hue.
 - **Voice**: Vocoder (as Ableton's: Noise, External, Modulator and Pitch Tracking carriers, 4 to 40
   bands, Precise or Retro, Formant, Enhance, Unvoiced), Vocal Rider (rides a vocal's level to a target,
   holding between phrases, following the music on its sidechain).

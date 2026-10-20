@@ -38,10 +38,11 @@
 // rest; High Quality, GigaTune's (SwiftF0, about 277 ms).
 //
 // The drive (Drive below), Little AlterBoy's, measured with noise (which LAB passes without grains) and fitted:
-// a pre-gain, an asymmetric clipper of variable hardness and a post-gain at each of LAB's Drive settings 0..10,
-// and above 6 a gain before the clipper that falls as the input's level rises (LAB's drive compresses there); the
-// small-signal gain rises 1.69 dB a step. Run at twice the rate. At 0 it isn't there at all (LAB's colours even
-// then, and is 2.4 dB quieter: Changeling at 0 is the input exactly).
+// LAB's wet path's colour (a high-pass at 22 Hz, +1.6 dB from 5.3 kHz), then at each of LAB's Drive settings 0..10
+// a pre-gain, an asymmetric clipper of variable hardness and a post-gain, and above 6 a gain before the clipper that
+// falls as the input's level rises (LAB's drive compresses there); the small-signal gain rises 1.69 dB a step. Run
+// at twice the rate; within 7 to 16 % (RMS) of LAB's output at every setting and level. At 0 it isn't there at all
+// (LAB colours even then, and is 2.4 dB quieter: Changeling at 0 is the input exactly); from 0 to 1 it fades in.
 
 #include <array>
 #include <cstdint>
@@ -161,6 +162,12 @@ private:
     std::array<dsp::Oversampler, kMaxChannels> oversamplers_;
     std::array<dsp::DelayLine, kMaxChannels> delays_;
     std::array<dsp::DcBlocker, kMaxChannels> dc_;
+    // LAB's wet path's colour (fitted from noise through it at Drive 0): a first-order high-pass, a high shelf and a
+    // gentle low-pass, faded in with the drive from 0 to 1.
+    dsp::BiquadCoefficients shelf_, top_;
+    float highPass_ = 0.f;
+    std::array<dsp::Biquad, kMaxChannels> shelves_, tops_;
+    std::array<dsp::OnePole, kMaxChannels> lows_;
     std::array<double, kMaxChannels> power_{};  // the input's mean square, followed
     double attack_ = 0.0, release_ = 0.0;
     int latency_ = 0;

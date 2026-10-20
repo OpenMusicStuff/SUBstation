@@ -41,6 +41,8 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/GigaTune.cpp](../../engine/src/builtin/devices/GigaTune.cpp) | GigaTune: pitch correction for a single voice. Key and Scale (Song: `keyTonic` and `keyMinor`; chromatic without a song key), Retune Speed, Strength, Pitch (whole semitones) and Formant, on `gigatune::Corrector`; its latency fixed for the rate; its editor's displays `pitch`, `corrected` and `note` (a value per 256 samples out, of what plays: `Corrector::heard()`, the frame at that sample's input time) |
 | [builtin/GigaTuneDesign.h](../../engine/src/builtin/GigaTuneDesign.h) / [.cpp](../../engine/src/builtin/GigaTuneDesign.cpp) | GigaTune's tracker and corrector, with no fastpitch in the header (its SIMD follows the compiler's flags: only the .cpp, built with the engine's, includes it). `PitchTracker`: fastpitch's YIN stage and observation model a frame at a time (32 ms frames every 2.67 ms, C2 to C7), a Viterbi decoder of its own over pYIN's HMM (librosa's transitions and tie rule) deciding each frame `kLag` frames later (0: as it comes; a longer lag traces back), and with the whole signal (`flush()`) librosa's path; each decided pitch refined by the difference function's minimum between whole lags (a windowed sinc between them, Brent's method) on the input low-passed to 8 kHz, the window ending at the newest input where a low voice's reaches past it. `offlinePyin()`: fastpitch's offline analysis, for tests. `Corrector`: targets with hysteresis (`targetNote()`, `scaleNotes()`), the correction followed by a one-pole, TD-PSOLA with analysis marks a period apart (moved onto the pulse at each voiced start, the grains' centres following it), synthesis marks an output period apart, grains spanning the analysis marks either side, divided by the windows' sum where it passes 1 (bit-exact at a ratio of 1), Formant reading voiced grains faster or slower (windowed-sinc reads, low-passed when faster). Grains are played a sample at a time, reading the input as they need it; the marks are placed as the grains need them, past the frames decided from the last one's pitch (provisional: placed again with each frame until a grain takes them; a grain takes its own when it starts and those after it when the output reaches its centre), and where a grain's read would pass the input in, an earlier period's grain plays. Low Latency's latency is MAutoPitch's (`kLowLatencySeconds`, 1024 samples at 48 kHz): a grain planned before a frame made it wider has its rising half squeezed (`lateSamples()`); High Quality's bound is worked out from the longest period and grain the settings allow, every mark settled |
 | [builtin/SwiftF0.h](../../engine/src/builtin/SwiftF0.h) / [.cpp](../../engine/src/builtin/SwiftF0.cpp) | SwiftF0 (a small neural pitch tracker) run by the engine itself, a frame at a time, for GigaTune's High Quality: the host rate resampled to 16 kHz (a Kaiser-windowed sinc), three log-magnitude spectra every 256 samples (512, 1024 and 2048 points, KFR's FFT, 128-band filterbanks), its eighteen convolutions run column by column (each a frame late where it sees time, so a frame is final 176 ms after its centre), the pitch from the best of 95 classes and its neighbours, the confidence from a sigmoid, silence gated; `Detector` (streamed) and `analyse16k()` (a whole signal, for tests) |
+| [builtin/devices/Changeling.cpp](../../engine/src/builtin/devices/Changeling.cpp) | Changeling: a pitch and formant shifter for a single voice, Little AlterBoy's controls and Polyverse Manipulator's (see [Changeling](#changeling-builtinchangeling-audioeffect-with-a-midi-input)): Mode, Pitch, Formant, Link, Glide, Key and Scale (`gigatune::scaleNotes()`), Drive, Mix (the dry signal delayed by the latency), Output, Harmonics, Twin, Interval, Detune, Width, Smear and Quality on `changeling::Shifter` and `changeling::Drive`; MIDI notes (`acceptsMidi()`) handed to the shifter at their offsets; its latency the Quality's and the drive's; its editor's displays `pitch`, `out` and `note` (a value per 256 samples out, `Shifter::heard()`) |
+| [builtin/ChangelingDesign.h](../../engine/src/builtin/ChangelingDesign.h) / [.cpp](../../engine/src/builtin/ChangelingDesign.cpp) | Changeling's maths. `Shifter`: GigaTune's tracker (two: lag 0 for Live and High Quality, `kStudioLag` for Studio, both rescuing short notes, `PitchTracker::setRescue()`) and GigaTune's corrector's marks and grains in four voices (each channel's main voice and its twin), sharing the analysis marks, each with synthesis marks and grains of its own (a twin runs while Twin is up, starting from its main voice's marks); the output pitch per frame by Mode (Quantize: `gigatune::targetNote()`), MIDI (the note held at the frame's input time) and two glides; Formant and Link as each grain's read speed; Harmonics as a rotation of each voiced grain's analytic signal (the input's `Quadrature` pair); Detune and the twin's interval as the voices' pitch offsets, Width as gains on alternate grains, Smear as earlier grains and jittered marks. `Drive`: LAB's colour, its fitted curve at each of 0..10 and the compression past 6, at twice the rate (`dsp::Oversampler`); 0 a plain delay. `Quadrature`: an allpass pair 90 degrees apart (within 0.2 from 30 Hz to 20 kHz at 48 kHz) |
 | [builtin/SwiftF0Data.h](../../engine/src/builtin/SwiftF0Data.h) | SwiftF0's weights (its filterbanks, convolutions and pitch classes), written from the model by [make_data.py](../../engine/third_party/swift-f0/make_data.py) |
 | [third_party/swift-f0](../../engine/third_party/swift-f0) | swift-f0 0.3.0 (MIT): its model.onnx and licence, unmodified, and the script that writes SwiftF0Data.h ([VERSION.txt](../../engine/third_party/swift-f0/VERSION.txt)) |
 | [third_party/fastpitch](../../engine/third_party/fastpitch) | fastpitch 1.0.0 (MIT), vendored unmodified ([VERSION.txt](../../engine/third_party/fastpitch/VERSION.txt)): a header-only pYIN that matches librosa.pyin frame for frame |
@@ -2584,6 +2586,91 @@ A slow gain that rides a vocal to a target level, as an engineer riding a fader 
 - **Displays**, one value per 256 samples: `level` (the vocal's level, dB), `gain` (the ride, dB), `target` (the
   target Music Sens. makes) and `music` (the music's level; -96 without).
 
+### Changeling (`builtin:changeling`, AudioEffect, with a MIDI input)
+
+A pitch and formant shifter for a single voice: Soundtoys' Little AlterBoy's controls, with Polyverse Manipulator's on
+its second page. Both were rendered headless through the engine's own hosting
+([benchmarks/plugin_render.cpp](../../benchmarks/plugin_render.cpp)) on synthetic probes (pulse trains, glottal
+vowels through formant filters, glides, steps and vibrato, MIDI notes, noise, a sawtooth with a 3 kHz probe whose
+envelope traces the grains' windows) and on dry vocal phrases; what each control does here is what was measured
+there, with the differences below. The maths is [builtin/ChangelingDesign.h](../../engine/src/builtin/ChangelingDesign.h).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `mode` | Mode | | Transpose, Quantize, Robot | Transpose |
+| `pitch` | Pitch | st | -24..24 (shown to a hundredth) | 0 |
+| `formant` | Formant | st | -24..24 (shown to a hundredth) | 0 |
+| `link` | Link | | Off, On | Off |
+| `glide` | Glide | ms | 1..1000, log | 20 |
+| `key` | Key | | Song, C..B | Song |
+| `scale` | Scale | | GigaTune's | Chromatic |
+| `drive` | Drive | dial | 0..10 | 0 |
+| `mix` | Mix | % | 0..100 | 100 |
+| `output` | Output | dB | -24..24 | 0 |
+| `harmonics` | Harmonics | | -4..4 (shown to a hundredth) | 0 |
+| `twin` | Twin | % | 0..100 | 0 |
+| `interval` | Interval | st | -24..24, whole | -12 |
+| `detune` | Detune | ct | 0..50 | 0 |
+| `width` | Width | % | 0..100 | 0 |
+| `smear` | Smear | % | 0..100 | 0 |
+| `quality` | Quality | | Live, Studio, High Quality (not automatable) | Studio |
+
+- **The shifter** is GigaTune's corrector's TD-PSOLA (analysis marks a period apart, the first voiced one moved onto
+  its pulse and the grains' centres following it, synthesis marks an output period apart, grains spanning their
+  neighbours' centres, the windows' sum divided out past 1, grains raised where they fall short of their step,
+  sqrt(ratio) for a flat spectrum's power) in four voices: each channel's main voice and its twin, sharing the
+  analysis marks, each with its synthesis marks and grains. A ratio of 1 is the input, bit for bit. The raise for a
+  grain read faster than it plays is held to 2 (a short burst each period, at Formant +24 on a low voice, would come out
+  spiky). Measured: Little AlterBoy's grains are flat-topped, about 1.8 periods long and end just after their pulse
+  (each carries the pulse before it: an octave down has a ghost of the original pitch), with ±13 % ripple even at 0;
+  Manipulator's are classic two-period Hann grains on the pulses, unnormalised (+3 dB an octave up). Both leave
+  unvoiced noise unshifted, as Changeling does.
+- **Modes** (LAB's, measured): Transpose adds Pitch; Quantize snaps the pitch heard to the nearest of Key and Scale's
+  notes (`gigatune::targetNote()`, its hysteresis) and adds Pitch, the vibrato gone; Robot holds `kRobotNote` (C4)
+  plus Pitch. The note held glides (two one-poles, `dsp::Glide`, 10 to 90 % in Glide's time), and so does the
+  transposition; in Quantize a note starting snaps. The output pitch is held within `kLowestOut`..`kHighestOut` and
+  `kMaxShift` of the voice.
+- **MIDI**, as LAB takes it: the last note-on is held (note-offs change nothing); Robot sings it plus Pitch; Transpose and
+  Quantize transpose by its distance from C4. Notes are kept with their input time and a frame takes the note held at
+  its own time, so a note acts where it was played once the engine has delayed the other tracks (LAB applies notes at
+  its output: 50 ms early). Manipulator's MIDI sets the pitch an octave below the note's number.
+- **Formant** moves each voiced grain's read speed (2^(Formant/12)); **Link** adds the frame's shift (out - heard) to it,
+  so the envelope moves with the pitch (measured: LAB's Link ignores its Formant knob; here it adds). Read speeds are
+  held within ±`kMaxRead`. LAB's Formant is ±12, Manipulator's ±24.
+- **Harmonics** (Manipulator's harmonic shifter, measured: its partials stay harmonic, the lowest k vanish, k =
+  8 (knob - 0.5), and its Ratio scales k): each voiced grain reads the input's analytic signal too (`Quadrature`,
+  kept beside the input) and rotates it by e^(2πi h u / T), u output samples from the grain's centre and T the local
+  output period, so its spectrum moves h harmonics while the grains still repeat at T. Below |h| = 0.5 it is mixed
+  with the grain as it was (no step at 0).
+- **Twin** (made from Manipulator's grain alternator, whose Octave 0 adds a voice that many octaves down read as a tape
+  would): the twins' offset is Interval (and their side's detune) and their read speed moves by Interval as well; Twin
+  is their level, the four voices kept as loud as the main ones (1 / sqrt(1 + Twin^2)); unvoiced grains aren't played by
+  the twins. A twin starts from its main voice's committed marks and grain when Twin comes up, and stops once its last
+  grain ends after Twin goes to 0: only running voices commit the shared marks, so with Twin at 0 a ratio of 1 stays
+  bit-exact.
+- **Detune**: the left voices `-Detune` cents, the right ones `+Detune`. **Width**: the left voices' odd grains and the
+  right's even ones scaled by `1 - Width` (their windows still count in the sum, so the gaps stay), each side raised by
+  sqrt(2 / (1 + (1 - Width)^2)). **Smear**: a voiced grain taken from up to `kSmearSeconds` before its analysis mark,
+  at random, and each voiced synthesis step moved by up to `kSmearJitter` of itself (in proportion, up or down alike).
+- **Quality**: Live, the tracker as GigaTune's Low Latency (21.3 ms at any rate); Studio, the same tracker deciding
+  each frame `kStudioLag` frames later (48.6 ms at 48 kHz: LAB's is 51), so a note's start is decided voiced from its
+  first periods; High Quality, SwiftF0 (about 316 ms here: a grain may reach further back, read at a quarter of the
+  speed). Both pYIN trackers rescue short notes the path leaves unvoiced (`PitchTracker::setRescue()`). Measured on
+  dry phrases, the share of each note's first 80 ms that comes out at the shifted pitch: Live 0.64-0.69, Studio
+  0.67-0.78, High Quality 0.68-0.81, Little AlterBoy 0.58-0.81, Manipulator 0.55-0.63.
+- **Drive** (`changeling::Drive`), LAB's, fitted from noise through it (which LAB passes without grains): LAB's colour
+  (a first-order high-pass at 22 Hz, a high shelf +1.6 dB from 5.3 kHz, a low-pass at 22 kHz), then `y = A (s(B c x +
+  b) - s(b))` with `s(u) = u / (1 + |u|^h)^(1/h)` and A, B, b, h fitted at each of 0..10 (interpolated between), A
+  divided by LAB's gain at 0 (0.759); c = 1 / (1 + κ max(0, rms - 0.07)) past 6 (κ = 5 ((Drive - 6) / 4)^1.5, the RMS
+  followed with 30 ms attack, 200 ms release), at twice the rate, a DC blocker after. Within 7 to 16 % (RMS) of LAB's
+  output at every setting and level. From 0 to 1 it fades in from the input; at 0 it is a plain delay of the
+  oversampling's 31 samples, the oversampler and the colour kept running so turning it up starts with their history.
+- **Mix** mixes the dry input, delayed by the whole latency, with the wet (smoothed over 10 ms); **Output** after it.
+  The latency is the Quality's plus the drive's.
+- **Displays**, one value per 256 samples out: `pitch` (heard, MIDI; 0 unvoiced), `out` (the main voices' output pitch)
+  and `note` (the note Quantize or Robot holds; -1 none).
+- Costs (builtin_devices_bench, a core): 2.5 % at its defaults, 2.7 % shifting, 3.4 % with Drive, 3.8 % with the twin.
+
 ### LFO (`builtin:lfo`, Modulator)
 
 A drawn curve played over and over; its value moves the parameters mapped to it (a modulator:
@@ -2912,6 +2999,7 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   Strength's share of the correction and the note); refinement, pass-through, notes landing and late grains at both
   Qualities, and the Quality switched while playing (its latency, the engine told). With `GIGATUNE_VOCALS` (a folder of dry phrases named `..._<key>_dry.wav`) it
   also corrects real vocals to their keys (`GIGATUNE_OUT`: writing what it made).
+- [test_changeling_engine.cpp](../../tests/engine/test_changeling_engine.cpp): its listing and latencies (Live GigaTune's Low Latency's, Studio `kStudioLag` hops more, High Quality's about 0.3 s, at 44.1-192 kHz, the device's with its drive's 31 samples); nothing to do passing voice, noise and silence bit for bit, `latency()` later, at every quality, rate and block size, one channel or two, and through the device; Transpose within 0.01 cents of its frequency (whole and fractional semitones, every quality); Quantize on the scale's nearest note, the vibrato gone, plus Pitch, and Robot on C4 plus Pitch; MIDI notes (Robot's note, Transpose's distance from C4, held, at their input time) and Glide's 10-90 % time; Formant and Link moving the envelope; Harmonics taking the lowest k harmonics 40 dB down and keeping the rest within a dB, no line between them; the twin's line and the level held, noise not doubled; Detune's cents each side and Width's halves; Smear; silence and noise; every control at its ends finite and bounded (High Quality never late); the Quality switched while playing; Mix; the drive (its 0 the input exactly, its small-signal gain, ceiling and lopsidedness); the quadrature pair's 90 degrees; the editor's displays.
 - [test_spectral_engine.cpp](../../tests/engine/test_spectral_engine.cpp): its listing, the defaults gentle on pink
   noise at a mix's level, and the shared maths (frame sizes, calibration, the knee, the gain computer's curve rising
   everywhere, Below held at the threshold, the Focus's weights); its latency, the frame and a hop, at every rate and an
