@@ -121,6 +121,67 @@ filter and volume. Velocity sets the level; each voice follows its note's bend
 | Resonance | 0 to 100 % |
 | Volume | −60 to +6 dB |
 
+### Supersaw
+
+An instrument for one sound, the supersaw, as thick and as clean as it can be made: up
+to three stacks of detuned saws on every note, each of 1 to 64 saws, so a chord can
+hold thousands of them. 16 notes.
+
+- **Clean at any pitch.** Every saw is band-limited at the instant it jumps, to a
+  fraction of a sample, and made at twice the sample rate (below 80 kHz), so nothing
+  folds back into what you hear: its aliases are more than 130 dB down, even on the
+  highest notes and through bends and glides. The saws keep exact time and exact pitch,
+  and a stack is as loud with 64 saws as with one.
+- **A stack** is a number of saws spread around its pitch:
+  - **Saws** (1 to 64).
+  - **Detune**: how far the outermost saws are from the middle, up to a semitone (the
+    knob is squared, so most of it is where supersaws live: 50 % is 25 cents).
+  - **Curve**: above 0 the saws gather towards the middle (as Roland's JP-8000 spreads
+    them, which keeps their beating from settling into a pattern); below 0 towards the
+    edges, a wider wash; at 0 evenly spaced.
+  - **Blend**: the middle saw against the others. 0 % is the middle saw alone, 75 %
+    every saw alike, 100 % the others louder.
+  - **Width**: how far the saws spread across the stereo field. Each side hears flat
+    and sharp saws alike; at 0 % both sides are the same.
+  - **Transpose** (±48 semitones), **Fine** (±100 cents) and **Level**.
+
+  Stack 1 plays on its own at first; switch on stack 2 (an octave down) and stack 3 (an
+  octave up), or tune them anywhere, for the fattest stacks.
+- **Phase** (0 to 360°) and **Random Phase**: where the saws start on each note. At
+  100 % every saw starts anywhere (the classic supersaw); at 0 % they all start
+  together at Phase, and the note opens with one big edge before they spread out.
+- **Drift**: each saw wanders slowly in pitch on its own, a few cents at most, as an
+  analog oscillator does.
+- **Sub**: a sine 0, 1 or 2 octaves under the note (at 100 % as loud as a stack).
+- **Filter**: Off, Low 12, Low 24, High 12, High 24 (12 and 24 dB an octave) or Band,
+  with Cutoff, Resonance, Key Track (the cutoff follows the note) and Env (how far its
+  own envelope, Attack, Decay, Sustain and Release, moves the cutoff, up or down).
+- **Attack, Decay, Sustain, Release**, **Velocity** (how much a note's velocity sets
+  its level) and **Volume**.
+- **Mode**: Poly, Mono (one note at a time, its envelopes struck again by each note) or
+  Legato (one note, the envelopes struck again only when no key was held). **Glide**:
+  how long a note takes to slide from the last note's pitch (in Mono always; in Legato
+  between held keys; in Poly from the last note played). When a held key is let go in
+  Mono or Legato, it goes back to the newest key still held.
+- **Bends**: each voice follows its note's bend ([midi.md](midi.md#pitch-bends-vibrato-and-slides));
+  MIDI pitch bend bends every note over **Bend Range** (up to 24 semitones). The sustain
+  pedal holds notes. A 17th note takes the place of the quietest releasing one (else
+  the oldest), which fades out in 4 ms rather than stopping with a click.
+
+**Its editor** has three pages, named in its title bar: **Stacks**, **Filter** and
+**Voice**. On every page the stacks are drawn, a lane each: every saw where it plays,
+across by its detune and up and down by where it sits from left to right, as large as it
+is loud; while sound plays the saws glow and shimmer as fast as each one beats. Beside
+each lane is its stack's switch. Press a lane to show that stack's knobs; drag in it
+across for its Detune and up and down for its Width (Shift for finer steps), and
+double-click to reset them. Knobs that do nothing as things are (a stack's while it is
+off, Blend with fewer than three saws, the filter's while it is off) are dimmed, but you
+can still set them.
+
+It is a little late, by 0.5 ms at 48 kHz (1 ms at 44.1 kHz), the time its filters take
+to keep everything above 20 kHz from folding back; delay compensation lines it up with
+the other tracks.
+
 ### Vital
 
 [Vital](https://github.com/mtytel/vital), Matt Tytel's spectral warping wavetable synth,

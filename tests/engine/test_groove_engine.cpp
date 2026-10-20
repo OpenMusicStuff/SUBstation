@@ -16,6 +16,7 @@
 #include "Rack.h"
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
+#include "builtin/DelayCharacter.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 #include "harness/Standalone.h"
@@ -491,11 +492,19 @@ TEST_CASE("groove: the Delay's swing follows the project's groove") {
         Samples in(kBeat, 0.f);
         in[0] = 1.f;
         const Samples out = delay.play(in);
-        // The first echo: a 16th late, swung onto the triplet when it follows the groove.
+        // The first echo: a 16th late, swung onto the triplet when it follows the groove (and where the Delay's
+        // Digital character puts it: its modulation's move then, and its band-limit's lateness).
         int64_t loudest = 0;
         for (size_t i = 1; i < out.size(); ++i)
             if (std::abs(out[i]) > std::abs(out[static_cast<size_t>(loudest)])) loudest = static_cast<int64_t>(i);
-        CHECK(std::abs(loudest - (follow ? 8000 : 6000)) <= 2);
+        const std::vector<float> taps = sub::delay_character::DigitalDesign::bandLimit(kSampleRate);
+        const auto peak = std::max_element(taps.begin(), taps.end()) - taps.begin();
+        sub::delay_character::DigitalModulation modulation;
+        modulation.prepare(kSampleRate);
+        int64_t expected = 0;
+        while (static_cast<double>(expected) - (follow ? 8000 : 6000) - modulation.next() < static_cast<double>(peak) - 0.5)
+            ++expected;
+        CHECK(std::abs(loudest - expected) <= 2);
     }
 }
 

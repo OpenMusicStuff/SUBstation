@@ -16,7 +16,7 @@ code is put together, [../README.md](../README.md).
 |---|---|
 | [arrangement.md](arrangement.md) | The timeline, clips and selecting, tracks and their headers, group tracks, folding, the master, the title bar and the transport bar, projects, undo and export |
 | [mixing.md](mixing.md) | Solo and mute, groups in the mix, return tracks and sends, sidechains, delay compensation, freezing and flattening |
-| [devices.md](devices.md) | The device view, the built-in devices (Vital, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ, Sidechain), the Arpeggiator and Groove MIDI effects, the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
+| [devices.md](devices.md) | The device view, the built-in devices (Vital, Supersaw, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ, Sidechain), the Arpeggiator and Groove MIDI effects, the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
 | [plugins.md](plugins.md) | VST3 and VST2 plug-ins: finding them, using them, their editors and presets, projects, latency |
 | [audio-clips.md](audio-clips.md) | The clip view for audio clips: warping, warp markers, an audio clip's groove, warp modes, transpose and detune, clip gain and pan, reversing, tempo and key from file names |
 | [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, chords and key, Generate and progression ideas, a MIDI clip's groove, MIDI input, the computer MIDI keyboard |
@@ -42,7 +42,8 @@ code is put together, [../README.md](../README.md).
 - Group tracks, return tracks and sends, sidechains, and delay compensation everywhere.
 - Freezing tracks, groups and returns (Ctrl+Shift+F), and flattening frozen tracks.
 - Vital, the spectral warping wavetable synth, built in from its own source (all of it, its `.vital` presets
-  too); built-in Synth and Sampler instruments (the Sampler with Simpler's Classic, 1-Shot and
+  too); the Supersaw (up to three stacks of 64 detuned saws a note, free of aliasing); built-in Synth and Sampler
+  instruments (the Sampler with Simpler's Classic, 1-Shot and
   Slice modes, warping, a filter and an LFO); Utility, Over The Top, Compressor, Gate,
   Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay,
   Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ and Sidechain

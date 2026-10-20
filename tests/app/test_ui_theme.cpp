@@ -98,6 +98,7 @@ private Q_SLOTS:
             {"meterBg", QColor("#141414")},         {"deviceHeader", QColor("#3e3e3e")},
             {"deviceHeaderSelected", QColor("#577077")}, {"scopeLine", QColor("#ffb84d")},
             {"scopeGlow", QColor(255, 166, 43, 60)}, {"scopeAxis", QColor(255, 255, 255, 22)},
+            {"display", QColor("#141414")},
             {"frozen", QColor("#8fd3ff")},          {"frozenTint", QColor(143, 211, 255, 34)},
             // A track header's volume and pan fill: the accent, see-through.
             {"volumeFill", QColor(255, 166, 43, 110)},
@@ -329,7 +330,7 @@ private Q_SLOTS:
             QStringLiteral("wave_square"),     QStringLiteral("wave_random"),     QStringLiteral("note"),
             QStringLiteral("bend"),            QStringLiteral("vibrato"),         QStringLiteral("glide"),
             QStringLiteral("automation_mode"), QStringLiteral("constrain_latency"), QStringLiteral("punch_in"),
-            QStringLiteral("punch_out"),       QStringLiteral("star")};
+            QStringLiteral("punch_out"),       QStringLiteral("keyboard"),        QStringLiteral("star")};
         QCOMPARE(names.size(), fromPython.size() + added.size());
         for (const QString& name : fromPython + added) {
             QVERIFY2(names.contains(name), qPrintable(name));

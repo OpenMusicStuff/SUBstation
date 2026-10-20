@@ -166,7 +166,7 @@ FocusScope {
                 }
                 ToolTip.visible: keyHover.hovered
                 ToolTip.delay: 700
-                ToolTip.text: qsTr("The key new ideas are in: the song's (set it next to the metronome),\nelse the one its MIDI is most likely in, else A minor")
+                ToolTip.text: qsTr("The key new ideas are in: the song's (set it in the transport bar, after the swing),\nelse the one its MIDI is most likely in, else A minor")
             }
         }
     }

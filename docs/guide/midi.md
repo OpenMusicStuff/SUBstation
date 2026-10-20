@@ -222,7 +222,7 @@ piano roll. **C** (*View › Chords and Key*) hides or shows them; they show at 
   band of colour, named at its start ("Am", "G7", "C/E" when its bass is E).
   Related chords have related colours. Clicks go through the bands to the notes.
 - The clip view's header shows the key, and notes out of it are tinted red. The key
-  is the **project key** (chosen next to the metronome in the transport bar), or, if
+  is the **project key** (chosen in the transport bar, after the swing), or, if
   it has none, the key the song's MIDI is most likely in ("Key: A Minor (inferred)").
   A minor key's notes are its natural minor scale.
 - The chords come from every MIDI track you hear: a muted track, or one in a muted
@@ -265,7 +265,7 @@ and change until one is right.
   McGill Billboard songs' chord changes) and in that mood's progressions. Hover over
   an idea's ▶ to see which it is.
 - **Length**: *4 bars* or *8 bars*, a chord a bar.
-- **The key**: the song's (chosen next to the metronome), else the one its MIDI is most
+- **The key**: the song's (chosen in the transport bar, after the swing), else the one its MIDI is most
   likely in, else A minor; the panel says which. Each chord shows its name and its Roman
   numeral in the key ("Am" over "i", "F" over "VI").
 - **Try**: click an idea (or its ▶) to write it into the clip as block chords, voiced to
@@ -338,7 +338,7 @@ Linux), played live and recorded, and from the [computer MIDI keyboard](#compute
 
 ## Computer MIDI keyboard
 
-**M** (*Options › Computer MIDI Keyboard*, or ⌨ in the control bar) turns it on: the
+**M** (*Options › Computer MIDI Keyboard*, or the piano keys in the transport bar) turns it on: the
 letter keys play notes as one more MIDI input, *Computer Keyboard* (tracks on *All Ins*
 hear it too; it plays and records like any input).
 

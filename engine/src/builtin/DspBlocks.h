@@ -2,8 +2,9 @@
 // Building blocks the built-in effects share, beside Dsp.h's: one-pole and DC
 // filters, a two-pole glide for controls, a delay line, an envelope follower,
 // an LFO with Ableton's shapes and synced rates, RBJ biquads, a Linkwitz-Riley
-// crossover, a sliding maximum (for lookahead), white noise, a fast tanh, and
-// linear-phase oversampling.
+// crossover, a sliding maximum (for lookahead), white noise, a fast tanh,
+// linear-phase oversampling, and a half-band decimator designed to a
+// passband and an attenuation.
 //
 // All inline. What allocates says so (prepare()); everything else is real-time
 // safe: no locks, no allocation, no exceptions.
@@ -702,6 +703,89 @@ private:
     int maxBlock_ = 1;
     int maxFactorLog2_ = 0;
     int factorLog2_ = 0;
+};
+
+// --- Half-band decimator -------------------------------------------------------------------
+
+// Down by 2, linear phase: a half-band FIR (a Kaiser-windowed sinc, unity at
+// DC) designed to a passband and an attenuation, for what is made at twice the
+// rate (oscillators) rather than taken up first. Flat to `passband` (a
+// fraction of the output's rate, below 0.5: 20 kHz at 44.1 kHz is 0.4535), and
+// all that would fold back into that band at least `attenuationDb` down; what
+// folds above it, between it and the output's Nyquist, is let through as the
+// transition band. Its length follows from the two (Kaiser's estimate), as
+// 4k + 3 taps: then its delay, (taps - 1) / 2 input samples, is odd, and with
+// an odd delay before it (an oscillator's) the whole is a whole number of
+// output samples. Run polyphase and folded: each output is half the centre
+// tap's input plus a product for each pair of the even taps (mirror images).
+// One per channel.
+class HalfbandDecimator {
+public:
+    // Allocates: up to `maxOut` output samples a call.
+    void design(double passband, double attenuationDb, int maxOut) {
+        passband = std::clamp(passband, 0.05, 0.49);
+        attenuationDb = std::clamp(attenuationDb, 21.0, 200.0);
+        const double transition = 0.5 - passband;  // of the input's rate: passband / 2 to its mirror
+        const double beta = attenuationDb > 50.0 ? 0.1102 * (attenuationDb - 8.7)
+                                                 : 0.5842 * std::pow(attenuationDb - 21.0, 0.4) +
+                                                       0.07886 * (attenuationDb - 21.0);
+        int taps = static_cast<int>(std::ceil((attenuationDb - 7.95) / (2.285 * kTwoPi * transition))) + 1;
+        while ((taps - 3) % 4 != 0) ++taps;
+        taps_ = taps;
+        centre_ = (taps - 1) / 2;
+        oddHistory_ = (centre_ + 1) / 2;
+        const double i0Beta = besselI0(beta);
+        // The even taps h[2p], p = 0..pairs - 1 (their mirrors h[taps - 1 - 2p] are the same).
+        const int pairs = (centre_ + 1) / 2;
+        std::vector<double> h(static_cast<size_t>(pairs));
+        double sum = 0.0;
+        for (int p = 0; p < pairs; ++p) {
+            const int m = 2 * p - centre_;  // odd
+            const double r = static_cast<double>(m) / centre_;
+            const double window = besselI0(beta * std::sqrt(std::max(0.0, 1.0 - r * r))) / i0Beta;
+            h[static_cast<size_t>(p)] = std::sin(kPi * m / 2.0) / (kPi * m) * window;
+            sum += 2.0 * h[static_cast<size_t>(p)];
+        }
+        coeff_.resize(static_cast<size_t>(pairs));
+        for (int p = 0; p < pairs; ++p)  // with the centre's 0.5, unity at DC
+            coeff_[static_cast<size_t>(p)] = static_cast<float>(h[static_cast<size_t>(p)] * 0.5 / sum);
+        maxOut_ = std::max(1, maxOut);
+        even_.assign(static_cast<size_t>(centre_ + maxOut_), 0.f);
+        odd_.assign(static_cast<size_t>(oddHistory_ + maxOut_), 0.f);
+        sums_.assign(static_cast<size_t>(maxOut_), 0.f);
+    }
+    void reset() noexcept {
+        std::fill(even_.begin(), even_.end(), 0.f);
+        std::fill(odd_.begin(), odd_.end(), 0.f);
+    }
+    int taps() const noexcept { return taps_; }
+    int delay() const noexcept { return centre_; }  // input samples
+
+    // 2 n input samples down to n (n ≤ maxOut).
+    void process(const float* in, int n, float* out) noexcept {
+        float* even = even_.data();
+        float* odd = odd_.data();
+        for (int i = 0; i < n; ++i) {
+            even[centre_ + i] = in[2 * i];
+            odd[oddHistory_ + i] = in[2 * i + 1];
+        }
+        // Output i reads even inputs i + p and centre + i - p (both h[2p]), and the odd one centre samples back.
+        float* sums = sums_.data();
+        for (int i = 0; i < n; ++i) sums[i] = 0.5f * odd[i];
+        for (size_t p = 0; p < coeff_.size(); ++p) {
+            const float c = coeff_[p];
+            const float* early = even + p;
+            const float* late = even + centre_ - static_cast<int>(p);
+            for (int i = 0; i < n; ++i) sums[i] += c * (early[i] + late[i]);
+        }
+        std::copy_n(sums, n, out);
+        std::copy_n(even + n, centre_, even);
+        std::copy_n(odd + n, oddHistory_, odd);
+    }
+
+private:
+    std::vector<float> coeff_, even_, odd_, sums_;
+    int taps_ = 3, centre_ = 1, oddHistory_ = 1, maxOut_ = 1;
 };
 
 }  // namespace sub::dsp

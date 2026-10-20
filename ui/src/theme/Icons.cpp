@@ -190,6 +190,19 @@ const std::map<QString, Icon>& icons() {
                                                       p.drawLine(QPointF(32, 6), QPointF(32, 15));
                                                       p.drawLine(QPointF(32, 36), QPointF(42, 26));
                                                   }};
+        // Four keys of a piano, C# and D# over them: the computer MIDI keyboard.
+        t[QStringLiteral("keyboard")] = {text, [](QPainter& p, const QColor& c, bool) {
+                                             p.setPen(pen(c, 5));
+                                             p.setBrush(Qt::NoBrush);
+                                             p.drawRoundedRect(QRectF(6, 12, 52, 40), 5, 5);
+                                             p.setPen(Qt::NoPen);
+                                             p.setBrush(c);
+                                             for (const qreal x : {19.5, 32.0}) {
+                                                 p.drawRoundedRect(QRectF(x - 5, 12, 10, 24), 1.5, 1.5);
+                                                 p.drawRect(QRectF(x - 2, 34, 4, 18));
+                                             }
+                                             p.drawRect(QRectF(42.5, 12, 4, 40));  // E | F
+                                         }};
         // Six spokes with a pair of twigs each: a frozen track.
         t[QStringLiteral("snowflake")] = {&Theme::frozen, [](QPainter& p, const QColor& c, bool) {
                                               p.setPen(pen(c, 4.5, Qt::RoundCap));

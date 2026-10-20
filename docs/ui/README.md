@@ -371,10 +371,11 @@ nodes made): the tests read it.
 `Theme.lane` in QML (a `QML_SINGLETON`). Base colours (`window`, `panel`, `surface`, `border`, `text`, `textDim`,
 `accent`, ...), the arrangement's (`lane`, `gridBar`, `playhead`, `insertMarker`, `selection`, `waveform`, ...), the
 piano roll's (`keyWhite`, `blackKeyRow`, `outsideClip`, ...) and the controls' (`activatorOn`, `soloOn`, `meterLow`,
-`scopeLine`, `frozen`, `knob`, `scrollHandle`, `automationOn`, ...). Fonts: `uiFont(pt, bold)`
+`scopeLine`, `display` (the transport bar's displays and the scope), `frozen`, `knob`, `scrollHandle`, `automationOn`,
+...). Fonts: `uiFont(pt, bold)`
 (Segoe UI, 9 pt by default), `monoFont(pt)` (Consolas), and for QML `Theme.font`, `Theme.smallFont` (8 pt, the
 buttons with a role), `Theme.listFont` (10 pt: the browser's lists, as Qt Quick draws small text smaller than the
-widgets did at the same size) and `Theme.listHeadingFont` (8.5 pt bold, the sidebar's headings), `Theme.uiFont()`. Metrics: `radius` (3), `controlHeight` (28, the transport bar's boxes and
+widgets did at the same size) and `Theme.listHeadingFont` (8.5 pt bold, the sidebar's headings), `Theme.uiFont()`. Metrics: `radius` (3), `controlHeight` (26, the transport bar's displays and
 buttons), `scrollBarWidth` (12), `iconSize` (14). `setUpApplication()` applies the font, the theme last chosen and
 a palette from its colours.
 
@@ -426,7 +427,8 @@ Basic style. A style `Button` is a `RoleButton` that takes the focus, as a dialo
 [Icons](../../ui/src/theme/Icons.h) are small vector drawings on a 64 × 64 grid, drawn with `QPainter` at the size
 asked for, so they stay sharp at any scale and pixel ratio: play, stop, record, metronome, loop, follow,
 re_enable_automation, lock_envelopes, headphones, folder, waveform, plugin, preset, plugin_window, sidechain,
-snowflake, save, link, infinity, expand, sliders, star, fold, search, app_icon. QML gets them from the image provider,
+snowflake, keyboard (the computer MIDI keyboard: four piano keys), save, link, infinity, expand, sliders, star, fold,
+search, app_icon. QML gets them from the image provider,
 `image://icons/<name>[?color=%23rrggbb][&state=on][&mode=disabled][&theme=<name>]` (`Icons.url()` builds it; `Icon { name; color;
 checked; size }` wraps it): `state=on` picks the On picture of `lock_envelopes` (closed), `fold` (pointing right:
 folded) and `star` (filled: a progression idea kept), `mode=disabled` draws it in `Theme::textDisabled()`. C++ items draw them with `Icons::image()` on the GUI thread
@@ -437,7 +439,7 @@ and keep the image. Add an icon by adding its drawing to the table in [Icons.cpp
 | Control | Where | Notes |
 |---|---|---|
 | `Knob` | [Knob.qml](../../ui/qml/Knob.qml) over [KnobItem](../../ui/src/controls/KnobItem.h) | Drag vertically: 600 px for the whole range (`kDragPixels`), 6000 with Shift (`kFineDragPixels`); pressing or letting go of Shift mid-drag changes the rate from there on. The wheel moves 1/50 of the range a notch (`kWheelNotches`), unless `wheel` is false (the event goes on to a scrolling list). Double-click resets to `defaultValue` (if never set: the value it was made with). `logScale` moves evenly in log(value) (when `from` > 0); `step` takes multiples of it from `from`; `bipolar` draws the arc from the middle. With a `parser`, typing a digit (the knob has the focus after a click) opens a small text field over it. `automation` "on" or "off" draws the dot (red automated, grey overridden; `drawAutomationDot()`, shared with the value box). `moved(value, gestureKey)` comes for user changes only, never for `value` set from outside; `touched()` on every left press or double-click; `relative` says whether the last change was a drag or wheel (rather than typed or reset). |
-| `ValueBox` | [ValueBox.qml](../../ui/qml/ValueBox.qml) over [ValueBoxItem](../../ui/src/controls/ValueBoxItem.h) | Ableton-style number: drag vertically, 0.25 steps a pixel (`kDragRate`), 0.025 with Shift; the wheel moves ten steps a notch, notches less than 0.6 s apart being one gesture. `choices` limits it to a list (the time signature's denominator: one choice per 10 px, or a notch). `logScale` drags and wheels in log(value) as a knob does. Double-click: with a `defaultValue` it resets (and typing a digit edits); without one it opens the text field with the value selected. `parseNumber` strips "dB", "bpm" and "%" and reads "-inf" as -70. Values are rounded to `decimals` and kept between `from` and `to`. Same signals as the knob. |
+| `ValueBox` | [ValueBox.qml](../../ui/qml/ValueBox.qml) over [ValueBoxItem](../../ui/src/controls/ValueBoxItem.h) | Ableton-style number: drag vertically, 0.25 steps a pixel (`kDragRate`), 0.025 with Shift; the wheel moves ten steps a notch, notches less than 0.6 s apart being one gesture. `choices` limits it to a list (the time signature's denominator: one choice per 10 px, or a notch). `logScale` drags and wheels in log(value) as a knob does. Double-click: with a `defaultValue` it resets (and typing a digit edits); without one it opens the text field with the value selected. `parseNumber` strips "dB", "bpm" and "%" and reads "-inf" as -70. Values are rounded to `decimals` and kept between `from` and `to`. `bare` draws it as a field of a display (the transport bar's): no box of its own, the text colour at 7 % under the mouse or dragged; `bottomPadding` centres the value above that much room, where its container puts a caption. Same signals as the knob. |
 | `Meter` | [Meter](../../ui/src/controls/Meter.h) | Stereo peak meter from -60 to +6 dB, falling `kFallPerSecond` (3.5 % of the scale every 33 ms) by the time since the last update (`setLevels()` on the bridge's `metersUpdated`; the fall needs every update; `DisplayClock::elapsed`: updates by hand count a tick each); a clip light at full scale, cleared by a click; compact, peak ticks held `kHoldSeconds` (0.99 s). |
 | `Oscilloscope` | [Oscilloscope.qml](../../ui/qml/Oscilloscope.qml) over [OscilloscopeItem](../../ui/src/controls/OscilloscopeItem.h) | [Below](#the-oscilloscope). |
 | `RoleButton` | [RoleButton.qml](../../ui/qml/RoleButton.qml) | A push button coloured by its `role`, with `iconName`, `iconColor`, `iconSize`, `tooltip` and `lit`, and `automation` (a switch's automation dot, "on" red or "off" grey, as knobs have). It never takes the keyboard focus, so Space stays play/stop. |
@@ -452,7 +454,8 @@ ends it when it loses the mouse grab.
 
 ### The oscilloscope
 
-The scope in the transport bar shows the master output, as FL Studio's does. Its feed is any `QObject` with a
+The scope in the transport bar shows the master output, as FL Studio's does, in a well like the bar's other
+displays (`Theme.display`, 3 px corners, shaded along its top). Its feed is any `QObject` with a
 `quint64 scopeWritten` property (samples written so far) and `Q_INVOKABLE QList<float> scopeSamples(int frames)`:
 the bridge. On each display tick (`DisplayClock`, at the display rate) it reads `scopeWritten`; only when it moved does it fetch
 `scopeSamples(2 * kWindow)` (neither blocks). `trigger()` finds the last rising zero crossing that still leaves a
@@ -469,36 +472,61 @@ it.
 
 ## Transport bar
 
-[TransportBar.qml](../../ui/qml/transport/TransportBar.qml), 40 px high, every box, button and the scope
-`Theme.controlHeight` (28 px) tall; nothing in it takes the keyboard focus. What needs working out is
-[TransportState](../../ui/src/mainwindow/TransportState.h)'s. Left to right:
+[TransportBar.qml](../../ui/qml/transport/TransportBar.qml), 34 px high, every display, button and the scope
+`Theme.controlHeight` (26 px) tall; nothing in it takes the keyboard focus. What needs working out is
+[TransportState](../../ui/src/mainwindow/TransportState.h)'s. Three groups: the song on the left, the transport in the
+middle of the window (or as near it as the groups either side leave room for: it moves aside rather than over them,
+16 px clear, and where even that leaves too little room the scope goes), and the view and the machine on the right.
 
-- **Tempo** (`ValueBox`, 20 to 999 BPM, 0.25 a step) → `editor.setTempo(value, gestureKey)`. **Time signature**: two
-  value boxes, the numerator 1 to 32, the denominator from `TransportState.denominators` →
-  `editor.setTimeSignature(n, d)`.
-- **Swing** (`ValueBox`, 50 to 75 %, 0.5 a step): the project's default groove as a swing, `Session.grooves.defaultSwing`
-  → `grooves.setDefaultSwing(value, gestureKey)` (one undo step a drag). It reads "Off" without a default groove (50 %),
-  the percent for a swing, and the groove's name (`defaultName`) while the default is another groove; dragging it
-  makes the default a swing again (*Edit › Default Groove* chooses the rest).
-- **Metronome** → `bridge.metronome`. **Project key** (a `ChoiceBox` of "No Key" and every key,
-  `TransportState.keys`) → `editor.setKeyByName(name)`: audio added with a key in its name is transposed to it (see
-  [guide/audio-clips.md](../guide/audio-clips.md)).
-- **⌨** toggles the computer MIDI keyboard (`Session.computerKeyboard`; its tooltip says which note A plays).
+Two kinds of thing, each with one look:
+
+- **Displays** (`Display`): wells in `Theme.display` with a `border` line and 3 px corners, shaded along the top
+  inside, their fields side by side with a faint line between two (`FieldLine`). A field is a value (`valueFont`:
+  Inter 9 pt, DemiBold) over its caption (`captionFont`: 6.5 pt capitals, spaced out, in `textDim`, its baseline
+  22 px down), the value centred above the caption's 10 px (`captionRoom`), 3 px over the value, between the two
+  and under the caption, as Logic's and Studio One's displays are. Numbers that drag are `ValueBox`es drawn `bare`
+  with that `bottomPadding` (`FieldBox`); what can be clicked or changed in a display is tinted under the mouse.
+- **Buttons** (`BarSwitch`: a `ToggleButton` with a `Face` of its own), 28 × 26 (Play, Stop and Record 32): raised
+  (`surface`, a 5 % white line along the top), `surfaceHover` under the mouse, `panel` pressed. Those that belong
+  together sit side by side with one border between them (`Segments`). A switch that is on lights its icon in the
+  accent over a 14 % wash of it, as Bitwig's; Play, Record and Re-Enable Automation `fill` instead, with `playOn`,
+  `recordOn` and `accent`, their icon in `accentText`, as Live's.
+
+Left to right:
+
+- **The song's display.** **Tempo** (20 to 999 BPM, 0.25 a step) → `editor.setTempo(value, gestureKey)`. **Time
+  signature**: two value boxes under one caption, the numerator 1 to 32, the denominator from
+  `TransportState.denominators` → `editor.setTimeSignature(n, d)`. **Swing** (50 to 75 %, 0.5 a step): the
+  project's default groove as a swing, `Session.grooves.defaultSwing` → `grooves.setDefaultSwing(value,
+  gestureKey)` (one undo step a drag). It reads "Off" without a default groove (50 %), the percent for a swing, and
+  the groove's name (`defaultName`) while the default is another groove; dragging it makes the default a swing again
+  (*Edit › Default Groove* chooses the rest). **Key** (a `ChoiceBox` of "No Key" and every key,
+  `TransportState.keys`, shown short: "A min", a dash for none) → `editor.setKeyByName(name)`: audio added with a
+  key in its name is transposed to it (see [guide/audio-clips.md](../guide/audio-clips.md)).
+- **Metronome** → `bridge.metronome`, its **count-in** a drop-down on its right (a `ChoiceBox` of
+  `Session.countInChoices`: none, 1, 2 or 4 bars, its arrow in the accent while there is one) →
+  `Session.countInBars`, kept in `QSettings` (`transport/count_in_bars`).
+- The **computer MIDI keyboard** (the `keyboard` icon) toggles `Session.computerKeyboard` (its tooltip says which
+  note A plays). **Constrain Delay Compensation** → `bridge.constrainLatency`.
 - **Position**: `TransportState.positionText` ("  1. 1. 1", bar right-aligned in three places), changed from the
-  bridge's `positionChanged` only when the text changes.
+  bridge's `positionChanged` only when the text changes; shown as its three parts over *Bar*, *Beat* and *16th*,
+  in `positionFont` (10.5 pt), each digit in a place as wide as the widest (a `TextMetrics` of "0"), so the numbers
+  hold still as they count.
 - **Play**, **Stop**, **Record** → `Session.togglePlay()`, `stop()`, `toggleRecord()`; Play's and Record's lit state
   is the bridge's `playing` and `recording`.
-- **Count-in** (`ChoiceBox` of `Session.countInChoices`: none, 1, 2 or 4 bars) → `Session.countInBars`, kept in
-  `QSettings` (`transport/count_in_bars`).
 - **Re-Enable Automation**: enabled and lit while `Session.automationOverridden` → `bridge.reEnableAutomation()`.
-- **Lock Envelopes** → `editor.setAutomationLocked` (saved with the project).
-- **Oscilloscope** (150 × 30, fed by `Session.bridge`). **Loop** → `editor.setLoopEnabled`. **Follow** → the
-  arrangement view's `follow`.
-- **CPU**: `TransportState.cpuText` ("CPU 12%"), from `bridge.cpuLoad` every 15th meter update (`kCpuEvery`, about
-  twice a second). **Disk** (shown while files stream from disk: `diskVisible`): `diskText` ("Disk", or "Disk late
-  3×" once the disk has come late: `bridge.diskLate`), with a tooltip saying how much audio that cost
-  ([app/engine-bridge.md](../app/engine-bridge.md#streaming)). **Device**: `deviceText` ("Speakers · 48 kHz", the
-  name cut to 28 characters; "No audio device"), with a tooltip; a click opens Preferences.
+- **Oscilloscope** (150 × 26, fed by `Session.bridge`: [above](#the-oscilloscope)).
+- **Punch In**, **Loop**, **Punch Out** → `editor.setPunchIn`, `setLoopEnabled`, `setPunchOut`. **Follow** → the
+  arrangement view's `follow`. (Lock Envelopes is in the arrangement's corner, as Ableton's.)
+- **The machine's display.** **CPU**: `TransportState.cpuLoad` in percent (red past 85 %), read from `bridge.cpuLoad`
+  every `kCpuEveryMs` (500 ms) on a meter update (`cpuText`, "CPU 12%", says it in words). The last `kCpuHistory`
+  readings (`cpuHistory`: 24, 12 s; each reading counts, the same or not, so the graph moves on) are drawn behind
+  it, oldest on the left, two pixels a reading, green, yellow past 60 % and red past 85 %, as a meter's. **Disk**
+  (only while files stream from disk: `diskVisible`): "OK", or how many times the disk came late (`diskLate`, in
+  `meterHigh`), with a tooltip saying how much audio that cost (`diskToolTip`;
+  [app/engine-bridge.md](../app/engine-bridge.md#streaming)). **Device**: `deviceName` over `deviceRate`
+  ("Speakers" over "48 kHz", the name cut to 28 characters; "No device" over "Audio off"); `deviceText` ("Speakers ·
+  48 kHz", "No audio device") and `deviceToolTip` say it in full. A click opens Preferences.
 
 ## Dialogs
 
@@ -686,10 +714,10 @@ offscreen platform renders Qt Quick in software, without the items' geometry); w
 | Test file | Covers here |
 |---|---|
 | [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | The layout and its look, every menu action calling the session, the shortcuts (every Action a KeyMap command, its keys followed at once), checkable actions kept in step with the model, Open Recent, files with the unsaved-changes question, closing (a render running, unsaved changes), the title, the status line, warnings, Export Audio, the clip view covering the arrangement, Rename, `PluginEditorKeys`, the window state kept |
-| [test_ui_transport.cpp](../../tests/app/test_ui_transport.cpp) | Each control of the transport bar and what it shows, whoever changed it; Play and Record following the bridge; nothing taking the keyboard |
+| [test_ui_transport.cpp](../../tests/app/test_ui_transport.cpp) | Each control of the transport bar and what it shows, whoever changed it; Play and Record following the bridge; nothing taking the keyboard; the transport in the middle of the window, moving aside in a narrow one (the scope going last); the CPU's readings and their graph |
 | [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp) | Preferences' pages on their controllers (Look and Feel's themes applied and kept, Keyboard's keys recorded, removed and reset, Agents' MCP server on and off and its port), Export Audio's choices, the render progress (modal, label, bar, Cancel) while exporting and freezing, the message boxes |
 | [test_ui_grooves.cpp](../../tests/app/test_ui_grooves.cpp) | Edit › Grooves… driven as a user would: the project's grooves listed and chosen, a built-in one added from Add, a step dragged late and its velocity up (one undo step each, the groove changing as the mouse moves), a double-click putting it back, lanes added for keys and removed, the cycle's bars, renaming, the default, removing (the groove shown going) |
-| [test_ui_controls.cpp](../../tests/app/test_ui_controls.cpp) | Knobs and value boxes dragged (one gesture key per drag), wheeled, double-clicked and typed into; the meter's fall and clip light; the oscilloscope's trigger and fade from a fake feed; buttons that never take the focus |
+| [test_ui_controls.cpp](../../tests/app/test_ui_controls.cpp) | Knobs and value boxes dragged (one gesture key per drag), wheeled, double-clicked and typed into; a bare value box (a display's field) drawn without a box, its value above its padding; the meter's fall and clip light; the oscilloscope's trigger and fade from a fake feed; buttons that never take the focus |
 | [test_ui_sg.cpp](../../tests/app/test_ui_sg.cpp) | `SgCanvas` and `SgPainter` rendered for real and checked pixel by pixel; the big-recording split; a benchmark of an arrangement's worth of rects |
 | [test_ui_theme.cpp](../../tests/app/test_ui_theme.cpp) | Every colour with its value, the themes (each complete, applied and kept), the button roles' looks, every icon (its colour, states, the disabled variant) and the image provider |
 | [test_ui_keymap.cpp](../../tests/app/test_ui_keymap.cpp) | `KeyMap`: the profiles (their commands known, no key twice), the Ableton profile's keys (as the menus had them), keys normalized, a key press as a key, the user's keys (taken from the command that had them, kept, reset), saved keys read back |
