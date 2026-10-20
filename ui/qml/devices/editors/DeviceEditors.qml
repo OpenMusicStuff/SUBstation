@@ -57,6 +57,7 @@ QtObject {
         "saturator": "SaturatorEditor.qml",
         "sidechain": "SidechainEditor.qml",
         "spectral": "SpectralEditor.qml",
+        "supersaw": "SupersawEditor.qml",
         "tape_stop": "TapeStopEditor.qml",
         "transient": "TransientEditor.qml",
         "vintage_hall": "VintageHallEditor.qml",

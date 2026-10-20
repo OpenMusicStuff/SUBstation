@@ -179,6 +179,7 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("ott", "Over The Top")) == Effect::Ott);
     CHECK(classify(builtin("sidechain", "Sidechain")) == Effect::Ducking);
     CHECK(classify(builtin("synth", "Synth", {}, true)) == Effect::Instrument);
+    CHECK(classify(builtin("supersaw", "Supersaw", {}, true)) == Effect::Instrument);
     CHECK(classify(builtin("reverb", "Reverb")) == Effect::Reverb);
     CHECK(classify(builtin("saturator", "Saturator")) == Effect::Saturation);
     CHECK(classify(builtin("phaser", "Phaser-Flanger")) == Effect::Phaser);
@@ -373,6 +374,12 @@ TEST_CASE("instruments, presets and samples name what plays") {
                                 {"sustain", "Sustain", 0, 0, "%", ""}, {"wave", "Wave", 2, 0, "", ""}},
                                true);
     CHECK_EQ(only(track("1", kMidi, {synth})).label, std::string("Synth Pluck"));
+    // A built-in Supersaw by its name, and its envelope as the Synth's.
+    CHECK_EQ(only(track("1", kMidi, {builtin("supersaw", "Supersaw", {}, true)})).label, std::string("Supersaw"));
+    DeviceFact pad = builtin("supersaw", "Supersaw",
+                             {{"attack", "Attack", 800, 0, "ms", ""}, {"sustain", "Sustain", 100, 0, "%", ""}}, true);
+    CHECK_EQ(only(track("1", kMidi, {pad})).label, std::string("Supersaw Pad"));
+    CHECK_EQ(only(track("1", kMidi, {pad})).family, std::string("synth"));
     // A built-in Vital by its patch's name, as a plug-in by its preset's.
     DeviceFact vital = builtin("vital", "Vital", {}, true);
     vital.preset = "BS - Dirty Fat BASS";

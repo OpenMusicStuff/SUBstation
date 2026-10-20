@@ -102,7 +102,7 @@ way. This page is the map; each part has its own pages (see the [index](README.m
   (Multiband Dynamics' gain law and ranges), `builtin/SpectralDesign.h` (the Spectral Compressor's threshold, Below and
   Focus), `builtin/SaturatorDesign.h` (the Saturator's curve and Color), `builtin/AmpDesign.h` (the Amp's tone and
   transfer curves), `builtin/ErosionDesign.h` (Erosion's noise band and excursion), `builtin/ChorusDesign.h` (the
-  Chorus-Ensemble's voices), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
+  Chorus-Ensemble's voices), `builtin/SupersawDesign.h` (the Supersaw's stacks), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
   `builtin/ReverbDesign.h` (the Reverb's decay curve, input filter, reflections and Spin's swing),
   `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/TransientDesign.h` (the Transient Shaper's
   detector, gain law and the hit its editor draws), `builtin/EqDesign.h` (the EQ's curves),

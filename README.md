@@ -98,8 +98,10 @@ Claude Code can read and edit your song while you watch.
 
 ### Devices
 
-- **Instruments**: Vital, Synth, and Sampler. The Sampler follows Ableton's Simpler, with
-  Classic, 1-Shot and Slice modes, slicing at transients, warping, a filter and an LFO.
+- **Instruments**: Vital, Supersaw, Synth, and Sampler. The Supersaw plays up to three stacks
+  of 64 detuned saws on every note, band-limited so their aliases are more than 130 dB down at any
+  pitch. The Sampler follows Ableton's Simpler, with Classic, 1-Shot and Slice modes, slicing at
+  transients, warping, a filter and an LFO.
 - **Dynamics**: Compressor (with sidechain), Gate, Limiter, Multiband Dynamics, Spectral
   Compressor, Over The Top, Transient Shaper, Sidechain.
 - **Colour and distortion**: Saturator, Amp, Erosion.
