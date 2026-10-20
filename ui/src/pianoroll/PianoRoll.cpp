@@ -490,10 +490,16 @@ void PianoRoll::applyGroove(const QString& choice) {
     applyOnRoll(
         toolTargets(),
         [&](const std::vector<Note>& notes) {
-            std::vector<Note> onTimeline = notes;
-            for (Note& n : onTimeline) n.start += origin;
-            std::vector<Note> placed = notes::grooved(onTimeline, *plays, amounts, tempo);
-            for (Note& n : placed) n.start = std::max(0.0, n.start - origin);
+            // Note for note, in order (each clip resolves overlaps as its notes go back into it).
+            std::vector<Note> placed;
+            placed.reserve(notes.size());
+            for (Note n : notes) {
+                n.start += origin;
+                const std::vector<Note> one = notes::grooved({n}, *plays, amounts, tempo);
+                if (!one.empty()) n = one.front();
+                n.start = std::max(0.0, n.start - origin);
+                placed.push_back(n);
+            }
             return placed;
         },
         QStringLiteral("Apply Groove"));

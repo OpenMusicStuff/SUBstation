@@ -1156,6 +1156,20 @@ private Q_SLOTS:
         roll()->setGrooveTiming(100.0);
         roll()->applyGroove(QStringLiteral("project"));
         QVERIFY(std::abs(starts()[1] - 0.31) < 1e-9);
+        undo().undo();
+
+        // Two notes pulled onto one 16th (Quantize 100 %, straight): placed note for note, the clip
+        // resolving their overlap (not left as they were).
+        session().editor()->setClipNotes(ref, {note(60, 0.24, 0.1), note(60, 0.26, 0.1), note(64, 0.74, 0.1)},
+                                         QStringLiteral("setup"));
+        roll()->setSelection({});
+        roll()->setGrooveSwing(50.0);
+        roll()->setGrooveQuantize(100.0);
+        roll()->applyGroove(QStringLiteral("swing"));
+        QCOMPARE(undo().undoText(), QStringLiteral("Apply Groove"));
+        QVERIFY(!clipNotes().empty());
+        for (const Note& n : clipNotes())
+            QVERIFY2(std::abs(n.start - 0.25) < 1e-9 || std::abs(n.start - 0.75) < 1e-9, qPrintable(QString::number(n.start)));
     }
 };
 

@@ -191,6 +191,13 @@ private Q_SLOTS:
         }
         QVERIFY(near(f.project.findGroove(copy)->groove.lanes.front().steps[3].timing, 0.3));
         QCOMPARE(f.stack.undoText(), QStringLiteral("Edit Groove"));
+        // The same merge key on another groove: a step of its own (undoing it leaves the first's).
+        groove::Groove other = f.project.findGroove(id)->groove;
+        other.lanes.front().steps[3].timing = 0.4;
+        f.editor.setGroove(id, other, QStringLiteral("drag"));
+        f.stack.undo();
+        QVERIFY(near(f.project.findGroove(id)->groove.lanes.front().steps[3].timing, swung));
+        QVERIFY(near(f.project.findGroove(copy)->groove.lanes.front().steps[3].timing, 0.3));
         f.stack.undo();
         QVERIFY(near(f.project.findGroove(copy)->groove.lanes.front().steps[3].timing, swung));
         f.stack.undo();
@@ -264,6 +271,13 @@ private Q_SLOTS:
         QVERIFY(grooved.groove);
         QVERIFY(grooved.isWarped());  // (a groove warps it)
         QVERIFY(near(grooved.segmentBpm, 120.0));
+        // Applied with no transients (not decoded, or none strong enough): as it played, unmoved.
+        Clip unheard = grooved;
+        unheard.setWarpMarkers({{0.0, 0.0}, {0.125, 0.25}, {1.0, 2.0}});  // (one on an offbeat 16th)
+        QCOMPARE(unheard.warpMarkers.size(), size_t{3});
+        const Clip kept = grooves::applied(unheard, groove::swing(75.0), {}, Tempo(120.0));
+        QVERIFY(!kept.groove);
+        QCOMPARE(kept.warpMarkers, unheard.warpMarkers);
         f.editor.setClipGroove({{track, QStringLiteral("a")}}, std::nullopt);
         QVERIFY(!f.project.clip(track, QStringLiteral("a")).groove);
         // MIDI: Apply Groove writes it into the notes.
@@ -367,6 +381,14 @@ private Q_SLOTS:
         QCOMPARE(read.name, QStringLiteral("Drunk"));
         QCOMPARE(read.groove, drunk->groove);
         QVERIFY(read.id != drunk->id);
+        // A lane's keys out of range (a file edited by hand): dropped, however far out.
+        const std::optional<groove::Groove> keys = grooveFromJson(QJsonObject{
+            {QStringLiteral("step"), 0.25},
+            {QStringLiteral("lanes"), QJsonArray{QJsonObject{{QStringLiteral("keys"), QJsonArray{}}},
+                                                 QJsonObject{{QStringLiteral("keys"), QJsonArray{1e300, -5, 128, 38}}}}}});
+        QVERIFY(keys);
+        QCOMPARE(keys->lanes.size(), size_t{2});
+        QCOMPARE(keys->lanes[1].keys, std::vector<int>{38});
         QFile bad(dir.path(QStringLiteral("bad.gilgroove")));
         bad.open(QIODevice::WriteOnly);
         bad.write("{\"format\": \"something else\"}");

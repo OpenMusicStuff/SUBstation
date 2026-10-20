@@ -90,7 +90,8 @@ void ProjectEditor::commitGrooves(std::vector<LibraryGroove> after, const QStrin
     // Within one drag, from the library as it was when the drag began (the devices' states too).
     const int index = undoStack_->index();
     const auto* last = index > 0 ? dynamic_cast<const SetGroovesCommand*>(undoStack_->command(index - 1)) : nullptr;
-    const bool merging = !mergeKey.isEmpty() && last != nullptr && last->mergeKey() == mergeKey;
+    const bool merging =
+        !mergeKey.isEmpty() && last != nullptr && last->mergeKey() == mergeKey && last->target() == grooveId;
     // The Groove devices playing a library groove: their copies as the library has it now (or, the
     // groove going, their own: the id dropped, the copy kept).
     for (const auto& [trackId, device] : grooveDevices(p)) {

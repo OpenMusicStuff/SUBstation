@@ -265,4 +265,10 @@ TEST_CASE("groove: as text and back") {
     CHECK(!groove::fromText("").has_value());
     CHECK(!groove::fromText("not a groove").has_value());
     CHECK(!groove::fromText("groove 1\ns 0 0 x 1\n").has_value());
+    // A lane's keys out of range (a damaged file): dropped, however far out.
+    const std::optional<groove::Groove> far = groove::fromText("groove 1\nstep 0.25\nlane\nlane 1e300 -1e300 42\n");
+    REQUIRE(far.has_value());
+    const groove::Groove kept = groove::normalized(*far);
+    REQUIRE(kept.lanes.size() == 2);
+    CHECK(kept.lanes[1].keys == std::vector<int>{42});
 }

@@ -115,8 +115,12 @@ protected:
                 double beat = ctx.beatPos + i / samplesPerBeat;
                 if (follows) {
                     if (straightAt < 0 || i >= straightAt + kGrooveStep) {
-                        straightAt = i - i % kGrooveStep;
-                        straightFrom = straightBeat(*follows, ctx.beatPos + straightAt / samplesPerBeat, *ctx.tempoMap);
+                        // (A window right after the last starts where that one ended.)
+                        const int at = i - i % kGrooveStep;
+                        straightFrom = straightAt >= 0 && at == straightAt + kGrooveStep
+                                           ? straightTo
+                                           : straightBeat(*follows, ctx.beatPos + at / samplesPerBeat, *ctx.tempoMap);
+                        straightAt = at;
                         straightTo = straightBeat(*follows, ctx.beatPos + (straightAt + kGrooveStep) / samplesPerBeat,
                                                   *ctx.tempoMap);
                     }

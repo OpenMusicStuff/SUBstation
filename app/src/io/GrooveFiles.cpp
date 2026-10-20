@@ -60,7 +60,8 @@ std::optional<groove::Groove> grooveFromJson(const QJsonValue& value) {
         const QJsonObject l = entry.toObject();
         groove::Lane lane;
         for (const QJsonValue& key : l.value(QStringLiteral("keys")).toArray()) {
-            if (key.isDouble()) lane.keys.push_back(static_cast<int>(key.toDouble()));
+            // (A key, 0..127; others aren't, and couldn't all be an int.)
+            if (const double k = key.toDouble(-1.0); k >= 0.0 && k <= 127.0) lane.keys.push_back(static_cast<int>(k));
         }
         for (const QJsonValue& s : l.value(QStringLiteral("steps")).toArray()) {
             const QJsonArray step = s.toArray();

@@ -426,7 +426,8 @@ std::optional<Groove> fromText(std::string_view text) {
             Lane lane;
             for (size_t i = 1; i < parts.size(); ++i) {
                 if (!parseNumber(parts[i], value)) return std::nullopt;
-                lane.keys.push_back(static_cast<int>(value));
+                // (Held just past 0..127 before it is an int: normalized() drops those.)
+                lane.keys.push_back(static_cast<int>(std::clamp(value, -1.0, 128.0)));
             }
             groove.lanes.push_back(std::move(lane));
         } else if (word == "s" && parts.size() == 5 && !groove.lanes.empty()) {

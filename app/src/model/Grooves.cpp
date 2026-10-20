@@ -196,6 +196,8 @@ Clip applied(const Clip& clip, const std::optional<groove::Groove>& groove, cons
         changed.notes = notes::normalize(moved);
         return changed;
     }
+    // (No transients, not decoded or none strong enough: as it played, as it was.)
+    if (transientSeconds.empty()) return changed;
     const std::vector<WarpMarker> markers = groovedMarkers(clip, transientSeconds, *groove, setting->amounts, tempo);
     if (markers.size() >= 2) changed.setWarpMarkers(markers);
     return changed;
