@@ -319,6 +319,7 @@ add_library(sub_engine STATIC
     src/builtin/GigaTuneDesign.cpp
     src/builtin/SwiftF0.cpp
     src/builtin/SampleSlicing.cpp
+    src/builtin/SnarlTables.cpp
     src/builtin/VitalPatch.cpp
     ${BUILTIN_DEVICE_SOURCES}
     ${CMAKE_CURRENT_BINARY_DIR}/generated/BuiltinDevices.cpp
@@ -407,7 +408,7 @@ target_include_directories(sub_engine PUBLIC src)
 # Signalsmith Stretch (time stretching / pitch shifting) and its FFT library:
 # MIT-licensed, header-only, no further dependencies.
 target_include_directories(sub_engine SYSTEM PRIVATE third_party/signalsmith-stretch)
-target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital fastpitch)  # (kfr_fft: Hue's FFTs)
+target_link_libraries(sub_engine PRIVATE signalsmith_linear kfr_fft mp3lame vital fastpitch)  # (kfr_fft: Hue's FFTs, Snarl's tables)
 target_link_libraries(sub_engine PUBLIC sub_platform sub_music miniaudio vst3_hosting vst2sdk)
 if (WIN32)
     target_link_libraries(sub_engine PUBLIC user32 ole32 uuid advapi32 winmm)

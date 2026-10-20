@@ -25,7 +25,9 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
 | [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
 | [builtin/devices/Snarl.cpp](../../engine/src/builtin/devices/Snarl.cpp) | the Snarl instrument: a bass synth (one voice, gliding; unison, growl, filter, dirt, split, squash, a sub; a wobble), oversampled; its displays |
-| [builtin/SnarlDesign.h](../../engine/src/builtin/SnarlDesign.h) | Snarl's maths (`snarl::`): its lists' names and values (the growl's modes, the FM ratios, the filters, the dirt, the wobble's rates and shapes), the oscillator's shapes and Wave's morph (`shapeAt`, `morph`), the growl (`growled`), the vowels (`formantsAt`, `vowelPosition`, `freqPosition`), the wobble (`wobble`), shared with the application layer's [SnarlResponse.h](../../app/src/audio/SnarlResponse.h) for the editor |
+| [builtin/SnarlDesign.h](../../engine/src/builtin/SnarlDesign.h) | Snarl's maths (`snarl::`): its lists' names and values (the growl's modes, the FM ratios, the filters, the dirt, the wobble's rates and shapes), the growl (`growled`, `foldAveraged`), the dirt's curves (`dirtCurve`, `dirtIntegral`, `dirtAveraged`), the vowels (`formantsAt`, `vowelPosition`, `freqPosition`), the wobble (`wobble`), shared with the application layer's [SnarlResponse.h](../../app/src/audio/SnarlResponse.h) for the editor |
+| [builtin/SnarlTables.h](../../engine/src/builtin/SnarlTables.h), [.cpp](../../engine/src/builtin/SnarlTables.cpp) | Snarl's wavetables (`snarl::Wavetables`, built once and shared; `tableLabels`): Basic's shapes and four tables of Adventure Kid waves, blended in frequency, band-limited at ten levels; `read` for the oscillators, `cycle` for an editor |
+| [builtin/SnarlTablesData.h](../../engine/src/builtin/SnarlTablesData.h) | the 64 AKWF single cycles those are built from (16-bit), written by [third_party/akwf/make_data.py](../../engine/third_party/akwf/make_data.py) |
 | [builtin/OttDesign.h](../../engine/src/builtin/OttDesign.h) | Over The Top's squash (`ott::Squash`: the three bands, their detectors and gain law, fitted to Live's OTT preset), shared by the Over The Top device and Snarl's Squash |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
 | [builtin/devices/Groove.cpp](../../engine/src/builtin/devices/Groove.cpp) | the Groove device, a MIDI effect: the notes reaching it moved in time with a groove (`groove::place()`, [music/Groove.h](../../music/src/music/Groove.h); [groove.md](../groove.md)), held and played later, or placed both ways when the renderer hands them over early |
@@ -421,7 +423,8 @@ sub (a sine at the note, × the amp) ──────────────�
 
 | id | Name | Unit | Range | Default |
 |---|---|---|---|---|
-| `wave` | Wave | % | 0..100 (0 Sine, 25 Triangle, 50 Saw, 75 Square, 100 Pulse) | 50 |
+| `table` | Table | | Basic, Voice, FM, Hollow, Dirty (a list) | Basic |
+| `wave` | Wave | % | 0..100 along the table (Basic: 0 Sine, 25 Triangle, 50 Saw, 75 Square, 100 Pulse) | 50 |
 | `unison` | Unison | | 1..7, whole | 3 |
 | `detune` | Detune | ct | 0..100 | 15 |
 | `width` | Width | % | 0..100 | 50 |
@@ -461,16 +464,29 @@ sub (a sine at the note, × the amp) ──────────────�
   id, else its key), gliding as the Synth's (`dsp::kBendGlideSeconds`). Velocity is ignored.
 - **Unison.** Detune spreads the oscillators evenly from -Detune to +Detune cents; Width pans them evenly across
   ±Width (equal power), each at √(2 / Unison), so any number is as loud as one.
-- **The growl** (`snarl::growled`, SnarlDesign.h), Growl plus the wobble's share, 0..1: FM is phase modulation by a
-  sine at Ratio times the oscillator, up to 8 radians, the BLEPs taking the bent phase's step; Sync reads a copy 1 + 7
-  Growl times as fast, restarted each cycle under a Hann window over the cycle (windowed sync: no click at the
-  restart), the window faded in over the first third of Growl; Fold drives the wave into a sine folder (up to 8x),
-  faded in the same way and anti-aliased (`foldAveraged`: the folder averaged over the line from the last input,
-  first-order antiderivative anti-aliasing; each oscillator keeps its last input, set afresh where the oscillators
-  are when the mode changes or their phases restart); Ring multiplies by a sine at Ratio, from none to all of it.
-  Each modulator has its own phase per unison oscillator. The growl reads the wave through a callable
-  (`growled(..., read)`), so any source (Wave's shapes) goes through it. At Growl 0 every mode is the oscillator as
-  it is.
+- **The tables** (`snarl::Wavetables`, SnarlTables.h), built the first time a Snarl is prepared (some 35 ms, on the
+  main thread; about 5 MB, shared by every Snarl). Basic is Wave's five shapes from their Fourier series (512
+  harmonics; the pulse 20 % wide, its DC out, its peak at 1). Voice, FM, Hollow and Dirty are 16 single cycles each
+  of the Adventure Kid Waveforms (CC0: `AKWF_hvoice`, `AKWF_fmsynth`, `AKWF_overtone`, `AKWF_distorted`, picked for
+  bass and ordered dark to bright: [VERSION.txt](../../engine/third_party/akwf/VERSION.txt)), each brought to an RMS
+  of 0.5 (`kLoudness`) and turned to line up with the one before it (the shift that correlates best: the inverse
+  FFT of their cross-spectrum). Between two keys lie three more frames, blended in frequency (each harmonic's level
+  linearly, its phase the short way round), so a scan never cancels between two waves as a crossfade of samples
+  would: Basic has 17 frames, the others 61. Each frame is kept at 10 levels an octave apart (512 harmonics down to
+  1, a cycle of 4 samples a harmonic, 64 at least, with guard samples so a read needn't wrap), from KFR inverse FFTs.
+  A read (`read(table, position, t, harmonicLimit)`) is Hermite reads at the two levels either side of what its
+  note allows (20 kHz, `kLimitHz`, over the step that read takes: so an FM'd or synced read is limited for its own
+  speed), crossfaded linearly in frequency between them (the fuller holds harmonics up to twice the limit at most,
+  under any oversampled rate's Nyquist), and between the two frames either side of Wave's place.
+- **The growl** (`snarl::growled`, SnarlDesign.h), Growl plus the wobble's share, 0..1: FM is phase modulation by a sine
+  at Ratio times the oscillator, up to 8 radians, its read band-limited for the bent phase's step; Sync reads a copy
+  1 + 7 Growl times as fast, restarted each cycle under a Hann window over the cycle (windowed sync: no click at the
+  restart), the window faded in over the first third of Growl; Fold drives the wave into a sine folder (up to 8x), faded
+  in the same way and anti-aliased (`foldAveraged`: the folder averaged over the line from the last input, first-order
+  antiderivative anti-aliasing; each oscillator keeps its last input, set afresh where the oscillators are when the mode
+  changes or their phases restart); Ring multiplies by a sine at Ratio, from none to all of it. Each modulator has its
+  own phase per unison oscillator. The growl reads the wave through a callable (`growled(..., read)`): the table,
+  crossfading from the one before for 3 ms after a change. At Growl 0 every mode is the oscillator as it is.
 - **The filter**, its frequency gliding in octaves and moved by the wobble up to 6 octaves (`kWobbleOctaves`), its
   coefficients worked out each base-rate sample: Low, two state-variable sections (damping 1.848, then 0.765 down to
   0.055 with Resonance), its output times √(k / 0.765) (half the resonant peak's rise made up in the passband, so
@@ -484,16 +500,18 @@ sub (a sine at the note, × the amp) ──────────────�
   one-pole damping, its output scaled by 1 - feedback.
 - **The amp** multiplies the filter's output (and the sub) by the envelope, before the dirt.
 - **Dirt.** First a 4-pole Butterworth low-pass at 20 kHz (at the oversampled rate): the oscillators' ultrasonic
-  harmonics (a Comb passes them all) would otherwise come out of the curves as products past the oversampled
-  Nyquist and fold back. Then u, the sound times half of Drive's gain (`driveGain`: x1 to x16, +24 dB; the half is 6
-  dB of headroom, so a full-scale sound bends only gently at Drive 0), into Tube (2 (tanh(u + b) - tanh b), b = 0.3
-  Drive), Hard (2 × a clip at ±1), Rectify (3 (1 - sech 2u): a full-wave rectifier rounded at 0, where |u|'s corner
-  would alias) or Crush (a sample held for up to 12 Drive² base samples' worth, quantized to 1024 down to 4 levels a
-  side, twice). All but Crush are anti-aliased (`dirtAveraged`: the curve averaged over the line from the last u,
-  from its antiderivative: ln cosh, the clip's, u - atan(tanh u)); the last u is each channel's, the same for a
-  crossfade's two curves. A DC blocker (10 Hz) follows: Rectify's DC.
+  harmonics (a Comb passes them all) would otherwise come out of the curves as products past the oversampled Nyquist and
+  fold back. Then u, the sound times half of Drive's gain (`driveGain`: x1 to x16, +24 dB; the half is 6 dB of headroom,
+  so a full-scale sound bends only gently at Drive 0), into Tube (2 (tanh(u + b) - tanh b), b = 0.3 Drive), Hard (2 × a
+  clip at ±1), Rectify (3 (1 - sech 2u): a full-wave rectifier rounded at 0, where |u|'s corner would alias) or Crush (a
+  sample held for up to 12 Drive² base samples' worth, quantized to 1024 down to 4 levels a side, twice). All but Crush
+  are anti-aliased (`dirtAveraged`: the curve averaged over the line from the last u, from its antiderivative: ln cosh
+  (as |u| + ln(1 + e^-2|u|) - ln 2), the clip's, u - atan(tanh u)); the last u is each channel's, the same for a
+  crossfade's two curves, and so is the playing curve's antiderivative there (Tube's at its bias), so a sample works out
+  only its own (both, after a change of the type or of Drive). A DC blocker (10 Hz) follows: Rectify's DC.
 - **Split** is two Butterworth state-variable high-passes (24 dB), then **Squash** is Over The Top's `ott::Squash`
-  (OttDesign.h) at the oversampled rate, linked stereo, Squash its depth. Over The Top brings a hot sound down
+  (OttDesign.h) at the oversampled rate, linked stereo, Squash its depth, its band gains worked out once a base
+  sample (`tick(..., regain)`; the detectors follow every sample). Over The Top brings a hot sound down
   towards its thresholds, some 22 dB on a driven bass at full depth, so Squash makes up `kSquashMakeupDb` (21 dB)
   times its depth: turning it up makes the sound denser, not quieter. Then a soft clip, x / (1 + (x / 3)⁴)^¼ (within
   0.15 dB of x up to half its ceiling of 3), holds the peaks that get past the squash's quick detectors.
@@ -505,8 +523,8 @@ sub (a sine at the note, × the amp) ──────────────�
   octaves), the growl (adds Wobble > Growl) and the pitch (Wobble > Pitch semitones), each in proportion to its level.
 - **Glides and crossfades.** Wave, Detune, Width, Sub, Split, Growl, Freq (in octaves), Resonance, Drive and Squash
   glide to where they are set (a one-pole of 10 ms, per base sample); Volume ramps (`SmoothedValue`, 20 ms). A change
-  of the growl's mode, the filter's type or the dirt's crossfades from the old over 3 ms (the old filter running on
-  meanwhile, the new one's state cleared as it comes in).
+  of the table, the growl's mode, the filter's type or the dirt's crossfades from the old over 3 ms (the old filter
+  running on meanwhile, the new one's state cleared as it comes in).
 - **Sleep.** 0.5 s after the envelope ends it sleeps: everything that rings out cleared, the glides where they are
   set, exact zeros out, nothing run until a note. `tailSamples()` is the release and 0.3 s.
 
@@ -825,7 +843,8 @@ phase, see below).
 - Depth scales each band's whole gain in dB (its make-up too), as Live's Amount does: 50 % is half the change in dB,
   not half the processed signal, and 0 % is 0 dB. The output trim applies last.
 - The squash itself (the bands, the detectors, the gain law) is `ott::Squash` in
-  [OttDesign.h](../../engine/src/builtin/OttDesign.h), a sample at a time; Snarl's Squash is the same.
+  [OttDesign.h](../../engine/src/builtin/OttDesign.h), a sample at a time; Snarl's Squash is the same (its gains
+  worked out once a base sample).
 - The settings are fitted to renders of Live's OTT preset (Multiband Dynamics) on drums, a dubstep growl and a piano
   at Amount 25, 50 and 100 %: each band's level, 10 ms at a time, is within 0.7 dB of Live's on average (the earlier
   settings, the preset's panel values with slow detectors and a linear blend, were 2.8 dB off). Live's ratios fit
@@ -3334,9 +3353,11 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   oscillator at Growl 0, FM's sidebands; the Vowel filter's formants adding between their peaks (no notch); folding
   and hard driving aliasing little (the energy between a held note's harmonics, 500 Hz to 18 kHz, through a
   Blackman-Harris window), and each dirt clean at Drive 0; the dirt's and the folder's anti-aliasing against
-  numerical integrals of their curves; the same output for any blocks; a list's change crossfading without a
+  numerical integrals of their curves; the tables (Basic's keys its shapes' series, a read band-limited for its
+  note, the AKWF keys as loud as each other and a scan through them smooth, never cancelling); every table clean
+  between its harmonics at its brightest; the same output for any blocks; a list's change crossfading without a
   click; random automation of everything finite and bounded; its displays (the scope's cycles 64 values each, the
-  level the output's peak); the design's shapes (no DC), vowels and wobbles; through the engine.
+  level the output's peak); the design's vowels and wobbles; through the engine.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
 - [test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp): the Synth and the Sampler play a
   note's bend at its bent pitch, and the Synth bends only the note a bend names.

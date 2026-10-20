@@ -25,6 +25,7 @@ the licences, not legal advice: for a commercial release, have it checked.
 | [miniaudio](../engine/third_party/miniaudio) | engine/third_party | Unlicense or MIT-0 | audio I/O, decoding | yes |
 | [Signalsmith Stretch, Linear](../engine/third_party) | engine/third_party | MIT | time stretching, Spectral's STFT (their FFTs run on KFR's: a backend of SUBstation's, `platform/fft-kfr.h`) | yes |
 | [fastpitch](../engine/third_party/fastpitch) 1.0.0 | engine/third_party/fastpitch | MIT | pitch tracking (pYIN): GigaTune | yes |
+| [Adventure Kid Waveforms](../engine/third_party/akwf) (AKWF), 64 of its single cycles | engine/third_party/akwf (their samples in engine/src/builtin/SnarlTablesData.h) | CC0 1.0 (public domain dedication) | Snarl's wavetables | yes (no conditions; credited anyway in its folder and the guide) |
 | [swift-f0](../engine/third_party/swift-f0) 0.3.0's model | engine/third_party/swift-f0 (its weights in engine/src/builtin/SwiftF0Data.h) | MIT | pitch tracking (SwiftF0): GigaTune's High Quality | yes |
 | [VST 3 SDK](../engine/third_party/vst3sdk) 3.8.1 | engine/third_party | MIT | plug-in hosting | yes |
 | [vst2sdk](../engine/third_party/vst2sdk) (Xaymar's clean-room VST 2.x interface) | engine/third_party | BSD-3-Clause | VST2 plug-in hosting (its header) | yes (ship its [LICENSE](../engine/third_party/vst2sdk/LICENSE)). It is a reimplementation, not Steinberg's VST 2 SDK, which isn't licensed any more; its README notes it grants no trademark rights: see [below](#to-decide) |

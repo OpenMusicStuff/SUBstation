@@ -79,7 +79,7 @@ private Q_SLOTS:
         QVERIFY(view && fitted());
         QVERIFY2(view->implicitHeight() <= bodyHeight(), qPrintable(QString::number(view->implicitHeight())));
         QVERIFY2(view->implicitWidth() <= 860, qPrintable(QString::number(view->implicitWidth())));
-        for (const QString& name : knobNames() + QStringList{"octave", "growlMode", "filterType", "dirtType",
+        for (const QString& name : knobNames() + QStringList{"table", "octave", "growlMode", "filterType", "dirtType",
                                                                "wobbleRate", "wobbleShape", "retrig", "scope",
                                                                "wobbleGraph", "dice", "styles"})
             QVERIFY2(find<QQuickItem>(view, name), qPrintable(name));
@@ -118,6 +118,29 @@ private Q_SLOTS:
         QCOMPARE(dirt->width(), dirtWidth);
         QCOMPARE(find(view, QStringLiteral("ampSection"))->x(), ampAt);
         QVERIFY(dirt->property("button").value<QQuickItem*>()->implicitWidth() <= dirtWidth + 0.5);
+
+        // The table: Wave reads as Basic's shapes on it, how far along on the others; the octave's box beside it
+        // within the section, its text whole.
+        const auto waveText = [&](double v) {
+            QVariant text;
+            QMetaObject::invokeMethod(view, "waveText", Q_RETURN_ARG(QVariant, text), Q_ARG(QVariant, v));
+            return text.toString();
+        };
+        QCOMPARE(waveText(50.0), QStringLiteral("Saw"));
+        QCOMPARE(waveText(60.0), QStringLiteral("Saw~"));
+        QQuickItem* table = find(view, QStringLiteral("table"));
+        const double tableWidth = table->width();
+        editor()->setDeviceParam(track_, device_, QStringLiteral("table"), 3.0);  // Hollow, the longest
+        QTRY_VERIFY(waveText(50.0) != QStringLiteral("Saw"));
+        QVERIFY2(waveText(50.0).startsWith(QStringLiteral("50")), qPrintable(waveText(50.0)));
+        QCOMPARE(table->width(), tableWidth);
+        QCOMPARE(find(view, QStringLiteral("ampSection"))->x(), ampAt);
+        QVERIFY(table->property("button").value<QQuickItem*>()->implicitWidth() <= tableWidth + 0.5);
+        QQuickItem* octave = find(view, QStringLiteral("octave"));
+        QQuickItem* osc = find(view, QStringLiteral("osc"));
+        QVERIFY(octave->mapToItem(osc, QPointF(octave->width(), 0)).x() <= osc->width() + 0.5);
+        QVERIFY(octave->property("box").value<QQuickItem*>()->implicitWidth() <= octave->width() + 0.5);
+        editor()->setDeviceParam(track_, device_, QStringLiteral("table"), 0.0);
 
         // A knob set, undoably; a list too.
         editor()->setDeviceParam(track_, device_, QStringLiteral("growl"), 80.0);
@@ -167,6 +190,7 @@ private Q_SLOTS:
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, centerOf(riddim));
         QCOMPARE(undo()->count(), steps + 1);
         QCOMPARE(value("growl_mode"), 2.0);  // Fold
+        QCOMPARE(value("table"), 3.0);  // Hollow
         QCOMPARE(value("wobble_shape"), 4.0);  // Square
         QCOMPARE(value("unison"), 1.0);
         QCOMPARE(undo()->undoText(), QStringLiteral("Snarl Style: Riddim"));
@@ -175,6 +199,7 @@ private Q_SLOTS:
         QVERIFY(scope->punchLeft() > 0.0);
         undo()->undo();
         QCOMPARE(value("growl_mode"), 0.0);  // (FM, as it was)
+        QCOMPARE(value("table"), 0.0);
         QCOMPARE(value("unison"), 3.0);
         undo()->redo();
         // Every style a whole patch of the device's parameters, within their ranges.
@@ -184,7 +209,7 @@ private Q_SLOTS:
         QVERIFY(device);
         for (const QVariant& style : styles) {
             const QVariantMap patch = style.toMap().value(QStringLiteral("patch")).toMap();
-            QCOMPARE(patch.size(), 25);  // all but Volume
+            QCOMPARE(patch.size(), 26);  // all but Volume
             for (auto it = patch.constBegin(); it != patch.constEnd(); ++it) {
                 const auto info = editor()->paramInfo(track_, device_, it.key());
                 QVERIFY2(info.has_value(), qPrintable(it.key()));

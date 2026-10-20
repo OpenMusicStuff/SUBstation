@@ -8,7 +8,7 @@ import SUBstation
 // coloured by the growl as it plays) with the dice in its corner (a click rolls
 // a new bass, Shift+click nudges the one there: one undo step each) and, with
 // the Vowel filter, the vowel it speaks. Then the sections, a name over each
-// that lights as it works: OSC (Octave, Wave, Unison, Detune, Width), SUB (Sub,
+// that lights as it works: OSC (Table, Octave, Wave, Unison, Detune, Width), SUB (Sub,
 // Split), GROWL (its mode, Growl, Ratio), FILTER (its type, Freq, Res), DIRT (its
 // type, Drive, Squash), WOBBLE (Rate, Shape, Retrig; how far it moves the
 // filter, the growl and the pitch; its shape with a dot riding it: SnarlWobble)
@@ -40,9 +40,19 @@ Item {
 
     EditorTextsWidth {
         id: knobTexts
+        texts: editor.waveForms
         knobs: [waveKnob, unisonKnob, detuneKnob, widthKnob, subKnob, splitKnob, growlKnob, ratioKnob, cutoffKnob,
                 resonanceKnob, driveKnob, squashKnob, wobbleFilterKnob, wobbleGrowlKnob, wobblePitchKnob, glideKnob,
                 attackKnob, releaseKnob, volumeKnob]
+    }
+    EditorTextsWidth {
+        id: tables
+        font: table.button.font
+        texts: table.names
+    }
+    EditorBoxWidth {
+        id: octaves
+        texts: [qsTr("Oct +2"), qsTr("Oct -1")]
     }
     EditorTextsWidth {
         id: growlModes
@@ -75,7 +85,7 @@ Item {
         id: p
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["wave", "unison", "detune", "width", "octave", "sub", "split", "growl_mode", "growl", "ratio",
+        ids: ["table", "wave", "unison", "detune", "width", "octave", "sub", "split", "growl_mode", "growl", "ratio",
               "filter_type", "cutoff", "resonance", "dirt_type", "drive", "wobble_rate", "wobble_shape",
               "wobble_filter", "wobble_growl", "wobble_pitch", "wobble_retrig", "squash", "glide", "attack",
               "release", "volume"]
@@ -154,6 +164,16 @@ Item {
             return vowels[nearest]
         return vowels[Math.floor(place)] + "→" + vowels[Math.min(4, Math.floor(place) + 1)]
     }
+    // Wave's readout: on Basic the shape there ("~" between two), on the others how far along the table.
+    readonly property var shapeNames: [qsTr("Sine"), qsTr("Tri"), qsTr("Saw"), qsTr("Square"), qsTr("Pulse")]
+    readonly property var waveForms: shapeNames.map(name => name + "~")
+    function waveText(v) {
+        const wave = p.get("wave")
+        if (editor.choiceOf("table") !== 0)
+            return wave ? wave.format(v) : ""
+        const place = v / 25
+        return editor.shapeNames[Math.round(place)] + (Math.abs(place - Math.round(place)) > 0.02 ? "~" : "")
+    }
     function freqPosition(hz) {
         return Math.log(Math.max(30, Math.min(18000, hz)) / 30) / Math.log(18000 / 30)
     }
@@ -163,33 +183,34 @@ Item {
     // The style last chosen (view state: it isn't saved).
     property string style: ""
     readonly property var styles: [
-        {name: "Growl", tip: qsTr("Growl: FM through a talking vowel filter, the wobble moving both"),
-         patch: {wave: 50, unison: 1, detune: 0, width: 0, octave: 0, sub: 60, split: 110, growl_mode: 0, growl: 45,
+        {name: "Growl", tip: qsTr("Growl: a voice, FM'd through a talking vowel filter, the wobble moving both"),
+         patch: {table: 1, wave: 55, unison: 1, detune: 0, width: 0, octave: 0, sub: 60, split: 110, growl_mode: 0,
+                 growl: 30,
                  ratio: 3, filter_type: 2, cutoff: 1200, resonance: 45, dirt_type: 0, drive: 35, wobble_rate: 7,
                  wobble_shape: 0, wobble_filter: 35, wobble_growl: 45, wobble_pitch: 0, wobble_retrig: 1,
                  squash: 55, glide: 40, attack: 2, release: 60}},
         {name: "Reese", tip: qsTr("Reese: seven detuned saws, wide and slowly breathing"),
-         patch: {wave: 50, unison: 7, detune: 30, width: 85, octave: 0, sub: 70, split: 140, growl_mode: 0, growl: 0,
+         patch: {table: 0, wave: 50, unison: 7, detune: 30, width: 85, octave: 0, sub: 70, split: 140, growl_mode: 0, growl: 0,
                  ratio: 1, filter_type: 0, cutoff: 2200, resonance: 15, dirt_type: 0, drive: 25, wobble_rate: 0,
                  wobble_shape: 0, wobble_filter: 15, wobble_growl: 0, wobble_pitch: 0, wobble_retrig: 0,
                  squash: 35, glide: 80, attack: 5, release: 150}},
         {name: "Wub", tip: qsTr("Wub: a resonant low-pass opened and shut on the beat, clipped hard"),
-         patch: {wave: 50, unison: 2, detune: 8, width: 30, octave: 0, sub: 65, split: 100, growl_mode: 0, growl: 10,
+         patch: {table: 0, wave: 50, unison: 2, detune: 8, width: 30, octave: 0, sub: 65, split: 100, growl_mode: 0, growl: 10,
                  ratio: 3, filter_type: 0, cutoff: 180, resonance: 50, dirt_type: 1, drive: 40, wobble_rate: 4,
                  wobble_shape: 0, wobble_filter: 75, wobble_growl: 15, wobble_pitch: 0, wobble_retrig: 1,
                  squash: 45, glide: 30, attack: 2, release: 60}},
-        {name: "Screech", tip: qsTr("Screech: synced squares an octave up through a comb, rectified"),
-         patch: {wave: 75, unison: 2, detune: 12, width: 40, octave: 1, sub: 55, split: 160, growl_mode: 1, growl: 55,
+        {name: "Screech", tip: qsTr("Screech: a bright FM wave synced an octave up through a comb, rectified"),
+         patch: {table: 2, wave: 60, unison: 2, detune: 12, width: 40, octave: 1, sub: 55, split: 160, growl_mode: 1, growl: 55,
                  ratio: 3, filter_type: 3, cutoff: 1800, resonance: 70, dirt_type: 2, drive: 35, wobble_rate: 9,
                  wobble_shape: 3, wobble_filter: 30, wobble_growl: 35, wobble_pitch: 0, wobble_retrig: 1,
                  squash: 50, glide: 20, attack: 1, release: 50}},
-        {name: "Riddim", tip: qsTr("Riddim: one folded square, a band-pass chopped in triplets"),
-         patch: {wave: 75, unison: 1, detune: 0, width: 0, octave: 0, sub: 70, split: 120, growl_mode: 2, growl: 40,
+        {name: "Riddim", tip: qsTr("Riddim: one hollow wave folded, a band-pass chopped in triplets"),
+         patch: {table: 3, wave: 20, unison: 1, detune: 0, width: 0, octave: 0, sub: 70, split: 120, growl_mode: 2, growl: 40,
                  ratio: 3, filter_type: 1, cutoff: 650, resonance: 50, dirt_type: 1, drive: 45, wobble_rate: 8,
                  wobble_shape: 4, wobble_filter: 50, wobble_growl: 25, wobble_pitch: 0, wobble_retrig: 1,
                  squash: 60, glide: 0, attack: 1, release: 30}},
-        {name: "Tearout", tip: qsTr("Tearout: ring-modulated, vowels at random every sixteenth, rectified and squashed"),
-         patch: {wave: 50, unison: 1, detune: 0, width: 0, octave: 0, sub: 60, split: 130, growl_mode: 3, growl: 50,
+        {name: "Tearout", tip: qsTr("Tearout: a dirty wave ring-modulated, vowels at random every sixteenth, rectified and squashed"),
+         patch: {table: 4, wave: 60, unison: 1, detune: 0, width: 0, octave: 0, sub: 60, split: 130, growl_mode: 3, growl: 50,
                  ratio: 7, filter_type: 2, cutoff: 900, resonance: 60, dirt_type: 2, drive: 50, wobble_rate: 9,
                  wobble_shape: 5, wobble_filter: 55, wobble_growl: 50, wobble_pitch: 0, wobble_retrig: 1,
                  squash: 70, glide: 25, attack: 1, release: 40}}
@@ -228,6 +249,7 @@ Item {
             values.growl_mode = Math.floor(r() * 4)
             values.growl = 15 + r() * 65
             values.ratio = Math.floor(r() * 8)
+            values.table = Math.floor(r() * 5)
             values.wave = r() * 100
             values.unison = 1 + Math.floor(r() * 5)
             values.detune = r() * 35
@@ -449,23 +471,31 @@ Item {
             id: oscSection
             objectName: "osc"
             title: qsTr("OSC")
-            width: oscKnobs.width
+            width: Math.max(oscKnobs.width, oscTop.implicitWidth)
             glow: editor.level * 0.6
             TopRow {
-                EditorCaption {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("Octave")
+                id: oscTop
+                ParamChoice {
+                    id: table
+                    objectName: "table"
+                    width: editor.listWidth(table, tables)
+                    param: p.get("table")
+                    tooltip: qsTr("Table: the wave the oscillators play, Wave moving along it: Basic's shapes, or a voice, FM, hollow overtones or a dirty wave")
                 }
                 ParamBox {
                     objectName: "octave"
-                    width: 34
+                    width: Math.max(octaves.needed, oscKnobs.width - table.width - oscTop.spacing)
                     height: 16
                     param: p.get("octave")
                     step: 1
                     decimals: 0
                     defaultValue: 0
-                    sampleText: "+2"
-                    formatter: v => (v > 0 ? "+" : "") + Math.round(v)
+                    sampleText: octaves.sample
+                    formatter: v => qsTr("Oct %1").arg((v > 0 ? "+" : "") + Math.round(v))
+                    parser: text => {
+                        const n = parseInt(text.replace(/[^-+0-9]/g, ""))
+                        return isNaN(n) ? null : n
+                    }
                     tooltip: qsTr("Octave: the oscillators' octave (the sub stays at the note)")
                 }
             }
@@ -480,9 +510,8 @@ Item {
                     size: editor.knobSize
                     param: p.get("wave")
                     title: qsTr("Wave")
-                    formatter: v => ["Sine", "Tri", "Saw", "Square", "Pulse"][Math.round(v / 25)]
-                                    + (Math.abs(v / 25 - Math.round(v / 25)) > 0.02 ? "~" : "")
-                    tooltip: qsTr("Wave: sine, triangle, saw, square and a narrow pulse, morphing between them")
+                    formatter: v => editor.waveText(v)
+                    tooltip: qsTr("Wave: where along the table it plays, morphing (Basic: sine, triangle, saw, square, a narrow pulse; the others dark to bright)")
                 }
                 EditorKnob {
                     id: unisonKnob

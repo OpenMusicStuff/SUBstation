@@ -17,6 +17,7 @@
 #include "Engine.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/SnarlDesign.h"
+#include "builtin/SnarlTables.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 #include "harness/Standalone.h"
@@ -116,7 +117,7 @@ TEST_CASE("snarl: listed as an instrument, its parameters and lists") {
     REQUIRE(it != infos.end());
     CHECK(it->isInstrument());
     CHECK(it->name == "Snarl");
-    CHECK(it->params.size() == 26u);
+    CHECK(it->params.size() == 27u);
     std::set<std::string> ids;
     for (const sub::ParamInfo& info : it->params) {
         INFO(info.id);
@@ -133,6 +134,9 @@ TEST_CASE("snarl: listed as an instrument, its parameters and lists") {
             if (info.id == id) return info.valueLabels;
         return std::vector<std::string>{};
     };
+    CHECK(labels("table") == snarl::tableLabels());
+    const std::vector<std::string> tables = {"Basic", "Voice", "FM", "Hollow", "Dirty"};
+    CHECK(snarl::tableLabels() == tables);
     CHECK(labels("growl_mode") == snarl::growlModeLabels());
     CHECK(labels("filter_type") == snarl::filterTypeLabels());
     CHECK(labels("dirt_type") == snarl::dirtTypeLabels());
@@ -460,6 +464,79 @@ TEST_CASE("snarl: the dirt's curves and their anti-aliasing") {
     }
 }
 
+TEST_CASE("snarl: the tables") {
+    const snarl::Wavetables& tables = snarl::Wavetables::instance();
+    CHECK(&tables == &snarl::Wavetables::instance());  // (built once, shared)
+    const int basic = static_cast<int>(snarl::Table::Basic);
+    CHECK(tables.frames(basic) == 4 * snarl::Wavetables::kStepsBetween + 1);  // five shapes
+    for (int t = 1; t < snarl::kTables; ++t) CHECK(tables.frames(t) == 15 * snarl::Wavetables::kStepsBetween + 1);
+    // Basic's keys are Wave's shapes, band-limited: the sine, and the saw and the square from their first 512
+    // harmonics, between samples too.
+    const auto series = [](double t, int first, int step, double scale) {
+        double sum = 0.0;
+        for (int h = first; h <= 512; h += step) sum += scale * std::sin(2.0 * kPi * h * t) / h;
+        return sum;
+    };
+    for (const double t : {0.0, 0.1, 0.2371, 0.5, 0.77}) {
+        INFO(std::to_string(t));
+        CHECK_NEAR(tables.read(basic, 0.0, t, 512), std::sin(2.0 * kPi * t), 1e-4);
+        CHECK_NEAR(tables.read(basic, 0.5, t, 512), series(t, 1, 1, -2.0 / kPi), 2e-3);
+        CHECK_NEAR(tables.read(basic, 0.75, t, 512), series(t, 1, 2, 4.0 / kPi), 2e-3);
+    }
+    // Band-limited for the note: for a limit of 10 harmonics a read holds 16 at most (the fuller level at most
+    // twice the limit), the saw's 17th and up gone. (Read at the levels' own samples, 64 a cycle: between them the
+    // interpolation adds images of its own, which the device's oscillators keep far down, as the next test shows.)
+    {
+        constexpr int points = 64;
+        std::vector<double> cycle(points);
+        for (int p = 0; p < points; ++p) cycle[size_t(p)] = tables.read(basic, 0.5, double(p) / points, 10.0);
+        const std::vector<Complex> bins = dft(cycle);
+        double low = 0.0, high = 0.0;
+        for (int h = 1; h < points / 2; ++h) (h <= 16 ? low : high) += std::norm(bins[size_t(h)]);
+        CHECK(high < 1e-8 * low);
+        CHECK(std::abs(bins[10]) > 0.0);
+    }
+    // The AKWF tables: each key as loud as the others, every frame finite, and a scan smooth: neighbouring
+    // frames alike (blended in frequency, lined up), and never cancelling between keys.
+    for (int t = 1; t < snarl::kTables; ++t) {
+        INFO(snarl::tableLabels()[size_t(t)]);
+        const int frames = tables.frames(t);
+        std::vector<float> before;
+        double lowest = 1e9;
+        for (int f = 0; f < frames; ++f) {
+            const std::vector<float> cycle = tables.cycle(t, double(f) / (frames - 1), 1024);
+            REQUIRE(finite(cycle));
+            const double level = rms(cycle);
+            lowest = std::min(lowest, level);
+            if (f % snarl::Wavetables::kStepsBetween == 0) CHECK_NEAR(level, snarl::Wavetables::kLoudness, 0.03);
+            if (!before.empty()) {
+                double dot = 0.0, a = 0.0, b = 0.0;
+                for (size_t i = 0; i < cycle.size(); ++i) {
+                    dot += double(cycle[i]) * before[i];
+                    a += double(cycle[i]) * cycle[i];
+                    b += double(before[i]) * before[i];
+                }
+                CHECK(dot / std::sqrt(a * b) > 0.5);
+            }
+            before = cycle;
+        }
+        CHECK(lowest > 0.3);
+    }
+}
+
+TEST_CASE("snarl: every table plays clean between its harmonics") {
+    // A high note (A3, 220 Hz) at each table's brightest: band-limited, nothing folds back.
+    for (int t = 0; t < snarl::kTables; ++t) {
+        INFO(snarl::tableLabels()[size_t(t)]);
+        Standalone device("snarl", kRate, with(kClean, {{"table", float(t)}, {"wave", 100.f}}));
+        Timeline n;
+        n.note(0, 48000, 57);
+        const Samples left = play(device, n, 48000).first;
+        CHECK(rms(slice(left, 12000, 28000)) > 0.05);
+        CHECK(inharmonicDb(left, hz(57), 12000) < -70.0);
+    }
+}
+
 TEST_CASE("snarl: the same output whatever the blocks") {
     const ParamValues busy = {{"unison", 5.f}, {"growl", 60.f}, {"wobble_growl", 40.f}, {"filter_type", 2.f},
                               {"dirt_type", 3.f}, {"glide", 80.f}};
@@ -551,21 +628,7 @@ TEST_CASE("snarl: its displays") {
     }
 }
 
-TEST_CASE("snarl: the design's shapes and vowels") {
-    // Wave's shapes at their places, each within -1..1.
-    CHECK_NEAR(snarl::morph(0.0, 0.25, 0.001), 1.0, 1e-6);   // sine
-    CHECK_NEAR(snarl::morph(1.0, 0.5, 0.001), 1.0, 1e-9);    // triangle's top
-    CHECK_NEAR(snarl::morph(2.0, 0.75, 0.001), 0.5, 1e-9);   // saw
-    CHECK_NEAR(snarl::morph(3.0, 0.25, 0.001), 1.0, 1e-9);   // square
-    for (double position = 0.0; position <= 4.0; position += 0.125) {
-        double mean = 0.0;
-        for (int i = 0; i < 1000; ++i) {
-            const double v = snarl::morph(position, (i + 0.5) / 1000.0, 0.001);
-            CHECK(std::abs(v) <= 1.0 + 1e-6);
-            mean += v / 1000.0;
-        }
-        CHECK(std::abs(mean) < 0.01);  // no DC, the pulse's too
-    }
+TEST_CASE("snarl: the design's vowels and wobbles") {
     // The vowels: the frequency picks U at the bottom, I at the top, A in the middle.
     CHECK(snarl::vowelPosition(snarl::kMinFreq) == 0.0);
     CHECK(snarl::vowelPosition(snarl::kMaxFreq) == 4.0);

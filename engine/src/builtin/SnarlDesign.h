@@ -2,9 +2,9 @@
 // Snarl's maths, shared by the device (builtin/devices/Snarl.cpp), its tests and,
 // through the application layer's SnarlResponse.h, its editor: the lists' names
 // and what they stand for (the growl's modes, the FM ratios, the filters, the
-// dirt, the wobble's rates and shapes), the oscillator's shapes and how Wave
-// morphs between them, the growl's four ways of bending them, the vowels the
-// Vowel filter talks through, and the wobble's shapes.
+// dirt, the wobble's rates and shapes), the growl's four ways of bending the
+// oscillators, the dirt's curves, the vowels the Vowel filter talks through, and
+// the wobble's shapes. The oscillators' tables are SnarlTables.h's.
 //
 // All inline and real-time safe.
 
@@ -68,53 +68,10 @@ inline double rateBeats(int index) noexcept {
 }
 
 // --- The oscillator ----------------------------------------------------------------------
-
-// PolyBLEP: smooths a step at phase 0 over one sample on each side (the Synth's).
-inline double polyBlep(double t, double dt) noexcept {
-    if (t < dt) {
-        t /= dt;
-        return t + t - t * t - 1.0;
-    }
-    if (t > 1.0 - dt) {
-        t = (t - 1.0) / dt;
-        return t * t + t + t + 1.0;
-    }
-    return 0.0;
-}
+// What the oscillators read (Wave's shapes and the AKWF waves, band-limited) is
+// in SnarlTables.h; their phases wrap here.
 
 inline double wrap(double phase) noexcept { return phase - std::floor(phase); }
-
-inline constexpr int kShapes = 5;         // Sine, Triangle, Saw, Square, Pulse
-inline constexpr double kPulseWidth = 0.2;
-
-// Shape `k` (0 Sine, 1 Triangle, 2 Saw, 3 Square, 4 Pulse) at phase `t` (0..1),
-// stepping `dt` a sample (its steps smoothed: PolyBLEP). Each in -1..1, without DC.
-inline double shapeAt(int k, double t, double dt) noexcept {
-    dt = std::clamp(dt, 1e-9, 0.5);
-    switch (k) {
-    case 0: return fastmath::sin(dsp::kTwoPi * t);
-    case 1: return 1.0 - 4.0 * std::abs(t - 0.5);
-    case 2: return 2.0 * t - 1.0 - polyBlep(t, dt);
-    case 3: return (t < 0.5 ? 1.0 : -1.0) + polyBlep(t, dt) - polyBlep(wrap(t + 0.5), dt);
-    default: {  // a narrow pulse, its DC taken out and its peak at 1
-        const double pulse = (t < kPulseWidth ? 1.0 : -1.0) + polyBlep(t, dt) - polyBlep(wrap(t + 1.0 - kPulseWidth), dt);
-        return (pulse - (2.0 * kPulseWidth - 1.0)) / (2.0 - 2.0 * kPulseWidth);
-    }
-    }
-}
-
-// Wave (0..100 %) as a place among the shapes: 0 Sine, 25 Triangle, 50 Saw,
-// 75 Square, 100 Pulse, crossfading between neighbours.
-inline double morphPosition(double wavePercent) noexcept {
-    return std::clamp(wavePercent, 0.0, 100.0) / 100.0 * (kShapes - 1);
-}
-inline double morph(double position, double t, double dt) noexcept {
-    const int first = std::clamp(static_cast<int>(position), 0, kShapes - 2);
-    const double fraction = std::clamp(position - first, 0.0, 1.0);
-    if (fraction <= 0.0) return shapeAt(first, t, dt);
-    if (fraction >= 1.0) return shapeAt(first + 1, t, dt);
-    return (1.0 - fraction) * shapeAt(first, t, dt) + fraction * shapeAt(first + 1, t, dt);
-}
 
 // --- The growl ---------------------------------------------------------------------------
 // Growl (0..1) bends the oscillator four ways:
@@ -144,7 +101,7 @@ inline double foldAveraged(double a, double x, double x0) noexcept {
 }
 
 // One oscillator through the growl: `read(t, dt)` the wave at phase `t` (0..1)
-// stepping `dt` a sample (Wave's shapes, or a wavetable's frame), `t` and `dt`
+// stepping `dt` a sample (a table's frame, band-limited for that step), `t` and `dt`
 // the oscillator's, `mod` the modulator's phase (FM, Ring) at `ratio` times its
 // frequency. `foldIn` is Fold's last input (what it averages from): Fold
 // updates it; another mode leaves it, so a switch to Fold primes it first.
@@ -156,7 +113,7 @@ double growled(GrowlMode mode, double growl, double t, double dt, double mod, do
         double sine, cosine;
         fastmath::sincos(dsp::kTwoPi * mod, sine, cosine);
         const double index = kMaxFmIndex * growl;
-        // The step the bent phase takes, the carrier's and the modulation's together, for the BLEPs.
+        // The step the bent phase takes, the carrier's and the modulation's together, for the band-limit.
         const double step = dt * (1.0 + index * ratio * cosine);
         return read(wrap(t + index * sine / dsp::kTwoPi), std::abs(step));
     }
@@ -182,13 +139,6 @@ double growled(GrowlMode mode, double growl, double t, double dt, double mod, do
     return 0.0;
 }
 
-// The same through Wave's shapes, at `position` among them.
-inline double growled(GrowlMode mode, double growl, double position, double t, double dt, double mod, double ratio,
-                      double& foldIn) noexcept {
-    return growled(mode, growl, t, dt, mod, ratio, foldIn,
-                   [position](double at, double step) { return morph(position, at, step); });
-}
-
 // --- The dirt ----------------------------------------------------------------------------
 // Each curve takes u, the sound times half of Drive's gain (6 dB of headroom: a
 // full-scale sound bends only gently at Drive 0), and is anti-aliased as Fold is:
@@ -199,10 +149,11 @@ inline double growled(GrowlMode mode, double growl, double position, double t, d
 
 inline constexpr double kLn2 = 0.69314718055994531;
 
-// ln cosh x, without overflow: |x| + ln(1 + e^(-2|x|)) - ln 2.
+// ln cosh x, without overflow: |x| + ln(1 + e^(-2|x|)) - ln 2. (ln, not ln1p: what an average over two of them
+// needs is a small absolute error, as small either way, and ln is quicker.)
 inline double logCosh(double x) noexcept {
     const double a = std::abs(x);
-    return a + std::log1p(std::exp(-2.0 * a)) - kLn2;
+    return a + std::log(1.0 + std::exp(-2.0 * a)) - kLn2;
 }
 
 inline double dirtCurve(DirtType type, double u) noexcept {
@@ -224,11 +175,15 @@ inline double dirtIntegral(DirtType type, double u) noexcept {
     }
     return 0.5 * u * u;
 }
-// The curve averaged over the line from u0 to u (at their midpoint where they are too close for the division).
-inline double dirtAveraged(DirtType type, double u, double u0) noexcept {
+// The curve averaged over the line from u0 to u (at their midpoint where they are too close for the division),
+// given the antiderivative at each (a caller keeps the last sample's: each sample works out only its own).
+inline double dirtAveraged(DirtType type, double u, double u0, double integral, double integral0) noexcept {
     const double d = u - u0;
     if (std::abs(d) < 1e-6) return dirtCurve(type, 0.5 * (u + u0));
-    return (dirtIntegral(type, u) - dirtIntegral(type, u0)) / d;
+    return (integral - integral0) / d;
+}
+inline double dirtAveraged(DirtType type, double u, double u0) noexcept {
+    return dirtAveraged(type, u, u0, dirtIntegral(type, u), dirtIntegral(type, u0));
 }
 
 // Drive (0..1) as a gain: x1 to x16 (+24 dB).

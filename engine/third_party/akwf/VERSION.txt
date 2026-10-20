@@ -1,0 +1,13 @@
+Adventure Kid Waveforms (AKWF) by Kristoffer Ekstrand, CC0 1.0 Universal (LICENSE.md: no rights reserved, no
+attribution required; credited anyway), https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE, commit
+8de90bf94376670947369e69de0af6b9fbd19286 (2025-12-04).
+
+waves/ holds 64 of its single-cycle waveforms (600 samples, 16-bit mono, 44.1 kHz), unmodified, copied from its AKWF/
+folder: sixteen each of AKWF_hvoice, AKWF_fmsynth, AKWF_overtone and AKWF_distorted. They were picked for bass: one
+cycle each (at least 5 % of their energy in odd harmonics: a file holding two cycles has none), bright enough for a bass
+note's vowel range (a spectral centroid of at least the 4th harmonic: at 44 Hz, 500 Hz up lies past the 12th), not
+noisy (under 2 % of their energy past the 200th harmonic), then spread evenly over what was left by brightness. Each
+table lists them dark to bright: make_data.py says which, in order.
+
+Snarl's wavetables (engine/src/builtin/SnarlTables.cpp) are built from them: make_data.py writes their samples into
+engine/src/builtin/SnarlTablesData.h (python make_data.py; it needs only Python's standard library).

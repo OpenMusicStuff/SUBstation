@@ -50,11 +50,15 @@ public:
     void reset() noexcept {
         for (auto& ch : channels_) ch.clear();
         env_.fill(0.f);
+        mix_.fill(1.f);
     }
 
     // One sample of `n` channels (1 or 2) in place, at `depth` (0..1). The
     // channels are split into bands, detected on the loudest (linked stereo).
-    void tick(float* x, int n, float depth) noexcept {
+    // Without `regain` the bands keep the gains of the last sample that had it
+    // (the detectors still follow every sample): an oversampled caller works
+    // them out once a base sample, what the ear can follow.
+    void tick(float* x, int n, float depth, bool regain = true) noexcept {
         std::array<std::array<float, kBands>, kChannels> bands{};
         std::array<float, kBands> peak{};
         for (int c = 0; c < n; ++c) {
@@ -67,15 +71,14 @@ public:
             bands[c] = {low, s.highLp.lowpass(lp), s.highHp.highpass(hp)};
             for (int b = 0; b < kBands; ++b) peak[b] = std::max(peak[b], std::abs(bands[c][b]));
         }
-        std::array<float, kBands> mix;
         for (int b = 0; b < kBands; ++b) {
             const float coeff = peak[b] > env_[b] ? attack_[b] : release_[b];
             env_[b] = peak[b] + coeff * (env_[b] - peak[b]);
-            mix[b] = expDbToGain(depth * bandGainDb(b, env_[b]));
+            if (regain) mix_[b] = expDbToGain(depth * bandGainDb(b, env_[b]));
         }
         for (int c = 0; c < n; ++c) {
             float sum = 0.f;
-            for (int b = 0; b < kBands; ++b) sum += bands[c][b] * mix[b];
+            for (int b = 0; b < kBands; ++b) sum += bands[c][b] * mix_[b];
             x[c] = sum;
         }
     }
@@ -142,6 +145,7 @@ private:
 
     std::array<Channel, kChannels> channels_{};
     std::array<float, kBands> env_{}, attack_{}, release_{};
+    std::array<float, kBands> mix_{1.f, 1.f, 1.f};  // each band's gain
 };
 
 }  // namespace sub::ott

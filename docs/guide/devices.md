@@ -196,9 +196,10 @@ and a **wobble** on the song's note values moving the filter, the growl and the 
   one still held. A note with none held starts again: the same hit every time. Velocity
   doesn't change the level. Each note follows its bend
   ([midi.md](midi.md#pitch-bends-vibrato-and-slides)).
-- **The styles**, at the top left: **Growl**, **Reese**, **Wub**, **Screech**,
-  **Riddim** and **Tearout** each set the whole sound (all but Volume) to start from, in
-  one undo step; the one chosen stays lit.
+- **The styles**, at the top left: **Growl** (a voice), **Reese** and **Wub** (saws),
+  **Screech** (an FM wave), **Riddim** (a hollow one) and **Tearout** (a dirty one) each
+  set the whole sound (all but Volume, the table too) to start from, in one undo step; the
+  one chosen stays lit.
 - **The dice**, in the scope's corner: a click rolls a new bass from the ranges bass
   music lives in (the sub, the split and the amp as they are), **Shift+click** nudges
   the one there a little (the lists stay). One undo step each: undo for the last one back.
@@ -208,7 +209,7 @@ and a **wobble** on the song's note values moving the filter, the growl and the 
 
 | Section | Controls |
 |---|---|
-| OSC | **Octave** (−1 to +2: the oscillators' octave; the sub stays at the note), **Wave** (sine, triangle, saw, square, a narrow pulse, morphing between them), **Unison** (1 to 7 oscillators), **Detune** (the unison spread in pitch, up to 100 cents either way: the reese's beating), **Width** (the unison spread across the stereo field) |
+| OSC | **Table** (the wave the oscillators play: **Basic**, or one of four tables of single cycles, each dark to bright: **Voice**, human vowels; **FM**, FM synths' metal; **Hollow**, overtones without their fundamental; **Dirty**, distorted waves), **Oct** (−1 to +2: the oscillators' octave; the sub stays at the note), **Wave** (where along the table it plays, morphing smoothly between its waves: on Basic sine, triangle, saw, square and a narrow pulse, the readout naming them; on the others how far along, darker to brighter), **Unison** (1 to 7 oscillators), **Detune** (the unison spread in pitch, up to 100 cents either way: the reese's beating), **Width** (the unison spread across the stereo field) |
 | SUB | **Sub** (a clean sine at the note, in the middle), **Split** (20 to 500 Hz: everything but the sub high-passed there, 24 dB an octave, so the sub owns the lows) |
 | GROWL | Its mode: **FM** (the oscillators' phase pushed by a sine at Ratio times the note), **Sync** (a copy up to 8 times as fast, restarted and faded in and out each cycle: a formant rising through it), **Fold** (into a wavefolder) or **Ring** (multiplied by a sine at Ratio times the note); **Growl** (how hard); **Ratio** (0.5 to 7: FM's and Ring's, dimmed for the others) |
 | FILTER | Its type: **Low** (24 dB, resonant), **Band**, **Vowel** (three formants: the frequency picks the vowel, U O A E I from dark to bright; Freq reads the vowel) or **Comb** (tuned to the frequency, ringing with Res); **Freq** (30 Hz to 18 kHz), **Res** |
@@ -216,9 +217,9 @@ and a **wobble** on the song's note values moving the filter, the growl and the 
 | WOBBLE | **Rate** (1/1 to 1/32, dotted D and triplets T), **Shape** (Sine, Triangle, Ramp Down, Ramp Up, Square, Random: a new level each cycle), **R** (Retrig: each note starts it again; off, it follows the song, a 1/4 wobble on every beat), **> Filter** (opens the filter up to 6 octaves from Freq; with Vowel, along the vowels), **> Growl** (adds growl), **> Pitch** (−24 to +24 semitones); its shape, a dot riding it as it plays |
 | AMP | **Glide** (0 to 1000 ms), **Attack** (0.5 to 1000 ms), **Release** (5 ms to 4 s), **Volume** |
 
-Everything but Volume runs oversampled (4x at 44.1 and 48 kHz, 2x up to 96 kHz), and the
-folding and the dirt are anti-aliased besides, so they stay clean between the notes'
-harmonics; its 18 samples of latency (at 4x) are compensated. At Drive 0 the dirt barely
+Everything but Volume runs oversampled (4x at 44.1 and 48 kHz, 2x up to 96 kHz); the
+tables are band-limited for each note (an FM'd or synced one too), and the folding and the
+dirt are anti-aliased besides, so they stay clean between the notes' harmonics; its 18 samples of latency (at 4x) are compensated. At Drive 0 the dirt barely
 bends the sound; Resonance raises its peak without blowing up the rest. A soft
 clip after the squash keeps the body's peaks under −2.5 dBFS (the sub stays clean); the
 styles all come out about as loud as each other.
@@ -231,6 +232,10 @@ another wobble). While it sounds, its knobs show what they do: the Growl, Freq a
 knobs, and the wobble's three, glow as hard as each works.
 
 A track with Snarl on it is labelled a bass ("Snarl Bass").
+
+Its Voice, FM, Hollow and Dirty tables are built from Kristoffer Ekstrand's [Adventure Kid
+Waveforms](https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE) (AKWF), given to the public domain
+(CC0): 16 of each set's single cycles, picked for bass.
 
 ### Sampler
 
