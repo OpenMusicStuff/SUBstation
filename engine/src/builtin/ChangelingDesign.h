@@ -35,7 +35,8 @@
 // Latency, by Quality: Live, the tracker's as GigaTune's Low Latency (21.3 ms at any rate); Studio, about
 // Little AlterBoy's (48 ms): the same tracker deciding each frame kStudioLag frames after it (pYIN's Viterbi path
 // traced back from there), so a note is heard as voiced from its first periods and its start is shifted with the
-// rest; High Quality, GigaTune's (SwiftF0, about 277 ms).
+// rest; High Quality, SwiftF0 as GigaTune's (about 316 ms: its grains may read a quarter as fast, so reach further
+// back than GigaTune's 277 ms allow).
 //
 // The drive (Drive below), Little AlterBoy's, measured with noise (which LAB passes without grains) and fitted:
 // LAB's wet path's colour (a high-pass at 22 Hz, +1.6 dB from 5.3 kHz), then at each of LAB's Drive settings 0..10

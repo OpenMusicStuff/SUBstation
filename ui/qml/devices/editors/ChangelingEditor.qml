@@ -50,7 +50,8 @@ Item {
         return labels
     }
 
-    readonly property int shiftWidth: 2 * bigWidth + linkButton.width + 8 + 2 * cellWidth + 4
+    // Pitch, Link 4 px either side, Formant, 8 px, the grid of two cells 4 px apart.
+    readonly property int shiftWidth: 2 * bigWidth + 4 + linkButton.width + 4 + 8 + 2 * cellWidth + 4
     readonly property int mutateWidth: 3 * cellWidth + 2 * 4
     implicitWidth: margin + scopeWidth + gap + Math.max(shiftWidth, mutateWidth) + margin
     implicitHeight: 6 + headerHeight + 6 + Math.max(scope.implicitHeight, 2 * glideCell.implicitHeight + 6) + 6
@@ -165,7 +166,7 @@ Item {
                                                      + "come out unshifted while the pitch is still being heard") },
                     { name: qsTr("Studio"), tip: qsTr("Studio: 49 ms of latency, about Little AlterBoy's: each note heard from its start") },
                     { name: qsTr("HQ"), tip: qsTr("High Quality: hears the pitch with SwiftF0, a small neural network, sure of\n"
-                                                   + "the voice through noise and reverb (about 300 ms of latency: for mixing)") }
+                                                   + "the voice through noise and reverb (about 316 ms of latency: for mixing)") }
                 ]
                 ParamButton {
                     required property int index

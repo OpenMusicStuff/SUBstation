@@ -837,7 +837,7 @@ sound passes untouched, sample for sample.
   the level out.
 - **Quality**: **Live** (21 ms of latency) for singing through; **Studio** (49 ms, about Little
   AlterBoy's 51) hears each note from its start, so a note's first moments are shifted with the
-  rest; **High Quality** (about 300 ms) hears the pitch with SwiftF0, for mixing. Quality can't
+  rest; **High Quality** (about 316 ms) hears the pitch with SwiftF0, for mixing. Quality can't
   be automated (it changes the latency: the device starts again).
 
 The **Mutate** page:

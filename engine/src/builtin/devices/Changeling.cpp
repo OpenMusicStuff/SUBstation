@@ -12,7 +12,7 @@
 // - Harmonics, Twin and Interval, Detune, Width and Smear: Manipulator's harmonic shifter, its alternator as a
 //   second voice, its doubler, stereo and smear.
 // - Quality: Live (21.3 ms latency), Studio (48 ms, Little AlterBoy's: notes are heard as voiced from their start),
-//   High Quality (277 ms, SwiftF0). Not automatable: it sets the latency, and a change starts the device again.
+//   High Quality (about 316 ms, SwiftF0). Not automatable: it sets the latency, and a change starts the device again.
 //
 // Its editor draws two displays, one value per kDisplaySamples of the output as it is heard: the pitch heard (MIDI;
 // 0 unvoiced) and the pitch out, and a third, the note Quantize or Robot holds the voice on (-1: none).

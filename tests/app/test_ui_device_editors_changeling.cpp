@@ -146,6 +146,22 @@ private Q_SLOTS:
         QVERIFY(find(view, QStringLiteral("keyChoice"))->parentItem()->isEnabled());
         undo()->undo();
 
+        // Inside the body, its margins kept, nothing over the display: the Shift page's controls (and the Mutate
+        // page's, below).
+        const QRectF body(0, 0, view->width(), view->height());
+        const QRectF scope = shown.scope->mapRectToItem(view, QRectF(0, 0, shown.scope->width(), shown.scope->height()));
+        const auto inside = [&](std::initializer_list<const char*> names) {
+            for (const char* name : names) {
+                QQuickItem* item = find(view, QString::fromLatin1(name));
+                const QRectF rect = item->mapRectToItem(view, QRectF(0, 0, item->width(), item->height()));
+                QVERIFY2(body.adjusted(8, 6, -8, -6).contains(rect), name);
+                QVERIFY2(!rect.intersects(scope), name);
+            }
+        };
+        inside({"pitch", "link", "formant", "glide", "drive", "mix", "output", "mode0", "quality2"});
+        if (QTest::currentTestFailed())
+            return;
+
         // Every knob's texts whole, whatever its value, on both pages; each page shows its own.
         QVERIFY(find(view, QStringLiteral("shiftPage"))->isVisible());
         QVERIFY(!find(view, QStringLiteral("mutatePage"))->isVisible());
@@ -164,15 +180,7 @@ private Q_SLOTS:
         }
         save(grab(), QStringLiteral("changeling-mutate.png"));
 
-        // Inside the body, its margins kept, nothing over the display.
-        const QRectF body(0, 0, view->width(), view->height());
-        const QRectF scope = shown.scope->mapRectToItem(view, QRectF(0, 0, shown.scope->width(), shown.scope->height()));
-        for (const char* name : {"harmonics", "twin", "interval", "detune", "width", "smear", "mode0", "quality2"}) {
-            QQuickItem* item = find(view, QString::fromLatin1(name));
-            const QRectF rect = item->mapRectToItem(view, QRectF(0, 0, item->width(), item->height()));
-            QVERIFY2(body.adjusted(8, 6, -8, -6).contains(rect), name);
-            QVERIFY2(!rect.intersects(scope), name);
-        }
+        inside({"harmonics", "twin", "interval", "detune", "width", "smear"});
     }
 
     void scopeFollowsTheVoice() {
