@@ -1222,9 +1222,11 @@ private Q_SLOTS:
                  (QStringList{QStringLiteral("Cut"), QStringLiteral("Copy"), QStringLiteral("Paste"), QString(),
                               QStringLiteral("Split Here"), QStringLiteral("Duplicate"), QStringLiteral("Consolidate"),
                               QStringLiteral("Reverse"), QStringLiteral("Deactivate"), QString(),
+                              QStringLiteral("Apply Groove"), QStringLiteral("Extract Groove"), QString(),
                               QStringLiteral("Find Similar Sounds"), QStringLiteral("Hot-Swap Sample"),
                               QStringLiteral("Show in File Manager"), QString(), QStringLiteral("Delete")}));
         QCOMPARE(selection().clips(), refs({{trackId(0), clipOf(0).id}}));
+        QVERIFY(!menu.find(QStringLiteral("Apply Groove"))->enabled);  // (it has none)
         QCOMPARE(menu.find(QStringLiteral("Duplicate"))->shortcut, QStringLiteral("Ctrl+D"));
         // Find Similar Sounds: the browser lists the sounds most like the clip's.
         QVERIFY(menu.find(QStringLiteral("Find Similar Sounds"))->enabled);

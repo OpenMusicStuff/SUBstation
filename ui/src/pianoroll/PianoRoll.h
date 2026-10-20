@@ -133,6 +133,15 @@ class PianoRoll : public QObject {
                    NOTIFY toolSettingsChanged)
     Q_PROPERTY(double humanizeTimingAmount READ humanizeTimingAmount WRITE setHumanizeTimingAmount
                    NOTIFY toolSettingsChanged)
+    // Groove ▾ (Apply Groove): the groove last applied ("swing", "project" or a library groove's id;
+    // Ctrl+Shift+U applies it again), Swing's percent (on 16ths), and the amounts the groove is
+    // applied at, in percent: Timing (0..200), Velocity (-100..100), Random, Quantize.
+    Q_PROPERTY(QString grooveChoice READ grooveChoice NOTIFY toolSettingsChanged)
+    Q_PROPERTY(double grooveSwing READ grooveSwing WRITE setGrooveSwing NOTIFY toolSettingsChanged)
+    Q_PROPERTY(double grooveTiming READ grooveTiming WRITE setGrooveTiming NOTIFY toolSettingsChanged)
+    Q_PROPERTY(double grooveVelocity READ grooveVelocity WRITE setGrooveVelocity NOTIFY toolSettingsChanged)
+    Q_PROPERTY(double grooveRandom READ grooveRandom WRITE setGrooveRandom NOTIFY toolSettingsChanged)
+    Q_PROPERTY(double grooveQuantize READ grooveQuantize WRITE setGrooveQuantize NOTIFY toolSettingsChanged)
     // At 100 %, how far Humanize › Timing moves a note (beats).
     Q_PROPERTY(double humanizeBeats READ humanizeBeats CONSTANT)
     // Whether the velocity model is there (Humanize › Velocity is offered).
@@ -173,6 +182,7 @@ public:
     static constexpr const char* kDefaultGrid = "1/16";
     static constexpr double kDefaultHumanizeVelocity = 100.0;  // %: the model's velocities
     static constexpr double kDefaultHumanizeTiming = 25.0;     // %
+    static constexpr double kDefaultGrooveSwing = 58.0;        // %
     static constexpr const char* kDrawTool = "draw";
     static constexpr const char* kVibratoTool = "vibrato";
     static constexpr const char* kGlideTool = "glide";
@@ -309,6 +319,11 @@ public:
     Q_INVOKABLE void humanizeTiming();
     // Humanize › Timing's random numbers start over from `seed` (for tests).
     Q_INVOKABLE void seedRandom(quint32 seed) { rng_.seed(seed); }
+    // Apply Groove (notes::grooved, on the timeline: the groove's cycle counts from the song's
+    // start): "swing", "project" (the project's default groove) or a library groove's id; "": the
+    // last one (Ctrl+Shift+U). Random's seed is new each time. Nothing (the status line says why) if
+    // there is no such groove.
+    Q_INVOKABLE void applyGroove(const QString& choice = {});
 
     static QStringList quantizeGrids();
     QString quantizeGrid() const { return quantizeGrid_; }
@@ -319,6 +334,17 @@ public:
     void setHumanizeVelocityAmount(double percent);
     double humanizeTimingAmount() const { return humanizeTimingAmount_; }
     void setHumanizeTimingAmount(double percent);
+    QString grooveChoice() const { return grooveChoice_; }
+    double grooveSwing() const { return grooveSwing_; }
+    void setGrooveSwing(double percent);
+    double grooveTiming() const { return grooveTiming_; }
+    void setGrooveTiming(double percent);
+    double grooveVelocity() const { return grooveVelocity_; }
+    void setGrooveVelocity(double percent);
+    double grooveRandom() const { return grooveRandom_; }
+    void setGrooveRandom(double percent);
+    double grooveQuantize() const { return grooveQuantize_; }
+    void setGrooveQuantize(double percent);
     // Quantize's grid in beats.
     double quantizeStep() const;
     static double humanizeBeats() { return app::notes::kHumanizeBeats; }
@@ -497,6 +523,8 @@ Q_SIGNALS:
     void previewChanged();
     void bendModeChanged();
     void toolSettingsChanged();
+    // A tool couldn't do what it was asked, and why.
+    void statusMessage(const QString& message);
     void toolsChanged();
     void copiedChanged();
     // Play from this arrangement beat (the ruler was clicked).
@@ -562,6 +590,12 @@ private:
     double quantizeAmount_ = 100.0;
     double humanizeVelocityAmount_ = kDefaultHumanizeVelocity;
     double humanizeTimingAmount_ = kDefaultHumanizeTiming;
+    QString grooveChoice_ = QStringLiteral("swing");
+    double grooveSwing_ = kDefaultGrooveSwing;
+    double grooveTiming_ = 100.0;
+    double grooveVelocity_ = 100.0;
+    double grooveRandom_ = 0.0;
+    double grooveQuantize_ = 0.0;
     bool toolsShown_ = false;
     QRectF toolsArea_;
     int toolsCount_ = 0;

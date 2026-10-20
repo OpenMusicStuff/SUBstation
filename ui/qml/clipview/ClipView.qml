@@ -6,8 +6,8 @@ import SUBstation
 // The clip view: what a double-clicked clip opens. MIDI clips get the piano
 // roll (several edited together), and in the header the key their notes are
 // judged by (out of it, red) and Generate (chords or a bass line from the
-// song's chords, into the lead clip). Audio clips get
-// their controls on the left (Warp, Pitch, Mix) and large waveforms on the
+// song's chords, into the lead clip), and their groove (Groove ▾). Audio clips get
+// their controls on the left (Warp, Pitch, Mix, Groove) and large waveforms on the
 // right; with several open, the controls edit all of them at once
 // (ClipViewController has the rules).
 //
@@ -137,6 +137,34 @@ FocusScope {
                 ToolTip.text: keyLabel.inferred
                     ? qsTr("The key the song's MIDI is most likely in (the project has none):\nnotes out of it show red. C shows or hides the chords and the key")
                     : qsTr("The project's key: notes out of it show red.\nC shows or hides the chords and the key")
+            }
+            RoleButton {
+                id: grooveButton
+                objectName: "grooveMenuButton"
+                anchors.verticalCenter: parent.verticalCenter
+                role: "small"
+                text: clipController.groove.kind ? qsTr("Groove: %1 ▾").arg(clipController.groove.name) : qsTr("Groove ▾")
+                tooltip: qsTr("The groove the clip's notes play in (Swing, the project's, one of its grooves),\nand making one of the clip's feel")
+                onClicked: groovePopup.open()
+
+                Popup {
+                    id: groovePopup
+                    objectName: "groovePopup"
+                    y: grooveButton.height
+                    padding: 8
+                    background: Rectangle {
+                        color: Theme.panelAlt
+                        border.color: Theme.border
+                        radius: 4
+                    }
+
+                    ClipGrooveControls {
+                        objectName: "midiGroove"
+                        width: 240
+                        controller: clipController
+                        midi: true
+                    }
+                }
             }
             RoleButton {
                 id: generateButton
@@ -393,6 +421,17 @@ FocusScope {
                         }
                     }
 
+                    ClipViewSection {
+                        width: column.width
+                        title: qsTr("Groove")
+
+                        ClipGrooveControls {
+                            objectName: "audioGroove"
+                            width: parent.width
+                            controller: clipController
+                        }
+                    }
+
                     Label {
                         width: column.width
                         wrapMode: Text.WordWrap
@@ -421,6 +460,10 @@ FocusScope {
             anchors.fill: parent
             visible: clipController.count > 0 && clipController.midi
             onLocateRequested: beat => view.locateRequested(beat)
+        }
+        Connections {
+            target: rollView.roll
+            function onStatusMessage(message) { view.statusMessage(message) }
         }
     }
 }

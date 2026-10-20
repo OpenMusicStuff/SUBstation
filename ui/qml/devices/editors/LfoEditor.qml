@@ -30,7 +30,7 @@ Item {
         id: params
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["rate", "sync", "synced", "depth", "offset", "phase", "retrigger", "smooth", "random"]
+        ids: ["rate", "sync", "synced", "depth", "offset", "phase", "retrigger", "smooth", "random", "follow_groove"]
     }
 
     Row {
@@ -61,15 +61,25 @@ Item {
 
                 ParamButton {
                     objectName: "sync"
-                    width: 52
+                    width: 39
                     height: 18
                     param: params.get("sync")
                     text: qsTr("Sync")
                     tooltip: qsTr("The rate in notes, at the tempo (following the song while it plays)")
                 }
                 ParamButton {
+                    objectName: "followGroove"
+                    width: 39
+                    height: 18
+                    enabled: params.get("sync") ? params.get("sync").value >= 0.5 : true
+                    opacity: enabled ? 1 : 0.55
+                    param: params.get("follow_groove")
+                    text: qsTr("Groove")
+                    tooltip: qsTr("Follow Groove: synced, its cycle swings with the project's default groove\n(Edit › Default Groove), its offbeats late as the groove's are")
+                }
+                ParamButton {
                     objectName: "random"
-                    width: 52
+                    width: 39
                     height: 18
                     param: params.get("random")
                     text: qsTr("Random")
@@ -77,7 +87,7 @@ Item {
                 }
                 ModulatorMapButton {
                     id: mapButton
-                    width: 52
+                    width: 39
                     height: 18
                     mappings: targets.mappings
                 }
