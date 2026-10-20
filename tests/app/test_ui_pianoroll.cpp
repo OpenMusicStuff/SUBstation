@@ -6,7 +6,8 @@
 // selected by dragging; the song's chords along the top, notes out of its key
 // in red, and Generate writing chords and a bass line; keys dragged over, a
 // rubber band's notes heard, Ctrl+D by the stretch dragged over, copy and paste
-// at the clicked beat, and several clips edited together. Runs on a display (xvfb here). With
+// at the clicked beat, several clips edited together, and Groove (Swing, the
+// project's grooves, Ctrl+Shift+U). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
 #include <QQuickItem>
@@ -32,6 +33,7 @@
 #include "pianoroll/PianoRoll.h"
 #include "pianoroll/PianoRuler.h"
 #include "pianoroll/VelocityLane.h"
+#include "session/GrooveLibrary.h"
 #include "session/Selection.h"
 
 using sub::app::Note;
@@ -1094,6 +1096,95 @@ private Q_SLOTS:
         QCOMPARE(notes[0].length, 2.0);
         QCOMPARE(notes[1].pitch, 41);  // F1
         QCOMPARE(notes[1].start, 2.0);
+    }
+
+    void grooveMovesTheNotesOnTheSongsGrid() {
+        openMidiClip();  // (a bar from beat 4: its 16ths are the song's)
+        const sub::app::ClipRef ref{trackId_, clipId_};
+        session().editor()->setClipNotes(ref, {note(60, 0.0, 0.25), note(60, 0.25, 0.25), note(60, 0.5, 0.25),
+                                               note(60, 0.75, 0.25)},
+                                         QStringLiteral("setup"));
+        const auto starts = [this] {
+            std::vector<double> out;
+            for (const Note& n : sortedBy(clipNotes())) out.push_back(n.start);
+            return out;
+        };
+        // Ctrl+Shift+U with nothing selected: the last groove (Swing at 58 % at first) on every note.
+        test::click(window_, cell(3.5, 40));  // (the notes take the keys)
+        QCOMPARE(roll()->grooveChoice(), QStringLiteral("swing"));
+        QTest::keyClick(window_, Qt::Key_U, Qt::ControlModifier | Qt::ShiftModifier);
+        std::vector<double> moved = starts();
+        QCOMPARE(moved.size(), size_t(4));
+        QCOMPARE(moved[0], 0.0);
+        QVERIFY(std::abs(moved[1] - 0.29) < 1e-9);  // 58 % of the way through its pair
+        QCOMPARE(moved[2], 0.5);
+        QVERIFY(std::abs(moved[3] - 0.79) < 1e-9);
+        QCOMPARE(undo().undoText(), QStringLiteral("Apply Groove"));
+        undo().undo();
+
+        // A groove of the project's, from the menu: it lists them.
+        const QString id = session().grooves()->addBuiltin(QStringLiteral("builtin:shuffle-16t"));
+        QVERIFY(!id.isEmpty());
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        waitForTools();
+        clickButton("groove");
+        QObject* menu = tools()->findChild<QObject*>(QStringLiteral("grooveMenu"));
+        QTRY_VERIFY(menu->property("opened").toBool());
+        QQuickItem* entry = nullptr;
+        QTRY_VERIFY((entry = window_->findChild<QQuickItem*>(QStringLiteral("groove_") + id)));
+        QTRY_VERIFY(entry->isVisible() && entry->y() > 0);  // (laid out after Swing and Project)
+        test::click(window_, test::centerOf(entry));
+        QTRY_VERIFY(!menu->property("visible").toBool());
+        moved = starts();
+        QVERIFY(std::abs(moved[1] - (0.25 + 0.5 / 6)) < 1e-6);  // a triplet feel
+        QCOMPARE(roll()->grooveChoice(), id);
+        undo().undo();
+
+        // Its amounts: half the timing (on every note: none selected).
+        roll()->setSelection({});
+        roll()->setGrooveTiming(50.0);
+        roll()->applyGroove();
+        QVERIFY(std::abs(starts()[1] - (0.25 + 0.25 / 6)) < 1e-6);
+        undo().undo();
+
+        // The project's default groove: none yet, so nothing (and the status line says so).
+        QSignalSpy said(roll(), &PianoRoll::statusMessage);
+        roll()->applyGroove(QStringLiteral("project"));
+        QCOMPARE(said.count(), 1);
+        QCOMPARE(starts()[1], 0.25);
+        session().grooves()->setDefaultSwing(62.0);
+        roll()->setGrooveTiming(100.0);
+        roll()->applyGroove(QStringLiteral("project"));
+        QVERIFY(std::abs(starts()[1] - 0.31) < 1e-9);
+        undo().undo();
+
+        // Two notes pulled onto one 16th (Quantize 100 %, straight): placed note for note, the clip
+        // resolving their overlap (not left as they were).
+        session().editor()->setClipNotes(ref, {note(60, 0.24, 0.1), note(60, 0.26, 0.1), note(64, 0.74, 0.1)},
+                                         QStringLiteral("setup"));
+        roll()->setSelection({});
+        roll()->setGrooveSwing(50.0);
+        roll()->setGrooveQuantize(100.0);
+        roll()->applyGroove(QStringLiteral("swing"));
+        QCOMPARE(undo().undoText(), QStringLiteral("Apply Groove"));
+        QVERIFY(!clipNotes().empty());
+        for (const Note& n : clipNotes())
+            QVERIFY2(std::abs(n.start - 0.25) < 1e-9 || std::abs(n.start - 0.75) < 1e-9, qPrintable(QString::number(n.start)));
+        undo().undo();
+
+        // Legato 16ths swung: a late one ends where the next on its key starts (no overlap left).
+        session().editor()->setClipNotes(ref, {note(60, 0.0, 0.25), note(60, 0.25, 0.25), note(60, 0.5, 0.25),
+                                               note(60, 0.75, 0.25)},
+                                         QStringLiteral("setup"));
+        roll()->setSelection({});
+        roll()->setGrooveQuantize(0.0);
+        roll()->setGrooveSwing(75.0);
+        roll()->applyGroove(QStringLiteral("swing"));
+        const std::vector<Note> legato = sortedBy(clipNotes());
+        QCOMPARE(legato.size(), size_t(4));
+        QVERIFY(std::abs(legato[1].start - 0.375) < 1e-9);
+        for (size_t i = 0; i + 1 < legato.size(); ++i)
+            QVERIFY2(legato[i].end() <= legato[i + 1].start + 1e-9, qPrintable(QString::number(i)));
     }
 };
 

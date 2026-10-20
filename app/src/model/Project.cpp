@@ -820,6 +820,21 @@ void Project::setAutomationView(const QString& owner, const AutomationView& view
     Q_EMIT automationViewChanged(owner);
 }
 
+const LibraryGroove* Project::findGroove(const QString& grooveId) const {
+    const auto it = std::find_if(grooves_.begin(), grooves_.end(), [&](const LibraryGroove& g) { return g.id == grooveId; });
+    return it == grooves_.end() ? nullptr : &*it;
+}
+
+void Project::setGrooves(std::vector<LibraryGroove> grooves) {
+    grooves_ = std::move(grooves);
+    Q_EMIT groovesChanged();
+}
+
+void Project::setDefaultGroove(const std::optional<GrooveSource>& source) {
+    defaultGroove_ = source && source->kind != GrooveSource::Kind::Project ? source : std::nullopt;
+    Q_EMIT defaultGrooveChanged();
+}
+
 void Project::replaceContents(ProjectContents contents) {
     tempoRange_ = {kTempoLaneLow, kTempoLaneHigh};
     setTempo(contents.tempo);
@@ -839,12 +854,18 @@ void Project::replaceContents(ProjectContents contents) {
     foldedDevices_ = std::move(contents.foldedDevices);
     shownChainLists_ = std::move(contents.shownChainLists);
     hiddenRackDevices_ = std::move(contents.hiddenRackDevices);
+    grooves_ = std::move(contents.grooves);
+    defaultGroove_ = contents.defaultGroove && contents.defaultGroove->kind != GrooveSource::Kind::Project
+                         ? contents.defaultGroove
+                         : std::nullopt;
     const bool pathChange = path_ != contents.path;
     path_ = contents.path;
     Q_EMIT reset();
     // The settings are new too: what shows them through their properties (the
     // tempo box, Lock Envelopes, the loop button) is notified by this signal only.
     Q_EMIT settingsChanged();
+    Q_EMIT groovesChanged();
+    Q_EMIT defaultGrooveChanged();
     if (pathChange) Q_EMIT pathChanged();
 }
 

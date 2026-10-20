@@ -2,7 +2,8 @@
 
 [io/Serialization.h](../../app/src/io/Serialization.h) saves the [project model](model.md) as a `.gilproj` file
 (JSON) and loads it back. It also saves a single device (a rack with everything in it) as a `.gilpreset` file;
-[io/Presets.h](../../app/src/io/Presets.h) keeps the user's library of them. Nothing else is written: audio stays in
+[io/Presets.h](../../app/src/io/Presets.h) keeps the user's library of them, groove files among them
+([io/GrooveFiles.h](../../app/src/io/GrooveFiles.h): `.gilgroove`, and Ableton's `.agr` read). Nothing else is written: audio stays in
 its own files, and preferences are in QSettings (see [engine-bridge.md](engine-bridge.md#settings-storage) and
 [session.md](session.md#settings)).
 
@@ -47,6 +48,7 @@ load:  Session::openProject(path)
 | [io/Serialization.h](../../app/src/io/Serialization.h) / [.cpp](../../app/src/io/Serialization.cpp) | `saveProject`, `loadProject`, `saveTemplate`, `loadTemplate`, `projectToJson`, `loadInto`, `tracksFromJson`, `returnsFromJson`, `repairRouting`; `deviceToJson`, `deviceFromJson`; presets: `deviceToPreset`, `presetDevice`, `savePreset`, `loadPreset`; constants `kProjectFormat`, `kProjectVersion`, `kProjectExtension`, `kPresetFormat`, `kPresetVersion`, `kPresetExtension`. Its header comment lists every version's additions. |
 | [io/VitalPresets.h](../../app/src/io/VitalPresets.h) / [.cpp](../../app/src/io/VitalPresets.cpp) | Vital's own presets (`.vital`) as Vital devices and back: `isVitalPreset`, `loadVitalPreset`, `saveVitalPreset`, `vitalPresetText`; a wavetable from a file (`vitalWavetableFromFile`: `.vitaltable` or audio); `kVitalPresetExtension`, `kVitalTableExtension` |
 | [io/Presets.h](../../app/src/io/Presets.h) / [.cpp](../../app/src/io/Presets.cpp) | The preset library: `libraryDir`, `presetFileName`, `groupOf`, `presetPath`, `saveToLibrary`, `listPresets`, `renamePreset`; default presets: `defaultPath`, `saveDefault`, `hasDefault`, `clearDefault`, `defaultDevice`; `kDefaultsFolder` |
+| [io/GrooveFiles.h](../../app/src/io/GrooveFiles.h) / [.cpp](../../app/src/io/GrooveFiles.cpp) | Grooves in files ([Grooves](#grooves), [Groove files](#groove-files-gilgroove-agr)): as JSON (`grooveToJson`, `grooveFromJson`, `grooveNotesToJson`, `libraryGrooveToJson`, `grooveSourceToJson`, `clipGrooveToJson` and their `...FromJson`), groove files (`saveGrooveFile`, `loadGrooveFile`, `isGrooveFile`, `grooveDevice`), Ableton's grooves (`agrGroove`: an `.agr`'s `GrooveFile`, or a Live Set pool's `Groove`); `kGrooveFormat`, `kGrooveVersion`, `kGrooveExtension`, `kAgrExtension` |
 | [model/](../../app/src/model) | The types saved; `repairTree` ([Routing.h](../../app/src/model/Routing.h)), `legacyWarpMode` ([Clip.h](../../app/src/model/Clip.h)), `refreshIds` ([Device.h](../../app/src/model/Device.h)), `ProjectFileError` ([Errors.h](../../app/src/model/Errors.h)) |
 | [model/DeviceState.h](../../app/src/model/DeviceState.h) | the text format inside a built-in device's `state` |
 | [io/Bytes.h](../../app/src/io/Bytes.h) | Numbers appended to bytes in a given order, whatever the CPU's (`appendLe16`, `appendLe32`, `appendLe64`, `appendBe32`): a WAV file's header, a `.vstpreset`, a VST2 plug-in's fxb or fxp |
@@ -63,7 +65,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 27; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 28; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
@@ -77,6 +79,8 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | `rack_devices_hidden` | list of rack ids | racks whose chain's devices don't show beside them (shown by default); only ids of devices that exist are saved |
 | `tracks` | list | the arrangement's tracks, in order, flat (below) |
 | `returns` | list | the return tracks, in order (below) |
+| `grooves` | list | only when the project has some (version 28): its groove library, in order, `[{"id", "name", "groove", "notes"}]` ([Grooves](#grooves)) |
+| `default_groove` | a groove source | only when it has one (version 28): the default groove ([Grooves](#grooves)); none: straight |
 
 ### Tracks
 
@@ -133,6 +137,7 @@ Each entry of `returns` has `id`, `kind` (`"return"`), `name`, `color`, `volume_
 | `fade_in_sec`, `fade_in_curve`, `fade_out_sec`, `fade_out_curve` | only where the clip has that fade: its length in source seconds, and its curve (-1..1, 0 a straight line). On load they are held to the clip (`Clip::fitFades`) |
 | `reversed_from`, `reversed_from_relative` | only for a reversed clip: the file `path` (its reversed copy) was made from, absolute and relative |
 | `muted` | only for a deactivated clip: `true` (it doesn't play) |
+| `groove` | only for a clip with a groove (version 28): its source and amounts ([Grooves](#grooves)) |
 
 On load, `path` is used if it exists; otherwise, if the project file's folder plus `relative_path` exists, that is
 used (and the same for `reversed_from`). So a project folder (with its samples and its `Recordings`, `Freeze` and
@@ -141,7 +146,8 @@ used (and the same for `reversed_from`). So a project folder (with its samples a
 ### MIDI clips
 
 `id`, `name` (MIDI clips have none: saved `""`; one in an earlier file is dropped on load), `start_beat`,
-`duration_beats`, `offset_beats`, `muted` (only for a deactivated clip: `true`), and `notes` inline as
+`duration_beats`, `offset_beats`, `muted` (only for a deactivated clip: `true`), `groove` (only with one, as an audio
+clip's), and `notes` inline as
 `[pitch, start, length, velocity]` (beats from the clip's content start), with a fifth value, `true`, for a
 deactivated note. A bent note (MIDI 2.0's per-note pitch bend) has a sixth value, its bend, so its fifth is written
 too (`false` unless it is deactivated):
@@ -203,7 +209,42 @@ back after a rescan (`EngineBridge::setKnownPlugins`). See [engine/plugins.md](.
 
 A built-in device's `state` is base64 of the engine's text format (`name=value` lines; see
 [DeviceState.h](../../app/src/model/DeviceState.h)). The Sampler stores its sample as `sample=<path>`. Its
-parameters are in `params`.
+parameters are in `params`. The Groove device stores the groove it plays: `source` (`swing`, `project` or `groove`),
+`groove_id` (the library groove it plays), `groove` (that groove's copy, or its own, in `groove::toText()`'s lines) and
+`seed` ([model.md](model.md#grooves)).
+
+### Grooves
+
+Version 28 (io/GrooveFiles.h; the model: [model.md](model.md#grooves)). Each is written only when there is one, so a
+project without grooves reads as before.
+
+- **A groove**: `{"step": beats, "bars": n, "base": beats, "lanes": [{"keys": [...], "steps": [[timing, ms,
+  velocity, length], ...]}]}`, the default lane (no keys) first. Read with defaults where values are missing or
+  aren't numbers (a sixteenth's step, one bar, the base its step, a step's values 0, 0, 0 and 1), then
+  `groove::normalized()`: a step dividing a beat into 1 to 24 (else the nearest of 1/8, 1/8T, 1/16, 1/16T and 1/32),
+  1, 2 or 4 bars (fewer while the cycle would have more than 256 steps), a base of 1/64 to 4 beats, a step for each of
+  the cycle's in every lane (missing ones neutral), values held to their ranges (timing ±0.5 of a step, ms ±50,
+  velocity ±1, length 0.25..2), the default lane first, a key in one lane only (the first naming it; a lane left with
+  none goes).
+- **What it was made from** (`notes`, only when there are some): `[[beat, key, velocity, length], ...]` in its cycle's
+  beats; a note whose beat isn't a number is left out, keys are held to 0..127 and velocities to 1..127.
+- **The library** (`grooves`): `[{"id", "name", "groove", "notes"}]`. On load one without an id or a groove, or with
+  an id taken already, is left out.
+- **A groove source** (`default_groove`, and a clip's): `{"source": "swing" | "project" | "library" | "own"}` with
+  what its kind uses: `"swing"` (percent, held to 50..75) and `"step"` (beats, the nearest step choice); `"groove_id"`;
+  `"groove"` (its own groove). An unknown kind, a library source without an id or an own one without a groove is
+  none. A library source naming a groove the library hasn't is kept, and plays none. A default groove of `"project"`
+  loads as none.
+- **A clip's groove** (`groove` on a clip): its source, with its amounts `"timing"` (0..2, default 1), `"velocity"`
+  (-1..1, default 1), `"random"` and `"quantize"` (0..1, default 0), and `"seed"` (only when it isn't 0), held to
+  their ranges on load.
+
+```json
+"grooves": [{"id": "3f2a91c04b7e", "name": "Drums Groove", "groove": {"step": 0.25, "bars": 1, "base": 0.25,
+             "lanes": [{"keys": [], "steps": [[0, 0, 0, 1], [0.16, 0, -0.1, 1], ...]}]}}],
+"default_groove": {"source": "swing", "swing": 58, "step": 0.25},
+... a clip: "groove": {"source": "library", "groove_id": "3f2a91c04b7e", "timing": 1, "velocity": 1, "random": 0, "quantize": 0}
+```
 
 ## Versions and migrations
 
@@ -239,6 +280,7 @@ that makes an older file load as it was, and saving writes the current version.
 | 25 | take lanes (`takes`, `takes_shown`) | none |
 | 26 | the song's tempo map and time signature changes (`tempo_map`, `time_signatures`) | one tempo and one time signature |
 | 27 | audio clips' warp markers (`warp_markers`) | none: a clip at its segment BPM throughout |
+| 28 | grooves: the library (`grooves`), the default groove (`default_groove`), clips' grooves (`groove`) | none: nothing grooved |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and
@@ -376,6 +418,32 @@ Plug-ins' own `.vstpreset` files (*Load VST3 Preset…* / *Save VST3 Preset…* 
 engine reads and writes them (`EngineBridge::applyPluginState`, `pluginState`), and loading one is an undoable
 `SetDeviceStateCommand` (`DeviceSelection`, [session.md](session.md#the-device-view-deviceselection)).
 
+### Groove files (.gilgroove, .agr)
+
+A groove of the project's library saved for other projects ([io/GrooveFiles.h](../../app/src/io/GrooveFiles.h)):
+
+```json
+{"format": "gilstudio-groove", "version": 1, "name": "Drums Groove", "groove": { ...a groove, as in a project... }, "notes": [...]}
+```
+
+- `saveGrooveFile(groove, path)` writes it whole or not at all (`QSaveFile`); `notes` only when it has some.
+  `loadGrooveFile(path)` reads it as a library groove with a fresh id, named as its file is: `ProjectFileError` for a
+  file that can't be read, isn't JSON ("damaged"), isn't a groove ("not a SUBstation groove"), is of a newer version
+  (`kGrooveVersion` = 1), or has no groove.
+- `loadGrooveFile` reads Ableton's `.agr` too (XML, through `live::parseAbleton`, gzipped or not, as a Live Set is
+  read: [live-import.md](live-import.md)): `agrGroove()` makes the groove of its `GrooveFile`'s clip, its notes'
+  offsets on its **Base** grid (Live's list, 1/4 to 1/32) over the clip's loop (1, 2 or 4 bars: `groove::fromNotes`,
+  one lane; deactivated notes left out), and reads its **Timing**, **Velocity**, **Random** and **Quantize** (percents,
+  or fractions in some versions) as amounts. A library groove keeps no amounts, so a file's Timing and Velocity are
+  worked into its steps; a Live Set's clips playing a pool groove get all four as their groove's amounts instead.
+- **In the preset library**: the user's groove files are its `Grooves` folder (`grooveFilesDir()`,
+  [session.md](session.md#the-projects-grooves-groovelibrary)). `isPresetFile` takes `.gilgroove` and `.agr` files
+  (`isGrooveFile`), so the browser lists them with the presets (under *Grooves*). A groove file is a Groove device's
+  preset: `loadPreset(path)` makes it a new Groove device playing it as its own (`grooveDevice()`: Own source, its
+  other parameters at their defaults), so it adds as a preset does and loads into a Groove device
+  (`loadPresetInto`: its parameters at the defaults too). `renamePreset` keeps a file's own extension (a `.vital`, a
+  `.gilgroove` or an `.agr` stays one).
+
 ## Extending the format
 
 1. Add the field to the model type with a default.
@@ -420,3 +488,5 @@ engine reads and writes them (`EngineBridge::applyPluginState`, `pluginState`), 
   [test_session_engine.cpp](../../tests/app/test_session_engine.cpp): presets loaded into devices, saved from the
   device view, rendering as the devices they were saved from.
 - [test_session_files.cpp](../../tests/app/test_session_files.cpp): saving and opening through the session.
+- [test_grooves.cpp](../../tests/app/test_grooves.cpp): grooves in project files (the library, the default, clips'
+  grooves), `.gilgroove` files round trip, `.agr` files read as Ableton's grooves.

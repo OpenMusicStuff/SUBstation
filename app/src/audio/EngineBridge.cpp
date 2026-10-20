@@ -81,6 +81,9 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
     connect(project, &Project::trackChanged, this,
             [this](const QString& trackId) { guarded("trackChanged", [&] { updateEditorTitles(trackId); }); });
     connect(project, &Project::settingsChanged, this, [edit, this] { edit("settingsChanged", [&] { pushSettings(); }); });
+    connect(project, &Project::groovesChanged, this, [edit, this] { edit("groovesChanged", [&] { pushGrooves(true); }); });
+    connect(project, &Project::defaultGrooveChanged, this,
+            [edit, this] { edit("defaultGrooveChanged", [&] { pushGrooves(true); }); });
     connect(project, &Project::automationChanged, this, [edit, this](const QString& owner, const QString& key) {
         edit("automationChanged", [&] { onAutomationChanged(owner, key); });
     });

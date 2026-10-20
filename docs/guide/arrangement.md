@@ -99,7 +99,8 @@ folding, the master, the title bar and the transport bar, and projects.
 
 A clip's right-click menu has *Cut*, *Copy*, *Paste*, *Split Here*, *Duplicate*,
 *Consolidate*, *Reverse*, *Deactivate* (or *Activate*) and *Delete*; right-clicking anywhere in a time selection
-offers the same (but *Split Here*), for what is selected. An audio clip's also has *Find
+offers the same (but *Split Here*), for what is selected. A clip's menu also has *Apply Groove* (the selected clips'
+grooves written into them) and *Extract Groove* (a groove made of the clip's feel): see [grooves.md](grooves.md). An audio clip's also has *Find
 Similar Sounds* (see [browser.md](browser.md#find-similar-sounds)), *Hot-Swap Sample*
 (try samples from the browser in place of its file, everywhere it plays) and *Show in
 File Manager* (see [file-manager.md](file-manager.md)). Right-clicking an empty part
@@ -343,6 +344,8 @@ The bar under the title bar holds, from left to right:
 
 - **Tempo** (drag it, Shift for fine steps, double-click to type) and the **time
   signature**;
+- **Swing**: the project's default groove as a swing on 16ths, *Off* (50 %) to 75 %, or
+  the name of the groove it is (see [grooves.md](grooves.md#the-default-groove));
 - the **metronome** with its **count-in** drop-down ▾ on its right, as in Live (see
   [recording.md](recording.md)), the **project key** (see [audio-clips.md](audio-clips.md))
   and the **computer MIDI keyboard** button ⌨ (see [midi.md](midi.md));

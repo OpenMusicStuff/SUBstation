@@ -18,7 +18,7 @@
 // the view. Wheel: scroll (Shift: sideways), Ctrl: zoom time, Alt: make the
 // keys' rows taller or shorter.
 // Keys: Delete, Ctrl+A, Ctrl+D (duplicate), Ctrl+C / Ctrl+X / Ctrl+V (copy,
-// cut, paste), Ctrl+U (quantize), 0 (deactivate the selected notes, or
+// cut, paste), Ctrl+U (quantize), Ctrl+Shift+U (the last groove applied), 0 (deactivate the selected notes, or
 // activate them if they all are: they show grey and aren't heard), Up/Down
 // (Shift: an octave), Left/Right (a grid step; Shift: a bar). The main window
 // has shortcuts for most of them too (for clips): the grid accepts their

@@ -599,4 +599,40 @@ public:
         : RemoveCommand(project, trackId, text) {}
 };
 
+// A change to the project's groove library and what plays its grooves with it:
+// the library, the Groove devices' states (their copies kept in step), and, a
+// groove removed, the clips and the default groove left with their own copies.
+// `defaultGroove` set: the default groove changes too.
+struct GroovesState {
+    std::vector<LibraryGroove> library;
+    DeviceStates devices;
+    ClipLists clips;
+    QMap<QString, std::vector<TakeLane>> takes;  // tracks' take lanes (their clips' grooves)
+    std::optional<std::optional<GrooveSource>> defaultGroove;
+};
+
+// The groove library (a groove added, removed, renamed or edited) and what
+// plays it. Target: the groove edited ("": the library); the groove editor's
+// drags pass a merge key, so a drag is one undo step.
+class SetGroovesCommand : public MergeableCommand<SetGroovesCommand, QString, GroovesState> {
+public:
+    SetGroovesCommand(Project* project, GroovesState before, GroovesState after, const QString& text,
+                      QString grooveId = {}, QString mergeKey = {});
+    void redo() override;
+    void undo() override;
+
+private:
+    void apply(const GroovesState& state);
+};
+
+// The project's default groove (none: straight).
+class SetDefaultGrooveCommand
+    : public MergeableCommand<SetDefaultGrooveCommand, int, std::optional<GrooveSource>> {
+public:
+    SetDefaultGrooveCommand(Project* project, std::optional<GrooveSource> before, std::optional<GrooveSource> after,
+                            QString mergeKey = {});
+    void redo() override;
+    void undo() override;
+};
+
 }  // namespace sub::app

@@ -19,6 +19,11 @@
 // mono, goes into the left's A, which feeds the right's B, which feeds the
 // left's A.
 //
+// Follow Groove: Swing is the project's groove's (ProcessContext::groove):
+// every other echo as late as the groove's offbeat steps are (on average, its
+// default lane's), as a share of that side's time (held to Swing's range).
+// Without a project groove, Swing as it is set.
+//
 // Its editor draws a spectrum of the input behind the filter's curve: the
 // display "input" is the input summed to mono, one value per sample.
 
@@ -32,6 +37,7 @@
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/Dsp.h"
 #include "builtin/DspBlocks.h"
+#include "music/Groove.h"
 #include "rt/RtUtils.h"
 
 namespace sub {
@@ -50,6 +56,7 @@ public:
         FilterOn, FilterFreq, FilterWidth,
         Mode, PingPong, Mix,
         Swing, Drive, Duck,
+        FollowGroove,
         NumParams
     };
     enum TimeMode { Repitch = 0, Fade, Jump };
@@ -116,11 +123,16 @@ protected:
         const float driveGain = 1.f + 7.f * drive;
         const float duck = param(Duck) / 100.f;
 
-        // Each stage's time: A's lengthened by the swing, B's shortened as much.
-        const double swing = kMaxSwing * param(Swing) / 100.0;
+        // Each stage's time: A's lengthened by the swing, B's shortened as much. Following the groove,
+        // the swing is how late its offbeats are (beats), as a share of the side's time.
+        const double setSwing = kMaxSwing * param(Swing) / 100.0;
+        const double late = isOn(FollowGroove) && ctx.groove ? offbeatBeats(*ctx.groove, ctx.tempo) : -1.0;
         float target[kStages];
         for (int s = 0; s < 2; ++s) {
-            const double time = std::clamp(timeSeconds(s, ctx.tempo), 0.001, kMaxDelaySeconds) * sampleRate_;
+            const double seconds = std::clamp(timeSeconds(s, ctx.tempo), 0.001, kMaxDelaySeconds);
+            const double beats = seconds * std::max(1.0, ctx.tempo) / 60.0;
+            const double swing = late >= 0.0 ? std::clamp(late / beats, 0.0, kMaxSwing) : setSwing;
+            const double time = seconds * sampleRate_;
             target[stageOf(s, 0)] = static_cast<float>(time * (1.0 + swing));
             target[stageOf(s, 1)] = static_cast<float>(time * (1.0 - swing));
         }
@@ -187,6 +199,19 @@ private:
         float fadeFrom = 0.f;  // Fade: the time faded away from
         int fadeLeft = 0;      // Fade: samples of the crossfade still to go
     };
+
+    // How late a groove's offbeat steps are, on average (its default lane's), in beats at `tempo`.
+    static double offbeatBeats(const groove::Groove& groove, double tempo) noexcept {
+        if (groove.lanes.empty()) return 0.0;
+        const std::vector<groove::Step>& steps = groove.lanes.front().steps;
+        double sum = 0.0;
+        int count = 0;
+        for (size_t i = 1; i < steps.size(); i += 2) {
+            sum += steps[i].timing * groove.stepBeats + steps[i].timingMs * std::max(1.0, tempo) / 60000.0;
+            ++count;
+        }
+        return count > 0 ? std::max(0.0, sum / count) : 0.0;
+    }
 
     // Side s's time in seconds (the right one's is the left's while linked).
     double timeSeconds(int s, double tempo) const noexcept {
@@ -261,6 +286,7 @@ private:
             {"swing", "Swing", "%", 0.f, 100.f, 0.f},
             {"drive", "Drive", "%", 0.f, 100.f, 0.f},
             {"duck", "Duck", "%", 0.f, 100.f, 0.f},
+            {"follow_groove", "Follow Groove", "", 0.f, 1.f, 0.f, false, kOnOff},
         };
         return kInfos;
     }

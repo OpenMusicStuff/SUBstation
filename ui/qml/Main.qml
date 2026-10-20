@@ -519,6 +519,60 @@ ApplicationWindow {
                 Action { id: deleteAction; objectName: "delete"; text: qsTr("&Delete"); shortcut: window.keyOf(objectName); onTriggered: Session.deleteSelection() }
                 Action { objectName: "selectAll"; text: qsTr("Select &All"); shortcut: window.keyOf(objectName); onTriggered: Session.selectAll() }
                 MenuSeparator {}
+                Menu {
+                    id: defaultGrooveMenu
+                    objectName: "defaultGroove"
+                    title: qsTr("Default &Groove")
+                    // The project's default groove (Session.grooves): none, a swing, or one of its
+                    // grooves. Groove devices and clips set to Project play it; devices following
+                    // the groove follow it. Checked from it (also after a click changed it). (Its
+                    // entries aren't commands: no names, no keys.)
+                    Action {
+                        text: qsTr("None")
+                        checkable: true
+                        checked: Session.grooves.defaultKind === ""
+                        onTriggered: {
+                            Session.grooves.clearDefault()
+                            checked = Qt.binding(() => Session.grooves.defaultKind === "")
+                        }
+                    }
+                    Instantiator {
+                        model: [54, 58, 62, 200 / 3, 71]
+                        delegate: Action {
+                            required property var modelData
+                            readonly property bool chosen: Session.grooves.defaultKind === "swing"
+                                                           && Math.abs(Session.grooves.defaultSwing - modelData) < 0.05
+                            text: qsTr("Swing %1 %").arg(Number(modelData).toFixed(modelData % 1 === 0 ? 0 : 1))
+                            checkable: true
+                            checked: chosen
+                            onTriggered: {
+                                Session.grooves.setDefaultSwing(modelData)
+                                checked = Qt.binding(() => chosen)
+                            }
+                        }
+                        onObjectAdded: (index, object) => defaultGrooveMenu.insertAction(1 + index, object)
+                        onObjectRemoved: (index, object) => defaultGrooveMenu.removeAction(object)
+                    }
+                    MenuSeparator {}
+                    Instantiator {
+                        model: Session.grooves.grooves
+                        delegate: Action {
+                            required property var modelData
+                            readonly property bool chosen: Session.grooves.defaultGrooveId === modelData.id
+                            text: modelData.name
+                            checkable: true
+                            checked: chosen
+                            onTriggered: {
+                                Session.grooves.setDefaultGroove(modelData.id)
+                                checked = Qt.binding(() => chosen)
+                            }
+                        }
+                        onObjectAdded: (index, object) => defaultGrooveMenu.addAction(object)  // (after the swings)
+                        onObjectRemoved: (index, object) => defaultGrooveMenu.removeAction(object)
+                    }
+                }
+                Action { objectName: "grooves"; text: qsTr("Gr&ooves…"); shortcut: window.keyOf(objectName); onTriggered: grooveDialog.open() }
+                MenuSeparator {}
                 // Enabled while automation is overridden somewhere.
                 Action {
                     objectName: "reEnableAutomation"
@@ -1002,6 +1056,10 @@ ApplicationWindow {
 
     RenderDialog {
         id: renderDialog
+    }
+
+    GrooveDialog {
+        id: grooveDialog
     }
 
     CpuUsageWindow {

@@ -25,7 +25,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | [RackDeviceBody.qml](../../ui/qml/devices/RackDeviceBody.qml), [RackMacroKnob.qml](../../ui/qml/devices/RackMacroKnob.qml), [RackMacroMappings.qml](../../ui/qml/devices/RackMacroMappings.qml), [RackChainRow.qml](../../ui/qml/devices/RackChainRow.qml), [RackChainView.qml](../../ui/qml/devices/RackChainView.qml), [RackMacro](../../ui/src/devices/RackMacro.h) (`RackMacro`, `RackMacros`), [RackChain](../../ui/src/devices/RackChain.h), [RackChains](../../ui/src/devices/RackChains.h) | A rack: its buttons, macros and chain list, a macro's mappings and their ranges, a chain's row, the chain shown beside the rack |
 | [DrumRackBody.qml](../../ui/qml/devices/DrumRackBody.qml), [DrumPad.qml](../../ui/qml/devices/DrumPad.qml), [DrumRack](../../ui/src/devices/DrumRack.h) (`DrumRack`, `DrumPadItem`) | A Drum Rack: its pads, the keys' overview, the similar-sound arrows, a pad's menu; dropping samples on pads |
 | [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h), [EditorPaint](../../ui/src/devices/EditorPaint.h), [DisplayClock](../../ui/src/devices/DisplayClock.h) | The display clock their displays tick on (at the display rate); the base of the editors' drawn items, and their drawing helpers (among them `LogAxis`, the graphs' logarithmic frequency and time axes, and `drawDecadeGrid()`), what they animate with (`MeterBallistics`, a meter's fall and held peak; `Eased` and `easeFraction()`, a value easing towards its target by the time since the last tick) and the meters and lines they share (`dbToY()`, `drawLevelMeter()`, `drawReductionMeter()`, `drawGlowPolyline()`) |
-| [DisplayValue](../../ui/src/devices/DisplayValue.h) | A device's display as a number for QML, drawing nothing: its newest value, eased (`smoothed`), and whether any came lately (`active`), for editors drawn in QML to animate by (the Arpeggiator's, the Bitcrusher's, the Tape Stop's, the Glitch's) |
+| [DisplayValue](../../ui/src/devices/DisplayValue.h) | A device's display as a number for QML, drawing nothing: its newest value, eased (`smoothed`), and whether any came lately (`active`), for editors drawn in QML to animate by (the Arpeggiator's, the Groove's, the Bitcrusher's, the Tape Stop's, the Glitch's) |
 | [editors/DeviceEditors.qml](../../ui/qml/devices/editors/DeviceEditors.qml) | The editor registry (a singleton): `editorFor(kind)` |
 | [editors/LfoEditor.qml](../../ui/qml/devices/editors/LfoEditor.qml), [editors/EnvelopeEditor.qml](../../ui/qml/devices/editors/EnvelopeEditor.qml), [editors/ModulatorTargets.qml](../../ui/qml/devices/editors/ModulatorTargets.qml), [ModulatorGraph](../../ui/src/devices/ModulatorGraph.h), [ModulatorMappings](../../ui/src/devices/ModulatorMappings.h), [ModulatorValues](../../ui/src/devices/ModulatorValues.h) | The modulators' editors (see [Modulators](#modulators)): the curve and what it plays, what they move (Map, ranges, Invert, ×), and their values as they play for whatever draws the parameters they move |
 | [editors/EditorCaption.qml](../../ui/qml/devices/editors/EditorCaption.qml), [editors/EditorReadout.qml](../../ui/qml/devices/editors/EditorReadout.qml), [editors/EditorKnob.qml](../../ui/qml/devices/editors/EditorKnob.qml), [editors/EditorTextsWidth.qml](../../ui/qml/devices/editors/EditorTextsWidth.qml), [editors/DeviceParamMap.qml](../../ui/qml/devices/editors/DeviceParamMap.qml) | The editors' captions (a control's name over it) and readouts (its value under it); `EditorKnob`, a knob between the two, bound to its parameter and dimmed while disabled, and what its cell shows (`texts()`); `EditorTextsWidth`, how wide a Text must be for texts, knobs' among them, in its font; `DeviceParamMap`, a `DeviceParam` per id (`get(id)`) |
@@ -44,6 +44,7 @@ What the user does with it: [guide/devices.md](../guide/devices.md), [guide/plug
 | Tape Stop: [TapeStopEditor.qml](../../ui/qml/devices/editors/TapeStopEditor.qml) | |
 | Glitch: [GlitchEditor.qml](../../ui/qml/devices/editors/GlitchEditor.qml) | |
 | Arpeggiator: [ArpeggiatorEditor.qml](../../ui/qml/devices/editors/ArpeggiatorEditor.qml) | |
+| Groove: [GrooveEditor.qml](../../ui/qml/devices/editors/GrooveEditor.qml), [GrooveSteps.qml](../../ui/qml/devices/editors/GrooveSteps.qml) (a groove drawn: one lane's steps over its cycle) | |
 | Chorus-Ensemble: [ChorusEditor.qml](../../ui/qml/devices/editors/ChorusEditor.qml), [ChorusGraph](../../ui/src/devices/ChorusGraph.h), the application layer's [ChorusVoices.h](../../app/src/audio/ChorusVoices.h) | |
 | Phaser-Flanger: [PhaserEditor.qml](../../ui/qml/devices/editors/PhaserEditor.qml), [PhaserGraph](../../ui/src/devices/PhaserGraph.h), [DisplayPlayback.h](../../ui/src/devices/DisplayPlayback.h) (display values played back at the audio's pace, for any editor), the application layer's [PhaserResponse.h](../../app/src/audio/PhaserResponse.h) | |
 | Reverb: [ReverbEditor.qml](../../ui/qml/devices/editors/ReverbEditor.qml), [ReverbFilterPad](../../ui/src/devices/ReverbFilterPad.h), [ReverbSpinPad](../../ui/src/devices/ReverbSpinPad.h), [ReverbDecayGraph](../../ui/src/devices/ReverbDecayGraph.h), the application layer's [ReverbResponse.h](../../app/src/audio/ReverbResponse.h) | |
@@ -391,6 +392,7 @@ readonly property var editors: ({
     "erosion": "ErosionEditor.qml",
     "gate": "GateEditor.qml",
     "gigatune": "GigaTuneEditor.qml",
+    "groove": "GrooveEditor.qml",
     "hue": "HueEditor.qml",
     "limiter": "LimiterEditor.qml",
     "multiband": "MultibandEditor.qml",
@@ -414,9 +416,9 @@ readonly property var editors: ({
 - `required property string trackId` and `deviceId`.
 - It is the device's body: the frame around it (the border, the title bar, the menu) is the panel's. Its
   `implicitWidth` is the body's width (Compressor 658, Gate 568, or 837 with its sidechain section, Limiter 610,
-  Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 454, Bitcrusher 380, Tape Stop 310, Glitch 332, Arpeggiator 404, Chorus-Ensemble
+  Multiband Dynamics 834, Spectral Compressor 936, Saturator 770, Amp 642, Erosion 532, Delay 454, Bitcrusher 380, Tape Stop 310, Glitch 332, Arpeggiator 404, Groove 472, Chorus-Ensemble
   534, Phaser-Flanger 732, or 906 with More open, Reverb 1023, Disperser 544, EQ 580, or 756 with its band controls,
-  Sidechain 720, Sampler 760, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Bitcrusher's, Tape Stop's, Glitch's, Arpeggiator's, Disperser's, EQ's, Sidechain's and
+  Sidechain 720, Sampler 760, Transient Shaper 732, Vital 996); it may change. All but the Compressor's, Delay's, Bitcrusher's, Tape Stop's, Glitch's, Arpeggiator's, Groove's, Disperser's, EQ's, Sidechain's and
   Sampler's are their widths in the default font as the tests' host has it (Inter standing in for Segoe UI): their parts
   are as wide as their texts need, so they follow the font. It gets the body's whole height and grows its graphs into it
   (6 px from the top and the bottom), while its knobs stay at the top; `implicitHeight` is the least it needs.
@@ -965,7 +967,8 @@ The editors:
   the display `input`: a 4096-point Hann FFT of the latest samples, falling 62.5 dB a second (1 dB a 16 ms tick):
   `analysis::FallingSpectrum`), the Filter switch, the frequency (a log-scaled value box) and width; under them, where
   Ableton's has its modulation, the Character: a title between two lines over Swing, Drive and Duck, value boxes
-  (`CharacterBox`); on the right the Mode buttons and Ping Pong over Dry/Wet.
+  (`CharacterBox`), and Groove's Follow button (`follow_groove`, Follow Groove: the swing the project's default
+  groove's); on the right the Mode buttons and Ping Pong over Dry/Wet.
 - **Bitcrusher** ([BitcrusherEditor.qml](../../ui/qml/devices/editors/BitcrusherEditor.qml)): no pages; a preview
   of one cycle of a sine as the device crushes it (the dry sine dim behind), worked out in the QML from Bits, Rate
   and Drive as the engine works them out (`steps`: each held sample's place, length and level, at most one a pixel),
@@ -996,13 +999,25 @@ The editors:
   shivers a pixel and moves as its kind does (Stutter: two echoes rippling out; Reverse: a white sweep running back;
   Tape: dark sinking from its top; Gate: blinking); the kind's knob swells and flickers. Cells fade as they age.
 - **Arpeggiator** ([ArpeggiatorEditor.qml](../../ui/qml/devices/editors/ArpeggiatorEditor.qml)): no pages; Style (a
-  `ParamChoice`) and Hold over the pattern (`pattern`: sixteen steps of a three-note chord over the octaves, the
+  `ParamChoice`), Hold and Groove (`follow_groove`, Follow Groove: synced and playing, its steps where the project's
+  default groove puts them, in Swing's place) over the pattern (`pattern`: sixteen steps of a three-note chord over the octaves, the
   rows as the engine's `indexFor` picks them, mirrored in `indexFor` here; Chord the whole chord an octave up each
   step), each step as wide as the gate and the odd ones late by the swing, the beats marked; beside it Sync over
   the Rate (a `ParamChoice` of note values, or unsynced a knob in Hz), Gate and Swing knobs, and under them a row of
   Octaves (four buttons) and one of Velocity (Played, Fixed and the fixed velocity's box, live only while Fixed).
   Animated: the step the display `step` says sounds (a `DisplayValue`) lights up, a glow sliding to it from the
   last and fading when the notes stop; new steps fade in.
+- **Groove** ([GrooveEditor.qml](../../ui/qml/devices/editors/GrooveEditor.qml)): no pages. On the left the groove it
+  plays (`Session.grooves.deviceGroove()`, read again on `revision`): a Groove chooser (Swing, Project with the default
+  groove's name, the project's grooves, and "Its own groove" while it has one; choosing calls
+  `Session.grooves.setDeviceSource`) over the steps
+  ([GrooveSteps.qml](../../ui/qml/devices/editors/GrooveSteps.qml): its default lane over its cycle, each step a bar
+  moved from its grid point (a faint tick) by its timing and as tall as it is loud, the beats and bars as lines; a
+  flat grid with none), and under them Apply (`applyDevice`: written into the track's notes, the device switched
+  off) and Add to Grooves (`addFromDevice`). On the right two rows of `EditorKnob`s at 52 px: Swing and Step (a
+  `ParamChoice`), both dimmed but for the Swing source, Timing and Velocity; Length, Random, Quantize, and Early over
+  Latency (`ParamButton`s). Animated: the step the display `step` says sounds (a `DisplayValue`, -1 while none does)
+  lights up, a glow sliding to it from the last and fading when the notes stop.
 - **Chorus-Ensemble** ([ChorusEditor.qml](../../ui/qml/devices/editors/ChorusEditor.qml)): no pages; laid out as
   Ableton's: the mode tabs (Chorus, Ensemble, Vibrato: `ParamButton`s on `mode`) over the display, and under it a strip:
   the High-pass switch (`filter_highpass` icon) and its frequency (a log-scaled value box as wide as its widest value,
@@ -1509,7 +1524,7 @@ The editors:
 
     The envelope's and the LFO's drawings show the newest voice moving through them (a glowing dot with a short
     trail, fading once no voice plays: `playing`), from the device's displays (see
-    [engine/devices.md](../engine/devices.md#vital)).
+    [engine/devices.md](../engine/devices.md#vital-builtinvital-instrument)).
   - **The grid**: two rows of `DeviceParamKnob`s with the editor's own short captions (`name`: "Cutoff", not "Filter
     1 Cutoff"), from its table (`rowsOf(page, choice)`: Vital's parameter ids, each with how many cells it takes: a
     list two, its names whole, unless the parameter isn't a list); the cells as wide as the page's widest row lets
@@ -1558,7 +1573,8 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
   the threshold at the right. A trigger (the Envelope's playhead starting again; the LFO's `key`) briefly lights
   the frame's edge. (`output`, its value now, feeds the targets' markers.) The Envelope's hint over the curve, while a sidechain triggers it and
   none is chosen, asks the frame for its sidechain menu.
-- **The controls**: a row of buttons (Sync, Random, and Map: [ModulatorMapButton.qml](../../ui/qml/devices/editors/ModulatorMapButton.qml)),
+- **The controls**: a row of buttons (Sync, the LFO's Groove (`follow_groove`, Follow Groove: synced and following the
+  song, its cycle swung by the project's default groove; live only while Sync is on), Random, and Map: [ModulatorMapButton.qml](../../ui/qml/devices/editors/ModulatorMapButton.qml)),
   then `EditorKnob`s at 38 px in 56 px cells (Rate or the synced rate, swapped by Sync; Depth, Offset, Phase,
   Smooth; the Envelope's Length, Depth, Velocity, Threshold dimmed until a sidechain is chosen, Smooth). The
   Envelope has no trigger setting: the notes it hears and, once chosen, its sidechain's hits trigger it.
@@ -1645,6 +1661,7 @@ and the count under it, lined up with them: [ModulatorTargetsButton.qml](../../u
 | [test_ui_device_panel_midi_from.cpp](../../tests/app/test_ui_device_panel_midi_from.cpp) | The MIDI From button (on an instrument and an effect with a MIDI input, not on one without), its tooltip (following its source's name) and menu, choosing a track and its own again, undo, its source deleted |
 | [test_ui_device_editors.cpp](../../tests/app/test_ui_device_editors.cpp) | The registry (every kind with an editor, and the generic knobs for the others); the Compressor's, Delay's, Disperser's, EQ's, Sidechain's and Sampler's editors, each loaded as the view loads it, driven with the mouse and keys, the project and (rendering offline) the engine checked; what the editors share (SgPainter's additions, the animation helpers, `EditorKnob` and `DeviceParamMap`); the parameter cell and its menu. Its host, and every editor test's, is [support/EditorHarness.h](../../tests/app/support/EditorHarness.h) |
 | [test_ui_device_editors_arpeggiator.cpp](../../tests/app/test_ui_device_editors_arpeggiator.cpp) | The Arpeggiator's editor: it goes after the instrument and fits the view, the octaves and velocity under the timing; the step playing lit; its buttons (Octaves, Hold, Velocity) set their parameters undoably, the fixed velocity's box live only while Fixed; the rate as a note value or a knob in Hz; the pattern drawn for each style |
+| [test_ui_device_editors_groove.cpp](../../tests/app/test_ui_device_editors_groove.cpp) | The Groove device's editor, loaded as the view loads it over a real engine: it fits the view; its source chooser (Swing, Project, the library's grooves) and what it sets, undoably; the Swing knobs live only for Swing; the steps drawn following the groove; the step playing lit; Add to Grooves and Apply |
 | [test_ui_device_editors_tape_stop.cpp](../../tests/app/test_ui_device_editors_tape_stop.cpp) | The Tape Stop's editor: Kilohearts' layout (the deck over one row of knobs from Stop Time to Start Time, the button in the deck's middle), fitting the view, its button (lit, undoable, a triangle or a square), the reels turning at the display's speed and still when stopped |
 | [test_ui_device_editors_glitch.cpp](../../tests/app/test_ui_device_editors_glitch.cpp) | The Glitch's editor: compact and fitting the view, its controls, the kinds' knobs in four colours, the cells inside the strip; the knobs centred top to bottom; the outline going to the step playing, cells taking what each step did, a glitching cell popping, shivering and ghosting, the tears, static, scan line, its name thrown across and the clock running only then, all settling after |
 | [test_ui_device_editors_bitcrusher.cpp](../../tests/app/test_ui_device_editors_bitcrusher.cpp) | The Bitcrusher's editor: fitting the view, its knobs, and its preview (one cycle) following Bits (its levels), Rate (its held samples), Drive (clipping) and Output (a box over it, its height); the wave running along only while sound comes in |

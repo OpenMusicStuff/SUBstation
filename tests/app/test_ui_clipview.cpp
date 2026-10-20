@@ -2,8 +2,8 @@
 // its settings and waveform; several clips edited in unison; warping and
 // transposing reaching the audio; warp markers on the waveform and at
 // transients; the clip gain making the waveform taller; which clips open with
-// a MIDI clip among them; going back (Esc, ×, the clips deleted, the project
-// reset). Runs on a display (xvfb here). With
+// a MIDI clip among them; an audio clip's groove (set, applied, extracted); going
+// back (Esc, ×, the clips deleted, the project reset). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
 #include <QQuickItem>
@@ -540,6 +540,68 @@ private Q_SLOTS:
         test::doubleClick(window_, test::at(waveform, QPointF(found[1] / 2.0 * waveform->width() + 3, 60)));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
         QCOMPARE(clip(0).warpMarkers[1].sec, found[1]);
+    }
+
+    void anAudioClipTakesAGroove() {
+        // Clicks on the offbeat 8ths (beats 0.5, 1.5, 2.5 at 120 BPM), unwarped.
+        const QString path = test::writeWav(dir_->path(QStringLiteral("clicks.wav")), clicks(2.0, {0.25, 0.75, 1.25}), 2);
+        const ClipRefs refs = editor().addClips(QString(), 0.0, {{path, 2.0}}, 0);
+        clips_ = refs;
+        QTRY_VERIFY(!session().bridge()->waveform(path).isNull());
+        open(refs);
+        QVERIFY(item("audioGroove")->isVisible());
+        // (The audio controls' Groove section's; the MIDI header's menu has its own.)
+        const auto groove = [this](const char* name) {
+            return item("audioGroove")->findChild<QQuickItem*>(QString::fromLatin1(name));
+        };
+        QVERIFY(controller()->grooveable());
+        QCOMPARE(controller()->groove().value(QStringLiteral("kind")).toString(), QString());
+        QVERIFY(!groove("groove_timing")->isVisible());  // (no groove: no amounts)
+
+        // Swing: the clip is warped for it.
+        QMetaObject::invokeMethod(groove("groove"), "activated", Q_ARG(int, 1));
+        QVERIFY(clip(0).groove);
+        QCOMPARE(clip(0).groove->source.kind, sub::app::GrooveSource::Kind::Swing);
+        QVERIFY(clip(0).warp);
+        QCOMPARE(undo().undoText(), QStringLiteral("Set Clip Groove"));
+        QCOMPARE(controller()->groove().value(QStringLiteral("kind")).toString(), QStringLiteral("swing"));
+        QVERIFY(groove("groove_timing")->isVisible());
+        QVERIFY(groove("groove_swing")->isVisible());
+        QVERIFY(!groove("groove_velocity")->isVisible());  // (MIDI's)
+        // On 8ths, at a triplet feel, at half its timing.
+        controller()->setGrooveValue(QStringLiteral("step"), 0);
+        controller()->setGrooveValue(QStringLiteral("swing"), 200.0 / 3.0);
+        controller()->setGrooveValue(QStringLiteral("timing"), 50.0);
+        QCOMPARE(clip(0).groove->source.stepBeats, 0.5);
+        QCOMPARE(clip(0).groove->amounts.timing, 0.5);
+        test::screenshot(window_, QStringLiteral("clip-view-groove"));
+
+        // Apply: the clicks' places written into its warp markers, the groove cleared.
+        QMetaObject::invokeMethod(groove("applyGroove"), "clicked");  // (scrolled out of sight, maybe)
+        QVERIFY(!clip(0).groove);
+        QCOMPARE(undo().undoText(), QStringLiteral("Apply Groove"));
+        const std::vector<double>& found = controller()->transients(path);
+        QCOMPARE(found.size(), size_t{3});
+        bool marked = false;
+        for (const auto& m : clip(0).warpMarkers) {
+            if (std::abs(m.sec - found[0]) < 1e-6) {
+                marked = true;
+                QVERIFY2(std::abs(m.beat - (2 * found[0] + 0.5 / 6)) < 0.01, qPrintable(QString::number(m.beat)));
+            }
+        }
+        QVERIFY(marked);
+        undo().undo();
+        QVERIFY(clip(0).groove);
+
+        // None: the groove goes.
+        QMetaObject::invokeMethod(groove("groove"), "activated", Q_ARG(int, 0));
+        QVERIFY(!clip(0).groove);
+        QCOMPARE(undo().undoText(), QStringLiteral("Remove Clip Groove"));
+
+        // Extract: the clicks' feel into the project's grooves (on 16ths: the 8ths' offbeats are on the grid).
+        QMetaObject::invokeMethod(groove("extractGroove"), "clicked");
+        QCOMPARE(project().grooves().size(), size_t(1));
+        QCOMPARE(project().grooves().front().notes.size(), size_t(3));
     }
 
     void severalClipsAreStackedInBands() {

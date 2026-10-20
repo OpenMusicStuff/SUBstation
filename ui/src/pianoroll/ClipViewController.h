@@ -28,6 +28,7 @@
 // mode, where speed and pitch move together like a turntable and transposing
 // does nothing).
 
+#include "audio/SampleSlices.h"
 #include "editor/ClipRef.h"
 #include "model/Clip.h"
 #include "pianoroll/PianoRoll.h"
@@ -93,6 +94,11 @@ class ClipViewController : public QObject {
     // caption, from, to, defaultValue, bipolar, tooltip, and the clips' value
     // (the first's), text (its readout: the range when they differ) and differs.
     Q_PROPERTY(QVariantMap knobs READ knobs NOTIFY changed)
+    // The lead clip's groove (Session.grooves.clipGroove(): kind "" for none, "swing", "project",
+    // "library" or "own"; its swing, step, amounts as fractions, and the groove it plays), and
+    // whether the clips shown can take one (MIDI clips; audio clips but a frozen track's).
+    Q_PROPERTY(QVariantMap groove READ groove NOTIFY changed)
+    Q_PROPERTY(bool grooveable READ grooveable NOTIFY changed)
     Q_PROPERTY(QStringList warpModes READ warpModes CONSTANT)
     Q_PROPERTY(QStringList warpModeTips READ warpModeTips CONSTANT)
 
@@ -102,7 +108,7 @@ public:
     static constexpr double kMinBpm = app::kMinSegmentBpm;
     static constexpr double kMaxBpm = app::kMaxSegmentBpm;
     // The weakest transient shown and marked (0..1 of the file's strongest).
-    static constexpr double kMinTransientStrength = 0.25;
+    static constexpr double kMinTransientStrength = app::sampleSlices::kMarkStrength;
 
     explicit ClipViewController(QObject* parent = nullptr);
     ~ClipViewController() override;
@@ -142,6 +148,8 @@ public:
     // it is decoded and kept; none until then.
     const std::vector<double>& transients(const QString& path) const;
     QVariantMap knobs() const { return knobs_; }
+    QVariantMap groove() const { return groove_; }
+    bool grooveable() const { return grooveable_; }
     static QStringList warpModes();
     static QStringList warpModeTips();
 
@@ -167,6 +175,19 @@ public:
     Q_INVOKABLE void nudge(const QString& knob, double value, const QString& gestureKey);
     // A knob's value as its readout and tooltip show it.
     Q_INVOKABLE QString format(const QString& knob, double value) const;
+    // Every shown clip's groove (model/Grooves.h): none (""), "swing", "project" or "library" (with
+    // `grooveId`), at the lead's amounts (a clip without a groove: Timing and Velocity 100 %). An
+    // audio clip that isn't warped is warped for it.
+    Q_INVOKABLE void setGroove(const QString& kind, const QString& grooveId = {});
+    // One of their grooves' settings, the same on every shown clip with a groove: "swing" (percent),
+    // "step" (an index of GrooveLibrary's stepNames), "timing" (0..200 %), "velocity" (-100..100 %),
+    // "random", "quantize" (0..100 %). One undo step per gesture key.
+    Q_INVOKABLE void setGrooveValue(const QString& field, double value, const QString& gestureKey = {});
+    // Apply Groove: their grooves written into them, and cleared.
+    Q_INVOKABLE void applyGroove();
+    // Extract Groove: the lead clip's feel into the project's grooves, on steps of stepNames()[stepIndex]
+    // over `bars` bars (a lane a key, for a MIDI clip with `perKeyLanes`); the groove's id ("": none).
+    Q_INVOKABLE QString extractGroove(int stepIndex, int bars, bool perKeyLanes = false);
 
 Q_SIGNALS:
     void sessionChanged();
@@ -222,6 +243,8 @@ private:
     bool warpMarkable_ = false;
     mutable QHash<QString, std::vector<double>> transients_;  // by path
     QVariantMap knobs_;
+    QVariantMap groove_;
+    bool grooveable_ = false;
     std::vector<std::pair<app::Clip, QColor>> audioClips_;
     // (gesture key, knob, {clip id: value when the gesture started})
     struct Baseline {

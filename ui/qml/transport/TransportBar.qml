@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import SUBstation
 
 // The bar on top of the window, left to right: the tempo, the time signature,
-// the metronome (its count-in a drop-down on its right), the project key, the
+// the swing (the project's default groove), the metronome (its count-in a drop-down on its right), the project key, the
 // computer MIDI keyboard and Constrain Delay Compensation | the position (bar. beat. sixteenth), play, stop,
 // record, Re-Enable Automation, the oscilloscope | Punch In, loop, Punch Out, follow, the CPU load
 // and the audio device (a click opens Preferences). (Lock Envelopes is in the
@@ -107,6 +107,30 @@ Rectangle {
             value: transport.denominator
             onMoved: value => Session.editor.setTimeSignature(transport.numerator, Math.round(value))
         }
+        Separator {}
+        // The project's default groove as a swing (Edit › Default Groove has the rest): Off at 50 %,
+        // the groove's name while it is one of the project's grooves (dragging makes it a swing).
+        ValueBox {
+            objectName: "swing"
+            Layout.preferredHeight: Theme.controlHeight
+            from: 50
+            to: 75
+            step: 0.5
+            decimals: 1
+            sampleText: "66.7 %"
+            formatter: {
+                const kind = Session.grooves.defaultKind
+                const name = Session.grooves.defaultName
+                return v => kind === "swing" ? v.toFixed(1) + " %" : kind === "" ? qsTr("Off") : name
+            }
+            value: Session.grooves.defaultSwing
+            onMoved: (value, gestureKey) => Session.grooves.setDefaultSwing(value, gestureKey)
+
+            ToolTip.visible: hovered && !dragging
+            ToolTip.text: qsTr("Swing: the project's default groove, MPC swing on 16ths (66.7 %: a triplet feel).\nGroove devices and clips set to Project play it; Edit › Default Groove chooses a groove instead")
+            ToolTip.delay: 700
+        }
+        DimLabel { text: qsTr("Swing") }
         Separator {}
         // The metronome, its count-in a drop-down on its right, as Live's.
         RowLayout {

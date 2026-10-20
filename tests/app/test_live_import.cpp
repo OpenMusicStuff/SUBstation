@@ -628,6 +628,44 @@ private Q_SLOTS:
                             {0.5, 0.5}, {1.0, 0.5}, {2.5, 0.5}, {3.0, 0.5}, {4.5, 0.5}, {5.0, 0.5}}));
     }
 
+    // The groove pool's grooves come into the project's library, and a clip playing one plays it
+    // at the groove's Timing, Random, Velocity and Quantize (scaled by Live's Global Amount).
+    void theGroovePoolsGrooves() {
+        Song song;
+        // 16ths, the offbeats 0.06 of a beat late; played at Timing 50 %, Random 10 %.
+        QString hits;
+        for (int i = 0; i < 16; ++i) hits += note(i * 0.25 + (i % 2 ? 0.06 : 0.0), 0.1);
+        const QString groove = element(
+            QStringLiteral("Groove"),
+            value(QStringLiteral("Name"), QStringLiteral("Swing 16ths")) +
+                element(QStringLiteral("Clip"), element(QStringLiteral("Value"), midiClip(0.0, 4.0, keyTrack(60, hits)))) +
+                value(QStringLiteral("Base"), QStringLiteral("3")) + value(QStringLiteral("Quantization"), 0.0) +
+                value(QStringLiteral("Timing"), 50.0) + value(QStringLiteral("Random"), 10.0) +
+                value(QStringLiteral("Velocity"), 0.0),
+            QStringLiteral("Id=\"7\""));
+        song.extra = element(QStringLiteral("GroovePool"), element(QStringLiteral("Grooves"), groove));
+        LiveTrack keys{QStringLiteral("MidiTrack"), 1, QStringLiteral("1-Keys")};
+        QString grooved = midiClip(0.0, 4.0, keyTrack(60, note(0.25, 0.1)));
+        grooved.replace(QStringLiteral("</MidiClip>"),
+                        element(QStringLiteral("GrooveSettings"), value(QStringLiteral("GrooveId"), QStringLiteral("7"))) +
+                            QStringLiteral("</MidiClip>"));
+        keys.clips = grooved + midiClip(4.0, 4.0, keyTrack(62, note(0.0, 0.1)));
+        song.tracks = track(keys);
+        auto imported = load(liveSet(song));
+        const Project& p = imported->project;
+        QCOMPARE(p.grooves().size(), size_t{1});
+        QCOMPARE(p.grooves()[0].name, QStringLiteral("Swing 16ths"));
+        QVERIFY(std::abs(p.grooves()[0].groove.lanes.front().steps[1].timing - 0.24) < 1e-9);
+        const Clip& first = p.tracks()[0].clips[0];
+        QVERIFY(first.groove);
+        QCOMPARE(first.groove->source.libraryId, p.grooves()[0].id);
+        QCOMPARE(first.groove->amounts.timing, 0.5);
+        QCOMPARE(first.groove->amounts.random, 0.1);
+        QVERIFY(!p.tracks()[0].clips[1].groove);
+        QVERIFY(std::any_of(imported->notes.begin(), imported->notes.end(),
+                            [](const QString& line) { return line.contains(QStringLiteral("groove pool")); }));
+    }
+
     // Audio clips: their files where the set moved; unwarped ones at their own
     // speed (markers in seconds); warped ones at the tempo their markers say, a
     // clip a stretch; loops written out; gain, pitch, fades, warp mode.

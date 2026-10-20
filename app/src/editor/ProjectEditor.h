@@ -46,6 +46,7 @@
 #include "model/Automation.h"
 #include "model/Clip.h"
 #include "model/Device.h"
+#include "model/GrooveTypes.h"
 #include "model/Keys.h"
 #include "model/OrderedMap.h"
 #include "model/ParamSpec.h"
@@ -94,6 +95,9 @@ public:
     // io/Presets.h defaultDevice).
     using DeviceDefaults =
         std::function<std::optional<Device>(const QString& kind, const std::optional<PluginRef>& plugin)>;
+    // An audio file's transients, (seconds from its start, strength 0..1) in time order, as Mark
+    // Transients finds them; none while it isn't decoded. The engine bridge fills it in.
+    using TransientSource = std::function<std::vector<std::pair<double, float>>(const QString& path)>;
 
     ProjectEditor(Project* project, QUndoStack* undoStack, QObject* parent = nullptr);
     ~ProjectEditor() override;
@@ -594,6 +598,46 @@ public:
     // undo step; the new track's id ("" if refused).
     Q_INVOKABLE QString padToTrack(const QString& trackId, const QString& chainId, const QString& afterTrackId = {});
 
+    // --- Grooves (EditorGrooves.cpp; model/Grooves.h) ---
+    // The groove library: a groove added (its name made unique; its id), a built-in one
+    // (grooves::builtins(), by id) or a copy of one, one changed (the groove editor: one drag with
+    // a merge key is one step) or renamed, one removed: what played it (clips, Groove devices, the
+    // default groove) keeps its own copy, so nothing changes sound; one undo step. Each changes
+    // the Groove devices playing it in the same step (their copy). Unknown ids do nothing ("").
+    QString addGroove(const QString& name, const groove::Groove& groove, const std::vector<groove::NoteTime>& notes = {});
+    Q_INVOKABLE QString addBuiltinGroove(const QString& builtinId);
+    Q_INVOKABLE QString duplicateGroove(const QString& grooveId);
+    void setGroove(const QString& grooveId, const groove::Groove& groove, const QString& mergeKey = {});
+    Q_INVOKABLE void renameGroove(const QString& grooveId, const QString& name);
+    Q_INVOKABLE void removeGroove(const QString& grooveId);
+    // Extract Groove: a clip's feel into the library (a MIDI clip's notes, an audio clip's
+    // transients), on steps of `stepBeats` over `bars` bars, a lane a key with `perKeyLanes` (MIDI);
+    // named after its track. Its id ("": nothing to take it from, or an audio file not decoded yet).
+    Q_INVOKABLE QString extractGroove(const QString& trackId, const QString& clipId, double stepBeats = 0.25,
+                                      int bars = 1, bool perKeyLanes = false);
+    // Clips' groove (none: none), one undo step (a knob's drag, with a merge key). An unwarped audio
+    // clip is warped for it, as warping it by hand does; clips that can't take one stay as they are.
+    void setClipGroove(const ClipRefs& refs, const std::optional<ClipGroove>& groove, const QString& mergeKey = {});
+    // Apply Groove on clips: each one's groove written into it and cleared (a MIDI clip's notes moved,
+    // an audio clip's warp markers), one undo step.
+    void applyClipGrooves(const ClipRefs& refs);
+    // A Groove device's source: "swing", "project", "library" (`grooveId`: its copy kept in step
+    // with the library's) or "own" (what it plays now, apart from the library).
+    Q_INVOKABLE void setDeviceGrooveSource(const QString& trackId, const QString& deviceId, const QString& kind,
+                                           const QString& grooveId = {});
+    // Apply Groove on the device: what a Groove device does written into the notes of its track's
+    // MIDI clips (on a Drum Rack's pad: that pad's key's), and it switched off; one undo step. False
+    // if it isn't a Groove device, or plays none.
+    Q_INVOKABLE bool applyDeviceGroove(const QString& trackId, const QString& deviceId);
+    // The project's default groove (none: straight), as a source; Swing's percent (50: none, straight;
+    // on the default swing's step, else 16ths), or a library groove's id ("": none).
+    void setDefaultGroove(const std::optional<GrooveSource>& source, const QString& mergeKey = {});
+    Q_INVOKABLE void setDefaultSwing(double percent, const QString& mergeKey = {});
+    Q_INVOKABLE void setDefaultGrooveId(const QString& grooveId);
+    // Where audio files' transients come from (for audio clips' grooves and Extract Groove).
+    void setTransients(TransientSource transients);
+    std::vector<std::pair<double, float>> transientsOf(const QString& path) const;
+
     // Macros: a rack's parameters, each moving the parameters mapped to it.
     // Their values are normalized. paramInfo() describes a device's parameter;
     // built-in devices' are known, others' come from the ParamInfoSource.
@@ -970,12 +1014,18 @@ private:
     std::pair<int, std::optional<QString>> outsideFrozen(int index, const std::optional<QString>& parent) const;
     std::optional<QString> heldProblem(const QStringList& trackIds) const;
     std::optional<QString> arrangementProblem(const TrackTree& tree, const QSet<QString>& going = {}) const;
+    // Grooves (EditorGrooves.cpp): the library changed to `after` in one step with what plays its
+    // grooves (Groove devices' copies; with `detach`, a groove going: its users' own copies).
+    void commitGrooves(std::vector<LibraryGroove> after, const QString& text, const QString& grooveId,
+                       const QString& mergeKey, const QString& detach = {});
+    QString uniqueGrooveName(const QString& base) const;
 
     Project* project_;
     QUndoStack* undoStack_;
     ParamInfoSource describe_;
     OwnValueSource readOwn_;
     DeviceDefaults defaultDevice_;
+    TransientSource transients_;
 };
 
 }  // namespace sub::app

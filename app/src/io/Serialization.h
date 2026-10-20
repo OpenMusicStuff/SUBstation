@@ -54,7 +54,10 @@
 // from a track that isn't a MIDI track there is dropped. An audio or MIDI track
 // stores its take lanes ("takes": [{"id", "name", "clips": [clips, as the
 // track's]}], oldest first) and whether they show ("takes_shown": true) when it
-// has them (version 25; older files have none).
+// has them (version 25; older files have none). The project's groove library
+// ("grooves": [{"id", "name", "groove"}]), its default groove ("default_groove":
+// a source) and clips' grooves ("groove": a source and its amounts) are stored
+// when there are some (version 28; older files have none): io/GrooveFiles.h.
 //
 // There is no per-version migration code: each addition has a default that
 // makes an older file load as it was, and saving writes the current version.
@@ -102,8 +105,9 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // lanes (Track::takes, takesShown), 26: the tempo along the song and time signature
 // changes ("tempo_map", "time_signatures"; "tempo" and "time_signature" stay the
 // song's start, so a reader of 25 plays it at one tempo), 27: audio clips' warp markers
-// ("warp_markers": [[seconds, beat], ...]; "segment_bpm" stays their first stretch's)
-inline constexpr int kProjectVersion = 27;
+// ("warp_markers": [[seconds, beat], ...]; "segment_bpm" stays their first stretch's), 28: grooves (the
+// library, the default groove, clips' grooves)
+inline constexpr int kProjectVersion = 28;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

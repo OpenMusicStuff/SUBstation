@@ -1,5 +1,6 @@
 #include "io/Serialization.h"
 
+#include "io/GrooveFiles.h"
 #include "io/Json.h"
 #include "io/VitalPresets.h"
 #include "model/Automation.h"
@@ -316,6 +317,7 @@ QJsonObject clipToJson(const Clip& clip, const QString& base) {
     data[QStringLiteral("name")] = clip.name;
     data[QStringLiteral("start_beat")] = clip.startBeat;
     if (clip.muted) data[QStringLiteral("muted")] = true;  // (only when deactivated: older projects read the same)
+    if (clip.groove) data[QStringLiteral("groove")] = clipGrooveToJson(*clip.groove);  // (only with one)
     if (clip.isMidi()) {
         data[QStringLiteral("duration_beats")] = clip.durationBeats;
         data[QStringLiteral("offset_beats")] = clip.offsetBeats;
@@ -710,6 +712,7 @@ Clip audioClipFromJson(const QJsonValue& value, const QString& base) {
     clip.fadeOutSec = floatOr(c, QStringLiteral("fade_out_sec"), 0.0);
     clip.fadeOutCurve = floatOr(c, QStringLiteral("fade_out_curve"), 0.0);
     clip.fitFades();
+    clip.groove = clipGrooveFromJson(c.value(QStringLiteral("groove")));
     if (truthy(c.value(QStringLiteral("reversed_from")))) {
         clip.reversedFrom =
             resolveClipPath(c, base, QStringLiteral("reversed_from"), QStringLiteral("reversed_from_relative"));
@@ -744,6 +747,7 @@ Clip midiClipFromJson(const QJsonValue& value) {
     clip.durationBeats = toFloat(need(c, QStringLiteral("duration_beats")));
     clip.offsetBeats = floatOr(c, QStringLiteral("offset_beats"), 0.0);
     clip.notes = notes::normalize(notes);
+    clip.groove = clipGrooveFromJson(c.value(QStringLiteral("groove")));
     return clip;
 }
 
@@ -1175,6 +1179,13 @@ QJsonObject projectToJson(const Project& project, const QString& projectFile) {
     // (Only when there are changes: "tempo" and "time_signature" say one throughout.)
     if (!project.tempoMap().constant()) out.insert(QStringLiteral("tempo_map"), tempoMapToJson(project.tempoMap()));
     if (!project.meter().constant()) out.insert(QStringLiteral("time_signatures"), meterToJson(project.meter()));
+    // (Only when there are some: a project without grooves reads the same.)
+    if (!project.grooves().empty()) {
+        QJsonArray grooves;
+        for (const LibraryGroove& groove : project.grooves()) grooves.append(libraryGrooveToJson(groove));
+        out.insert(QStringLiteral("grooves"), grooves);
+    }
+    if (project.defaultGroove()) out.insert(QStringLiteral("default_groove"), grooveSourceToJson(*project.defaultGroove()));
     return out;
 }
 
@@ -1290,6 +1301,15 @@ ProjectContents contentsFromJson(const QJsonObject& data, const QString& project
     for (const QJsonValue& id : listOr(data, QStringLiteral("rack_devices_hidden"))) {
         contents.hiddenRackDevices.insert(toStr(id));
     }
+    // Grooves (a groove without an id or groove is left out; ids are unique).
+    QSet<QString> grooveIds;
+    for (const QJsonValue& value : listOr(data, QStringLiteral("grooves"))) {
+        std::optional<LibraryGroove> groove = libraryGrooveFromJson(value);
+        if (!groove || groove->id.isEmpty() || grooveIds.contains(groove->id)) continue;
+        grooveIds.insert(groove->id);
+        contents.grooves.push_back(std::move(*groove));
+    }
+    contents.defaultGroove = grooveSourceFromJson(data.value(QStringLiteral("default_groove")));
     contents.path = projectFile;
     return contents;
 }
@@ -1398,6 +1418,7 @@ void savePreset(const Device& device, const QString& path) { writeJson(deviceToP
 
 Device loadPreset(const QString& path) {
     if (isVitalPreset(path)) return loadVitalPreset(path);  // (Vital's own, as a Vital device)
+    if (isGrooveFile(path)) return grooveDevice(loadGrooveFile(path));  // (a groove, as a Groove device)
     Device device = presetDevice(parseJson(readFile(path), path));
     if (device.isRack()) device.name = stemOf(path);  // (the preset's name, renamed or not)
     return device;

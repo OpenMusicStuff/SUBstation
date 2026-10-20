@@ -5,6 +5,7 @@
 #include "harmony/Accompaniment.h"
 #include "intelligence/Harmony.h"
 #include "intelligence/Humanizer.h"
+#include "model/Grooves.h"
 #include "model/Notes.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
@@ -457,6 +458,96 @@ void PianoRoll::humanizeTiming() {
     applyOnRoll(toolTargets(),
                 [this, amount](const std::vector<Note>& notes) { return notes::humanizedTiming(notes, rng_, amount); },
                 QStringLiteral("Humanize Timing"));
+}
+
+void PianoRoll::applyGroove(const QString& choice) {
+    if (!session_) return;
+    const app::Project* p = session_->project();
+    const QString which = choice.isEmpty() ? grooveChoice_ : choice;
+    std::optional<groove::Groove> plays;
+    if (which == u"swing") {
+        plays = groove::swing(grooveSwing_);
+    } else if (which == u"project") {
+        if (p->defaultGroove()) plays = app::grooves::resolve(*p->defaultGroove(), p->grooves(), std::nullopt);
+        if (!plays) {
+            Q_EMIT statusMessage(QStringLiteral("The project has no default groove (Edit › Default Groove)"));
+            return;
+        }
+    } else if (const app::LibraryGroove* found = p->findGroove(which)) {
+        plays = groove::normalized(found->groove);
+    } else {
+        Q_EMIT statusMessage(QStringLiteral("That groove is no longer one of the project's"));
+        return;
+    }
+    if (which != grooveChoice_) {
+        grooveChoice_ = which;
+        Q_EMIT toolSettingsChanged();
+    }
+    const groove::Amounts amounts{grooveTiming_ / 100.0, grooveVelocity_ / 100.0, grooveRandom_ / 100.0,
+                                  grooveQuantize_ / 100.0, 0.0, rng_.generate()};
+    const app::Tempo& tempo = p->tempoMap();
+    // Clip by clip, its notes grooved together on the timeline (the groove's cycle is the song's), untangled
+    // as a MIDI clip's groove plays them: a note grooved into the next on its key ends where that one starts.
+    const std::vector<ClipNote> targets = toolTargets();
+    std::map<int, std::vector<Note>> changes;
+    std::vector<ClipNote> placed;  // (selected afterwards, if they were)
+    for (const int index : roll::clipsOf(targets)) {
+        const app::Clip* c = clipAt(index);
+        if (!c) continue;
+        const double toTimeline = shift(index) + origin_;  // the clip's content beats to the timeline's
+        std::vector<Note> removed, onTimeline;
+        for (const ClipNote& target : targets) {
+            if (target.clip != index) continue;
+            removed.push_back(target.note);
+            Note note = target.note;
+            note.start += toTimeline;
+            onTimeline.push_back(note);
+        }
+        std::vector<Note> added = notes::grooved(onTimeline, *plays, amounts, tempo);
+        for (Note& note : added) {
+            note.start = std::max(0.0, note.start - toTimeline);
+            placed.push_back({index, note});
+        }
+        changes[index] = notes::place(c->notes, removed, added);
+    }
+    if (changes.empty()) return;
+    commitNotes(changes, QStringLiteral("Apply Groove"), {},
+                selected_.empty() ? std::vector<ClipNote>() : placed);
+}
+
+void PianoRoll::setGrooveSwing(double percent) {
+    percent = std::clamp(percent, groove::kMinSwing, groove::kMaxSwing);
+    if (percent == grooveSwing_) return;
+    grooveSwing_ = percent;
+    Q_EMIT toolSettingsChanged();
+}
+
+void PianoRoll::setGrooveTiming(double percent) {
+    percent = std::clamp(percent, 0.0, 100.0 * groove::kMaxTimingAmount);
+    if (percent == grooveTiming_) return;
+    grooveTiming_ = percent;
+    Q_EMIT toolSettingsChanged();
+}
+
+void PianoRoll::setGrooveVelocity(double percent) {
+    percent = std::clamp(percent, -100.0, 100.0);
+    if (percent == grooveVelocity_) return;
+    grooveVelocity_ = percent;
+    Q_EMIT toolSettingsChanged();
+}
+
+void PianoRoll::setGrooveRandom(double percent) {
+    percent = std::clamp(percent, 0.0, 100.0);
+    if (percent == grooveRandom_) return;
+    grooveRandom_ = percent;
+    Q_EMIT toolSettingsChanged();
+}
+
+void PianoRoll::setGrooveQuantize(double percent) {
+    percent = std::clamp(percent, 0.0, 100.0);
+    if (percent == grooveQuantize_) return;
+    grooveQuantize_ = percent;
+    Q_EMIT toolSettingsChanged();
 }
 
 QStringList PianoRoll::quantizeGrids() {

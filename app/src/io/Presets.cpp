@@ -1,5 +1,6 @@
 #include "io/Presets.h"
 
+#include "io/GrooveFiles.h"
 #include "io/Serialization.h"
 #include "io/VitalPresets.h"
 #include "model/Devices.h"
@@ -36,7 +37,8 @@ QString stemOf(const QString& fileName) {
 }
 
 bool isPresetFile(const QFileInfo& info) {
-    return info.isFile() && (info.fileName().toLower().endsWith(kPresetExtension) || isVitalPreset(info.fileName()));
+    return info.isFile() && (info.fileName().toLower().endsWith(kPresetExtension) || isVitalPreset(info.fileName()) ||
+                             isGrooveFile(info.fileName()));
 }
 
 QString rootOr(const QString& root) { return root.isEmpty() ? libraryDir() : root; }
@@ -105,7 +107,9 @@ std::vector<PresetFile> listPresets(const QString& root) {
 
 QString renamePreset(const QString& path, const QString& name) {
     const QFileInfo info(path);
-    const QString target = info.path() + u'/' + presetFileName(name) + kPresetExtension;
+    // (Its own kind of file: a Vital preset, a groove, stays one.)
+    const QString extension = info.suffix().isEmpty() ? kPresetExtension : u'.' + info.suffix();
+    const QString target = info.path() + u'/' + presetFileName(name) + extension;
     if (QDir::cleanPath(target) == QDir::cleanPath(path)) return path;
     if (QFileInfo::exists(target) && !samePath(target, path)) {  // (a change of case on Windows is no clash)
         throw EditError(QStringLiteral("There is a preset called %1 already").arg(stemOf(QFileInfo(target).fileName())));

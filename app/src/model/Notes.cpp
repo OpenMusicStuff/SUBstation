@@ -290,6 +290,20 @@ std::vector<Note> humanizedTiming(const std::vector<Note>& notes, QRandomGenerat
     return untangle(result);
 }
 
+std::vector<Note> grooved(const std::vector<Note>& notes, const groove::Groove& groove, const groove::Amounts& amounts,
+                          const Tempo& tempo) {
+    std::vector<Note> result;
+    result.reserve(notes.size());
+    for (Note n : notes) {
+        const groove::Placed placed = groove::place(groove, n.start, n.pitch, n.velocity, n.length, tempo.map(), amounts);
+        n.start = std::max(0.0, placed.beat);
+        n.length = std::max(kMinNoteBeats, placed.lengthBeats);
+        n.velocity = static_cast<int>(std::clamp(std::lround(placed.velocity), 1L, 127L));
+        result.push_back(n);
+    }
+    return untangle(result);
+}
+
 // --- Bends ---------------------------------------------------------------------------------
 
 Note withStart(Note note, double start) {

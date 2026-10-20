@@ -37,6 +37,7 @@
 #include "session/ComputerKeyboard.h"
 #include "session/ModulationLearn.h"
 #include "session/DeviceSelection.h"
+#include "session/GrooveLibrary.h"
 #include "session/MidiPreferences.h"
 #include "session/RenderProgress.h"
 #include "session/Renders.h"
@@ -113,6 +114,7 @@ Session::Session(sub::Engine& engine, Options options, QObject* parent)
     connect(project_, &Project::takesChanged, analyseFiles_, qOverload<>(&QTimer::start));
     connect(project_, &Project::reset, analyseFiles_, qOverload<>(&QTimer::start));
     devices_ = new DeviceSelection(editor_, selection_, bridge_, this);
+    grooves_ = new GrooveLibrary(project_, editor_, this);
     keyboard_ = new ComputerKeyboard(bridge_, this);
     learn_ = new ModulationLearn(project_, editor_, this);
     hotSwap_ = new HotSwap(project_, editor_, undoStack_, bridge_, browser_, this);
@@ -134,7 +136,7 @@ void Session::wire() {
     // What the editor needs from the engine: a plug-in's (or a rack's)
     // parameter mapping, for macros; a plug-in parameter's value as its own
     // editor set it, to undo a macro to. And where new devices come from: the
-    // user's default presets.
+    // user's default presets, and audio files' transients (grooves).
     // (The agents' editor, too: it edits as the user's does, on a stack of its own.)
     for (ProjectEditor* editor : {editor_, agents_->editor()}) {
         editor->setParamInfo([this](const QString& trackId, const QString& deviceId,
@@ -147,6 +149,8 @@ void Session::wire() {
         editor->setDeviceDefaults([](const QString& kind, const std::optional<PluginRef>& plugin) {
             return defaultDevice(kind, plugin);
         });
+        // Audio files' transients: what audio clips' grooves move, and Extract Groove takes.
+        editor->setTransients([this](const QString& path) { return bridge_->transients(path); });
         // A switch switched by hand (or by an agent): its automation stops playing
         // (it may have had it the other way than the model, which then needn't change).
         connect(editor, &ProjectEditor::switchedByHand, bridge_, &EngineBridge::overrideAutomation);
@@ -155,7 +159,7 @@ void Session::wire() {
     for (QObject* source : {static_cast<QObject*>(bridge_), static_cast<QObject*>(browser_),
                             static_cast<QObject*>(plugins_), static_cast<QObject*>(arrangement_),
                             static_cast<QObject*>(devices_), static_cast<QObject*>(keyboard_),
-                            static_cast<QObject*>(learn_),
+                            static_cast<QObject*>(learn_), static_cast<QObject*>(grooves_),
                             static_cast<QObject*>(humanizer_), static_cast<QObject*>(files_),
                             static_cast<QObject*>(hotSwap_), static_cast<QObject*>(mcp_),
                             static_cast<QObject*>(similarSamples_)}) {

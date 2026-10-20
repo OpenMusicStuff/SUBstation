@@ -8,11 +8,12 @@ import SUBstation
 // the filter on the echoes (FilterGraph: a curve to drag across for its
 // frequency, up and down for its width, over a spectrum of the input) with its
 // switch, frequency and width, and under it, where Ableton has its modulation,
-// the Character: Swing (every other echo late), Drive (saturation in the loop)
-// and Duck (the echoes dip while the input plays); on the right the mode the
-// time changes in and ping pong, over the dry/wet mix. Every control shows its
-// parameter as it is now (its automation's value while that plays), sets it
-// undoably, touches it when pressed, and right-click gives its menu.
+// the Character: Swing (every other echo late), Drive (saturation in the loop),
+// Duck (the echoes dip while the input plays) and Follow Groove (the swing the
+// project's groove's); on the right the mode the time changes in and ping pong,
+// over the dry/wet mix. Every control shows its parameter as it is now (its
+// automation's value while that plays), sets it undoably, touches it when
+// pressed, and right-click gives its menu.
 Item {
     id: editor
 
@@ -46,7 +47,8 @@ Item {
     Instantiator {
         id: paramObjects
         model: ["l_sync", "l_division", "l_time", "l_offset", "r_sync", "r_division", "r_time", "r_offset", "link",
-                "feedback", "freeze", "filter", "freq", "width", "mode", "ping_pong", "mix", "swing", "drive", "duck"]
+                "feedback", "freeze", "filter", "freq", "width", "mode", "ping_pong", "mix", "swing", "drive", "duck",
+                "follow_groove"]
         DeviceParam {
             required property string modelData
             session: Session
@@ -351,7 +353,7 @@ Item {
                     width: parent.width
                     spacing: 8
 
-                    readonly property real cellWidth: (width - 2 * spacing) / 3
+                    readonly property real cellWidth: (width - 3 * spacing) / 4
 
                     CharacterBox {
                         width: parent.cellWidth
@@ -370,6 +372,22 @@ Item {
                         paramId: "duck"
                         title: qsTr("Duck")
                         tooltip: qsTr("Duck: the echoes dip while the input plays, and swell back in the gaps")
+                    }
+                    Column {
+                        width: parent.cellWidth
+                        spacing: 1
+
+                        EditorCaption {
+                            width: parent.width
+                            text: qsTr("Groove")
+                        }
+                        ParamButton {
+                            objectName: "followGroove"
+                            width: parent.width
+                            param: editor.params["follow_groove"] || null
+                            text: qsTr("Follow")
+                            tooltip: qsTr("Follow Groove: the swing is the project's default groove's (Edit › Default Groove):\nevery other echo as late as its offbeats")
+                        }
                     }
                 }
             }

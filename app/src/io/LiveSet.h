@@ -68,6 +68,10 @@ struct ReadLimits {
 std::unique_ptr<Element> readLiveSet(const QString& path, const ReadLimits& limits = {});
 // The same from the file's bytes (gzip or XML).
 std::unique_ptr<Element> parseLiveSet(const QByteArray& bytes, const QString& name, const ReadLimits& limits = {});
+// Any of Live's files (<Ableton ...>: a set, a groove), from its bytes; one that isn't is "`name` is not
+// `what`".
+std::unique_ptr<Element> parseAbleton(const QByteArray& bytes, const QString& name, const ReadLimits& limits = {},
+                                      const QString& what = QStringLiteral("an Ableton file"));
 // A gzip file's contents (its first member). Throws ProjectFileError("... is
 // damaged") if it isn't gzip or doesn't check out (its length, its CRC), and
 // ("... is too large to read") if it says it is longer than `limits.bytes`.
