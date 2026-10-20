@@ -182,6 +182,8 @@ publishes, and wakes it on a locate (`locate()`), Play, a new preview and new pi
 - **Threads**: they run at a raised normal priority (`platform::raiseNormalPriority()`: above normal on Windows; on
   Linux the best-effort I/O class at its highest level, and nice -5 where allowed), never
   `enterBackgroundMode()`, which lowers their reads' priority too. A failed read isn't tried again for a second.
+  They read a file at once through one handle (each at an offset of its own); it is closed after a failed read (to
+  be opened again: the file may come back) only once none of them is reading it.
 
 ## Moving the playhead
 

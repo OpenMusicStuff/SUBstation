@@ -587,10 +587,14 @@ bool StreamCache::readPages(StreamedAudio& stream, int64_t first, int64_t count,
             return false;
         }
     }
-    const int64_t got = stream.file_.read(offset, buffer.data(), static_cast<size_t>(bytes));
+    int64_t got = -1;
+    {
+        std::shared_lock lock(stream.fileMutex_);
+        if (stream.file_.isOpen()) got = stream.file_.read(offset, buffer.data(), static_cast<size_t>(bytes));
+    }
     if (got < 0) {
         std::lock_guard lock(stream.fileMutex_);
-        stream.file_.close();  // (opened again next time: the file may come back)
+        stream.file_.close();  // (none reads it now; opened again next time: the file may come back)
         return false;
     }
     float* samples[kMaxPagesARead];

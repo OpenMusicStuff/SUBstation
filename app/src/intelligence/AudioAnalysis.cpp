@@ -22,7 +22,11 @@ std::optional<AudioAnalysis::Result> analyseWaveform(const Waveform& waveform) {
     read.reserve(static_cast<size_t>(std::max(0, waveform.channels())));
     for (int c = 0; c < waveform.channels(); ++c) {
         const float* samples = waveform.channelData(c);
-        if (!samples) samples = read.emplace_back(waveform.samples(c)).data();
+        if (!samples) {
+            bool ok = false;
+            samples = read.emplace_back(waveform.samples(c, &ok)).data();
+            if (!ok) return std::nullopt;  // (it went away, or changed: not analysed as silence)
+        }
         channels.push_back(samples);
     }
     if (channels.empty() || waveform.frames() <= 0 || waveform.sampleRate() <= 0) return std::nullopt;

@@ -1,22 +1,27 @@
 // Streaming long files from disk, as the application has it (docs/engine/streaming.md):
 // the preferences (StreamingPreferences), saved and applied by the bridge, files
 // fetched again as the settings now say when what streams changes, a waveform
-// read from disk, and what the disk came late for said in the status line and
-// counted for the transport bar.
+// read from disk (and only the frames near a zero crossing snapped to), and what
+// the disk came late for said in the status line and counted for the transport bar.
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
 
 #include "audio/AudioSettings.h"
 #include "audio/EngineBridge.h"
+#include "audio/SampleSlices.h"
 #include "audio/Waveform.h"
 
 #include "AudioSource.h"
 #include "StreamCache.h"
+#include "builtin/SampleSlicing.h"
 
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTest>
+
+#include <cmath>
+#include <numbers>
 
 using namespace sub::app;
 using sub::app::test::Studio;
@@ -122,6 +127,53 @@ private Q_SLOTS:
             return source && source->resident();
         }));
         QVERIFY(studio.engine.cachedSource(path.toStdString())->resident());
+    }
+
+    // Snapping to a zero crossing reads only the frames it looks at, and finds what a search
+    // of the whole file finds: forwards and reversed, near the ends too, streamed or not.
+    void aZeroCrossingIsFoundFromTheFramesNearIt() {
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        test::TempDir dir;
+        bridge.setStreamCacheFolder(dir.path(QStringLiteral("cache")));
+        bridge.setStreamThreshold(1.0);
+        bridge.setStreaming(true);
+        const auto signal = [](size_t frames) {  // (stereo, crossings far apart: some frames have none near)
+            std::vector<float> samples(2 * frames);
+            for (size_t i = 0; i < frames; ++i) {
+                const double t = static_cast<double>(i) / test::kSampleRate;
+                samples[2 * i] = static_cast<float>(0.5 * std::sin(2 * std::numbers::pi * 23 * t) + 0.1);
+                samples[2 * i + 1] = static_cast<float>(0.3 * std::sin(2 * std::numbers::pi * 7 * t + 1.0));
+            }
+            return samples;
+        };
+        const QString longPath =
+            test::writeWav(dir.path(QStringLiteral("long.wav")), signal(3 * test::kSampleRate), 2);
+        const QString shortPath = test::writeWav(dir.path(QStringLiteral("short.wav")), signal(test::kSampleRate / 2), 2);
+        bridge.requestSource(longPath);
+        bridge.requestSource(shortPath);
+        QVERIFY(QTest::qWaitFor([&] { return bridge.source(longPath) && bridge.source(shortPath); }));
+        for (const QString& path : {longPath, shortPath}) {
+            const Waveform waveform = bridge.waveform(path);
+            QCOMPARE(waveform.resident(), path == shortPath);
+            const qint64 frames = waveform.frames();
+            const std::vector<float> left = waveform.samples(0), right = waveform.samples(1);
+            const float* channels[] = {left.data(), right.data()};
+            const auto reach = static_cast<int64_t>(sub::slicing::kSnapSeconds * waveform.sampleRate());
+            std::vector<qint64> at = {-5, 0, 1, 2, reach - 1, reach, reach + 1, reach + 2, frames / 2,
+                                      frames - reach - 2, frames - reach, frames - 2, frames - 1, frames, frames + 9};
+            for (qint64 frame = 3; frame < frames; frame += 997) at.push_back(frame);
+            int moved = 0;
+            for (const bool reversed : {false, true}) {
+                for (const qint64 frame : at) {
+                    const qint64 expected =
+                        sub::slicing::nearestZeroCrossing(channels, 2, frames, reversed, frame, reach);
+                    QCOMPARE(sampleSlices::nearestZeroCrossing(waveform, reversed, frame), expected);
+                    moved += expected != frame;
+                }
+            }
+            QVERIFY(moved > 0);
+        }
     }
 
     void whatTheDiskCameLateForIsSaidAndCounted() {

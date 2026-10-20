@@ -207,12 +207,16 @@ ColumnLayout {
         }
         ChoiceBox {
             objectName: "streamDiskThreads"
-            readonly property var values: [1, 2, 4]
+            readonly property var values: {
+                const usual = [1, 2, 4]
+                const saved = Session.bridge.streamDiskThreads
+                return usual.includes(saved) ? usual : usual.concat([saved]).sort((a, b) => a - b)
+            }
             Layout.fillWidth: true
             visible: Session.bridge.streaming
             tooltip: qsTr("One for a spinning disk; an SSD reads faster with several.")
-            choices: [{label: qsTr("1 (a spinning disk)"), value: 1}, {label: qsTr("2"), value: 2},
-                      {label: qsTr("4 (an SSD)"), value: 4}]
+            choices: values.map(v => ({label: v === 1 ? qsTr("1 (a spinning disk)") : v === 4 ? qsTr("4 (an SSD)")
+                                                                                       : qsTr("%1").arg(v), value: v}))
             chosenIndex: Math.max(0, values.indexOf(Session.bridge.streamDiskThreads))
             onChosen: index => Session.bridge.streamDiskThreads = values[index]
         }

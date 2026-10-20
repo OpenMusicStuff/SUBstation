@@ -41,8 +41,9 @@ public:
     // (waiting for the reads: not on a thread that mustn't wait). Frames outside the file are 0.
     // False if a streamed file couldn't be read (they are 0 there).
     bool read(int channel, qint64 start, qint64 count, float* out) const;
-    // A whole channel (`frames()` of them) in a vector of its own, however it is kept.
-    std::vector<float> samples(int channel) const;
+    // A whole channel (`frames()` of them) in a vector of its own, however it is kept; `ok` (if
+    // given) false if a streamed file couldn't be read, as read() says.
+    std::vector<float> samples(int channel, bool* ok = nullptr) const;
 
     int peakLevels() const;
     static int samplesPerPeak(int level);

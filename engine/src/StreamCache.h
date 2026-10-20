@@ -27,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -161,8 +162,9 @@ private:
     std::chrono::steady_clock::time_point failedUntil_{};  // a failed read isn't tried again before this
     uint64_t missesTaken_ = 0;  // (reported unreadable already)
 
-    // The file, opened by the first read.
-    mutable std::mutex fileMutex_;
+    // The file, opened by the first read: read by several threads at once (the lock shared), opened
+    // and closed only while none is reading it (the lock held alone).
+    mutable std::shared_mutex fileMutex_;
     mutable platform::StreamFile file_;
 };
 

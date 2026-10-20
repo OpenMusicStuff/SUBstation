@@ -428,7 +428,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 | [test_bridge_freeze.cpp](../tests/app/test_bridge_freeze.cpp) | Frozen tracks playing their frozen audio without their devices (and getting them back), where a time selection moved it and where a drag would take it, renders in the background followed and cancelled, several tracks in one render (each file the same as freezing it alone), reversed copies written and found again. |
 | [test_bridge_recording.cpp](../tests/app/test_bridge_recording.cpp) | What records and why not, inputs, monitoring and arming in the engine, a take recorded, drawn live and handed on. |
 | [test_bridge_settings.cpp](../tests/app/test_bridge_settings.cpp) | The audio and MIDI preferences' settings, where the bridge puts its files and how it names them, the float WAV writer, the EQ's curve, the Disperser's group delay, device status, the scope, MIDI inputs. |
-| [test_bridge_streaming.cpp](../tests/app/test_bridge_streaming.cpp) | Streaming's preferences, saved and applied; a long file streaming and its waveform read from disk; files fetched again when streaming is switched; what the disk came late for, counted and said. |
+| [test_bridge_streaming.cpp](../tests/app/test_bridge_streaming.cpp) | Streaming's preferences, saved and applied; a long file streaming and its waveform read from disk; a zero crossing snapped to from only the frames near it, as a search of the whole file finds it; files fetched again when streaming is switched; what the disk came late for, counted and said. |
 
 ### The session
 

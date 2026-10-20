@@ -110,10 +110,12 @@ std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, boo
 std::shared_ptr<AudioSource> Engine::loadResidentSource(const std::string& path) {
     const std::string key = sourceKey(path);
     uint32_t rate = 0;
+    bool enabled = false;
     {
         std::lock_guard lock(mutex_);
-        if (!streaming_.enabled) return loadSource(path);  // (in memory anyway: the clips' cache)
+        enabled = streaming_.enabled;
     }
+    if (!enabled) return loadSource(path);  // (in memory anyway: the clips' cache; decoded without the lock)
     if (const AudioFileInfo info = AudioSource::probe(path); [&] {
             std::lock_guard lock(mutex_);
             return !streamsLocked(info.duration);

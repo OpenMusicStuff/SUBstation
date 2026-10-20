@@ -35,9 +35,10 @@ bool Waveform::read(int channel, qint64 start, qint64 count, float* out) const {
     return source_->read(static_cast<uint32_t>(channel), start, count, out);
 }
 
-std::vector<float> Waveform::samples(int channel) const {
+std::vector<float> Waveform::samples(int channel, bool* ok) const {
     std::vector<float> out(static_cast<size_t>(std::max<qint64>(0, frames())));
-    read(channel, 0, frames(), out.data());
+    const bool read = this->read(channel, 0, frames(), out.data());
+    if (ok) *ok = read;
     return out;
 }
 
