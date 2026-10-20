@@ -78,6 +78,14 @@ inline std::string rampWav() {
     return makeWav(samples, 1);
 }
 
+// A source's samples of channel `c`, wherever they are: in memory, or streamed
+// from disk (read through the stream cache: AudioSource::read()).
+inline std::vector<float> sourceChannel(const sub::AudioSource& source, uint32_t c) {
+    std::vector<float> samples(static_cast<size_t>(source.frames()));
+    source.read(c, 0, source.frames(), samples.data());
+    return samples;
+}
+
 // The test VST3 bundle (tests/vst3_plugins), built with the tests; empty if it wasn't.
 inline std::string testPluginsBundle() {
 #ifdef SUBSTATION_TEST_PLUGINS_BUNDLE

@@ -232,6 +232,16 @@ public:
         switchDelayOverride_ = switchLines;
     }
 
+    // Streamed sources (docs/engine/streaming.md). Playback that starts where a
+    // streamed clip's pages aren't in memory yet (a locate into the middle of a
+    // long clip) waits for them, up to kPreRollSeconds, before the playhead moves
+    // (it moves anyway then, the clip coming in once its pages are there). It
+    // looks kPreRollWindow ahead. After the playhead jumps while playing (a
+    // locate, a drag), misses are expected for kJumpGrace: not reported.
+    static constexpr double kPreRollSeconds = 0.15;
+    static constexpr double kPreRollWindow = 0.5;
+    static constexpr double kJumpGrace = 1.0;
+
     // How long a switch (a track's activator, a device's on/off) fades when its
     // automation switches it: about 5 ms, at most kMaxSwitchFade samples.
     static constexpr double kSwitchFade = 0.005;
@@ -244,7 +254,8 @@ private:
 
     // A rendering thread's scratch: what a track needs only while it renders.
     struct WorkerScratch {
-        std::vector<float> warpLeft, warpRight;  // one warped clip's audio, before gain and fades
+        std::vector<float> warpLeft, warpRight;  // one clip's audio (warped, or streamed), before gain and fades
+        std::vector<float> span;  // a streamed source's frames Re-Pitch's kernel reaches (2 * kResampleSpan)
         std::vector<float> autoGain, autoPanLeft, autoPanRight;  // automated fader, per sample
         std::vector<float> audible;   // the fader's mute (and solo) ramp, for pre-fader taps
         std::vector<float> edgeGain;  // an automated send level, per sample
@@ -352,6 +363,8 @@ private:
     static constexpr int kBendHeadroom = 64;
 
     void renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags flags) noexcept;
+    // Playback starting: whether the playhead waits for streamed pages this chunk (the pre-roll).
+    bool waitsForStreams(const RenderSnapshot& snap, ChunkFlags flags, int frames) noexcept;
     // The graph's job: track `node` of the chunk's snapshot, on thread `worker`.
     static void renderNode(void* self, int node, int worker) noexcept;
     // A track, from its TrackBuffers (prepared by the prologue) and its incoming
@@ -561,6 +574,9 @@ private:
     int64_t chunkFrom_ = -1;  // where the last chunk ended (-1: it didn't play): what a jump at this one's start left
     bool playing_ = false;
     bool chasePending_ = false;  // playback just started: its first segment chases notes
+    int64_t preRollLeft_ = 0;    // samples the playhead may still wait for streamed pages (live)
+    int64_t jumpGraceLeft_ = 0;  // samples misses are still expected for, after a jump
+    StreamReads chunkReads_{};   // how this chunk reads streamed sources
     int64_t countIn_ = 0;        // samples of count-in still to come before the playhead moves
     int64_t countInTotal_ = 0;
     // The count-in's clicks: one a beat of the time signature where playback starts, at the tempo there.

@@ -6,7 +6,8 @@ import SUBstation
 // The bar on top of the window, left to right: the tempo, the time signature,
 // the metronome (its count-in a drop-down on its right), the project key, the
 // computer MIDI keyboard and Constrain Delay Compensation | the position (bar. beat. sixteenth), play, stop,
-// record, Re-Enable Automation, the oscilloscope | Punch In, loop, Punch Out, follow, the CPU load
+// record, Re-Enable Automation, the oscilloscope | Punch In, loop, Punch Out, follow, the CPU load, the disk
+// (while files stream from it)
 // and the audio device (a click opens Preferences). (Lock Envelopes is in the
 // arrangement's corner, as Ableton's: GridInfo.)
 //
@@ -307,6 +308,21 @@ Rectangle {
             objectName: "cpu"
             Layout.minimumWidth: 60
             text: transport.cpuText
+        }
+        DimLabel {
+            objectName: "disk"
+            visible: transport.diskVisible
+            text: transport.diskText
+
+            MouseArea {
+                id: diskArea
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+            }
+            ToolTip.visible: diskArea.containsMouse
+            ToolTip.text: transport.diskToolTip
+            ToolTip.delay: 700
         }
         DimLabel {
             objectName: "device"

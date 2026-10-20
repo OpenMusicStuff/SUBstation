@@ -20,7 +20,7 @@ includes the engine's headers.
 | File | What it holds |
 |---|---|
 | [Engine.h](../../engine/src/Engine.h) | The public API (what the engine bridge calls), the API's plain structs (`ClipDesc`, `NoteDesc`, `RecordTarget`, `SendInfo`, `SidechainInfo`, `MeterReading`, `ProcessorInfo`, `DeviceStatus`, `TrackCost`, ...), and the private edit model (`TrackModel`, `ChainModel`, `ProcessorEntry`, `SendModel`, `SidechainModel`). Its header comment is the threading model. |
-| [Engine.cpp](../../engine/src/Engine.cpp) | Lifetime, sources (`loadSource`, the source cache), transport calls, browser preview, audio threads (`setAudioThreads`, cost ordering), and housekeeping (`idle()`). |
+| [Engine.cpp](../../engine/src/Engine.cpp) | Lifetime, sources (`loadSource`, the source cache, `loadResidentSource`), streaming's settings (`setStreaming`), transport calls, browser preview, audio threads (`setAudioThreads`, cost ordering), and housekeeping (`idle()`). |
 | [EngineDevice.cpp](../../engine/src/EngineDevice.cpp) | Opening and closing the audio device, device events, input meters, the master scope, and `audioCallback()`. See [audio-devices.md](audio-devices.md). |
 | [EngineTracks.cpp](../../engine/src/EngineTracks.cpp) | Tracks, their mixer, routing (outputs, sends, the list of edges, cycle checks), meters, `setTrackAutomation`. See [routing.md](routing.md). |
 | [EngineInput.cpp](../../engine/src/EngineInput.cpp) | Track inputs (device channels or another track's output), monitoring, arming, recording, MIDI input. See [recording.md](recording.md) and [midi.md](midi.md). |
@@ -35,6 +35,7 @@ includes the engine's headers.
 | [Routing.h](../../engine/src/Routing.h), [Rack.h](../../engine/src/Rack.h) | The routing graph, delay compensation, racks. See [routing.md](routing.md). |
 | [Scheduler.h](../../engine/src/Scheduler.h) / [.cpp](../../engine/src/Scheduler.cpp) | The task graph and worker threads. See [scheduler.md](scheduler.md). |
 | [Transport.h](../../engine/src/Transport.h) | `TransportCommand`, `PreviewNote` and `SharedState`: what the API threads and the audio thread share. |
+| [StreamCache.h](../../engine/src/StreamCache.h), [StreamScheduler.h](../../engine/src/StreamScheduler.h), [SourceCursor.h](../../engine/src/SourceCursor.h), [CacheFile.h](../../engine/src/CacheFile.h) | Streaming long files from disk. See [streaming.md](streaming.md). |
 | [Metronome.h](../../engine/src/Metronome.h) / [.cpp](../../engine/src/Metronome.cpp) | The click generator. See [rendering.md](rendering.md#metronome-and-count-in). |
 | [rt/RtUtils.h](../../engine/src/rt/RtUtils.h) | Real-time helpers: `ScopedNoDenormals`, `cpuRelax`, `hostTimeNs`, `SmoothedValue`, `copyIntoRing`/`copyOutOfRing`, `SpscQueue`, `DeferredReleasePool`, `atomicStoreMax`, `dbToGain`, `gainToDb`, `expDbToGain`, `onePoleCoefficient`, `addStereo`, `interleave`, `balanceGains`, `DisplayStream`. |
 | [MiniaudioFiles.h](../../engine/src/MiniaudioFiles.h) | `initDecoderFile()`, `initEncoderFile()`: miniaudio's files by UTF-8 path (its wide calls on Windows, its narrow ones elsewhere). The engine takes paths as UTF-8; the platform layer ([platform.md](../platform.md)) turns them into what the system and `std::filesystem` take (`platform::toPath()`). |
@@ -72,6 +73,9 @@ The header comment of [Engine.h](../../engine/src/Engine.h) is the rule book. In
   thread; it never takes `mutex_`. See [midi.md](midi.md).
 - **Audio worker threads** (the `Scheduler`) share each chunk's tracks with the thread
   rendering. They touch only what the snapshot hands them. See [scheduler.md](scheduler.md).
+- **Disk threads** (the `StreamScheduler`, while sources stream) read what the snapshot they
+  hold plays soon into the stream cache's pages; they never take `mutex_`. See
+  [streaming.md](streaming.md).
 - **The UI never waits on the audio thread**: the playhead, meters and CPU load are read from
   atomics (`SharedState`, `TrackParams`).
 
@@ -113,7 +117,13 @@ only tracks and the edges between them.
   marks the snapshot stale, for a decoder that publishes the files arriving together at once (the
   bridge does: [engine-bridge.md](../app/engine-bridge.md)); `idle()` publishes what nobody did. A
   new sample rate reloads every source (`reloadSourcesLocked()`). See [warp.md](warp.md) for
-  decoding.
+  decoding. While streaming is on (`setStreaming()`), a long file is opened streamed from disk
+  instead (`StreamCache::open()`), and a cached source kept another way than the settings now say
+  is loaded again; built-in devices' samples come through `loadResidentSource()`, decoded into
+  memory whatever their length (`residentSources_`). See [streaming.md](streaming.md).
+- **Streaming**: `streamCache_` (the pages of streamed sources, each holding it too) and, once a
+  source streams, `streamScheduler_` (the disk threads), handed each snapshot built; each build
+  pins the starts of its clips of streamed sources (`pinStreamsLocked()`).
 
 Every call that changes something the renderer reads ends with `rebuildSnapshotLocked()`.
 Calls that only change an atomic don't: track and chain gain, pan, mute and solo
@@ -459,6 +469,6 @@ state without a device, chains and moves), [test_render_jobs.cpp](../../tests/en
 | [midi.md](midi.md) | MIDI playback (notes to events, note-offs, preview queue) and MIDI input |
 | [automation.md](automation.md) | `Automation.h`, `ParamInfo`'s normalized mapping, `Processor::automate`, faders, sends, overrides |
 | [warp.md](warp.md) | `Warp.cpp`, stretch voices, the Re-Pitch resampler, `AudioSource` decoding and peaks |
-| [streaming.md](streaming.md) | the design for streaming long files from disk (not implemented): the stream cache, the disk threads, `SourceCursor` |
+| [streaming.md](streaming.md) | streaming long files from disk: cache files and peak files, the stream cache and its pool, the disk threads, `SourceCursor`, the platform's `StreamFile` |
 | [devices.md](devices.md) | `Processor.h`, `BuiltinProcessor`, `BuiltinRegistry`, the built-in devices; adding a device |
 | [plugins.md](plugins.md) | VST3 hosting, the threading handshake, state, latency, the CLAP plan |

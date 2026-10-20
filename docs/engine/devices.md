@@ -201,9 +201,10 @@ What every built-in device shares ([BuiltinProcessor.h](../../engine/src/builtin
   ([app/src/model/DeviceState.h](../../app/src/model/DeviceState.h), namespace `deviceState`, has the same encoding),
   so it saves, loads and undoes as a plug-in's does.
 - **Audio files** come through `loadSource(path)` (not real-time). The engine sets a `SourceLoader` on every built-in
-  device it creates (`Engine::addBuiltinProcessor`), so files are shared with the engine's cache and decoded at the
-  engine's rate; without one (a device made outside an engine) it decodes the file at its own rate. See
-  [warp.md](warp.md#the-source-cache).
+  device it creates (`Engine::addBuiltinProcessor`): `Engine::loadResidentSource()`, so files are shared with the
+  engine's cache and decoded at the engine's rate, and always into memory, however long (a device reads its sample
+  anywhere, note by note; a clip of the same long file may stream: [streaming.md](streaming.md)); without one (a
+  device made outside an engine) it decodes the file at its own rate. See [warp.md](warp.md#the-source-cache).
 
 ## `BuiltinRegistry`
 

@@ -212,9 +212,10 @@ This is what sets SUBstation apart. Start goal 13 alongside Phase 1, because it 
 - **Piano roll:** pad names from the Drum Rack, and folding to the rows in use.
 
 ### 22. Big-project scalability, part two. Effort: L–XL
-- **Disk streaming.** The design: [docs/engine/streaming.md](docs/engine/streaming.md).
+- **Disk streaming (done, off by default).** [docs/engine/streaming.md](docs/engine/streaming.md).
   - The problem: sources are float32 in RAM at the engine rate, about 2.2× a 16-bit WAV and about 20× an MP3. 32 stereo tracks × 5 minutes is about 3.7 GB.
-  - Steps on the way: decode in place without the second copy, and store sources at native rate or in 16 bits.
+  - Done: files past a threshold (30 s) stream: WAV and AIFF at the engine's rate as they are, anything else from a cache file decoded once (peak files beside them), every source read through a `SourceCursor` (live: never waiting, misses faded and counted; offline: waiting), disk threads reading by deadline into a pool, heads and clip and loop starts pinned, a pre-roll for Play, the warp cache's renders of streamed clips on disk, the readers off the audio thread through `read()`, the preferences and a *Disk* indicator. Decoding in place without the second copy, too. Every engine test runs streamed as well (`engine_streamed`), to the bit.
+  - Still to do: on by default after a Canary release; measure the defaults (threshold, pool, horizon) on a spinning disk and a 100-track project; overlapped I/O, IoRing and `io_uring` (several reader threads stand in for them); level 0 of streamed peaks read from disk; storing resident sources at native rate or in 16 bits.
 - **Anticipative rendering** (as REAPER does) for tracks that aren't live-monitored. It needs the separate processors from goal 13.
 - **Sandbox defaults.**
   - Consider one sandbox per manufacturer as the default, because in *Together* mode one plug-in's crash silences every plug-in.

@@ -18,11 +18,24 @@
 
 namespace sub {
 
+namespace {
+
+std::mutex defaultStreamingMutex;
+StreamingSettings defaultStreamingSettings;
+
+}  // namespace
+
 Engine::Engine()
     : midiDevices_([this](uint16_t port, const uint8_t* message, int size, int64_t hostTime) {
           midiInput(port, message, size, hostTime);
       }) {
     std::lock_guard lock(mutex_);
+    streamCache_ = StreamCache::create();
+    // A page the disk threads let go of is reused once no audio callback that may have read it still runs.
+    streamCache_->setAudioEpochs(&callbacksBegun_, &audioEpoch_);
+    warpCache_.setStreamCache(streamCache_);
+    streaming_ = defaultStreaming();
+    applyStreamingLocked();
     sandboxes_ = std::make_unique<sandbox::PluginSandboxes>();
     master_.chainId = addChainLocked(kMaster, 0);
     scheduler_ = std::make_unique<Scheduler>(defaultAudioThreads());
@@ -40,6 +53,7 @@ Engine::~Engine() {
     }
     midiDevices_.closeAll();
     closeDeviceLocked();
+    streamScheduler_.reset();  // (its threads end: what they hold goes with them)
 }
 
 std::string Engine::sourceKey(const std::string& path) { return platform::fileKey(path); }
@@ -54,15 +68,25 @@ std::shared_ptr<AudioSource> Engine::decodeSource(const std::string& path) { ret
 std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, bool publish) {
     const std::string key = sourceKey(path);
     uint32_t rate = 0;
+    bool streaming = false;
     {
         std::lock_guard lock(mutex_);
-        auto it = sources_.find(key);
-        if (it != sources_.end() && it->second->sampleRate() == static_cast<uint32_t>(sampleRate_)) return it->second;
         rate = static_cast<uint32_t>(sampleRate_);
+        streaming = streaming_.enabled;
+        auto it = sources_.find(key);
+        // Cached at the engine's rate, and kept as the settings would keep it now.
+        if (it != sources_.end() && it->second->sampleRate() == rate &&
+            it->second->resident() == !streamsLocked(it->second->duration()))
+            return it->second;
     }
-    // Decode without holding the lock; retry if the device changed rate meanwhile.
+    // Decode (or open for streaming) without holding the lock; retry if the device changed rate meanwhile.
     for (int attempt = 0; attempt < 4; ++attempt) {
-        auto source = AudioSource::load(path, rate);
+        const bool streams = streaming && [&] {
+            const AudioFileInfo info = AudioSource::probe(path);
+            std::lock_guard lock(mutex_);
+            return streamsLocked(info.duration);
+        }();
+        auto source = streams ? streamCache_->open(path, rate) : AudioSource::load(path, rate);
         std::lock_guard lock(mutex_);
         const auto current = static_cast<uint32_t>(sampleRate_);
         if (current != rate) {
@@ -70,8 +94,9 @@ std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, boo
             continue;
         }
         auto& slot = sources_[key];
-        if (slot && slot->sampleRate() == rate) return slot;
+        if (slot && slot->sampleRate() == rate && slot->resident() == source->resident()) return slot;
         slot = std::move(source);
+        if (!slot->resident()) ensureStreamSchedulerLocked();
         if (publish) {
             rebuildSnapshotLocked();  // clips waiting for this file become audible
         } else {
@@ -80,6 +105,35 @@ std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, boo
         return slot;
     }
     throw std::runtime_error("The sample rate kept changing while loading " + path);
+}
+
+std::shared_ptr<AudioSource> Engine::loadResidentSource(const std::string& path) {
+    const std::string key = sourceKey(path);
+    uint32_t rate = 0;
+    {
+        std::lock_guard lock(mutex_);
+        if (!streaming_.enabled) return loadSource(path);  // (in memory anyway: the clips' cache)
+    }
+    if (const AudioFileInfo info = AudioSource::probe(path); [&] {
+            std::lock_guard lock(mutex_);
+            return !streamsLocked(info.duration);
+        }()) {
+        return loadSource(path);
+    }
+    {
+        std::lock_guard lock(mutex_);
+        rate = static_cast<uint32_t>(sampleRate_);
+        if (auto it = sources_.find(key); it != sources_.end() && it->second->sampleRate() == rate && it->second->resident())
+            return it->second;
+        if (auto it = residentSources_.find(key); it != residentSources_.end() && it->second->sampleRate() == rate)
+            return it->second;
+    }
+    auto source = AudioSource::load(path, rate);
+    std::lock_guard lock(mutex_);
+    auto& slot = residentSources_[key];
+    if (slot && slot->sampleRate() == source->sampleRate()) return slot;
+    slot = std::move(source);
+    return slot;
 }
 
 std::shared_ptr<AudioSource> Engine::cachedSource(const std::string& path) {
@@ -95,6 +149,7 @@ void Engine::cacheSource(std::shared_ptr<AudioSource> source) {
     auto& slot = sources_[sourceKey(source->path())];
     if (slot && slot->sampleRate() == rate) return;  // (still cached, or decoded again since)
     slot = std::move(source);
+    if (!slot->resident()) ensureStreamSchedulerLocked();
     rebuildSnapshotLocked();  // clips waiting for this file become audible
 }
 
@@ -105,19 +160,88 @@ void Engine::releaseUnusedSources() {
     std::erase_if(sources_, [&](const auto& entry) {
         return !used.contains(entry.first) && entry.second != previewHold_;
     });
+    // Devices hold the samples they use themselves.
+    std::erase_if(residentSources_, [](const auto& entry) { return entry.second.use_count() == 1; });
 }
 
 void Engine::reloadSourcesLocked() {
     std::unordered_map<std::string, std::shared_ptr<AudioSource>> reloaded;
     for (const auto& [key, source] : sources_) {
         try {
-            reloaded[key] = AudioSource::load(source->path(), static_cast<uint32_t>(sampleRate_));
+            if (source->resident()) {
+                reloaded[key] = AudioSource::load(source->path(), static_cast<uint32_t>(sampleRate_));
+            } else if (auto streamed = streamCache_->open(source->path(), static_cast<uint32_t>(sampleRate_), false)) {
+                reloaded[key] = std::move(streamed);
+            }
+            // (A streamed file whose cache file at this rate isn't made yet is let go: whoever loads its
+            // sources, the engine bridge, has it made again in the background, and its clips wait meanwhile.)
         } catch (const std::exception&) {
             // The file vanished or became unreadable; its clips go silent.
         }
     }
     sources_ = std::move(reloaded);
+    residentSources_.clear();  // (the devices keep theirs at the rate they loaded them)
 }
+
+// ---------------------------------------------------------------------------
+// Streaming
+
+void Engine::setStreaming(const StreamingSettings& settings) {
+    std::lock_guard lock(mutex_);
+    streaming_ = settings;
+    applyStreamingLocked();
+}
+
+StreamingSettings Engine::streaming() {
+    std::lock_guard lock(mutex_);
+    return streaming_;
+}
+
+void Engine::setDefaultStreaming(const StreamingSettings& settings) {
+    std::lock_guard lock(defaultStreamingMutex);
+    defaultStreamingSettings = settings;
+}
+
+StreamingSettings Engine::defaultStreaming() {
+    std::lock_guard lock(defaultStreamingMutex);
+    return defaultStreamingSettings;
+}
+
+void Engine::applyStreamingLocked() {
+    streaming_.thresholdSeconds = std::max(0.0, streaming_.thresholdSeconds);
+    streaming_.diskThreads = std::clamp(streaming_.diskThreads, 1, StreamScheduler::kMaxThreads);
+    streamCache_->setPoolBytes(streaming_.poolBytes);
+    streamCache_->setFolder(streaming_.cacheFolder);
+    if (streamCache_->folderBudget() != streaming_.cacheBudgetBytes) streamCache_->setFolderBudget(streaming_.cacheBudgetBytes);
+    if (streamScheduler_) {
+        streamScheduler_->setThreads(streaming_.diskThreads);
+        streamScheduler_->setHorizon(streaming_.horizonSeconds);
+    }
+}
+
+void Engine::ensureStreamSchedulerLocked() {
+    if (streamScheduler_) return;
+    streamScheduler_ = std::make_unique<StreamScheduler>(streamCache_, shared_, streaming_.diskThreads);
+    streamScheduler_->setHorizon(streaming_.horizonSeconds);
+    streamScheduler_->setSnapshot(snapshotHold_);
+    snapshotStale_ = true;  // (the next build pins its clips' starts)
+}
+
+std::vector<StreamMiss> Engine::takeStreamMisses() { return streamCache_->takeMisses(); }
+
+StreamCache::Stats Engine::streamingStats() { return streamCache_->stats(); }
+
+void Engine::waitForStreams() {
+    StreamScheduler* scheduler = nullptr;
+    {
+        std::lock_guard lock(mutex_);
+        publishPendingLocked();  // (its pins)
+        scheduler = streamScheduler_.get();
+    }
+    if (scheduler) scheduler->waitIdle();
+}
+
+void Engine::setStreamReadHook(StreamCache::ReadHook hook) { streamCache_->setReadHook(std::move(hook)); }
 
 // ---------------------------------------------------------------------------
 // Transport
@@ -143,6 +267,7 @@ void Engine::serviceTransportIfIdleLocked() {
 
 void Engine::play(double countInBeats) {
     std::lock_guard lock(mutex_);
+    if (streamScheduler_) streamScheduler_->wake();  // (playback may wait for the pages where it starts)
     requestedPlaying_.store(true);
     pushCommandLocked({TransportCommand::Type::Play, 0.0, std::max(0.0, countInBeats)});
 }
@@ -156,6 +281,7 @@ void Engine::stop() {
 void Engine::setPositionBeats(double beat) {
     std::lock_guard lock(mutex_);
     beat = std::max(0.0, beat);
+    if (streamScheduler_) streamScheduler_->locate(beat);  // its pages first
     // Said at once (positionBeats()) until the audio thread confirms it: a block it is
     // rendering from where it was publishes that position before it takes the locate.
     locateBeat_.store(beat);
@@ -255,6 +381,7 @@ void Engine::preview(const std::string& path) {
     }
     std::shared_ptr<const AudioSource> old = std::move(previewHold_);
     previewHold_ = it->second;
+    if (streamScheduler_) streamScheduler_->setPreview(previewHold_->resident() ? nullptr : previewHold_);
     shared_.previewSource.store(previewHold_.get(), std::memory_order_seq_cst);
     shared_.previewActive.store(true);
     shared_.previewSerial.fetch_add(1, std::memory_order_seq_cst);
@@ -263,6 +390,7 @@ void Engine::preview(const std::string& path) {
 
 void Engine::stopPreview() {
     std::lock_guard lock(mutex_);
+    if (streamScheduler_) streamScheduler_->setPreview(nullptr);
     std::shared_ptr<const AudioSource> old = std::move(previewHold_);
     shared_.previewSource.store(nullptr, std::memory_order_seq_cst);
     shared_.previewActive.store(false);

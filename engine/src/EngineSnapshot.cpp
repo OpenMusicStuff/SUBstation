@@ -901,6 +901,7 @@ void Engine::buildSnapshotLocked() {
         }
     }
     warpCache_.endBuild();
+    if (streamScheduler_) pinStreamsLocked(*snap);
     ensureWarpVoicesLocked(voicesNeeded);
     snap->warpVoices = warpVoices_;
     // The devices taking other tracks' notes: from which snapshot track (they were listed by track id).
@@ -918,8 +919,33 @@ void Engine::buildSnapshotLocked() {
     // Publish, then read the epoch (both seq_cst; see DeferredReleasePool).
     snapshot_.store(snap.get(), std::memory_order_seq_cst);
     releasePool_.retire(std::move(old), audioEpoch_.load(std::memory_order_seq_cst));
+    if (streamScheduler_) streamScheduler_->setSnapshot(snap);  // (what the disk threads read ahead for)
     collectGarbageLocked();
     serviceTransportIfIdleLocked();
+}
+
+void Engine::pinStreamsLocked(const RenderSnapshot& snap) {
+    // Where playback may start at once: each clip's start (in its source, or in its render), and the
+    // loop's start, for StreamCache::kHeadSeconds. (The head of each file is pinned for good.)
+    const auto head = static_cast<int64_t>(std::ceil(StreamCache::kHeadSeconds * snap.sampleRate));
+    const auto pin = [&](const ClipRender& clip, int64_t from, int64_t to) {
+        clipSpans(clip, from, to, snap.sampleRate, true, [&](const AudioSource& source, int64_t first, int64_t end) {
+            if (!source.resident()) streamCache_->pin(source, first, end);
+        });
+    };
+    streamCache_->beginPins();
+    for (const TrackRender& track : snap.tracks) {
+        for (const ClipRender& clip : track.clips) {
+            if (!clip.source->resident()) pin(clip, clip.start, clip.start + std::min(head, clip.length));
+        }
+        if (snap.loopEnabled && snap.loopEnd > snap.loopStart) {
+            forEachClip(track, snap.loopStart, std::min(snap.loopEnd, snap.loopStart + head),
+                        [&](const ClipRender& clip, int64_t from, int64_t to) {
+                            if (!clip.source->resident()) pin(clip, from, to);
+                        });
+        }
+    }
+    streamCache_->endPins();
 }
 
 void Engine::ensureWarpVoicesLocked(const std::array<size_t, kNumStretchConfigs>& needed) {

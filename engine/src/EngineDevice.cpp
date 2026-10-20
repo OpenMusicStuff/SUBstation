@@ -51,6 +51,7 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
         shared_.previewSerial.fetch_add(1, std::memory_order_seq_cst);
         shared_.previewActive.store(false);
         previewHold_.reset();
+        if (streamScheduler_) streamScheduler_->setPreview(nullptr);
 
         renderer_.prepare(sampleRate_);
         for (auto& [id, entry] : processors_) entry.processor->prepare(sampleRate_, Renderer::kMaxBlock);

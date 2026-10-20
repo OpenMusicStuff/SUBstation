@@ -132,6 +132,7 @@ void EngineBridge::pollDisplays() {
 void EngineBridge::pollIdle() {
     pollLatencies();
     pollPlugins();
+    pollStreams();
     if (!d_->busy) pollDevice();  // not from a message loop inside a plug-in's or driver's call
 }
 

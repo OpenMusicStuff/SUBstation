@@ -132,6 +132,13 @@ playing without a re-seek ([warp.md](warp.md)). Their beats are taken by the map
 (`rememberBeats()`, after every chunk and locate): the renderer never reads a map but the
 snapshot's it renders, as the one before may be gone.
 
+**Pre-roll.** Play while stopped arms `preRollLeft_` (150 ms, `kPreRollSeconds`). Live, once a
+count-in is over, the playhead waits chunk by chunk (`waitsForStreams()`) until every page the
+snapshot's streamed clips play from over the next half second is in memory (`streamsReady()`), or
+the 150 ms are up: playback started where the disk hasn't been read yet comes in whole when it
+can, and late (counted) when it can't ([streaming.md](streaming.md#moving-the-playhead)). Without
+streamed sources nothing waits.
+
 ## Rendering a track
 
 `renderTrack()` (on whichever thread the scheduler picks, with that thread's `WorkerScratch`):
@@ -176,6 +183,12 @@ source's buffer by its destination (`edgeSignal()`).
 Then gain, the clip's fades (`ClipRender::fadeIn` / `fadeOut`, samples from each end, each
 shaped by its curve with `automationShape()`), and the clip's pan as balance gains. Details of
 warping and the voices are in [warp.md](warp.md).
+
+A resident source (or render) is read in place. A streamed one ([streaming.md](streaming.md)) is
+fetched through its `SourceCursor` into the worker's scratch (`warpLeft`/`warpRight`; Re-Pitch's
+span into `span`), as the chunk's `StreamReads` say: live, never waiting (a page not in memory
+plays as silence, faded at its edges, and is counted; for `kJumpGrace` after the playhead jumps
+while playing, as expected); offline, waiting for the disk.
 
 The snapshot works out each clip's fades: its own (`ClipDesc::fadeInSec` / `fadeOutSec`, in source
 seconds, so on the timeline they follow the clip's speed; shortened in proportion where together
@@ -309,7 +322,9 @@ position). `isCountingIn()` reads `SharedState::countingIn`. Recording starts af
 `Engine::preview(path)` plays a source that is already loaded at the engine's rate straight into
 the master output. The handover is lock-free: the engine stores the source pointer and bumps
 `previewSerial`; `mixPreview()`, after each chunk, notices the new serial, starts the source from
-its beginning, and adds it at `previewGain` (0.8) after the master fader and the metronome.
+its beginning, and adds it at `previewGain` (0.8) after the master fader and the metronome (a
+streamed source fetched through its cursor; its position published in `previewPosition` for the
+disk threads to read ahead of).
 When it reaches the end it clears `previewActive` (unless a newer preview started). The engine
 keeps the source alive in `previewHold_` and retires the old one through the epoch pool. Offline
 renders never play the preview. Opening a device drops it.

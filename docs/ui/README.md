@@ -491,8 +491,10 @@ it.
 - **Oscilloscope** (150 × 30, fed by `Session.bridge`). **Loop** → `editor.setLoopEnabled`. **Follow** → the
   arrangement view's `follow`.
 - **CPU**: `TransportState.cpuText` ("CPU 12%"), from `bridge.cpuLoad` every 15th meter update (`kCpuEvery`, about
-  twice a second). **Device**: `deviceText` ("Speakers · 48 kHz", the name cut to 28 characters; "No audio device"),
-  with a tooltip; a click opens Preferences.
+  twice a second). **Disk** (shown while files stream from disk: `diskVisible`): `diskText` ("Disk", or "Disk late
+  3×" once the disk has come late: `bridge.diskLate`), with a tooltip saying how much audio that cost
+  ([app/engine-bridge.md](../app/engine-bridge.md#streaming)). **Device**: `deviceText` ("Speakers · 48 kHz", the
+  name cut to 28 characters; "No audio device"), with a tooltip; a click opens Preferences.
 
 ## Dialogs
 
@@ -511,8 +513,12 @@ application-layer object that holds the logic. What the preferences mean to the 
     driver's panel runs (it may run a message loop of its own); the status (rich text: what runs, or why it didn't
     open). A driver this build lacks (ASIO without the SDK) is greyed out with a tooltip saying so. Each choice
     reopens the device, since what a device offers is only known while it is open; only settings that opened are
-    saved. Under the status, in a build with ASIO, Steinberg's trademark attribution (`trademarkNotice`), which their
-    ASIO usage guidelines ask for wherever ASIO is set up.
+    saved. Below them, *Disk Streaming*, bound to the bridge's streaming properties (a check box, `streaming`; while
+    it is on, `ChoiceBox`es of the usual values (and the one saved, if it is another) for `streamThreshold`,
+    `streamMemory`, `streamDiskThreads` and `streamCacheSize`, and the cache folder with Choose… (a `FolderDialog`)
+    and Default): each applied at once ([app/engine-bridge.md](../app/engine-bridge.md#streaming)). Under the status,
+    in a build with ASIO, Steinberg's trademark attribution (`trademarkNotice`), which their ASIO usage guidelines
+    ask for wherever ASIO is set up.
   - **MIDI** (`MidiPage` on [MidiPreferences](../../app/src/session/MidiPreferences.h)): a check box per input
     (`inputs`: name, enabled, error: an input that couldn't be opened shows in red, why in its tooltip) →
     `setInputEnabled(name, on)`; Refresh → `refresh()`.

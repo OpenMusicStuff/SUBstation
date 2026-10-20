@@ -110,6 +110,30 @@ void setConstrainThresholdMs(double ms) {
                                                                     : kDefaultConstrainThresholdMs);
 }
 
+StreamingPreferences StreamingPreferences::load() {
+    const QSettings s;
+    StreamingPreferences prefs;
+    prefs.enabled = s.value(QStringLiteral("audio/streaming"), QStringLiteral("false")).toString().toLower() == u"true";
+    bool ok = false;
+    const double threshold = s.value(QStringLiteral("audio/stream_threshold_s"), kDefaultThresholdSeconds).toDouble(&ok);
+    prefs.thresholdSeconds = ok && std::isfinite(threshold) ? std::clamp(threshold, 0.0, 3600.0) : kDefaultThresholdSeconds;
+    prefs.memoryMb = std::clamp(intValue(s, QStringLiteral("audio/stream_memory_mb"), kDefaultMemoryMb), 16, 65536);
+    prefs.cacheFolder = s.value(QStringLiteral("audio/stream_cache_folder"), QString()).toString();
+    prefs.cacheGb = std::clamp(intValue(s, QStringLiteral("audio/stream_cache_gb"), kDefaultCacheGb), 1, 100000);
+    prefs.diskThreads = std::clamp(intValue(s, QStringLiteral("audio/stream_disk_threads"), kDefaultDiskThreads), 1, 8);
+    return prefs;
+}
+
+void StreamingPreferences::save() const {
+    QSettings s;
+    s.setValue(QStringLiteral("audio/streaming"), enabled ? QStringLiteral("true") : QStringLiteral("false"));
+    s.setValue(QStringLiteral("audio/stream_threshold_s"), thresholdSeconds);
+    s.setValue(QStringLiteral("audio/stream_memory_mb"), memoryMb);
+    s.setValue(QStringLiteral("audio/stream_cache_folder"), cacheFolder);
+    s.setValue(QStringLiteral("audio/stream_cache_gb"), cacheGb);
+    s.setValue(QStringLiteral("audio/stream_disk_threads"), diskThreads);
+}
+
 QSet<QString> disabledMidiInputs() {
     const QVariant value = QSettings().value(kMidiDisabledKey);
     QSet<QString> names;

@@ -2,6 +2,7 @@
 
 #include "AudioSource.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace sub::app {
@@ -18,9 +19,26 @@ int Waveform::sampleRate() const { return source_ ? static_cast<int>(source_->sa
 
 double Waveform::duration() const { return source_ ? source_->duration() : 0.0; }
 
+bool Waveform::resident() const { return !source_ || source_->resident(); }
+
 const float* Waveform::channelData(int channel) const {
     if (!source_ || channel < 0 || channel >= channels()) return nullptr;
     return source_->channelData(static_cast<uint32_t>(channel));
+}
+
+bool Waveform::read(int channel, qint64 start, qint64 count, float* out) const {
+    if (count <= 0) return true;
+    if (!source_ || channel < 0 || channel >= channels()) {
+        std::fill_n(out, count, 0.f);
+        return false;
+    }
+    return source_->read(static_cast<uint32_t>(channel), start, count, out);
+}
+
+std::vector<float> Waveform::samples(int channel) const {
+    std::vector<float> out(static_cast<size_t>(std::max<qint64>(0, frames())));
+    read(channel, 0, frames(), out.data());
+    return out;
 }
 
 int Waveform::peakLevels() const { return source_ ? source_->numPeakLevels() : 0; }

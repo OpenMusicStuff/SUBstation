@@ -522,6 +522,21 @@ struct TrackRender : StripRender {
     NoteList notes;  // sorted by start
 };
 
+// Calls f(clip, from, to) for each clip of the track that plays in [segStart,
+// segEnd), in order, with the part of the segment it covers.
+template <typename F>
+void forEachClip(const TrackRender& track, int64_t segStart, int64_t segEnd, F&& f) {
+    // Clips are sorted by start; no clip starting before this bound can reach the segment.
+    const int64_t earliest = segStart - track.maxClipLength;
+    auto it = std::lower_bound(track.clips.begin(), track.clips.end(), earliest,
+                               [](const ClipRender& clip, int64_t value) { return clip.start < value; });
+    for (; it != track.clips.end() && it->start < segEnd; ++it) {
+        const int64_t from = std::max(segStart, it->start);
+        const int64_t to = std::min(segEnd, it->start + it->length);
+        if (from < to) f(*it, from, to);
+    }
+}
+
 struct RenderSnapshot {
     double sampleRate = 48000.0;
     // The song's tempo and time signatures (music/TempoMap.h), never null; `tempoVersion` is a

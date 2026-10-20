@@ -2,6 +2,7 @@
 
 #include <QThread>
 
+#include <algorithm>
 #include <cmath>
 
 #include "audio/AudioAnalysis.h"  // (the intelligence module's)
@@ -17,7 +18,13 @@ namespace {
 // A decoded file analysed (on the analysis thread: the source is immutable).
 std::optional<AudioAnalysis::Result> analyseWaveform(const Waveform& waveform) {
     std::vector<const float*> channels;
-    for (int c = 0; c < waveform.channels(); ++c) channels.push_back(waveform.channelData(c));
+    std::vector<std::vector<float>> read;  // (a file streamed from disk: read for the while)
+    read.reserve(static_cast<size_t>(std::max(0, waveform.channels())));
+    for (int c = 0; c < waveform.channels(); ++c) {
+        const float* samples = waveform.channelData(c);
+        if (!samples) samples = read.emplace_back(waveform.samples(c)).data();
+        channels.push_back(samples);
+    }
     if (channels.empty() || waveform.frames() <= 0 || waveform.sampleRate() <= 0) return std::nullopt;
     const intelligence::audio::Analysis heard = intelligence::audio::analyze(
         channels.data(), static_cast<int>(channels.size()), static_cast<std::size_t>(waveform.frames()),

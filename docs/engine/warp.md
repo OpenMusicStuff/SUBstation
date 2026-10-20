@@ -13,9 +13,10 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 
 ## Overview
 
-- An `AudioSource` is a whole file decoded to 32-bit float at the engine's sample rate, planar, with six levels of
-  min/max peaks for drawing waveforms. It is immutable once loaded, so the UI, snapshots and the audio thread share
-  it freely. Long files are not streamed from disk: sources are decoded into memory.
+- An `AudioSource` is a file at the engine's sample rate, with six levels of min/max peaks for drawing waveforms:
+  decoded whole to 32-bit float, planar (resident), or, while streaming is on, a long file read from disk as it
+  plays (streamed: [streaming.md](streaming.md)). It is immutable once loaded, so the UI, snapshots and the audio
+  thread share it freely.
 - The snapshot turns each clip's beats into samples by the tempo map ([music.md](../music.md)). A warped clip's two
   ends sit on their beats, and it plays at `tempo / segment BPM` speed: under a tempo that changes along it, the
   tempo where it is, by its `WarpCurve`.
@@ -40,8 +41,9 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 
 | File | What it holds |
 |---|---|
-| [AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | `AudioFileInfo`, `AudioSource::probe()`, `AudioSource::load()`, planar data, peak mipmaps |
-| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice`, `WarpVoiceSet`, `renderResampled()` (and, inside, its kernel: `SincTable`, `SincPhases`, `phasedFrame()`, `kernelFrame()`) |
+| [AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | `AudioFileInfo`, `AudioSource::probe()`, `decode()`, `load()`, planar data (or a streamed file: [streaming.md](streaming.md)), `read()`, peak mipmaps (`PeakBuilder`) |
+| [SourceCursor.h](../../engine/src/SourceCursor.h) | `SourceCursor`: a source's frames wherever they are (memory, or the stream cache's pages), real-time or waiting for the disk |
+| [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice` (and its inputs: `SourceInput`, `StreamInput`, `LeasedInput`), `WarpVoiceSet`, `renderResampled()` (and, inside, its kernel: `SincTable`, `SincPhases`, `SourceSpan`, `phasedFrame()`, `kernelFrame()`) |
 | [WarpCache.h](../../engine/src/WarpCache.h) / [.cpp](../../engine/src/WarpCache.cpp) | `WarpRender` (a stretched clip rendered whole), `WarpCache` (its thread, `request()`, the budget) |
 | [Snapshot.h](../../engine/src/Snapshot.h) | `ClipRender` (`Playback::Direct / Resample / Stretch`, `rate`, `sourceAt()`, `key`, `rendered`), `TrackBuffers::kMaxClipVoices` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | clips to `ClipRender`s, choosing the playback, asking the warp cache for renders; `ensureWarpVoicesLocked()` |
@@ -61,13 +63,18 @@ Both Signalsmith libraries are added as `SYSTEM` include directories in [CMakeLi
 
 `AudioSource::load(utf8Path, sampleRate)` decodes with miniaudio's decoder (WAV, FLAC and MP3):
 
-1. It opens the file once to learn its native channel count and rate.
+1. It opens the file once to learn its native channel count, rate and sample format.
 2. It opens it again asking for float output at the engine's rate, with miniaudio's linear resampler at its highest
    low-pass filter order (`MA_MAX_FILTER_ORDER`). Mono files stay mono; anything with two or more channels is decoded
    as stereo (more than two are downmixed by miniaudio).
-3. It reads 16384 frames at a time, de-interleaving into one vector per channel, then copies them into one planar
-   buffer: channel `c` occupies `[c * frames, (c + 1) * frames)`.
+3. It reads 16384 frames at a time, de-interleaving each straight into its place in one planar buffer (channel `c`
+   occupies `[c * frames, (c + 1) * frames)`), made as long as the decoder expects (longer if it was wrong: copied
+   once then), the second channel moved down at the end if the file was shorter. No second copy of the file.
 4. It builds the peaks.
+
+Steps 1 to 3 are `AudioSource::decode(path, rate, begin, take)`, which hands over the decoded format and then the
+frames a chunk at a time: the stream cache's cache files are decoded through it too ([streaming.md](streaming.md)),
+so a streamed file plays the same samples as a resident one.
 
 It throws `std::runtime_error` if the file can't be opened or contains no audio. Paths are UTF-8 and opened with
 `initDecoderFile()` ([MiniaudioFiles.h](../../engine/src/MiniaudioFiles.h)): miniaudio's wide call on Windows, so any
@@ -77,7 +84,9 @@ Windows path works, and its narrow one elsewhere, so a path never goes through t
 own rate, channels, rate, duration). For streams that report no length it counts the frames by decoding.
 
 Accessors: `path()`, `channels()`, `frames()`, `sampleRate()` (the rate it was decoded at), `fileSampleRate()`,
-`duration()`, `data()`, `channelData(c)`.
+`duration()`, `resident()`, `data()`, `channelData(c)` (null for a streamed source), `stream()` (a streamed source's
+`StreamedAudio`), and `read(channel, start, count, out)`: frames from memory, or from disk through the stream cache,
+waiting for its reads (any thread but the audio thread's).
 
 ### Peak mipmaps
 
@@ -87,7 +96,9 @@ combines four peaks of the one below. The layout of `peaks(level)` is `[numPeaks
 
 The application layer hands them to the UI without copying: a `Waveform`
 ([app/src/audio/Waveform.h](../../app/src/audio/Waveform.h), from `EngineBridge::waveform(path)`) holds a
-`shared_ptr` to the source, which keeps it alive, and gives `peaks(level)` and `channelData(c)` as they are. The
+`shared_ptr` to the source, which keeps it alive, and gives `peaks(level)` and `channelData(c)` as they are (a
+streamed source's frames through `read()`). A streamed source's peaks come from its peak file, made by a
+`PeakBuilder` (the same levels, to the bit) as its frames were decoded or scanned. The
 arrangement's waveforms and the Sampler's editor draw from these ([ui/arrangement.md](../ui/arrangement.md)); the UI
 never includes the engine's headers.
 
@@ -106,12 +117,16 @@ lower-cased, so two spellings of a path share it).
   a file it decoded, by the time it hears so, or one it asks for again.
 - `releaseUnusedSources()` drops sources no clip uses (except the one previewing).
 - When the device's sample rate changes, `reloadSourcesLocked()` decodes every cached source again at the new rate;
-  files that vanished or became unreadable are dropped, and their clips go silent.
+  files that vanished or became unreadable are dropped, and their clips go silent. (Streamed ones are opened again
+  where no new cache file is needed, else let go of until they are loaded again: [streaming.md](streaming.md).)
+- While streaming is on, `loadSource()` opens a file at least the threshold long streamed
+  ([streaming.md](streaming.md)).
 - A snapshot only includes a clip whose source is cached *at the engine rate*; until then the clip is skipped
   ("still loading").
 
-Built-in devices that play files (the Sampler) get theirs through the same cache via a `SourceLoader`
-(see [devices.md](devices.md)). The engine bridge decodes sources in a thread pool of its own
+Built-in devices that play files (the Sampler) get theirs via a `SourceLoader` (see [devices.md](devices.md)):
+`Engine::loadResidentSource()`, the same cache while the file wouldn't stream, else a decoding of its own (a device
+reads its sample anywhere, note by note: always in memory). The engine bridge decodes sources in a thread pool of its own
 ([app/engine-bridge.md](../app/engine-bridge.md)).
 
 The Sampler warps its sample too (its Warp: the whole sample in so many beats at the tempo), with the same modes: it
@@ -262,7 +277,10 @@ instead of a few hundred; see [What it costs](#what-it-costs)).
   its gain, pan and fades don't matter (the renderer applies those as for any clip), so moving a clip, or changing
   its gain, keeps its render, unless it moves to where the tempo changes differently under it. A change of tempo
   changes the rate (or curve) of the warped clips, so they are rendered again. `WarpRender::frameOf()` finds the
-  frame that played a source position (a voice taking over mid-way fades from there).
+  frame that played a source position (a voice taking over mid-way fades from there). Its audio (`audio()`) is an
+  `AudioSource` of its own: in memory (`left()`, `right()`; no peaks), or, for a clip of a streamed source, a file in
+  the stream cache's folder, streamed back as its source is ([streaming.md](streaming.md#the-warp-caches-renders)),
+  its voice's input read with leased pages (`StreamReads{blocking}`).
 - **Asking.** Each snapshot build brackets its clips with `beginBuild()` and `endBuild()`, and asks for each
   stretched clip's render (`request()`), which the `ClipRender` carries (`rendered`). A render asked for before is
   shared; a new one is queued. `endBuild()` forgets the renders no clip asked for: an unfinished one stops (it
@@ -282,9 +300,13 @@ instead of a few hundred; see [What it costs](#what-it-costs)).
 
 ## Re-Pitch resampling
 
-`renderResampled(clip, position, frames, outL, outR)` is stateless: for each output frame it convolves the source
-around `sourceAt(t)` with a windowed-sinc (Lanczos) kernel of 8 zero crossings each side, tabulated at 512 points per
-zero crossing and linearly interpolated (`SincTable`, built during static initialisation, never on the audio thread).
+`renderResampled(clip, position, frames, outL, outR, span, reads)` is stateless: for each output frame it convolves
+the source around `sourceAt(t)` with a windowed-sinc (Lanczos) kernel of 8 zero crossings each side, tabulated at 512
+points per zero crossing and linearly interpolated (`SincTable`, built during static initialisation, never on the
+audio thread). It reads the source through a `SourceSpan` (the frames from one on): a resident source's whole file in
+place, or a streamed source's frames the kernel reaches over a piece of the block, fetched into `span` (the worker's
+scratch, `kResampleSpan` frames a channel) as `reads` says ([streaming.md](streaming.md)). The cutoff is the
+block's either way, so the output doesn't depend on how it was read.
 
 Speeding up moves content above the output Nyquist, so the cutoff is lowered to `1 / rate` and the kernel widened by
 the same factor: the content is filtered out instead of aliasing. The rate used for this is clamped to 1..4
@@ -333,9 +355,11 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
 ## Invariants and real-time rules
 
 - `AudioSource` is immutable after `load()`; snapshots hold `shared_ptr`s, and retired snapshots are freed on the UI
-  thread once the audio thread's epoch has moved past them.
+  thread once the audio thread's epoch has moved past them. (A streamed source's frames don't change either: which of
+  its pages are in memory does, [streaming.md](streaming.md).)
 - `WarpVoice` construction and `configure()` allocate: only on the edit side (and on the warp cache's thread, for its
-  own voices). `render()`, `outputSeek()` and `renderResampled()` don't allocate or lock.
+  own voices). `render()`, `outputSeek()` and `renderResampled()` don't allocate or lock, live; offline, reading a
+  streamed source, they wait for the disk.
 - A `WarpRender` is written only by the warp cache's thread, and read by the audio thread only once `ready()`; it is
   freed on the edit side or on the cache's thread, never on the audio thread.
 - A voice is used by one clip per block: `acquireVoice()` never hands out a voice stamped with the current block.
@@ -350,8 +374,9 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
 - **Warp markers** (warping within a clip) are not implemented: a warped clip has one segment BPM. Its source
   position is already a piecewise mapping under a changing tempo (`WarpCurve`): markers would add their points
   to it.
-- **Streaming long files** is not implemented; `AudioSource` would need a different storage behind `channelData()`.
-  The design is [streaming.md](streaming.md).
+- **Another way to read a source** (a resident source at its native rate, or in 16 bits): `SourceCursor` is the one
+  place the renderer reads sources through ([streaming.md](streaming.md)); a storage behind it needs `fetch()`, the
+  stretcher's input and Re-Pitch's span.
 
 ## Gotchas
 
@@ -378,6 +403,10 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
 - [tests/engine/test_tempo_engine.cpp](../../tests/engine/test_tempo_engine.cpp): warped clips on their beats
   through a tempo jump and a ramp, Re-Pitch and stretched.
 - [benchmarks/warp_bench.cpp](../../benchmarks/warp_bench.cpp) (not a test): what each playback costs, from a render
-  too (the `-cached` cases).
+  too (the `-cached` cases), and from a streamed source (the `-streamed` cases).
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,
   resampling to the engine rate, `probe`, clips waiting for their source.
+- [tests/engine/test_streaming.cpp](../../tests/engine/test_streaming.cpp): streamed sources play the frames and
+  peaks resident ones have; Direct, Re-Pitch and stretched clips of them render the same, live and offline; a streamed
+  clip's render is the in-memory one's. CTest's `engine_streamed` runs every engine test again with every file
+  streamed ([streaming.md](streaming.md#testing)).

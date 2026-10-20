@@ -178,10 +178,11 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 | Qt Quick render thread | the scene graph's sync and rendering: every `SgCanvas` item's `paint()`, during the sync step, while the GUI thread is blocked. (Where Qt uses its basic render loop, this is the GUI thread itself.) | write anything: `paint()` reads the item and the model, and changes nothing (no property writes, signals, JavaScript or new QObjects) |
 | Audio thread (driver callback) | the `Renderer`, a chunk at a time; it hands tracks to the workers | lock, allocate, free, or wait for any other thread |
 | Render workers ([Scheduler](engine/scheduler.md)) | tracks of the routing graph, each after what goes into it | the same as the audio thread |
-| The bridge's decoding pool (`QThreadPool`, 2 threads) | decoding audio files into engine sources (`Engine::loadSource`); results come back to the GUI thread | touch the model |
+| The bridge's decoding pool (`QThreadPool`, 2 threads) | decoding audio files into engine sources (`Engine::loadSource`), or opening long ones to stream (making their cache and peak files first if they need them); results come back to the GUI thread | touch the model |
 | The bridge's state pool (`QThreadPool`, 1 thread) | restoring built-in devices' states (a sampler's sample), one at a time, in the order they were set | touch the model |
 | Recorder's disk writer | empties the recording rings into WAV files | — |
-| Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)) | take the engine's mutex |
+| Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)); a streamed clip's into a file, streamed back | take the engine's mutex |
+| Disk threads (`StreamScheduler`, raised normal priority; while files stream) | a planner: what the snapshot plays soon, by deadline; readers (1 to 8): those pages of streamed files into the stream cache's pool ([engine/streaming.md](engine/streaming.md)) | take the engine's mutex |
 | Render jobs ([RenderJob](engine/README.md#in-the-background)) | an export or a freeze's render, on the snapshot it began with (live output is silent meanwhile) | take the engine's mutex |
 | Audio analysis (`AudioAnalysis`'s `QThreadPool`, 1 thread, low priority) | a decoded file's tempo, key and chords (`audio::analyze`), one file at a time; results come back to the GUI thread | touch the model |
 | Reverse jobs (`ReverseJob`) | a reversed copy of a decoded file written as a WAV file, then decoded | touch the model |

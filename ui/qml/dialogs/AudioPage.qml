@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import SUBstation
 
@@ -8,8 +9,10 @@ import SUBstation
 // saying so), the device and its Hardware Setup (ASIO), the outputs the master
 // plays on (ASIO), the sample rate, the buffer size (greyed out when the
 // driver sets it), exclusive mode (WASAPI), the audio threads and the latency
-// Constrain Delay Compensation bypasses devices over; below them
-// what runs, or why it didn't open. Each choice opens the device with it at
+// Constrain Delay Compensation bypasses devices over; disk streaming (long
+// files read from disk as they play: how long, the memory it takes, reads at
+// once, the cache folder and its size); below them what runs, or why it didn't
+// open. Each choice opens the device with it at
 // once, since what a device offers is only known while it is open; the lists
 // then show what it offers.
 ColumnLayout {
@@ -145,6 +148,135 @@ ColumnLayout {
             chosenIndex: Math.max(0, values.indexOf(Session.bridge.constrainThresholdMs))
             onChosen: index => Session.bridge.constrainThresholdMs = values[index]
         }
+
+        Label { text: qsTr("Disk Streaming") }
+        CheckBox {
+            objectName: "streaming"
+            focusPolicy: Qt.NoFocus
+            text: qsTr("Stream long files from disk (memory follows what plays soon)")
+            checked: Session.bridge.streaming
+            onToggled: {
+                Session.bridge.streaming = checked
+                checked = Qt.binding(() => Session.bridge.streaming)
+            }
+        }
+
+        Label {
+            visible: Session.bridge.streaming
+            text: qsTr("Stream Files Longer Than")
+        }
+        ChoiceBox {
+            objectName: "streamThreshold"
+            // The usual lengths (seconds), and the one saved if it is another.
+            readonly property var values: {
+                const usual = [10, 30, 60, 120, 300]
+                const saved = Session.bridge.streamThreshold
+                return usual.includes(saved) ? usual : usual.concat([saved]).sort((a, b) => a - b)
+            }
+            Layout.fillWidth: true
+            visible: Session.bridge.streaming
+            tooltip: qsTr("Shorter files (one-shots, loops) are decoded into memory, as they are without streaming.")
+            choices: values.map(v => ({label: v < 60 ? qsTr("%1 s").arg(v) : qsTr("%1 min").arg(v / 60), value: v}))
+            chosenIndex: Math.max(0, values.indexOf(Session.bridge.streamThreshold))
+            onChosen: index => Session.bridge.streamThreshold = values[index]
+        }
+
+        Label {
+            visible: Session.bridge.streaming
+            text: qsTr("Streaming Memory")
+        }
+        ChoiceBox {
+            objectName: "streamMemory"
+            readonly property var values: {
+                const usual = [64, 128, 256, 512, 1024, 2048, 4096]
+                const saved = Session.bridge.streamMemory
+                return usual.includes(saved) ? usual : usual.concat([saved]).sort((a, b) => a - b)
+            }
+            Layout.fillWidth: true
+            visible: Session.bridge.streaming
+            tooltip: qsTr("What the audio read ahead of the playhead may take (the start of each file and clip comes on top). "
+                          + "More holds more streamed tracks playing at once.")
+            choices: values.map(v => ({label: v < 1024 ? qsTr("%1 MB").arg(v) : qsTr("%1 GB").arg(v / 1024), value: v}))
+            chosenIndex: Math.max(0, values.indexOf(Session.bridge.streamMemory))
+            onChosen: index => Session.bridge.streamMemory = values[index]
+        }
+
+        Label {
+            visible: Session.bridge.streaming
+            text: qsTr("Disk Reads at Once")
+        }
+        ChoiceBox {
+            objectName: "streamDiskThreads"
+            readonly property var values: [1, 2, 4]
+            Layout.fillWidth: true
+            visible: Session.bridge.streaming
+            tooltip: qsTr("One for a spinning disk; an SSD reads faster with several.")
+            choices: [{label: qsTr("1 (a spinning disk)"), value: 1}, {label: qsTr("2"), value: 2},
+                      {label: qsTr("4 (an SSD)"), value: 4}]
+            chosenIndex: Math.max(0, values.indexOf(Session.bridge.streamDiskThreads))
+            onChosen: index => Session.bridge.streamDiskThreads = values[index]
+        }
+
+        Label {
+            visible: Session.bridge.streaming
+            text: qsTr("Cache Folder")
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: Session.bridge.streaming
+            spacing: 6
+
+            Label {
+                objectName: "streamCacheFolder"
+                Layout.fillWidth: true
+                Layout.maximumWidth: 360
+                elide: Text.ElideMiddle
+                text: Session.bridge.streamCacheFolder !== "" ? Session.bridge.streamCacheFolder
+                                                             : Session.bridge.defaultStreamCacheFolder
+                color: Theme.textDim
+            }
+            RoleButton {
+                objectName: "chooseStreamCacheFolder"
+                text: qsTr("Choose…")
+                tooltip: qsTr("Where files that can't stream as they are (FLAC, MP3, another sample rate) are kept, "
+                              + "decoded, and every streamed file's waveform")
+                onClicked: cacheFolderDialog.open()
+            }
+            RoleButton {
+                objectName: "defaultStreamCacheFolder"
+                visible: Session.bridge.streamCacheFolder !== ""
+                text: qsTr("Default")
+                onClicked: Session.bridge.streamCacheFolder = ""
+            }
+        }
+
+        Label {
+            visible: Session.bridge.streaming
+            text: qsTr("Cache Size Limit")
+        }
+        ChoiceBox {
+            objectName: "streamCacheSize"
+            readonly property var values: {
+                const usual = [5, 10, 20, 50, 100]
+                const saved = Session.bridge.streamCacheSize
+                return usual.includes(saved) ? usual : usual.concat([saved]).sort((a, b) => a - b)
+            }
+            Layout.fillWidth: true
+            visible: Session.bridge.streaming
+            tooltip: qsTr("Past it, the files used least lately go (they are made again when needed).")
+            choices: values.map(v => ({label: qsTr("%1 GB").arg(v), value: v}))
+            chosenIndex: Math.max(0, values.indexOf(Session.bridge.streamCacheSize))
+            onChosen: index => Session.bridge.streamCacheSize = values[index]
+        }
+    }
+
+    FolderDialog {
+        id: cacheFolderDialog
+        objectName: "cacheFolderDialog"
+        title: qsTr("Cache Folder for Streaming")
+        currentFolder: FileUrls.folderUrl(Session.bridge.streamCacheFolder !== "" ? Session.bridge.streamCacheFolder
+                                                                                 : Session.bridge.defaultStreamCacheFolder)
+        onAccepted: Session.bridge.streamCacheFolder = FileUrls.localPath(selectedFolder)
     }
 
     Label {

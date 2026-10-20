@@ -5,19 +5,28 @@
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <vector>
 
 namespace sub::app::sampleSlices {
 namespace {
 
-// The waveform's first two channels (one twice for a mono file), as the Sampler reads them.
+// The waveform's first two channels (one twice for a mono file), as the Sampler reads them: in
+// place, or (a long file streamed from disk) read into memory for the while.
 struct Channels {
     std::array<const float*, 2> data{};
+    std::array<std::vector<float>, 2> read;
     int count = 0;
 
     explicit Channels(const Waveform& waveform) {
         count = std::min(2, waveform.channels());
-        data[0] = waveform.channelData(0);
-        data[1] = count > 1 ? waveform.channelData(1) : data[0];
+        for (int c = 0; c < count; ++c) {
+            data[c] = waveform.channelData(c);
+            if (!data[c]) {
+                read[c] = waveform.samples(c);
+                data[c] = read[c].data();
+            }
+        }
+        if (count < 2) data[1] = data[0];
     }
 };
 

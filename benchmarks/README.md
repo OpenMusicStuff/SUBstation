@@ -9,7 +9,7 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [freeze_bench.cpp](freeze_bench.cpp) | Tracks rendered before their faders into WAV files with a 10 s tail, as freezing them does: one track out of many, several at once, a group, one track of a short song; and the whole mix exported, for comparison. The engine alone, no Qt. |
 | [browser_backend_bench.cpp](browser_backend_bench.cpp) | The browser's backend on a large synthetic library: indexing, starting from the saved index, searches. Checks every query against the reference the tests use, and fails if any differs. |
 | [builtin_devices_bench.cpp](builtin_devices_bench.cpp) | Each built-in audio effect alone, as the audio thread runs it: what it costs a core, at its defaults or at settings given. The engine alone, no Qt. |
-| [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
+| [warp_bench.cpp](warp_bench.cpp) | An audio clip's playback alone, as the renderer asks for it: Direct, Re-Pitch at several rates, each stretch configuration, transposed, Formants; from a warp cache render, and streamed from disk. Nanoseconds a frame and the load on a core. The engine alone, no Qt. |
 | [fft_bench.cpp](fft_bench.cpp) | Signalsmith Linear's power-of-two FFTs on KFR's against the library's own: nanoseconds a transform, complex and real, each size. Signalsmith Linear and KFR alone. |
 | [display_fft_bench.cpp](display_fft_bench.cpp) | What the device editors' spectra cost the GUI thread: the FFT (`app/src/analysis/Fft`, KFR's) against the radix-2 transform it replaced (kept in the program), and a display tick of the EQ's analyzer (`EqAnalyzer`: two 8192-point spectra) and the Delay's (`FallingSpectrum`: one of 4096). The application layer alone, no UI. |
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
@@ -521,10 +521,13 @@ load on one core (best of `--repeat`). The cases: `direct` (the source read in
 place), `repitch-R` (Re-Pitch at rate R), `transients-`, `standard-` and
 `smooth-R` (each stretch configuration at rate R), `transpose+7` and `formants+7`
 (seven semitones up at the clip's own tempo, Standard, without and with
-Formants), and `standard-0.9-cached` and `formants+7-cached` (the same played
+Formants), `standard-0.9-cached` and `formants+7-cached` (the same played
 from their [warp cache](../docs/engine/warp.md#the-warp-cache) render, as live
 playback does once it is ready; the time the render took on the cache's thread
-is printed beside them).
+is printed beside them), and `direct-`, `repitch-0.9-`, `repitch-1.5-` and
+`standard-0.9-streamed` (the clip [streamed from disk](../docs/engine/streaming.md),
+every page of it in memory first: what reading through the stream cache's pages
+costs over reading a resident source in place).
 
 ## Results
 
@@ -564,6 +567,22 @@ ready:
 | standard-0.9-cached | **0.48** | 0.002 % | 386 ms for 30 s (268 ns/frame) |
 | formants+7 (stretched live) | 341.1 | 1.637 % | |
 | formants+7-cached | **0.49** | 0.002 % | 508 ms for 30 s (353 ns/frame) |
+
+Streamed from disk (Linux, the same kind of machine, three runs of best of
+three; the clip's pages all in memory, as they are while the disk keeps up), a
+clip costs what it does from memory, within the runs' noise:
+
+| case | from memory (ns/frame) | streamed |
+|---|---|---|
+| direct | 0.70 to 1.44 | 0.55 to 0.68 |
+| repitch-0.9 | 7.3 to 9.6 | 8.1 to 8.4 |
+| repitch-1.5 | 31.7 to 35.9 | 34.3 to 34.9 |
+| standard-0.9 | 197 to 202 | 194 to 216 |
+
+(Direct streamed copies the frames into the worker's scratch instead of reading
+them in place: a copy of a few kilobytes a block. The first case run pays for
+cold memory, which is why `direct` varies most. A stretched clip's input looks up
+each frame's page as the stretcher reads it.)
 
 ## Where the time goes
 
