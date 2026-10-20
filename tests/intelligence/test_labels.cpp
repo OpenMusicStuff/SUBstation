@@ -176,6 +176,7 @@ TEST_CASE("what presets' names say") {
 
 TEST_CASE("what effects are") {
     CHECK(classify(builtin("delay", "Delay")) == Effect::Delay);
+    CHECK(classify(builtin("vintage_delay", "Vintage Delay")) == Effect::Delay);
     CHECK(classify(builtin("ott", "Over The Top")) == Effect::Ott);
     CHECK(classify(builtin("sidechain", "Sidechain")) == Effect::Ducking);
     CHECK(classify(builtin("synth", "Synth", {}, true)) == Effect::Instrument);

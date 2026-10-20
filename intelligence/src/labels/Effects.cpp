@@ -403,7 +403,7 @@ Effect classify(const DeviceFact& device) {
         {"limiter", E::Limiter},      {"multiband", E::Compressor}, {"spectral", E::Compressor},
         {"transient", E::Transient},  {"vintage_hall", E::Reverb},  {"hue", E::PitchCorrection},
         {"gigatune", E::PitchCorrection}, {"vocoder", E::Vocoder},  {"vocal_rider", E::Rider},
-        {"tape_stop", E::Glitch},     {"glitch", E::Glitch},
+        {"tape_stop", E::Glitch},     {"glitch", E::Glitch},      {"vintage_delay", E::Delay},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {

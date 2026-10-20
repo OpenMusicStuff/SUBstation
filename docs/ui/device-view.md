@@ -405,6 +405,7 @@ readonly property var editors: ({
     "spectral": "SpectralEditor.qml",
     "supersaw": "SupersawEditor.qml",
     "transient": "TransientEditor.qml",
+    "vintage_delay": "DelayEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
     "vital": "VitalEditor.qml",
     "vocal_rider": "VocalRiderEditor.qml",
