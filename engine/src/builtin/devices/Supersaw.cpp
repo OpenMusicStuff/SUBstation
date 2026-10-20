@@ -297,6 +297,7 @@ private:
     void glideTo(Voice& voice, double pitch, bool glide) const;
     void releaseVoice(Voice& voice) const;
     void releaseAll(bool kill);
+    void followMode();
     float velocityGain(uint8_t velocity) const;
 
     // Control, a period at a time.
@@ -406,7 +407,6 @@ void SupersawProcessor::reset() {
     quiet_ = 0;
     asleep_ = true;
     displayCount_ = 0;
-    mode_ = static_cast<VoiceMode>(std::clamp(choiceIndex(Mode), 0, 2));
     settle();
 }
 
@@ -414,6 +414,7 @@ void SupersawProcessor::reset() {
 void SupersawProcessor::settle() {
     readAny_ = false;
     readSettings();
+    followMode();  // (nothing plays here to fade: a reset, or waking from sleep)
     for (Stack& stack : stacks_) {
         stack.count = stack.playing;
         for (size_t i = 0; i < static_cast<size_t>(kMaxSaws); ++i) {
@@ -614,6 +615,7 @@ void SupersawProcessor::glideTo(Voice& voice, double pitch, bool glide) const {
 }
 
 void SupersawProcessor::noteOn(const ProcessEvent& event) {
+    followMode();  // (changed since the period's update: the note plays in the new one)
     const float velocity = velocityGain(event.velocity());
     if (mode_ != VoiceMode::Poly) {
         // Remember the key (the newest last), to go back to.
@@ -673,6 +675,7 @@ void SupersawProcessor::releaseVoice(Voice& voice) const {
 }
 
 void SupersawProcessor::noteOff(const ProcessEvent& event) {
+    followMode();
     if (mode_ == VoiceMode::Poly) {
         if (Voice* voice = voiceOf(event, true)) releaseVoice(*voice);
         return;
@@ -717,6 +720,15 @@ void SupersawProcessor::releaseAll(bool kill) {
             voice.amp = voice.filt = Stage::Release;
         }
     }
+}
+
+// The Mode as it is now: another fades out what plays, and forgets the keys held. Taken at each period's update
+// and at each note (a change since the update), so a note never starts in a mode that then fades it out.
+void SupersawProcessor::followMode() {
+    const auto mode = static_cast<VoiceMode>(std::clamp(choiceIndex(Mode), 0, 2));
+    if (mode == mode_) return;
+    mode_ = mode;
+    releaseAll(true);
 }
 
 void SupersawProcessor::midi(const ProcessEvent& event) {
@@ -853,11 +865,7 @@ void SupersawProcessor::tuneVoice(Voice& voice) {
 
 void SupersawProcessor::controlUpdate() {
     readSettings();
-    const auto mode = static_cast<VoiceMode>(std::clamp(choiceIndex(Mode), 0, 2));
-    if (mode != mode_) {  // another mode: what plays fades out
-        mode_ = mode;
-        releaseAll(true);
-    }
+    followMode();
     if (set_.filter != filterKind_) {  // another filter: the sections start again from rest
         filterKind_ = set_.filter;
         for (Voice& voice : voices_)

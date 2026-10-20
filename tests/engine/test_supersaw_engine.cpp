@@ -779,3 +779,21 @@ TEST_CASE("supersaw: what it costs") {
     CHECK(best < 1.5);
 #endif
 }
+
+TEST_CASE("supersaw: a new Mode takes the next note, asleep or not") {
+    // Asleep (or not yet woken) when Mode changes: the next note plays in it, and goes on playing.
+    Player p({{"s1_saws", 1.f}});
+    // Played, then silent long enough to sleep, ending off the control grid (so it wakes inside a period).
+    p.left(seconds(0.5) + 5, {noteOn(0, 57), noteOff(seconds(0.05), 57)});
+    p.set("mode", 1.f);
+    const Samples woken = p.left(seconds(0.3), {noteOn(3, 57), noteOn(seconds(0.15), 69)});  // (in the period it wakes in)
+    CHECK(rms(slice(woken, seconds(0.05), seconds(0.14))) > 0.05);  // still sounding long after a steal's fade
+    CHECK_APPROX_REL(dominantFreq(slice(woken, seconds(0.17), seconds(0.29))), 440.0, 1e-3);  // one voice moved to it
+    for (const float voices : p.display("voices")) CHECK(voices <= 1.f);
+    // Awake: Mode changes where a note starts (both at once): what played fades out, the new note plays on in it.
+    Player q({{"s1_saws", 1.f}});
+    const auto [out, right] = q.play(seconds(0.5), {noteOn(0, 57), noteOn(seconds(0.2) + 7, 69)}, 256,
+                                     {{seconds(0.2) + 7, "mode", 1.f}});
+    CHECK(rms(slice(out, seconds(0.3), seconds(0.5))) > 0.05);
+    CHECK_APPROX_REL(dominantFreq(slice(out, seconds(0.3), seconds(0.5))), 440.0, 1e-3);
+}

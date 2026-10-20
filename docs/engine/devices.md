@@ -3324,7 +3324,7 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   each saw playing where it says, as loud; a stack as loud whatever its count; Width (0: both sides the same, to the bit;
   wider, less alike, as loud); Transpose, Fine and three stacks; the sub; the envelopes, the filter's types, resonance,
   key tracking and envelope; Phase and Random Phase; Drift; glide in Mono, Legato and Poly, going back to a key still
-  held; a note's bend and the wheel; the pedal; stealing; Saws changed mid-note, faded in; silence as zeros and
+  held; a new Mode taking the next note, asleep or not (even one in the same period); a note's bend and the wheel; the pedal; stealing; Saws changed mid-note, faded in; silence as zeros and
   sleeping; the same output to the bit whatever the blocks (chords, bends, the wheel, automation, Mono); through the
   engine, the same twice and on the beat; every rate; its cost.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
