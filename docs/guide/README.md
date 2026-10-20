@@ -19,7 +19,7 @@ code is put together, [../README.md](../README.md).
 | [devices.md](devices.md) | The device view, the built-in devices (Vital, Supersaw, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ, Sidechain), the Arpeggiator and Groove MIDI effects, the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
 | [plugins.md](plugins.md) | VST3 and VST2 plug-ins: finding them, using them, their editors and presets, projects, latency |
 | [audio-clips.md](audio-clips.md) | The clip view for audio clips: warping, warp markers, an audio clip's groove, warp modes, transpose and detune, clip gain and pan, reversing, tempo and key from file names |
-| [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, a MIDI clip's groove, MIDI input, the computer MIDI keyboard |
+| [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, chords and key, Generate and progression ideas, a MIDI clip's groove, MIDI input, the computer MIDI keyboard |
 | [grooves.md](grooves.md) | Swing and feel: how a groove moves notes, the project's grooves and the groove editor (Edit › Grooves…), groove files, the default groove and the transport's Swing |
 | [recording.md](recording.md) | Arming, inputs, monitoring, the count-in, takes, resampling |
 | [automation.md](automation.md) | Automation lanes and editing envelopes, Lock Envelopes, overriding and re-enabling |

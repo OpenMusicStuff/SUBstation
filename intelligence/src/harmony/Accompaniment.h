@@ -42,4 +42,8 @@ std::vector<GeneratedNote> bassPart(const std::vector<ChordSpan>& chords, double
 // IV in a major key, i VI III VII in a minor one, over and over.
 std::vector<ChordSpan> starterProgression(const Key& key, double start, double end, double barBeats = 4.0);
 
+// `chords` a bar each from `start` to `end`, over and over (the first and last
+// cut at them: the first plays to the bar line after `start`).
+std::vector<ChordSpan> layOut(const std::vector<Chord>& chords, double start, double end, double barBeats = 4.0);
+
 }  // namespace sub::intelligence::harmony

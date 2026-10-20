@@ -168,7 +168,8 @@ This is what sets SUBstation apart. Start goal 13 alongside Phase 1, because it 
 - **The need:** the top beginner struggle in a survey of 1,000+ producers is "not knowing where to start". Scaler, Logic's Chord Track and Session Players, and FL's Gopher show the demand.
 - **What to build:**
   - **Scale snap/fold** in the piano roll and the computer keyboard (S). The key is already known; let it constrain input.
-  - A **chord track** that Generate's chords and bass follow, a **chord palette by function** (I–IV–V, borrowed chords) to audition, and generated parts with rhythm, not just block chords.
+  - **Progression ideas (done).** Generate ▾ › Progressions…: progressions in a mood (Sad, Dark, Nostalgic) to try in the clip one after another, from free-midi-chords' progressions (MIT) and chords drawn as they follow each other in the McGill Billboard songs (CC0); locking chords, keeping ideas, swapping a chord for its colours or the chords around it, variations (docs/intelligence.md#progression-ideas).
+  - A **chord track** that Generate's chords and bass follow, a **chord palette by function** (I–IV–V, borrowed chords) to audition, and generated parts with rhythm, not just block chords (the progression ideas' too), and more moods for them.
   - **Explain mode:** "why is this note red", "what did this compressor do", with a before/after render (goal 13) by the agent.
   - A **first-run guided song** and a **Simple mode** that hides advanced panels.
   - **Localization:** QML already uses `qsTr` (76 files), but there is no translator loader or `.ts` files, and the C++ strings aren't wrapped.

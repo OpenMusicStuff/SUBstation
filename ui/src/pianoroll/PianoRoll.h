@@ -30,7 +30,8 @@
 // out on the GUI thread when the harmony changes (chords(), scaleKey()), for
 // the items to draw. Generate writes block chords or a bass line from those
 // chords into the lead clip (from a progression in the key where the song has
-// none).
+// none); the clip view's progression ideas (ProgressionIdeas) are tried in it
+// through writeProgression().
 //
 // Every edit goes through commitNotes() (commit(): the lead clip's): the new
 // list of notes of each clip it changes, one undo command, merged with the
@@ -63,6 +64,7 @@
 // faintly.
 
 #include "editor/ClipRef.h"
+#include "harmony/Chords.h"
 #include "model/Clip.h"
 #include "model/Keys.h"
 #include "model/Notes.h"
@@ -429,6 +431,26 @@ public:
     // left out. One undo step (none if nothing would be added).
     Q_INVOKABLE void generateChords();
     Q_INVOKABLE void generateBass();
+
+    // A clip's notes and length, as a progression is written over them.
+    struct ClipBody {
+        std::vector<app::Note> notes;
+        double lengthBeats = 0.0;
+
+        friend bool operator==(const ClipBody&, const ClipBody&) = default;
+    };
+    // The lead clip's, now (none: no clip).
+    std::optional<ClipBody> leadBody() const;
+    // Write a progression into the lead clip (Progressions › Try): its chords a
+    // bar each as block chords (chordPart), and with `bass` a bass line under
+    // them, from where the clip starts, round and round to its end, over
+    // `base` (the notes it holds besides, and its length): the clip made long
+    // enough to play every chord once, never shorter. The base's notes win
+    // where a written one would overlap one on its key. One undo step per
+    // `mergeKey` ("Try Progression"); the written notes selected. The clip as
+    // it is then (none: no clip, or no chords).
+    std::optional<ClipBody> writeProgression(const std::vector<intelligence::harmony::Chord>& chords, bool bass,
+                                             const ClipBody& base, const QString& mergeKey);
 
     // --- Geometry -----------------------------------------------------------------
 

@@ -253,6 +253,43 @@ one on the same key is shortened or left out. The written notes are selected; ea
 Generate is one undo step. Write the chords into one clip and the bass into another, on tracks
 of their own, to hear them on different instruments.
 
+### Progression ideas
+
+*Generate ▾ › Progressions…* opens a panel beside the piano roll with six chord
+progressions to try in the clip: ideas for a sad song, say, to hear one after another
+and change until one is right.
+
+- **Mood**: *Sad*, *Dark* or *Nostalgic*. Ideas start from progressions known to have
+  that mood (from [free-midi-chords](https://github.com/ldrolez/free-midi-chords)), in
+  between ones drawn fresh: each chord as chords follow each other in real songs (the
+  McGill Billboard songs' chord changes) and in that mood's progressions. Hover over
+  an idea's ▶ to see which it is.
+- **Length**: *4 bars* or *8 bars*, a chord a bar.
+- **The key**: the song's (chosen in the transport bar, after the swing), else the one its MIDI is most
+  likely in, else A minor; the panel says which. Each chord shows its name and its Roman
+  numeral in the key ("Am" over "i", "F" over "VI").
+- **Try**: click an idea (or its ▶) to write it into the clip as block chords, voiced to
+  move little from chord to chord. **↑** and **↓** try the idea above or below, so you
+  can listen to them in turn while the song plays. The clip is made long enough to play
+  every chord once (never shorter; up to the next clip on its track); its own notes stay
+  as they are, and each try takes out the chords the last one wrote. A run of tries is one undo step; the idea in the clip is
+  lit.
+- **7ths** plays the triads with their sevenths, as the key has them (Am7, Fmaj7, G7 in
+  A minor); **Bass** writes a bass line under the chords too. The idea in the clip is
+  written again.
+- **Lock a chord**: click it (a padlock shows). **New Ideas** keeps it where it is and
+  draws the rest of its idea again, to fit round it; ideas with nothing locked are
+  replaced.
+- **Keep an idea**: ★. New Ideas leaves it as it is.
+- **Swap a chord**: right-click it, for its colours (its seventh, sus4, sus2; a seventh's
+  triad) and the chords most likely to come after the chord before it and lead into the
+  one after. Choosing one in the idea in the clip writes it again.
+- **More like this**: ≈ puts ideas one or two chords away from that one in place of the
+  others (but the kept ones); its locked chords stay in them.
+
+The ideas stay in the panel while SUBstation is open, from clip to clip; × or **Esc**
+closes it. Its keys work once you have clicked in it; **Space** still plays and stops.
+
 ### A clip's groove
 
 *Groove ▾* in the clip view's header gives a MIDI clip a groove of its own

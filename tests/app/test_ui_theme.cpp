@@ -330,7 +330,7 @@ private Q_SLOTS:
             QStringLiteral("wave_square"),     QStringLiteral("wave_random"),     QStringLiteral("note"),
             QStringLiteral("bend"),            QStringLiteral("vibrato"),         QStringLiteral("glide"),
             QStringLiteral("automation_mode"), QStringLiteral("constrain_latency"), QStringLiteral("punch_in"),
-            QStringLiteral("punch_out"),       QStringLiteral("keyboard")};
+            QStringLiteral("punch_out"),       QStringLiteral("keyboard"),        QStringLiteral("star")};
         QCOMPARE(names.size(), fromPython.size() + added.size());
         for (const QString& name : fromPython + added) {
             QVERIFY2(names.contains(name), qPrintable(name));
