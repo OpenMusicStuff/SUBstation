@@ -698,7 +698,7 @@ harmony is: the same project always gives the same labels, and the details say w
 | A rack's name ("Supersaw", "Metallic Dist") | the user's (or a preset's) name for what it holds | 2.5 holding the instrument, else 2.0 | 0.6 |
 | Its audio files' names, by how much each plays; a sampler's sample | pack codes, tempos and keys left out | 2.5 × its share | 0.5 × its share |
 | The instrument's own name ("Originals - Cinematic Soft Piano", "Superior Drummer"), its VST3 category ("Instrument\|Drum") | what a sample library plays | 2.0, 1.5 | 0.45 |
-| A built-in synth's envelope | a quick decay to silence plucks; a slow attack, held, swells into a pad | 1.4 | |
+| A built-in synth's envelope (the Synth's, the Supersaw's) | a quick decay to silence plucks; a slow attack, held, swells into a pad | 1.4 | |
 | Its notes | the part they play | up to 1.3 | |
 | Its effects, its sends, its fader and pan | how it sounds | | 0.15–0.9, by kind and amount |
 
@@ -778,7 +778,8 @@ trumpet's, a drum's are no chords.
 
 A track's best instrument, sound and pattern (by weight, then rank, then which came first) make its nouns: [a synth's
 name] [instrument] [sound] [pattern], no word twice: "Serum Pluck Arp", "Bell Stab", "Drum Loop". A synth's name
-always goes first ("Serum", "Synth"); another instrument's only when nothing else says what it plays ("Kontakt
+always goes first ("Serum", "Synth", "Supersaw": a built-in Supersaw's name isn't read again as its sound, so a slow one is
+a "Supersaw Pad"); another instrument's only when nothing else says what it plays ("Kontakt
 Chords"; but "808", not "Sampler 808"). Patterns that say nothing more go (a pad's chords, a lead's line, a pluck
 played one note at a time); a synth's family is its sound's ("Serum Vocal Lead" is a synth); nature sounds are an
 ambience ("Wind Ambience"). Then at most two traits, one of each group (space, echo, drive, dynamics, width, tone...),

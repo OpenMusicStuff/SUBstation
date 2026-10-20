@@ -296,6 +296,9 @@ void readInstrument(Description& d, const DeviceFact& device) {
     if (device.kind == "synth" || device.kind == "vital") {
         d.synth = true;
         d.source = device.kind == "vital" ? "Vital" : "Synth";
+    } else if (device.kind == "supersaw") {
+        d.synth = true;
+        d.source = "Supersaw";  // (what it plays, its name not read again as the sound: "Supersaw Pad")
     } else if (device.kind == "sampler") {
         d.source = "Sampler";
     } else {
@@ -306,7 +309,7 @@ void readInstrument(Description& d, const DeviceFact& device) {
     }
     if (known && !known->noun.empty()) addReading(d, readWords(known->noun, Source::Name), kInstrumentNouns, 0.0);
     if (known && !known->adjective.empty()) addTrait(d, std::string(known->adjective), kKnownAdjective);
-    addReading(d, readWords(device.name, Source::Name), kInstrumentNouns, kInstrumentAdjectives);
+    if (device.kind != "supersaw") addReading(d, readWords(device.name, Source::Name), kInstrumentNouns, kInstrumentAdjectives);
     const std::string category = lowered(device.category);
     if (category.find("drum") != std::string::npos) addNoun(d, wordFor("Drums"), kCategoryNouns);
     if (category.find("piano") != std::string::npos) addNoun(d, wordFor("Piano"), kCategoryNouns);
@@ -339,7 +342,7 @@ void readInstrument(Description& d, const DeviceFact& device) {
         if (const std::string own = ownWords(reading); !own.empty()) d.distinctive.push_back(own);
         line += ", sample " + quoted(stem);
     }
-    if (device.kind == "synth") {
+    if (device.kind == "synth" || device.kind == "supersaw") {
         // Its envelope: a quick decay to silence plucks, a slow attack held swells.
         const double attack = builtinParam(device, "attack").value_or(3.0);
         const double decay = builtinParam(device, "decay").value_or(300.0);
@@ -351,7 +354,7 @@ void readInstrument(Description& d, const DeviceFact& device) {
         }
         static const char* const kWaves[] = {"Sine", "Triangle", "Saw", "Square"};
         const auto wave = static_cast<int>(std::lround(builtinParam(device, "wave").value_or(2.0)));
-        if (wave >= 0 && wave < 4) addTrait(d, kWaves[wave], 0.2);
+        if (device.kind == "synth" && wave >= 0 && wave < 4) addTrait(d, kWaves[wave], 0.2);
     }
     if (!device.enabled) line += " (off)";
     d.details.push_back(line);
