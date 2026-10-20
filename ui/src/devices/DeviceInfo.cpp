@@ -143,6 +143,11 @@ void DeviceInfo::connectSession() {
         if (trackId == sidechainSource_ || trackId == midiSource_)
             refresh();
     });
+    // A pad of its sidechain's source renamed (the tooltip names the pad it is taken from).
+    connections_ << connect(project, &Project::chainChanged, this, [this](const QString& trackId, const QString&) {
+        if (trackId == sidechainSource_)
+            refresh();
+    });
     connections_ << connect(project, &Project::devicesFolded, this, ofTrack);
     connections_ << connect(project, &Project::rackViewChanged, this, ofTrack);
     connections_ << connect(project, &Project::reset, this, refreshAll);

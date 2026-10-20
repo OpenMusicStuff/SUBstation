@@ -332,6 +332,9 @@ private Q_SLOTS:
         QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Post FX"));
         undo().undo();
         QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › Post FX"));
+        // The pad renamed: so is it in the tooltip.
+        editor().renameChain(drums, kick, QStringLiteral("Big Kick"));
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Big Kick › Post FX"));
     }
 
     void theMastersDevicesTakeAnyTrack() {

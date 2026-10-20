@@ -335,7 +335,9 @@ private Q_SLOTS:
         const QString onKick = f.editor.addDevice(bass, QStringLiteral("utility"));
         const QString onSnare = f.editor.addDevice(bass, QStringLiteral("utility"));
         const QString onDrums = f.editor.addDevice(bass, QStringLiteral("utility"));
+        const QString onSampler = f.editor.addDevice(bass, QStringLiteral("utility"));
         f.editor.setDeviceSidechain(bass, onKick, Sidechain{track, kPreFx, kick});
+        f.editor.setDeviceSidechain(bass, onSampler, Sidechain{track, snareSampler});  // after a pad's device
         f.editor.setDeviceSidechain(bass, onSnare, Sidechain{track, kPostFader, snare});
         f.editor.setDeviceSidechain(bass, onDrums, Sidechain{track, kPreFader});
         const std::vector<Track> before = f.project.tracks();
@@ -373,6 +375,7 @@ private Q_SLOTS:
         QCOMPARE(f.project.device(bass, onKick).sidechain, std::optional<Sidechain>(Sidechain{made[0], kPreFx}));
         QCOMPARE(f.project.device(bass, onSnare).sidechain, std::optional<Sidechain>(Sidechain{made[1], kPostFader}));
         QCOMPARE(f.project.device(bass, onDrums).sidechain, std::optional<Sidechain>(Sidechain{track, kPreFader}));
+        QCOMPARE(f.project.device(bass, onSampler).sidechain, std::optional<Sidechain>(Sidechain{made[1], snareSampler}));
         f.stack.undo();
         QCOMPARE(f.project.tracks(), before);
         // A track's own Drum Rack only.
@@ -412,6 +415,27 @@ private Q_SLOTS:
         // Without a track to go after: last.
         const QString last = f.editor.padToTrack(track, snare);
         QCOMPARE(f.project.trackIndex(last), int(f.project.tracks().size()) - 1);
+    }
+
+    // A pad dropped into a group a device of which it keys: nothing feeds the
+    // pad's new track, so that closes no cycle; the sidechain goes along, and
+    // loading keeps it.
+    void aPadTrackKeysItsGroup() {
+        EditorFixture f;
+        const auto [track, rackId] = drums(f);
+        const QString snare = f.editor.loadDrumPad(track, rackId, 38, QStringLiteral("/s/Snare.wav"));
+        const QString other = f.editor.addAudioTrack();
+        const QString group = f.editor.groupTracks({other});
+        const QString keyed = f.editor.addDevice(group, QStringLiteral("utility"));
+        f.editor.setDeviceSidechain(group, keyed, Sidechain{track, kPostFader, snare});
+        const QString made = f.editor.padToTrack(track, snare, other);
+        QCOMPARE(f.track(made).parent, std::optional<QString>(group));
+        const std::optional<Sidechain> moved(Sidechain{made, kPostFader});
+        QCOMPARE(f.project.device(group, keyed).sidechain, moved);
+        QVERIFY(!f.project.sidechainWouldCycle(group, made));
+        Project loaded;
+        loadInto(loaded, projectToJson(f.project));
+        QCOMPARE(loaded.device(group, keyed).sidechain, moved);
     }
 };
 

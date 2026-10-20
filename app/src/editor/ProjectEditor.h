@@ -589,15 +589,16 @@ public:
     // its), with a MIDI track in it for each pad: the pad's devices, its fader,
     // its automation, and the notes of its key on the track's clips, at C3 (as
     // the pad's devices heard them); the track's MIDI effects play on each. A
-    // sidechain taken from a pad is taken from its track (as the pad's: Pre FX,
-    // Post FX, Post Mixer). Only a Drum Rack of the track's own chain (not in a
-    // rack). One undo step; the new tracks' ids (none if refused).
+    // sidechain taken from a pad (or after a device in it) is taken from its
+    // track (as the pad's: Pre FX, Post FX, Post Mixer; after the same device).
+    // Only a Drum Rack of the track's own chain (not in a rack). One undo step;
+    // the new tracks' ids (none if refused).
     Q_INVOKABLE QStringList separatePads(const QString& trackId, const QString& rackId);
     // One pad as a MIDI track of its own (as separatePads makes them), after
     // `afterTrackId` and what is in it, in its group (""): last, in no group):
     // the pad leaves the rack, and the notes of its key the track's clips; a
-    // sidechain taken from the pad, from the track. One undo step; the new
-    // track's id ("" if refused).
+    // sidechain taken from the pad (or after a device in it), from the track.
+    // One undo step; the new track's id ("" if refused).
     Q_INVOKABLE QString padToTrack(const QString& trackId, const QString& chainId, const QString& afterTrackId = {});
 
     // --- Grooves (EditorGrooves.cpp; model/Grooves.h) ---
@@ -985,8 +986,9 @@ private:
     bool pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
                              const QMap<DeviceParam, double>& old, const QString& text, const QString& mergeKey);
 
-    // The sidechains taken from pads of `trackId` now tracks of their own (pad -> its track) take theirs:
-    // that track's tap where the pad's was (its Pre FX, Post FX, Post Mixer).
+    // The sidechains taken from pads of `trackId` now tracks of their own (a pad, and each device in it ->
+    // the pad's track) take theirs: that track's tap where the pad's was (its Pre FX, Post FX, Post Mixer),
+    // or after the same device.
     void padSidechainsToTracks(const QString& trackId, const QHash<QString, QString>& padTracks, const QString& text);
     // Drum Racks' pads named after the samples these Samplers played (device,
     // its sample before) named after the ones they play now (EditorDrumRacks.cpp).
