@@ -16,6 +16,8 @@
 #                           library's own: the transforms alone
 #   vital_bench             the built-in Vital against Vital's VST3 plug-in,
 #                           the same notes held through each
+#   plugin_render           a WAV file through one effect offline (a plug-in
+#                           or a built-in), for comparing them: not a measure
 #   sound_similarity_bench  the sound similarity's fingerprints on a real sample
 #                           library: speed, and how often a one-shot's nearest
 #                           sounds are of its kind (the intelligence module alone)
@@ -66,6 +68,11 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     endif()
 endif()
 sub_project_warnings(fft_bench)
+
+# A WAV file through one effect offline: a plug-in or a built-in device (comparing them).
+add_executable(plugin_render plugin_render.cpp)
+target_link_libraries(plugin_render PRIVATE sub_engine)
+sub_project_warnings(plugin_render)
 
 # The built-in Vital against Vital's VST3 plug-in (the engine's VST3 host).
 add_executable(vital_bench vital_bench.cpp Json.h)

@@ -190,6 +190,7 @@ TEST_CASE("what effects are") {
     CHECK(classify(builtin("vintage_hall", "Vintage Hall")) == Effect::Reverb);
     CHECK(classify(builtin("hue", "Hue")) == Effect::PitchCorrection);
     CHECK(classify(builtin("gigatune", "GigaTune")) == Effect::PitchCorrection);
+    CHECK(classify(builtin("changeling", "Changeling")) == Effect::PitchShift);
     CHECK(classify(builtin("vocoder", "Vocoder")) == Effect::Vocoder);
     CHECK(classify(builtin("vocal_rider", "Vocal Rider")) == Effect::Rider);
     CHECK(classify(builtin("tape_stop", "Tape Stop")) == Effect::Glitch);

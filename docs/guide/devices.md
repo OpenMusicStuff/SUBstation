@@ -91,7 +91,8 @@ another track's part.
   while it monitors (armed, or *In*). A MIDI track with no instrument of its own can
   just feed such a device.
 - Built-in instruments (Synth, Sampler) and plug-ins with a MIDI (event) input have the
-  button; of the built-in effects, Hue (its notes from the chords played) has it too.
+  button; of the built-in effects, Hue (its notes from the chords played) and Changeling (the
+  note it sings or transposes by) have it too.
 - The notes reach the device when they play on the timeline: plug-in latency on the
   device's own track before it (delay compensation) doesn't delay them. A track's mute
   and solo don't stop its notes reaching a device elsewhere, and a frozen MIDI track
@@ -800,6 +801,77 @@ passes untouched, sample for sample.
   correction takes it, and the band in the middle glows green while the result is in tune.
   Along the bottom are the twelve notes, those the key and scale correct to lit and the
   one being corrected to glowing. Song's choices name the song's key once it is known.
+
+### Changeling
+
+A pitch and formant shifter for a single voice: turn a vocal up or down, make it bigger or
+smaller, snap it to notes, hold it on one, or mangle it. Its controls are Soundtoys' Little
+AlterBoy's, with Polyverse Manipulator's on a second page, and both were measured to make it:
+what each control does here is what it does there, set out below where Changeling differs.
+It moves the voice by cutting it into grains centred on its pulses and laying them a new
+period apart (PSOLA, as GigaTune does), so the voice keeps its timbre; with nothing to do the
+sound passes untouched, sample for sample.
+
+- **Mode**: **Transpose** moves the voice by Pitch, every note and slide as sung.
+  **Quantize** pulls each note onto the nearest note of Key and Scale (the vibrato gone),
+  then moves it by Pitch. **Robot** holds the voice on one note: C4 moved by Pitch.
+- **Pitch** (±24 semitones, in hundredths): up or down, the formants kept. In Robot it picks
+  the note, from C4.
+- **Formant** (±24 semitones): the formants moved, the pitch kept: down sounds bigger and
+  darker, up smaller and brighter. **Link** moves them with the pitch instead, as a tape sped
+  up or slowed down would (the chipmunk and the giant); Formant then moves them on from there.
+- **Glide** (1 ms to 1 s, 20 ms at first): how long the voice takes to reach a new note in
+  Quantize and Robot, or a new transposition. Little AlterBoy's Quantize moves in about
+  17 ms, its Robot in about 60.
+- **Key** and **Scale**: Quantize's notes, as GigaTune's (Song follows the song's key). At
+  first Chromatic: every semitone, as Little AlterBoy's Quantize.
+- **MIDI**: give it a MIDI track's notes (the **MIDI From** button in its title bar: see
+  [MIDI from another track](#midi-from-another-track)) and in Robot the voice sings the last
+  note played; in Transpose and Quantize the last note moves the voice by its distance from C4
+  (C5: an octave up). The note holds after you let go, as Little AlterBoy's does. Notes act
+  where they are played (Little AlterBoy's take effect 50 ms early, its latency).
+- **Drive** (0 to 10): Little AlterBoy's saturation, measured and fitted: its tone (a little
+  bass taken out, a lift from 5 kHz up), then a lopsided clipper whose gain rises 1.7 dB a step
+  while its ceiling falls, compressing past 6. At 0 there is none at all.
+- **Mix**: the voice as it was against the shifted voice, both as late as each other. **Output**:
+  the level out.
+- **Quality**: **Live** (21 ms of latency) for singing through; **Studio** (49 ms, about Little
+  AlterBoy's 51) hears each note from its start, so a note's first moments are shifted with the
+  rest; **High Quality** (about 316 ms) hears the pitch with SwiftF0, for mixing. Quality can't
+  be automated (it changes the latency: the device starts again).
+
+The **Mutate** page:
+
+- **Harmonics** (±4): Manipulator's harmonic shifter. The voice's harmonics move up or down by
+  that many of them while its pitch stays: up, the lowest ones are gone and the voice turns thin,
+  nasal, telephone-like; down, the spectrum folds back on itself. Between whole numbers it rings.
+- **Twin** and **Interval** (±24 semitones, an octave down at first): a second voice at Interval
+  from the first, read as a tape at that speed would play it, its formants moved with it (an
+  octave down is dark and huge, up small and quick). Twin is its level; together they are as loud
+  as the voice alone. Breaths and sibilants aren't doubled.
+- **Detune** (0 to 50 cents): the left side that many cents lower, the right higher: a doubled,
+  wide voice.
+- **Width**: every other grain of the voice to one side, the rest to the other. Each side
+  sounds rougher and an octave lower on its own; together they are the voice.
+- **Smear**: grains taken from up to 80 ms back, their timing moved at random: the voice blurs
+  and roughens, as if through a broken tape.
+
+Things to know:
+
+- Breaths, sibilants and noise pass through unshifted, as in both originals; Twin, Width and
+  Harmonics leave them alone too.
+- It follows one voice at a time, from C2 to C7 (wider than Little AlterBoy's or Manipulator's,
+  which lose a voice above about 600 Hz). On chords or a full mix it has no single pitch to follow.
+- Where it differs from Little AlterBoy on purpose: it keeps the level as the pitch moves (Little
+  AlterBoy loses 5 to 7 dB shifting down, Manipulator gains 3 dB an octave up), its 0 is the input
+  exactly (Little AlterBoy's is 2.4 dB quieter and slightly coloured), it goes ±24 semitones, and
+  its grains are centred on the voice's pulses, so an octave down is a clean octave (Little
+  AlterBoy's carries a ghost of the original pitch).
+- **The editor**: along the top the modes, Quantize's Key and Scale (dimmed in the other modes)
+  and the quality; down the left a display of the last 3 s: the pitch heard (grey), the pitch out
+  (bright), and in Quantize and Robot the note held, with the note out now and its cents in the
+  corner. The Shift page has Pitch and Formant, large, with Link between them, and Glide, Drive,
+  Mix and Output; the Mutate page the rest.
 
 ### Saturator
 
