@@ -26,7 +26,7 @@ import SUBstation
 // Its controls show the project, the bridge and the session, and call them:
 // Play's and Record's checked state follows the bridge, never the click; the
 // toggles show what the model has (a click asks it to change). Every display,
-// button and the scope are Theme.controlHeight (28 px) tall; none takes the
+// button and the scope are Theme.controlHeight (26 px) tall; none takes the
 // keyboard focus, so Space stays play/stop.
 Rectangle {
     id: bar
@@ -41,15 +41,16 @@ Rectangle {
     // The displays' type: values, the position's bigger digits, and the
     // captions under them (small capitals, spaced out).
     readonly property font valueFont: Qt.font({family: Theme.font.family, pointSize: 9, weight: Font.DemiBold})
-    readonly property font positionFont: Qt.font({family: Theme.font.family, pointSize: 11, weight: Font.DemiBold})
+    readonly property font positionFont: Qt.font({family: Theme.font.family, pointSize: 10.5,
+                                                  weight: Font.DemiBold})
     readonly property font captionFont: Qt.font({family: Theme.font.family, pointSize: 6.5, weight: Font.DemiBold,
                                                  letterSpacing: 0.7, capitalization: Font.AllUppercase})
     // A caption that is a reading, not a name ("48 kHz"): as it is written.
     readonly property font readingFont: Qt.font({family: Theme.font.family, pointSize: 6.5, weight: Font.DemiBold,
                                                  letterSpacing: 0.5})
     // A caption's line: its room along a display's bottom, and where its baseline is.
-    readonly property int captionRoom: 11
-    readonly property int captionBaseline: 23
+    readonly property int captionRoom: 10
+    readonly property int captionBaseline: 22
 
     // `color` at `opacity` (Qt 6.4's QML has no Qt.alpha()).
     function faded(color, opacity) {
@@ -57,7 +58,7 @@ Rectangle {
     }
 
     objectName: "transportBar"
-    implicitHeight: 40
+    implicitHeight: 34
     color: Theme.panel
 
     TransportState {
@@ -109,9 +110,9 @@ Rectangle {
 
     // The line between two fields of a display.
     component FieldLine: Rectangle {
-        y: 7
+        y: 6
         width: 1
-        height: Theme.controlHeight - 14
+        height: Theme.controlHeight - 12
         color: bar.faded(Theme.text, 0.09)
     }
 
@@ -253,7 +254,7 @@ Rectangle {
         property color fill: "transparent"
         readonly property bool fills: fill.a > 0
 
-        implicitWidth: 30
+        implicitWidth: 28
         implicitHeight: Theme.controlHeight
         role: "tool"
         checkable: false
@@ -277,7 +278,7 @@ Rectangle {
     Row {
         id: song
         x: 8
-        y: 5
+        y: 4
         spacing: 4
 
         Display {
@@ -426,7 +427,7 @@ Rectangle {
             ChoiceBox {
                 id: countIn
                 objectName: "countIn"
-                width: 15
+                width: 14
                 height: Theme.controlHeight
                 leftPadding: 0
                 rightPadding: 0
@@ -489,7 +490,7 @@ Rectangle {
             const most = controls.x - 16 - width
             return Math.round(Math.max(least, Math.min(middle, most)))
         }
-        y: 5
+        y: 4
         spacing: 6
 
         Display {
@@ -531,7 +532,7 @@ Rectangle {
 
             BarSwitch {
                 objectName: "play"
-                implicitWidth: 34
+                implicitWidth: 32
                 fill: Theme.playOn
                 iconName: "play"
                 tooltip: qsTr("Play / Stop (Space)")
@@ -540,14 +541,14 @@ Rectangle {
             }
             BarSwitch {
                 objectName: "stop"
-                implicitWidth: 34
+                implicitWidth: 32
                 iconName: "stop"
                 tooltip: qsTr("Stop (press again to return to the start)")
                 onClicked: Session.stop()
             }
             BarSwitch {
                 objectName: "record"
-                implicitWidth: 34
+                implicitWidth: 32
                 fill: Theme.recordOn
                 iconName: "record"
                 tooltip: qsTr("Arrangement Record (F9): records the armed tracks")
@@ -581,7 +582,7 @@ Rectangle {
     Row {
         id: controls
         x: bar.width - 8 - width
-        y: 5
+        y: 4
         spacing: 4
 
         Segments {

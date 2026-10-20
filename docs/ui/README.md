@@ -375,7 +375,7 @@ piano roll's (`keyWhite`, `blackKeyRow`, `outsideClip`, ...) and the controls' (
 ...). Fonts: `uiFont(pt, bold)`
 (Segoe UI, 9 pt by default), `monoFont(pt)` (Consolas), and for QML `Theme.font`, `Theme.smallFont` (8 pt, the
 buttons with a role), `Theme.listFont` (10 pt: the browser's lists, as Qt Quick draws small text smaller than the
-widgets did at the same size) and `Theme.listHeadingFont` (8.5 pt bold, the sidebar's headings), `Theme.uiFont()`. Metrics: `radius` (3), `controlHeight` (28, the transport bar's displays and
+widgets did at the same size) and `Theme.listHeadingFont` (8.5 pt bold, the sidebar's headings), `Theme.uiFont()`. Metrics: `radius` (3), `controlHeight` (26, the transport bar's displays and
 buttons), `scrollBarWidth` (12), `iconSize` (14). `setUpApplication()` applies the font, the theme last chosen and
 a palette from its colours.
 
@@ -472,8 +472,8 @@ it.
 
 ## Transport bar
 
-[TransportBar.qml](../../ui/qml/transport/TransportBar.qml), 40 px high, every display, button and the scope
-`Theme.controlHeight` (28 px) tall; nothing in it takes the keyboard focus. What needs working out is
+[TransportBar.qml](../../ui/qml/transport/TransportBar.qml), 34 px high, every display, button and the scope
+`Theme.controlHeight` (26 px) tall; nothing in it takes the keyboard focus. What needs working out is
 [TransportState](../../ui/src/mainwindow/TransportState.h)'s. Three groups: the song on the left, the transport in the
 middle of the window (or as near it as the groups either side leave room for: it moves aside rather than over them,
 16 px clear, and where even that leaves too little room the scope goes), and the view and the machine on the right.
@@ -483,10 +483,10 @@ Two kinds of thing, each with one look:
 - **Displays** (`Display`): wells in `Theme.display` with a `border` line and 3 px corners, shaded along the top
   inside, their fields side by side with a faint line between two (`FieldLine`). A field is a value (`valueFont`:
   Inter 9 pt, DemiBold) over its caption (`captionFont`: 6.5 pt capitals, spaced out, in `textDim`, its baseline
-  23 px down), the value centred above the caption's 11 px (`captionRoom`), as Logic's and Studio One's displays
-  are. Numbers that drag are `ValueBox`es drawn `bare` with that `bottomPadding` (`FieldBox`); what can be clicked
-  or changed in a display is tinted under the mouse.
-- **Buttons** (`BarSwitch`: a `ToggleButton` with a `Face` of its own), 30 × 28 (Play, Stop and Record 34): raised
+  22 px down), the value centred above the caption's 10 px (`captionRoom`), 3 px over the value, between the two
+  and under the caption, as Logic's and Studio One's displays are. Numbers that drag are `ValueBox`es drawn `bare`
+  with that `bottomPadding` (`FieldBox`); what can be clicked or changed in a display is tinted under the mouse.
+- **Buttons** (`BarSwitch`: a `ToggleButton` with a `Face` of its own), 28 × 26 (Play, Stop and Record 32): raised
   (`surface`, a 5 % white line along the top), `surfaceHover` under the mouse, `panel` pressed. Those that belong
   together sit side by side with one border between them (`Segments`). A switch that is on lights its icon in the
   accent over a 14 % wash of it, as Bitwig's; Play, Record and Re-Enable Automation `fill` instead, with `playOn`,
@@ -510,12 +510,12 @@ Left to right:
   note A plays). **Constrain Delay Compensation** → `bridge.constrainLatency`.
 - **Position**: `TransportState.positionText` ("  1. 1. 1", bar right-aligned in three places), changed from the
   bridge's `positionChanged` only when the text changes; shown as its three parts over *Bar*, *Beat* and *16th*,
-  in `positionFont` (11 pt), each digit in a place as wide as the widest (a `TextMetrics` of "0"), so the numbers
+  in `positionFont` (10.5 pt), each digit in a place as wide as the widest (a `TextMetrics` of "0"), so the numbers
   hold still as they count.
 - **Play**, **Stop**, **Record** → `Session.togglePlay()`, `stop()`, `toggleRecord()`; Play's and Record's lit state
   is the bridge's `playing` and `recording`.
 - **Re-Enable Automation**: enabled and lit while `Session.automationOverridden` → `bridge.reEnableAutomation()`.
-- **Oscilloscope** (150 × 28, fed by `Session.bridge`: [above](#the-oscilloscope)).
+- **Oscilloscope** (150 × 26, fed by `Session.bridge`: [above](#the-oscilloscope)).
 - **Punch In**, **Loop**, **Punch Out** → `editor.setPunchIn`, `setLoopEnabled`, `setPunchOut`. **Follow** → the
   arrangement view's `follow`. (Lock Envelopes is in the arrangement's corner, as Ableton's.)
 - **The machine's display.** **CPU**: `TransportState.cpuLoad` in percent (red past 85 %), read from `bridge.cpuLoad`

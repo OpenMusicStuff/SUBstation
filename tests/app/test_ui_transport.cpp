@@ -82,14 +82,14 @@ private Q_SLOTS:
         QVERIFY(warnings.isEmpty());
     }
 
-    // As the Python UI laid it out: 40 px, every control 28 px, PANEL with a BORDER line below.
+    // Compact: 34 px, every display and button 26 px, PANEL with a BORDER line below.
     void layout() {
-        QCOMPARE(bar_->height(), 40.0);
+        QCOMPARE(bar_->height(), 34.0);
         for (const char* name : {"tempo", "numerator", "denominator", "metronome", "key", "computerKeys", "position",
                                  "play", "stop", "record", "countIn", "reEnable", "scope", "punchIn", "loop",
                                  "punchOut", "follow"}) {
             QVERIFY2(item(name), name);
-            QCOMPARE(item(name)->height(), 28.0);
+            QCOMPARE(item(name)->height(), 26.0);
         }
         auto left = [&](const char* name) { return item(name)->mapToScene(QPointF(0, 0)).x(); };
         QVERIFY(left("tempo") < left("numerator") && left("numerator") < left("metronome"));
@@ -110,7 +110,7 @@ private Q_SLOTS:
         QCOMPARE(text("position"), QStringLiteral("  1. 1. 1"));
         QCOMPARE(text("cpu"), QStringLiteral("CPU 0%"));
         QCOMPARE(text("device"), QStringLiteral("No audio device"));
-        test::screenshot(window_, QStringLiteral("transport-bar"), QRect(0, 0, window_->width(), 40));
+        test::screenshot(window_, QStringLiteral("transport-bar"), QRect(0, 0, window_->width(), 34));
     }
 
     // In a narrow window the transport moves aside, never over the groups either

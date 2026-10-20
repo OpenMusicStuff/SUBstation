@@ -129,7 +129,7 @@ public:
     static constexpr const char* kUiFontFamily = "Inter";  // bundled (ui/fonts), loaded by uiFont()
     static constexpr const char* kMonoFontFamily = "Consolas";  // MONO_FONT
     static constexpr int kRadius = 3;
-    static constexpr int kControlHeight = 28;
+    static constexpr int kControlHeight = 26;
     static constexpr int kScrollBarWidth = 12;
     static constexpr int kIconSize = 14;
     static constexpr const char* kSettingsKey = "ui/theme";  // the theme's name in QSettings
