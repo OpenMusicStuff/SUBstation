@@ -94,7 +94,8 @@ What SUBstation doesn't do yet, by area.
   setting for how weak a transient is still marked.
 - Warp markers are edited one clip at a time, and there is no zooming into the clip
   view's waveform to place them closer than the whole file at its width allows.
-- Streaming long files from disk: sources are decoded into memory.
+- Streaming long files from disk is off by default (Preferences › Audio: *Disk Streaming*), and reads with one
+  thread a read in flight rather than the systems' asynchronous queues (IoRing, `io_uring`).
 
 ## Audio devices
 

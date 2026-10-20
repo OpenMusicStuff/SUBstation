@@ -86,7 +86,7 @@ UI shows of the engine comes as application-layer types:
 
 | Type | What it is |
 |---|---|
-| `Waveform` | a decoded file as the UI draws it: a handle on the engine's immutable `AudioSource` (frames, channels, sample rate, samples, min/max peaks at a few levels of detail), safe to keep and read from any thread, including the render thread |
+| `Waveform` | a decoded file as the UI draws it: a handle on the engine's immutable `AudioSource` (frames, channels, sample rate, samples, min/max peaks at a few levels of detail), safe to keep and read from any thread, including the render thread. A long file streamed from disk ([Streaming](#streaming)) has its peaks in memory but not its samples: `channelData()` is null, and `read()` and `samples()` read them from disk, waiting for it (the waveform at sample level, the Sampler's slices, audio analysis and reversing read so) |
 | `LiveTake`, `LiveNote` | a take while it records: an audio take's peaks, or a MIDI take's notes so far |
 | `MeterLevel`, `AudioFileInfo`, `AudioDeviceStatus`, `AudioDeviceCaps`, `AudioDeviceEntry` | meter readings, a file's header, the device running and what it offers (Q_GADGETs, so QML reads them as values) |
 | `ProcessorParam`, `ProcessorDisplay`, `ParamGroup` | a processor's parameters as a device's editor shows them (with the engine's normalized mapping), the streams its own editor draws (meters, curves), and an owner's automatable parameters as `ParamSpec`s |
@@ -568,6 +568,28 @@ them). So the bridge hands the engine its source again (`Engine::cacheSource`) w
 when a file it has is asked for: their clips play once they do, in whichever project is open by then. See
 [engine/warp.md](../engine/warp.md).
 
+## Streaming
+
+Long files may stream from disk instead of being decoded into memory ([engine/streaming.md](../engine/streaming.md)),
+as Preferences › Audio's *Disk Streaming* says ([BridgeStreaming.cpp](../../app/src/audio/BridgeStreaming.cpp)):
+
+- **The settings** are `StreamingPreferences` ([AudioSettings.h](../../app/src/audio/AudioSettings.h): on or off,
+  the threshold, the memory, the cache folder and its size, the reads at once), saved under `audio/stream*`
+  ([Settings storage](#settings-storage)). `startAudio()` applies them (`applyStreaming()`: `Engine::setStreaming()`).
+  The bridge's properties (`streaming`, `streamThreshold`, `streamMemory`, `streamCacheFolder` (empty: the default,
+  `defaultStreamCacheFolder`), `streamCacheSize`, `streamDiskThreads`) read the engine's and save and apply a
+  change at once (`streamingChanged`). When what streams changes (on, off, the threshold), every file in use is
+  fetched again (`refreshSources()`): each comes back kept as the settings now say, its clips playing the old one
+  meanwhile.
+- **Decoding** goes on as before ([Async decoding](#async-decoding)): `Engine::decodeSource()` opens a long file to
+  stream instead, on the decoding pool, making its cache file and peak file first if it needs them (an MP3, a FLAC,
+  another rate: decoded once).
+- **The disk late**: `pollStreams()` takes what each streamed file missed (`Engine::takeStreamMisses()`: frames the
+  disk came late for, played as silence; misses right after the playhead was dragged aren't counted). It counts
+  them (`diskLate`, `diskLateMs`, `diskLateChanged`: the transport bar's *Disk late N×*), says in the status line how
+  much of which file played as silence (at most every 2 s), and that a file can't be read any more (gone or cut
+  short: the File Manager lists it as missing when it next looks).
+
 ## Polling
 
 What the UI shows moving is polled every display tick: `setDisplayInterval(ms)` (the session's `DisplayPreferences`:
@@ -586,7 +608,8 @@ the lower of the rate chosen in Preferences › Look and Feel and the screen's, 
   1. `pollLatencies`: `latenciesChanged` if a track's or the output's changed.
   2. `pollPlugins()`: `Engine::idle()` (the engine's GUI-thread housekeeping: freeing retired snapshots, destroying
      removed plug-ins a few at a time, plug-ins' main-thread work) and, unless busy, the plug-ins' reports.
-  3. Unless busy, `pollDevice` (not while a render runs in the background).
+  3. `pollStreams`: what streamed files missed ([Streaming](#streaming)).
+  4. Unless busy, `pollDevice` (not while a render runs in the background).
 
 None of these wait for a render in the background (`Engine::isRendering`): it renders without the engine's lock.
 
@@ -658,6 +681,12 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 | `audio/output_channels` | `"2,3"`: the pair the master plays on; empty: the first two | |
 | `audio/input_channels` | inputs to open (ASIO, PipeWire); none until something records | |
 | `audio/threads` | render threads; 0: the engine's default (one per core but one) | `audioThreads()` |
+| `audio/streaming` | stream long files from disk (`"true"` / `"false"`; off by default) | `StreamingPreferences` |
+| `audio/stream_threshold_s` | files at least this long stream; default 30 | |
+| `audio/stream_memory_mb` | the memory streaming's pages may take; default 256 | |
+| `audio/stream_cache_folder` | where cache and peak files go; empty: the user's cache folder's `SUBstation/Streaming` | |
+| `audio/stream_cache_gb` | what they may take there; default 20 | |
+| `audio/stream_disk_threads` | reads at once; default 2 | |
 | `midi/disabled_inputs` | MIDI inputs turned off (every other input is used, so a new one just plays) | `disabledMidiInputs()` |
 | `record/quantize` | record quantization grid in beats; 0: as played (`recordQuantizeChoices()` lists the choices) | `recordQuantize()` |
 | `record/quantize_ends` | record quantization puts notes' ends on the grid too (off by default) | `recordQuantizeEnds()` |

@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 #include "MiniaudioFiles.h"
+#include "StreamCache.h"
 
 namespace sub {
 namespace {
@@ -53,61 +54,95 @@ AudioFileInfo AudioSource::probe(const std::string& utf8Path) {
     return info;
 }
 
-std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint32_t sampleRate) {
+void AudioSource::decode(const std::string& utf8Path, uint32_t sampleRate,
+                         const std::function<void(const DecodeFormat&)>& begin,
+                         const std::function<void(const float*, int64_t)>& take) {
     if (sampleRate == 0) throw std::invalid_argument("sample rate must be positive");
 
-    uint32_t nativeChannels = 0;
-    uint32_t nativeRate = 0;
+    DecodeFormat format;
+    ma_format nativeFormat = ma_format_unknown;
     {
-        const ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
+        const ma_decoder_config config = ma_decoder_config_init(ma_format_unknown, 0, 0);
         Decoder probe(utf8Path, config);
-        nativeChannels = probe.get()->outputChannels;
-        nativeRate = probe.get()->outputSampleRate;
+        format.fileChannels = probe.get()->outputChannels;
+        format.fileRate = probe.get()->outputSampleRate;
+        nativeFormat = probe.get()->outputFormat;
     }
-    const uint32_t channels = nativeChannels >= 2 ? 2 : 1;
+    format.channels = format.fileChannels >= 2 ? 2 : 1;
+    // Neither resampled nor mixed down: the samples are the file's integers, scaled.
+    if (format.fileRate == sampleRate && format.fileChannels <= 2) {
+        if (nativeFormat == ma_format_s16) format.integerBits = 16;
+        if (nativeFormat == ma_format_s24 || nativeFormat == ma_format_s32) format.integerBits = 24;
+    }
 
-    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, channels, sampleRate);
+    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, format.channels, sampleRate);
     config.resampling.linear.lpfOrder = MA_MAX_FILTER_ORDER;
     Decoder decoder(utf8Path, config);
 
     ma_uint64 expected = 0;
     ma_decoder_get_length_in_pcm_frames(decoder.get(), &expected);
-
-    std::vector<std::vector<float>> planar(channels);
-    for (auto& ch : planar) ch.reserve(static_cast<size_t>(expected));
+    format.expectedFrames = static_cast<int64_t>(expected);
+    begin(format);
 
     constexpr ma_uint64 kChunk = 16384;
-    std::vector<float> interleaved(kChunk * channels);
+    std::vector<float> interleaved(kChunk * format.channels);
     for (;;) {
         ma_uint64 read = 0;
         const ma_result result = ma_decoder_read_pcm_frames(decoder.get(), interleaved.data(), kChunk, &read);
-        for (uint32_t c = 0; c < channels; ++c) {
-            auto& out = planar[c];
-            const size_t base = out.size();
-            out.resize(base + static_cast<size_t>(read));
-            for (ma_uint64 i = 0; i < read; ++i) out[base + i] = interleaved[i * channels + c];
-        }
+        if (read > 0) take(interleaved.data(), static_cast<int64_t>(read));
         if (read < kChunk || result != MA_SUCCESS) break;
     }
+}
 
+std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint32_t sampleRate) {
     auto source = std::shared_ptr<AudioSource>(new AudioSource());
+    std::vector<float>& data = source->data_;
+    // Decoded in place: each channel straight into its part of the planar
+    // buffer, made as long as the decoder expects (longer if it was wrong).
+    uint32_t channels = 1;
+    int64_t capacity = 0;  // frames each channel has room for
+    int64_t frames = 0;
+    const auto grow = [&](int64_t needed) {
+        const int64_t room = std::max<int64_t>(needed, capacity > 0 ? capacity * 2 : int64_t{1} << 18);
+        std::vector<float> larger(static_cast<size_t>(room) * channels);
+        for (uint32_t c = 0; c < channels; ++c) {
+            const auto from = data.begin() + static_cast<ptrdiff_t>(c * static_cast<size_t>(capacity));
+            std::copy(from, from + frames, larger.begin() + static_cast<ptrdiff_t>(c * static_cast<size_t>(room)));
+        }
+        data = std::move(larger);
+        capacity = room;
+    };
+    decode(
+        utf8Path, sampleRate,
+        [&](const DecodeFormat& format) {
+            channels = format.channels;
+            source->fileSampleRate_ = format.fileRate;
+            if (format.expectedFrames > 0) grow(format.expectedFrames);
+        },
+        [&](const float* interleaved, int64_t read) {
+            if (frames + read > capacity) grow(frames + read);
+            for (uint32_t c = 0; c < channels; ++c) {
+                float* out = data.data() + static_cast<size_t>(c) * static_cast<size_t>(capacity) + frames;
+                for (int64_t i = 0; i < read; ++i) out[i] = interleaved[i * channels + c];
+            }
+            frames += read;
+        });
+    if (frames == 0) throw std::runtime_error("Audio file '" + utf8Path + "' contains no audio");
+    if (channels > 1 && capacity != frames) {  // the second channel down to where it belongs (no overlap: frames < capacity)
+        std::copy(data.begin() + capacity, data.begin() + capacity + frames, data.begin() + frames);
+    }
+    data.resize(static_cast<size_t>(frames) * channels);
+
     source->path_ = utf8Path;
     source->channels_ = channels;
     source->sampleRate_ = sampleRate;
-    source->fileSampleRate_ = nativeRate;
-    source->frames_ = static_cast<int64_t>(planar[0].size());
-    if (source->frames_ == 0) throw std::runtime_error("Audio file '" + utf8Path + "' contains no audio");
-
-    source->data_.resize(static_cast<size_t>(source->frames_) * channels);
-    for (uint32_t c = 0; c < channels; ++c) {
-        std::copy(planar[c].begin(), planar[c].end(), source->data_.begin() + static_cast<size_t>(c) * source->frames_);
-    }
+    source->frames_ = frames;
     source->buildPeaks();
     return source;
 }
 
 std::shared_ptr<AudioSource> AudioSource::fromSamples(const std::string& utf8Path, uint32_t sampleRate,
-                                                      uint32_t channels, std::vector<float> planar) {
+                                                      uint32_t channels, std::vector<float> planar, bool peaks) {
     if (sampleRate == 0) throw std::invalid_argument("sample rate must be positive");
     if (channels < 1 || channels > 2) throw std::invalid_argument("one or two channels");
     auto source = std::shared_ptr<AudioSource>(new AudioSource());
@@ -119,8 +154,44 @@ std::shared_ptr<AudioSource> AudioSource::fromSamples(const std::string& utf8Pat
     if (source->frames_ == 0) throw std::runtime_error("Audio file '" + utf8Path + "' contains no audio");
     planar.resize(static_cast<size_t>(source->frames_) * channels);
     source->data_ = std::move(planar);
-    source->buildPeaks();
+    if (peaks) {
+        source->buildPeaks();
+    } else {
+        source->peaks_.assign(kNumPeakLevels, {});
+    }
     return source;
+}
+
+std::shared_ptr<AudioSource> AudioSource::streamed(const std::string& utf8Path, uint32_t sampleRate, uint32_t fileRate,
+                                                   std::shared_ptr<StreamedAudio> stream,
+                                                   std::vector<std::vector<float>> peaks) {
+    if (!stream) throw std::invalid_argument("no stream");
+    auto source = std::shared_ptr<AudioSource>(new AudioSource());
+    source->path_ = utf8Path;
+    source->channels_ = stream->channels();
+    source->sampleRate_ = sampleRate;
+    source->fileSampleRate_ = fileRate;
+    source->frames_ = stream->frames();
+    if (source->frames_ == 0) throw std::runtime_error("Audio file '" + utf8Path + "' contains no audio");
+    source->stream_ = std::move(stream);
+    peaks.resize(kNumPeakLevels);
+    source->peaks_ = std::move(peaks);
+    return source;
+}
+
+bool AudioSource::read(uint32_t channel, int64_t start, int64_t count, float* out) const {
+    if (count <= 0) return true;
+    if (channel >= channels_) {
+        std::fill_n(out, count, 0.f);
+        return true;
+    }
+    if (stream_) return stream_->read(channel, start, count, out);
+    const float* samples = channelData(channel);
+    for (int64_t i = 0; i < count; ++i) {
+        const int64_t k = start + i;
+        out[i] = k >= 0 && k < frames_ ? samples[k] : 0.f;
+    }
+    return true;
 }
 
 int AudioSource::samplesPerPeak(int level) { return kBaseSamplesPerPeak << (2 * level); }
@@ -134,6 +205,35 @@ const float* AudioSource::peaks(int level) const {
     if (level < 0 || level >= kNumPeakLevels) return nullptr;
     return peaks_[level].data();
 }
+
+namespace {
+
+// Each coarser level combines four peaks of the one below.
+void coarserLevels(std::vector<std::vector<float>>& peaks, uint32_t channels) {
+    for (int level = 1; level < AudioSource::kNumPeakLevels; ++level) {
+        const auto& prev = peaks[level - 1];
+        const int64_t prevCount = static_cast<int64_t>(prev.size() / (static_cast<size_t>(channels) * 2));
+        const int64_t count = (prevCount + 3) / 4;
+        auto& cur = peaks[level];
+        cur.resize(static_cast<size_t>(count) * channels * 2);
+        for (int64_t p = 0; p < count; ++p) {
+            for (uint32_t c = 0; c < channels; ++c) {
+                float lo = std::numeric_limits<float>::max();
+                float hi = std::numeric_limits<float>::lowest();
+                for (int64_t q = p * 4; q < std::min(prevCount, p * 4 + 4); ++q) {
+                    const size_t at = (static_cast<size_t>(q) * channels + c) * 2;
+                    lo = std::min(lo, prev[at]);
+                    hi = std::max(hi, prev[at + 1]);
+                }
+                const size_t at = (static_cast<size_t>(p) * channels + c) * 2;
+                cur[at] = lo;
+                cur[at + 1] = hi;
+            }
+        }
+    }
+}
+
+}  // namespace
 
 void AudioSource::buildPeaks() {
     peaks_.assign(kNumPeakLevels, {});
@@ -157,28 +257,56 @@ void AudioSource::buildPeaks() {
             level0[at + 1] = hi;
         }
     }
-    // Each coarser level combines four peaks of the previous one.
-    for (int level = 1; level < kNumPeakLevels; ++level) {
-        const auto& prev = peaks_[level - 1];
-        const int64_t prevCount = static_cast<int64_t>(prev.size() / (static_cast<size_t>(channels_) * 2));
-        const int64_t count = (prevCount + 3) / 4;
-        auto& cur = peaks_[level];
-        cur.resize(static_cast<size_t>(count) * channels_ * 2);
-        for (int64_t p = 0; p < count; ++p) {
+    coarserLevels(peaks_, channels_);
+}
+
+// ---------------------------------------------------------------------------
+// PeakBuilder
+
+PeakBuilder::PeakBuilder(uint32_t channels) : channels_(std::max<uint32_t>(channels, 1)), current_(channels_ * 2) {}
+
+void PeakBuilder::add(const float* interleaved, int64_t frames) {
+    constexpr int64_t spp = AudioSource::kBaseSamplesPerPeak;
+    for (int64_t i = 0; i < frames; ++i) {
+        if (inPeak_ == 0) {
             for (uint32_t c = 0; c < channels_; ++c) {
-                float lo = std::numeric_limits<float>::max();
-                float hi = std::numeric_limits<float>::lowest();
-                for (int64_t q = p * 4; q < std::min(prevCount, p * 4 + 4); ++q) {
-                    const size_t at = (static_cast<size_t>(q) * channels_ + c) * 2;
-                    lo = std::min(lo, prev[at]);
-                    hi = std::max(hi, prev[at + 1]);
-                }
-                const size_t at = (static_cast<size_t>(p) * channels_ + c) * 2;
-                cur[at] = lo;
-                cur[at + 1] = hi;
+                current_[c * 2] = std::numeric_limits<float>::max();
+                current_[c * 2 + 1] = std::numeric_limits<float>::lowest();
             }
         }
+        for (uint32_t c = 0; c < channels_; ++c) {
+            const float v = interleaved[i * channels_ + c];
+            current_[c * 2] = std::min(current_[c * 2], v);
+            current_[c * 2 + 1] = std::max(current_[c * 2 + 1], v);
+        }
+        if (++inPeak_ == spp) {
+            level0_.insert(level0_.end(), current_.begin(), current_.end());
+            inPeak_ = 0;
+        }
     }
+}
+
+void PeakBuilder::addPlanar(const float* const* channels, int64_t frames) {
+    constexpr int64_t kChunk = 1024;
+    float interleaved[kChunk * 2];
+    for (int64_t at = 0; at < frames; at += kChunk) {
+        const int64_t n = std::min(kChunk, frames - at);
+        for (int64_t i = 0; i < n; ++i)
+            for (uint32_t c = 0; c < channels_; ++c) interleaved[i * channels_ + c] = channels[c][at + i];
+        add(interleaved, n);
+    }
+}
+
+std::vector<std::vector<float>> PeakBuilder::finish() {
+    if (inPeak_ > 0) {
+        level0_.insert(level0_.end(), current_.begin(), current_.end());
+        inPeak_ = 0;
+    }
+    std::vector<std::vector<float>> peaks(AudioSource::kNumPeakLevels);
+    peaks[0] = std::move(level0_);
+    level0_.clear();
+    coarserLevels(peaks, channels_);
+    return peaks;
 }
 
 }  // namespace sub

@@ -5,29 +5,12 @@
 #include <cmath>
 #include <utility>
 
+#include "SourceCursor.h"
+#include "StreamScheduler.h"
 #include "Ump.h"
 #include "WarpCache.h"
 
 namespace sub {
-
-namespace {
-
-// Calls f(clip, from, to) for each clip that plays in [segStart, segEnd), in
-// order, with the part of the segment it covers.
-template <typename F>
-void forEachClip(const TrackRender& track, int64_t segStart, int64_t segEnd, F&& f) {
-    // Clips are sorted by start; no clip starting before this bound can reach the segment.
-    const int64_t earliest = segStart - track.maxClipLength;
-    auto it = std::lower_bound(track.clips.begin(), track.clips.end(), earliest,
-                               [](const ClipRender& clip, int64_t value) { return clip.start < value; });
-    for (; it != track.clips.end() && it->start < segEnd; ++it) {
-        const int64_t from = std::max(segStart, it->start);
-        const int64_t to = std::min(segEnd, it->start + it->length);
-        if (from < to) f(*it, from, to);
-    }
-}
-
-}  // namespace
 
 void Renderer::prepare(double sampleRate) {
     sampleRate_ = sampleRate;
@@ -38,6 +21,7 @@ void Renderer::prepare(double sampleRate) {
     setScheduler(scheduler_);
     recordScratch_.assign(2 * kMaxBlock, 0.f);
     countIn_ = countInTotal_ = 0;
+    preRollLeft_ = jumpGraceLeft_ = 0;
     metronome_.prepare(sampleRate);
     previewSource_ = nullptr;
     // Processors are prepared (silenced) along with the renderer.
@@ -70,6 +54,7 @@ void Renderer::setScheduler(Scheduler* scheduler) {
                              &scratch.keyLeft, &scratch.keyRight}) {
             buffer->assign(kMaxBlock, 0.f);
         }
+        scratch.span.assign(2 * kResampleSpan, 0.f);
         scratch.switchStates.assign(kMaxBlock + kMaxSwitchFade, 0.f);
         for (WorkerScratch::Switch& device : scratch.switches) {
             for (auto* buffer : {&device.gain, &device.dryLeft, &device.dryRight}) buffer->assign(kMaxBlock, 0.f);
@@ -133,6 +118,7 @@ void Renderer::applyCommand(const TransportCommand& command) noexcept {
     switch (command.type) {
         case TransportCommand::Type::Play:
             chasePending_ = chasePending_ || !playing_;  // (live playback only: offline renders start clean)
+            if (!playing_) preRollLeft_ = std::llround(kPreRollSeconds * sampleRate_);
             if (!playing_ && command.countInBeats > 0.0 && tempoSnap_) {
                 // At the tempo and in the time signature where playback starts.
                 const RenderSnapshot& snap = *tempoSnap_;
@@ -148,6 +134,7 @@ void Renderer::applyCommand(const TransportCommand& command) noexcept {
         case TransportCommand::Type::Stop:
             playing_ = false;
             countIn_ = 0;
+            preRollLeft_ = 0;
             break;
         case TransportCommand::Type::Locate:
             if (tempoSnap_) setPosition(tempoSnap_->sampleAt(std::max(0.0, command.beat)));
@@ -326,6 +313,7 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
             scheduleCountIn(snap, done);
             countIn_ -= done;
         }
+        if (done < frames && waitsForStreams(snap, flags, frames - done)) done = frames;  // (the playhead waits)
         bool chase = chasePending_ && done < frames;
         if (done < frames) chasePending_ = false;
         // (Recording wraps with the loop too: its takes run on in recording time, recordInput().)
@@ -344,6 +332,8 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
             const bool jump = position_ != expectedPosition_;
             const bool wrap = jump && wrapNext_ && loop && position_ == snap.loopStart;
             if (jump) looped_ = wrap;
+            // Dragged while playing: the disk catches up with the playhead's new place.
+            if (jump && !wrap && !chase) jumpGraceLeft_ = std::llround(kJumpGrace * sampleRate_);
             segments_[numSegments_++] = {position_, length, done, jump, chase, wrap, expectedPosition_, position_};
             chase = false;
             if (flags.metronome) scheduleTicks(snap, position_, length, done);
@@ -361,6 +351,9 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         looped_ = false;
     }
     rememberBeats();  // (where the playhead goes on from, in beats)
+    // Streamed sources: offline renders wait for the disk; live ones never do.
+    chunkReads_ = {!flags.live, jumpGraceLeft_ > 0};
+    jumpGraceLeft_ = std::max<int64_t>(0, jumpGraceLeft_ - frames);
 
     ProcessContext& context = chunkContext_;
     context = {};
@@ -496,6 +489,16 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     }
     metronome_.renderUntil(masterL, masterR, cursor, frames);
     outputTime_ += frames;
+}
+
+bool Renderer::waitsForStreams(const RenderSnapshot& snap, ChunkFlags flags, int frames) noexcept {
+    if (preRollLeft_ <= 0) return false;
+    if (!flags.live || streamsReady(snap, position_, std::llround(kPreRollWindow * snap.sampleRate))) {
+        preRollLeft_ = 0;
+        return false;
+    }
+    preRollLeft_ -= frames;
+    return preRollLeft_ > 0;  // (waited long enough: on anyway, missing what isn't there yet)
 }
 
 void Renderer::renderNode(void* self, int node, int worker) noexcept {
@@ -1946,15 +1949,27 @@ void Renderer::renderClips(const TrackRender& track, const Segment& segment, con
         const float* srcL = nullptr;
         const float* srcR = nullptr;
         int64_t srcBase = from;  // index into srcL/srcR of timeline sample t is t - srcBase
+        const int frames = static_cast<int>(to - from);
+        // A streamed source's frames (or a streamed render's), fetched through its cursor into the scratch.
+        const auto fetched = [&](const AudioSource& source, int64_t first) {
+            SourceCursor(source).fetch(first, frames, scratch.warpLeft.data(), scratch.warpRight.data(), chunkReads_);
+            srcL = scratch.warpLeft.data();
+            srcR = scratch.warpRight.data();
+            srcBase = from;
+        };
         switch (clip.playback) {
             case ClipRender::Playback::Direct:
+                if (!clip.source->resident()) {
+                    fetched(*clip.source, clip.sourceOffset + (from - clip.start));
+                    break;
+                }
                 srcL = clip.source->stereoChannel(0);
                 srcR = clip.source->stereoChannel(1);
                 srcBase = clip.start - clip.sourceOffset;
                 break;
             case ClipRender::Playback::Resample:
-                renderResampled(clip, from, static_cast<int>(to - from), scratch.warpLeft.data(),
-                                scratch.warpRight.data());
+                renderResampled(clip, from, frames, scratch.warpLeft.data(), scratch.warpRight.data(), scratch.span.data(),
+                                chunkReads_);
                 srcL = scratch.warpLeft.data();
                 srcR = scratch.warpRight.data();
                 break;
@@ -1964,14 +1979,18 @@ void Renderer::renderClips(const TrackRender& track, const Segment& segment, con
                 }
                 const TrackBuffers::ClipVoice& slot = buffers.voices[static_cast<size_t>(nextVoice++)];
                 if (slot.rendered) {  // read in place, as a clip played as it is
+                    if (!slot.rendered->left()) {
+                        fetched(*slot.rendered->audio(), from - clip.start);
+                        break;
+                    }
                     srcL = slot.rendered->left();
                     srcR = slot.rendered->right();
                     srcBase = clip.start;
                     break;
                 }
                 if (!slot.voice) return;
-                slot.voice->render(clip, from, static_cast<int>(to - from), slot.continuing, scratch.warpLeft.data(),
-                                   scratch.warpRight.data());
+                slot.voice->render(clip, from, frames, slot.continuing, scratch.warpLeft.data(), scratch.warpRight.data(),
+                                   chunkReads_);
                 srcL = scratch.warpLeft.data();
                 srcR = scratch.warpRight.data();
                 break;
@@ -2443,17 +2462,26 @@ void Renderer::mixPreview(SharedState& shared, int frames) noexcept {
         previewSerial_ = serial;
         previewSource_ = shared.previewSource.load(std::memory_order_seq_cst);
         previewPosition_ = 0;
+        shared.previewPosition.store(0, std::memory_order_relaxed);
     }
     if (!previewSource_) return;
 
     const AudioSource& source = *previewSource_;
     const float gain = shared.previewGain.load(std::memory_order_relaxed);
-    const float* srcL = source.stereoChannel(0);
-    const float* srcR = source.stereoChannel(1);
     const int64_t n = std::min<int64_t>(frames, source.frames() - previewPosition_);
-    addStereo(masterLeft_.data(), masterRight_.data(), srcL + previewPosition_, srcR + previewPosition_,
-              static_cast<int>(n), gain);
+    if (source.resident()) {
+        const float* srcL = source.stereoChannel(0);
+        const float* srcR = source.stereoChannel(1);
+        addStereo(masterLeft_.data(), masterRight_.data(), srcL + previewPosition_, srcR + previewPosition_,
+                  static_cast<int>(n), gain);
+    } else {  // (a long file: streamed like a clip)
+        WorkerScratch& scratch = scratch_[0];
+        SourceCursor(source).fetch(previewPosition_, n, scratch.warpLeft.data(), scratch.warpRight.data());
+        addStereo(masterLeft_.data(), masterRight_.data(), scratch.warpLeft.data(), scratch.warpRight.data(),
+                  static_cast<int>(n), gain);
+    }
     previewPosition_ += n;
+    shared.previewPosition.store(previewPosition_, std::memory_order_relaxed);
     if (previewPosition_ >= source.frames()) {
         previewSource_ = nullptr;
         if (shared.previewSerial.load(std::memory_order_acquire) == previewSerial_) {

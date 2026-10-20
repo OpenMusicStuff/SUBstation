@@ -49,4 +49,10 @@ extern template std::optional<std::vector<char>> readFile(const std::string&);
 // leaves half of one. False on failure; `path` is as it was then.
 bool writeFileAtomically(const std::string& path, std::string_view bytes);
 
+// Where this user's programs keep caches (what can be made again): Windows' local
+// application data (%LOCALAPPDATA%), macOS's ~/Library/Caches, elsewhere
+// $XDG_CACHE_HOME or ~/.cache; the system's temporary folder if none is known.
+// The folder may not exist yet.
+std::string userCacheFolder();
+
 }  // namespace sub::platform

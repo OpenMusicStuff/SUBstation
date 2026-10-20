@@ -54,6 +54,7 @@ struct SharedState {
     std::atomic<uint64_t> locatesDrained{0};
     std::atomic<uint64_t> locatesPublished{0};
     std::atomic<bool> previewActive{false};
+    std::atomic<int64_t> previewPosition{0};  // the preview's next frame (the disk threads read ahead of it)
     std::atomic<float> cpuLoad{0.f};
     AudioClock clock;  // the device's sample clock against the host clock (MIDI input timing)
     // Peak level of each open input channel (beyond this many, none).

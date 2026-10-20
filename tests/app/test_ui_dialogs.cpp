@@ -238,6 +238,31 @@ private Q_SLOTS:
         QCOMPARE(shown(QStringLiteral("exclusive")) != nullptr, prefs.exclusiveVisible());
         QCOMPARE(shown(QStringLiteral("outputs")) != nullptr, prefs.outputsVisible());
         QCOMPARE(shown(QStringLiteral("controlPanel")) != nullptr, prefs.controlPanelVisible());
+
+        // Disk streaming: off, its settings hidden; on, they show, and what is chosen applies at once.
+        QQuickItem* streaming = shown(QStringLiteral("streaming"));
+        QVERIFY(streaming);
+        QVERIFY(!bridge.streaming());
+        QVERIFY(!shown(QStringLiteral("streamMemory")));
+        streaming->setProperty("checked", true);
+        QVERIFY(QMetaObject::invokeMethod(streaming, "toggled"));
+        QVERIFY(bridge.streaming());
+        QVERIFY(sub::app::StreamingPreferences::load().enabled);
+        QTRY_VERIFY(shown(QStringLiteral("streamMemory")) != nullptr);
+        choose(QStringLiteral("streamMemory"), 4);
+        QCOMPARE(bridge.streamMemory(), 1024);
+        QCOMPARE(comboText(QStringLiteral("streamMemory")), QStringLiteral("1 GB"));
+        choose(QStringLiteral("streamThreshold"), 0);
+        QCOMPARE(bridge.streamThreshold(), 10.0);
+        choose(QStringLiteral("streamDiskThreads"), 2);
+        QCOMPARE(bridge.streamDiskThreads(), 4);
+        QCOMPARE(shown(QStringLiteral("streamCacheFolder"))->property("text").toString(),
+                 sub::app::EngineBridge::defaultStreamCacheFolder());
+        QVERIFY(!shown(QStringLiteral("defaultStreamCacheFolder")));  // (the default folder already)
+        test::screenshot(window_, QStringLiteral("preferences-audio-streaming"));
+        bridge.setStreaming(false);
+        QTRY_VERIFY(!shown(QStringLiteral("streamMemory")));
+        QSettings().remove(QStringLiteral("audio/streaming"));
         close(QStringLiteral("preferencesDialog"));
     }
 

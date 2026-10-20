@@ -185,6 +185,10 @@ struct EngineBridge::Private {
     QTimer positionTimer;  // the playhead: every display tick
     QTimer displayTimer;   // the meters, a recording's progress: the same
     QTimer idleTimer;      // the plug-ins, the device: kIdlePollMs
+    // Streaming: the disk's lateness so far, and when it was last said in the status line.
+    int diskLate = 0;
+    double diskLateMs = 0.0;
+    QElapsedTimer diskLateSaid;
 
     // For tests: reports to take as if the plug-ins had sent them (BridgeTestAccess).
     std::vector<sub::ProcessorEventRecord> injectedEvents;

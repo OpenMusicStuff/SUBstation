@@ -56,6 +56,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [MIDI](engine/midi.md) | MIDI playback, per-note pitch bends (MIDI 2.0), notes handed early to MIDI effects, MIDI input, devices taking another track's notes |
 | [Automation](engine/automation.md) | envelopes, normalized parameters, sample-accurate playback |
 | [Warping and sources](engine/warp.md) | time stretching, Re-Pitch, decoding, peaks |
+| [Disk streaming](engine/streaming.md) | long files read from disk as they play: what streams, cache files and peak files, the head and clip starts, the audio thread's reads (`SourceCursor`), the disk threads, moving the playhead, each system's file calls |
 | [Devices](engine/devices.md) | the `Processor` interface and the built-in devices; adding one |
 | [Plug-in hosting](engine/plugins.md) | VST3 and VST2 hosting, editors, threading |
 | [Plug-in sandboxes](engine/sandboxes.md) | plug-ins in processes of their own: the hosting modes, the host program, messages, audio in shared memory, crashes |

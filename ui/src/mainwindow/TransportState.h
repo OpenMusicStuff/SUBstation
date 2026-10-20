@@ -3,8 +3,9 @@
 // What the transport bar shows that needs working out: the position as
 // "bar. beat. sixteenth", changed only when its text does; the time
 // signature's two numbers and the denominators it may have; the project key's
-// choices; the CPU load, every 15th meter update (about twice a second); and
-// the audio device's name and rate, with a tooltip. The bar's controls call
+// choices; the CPU load, every 15th meter update (about twice a second); the
+// disk, while files stream from it (how often it came late); and the audio
+// device's name and rate, with a tooltip. The bar's controls call
 // the session's editor and bridge themselves.
 
 #include <QElapsedTimer>
@@ -35,6 +36,10 @@ class TransportState : public QObject {
     // The project's key among them (0: none).
     Q_PROPERTY(int keyIndex READ keyIndex NOTIFY settingsChanged)
     Q_PROPERTY(QString cpuText READ cpuText NOTIFY cpuTextChanged)  // "CPU 12%"
+    // While files stream from disk: "Disk", or "Disk late 3×" once it has come late; and why.
+    Q_PROPERTY(bool diskVisible READ diskVisible NOTIFY diskChanged)
+    Q_PROPERTY(QString diskText READ diskText NOTIFY diskChanged)
+    Q_PROPERTY(QString diskToolTip READ diskToolTip NOTIFY diskChanged)
     // "Speakers · 48 kHz" (a long name cut to 28 characters), or "No audio device".
     Q_PROPERTY(QString deviceText READ deviceText NOTIFY deviceChanged)
     Q_PROPERTY(QString deviceToolTip READ deviceToolTip NOTIFY deviceChanged)
@@ -55,6 +60,9 @@ public:
     QVariantList keys() const;
     int keyIndex() const;
     QString cpuText() const { return cpuText_; }
+    bool diskVisible() const { return diskVisible_; }
+    QString diskText() const { return diskText_; }
+    QString diskToolTip() const { return diskToolTip_; }
     QString deviceText() const { return deviceText_; }
     QString deviceToolTip() const { return deviceToolTip_; }
 
@@ -66,17 +74,22 @@ Q_SIGNALS:
     void positionTextChanged();
     void settingsChanged();
     void cpuTextChanged();
+    void diskChanged();
     void deviceChanged();
 
 private:
     void showPosition(double beat);
     void meterTick();
     void refreshDevice();
+    void refreshDisk();
     void refresh();
 
     QPointer<app::Session> session_;
     QString positionText_;
     QString cpuText_ = QStringLiteral("CPU 0%");
+    bool diskVisible_ = false;
+    QString diskText_;
+    QString diskToolTip_;
     QString deviceText_;
     QString deviceToolTip_;
     QElapsedTimer cpuShown_;  // since the CPU reading was last shown

@@ -47,8 +47,12 @@ if (TARGET sub_test_asio)
     target_compile_definitions(engine_tests PRIVATE SUBSTATION_TEST_ASIO_DRIVER="$<TARGET_FILE:sub_test_asio>")
 endif()
 add_test(NAME engine COMMAND engine_tests)
+# The same again with every file the tests play streamed from disk (docs/engine/streaming.md, test_streaming.cpp):
+# everything must come out as it does from memory.
+add_test(NAME engine_streamed COMMAND engine_tests)
+set_tests_properties(engine_streamed PROPERTIES ENVIRONMENT "SUBSTATION_TEST_STREAMING=1")
 if (WIN32)
-    set_tests_properties(engine PROPERTIES RESOURCE_LOCK desktop)  # (it opens plug-in editors: see app/)
+    set_tests_properties(engine engine_streamed PROPERTIES RESOURCE_LOCK desktop)  # (it opens plug-in editors: see app/)
 endif()
 
 # --- Platform tests: Qt-free, with the engine tests' harness ------------------------------

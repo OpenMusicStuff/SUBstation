@@ -1,9 +1,12 @@
 #include "WarpCache.h"
 
 #include <algorithm>
+#include <cmath>
 #include <new>
 
+#include "CacheFile.h"
 #include "Snapshot.h"
+#include "StreamCache.h"
 #include "platform/Threads.h"
 #include "rt/RtUtils.h"
 
@@ -127,6 +130,11 @@ void WarpCache::run() {
     }
 }
 
+void WarpCache::setStreamCache(std::shared_ptr<StreamCache> cache) {
+    std::lock_guard lock(mutex_);
+    streamCache_ = std::move(cache);
+}
+
 bool WarpCache::renderEntry(const Entry& entry) {
     WarpRender& render = *entry.render;
     ClipRender clip;
@@ -139,24 +147,50 @@ bool WarpCache::renderEntry(const Entry& entry) {
     clip.stretchConfig = entry.config;
     clip.transpose = entry.transpose;
     clip.preserveFormants = entry.formants;
+    // A clip of a streamed source is rendered to a file, streamed back as its source is.
+    std::shared_ptr<StreamCache> streams;
+    if (!entry.source->resident()) {
+        std::lock_guard lock(mutex_);
+        streams = streamCache_;
+    }
+    const auto rate = static_cast<uint32_t>(std::lround(entry.sampleRate));
+    const StreamReads reads{true, false};  // its source read waiting for the disk (this thread isn't real-time)
     try {
         WarpVoice voice(entry.config, entry.sampleRate);
-        render.left_.resize(static_cast<size_t>(entry.length));
-        render.right_.resize(static_cast<size_t>(entry.length));
         ScopedNoDenormals noDenormals;  // as the audio thread renders
-        for (int64_t at = 0; at < entry.length; at += kRenderBlock) {
-            if (!render.wanted_.load(std::memory_order_relaxed)) break;
-            const auto frames = static_cast<int>(std::min<int64_t>(kRenderBlock, entry.length - at));
-            voice.render(clip, at, frames, at > 0, render.left_.data() + at, render.right_.data() + at);
+        if (streams) {
+            CacheFileWriter writer(streams->temporaryFile(), 2, rate, SampleEncoding::Float32);
+            std::vector<float> left(kRenderBlock), right(kRenderBlock);
+            const float* channels[2] = {left.data(), right.data()};
+            for (int64_t at = 0; at < entry.length; at += kRenderBlock) {
+                if (!render.wanted_.load(std::memory_order_relaxed)) return true;  // (the writer drops its file)
+                const auto frames = static_cast<int>(std::min<int64_t>(kRenderBlock, entry.length - at));
+                voice.render(clip, at, frames, at > 0, left.data(), right.data(), reads);
+                writer.writePlanar(channels, frames);
+            }
+            const StreamLayout layout = writer.finish();
+            render.audio_ = AudioSource::streamed(entry.source->path(), rate, rate,
+                                                  streams->openFile(layout, rate, entry.source->path(), true), {});
+        } else {
+            std::vector<float> planar(static_cast<size_t>(entry.length) * 2);
+            float* left = planar.data();
+            float* right = planar.data() + entry.length;
+            for (int64_t at = 0; at < entry.length; at += kRenderBlock) {
+                if (!render.wanted_.load(std::memory_order_relaxed)) return true;
+                const auto frames = static_cast<int>(std::min<int64_t>(kRenderBlock, entry.length - at));
+                voice.render(clip, at, frames, at > 0, left + at, right + at, reads);
+            }
+            render.audio_ = AudioSource::fromSamples(entry.source->path(), rate, 2, std::move(planar), false);
         }
     } catch (const std::bad_alloc&) {
-        std::vector<float>().swap(render.left_);
-        std::vector<float>().swap(render.right_);
+        render.audio_.reset();
+        return false;
+    } catch (const std::exception&) {  // (its file couldn't be written: a full disk)
+        render.audio_.reset();
         return false;
     }
     if (!render.wanted_.load(std::memory_order_relaxed)) {  // forgotten meanwhile: its memory goes now
-        std::vector<float>().swap(render.left_);
-        std::vector<float>().swap(render.right_);
+        render.audio_.reset();
         return true;
     }
     render.ready_.store(true, std::memory_order_release);

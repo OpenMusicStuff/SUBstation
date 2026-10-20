@@ -16,6 +16,12 @@
 //   audio/threads          render threads; 0: the engine's default   audioThreads()
 //   audio/constrain_latency   Constrain Delay Compensation ("true" / "false")   constrainLatency()
 //   audio/constrain_threshold_ms   the latency it bypasses devices over; default 3   constrainThresholdMs()
+//   audio/streaming        stream long files from disk ("true" / "false")   StreamingPreferences
+//   audio/stream_threshold_s   files at least this long stream; default 30
+//   audio/stream_memory_mb     what streaming's pages may take; default 256
+//   audio/stream_cache_folder  where decoded files go; "": the user's cache folder's SUBstation/Streaming
+//   audio/stream_cache_gb      what they may take there; default 20
+//   audio/stream_disk_threads  reads at once: 1 for a spinning disk, more for an SSD; default 2
 //   midi/disabled_inputs   MIDI inputs turned off                     disabledMidiInputs()
 //   midi/immediate         MIDI input played at once ("true" / "false")   midiImmediate()
 //   record/quantize        record quantization grid in beats; 0: as played
@@ -58,6 +64,29 @@ struct AudioSettings {
     void save() const;
 
     friend bool operator==(const AudioSettings&, const AudioSettings&) = default;
+};
+
+// Streaming long files from disk instead of decoding them into memory
+// (sub::Engine::setStreaming(), docs/engine/streaming.md). Off by default
+// until it has had a Canary release.
+struct StreamingPreferences {
+    static constexpr double kDefaultThresholdSeconds = 30.0;
+    static constexpr int kDefaultMemoryMb = 256;
+    static constexpr int kDefaultCacheGb = 20;
+    static constexpr int kDefaultDiskThreads = 2;
+
+    bool enabled = false;
+    double thresholdSeconds = kDefaultThresholdSeconds;  // files at least this long stream
+    int memoryMb = kDefaultMemoryMb;                     // the pages they stream through
+    QString cacheFolder;                                 // "": the default
+    int cacheGb = kDefaultCacheGb;
+    int diskThreads = kDefaultDiskThreads;
+
+    // The saved settings (out of range: the nearest that is in it).
+    static StreamingPreferences load();
+    void save() const;
+
+    friend bool operator==(const StreamingPreferences&, const StreamingPreferences&) = default;
 };
 
 inline const QString kAudioThreadsKey = QStringLiteral("audio/threads");

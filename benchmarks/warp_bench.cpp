@@ -15,7 +15,9 @@
 // load on one core at --rate (best of --repeat runs; 100% would be a whole core).
 // The "-cached" cases play a stretched clip from its WarpCache render, as live
 // playback does once it is ready; the time the render took (on the cache's own
-// thread) is reported beside them.
+// thread) is reported beside them. The "-streamed" cases play the clip streamed
+// from disk (docs/engine/streaming.md), every page of it in memory: what reading
+// through the stream cache's pages costs over reading a resident source in place.
 //
 // Qt-free: it links the engine alone.
 
@@ -38,6 +40,8 @@
 #include "AudioSource.h"
 #include "Json.h"
 #include "Snapshot.h"
+#include "SourceCursor.h"
+#include "StreamCache.h"
 #include "Warp.h"
 #include "WarpCache.h"
 #include "rt/RtUtils.h"
@@ -114,6 +118,7 @@ struct Case {
     float transpose = 0.f;
     bool formants = false;
     bool cached = false;  // from its WarpCache render
+    bool streamed = false;  // the source streamed from disk (all of it in memory)
 };
 
 const std::vector<Case>& allCases() {
@@ -133,6 +138,10 @@ const std::vector<Case>& allCases() {
         {"formants+7", Playback::Stretch, 1.0, StretchConfig::Standard, 7.f, true},
         {"standard-0.9-cached", Playback::Stretch, 0.9, StretchConfig::Standard, 0.f, false, true},
         {"formants+7-cached", Playback::Stretch, 1.0, StretchConfig::Standard, 7.f, true, true},
+        {"direct-streamed", Playback::Direct, 1.0, StretchConfig::Standard, 0.f, false, false, true},
+        {"repitch-0.9-streamed", Playback::Resample, 0.9, StretchConfig::Standard, 0.f, false, false, true},
+        {"repitch-1.5-streamed", Playback::Resample, 1.5, StretchConfig::Standard, 0.f, false, false, true},
+        {"standard-0.9-streamed", Playback::Stretch, 0.9, StretchConfig::Standard, 0.f, false, false, true},
     };
     return cases;
 }
@@ -180,12 +189,12 @@ void writeWav(const std::filesystem::path& path, const std::vector<float>& left,
     if (!out) throw std::runtime_error("couldn't write " + path.string());
 }
 
-// The temporary WAV, removed however the run ends.
+// The temporary WAV (and the streamed one's cache folder), removed however the run ends.
 struct TemporaryFile {
     std::filesystem::path path;
     ~TemporaryFile() {
         std::error_code ignored;
-        std::filesystem::remove(path, ignored);
+        std::filesystem::remove_all(path, ignored);
     }
 };
 
@@ -193,6 +202,7 @@ struct TemporaryFile {
 // collects the output so nothing is optimised away.
 double run(const Case& c, const sub::ClipRender& clip, int64_t frames, int block, double rate, double& checksum) {
     std::vector<float> l(static_cast<size_t>(block)), r(static_cast<size_t>(block));
+    std::vector<float> span(2 * sub::kResampleSpan);  // (a worker's scratch: Re-Pitch's span of a streamed source)
     std::unique_ptr<sub::WarpVoice> voice;
     if (c.playback == Playback::Stretch && !c.cached) voice = std::make_unique<sub::WarpVoice>(c.config, rate);
     sub::ScopedNoDenormals noDenormals;
@@ -202,6 +212,10 @@ double run(const Case& c, const sub::ClipRender& clip, int64_t frames, int block
         const auto start = Clock::now();
         switch (c.playback) {
             case Playback::Direct: {
+                if (c.streamed) {  // what the renderer fetches through the source's cursor
+                    sub::SourceCursor(*clip.source).fetch(clip.sourceOffset + at, block, l.data(), r.data());
+                    break;
+                }
                 // What the renderer reads in place: the source's frames as they are.
                 const float* srcL = clip.source->stereoChannel(0);
                 const float* srcR = clip.source->stereoChannel(1);
@@ -209,7 +223,7 @@ double run(const Case& c, const sub::ClipRender& clip, int64_t frames, int block
                 std::copy_n(srcR + clip.sourceOffset + at, block, r.data());
                 break;
             }
-            case Playback::Resample: sub::renderResampled(clip, at, block, l.data(), r.data()); break;
+            case Playback::Resample: sub::renderResampled(clip, at, block, l.data(), r.data(), span.data()); break;
             case Playback::Stretch:
                 if (c.cached) {  // what the renderer reads in place
                     std::copy_n(clip.rendered->left() + at, block, l.data());
@@ -248,14 +262,22 @@ int main(int argc, char** argv) {
         const auto sourceFrames = static_cast<size_t>(o.seconds * o.rate);
         std::vector<float> left(sourceFrames), right(sourceFrames);
         if (o.input == "sound") fill(left, right, o.rate);
-        std::shared_ptr<const sub::AudioSource> source;
-        {
-            // A name of its own: runs side by side don't share it.
-            const auto unique = std::to_string(std::random_device{}()) + "_" +
-                                std::to_string(Clock::now().time_since_epoch().count());
-            const TemporaryFile wav{std::filesystem::temp_directory_path() / ("warp_bench_" + unique + ".wav")};
-            writeWav(wav.path, left, right, sampleRate);
-            source = sub::AudioSource::load(wav.path.string(), sampleRate);
+        // A name of its own: runs side by side don't share it.
+        const auto unique = std::to_string(std::random_device{}()) + "_" +
+                            std::to_string(Clock::now().time_since_epoch().count());
+        const TemporaryFile wav{std::filesystem::temp_directory_path() / ("warp_bench_" + unique + ".wav")};
+        const TemporaryFile folder{std::filesystem::temp_directory_path() / ("warp_bench_" + unique)};
+        writeWav(wav.path, left, right, sampleRate);
+        const std::shared_ptr<const sub::AudioSource> source = sub::AudioSource::load(wav.path.string(), sampleRate);
+        std::shared_ptr<const sub::AudioSource> streamed;
+        const auto streams = sub::StreamCache::create();
+        if (std::any_of(cases.begin(), cases.end(), [](const Case& c) { return c.streamed; })) {
+            // The float WAV streamed as it is, every page of it read into the pool first.
+            streams->setFolder(folder.path.string());
+            streams->setPoolBytes(sourceFrames * 2 * sizeof(float) * 2 + (size_t{64} << 20));
+            streamed = streams->open(wav.path.string(), sampleRate);
+            std::vector<float> l(sourceFrames), r(sourceFrames);
+            streamed->stream()->fetchBlocking(0, static_cast<int64_t>(sourceFrames), l.data(), r.data());
         }
         sub::WarpCache cache(sub::WarpCache::kDefaultBudget, std::chrono::milliseconds(0));
 
@@ -264,7 +286,7 @@ int main(int argc, char** argv) {
         double checksum = 0.0;
         for (const Case& c : cases) {
             sub::ClipRender clip;
-            clip.source = source;
+            clip.source = c.streamed ? streamed : source;
             clip.rate = c.rate;
             clip.playback = c.playback;
             clip.stretchConfig = c.config;

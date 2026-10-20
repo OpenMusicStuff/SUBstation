@@ -40,6 +40,7 @@ WaveformOutline waveformOutline(const app::Waveform& source, double framesPerPix
     // Each point's minimum and maximum, per channel: of the frames from half a
     // column before its column to half a column after it.
     std::vector<float> lo(static_cast<size_t>(count * channels)), hi(lo.size());
+    std::vector<float> read;
     for (int j = 0; j < count; ++j) {
         const double column = static_cast<double>(first + j);
         const auto i0 = static_cast<qint64>(std::floor((column - 0.5) * fpp / perIndex));
@@ -53,11 +54,17 @@ WaveformOutline waveformOutline(const app::Waveform& source, double framesPerPix
                     low = std::min(low, peaks[(k * channels + c) * 2]);
                     high = std::max(high, peaks[(k * channels + c) * 2 + 1]);
                 }
-            } else {
-                const float* samples = source.channelData(c);
+            } else if (const float* samples = source.channelData(c)) {
                 for (qint64 k = from; k < to; ++k) {
                     low = std::min(low, samples[k]);
                     high = std::max(high, samples[k]);
+                }
+            } else {  // (streamed from disk: these frames read)
+                read.resize(static_cast<size_t>(to - from));
+                source.read(c, from, to - from, read.data());
+                for (const float v : read) {
+                    low = std::min(low, v);
+                    high = std::max(high, v);
                 }
             }
             lo[static_cast<size_t>(j * channels + c)] = low * static_cast<float>(gain);

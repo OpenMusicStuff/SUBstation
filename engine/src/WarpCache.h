@@ -21,11 +21,12 @@
 #include <thread>
 #include <vector>
 
+#include "AudioSource.h"
 #include "Warp.h"
 
 namespace sub {
 
-class AudioSource;
+class StreamCache;
 struct ClipRender;
 
 // A stretched clip's output over its whole length: frame n is what a voice
@@ -33,12 +34,15 @@ struct ClipRender;
 // sourceOffset() + n * rate() (or, under a tempo that changes along the clip,
 // where its curve has it: frameOf() is the inverse). Written by the cache's thread; read-only, from
 // any thread, once ready() (but for the live renderer's note of where it
-// played it last).
+// played it last). Its audio is stereo, in memory; or, for a clip of a streamed
+// source, in a file of the stream cache's folder, streamed like its source
+// (StreamCache.h): left() and right() are then null.
 class WarpRender {
 public:
     bool ready() const noexcept { return ready_.load(std::memory_order_acquire); }
-    const float* left() const noexcept { return left_.data(); }
-    const float* right() const noexcept { return right_.data(); }
+    const AudioSource* audio() const noexcept { return audio_.get(); }
+    const float* left() const noexcept { return audio_ ? audio_->channelData(0) : nullptr; }
+    const float* right() const noexcept { return audio_ ? audio_->channelData(1) : nullptr; }
     int64_t length() const noexcept { return length_; }
     int64_t sourceOffset() const noexcept { return sourceOffset_; }
     double rate() const noexcept { return rate_; }
@@ -61,7 +65,7 @@ public:
 
 private:
     friend class WarpCache;
-    std::vector<float> left_, right_;
+    std::shared_ptr<const AudioSource> audio_;
     int64_t length_ = 0;
     int64_t sourceOffset_ = 0;
     double rate_ = 1.0;
@@ -97,6 +101,10 @@ public:
     // Waits until every render asked for is ready (tests and benchmarks).
     void waitIdle();
 
+    // Where the renders of clips of streamed sources go (files in its folder, streamed back); without
+    // one, into memory like the others. Any thread.
+    void setStreamCache(std::shared_ptr<StreamCache> cache);
+
 private:
     struct Entry {
         // What the render depends on (the source held, so its address isn't reused).
@@ -120,7 +128,7 @@ private:
     };
 
     void run();
-    static bool renderEntry(const Entry& entry);  // false: out of memory
+    bool renderEntry(const Entry& entry);  // false: out of memory (or disk)
 
     const size_t budget_;
     const std::chrono::milliseconds settle_;
@@ -128,6 +136,7 @@ private:
     std::condition_variable wake_;  // something to render, or stop
     std::condition_variable idle_;  // a render finished
     std::vector<Entry> entries_;
+    std::shared_ptr<StreamCache> streamCache_;
     size_t buildBytes_ = 0;  // of the entries asked for in the build under way
     bool stop_ = false;
     std::thread thread_;  // last: started once the rest stands

@@ -20,7 +20,8 @@ ctest --test-dir build -R boundaries           # the layers' boundaries only
 ctest --test-dir build -N                      # list them without running
 ```
 
-CTest knows each test program as one test: `boundaries`, `engine` (all of `engine_tests`), `intelligence` (all of
+CTest knows each test program as one test: `boundaries`, `engine` (all of `engine_tests`), `engine_streamed` (all of
+`engine_tests` again, every file the tests play streamed from disk: see below), `intelligence` (all of
 `intelligence_tests`) and `platform` (all of `platform_tests`, the platform layer's: [platform.md](platform.md)), the
 last two running and filtering as `engine_tests` does, with the same harness, and one per
 `tests/app/test_*.cpp`, by its name (`test_editor_racks`, `test_ui_arrangement`...). Each Qt Test program keeps its
@@ -35,6 +36,15 @@ each, then the counts; it exits with 1 if any failed. Its arguments filter by na
 build/bin/engine_tests                   # all
 build/bin/engine_tests sidechain warp    # those whose names contain "sidechain" or "warp"
 build/bin/engine_tests --list            # "file: name" of each, without running them
+```
+
+`engine_streamed` is `engine_tests` with `SUBSTATION_TEST_STREAMING` set: every engine the tests make streams every
+file it loads (threshold 0, from a cache folder of the run's own, removed after), so every test that plays a file
+plays it streamed from disk, and must come out as it does from memory ([engine/streaming.md](engine/streaming.md)).
+By hand:
+
+```sh
+SUBSTATION_TEST_STREAMING=1 build/bin/engine_tests warp
 ```
 
 ### A Qt Test program
@@ -302,6 +312,7 @@ Rendered offline unless the file says otherwise; the live tests play through the
 | [test_automation_engine.cpp](../tests/engine/test_automation_engine.cpp) | Envelopes of mixer controls (tracks and master) and of device parameters, sample by sample. |
 | [test_switches_engine.cpp](../tests/engine/test_switches_engine.cpp) | A track's activator and a device's (or a rack's) on/off, automated: silence and the fade, standing in for mute, a latent device passed by in time. |
 | [test_warp.cpp](../tests/engine/test_warp.cpp) | Warped clips on their beats at any tempo, pitch shifting, Re-Pitch filtering rather than aliasing. |
+| [test_streaming.cpp](../tests/engine/test_streaming.cpp) | Streaming long files from disk ([engine/streaming.md](engine/streaming.md#testing)): WAVs and AIFFs read as they are, cache files (made once, made again when the file or the rate changes, integers where they hold exactly), the folder's budget, missing pages (silence, faded, counted), the pool (least recently wanted first, pins, epochs, leases), the same output streamed as from memory (offline, with a slow disk too; live once the pages are in), a slow disk live, the audio thread never waiting, the pre-roll, an unreadable file, a streamed clip's warp render, an engine's settings and pins. With `SUBSTATION_TEST_STREAMING` set (CTest's `engine_streamed`), it makes every engine the tests make stream every file it loads. |
 | [test_signalsmith_kfr_fft.cpp](../tests/engine/test_signalsmith_kfr_fft.cpp) | Signalsmith Linear's FFTs on KFR's (`platform/fft-kfr.h`): the power-of-two transforms against the library's own (interleaved, split, in place, both ways, float and double, every size to 16384), and Stretch's real FFTs (sizes with factors of 3 and 5, in steps) against a direct DFT. |
 | [test_midi_engine.cpp](../tests/engine/test_midi_engine.cpp) | Note scheduling and the built-in Synth: notes on their sample, following the tempo (a new one after the notes, kept between snapshots, too), pitch and level, no hanging notes at loop wraps and after renders. |
 | [test_note_bends_engine.cpp](../tests/engine/test_note_bends_engine.cpp) | MIDI 2.0's per-note pitch bend: the bend's curve and vibrato (`sub::bend`), UMP messages decoded, a note's events carrying its id and its bends following its curve (bent from its note-on, joined part way, edited while it sounds, a vibrato swinging, a slide landing on its last value), notes played by hand having ids, a live per-note bend reaching the note it names, recorded bends, the Synth, the Sampler and a plug-in (its tuning expression) playing bent notes, a note after a bent one at its own pitch on a plug-in that reuses voices, which devices play notes. |
@@ -421,6 +432,7 @@ labels, a project's fit. See [intelligence.md](intelligence.md#tests).
 | [test_bridge_freeze.cpp](../tests/app/test_bridge_freeze.cpp) | Frozen tracks playing their frozen audio without their devices (and getting them back), where a time selection moved it and where a drag would take it, renders in the background followed and cancelled, several tracks in one render (each file the same as freezing it alone), reversed copies written and found again. |
 | [test_bridge_recording.cpp](../tests/app/test_bridge_recording.cpp) | What records and why not, inputs, monitoring and arming in the engine, a take recorded, drawn live and handed on. |
 | [test_bridge_settings.cpp](../tests/app/test_bridge_settings.cpp) | The audio and MIDI preferences' settings, where the bridge puts its files and how it names them, the float WAV writer, the EQ's curve, the Disperser's group delay, device status, the scope, MIDI inputs. |
+| [test_bridge_streaming.cpp](../tests/app/test_bridge_streaming.cpp) | Streaming's preferences, saved and applied; a long file streaming and its waveform read from disk; a zero crossing snapped to from only the frames near it, as a search of the whole file finds it; files fetched again when streaming is switched; what the disk came late for, counted and said. |
 
 ### The session
 

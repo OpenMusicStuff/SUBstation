@@ -215,6 +215,20 @@ class EngineBridge : public QObject {
                    NOTIFY constrainLatencyChanged)
     // MIDI input played at once (saved in the preferences).
     Q_PROPERTY(bool midiImmediate READ midiImmediate WRITE setMidiImmediate NOTIFY midiImmediateChanged)
+    // Streaming long files from disk (saved in the preferences: StreamingPreferences). The threshold
+    // in seconds, the memory in MB, the cache folder ("": the default one) and its size in GB, the
+    // reads at once.
+    Q_PROPERTY(bool streaming READ streaming WRITE setStreaming NOTIFY streamingChanged)
+    Q_PROPERTY(double streamThreshold READ streamThreshold WRITE setStreamThreshold NOTIFY streamingChanged)
+    Q_PROPERTY(int streamMemory READ streamMemory WRITE setStreamMemory NOTIFY streamingChanged)
+    Q_PROPERTY(QString streamCacheFolder READ streamCacheFolder WRITE setStreamCacheFolder NOTIFY streamingChanged)
+    Q_PROPERTY(QString defaultStreamCacheFolder READ defaultStreamCacheFolder CONSTANT)
+    Q_PROPERTY(int streamCacheSize READ streamCacheSize WRITE setStreamCacheSize NOTIFY streamingChanged)
+    Q_PROPERTY(int streamDiskThreads READ streamDiskThreads WRITE setStreamDiskThreads NOTIFY streamingChanged)
+    // How many times the disk came late for streamed files since the program started (what it
+    // missed played as silence), and the audio that cost, in ms.
+    Q_PROPERTY(int diskLate READ diskLate NOTIFY diskLateChanged)
+    Q_PROPERTY(double diskLateMs READ diskLateMs NOTIFY diskLateChanged)
     Q_PROPERTY(double cpuLoad READ cpuLoad NOTIFY metersUpdated)
     Q_PROPERTY(double sampleRate READ sampleRate NOTIFY deviceChanged)
     Q_PROPERTY(sub::app::AudioDeviceStatus deviceStatus READ deviceStatus NOTIFY deviceChanged)
@@ -290,6 +304,25 @@ public:
     void setConstrainThresholdMs(double ms);
     // MIDI input played at once (sub::Engine::setMidiImmediate()), as the preferences say; saved and applied.
     void applyMidiImmediate();
+    // Streaming long files from disk (sub::Engine::setStreaming()), as the preferences say
+    // (BridgeStreaming.cpp). A change is saved and applied; when what streams changes (on, off,
+    // the threshold), the files in use are fetched again, each kept as the settings now say.
+    void applyStreaming();
+    bool streaming() const;
+    void setStreaming(bool on);
+    double streamThreshold() const;
+    void setStreamThreshold(double seconds);
+    int streamMemory() const;
+    void setStreamMemory(int megabytes);
+    QString streamCacheFolder() const;
+    void setStreamCacheFolder(const QString& folder);
+    static QString defaultStreamCacheFolder();
+    int streamCacheSize() const;
+    void setStreamCacheSize(int gigabytes);
+    int streamDiskThreads() const;
+    void setStreamDiskThreads(int threads);
+    int diskLate() const;
+    double diskLateMs() const;
     bool midiImmediate() const;
     void setMidiImmediate(bool immediate);
 
@@ -611,6 +644,8 @@ Q_SIGNALS:
     // a track was armed or monitored: which devices it bypasses may have changed.
     void constrainLatencyChanged();
     void midiImmediateChanged();
+    void streamingChanged();
+    void diskLateChanged();  // the disk came late for a streamed file (diskLate(), diskLateMs())
     void metersUpdated();  // meters() and chainMeters() were refreshed
     void latenciesChanged();  // a track's latency or the output's changed (a device's, then, too)
     void deviceChanged();  // the audio device opened, closed, changed or reported new latencies
@@ -748,6 +783,9 @@ private:
     void pollDisplays();  // a recording's progress, the meters: metersUpdated
     void pollIdle();      // latencies, the plug-ins (Engine::idle, their reports), the device's events
     void pollLatencies();  // latenciesChanged() if a track's or the output's changed
+    // Streaming (BridgeStreaming.cpp): what the disk came late for, said in the status line.
+    void pollStreams();
+    void changeStreaming(const std::function<void(StreamingPreferences&)>& change);
     // Recording (BridgeRecording.cpp).
     void pollRecording();
     // Freezing (BridgeFreezing.cpp).

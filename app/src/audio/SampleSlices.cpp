@@ -5,19 +5,34 @@
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <vector>
 
 namespace sub::app::sampleSlices {
 namespace {
 
-// The waveform's first two channels (one twice for a mono file), as the Sampler reads them.
+// The waveform's first two channels (one twice for a mono file), as the Sampler reads them, from
+// frame `start` on (`length` of them): in place, or (a long file streamed from disk) read into
+// memory for the while.
 struct Channels {
     std::array<const float*, 2> data{};
+    std::array<std::vector<float>, 2> read;
     int count = 0;
 
-    explicit Channels(const Waveform& waveform) {
+    explicit Channels(const Waveform& waveform) : Channels(waveform, 0, waveform.frames()) {}
+
+    Channels(const Waveform& waveform, qint64 start, qint64 length) {
         count = std::min(2, waveform.channels());
-        data[0] = waveform.channelData(0);
-        data[1] = count > 1 ? waveform.channelData(1) : data[0];
+        for (int c = 0; c < count; ++c) {
+            data[c] = waveform.channelData(c);
+            if (data[c]) {
+                data[c] += start;
+            } else {
+                read[c].resize(static_cast<size_t>(length));
+                waveform.read(c, start, length, read[c].data());
+                data[c] = read[c].data();
+            }
+        }
+        if (count < 2) data[1] = data[0];
     }
 };
 
@@ -64,12 +79,16 @@ int firstSliceKey() { return sub::slicing::kFirstSliceKey; }
 int maxSlices() { return sub::slicing::kMaxSlices; }
 
 qint64 nearestZeroCrossing(const Waveform& waveform, bool reversed, qint64 frame) {
-    if (waveform.isNull())
+    const qint64 frames = waveform.frames();
+    if (waveform.isNull() || frame <= 0 || frame >= frames)
         return frame;
-    const Channels channels(waveform);
+    // Only the frames the search looks at (the one before each, too), as it plays: a file streamed
+    // from disk isn't read whole on each drag.
     const auto reach = static_cast<int64_t>(sub::slicing::kSnapSeconds * waveform.sampleRate());
-    return sub::slicing::nearestZeroCrossing(channels.data.data(), channels.count, waveform.frames(), reversed, frame,
-                                             reach);
+    const qint64 start = std::max<qint64>(0, frame - reach - 1), end = std::min<qint64>(frames, frame + reach + 1);
+    const Channels channels(waveform, reversed ? frames - end : start, end - start);
+    return start + sub::slicing::nearestZeroCrossing(channels.data.data(), channels.count, end - start, reversed,
+                                                     frame - start, reach);
 }
 
 }  // namespace sub::app::sampleSlices

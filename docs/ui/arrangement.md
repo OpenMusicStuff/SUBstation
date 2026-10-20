@@ -695,7 +695,8 @@ waveform (an `app::Waveform`: [app/engine-bridge.md](../app/engine-bridge.md)):
 
 1. Column edges in source frames, with one padding column each side so smoothing is seamless across tile borders.
 2. The coarsest peak level of the source's mipmap (`Waveform::peaks(level)`, `samplesPerPeak`) with no more frames
-   per peak than per pixel; when zoomed in past the finest level, the raw samples. See
+   per peak than per pixel; when zoomed in past the finest level, the raw samples (a file streamed from disk's read
+   for the tile: `Waveform::read()`, [engine/streaming.md](../engine/streaming.md)). See
    [engine/warp.md](../engine/warp.md) for the peaks.
 3. Each column's minimum and maximum, times the clip's gain (linear; cut off at the lane's edges); a [1 2 1]/4 blur
    for peak data (envelopes read smoother), none for raw samples.
