@@ -6,7 +6,8 @@ import SUBstation
 // The clip view: what a double-clicked clip opens. MIDI clips get the piano
 // roll (several edited together), and in the header the key their notes are
 // judged by (out of it, red) and Generate (chords or a bass line from the
-// song's chords, into the lead clip), and their groove (Groove ▾). Audio clips get
+// song's chords, into the lead clip; or Progressions…, progression ideas in a
+// mood to try in it, in a panel beside the roll), and their groove (Groove ▾). Audio clips get
 // their controls on the left (Warp, Pitch, Mix, Groove) and large waveforms on the
 // right; with several open, the controls edit all of them at once
 // (ClipViewController has the rules).
@@ -39,6 +40,8 @@ FocusScope {
 
     readonly property alias controller: clipController
     readonly property alias pianoRollView: rollView
+    readonly property alias progressionPanel: progressionPanel
+    readonly property alias progressionIdeas: progressionIdeas
     // Showing a MIDI clip in the piano roll (else audio clips, or nothing).
     readonly property bool midi: clipController.midi
 
@@ -172,7 +175,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 role: "small"
                 text: qsTr("Generate ▾")
-                tooltip: qsTr("Write block chords or a bass line into the clip, from the song's chords\n(or from a progression in its key, where it has none)")
+                tooltip: qsTr("Write block chords or a bass line into the clip, from the song's chords\n(or from a progression in its key, where it has none); or try progression ideas in a mood")
                 onClicked: generateMenu.popup(generateButton, 0, generateButton.height)
 
                 Menu {
@@ -188,6 +191,15 @@ FocusScope {
                         objectName: "generateBass"
                         text: qsTr("Bass")
                         onTriggered: rollView.roll.generateBass()
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        objectName: "generateProgressions"
+                        text: qsTr("Progressions…")
+                        onTriggered: {
+                            progressionPanel.wanted = true
+                            progressionPanel.open()
+                        }
                     }
                 }
             }
@@ -452,18 +464,40 @@ FocusScope {
             }
         }
 
-        // --- A MIDI clip: the piano roll ---
+        // --- A MIDI clip: the piano roll, and progression ideas beside it ---
 
         PianoRollView {
             id: rollView
             objectName: "pianoRollView"
-            anchors.fill: parent
+            width: parent.width - (progressionPanel.visible ? progressionPanel.width : 0)
+            height: parent.height
             visible: clipController.count > 0 && clipController.midi
             onLocateRequested: beat => view.locateRequested(beat)
         }
         Connections {
             target: rollView.roll
             function onStatusMessage(message) { view.statusMessage(message) }
+        }
+
+        ProgressionIdeas {
+            id: progressionIdeas
+            roll: rollView.roll
+            onStatusMessage: message => view.statusMessage(message)
+        }
+        ProgressionPanel {
+            id: progressionPanel
+            objectName: "progressionPanel"
+            // Shown with the piano roll once opened, until closed.
+            property bool wanted: false
+            x: parent.width - width
+            width: implicitWidth
+            height: parent.height
+            visible: wanted && rollView.visible
+            ideas: progressionIdeas
+            onCloseRequested: {
+                wanted = false
+                view.focusContent()
+            }
         }
     }
 }

@@ -381,6 +381,21 @@ const std::map<QString, Icon>& icons() {
                                           slide.cubicTo(QPointF(34, 46), QPointF(30, 18), QPointF(44, 18));
                                           p.drawPath(slide);
                                       }};
+        // A five-pointed star: outlined, filled when on (a progression idea kept).
+        t[QStringLiteral("star")] = {text, [](QPainter& p, const QColor& c, bool on) {
+                                         QPainterPath star;
+                                         for (int i = 0; i < 10; ++i) {
+                                             const qreal r = i % 2 ? 10.5 : 26.0;
+                                             const qreal a = (-90.0 + 36.0 * i) * 3.14159265358979 / 180.0;
+                                             const QPointF point(32 + r * std::cos(a), 35 + r * std::sin(a));
+                                             if (i == 0) star.moveTo(point);
+                                             else star.lineTo(point);
+                                         }
+                                         star.closeSubpath();
+                                         p.setPen(pen(c, 4, Qt::RoundCap, Qt::RoundJoin));
+                                         p.setBrush(on ? QBrush(c) : QBrush(Qt::NoBrush));
+                                         p.drawPath(star);
+                                     }};
         // A device's fold button: a triangle pointing down while it is open, right while folded.
         t[QStringLiteral("fold")] = {text, [](QPainter& p, const QColor& c, bool folded) {
                                          p.fillPath(folded ? path({{22, 14}, {46, 32}, {22, 50}}, true)

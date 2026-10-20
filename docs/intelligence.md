@@ -6,7 +6,8 @@ Similar Sounds in the browser, on threads of its own; its descriptors made with
 "Snare · Punchy · Bright", by a model trained on open sample libraries, from the same descriptors; the browser's
 searches by description, "hard trap snare"; and what the project sounds like, "Techno, Punchy · A Minor", for the
 agents), **harmony** (a song's chords and key, inferred from its MIDI: the piano roll's chord lane, its notes out of
-the key in red, and Generate's block chords and bass lines) and
+the key in red, and Generate's block chords and bass lines; and **progression ideas**, chord progressions in a mood to
+try in a clip, from free-midi-chords' progressions and the chord changes of the McGill Billboard songs) and
 **humanizing** (the piano roll's Humanize › Velocity: velocities from HUMANBRO's XGBoost model, through its C++ library,
 vendored) and **track labels** (what each track is, in a few words: "Washed Out Serum Pluck", from its names, presets,
 notes, effects and mixer; the tooltip over a track's name) and **audio analysis** (a recording's tempo, beats, key
@@ -18,8 +19,8 @@ the browser's backend is: the static library `sub_intelligence` ([intelligence/s
 [app/src/intelligence](../app/src/intelligence) (`SoundSimilarity`, `Session.similarity`, which hands out the tags
 too; `SoundSuggestions`, `Session.suggestions`; `Harmony`,
 `Session.harmony`; `Humanizer`, `Session.humanizer`; `TrackLabels`, `Session.trackLabels`). How Find Similar behaves
-for the user is in [guide/browser.md](guide/browser.md#find-similar-sounds), the chords, the key, Generate and
-Humanize in [guide/midi.md](guide/midi.md#chords-and-key), the track labels in
+for the user is in [guide/browser.md](guide/browser.md#find-similar-sounds), the chords, the key, Generate, progression
+ideas and Humanize in [guide/midi.md](guide/midi.md#chords-and-key), the track labels in
 [guide/arrangement.md](guide/arrangement.md#what-a-track-is).
 
 ```
@@ -457,6 +458,101 @@ build, one core of a 4-core cloud machine); a typical song is under a millisecon
 Time signature changes, and tempo changes, if the project gets them. A model trained on annotated MIDI as one more
 term of the score (or in place of the hand-set transitions), for the ambiguous passages. (Chords from audio go
 through the same scoring: [below](#tempo-key-and-chords-from-audio).)
+
+## Progression ideas
+
+[harmony/Progressions.h](../intelligence/src/harmony/Progressions.h) makes chord progressions to try in a song, in a
+mood (Sad, Dark, Nostalgic), a chord a bar, played round and round: the piano roll's Progressions panel
+([guide/midi.md](guide/midi.md#progression-ideas), [ui/piano-roll.md](ui/piano-roll.md#progression-ideas)). Like
+harmony's inference it is pure functions, seeded: the same settings and seed make the same ideas, on every system
+(SplitMix64, and none of the standard library's distributions, which differ between standard libraries).
+
+### What was weighed
+
+| Approach | Good at | Costs | Chosen |
+|---|---|---|---|
+| A list of progressions by mood (free-midi-chords: 194 in Roman numerals, tagged with moods; MIT) | progressions people know work, with a mood each | a list: 13 sad ones, 15 dark, 59 nostalgic, and nothing in between | as where ideas start |
+| Counted chord changes (the McGill Billboard annotations, 890 of chart songs, 1958–91; CC0) | what follows what in real songs, by where it is in the key | no moods; dated, pop and rock | as how ideas are drawn |
+| Both, the draw leaning to the mood's own changes | new progressions in the mood that move as songs do | tuning how much the mood leans (below) | **yes** |
+| A learned model (a transformer over chord symbols, as ChordSeqAI's) | longer-range sense; conditioning by genre | a runtime and a model to ship; the open ones' training data's licences are unclear (Chordonomicon's labels are CC BY-NC) | no (the roadmap's goal 26: no bundled generation models) |
+| Hooktheory's Trends API (next-chord chances from 40 000 songs) | exactly this, and current | an account and the network for every user, 10 requests in 10 seconds, no data to download | no |
+
+### The data ([ProgressionData.inc](../intelligence/src/harmony/ProgressionData.inc))
+
+Written by [tools/progressions/build_tables.py](../tools/progressions/build_tables.py), which
+[tools/progressions/README.md](../tools/progressions/README.md) describes, from the two sources as downloaded:
+
+- **The moods' progressions**: free-midi-chords' progressions tagged Sad, Dark or Nostalgic (80; some have two of
+  the three): each one's numerals and tags as free-midi-chords writes them ("i VI iv v", "Sad Hopeful"), whether it
+  is in a minor key, and its chords as semitones above the tonic and a `Quality`, read as free-midi-chords' MIDI is
+  made from them (a numeral is a degree of the key's scale; its suffix makes the chord on that degree's root).
+- **How chords follow each other**: for songs' stretches in major keys (846, 64 634 chord changes) and in minor ones
+  (163, 12 714), how often each chord changed to each other and how often each was played; a chord being where it
+  is in the key and its kind (major, minor, diminished, augmented, sus2, sus4: a seventh counts as its triad), 72
+  of them.
+
+### The ideas ([Progressions.h](../intelligence/src/harmony/Progressions.h))
+
+`progressionIdeas(settings, count, seed, avoid)` makes `count` ideas in the settings' key, mood and length (4 or 8
+chords), none with the chords of another or of one in `avoid`, alternately:
+
+- **The mood's own**, in a random order: in the song's key; one in a major key goes into a minor key's relative
+  major, one in a minor key into a major key's relative minor (the same notes, so it fits). Fitted to the length:
+  cut if longer, played again if it divides it, else the bars after it drawn (below). Each says which it is
+  (`Idea::seed`, `seedInfo()`).
+- **Drawn**: the first chord as the mood's progressions start; each next one by its chance of following the one
+  before. That chance is Billboard's (the key's mode's counts, each row pulled to how often each chord plays by 5
+  counts) and the mood's (its progressions' changes, round and round, pulled to how often it plays each chord by 1),
+  multiplied, the square root of each: both must agree, so a chord the mood's progressions never play there comes
+  up rarely, and the draws move in the ways real songs do. Chords drawn: those Billboard plays at least 1 in 400
+  times in the key's mode, and those the mood's progressions play. A chord never follows itself (but where locked
+  chords make it, at a chance of 1 in 10 000), and the last leads back into the first. A draw is kept if it has
+  three different chords or more (two in a shorter one) and the key's tonic or its relative (i or III in a minor
+  key, I or vi in a major one), else drawn again (60 tries); it never has the chords of one of the mood's own still
+  to come, which comes up as that one instead.
+
+What is fixed (a locked chord, the first one) is fixed in the draw too: the chords around it are drawn together so
+that each fits both its neighbours, by forward filtering and backward sampling over the loop: turned so a fixed chord
+comes first, the chance of reaching the end of the loop (the first chord again) from each chord at each bar is worked
+out backwards, then each chord is drawn forwards by its chance of following the last times that. So
+`redrawIdea(chords, locked, ...)` keeps the locked ones where they are and draws the rest, and
+`ideaVariations(chords, locked, ...)` draws one or two of those that aren't locked again, each idea different.
+`chordAlternatives(chords, index, ...)` ranks every drawn chord by its chance of following the one before times that
+of leading into the one after; `chordColours(chord, key)` gives the same chord otherwise: its seventh
+(`withSeventh()`: a major triad's major seventh if the key has it, else its minor seventh; a minor one's minor; a
+diminished one's half-diminished if the key has its minor seventh, else diminished), its triad, sus4 and sus2.
+`romanNumeral(chord, key)` names a chord by the degree of the key's scale its root is on ("i", "VI", "bVII", "iv7",
+"V7", "ii°", "Imaj7", "iiø7", "Vsus4"), and `layOut()` ([Accompaniment.h](../intelligence/src/harmony/Accompaniment.h))
+lays a progression out a chord a bar.
+
+### How well it works
+
+The tests ([tests/intelligence/test_progressions.cpp](../tests/intelligence/test_progressions.cpp)) hold it to the
+mood's own progressions as written in the key (A minor's "i VI iv v" is Am F Dm Em, and in C major vi IV ii iii),
+cut, repeated and filled out; ideas alternating, all different, the same from the same seed; drawn ones playing like
+progressions in the key; locks, variations, alternatives, colours, sevenths and numerals.
+
+Of 600 drawn ideas (200 seeds, a batch of six each, four chords), the share of their chords in the key (the natural
+minor's, and its dominant, E or E7 in A minor) and how many different chords they use:
+
+| Mood | A minor: in the key | chords | different ideas | C major: in the key | most played (A minor) |
+|---|---|---|---|---|---|
+| Sad | 100 % | 14 | 169 | 99 % | Am 35 %, F 17 %, G 14 %, Em 13 %, Dm 13 % |
+| Dark | 90 % | 21 | 325 | 88 % | Am 31 %, F 13 %, Dm 13 %, G 12 %, C 11 %, Bb 4 % (bII) |
+| Nostalgic | 91 % | 19 | 334 | 90 % | Am 27 %, F 17 %, C 16 %, G 12 %, Dm 10 %, D 5 % (IV) |
+
+Out of the key are the mood's own colours: Dark's Phrygian bII (Bb) and borrowed minor chords, Nostalgic's Dorian IV
+(D) and borrowed iv. Adding the two chances instead (half each) let Billboard's rock songs in minor keys bring their
+D major into sad ideas (5 % of chords; Sad 94 % in the key). In a major key, sad ideas lean to the relative minor (Am
+is 29 % of C major's): the mood's progressions are mostly minor. Speed: six ideas in 0.09 ms (eight chords: 0.2 ms),
+a redraw 0.06 ms, five variations 0.12 ms, the alternatives 0.08 ms (a release build, one core).
+
+### What would make it better
+
+More moods (free-midi-chords' tags: Hopeful, Romantic, Dreamy...: a line in the tool each), and moods from data:
+listeners' ratings of progressions. Rhythm: arpeggios, a ballad's broken chords, a pad's held notes (the roadmap's
+goal 15). Inversions chosen for the bass's line (a descending bass, the lament's i–v6–iv6–V), and chords changing
+within a bar. A larger, newer corpus of chord changes under a licence that allows shipping counts of it.
 
 ## Tempo, key and chords from audio
 
@@ -903,7 +999,10 @@ the arrangement.
 | [harmony/Chords.h](../intelligence/src/harmony/Chords.h) | `Quality`, `Chord` (its notes, its name: "Am7", "C/E"), `Key` (its scale, its triads), `pitchClass()`, `noteName()` |
 | [harmony/ChordInference.h](../intelligence/src/harmony/ChordInference.h) | `Note`, `ChordSpan`, `InferenceOptions`, `Harmony`, `StepProfiles` (what sounds in each step, and the bass: from notes or from audio); `estimateKey()` (of notes, or of a pitch-class profile), `inferHarmony()`, `inferChords()` (of step profiles), `bassTrust()` |
 | [audio/AudioAnalysis.h](../intelligence/src/audio/AudioAnalysis.h) | `analyze()`: a recording's `Analysis` (`Tempo`, `harmony::Key`, `ChordSpanSec`s) from its samples, `Options`; `estimateTempo()`; `kMinBpm`, `kMaxBpm`, `kMinTempoConfidence` |
-| [harmony/Accompaniment.h](../intelligence/src/harmony/Accompaniment.h) | `GeneratedNote`; `chordPart()`, `bassPart()`, `starterProgression()` |
+| [harmony/Accompaniment.h](../intelligence/src/harmony/Accompaniment.h) | `GeneratedNote`; `chordPart()`, `bassPart()`, `starterProgression()`, `layOut()` (a progression a chord a bar) |
+| [harmony/Progressions.h](../intelligence/src/harmony/Progressions.h) | `Mood`, `moodName()`, `ProgressionSettings`, `Idea`, `SeedInfo`, `seedInfo()`; `progressionIdeas()`, `redrawIdea()`, `ideaVariations()`, `chordAlternatives()`, `chordColours()`, `withSeventh()`, `romanNumeral()` |
+| [harmony/ProgressionData.inc](../intelligence/src/harmony/ProgressionData.inc) | (generated by [tools/progressions](../tools/progressions/README.md)) the moods' progressions (free-midi-chords') and Billboard's chord changes, by mode |
+| [third_party/free-midi-chords](../intelligence/third_party/free-midi-chords) | free-midi-chords' [LICENSE](../intelligence/third_party/free-midi-chords/LICENSE) (MIT), shipped with every build, and what of it is taken |
 | [humanize/VelocityModel.h](../intelligence/src/humanize/VelocityModel.h) | `VelocityModel` (`humanize()`, `predict()`), `Note` (a part's, `target` or context), `Meter`, `ModelError` |
 | [third_party/humanbro](../intelligence/third_party/humanbro) | HUMANBRO's C++ runtime (the `humanbro` library): `humanbro::Humanizer`, its features and tree walker |
 | [models/velocity.hbm](../intelligence/models) | The velocity model (HUMANBRO's quantized one); [models/README.md](../intelligence/models/README.md) says where it came from and how to replace it |
@@ -1236,6 +1335,14 @@ What it is used for:
 - [tests/app/test_humanizer.cpp](../tests/app/test_humanizer.cpp): the model next to the tests (`bin/models`); a
   clip's velocities where it plays on the timeline, at the notes' own level; a track's other clips as context, its
   deactivated notes and clips not; each track keeping its own level; targets whose clip is gone.
+- [tests/intelligence/test_progressions.cpp](../tests/intelligence/test_progressions.cpp) (`intelligence_tests`): the
+  moods' progressions as free-midi-chords writes them; in the key (and the relative key), cut, repeated and filled
+  out; ideas alternating, all different, avoiding those given, the same from the same seed; drawn ones playing like
+  progressions in the key (three chords or more, the tonic or its relative, never a chord after itself, 95 % in the
+  key); redrawing round locked chords; variations; alternatives and colours; sevenths as the key has them; Roman
+  numerals; a progression laid out a chord a bar.
+- [tests/app/test_ui_progressions.cpp](../tests/app/test_ui_progressions.cpp): the Progressions panel through the
+  clip view (see [ui/piano-roll.md](ui/piano-roll.md#tests)).
 - [tests/app/test_ui_pianoroll.cpp](../tests/app/test_ui_pianoroll.cpp): the chord lane over the clip (hidden with
   the key, clicks going through it), notes out of the key in red, Generate › Chords and › Bass; Humanize's menu
   (Velocity and Timing, each with its own amount, the notes getting the keyboard back);
@@ -1291,6 +1398,14 @@ What it is used for:
   its temperature scaling.
 - Font, Serrà, Serra, "Class-based tag recommendation and user-based evaluation in online audio clip sharing"
   (Knowledge-Based Systems, 2014): Freesound's tags as labels for what sounds are called.
+- Burgoyne, Wild and Fujinaga, "An Expert Ground Truth Set for Audio Chord Recognition and Music Analysis" (ISMIR
+  2011): the McGill Billboard annotations (CC0), how chords follow each other in progression ideas.
+- Drolez, free-midi-chords (https://github.com/ldrolez/free-midi-chords, MIT): the moods' progressions.
+- Pachet and Roy, "Markov constraints: steerable generation of Markov sequences" (Constraints, 2011): Markov chains
+  with chords fixed where the user wants them. Carter and Kohn, "On Gibbs sampling for state space models"
+  (Biometrika, 1994): forward filtering, backward sampling. Hinton, "Training products of experts by minimizing
+  contrastive divergence" (Neural Computation, 2002): two distributions multiplied, each vetoing what the other
+  doesn't like.
 - Krumhansl and Kessler, "Tracing the dynamic changes in perceived tonal organization in a spatial representation of
   musical keys" (1982): the key profiles; Krumhansl, *Cognitive Foundations of Musical Pitch* (1990).
 - Pardo and Birmingham, "Algorithms for chordal analysis" (Computer Music Journal, 2002): chord templates scored

@@ -426,10 +426,10 @@ Basic style. A style `Button` is a `RoleButton` that takes the focus, as a dialo
 [Icons](../../ui/src/theme/Icons.h) are small vector drawings on a 64 × 64 grid, drawn with `QPainter` at the size
 asked for, so they stay sharp at any scale and pixel ratio: play, stop, record, metronome, loop, follow,
 re_enable_automation, lock_envelopes, headphones, folder, waveform, plugin, preset, plugin_window, sidechain,
-snowflake, save, link, infinity, expand, sliders, fold, search, app_icon. QML gets them from the image provider,
+snowflake, save, link, infinity, expand, sliders, star, fold, search, app_icon. QML gets them from the image provider,
 `image://icons/<name>[?color=%23rrggbb][&state=on][&mode=disabled][&theme=<name>]` (`Icons.url()` builds it; `Icon { name; color;
-checked; size }` wraps it): `state=on` picks the On picture of `lock_envelopes` (closed) and `fold` (pointing right:
-folded), `mode=disabled` draws it in `Theme::textDisabled()`. C++ items draw them with `Icons::image()` on the GUI thread
+checked; size }` wraps it): `state=on` picks the On picture of `lock_envelopes` (closed), `fold` (pointing right:
+folded) and `star` (filled: a progression idea kept), `mode=disabled` draws it in `Theme::textDisabled()`. C++ items draw them with `Icons::image()` on the GUI thread
 and keep the image. Add an icon by adding its drawing to the table in [Icons.cpp](../../ui/src/theme/Icons.cpp).
 
 ## Shared controls
