@@ -45,6 +45,9 @@ struct Palette {
     QColor deviceHeaderSelected;  // a selected device's title bar
     QColor deviceHeaderHover;     // a device header button under the mouse
     QColor scopeLine, scopeGlow, scopeAxis;
+    // The transport bar's displays (its values over their captions, the position, the
+    // CPU and the device) and the scope: wells set into the bar.
+    QColor display;
     QColor frozen;      // a frozen track's snowflake
     QColor frozenTint;  // over a frozen track's lane
     QColor knob, knobTrack;  // a knob's value arc, and the rest of its range

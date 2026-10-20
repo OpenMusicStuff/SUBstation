@@ -199,7 +199,7 @@ private Q_SLOTS:
         const QRectF t = transport->mapRectToScene(transport->boundingRect());
         QCOMPARE(tb, QRectF(0, 0, window_->width(), 32));
         QCOMPARE(t.top(), tb.bottom());
-        QCOMPARE(t.height(), 40.0);
+        QCOMPARE(t.height(), 34.0);
         QVERIFY(t.bottom() <= b.top() + 1);
         QVERIFY(b.right() < a.left());
         QCOMPARE(b.width(), 300.0);

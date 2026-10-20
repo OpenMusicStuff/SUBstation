@@ -87,11 +87,11 @@ void TransportState::meterTick() {
     if (!cpuShown_.isValid()) cpuShown_.start();
     if (cpuShown_.elapsed() < kCpuEveryMs || !session_) return;
     cpuShown_.restart();
-    const QString text =
-        QStringLiteral("CPU %1%").arg(QString::number(session_->bridge()->cpuLoad() * 100.0, 'f', 0));
-    if (text == cpuText_) return;
-    cpuText_ = text;
-    Q_EMIT cpuTextChanged();
+    const double load = session_->bridge()->cpuLoad();
+    cpuHistory_ << load;  // (every reading, the same or not: the graph moves on)
+    if (cpuHistory_.size() > kCpuHistory) cpuHistory_.removeFirst();
+    cpuText_ = QStringLiteral("CPU %1%").arg(QString::number(load * 100.0, 'f', 0));
+    Q_EMIT cpuChanged();
 }
 
 void TransportState::refreshDisk() {
@@ -105,27 +105,30 @@ void TransportState::refreshDisk() {
                        .arg(late)
                        .arg(QString::number(bridge->diskLateMs(), 'f', 0))
                  : QStringLiteral("Long files stream from disk (Preferences > Audio). It has kept up.");
-    if (visible == diskVisible_ && text == diskText_ && toolTip == diskToolTip_) return;
+    if (visible == diskVisible_ && text == diskText_ && toolTip == diskToolTip_ && late == diskLate_) return;
     diskVisible_ = visible;
     diskText_ = text;
     diskToolTip_ = toolTip;
+    diskLate_ = late;
     Q_EMIT diskChanged();
 }
 
 void TransportState::refreshDevice() {
     QString text = QStringLiteral("No audio device");
     QString toolTip = QStringLiteral("No audio output is open. Click to open Preferences.");
+    QString deviceName, deviceRate;
     if (session_) {
         const app::AudioDeviceStatus status = session_->bridge()->deviceStatus();
         if (status.open) {
             // (Counted in characters, as Python counts them, not UTF-16 units.)
             const QList<uint> name = status.name.toUcs4();
-            const QString shown = name.size() <= kDeviceNameMax
-                                      ? status.name
-                                      : QString::fromUcs4(reinterpret_cast<const char32_t*>(name.constData()),
-                                                          kDeviceNameMax - 1) +
-                                            QStringLiteral("…");
-            text = QStringLiteral("%1 · %2 kHz").arg(shown, QString::number(status.sampleRate / 1000.0, 'g', 6));
+            deviceName = name.size() <= kDeviceNameMax
+                             ? status.name
+                             : QString::fromUcs4(reinterpret_cast<const char32_t*>(name.constData()),
+                                                 kDeviceNameMax - 1) +
+                                   QStringLiteral("…");
+            deviceRate = QStringLiteral("%1 kHz").arg(QString::number(status.sampleRate / 1000.0, 'g', 6));
+            text = QStringLiteral("%1 · %2").arg(deviceName, deviceRate);
             toolTip = QStringLiteral("%1: %2\n%3 Hz, %4 frames, ~%5 ms output latency%6\nClick to open Preferences.")
                           .arg(status.backend, status.name)
                           .arg(status.sampleRate)
@@ -137,6 +140,8 @@ void TransportState::refreshDevice() {
     if (text == deviceText_ && toolTip == deviceToolTip_) return;
     deviceText_ = text;
     deviceToolTip_ = toolTip;
+    deviceName_ = deviceName;
+    deviceRate_ = deviceRate;
     Q_EMIT deviceChanged();
 }
 

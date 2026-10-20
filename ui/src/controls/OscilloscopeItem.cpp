@@ -115,18 +115,28 @@ void OscilloscopeItem::rebuild() {
 }
 
 void OscilloscopeItem::paint(SgPainter& p) {
+    // A display of the transport bar (TransportBar.qml's Display): a well with
+    // rounded corners, shaded along its top inside.
     const QRectF rect(0, 0, width(), height());
-    p.fillRect(rect, Theme::meterBg());
-    const double mid = rect.center().y();
-    p.drawLine(QPointF(rect.left(), mid), QPointF(rect.right(), mid), Theme::scopeAxis(), 1.0);
-    p.drawRect(rect.adjusted(0, 0, -1, -1), Theme::border(), 1.0);
-    if (trace_.size() < 2)
-        return;
-    p.setClipRect(rect.adjusted(1, 1, -1, -1));
-    // The wide glow is soft anyway, so it skips antialiasing; the line keeps it.
-    p.drawPolyline(trace_.data(), int(trace_.size()), Theme::scopeGlow(), 3.0);
+    const QRectF edge = rect.adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal radius = Theme::kRadius;
     p.setAntialiasing(true);
-    p.drawPolyline(trace_.data(), int(trace_.size()), Theme::scopeLine(), 1.0);
+    p.fillRoundedRect(edge, radius, radius, Theme::display());
+    p.setAntialiasing(false);
+    p.fillRect(QRectF(radius, 1, width() - 2 * radius, 1), QColor(0, 0, 0, 22));
+    const double mid = rect.center().y();
+    p.drawLine(QPointF(rect.left() + 1, mid), QPointF(rect.right() - 1, mid), Theme::scopeAxis(), 1.0);
+    if (trace_.size() >= 2) {
+        p.save();
+        p.setClipRect(rect.adjusted(1, 2, -1, -1));
+        // The wide glow is soft anyway, so it skips antialiasing; the line keeps it.
+        p.drawPolyline(trace_.data(), int(trace_.size()), Theme::scopeGlow(), 3.0);
+        p.setAntialiasing(true);
+        p.drawPolyline(trace_.data(), int(trace_.size()), Theme::scopeLine(), 1.0);
+        p.restore();
+    }
+    p.setAntialiasing(true);
+    p.drawRoundedRect(edge, radius, radius, Theme::border());
 }
 
 }  // namespace sub::ui
