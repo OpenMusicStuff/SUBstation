@@ -133,6 +133,14 @@ struct EngineBridge::Private {
     QHash<QString, QStringList> closedEditors;
 
     QHash<QString, std::shared_ptr<sub::AudioSource>> sources;  // source key -> decoded file
+    // Source key -> its transients, once found, and the decoded file they were found in (a file decoded
+    // again, rewritten, has them found again).
+    struct Transients {
+        std::weak_ptr<const sub::AudioSource> from;
+        std::vector<std::pair<double, float>> found;
+    };
+    QHash<QString, Transients> transients;
+    std::optional<Tempo> grooveTempo;  // the tempo the clips' grooves were last played at
     QHash<QString, std::vector<std::function<void()>>> loading;  // source key -> what waits for it
     QHash<QString, QString> failed;  // source key -> why it couldn't be decoded
     QHash<QString, AudioFileInfo> fileInfo;  // source key -> its header's
@@ -177,6 +185,10 @@ struct EngineBridge::Private {
     QTimer positionTimer;  // the playhead: every display tick
     QTimer displayTimer;   // the meters, a recording's progress: the same
     QTimer idleTimer;      // the plug-ins, the device: kIdlePollMs
+    // Streaming: the disk's lateness so far, and when it was last said in the status line.
+    int diskLate = 0;
+    double diskLateMs = 0.0;
+    QElapsedTimer diskLateSaid;
 
     // For tests: reports to take as if the plug-ins had sent them (BridgeTestAccess).
     std::vector<sub::ProcessorEventRecord> injectedEvents;

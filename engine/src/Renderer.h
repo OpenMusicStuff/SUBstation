@@ -232,6 +232,16 @@ public:
         switchDelayOverride_ = switchLines;
     }
 
+    // Streamed sources (docs/engine/streaming.md). Playback that starts where a
+    // streamed clip's pages aren't in memory yet (a locate into the middle of a
+    // long clip) waits for them, up to kPreRollSeconds, before the playhead moves
+    // (it moves anyway then, the clip coming in once its pages are there). It
+    // looks kPreRollWindow ahead. After the playhead jumps while playing (a
+    // locate, a drag), misses are expected for kJumpGrace: not reported.
+    static constexpr double kPreRollSeconds = 0.15;
+    static constexpr double kPreRollWindow = 0.5;
+    static constexpr double kJumpGrace = 1.0;
+
     // How long a switch (a track's activator, a device's on/off) fades when its
     // automation switches it: about 5 ms, at most kMaxSwitchFade samples.
     static constexpr double kSwitchFade = 0.005;
@@ -244,7 +254,8 @@ private:
 
     // A rendering thread's scratch: what a track needs only while it renders.
     struct WorkerScratch {
-        std::vector<float> warpLeft, warpRight;  // one warped clip's audio, before gain and fades
+        std::vector<float> warpLeft, warpRight;  // one clip's audio (warped, or streamed), before gain and fades
+        std::vector<float> span;  // a streamed source's frames Re-Pitch's kernel reaches (2 * kResampleSpan)
         std::vector<float> autoGain, autoPanLeft, autoPanRight;  // automated fader, per sample
         std::vector<float> audible;   // the fader's mute (and solo) ramp, for pre-fader taps
         std::vector<float> edgeGain;  // an automated send level, per sample
@@ -274,6 +285,11 @@ private:
         // A Drum Rack pad's notes (padNotes), by its rack's depth; and a modulator's in a pad.
         std::array<std::vector<ProcessEvent>, kMaxRackDepth> padNotes;
         std::vector<ProcessEvent> modulatorNotes;
+        // The notes handed early to the chain being processed (its strip's, or a pad's: padEarly, by its
+        // rack's depth), for its first MIDI effect (processMidiEffects).
+        const EarlyEvent* early = nullptr;
+        int numEarly = 0;
+        std::array<std::vector<EarlyEvent>, kMaxRackDepth> padEarly;
     };
 
     // The stretches of a chunk a strip's devices process: one per continuous
@@ -315,6 +331,12 @@ private:
         float bend;      // the bend last sent (semitones)
         double startBeat;  // start and end in beats (a new tempo map moves them there)
         double endBeat;
+        // Handed early to a MIDI effect (buildEarlyEvents): `pending` until its start comes (its note-on
+        // goes out again then, with its id, for the devices that didn't take it early); `earlyOff`: its
+        // note-off was handed early too.
+        bool early = false;
+        bool pending = false;
+        bool earlyOff = false;
     };
     struct InputEvent {  // a MIDI input message due in this chunk
         int offset;
@@ -352,6 +374,8 @@ private:
     static constexpr int kBendHeadroom = 64;
 
     void renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags flags) noexcept;
+    // Playback starting: whether the playhead waits for streamed pages this chunk (the pre-roll).
+    bool waitsForStreams(const RenderSnapshot& snap, ChunkFlags flags, int frames) noexcept;
     // The graph's job: track `node` of the chunk's snapshot, on thread `worker`.
     static void renderNode(void* self, int node, int worker) noexcept;
     // A track, from its TrackBuffers (prepared by the prologue) and its incoming
@@ -406,12 +430,14 @@ private:
     // `out`, and `outSlices` (a copy of `slices`) says which are each slice's.
     void processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
                        const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
-                       WorkerScratch& scratch, EventOutput* out = nullptr, Slices* outSlices = nullptr) noexcept;
+                       WorkerScratch& scratch, EventOutput* out = nullptr, Slices* outSlices = nullptr,
+                       EarlyList early = {}) noexcept;
     // Before a chain's devices: its MIDI effects (Processor::isMidiEffect()), in
     // their order, each playing the notes the last one played; `slices` and
     // `events` become the notes the chain's devices hear (in scratch.midiNotes).
     // One switched off (or bypassed by its automation) passes the notes on, after
-    // ending the notes it was playing.
+    // ending the notes it was playing. The first, if it plays notes early
+    // (earlyBeats()), gets those handed early (scratch.early).
     void processMidiEffects(const RenderSnapshot& snap, const StripRender& chain, ProcessContext& context,
                             Slices& slices, ProcessEvent*& events, float* left, float* right, int frames, int depth,
                             WorkerScratch& scratch) noexcept;
@@ -441,6 +467,8 @@ private:
     // goes on to it too), into `out` (TrackBuffers::kMaxEvents long), slice by slice.
     static void padNotes(int key, const Slices& slices, const ProcessEvent* events, ProcessEvent* out,
                          Slices& outSlices) noexcept;
+    // The same of the notes handed early: those of its key, as C3, into `out` (kMaxEarly long); how many.
+    static int padEarly(int key, const EarlyEvent* events, int count, EarlyEvent* out) noexcept;
     void processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                      const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                      bool monitored, WorkerScratch& scratch) noexcept;
@@ -518,7 +546,23 @@ private:
     // `chaseClips`: its clips' notes underway sound from the chunk's start (its clips play again).
     void buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool hearsInput, bool clipNotes,
                          MidiRecordingTake* take, bool chaseClips = false) noexcept;
-    void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept;
+    // Its sounding notes' note-offs (and those handed early, but at a loop's wrap: `keepHanded`; they
+    // were handed for after it).
+    void releaseNotes(uint32_t trackId, int offset, TrackBuffers& out, bool keepHanded = false) noexcept;
+    // Prologue, after its notes: the track's clips' notes due within its MIDI effects' earlyBeats()
+    // after the chunk (where the playhead goes on, round the loop once at most), handed early
+    // (TrackBuffers::early), each noted as an active note `pending` its start; and the note-offs of
+    // the notes handed early that fall there.
+    void buildEarlyEvents(const RenderSnapshot& snap, const TrackRender& track, TrackBuffers& out, int frames) noexcept;
+    // The notes starting (and those handed early ending) in [from, to) of the timeline, which plays
+    // `offset` samples from the chunk's start.
+    void handEarly(const TrackRender& track, TrackBuffers& out, int64_t from, int64_t to, int64_t offset) noexcept;
+    // How early a chain's notes are taken (the largest earlyBeats() of the first MIDI effect of
+    // it and of each chain of its racks, those switched on).
+    static double earlyBeatsOf(const StripRender& chain) noexcept;
+    // A note of the track's clips starting where one handed early waits: its note-on again, with that
+    // one's id (and its bend where it starts); false if none waits for it.
+    bool startHanded(const TrackRender& track, size_t index, int32_t offset, TrackBuffers& out) noexcept;
     // A note-on for a note of the track's clips (and its bend where it starts
     // sounding, `from` samples into it), remembered as an active note.
     bool startNote(const TrackRender& track, size_t index, int32_t offset, int64_t from, TrackBuffers& out) noexcept;
@@ -561,6 +605,9 @@ private:
     int64_t chunkFrom_ = -1;  // where the last chunk ended (-1: it didn't play): what a jump at this one's start left
     bool playing_ = false;
     bool chasePending_ = false;  // playback just started: its first segment chases notes
+    int64_t preRollLeft_ = 0;    // samples the playhead may still wait for streamed pages (live)
+    int64_t jumpGraceLeft_ = 0;  // samples misses are still expected for, after a jump
+    StreamReads chunkReads_{};   // how this chunk reads streamed sources
     int64_t countIn_ = 0;        // samples of count-in still to come before the playhead moves
     int64_t countInTotal_ = 0;
     // The count-in's clicks: one a beat of the time signature where playback starts, at the tempo there.

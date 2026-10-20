@@ -7,6 +7,7 @@
 #include "io/LiveImport.h"
 
 #include "io/Bytes.h"
+#include "io/GrooveFiles.h"
 #include "io/Json.h"
 #include "io/LiveSet.h"
 #include "io/Serialization.h"
@@ -15,6 +16,7 @@
 #include "model/Device.h"
 #include "model/DeviceState.h"
 #include "model/Devices.h"
+#include "model/Grooves.h"
 #include "model/Ids.h"
 #include "model/Keys.h"
 #include "model/ParamSpec.h"
@@ -414,6 +416,10 @@ private:
     };
 
     void readSettings();
+    // The groove pool: each groove into the library (grooves_), and the Global Amount its clips play them at.
+    void readGrooves();
+    // A clip's groove, if it plays one of the pool's: into its data.
+    void addGroove(const Element& clip, QJsonObject& data);
     void assignIds();
     QJsonObject translateTrack(const Element& track, const QString& id, const std::optional<QString>& parent);
     QJsonObject translateReturn(const Element& track, const QString& id);
@@ -492,9 +498,45 @@ private:
     int clipCount_ = 0;
     QHash<QString, QString> resolvedPaths_;  // a file as the set names it (path, relative) -> where it is
     QSet<QString> missingPaths_;
+    // The groove pool's grooves: Live's Id -> (the library groove's id, the amounts it is played at).
+    QHash<QString, std::pair<QString, groove::Amounts>> grooves_;
+    QJsonArray grooveList_;  // the library, as the project file holds it
+    double grooveAmount_ = 1.0;  // Live's Global Amount (0..1.3125)
+    int groovedClips_ = 0;
 };
 
 // --- The song --------------------------------------------------------------------------------
+
+void Importer::readGrooves() {
+    const Element* master = set_.child(u"MainTrack") ? set_.child(u"MainTrack") : set_.child(u"MasterTrack");
+    if (const Element* mixer = master ? master->at(u"DeviceChain/Mixer") : nullptr) {
+        grooveAmount_ = std::clamp(mixer->number(u"GlobalGrooveAmount/Manual", 100.0) / 100.0, 0.0, 1.3125);
+    }
+    const Element* pool = set_.at(u"GroovePool/Grooves");
+    if (!pool) return;
+    for (const Element* element : pool->all(u"Groove")) {
+        const AgrGroove read = agrGroove(*element);
+        const QString id = newId();
+        const QString name = read.name.isEmpty() ? QStringLiteral("Groove %1").arg(grooveList_.size() + 1) : read.name;
+        grooveList_.append(libraryGrooveToJson({id, name, read.groove, read.notes}));
+        grooves_.insert(element->attribute(u"Id"), {id, read.amounts});
+    }
+}
+
+void Importer::addGroove(const Element& clip, QJsonObject& data) {
+    const auto found = grooves_.constFind(clip.value(u"GrooveSettings/GrooveId").value_or(QStringLiteral("-1")));
+    if (found == grooves_.constEnd()) return;
+    ClipGroove groove;
+    groove.source = grooves::librarySource(found->first);
+    // The groove's own amounts, as Live's Global Amount scales them.
+    const groove::Amounts& own = found->second;
+    groove.amounts.timing = std::clamp(own.timing * grooveAmount_, 0.0, groove::kMaxTimingAmount);
+    groove.amounts.velocity = std::clamp(own.velocity * grooveAmount_, -1.0, 1.0);
+    groove.amounts.random = std::clamp(own.random * grooveAmount_, 0.0, 1.0);
+    groove.amounts.quantize = std::clamp(own.quantize * grooveAmount_, 0.0, 1.0);
+    data[QStringLiteral("groove")] = clipGrooveToJson(groove);
+    ++groovedClips_;
+}
 
 const Element* masterTrack(const Element& set) {
     if (const Element* main = set.child(u"MainTrack")) return main;  // (Live 12)
@@ -618,6 +660,7 @@ void Importer::assignIds() {
 
 ImportResult Importer::run() {
     readSettings();
+    readGrooves();
     assignIds();
     const Element* tracks = set_.child(u"Tracks");
     QHash<QString, QString> groupIds;  // a Live group's Id -> its id
@@ -717,6 +760,15 @@ ImportResult Importer::run() {
         {QStringLiteral("master"), master},
         {QStringLiteral("tracks"), trackList},
         {QStringLiteral("returns"), returns_}};
+    if (!grooveList_.isEmpty()) {
+        result.project[QStringLiteral("grooves")] = grooveList_;
+        notes_.line(grooveList_.size() == 1
+                        ? QStringLiteral("The groove pool's groove is in the project's grooves (%1 clips play it).")
+                              .arg(groovedClips_)
+                        : QStringLiteral("The groove pool's %1 grooves are in the project's grooves (%2 clips play them).")
+                              .arg(grooveList_.size())
+                              .arg(groovedClips_));
+    }
     result.notes = notes_.all();
     result.tracks = static_cast<int>(tracks_.size());
     result.clips = clipCount_;
@@ -1924,6 +1976,7 @@ std::optional<QJsonObject> Importer::midiClip(const Element& clip,
                      {QStringLiteral("start_beat"), start}, {QStringLiteral("duration_beats"), length},
                      {QStringLiteral("offset_beats"), 0.0}, {QStringLiteral("notes"), notes}};
     if (clip.flag(u"Disabled")) data[QStringLiteral("muted")] = true;
+    addGroove(clip, data);
     return data;
 }
 
@@ -2073,6 +2126,7 @@ void Importer::audioClips(const Element& clip, QJsonArray& out) {
             data[QStringLiteral("fade_out_curve")] = std::clamp(clip.number(u"Fades/FadeOutCurveSlope"), -1.0, 1.0);
         }
         if (clip.flag(u"Disabled")) data[QStringLiteral("muted")] = true;
+        if (warped) addGroove(clip, data);  // (Live grooves warped clips only, as SUBstation does)
         out.append(data);
         ++clipCount_;
     }

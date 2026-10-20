@@ -441,6 +441,42 @@ private Q_SLOTS:
         QCOMPARE(volume->text(), QStringLiteral("6.0"));
     }
 
+    // A field of a display (bare): no box of its own, what is behind it showing, a tint
+    // under the mouse; its value above its bottom padding (a caption's room).
+    void bareValueBoxShowsWhatIsBehind() {
+        auto* box = item<ValueBoxItem>("bareBox");
+        QVERIFY(box->bare());
+        QCOMPARE(box->bottomPadding(), 11.0);
+        QTest::mouseMove(window_, QPoint(500, 20));  // (away from it)
+        QTRY_VERIFY(!box->hovered());
+        const qreal dpr = window_->effectiveDevicePixelRatio();
+        const auto grab = [this, box, dpr] {
+            return window_->grabWindow().copy(
+                QRectF(box->mapToScene(QPointF(0, 0)) * dpr, box->size() * dpr).toRect());
+        };
+        // The rows from `top` to `bottom` with anything drawn on them.
+        const auto inked = [this](const QImage& image, int top, int bottom) {
+            int rows = 0;
+            for (int y = top; y < bottom; ++y)
+                for (int x = 0; x < image.width(); ++x)
+                    if (QColor(image.pixel(x, y)) != window_->color()) {
+                        ++rows;
+                        break;
+                    }
+            return rows;
+        };
+        const QImage plain = grab();
+        const int padding = int(std::ceil(11.0 * dpr));
+        QCOMPARE(QColor(plain.pixel(0, 0)), window_->color());                 // no box
+        QCOMPARE(QColor(plain.pixel(plain.width() / 2, 0)), window_->color());  // no border either
+        QVERIFY(inked(plain, 0, plain.height() - padding) > 4);                // the value...
+        QCOMPARE(inked(plain, plain.height() - padding, plain.height()), 0);   // ...above the padding
+
+        QTest::mouseMove(window_, center(box));
+        QTRY_VERIFY(box->hovered());
+        QTRY_VERIFY(QColor(grab().pixel(int(4 * dpr), int(4 * dpr))) != window_->color());  // tinted
+    }
+
     // --- Meter -----------------------------------------------------------------------
 
     void meterFallsAndClips() {
@@ -659,6 +695,8 @@ Window {
                choices: [1, 2, 4, 8, 16, 32] }
     ValueBox { objectName: "volume"; x: 150; y: 180; width: 70; height: 24; from: -70; to: 6; value: -6; step: 0.25
                decimals: 1; defaultValue: 0 }
+    ValueBox { objectName: "bareBox"; x: 330; y: 100; width: 50; height: 28; bare: true; bottomPadding: 11
+               from: 0; to: 10; value: 5; decimals: 0 }
     Meter { objectName: "meter"; x: 240; y: 170; width: 10; height: 60 }
     Oscilloscope { objectName: "scope"; x: 270; y: 180 }
     ToggleButton { objectName: "toggle"; x: 20; y: 240; text: "S"; role: "solo" }

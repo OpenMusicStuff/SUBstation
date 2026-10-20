@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Snapshot.h"
+#include "StreamCache.h"
 #include "WarpCache.h"
 
 #if defined(__AVX__)
@@ -47,6 +48,42 @@ struct SourceInput {
     Channel operator[](int c) const noexcept {
         return {source->stereoChannel(static_cast<uint32_t>(c)), source->frames(), start};
     }
+};
+
+// The same of a streamed source, live: a page not in memory reads as silence
+// (faded at its edges: StreamedAudio::sample()).
+struct StreamInput {
+    const StreamedAudio* stream;
+    int64_t start;
+
+    struct Channel {
+        const StreamedAudio* stream;
+        uint32_t side;
+        int64_t start;
+        float operator[](int i) const noexcept { return stream->sample(side, start + i); }
+    };
+    Channel operator[](int c) const noexcept { return {stream, static_cast<uint32_t>(c), start}; }
+};
+
+// The same offline: the pages it reads leased first (waiting for the disk), so all of them are there.
+struct LeasedInput {
+    const std::vector<StreamLease>* leases;
+    int64_t firstPage;
+    int64_t start;
+    int64_t frames;
+    uint32_t channels;
+
+    struct Channel {
+        const LeasedInput* input;
+        uint32_t channel;
+        float operator[](int i) const noexcept {
+            const int64_t k = input->start + i;
+            if (k < 0 || k >= input->frames) return 0.f;
+            const StreamLease& page = (*input->leases)[static_cast<size_t>((k >> kStreamPageShift) - input->firstPage)];
+            return page ? page.channel(channel)[k & (kStreamPageFrames - 1)] : 0.f;
+        }
+    };
+    Channel operator[](int c) const noexcept { return {this, channels > 1 ? static_cast<uint32_t>(c) : 0u}; }
 };
 
 // Windowed-sinc (Lanczos) kernel, tabulated. kHalfWidth zero crossings each
@@ -150,7 +187,8 @@ inline void phasedFrame(const float* low, const float* high, float frac, const f
 }
 
 // One frame at any rate: source frames first..last (at least one) around `pos`,
-// the kernel scaled by `cutoff`; the sums before the gain. With AVX2, eight taps
+// `srcL[0]` and `srcR[0]` being frame `first`, the kernel scaled by `cutoff`;
+// the sums before the gain. With AVX2, eight taps
 // at a time. Each tap's position in the table is computed in float from its
 // whole frames and the fraction apart, within a thousandth of a table step of
 // kSinc's (a weight within about 1e-6). Its two table values are loaded as one
@@ -188,16 +226,16 @@ inline void kernelFrame(const float* srcL, const float* srcR, double pos, int64_
         const __m256i inside = _mm256_cmpgt_epi32(_mm256_set1_epi32(taps), jv);
         const __m256 w = _mm256_and_ps(_mm256_add_ps(a, _mm256_mul_ps(frac, _mm256_sub_ps(b, a))),
                                        _mm256_castsi256_ps(inside));
-        sumL = _mm256_add_ps(sumL, _mm256_mul_ps(_mm256_maskload_ps(srcL + first + j, inside), w));
-        sumR = _mm256_add_ps(sumR, _mm256_mul_ps(_mm256_maskload_ps(srcR + first + j, inside), w));
+        sumL = _mm256_add_ps(sumL, _mm256_mul_ps(_mm256_maskload_ps(srcL + j, inside), w));
+        sumR = _mm256_add_ps(sumR, _mm256_mul_ps(_mm256_maskload_ps(srcR + j, inside), w));
     }
     sumLanes(sumL, sumR, outL, outR);
 #else
     float l = 0.f, r = 0.f;
     for (int64_t k = first; k <= last; ++k) {
         const float w = kSinc(std::abs(pos - static_cast<double>(k)) * cutoff);
-        l += srcL[k] * w;
-        r += srcR[k] * w;
+        l += srcL[k - first] * w;
+        r += srcR[k - first] * w;
     }
     outL = l;
     outR = r;
@@ -231,6 +269,35 @@ struct WarpVoice::State {
     std::vector<float> fadeLeft, fadeRight;
     size_t fadeAt = 0;
     bool fadeFresh = false;  // set for the render() that starts it; any other re-seek drops what is left
+    std::vector<StreamLease> leases;  // offline: the streamed pages the stretcher reads now
+
+    // `use(input)` with the source's frames from `start` on as the stretcher's input, `count` of
+    // them read: in place, through the stream cache's pages, or (offline) leased.
+    template <typename F>
+    void feed(const AudioSource& source, int64_t start, int64_t count, StreamReads reads, F&& use) noexcept {
+        const StreamedAudio* stream = source.stream();
+        if (!stream) {
+            SourceInput input{&source, start};
+            use(input);
+            return;
+        }
+        if (!reads.blocking) {
+            stream->noteMissing(start, count, reads.missesExpected);
+            StreamInput input{stream, start};
+            use(input);
+            return;
+        }
+        const int64_t from = std::max<int64_t>(start, 0);
+        const int64_t to = std::min<int64_t>(start + count, stream->frames());
+        const int64_t firstPage = from >> kStreamPageShift;
+        leases.clear();
+        if (from < to) {
+            for (int64_t k = firstPage; k <= (to - 1) >> kStreamPageShift; ++k) leases.push_back(stream->lease(k));
+        }
+        LeasedInput input{&leases, firstPage, start, stream->frames(), stream->channels()};
+        use(input);
+        leases.clear();
+    }
 };
 
 WarpVoice::WarpVoice(StretchConfig config, double sampleRate)
@@ -240,6 +307,7 @@ WarpVoice::WarpVoice(StretchConfig config, double sampleRate)
     state_->fadeLeft.resize(fade);
     state_->fadeRight.resize(fade);
     state_->fadeAt = fade;
+    state_->leases.reserve(8);
 }
 
 WarpVoice::~WarpVoice() = default;
@@ -256,25 +324,34 @@ bool WarpVoice::carriesOn(const ClipRender& clip, int64_t position) const noexce
 void WarpVoice::fadeFrom(const WarpRender& render, const ClipRender& clip, int64_t position) noexcept {
     State& st = *state_;
     const int64_t last = render.length() - 1;
+    // Its frames in memory, or (a streamed clip's render) through the stream cache's pages.
+    const AudioSource* audio = render.audio();
+    const StreamedAudio* stream = audio ? audio->stream() : nullptr;
+    const float* left = render.left();
+    const float* right = render.right();
+    const auto at = [&](uint32_t side, size_t u) {
+        if (stream) return stream->sample(side, static_cast<int64_t>(u));
+        return (side ? right : left)[u];
+    };
     for (size_t i = 0; i < st.fadeLeft.size(); ++i) {
         // The render's frame for this source position (at its own rate, or by its curve), between two frames.
-        const double at = render.frameOf(clip.sourceAt(position + static_cast<int64_t>(i)));
-        const auto k = static_cast<int64_t>(std::floor(at));
-        if (k < 0 || k >= last) {  // past its ends
+        const double frame = render.frameOf(clip.sourceAt(position + static_cast<int64_t>(i)));
+        const auto k = static_cast<int64_t>(std::floor(frame));
+        if (k < 0 || k >= last || (!stream && !left)) {  // past its ends
             st.fadeLeft[i] = st.fadeRight[i] = 0.f;
             continue;
         }
-        const auto frac = static_cast<float>(at - static_cast<double>(k));
+        const auto frac = static_cast<float>(frame - static_cast<double>(k));
         const auto u = static_cast<size_t>(k);
-        st.fadeLeft[i] = render.left()[u] + frac * (render.left()[u + 1] - render.left()[u]);
-        st.fadeRight[i] = render.right()[u] + frac * (render.right()[u + 1] - render.right()[u]);
+        st.fadeLeft[i] = at(0, u) + frac * (at(0, u + 1) - at(0, u));
+        st.fadeRight[i] = at(1, u) + frac * (at(1, u + 1) - at(1, u));
     }
     st.fadeAt = 0;
     st.fadeFresh = true;
 }
 
 void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL,
-                       float* outR) noexcept {
+                       float* outR, StreamReads reads) noexcept {
     State& st = *state_;
     auto& stretch = st.stretch;
 
@@ -294,8 +371,7 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
         // source frame `from`: sample-accurate starts, locates and loop jumps.
         const auto from = static_cast<int64_t>(std::floor(clip.sourceAt(position)));
         const int seekLength = stretch.outputSeekLength(static_cast<float>(rate));
-        SourceInput seekInput{clip.source.get(), from};
-        stretch.outputSeek(seekInput, seekLength);
+        st.feed(*clip.source, from, seekLength, reads, [&](auto& input) { stretch.outputSeek(input, seekLength); });
         st.inputPos = from + seekLength;
         st.primed = true;
         if (!st.fadeFresh) st.fadeAt = st.fadeLeft.size();  // a fade left from before belongs elsewhere
@@ -307,9 +383,8 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
     // end on; rounding never accumulates because the target is absolute.
     const int64_t target = std::llround(clip.sourceAt(position + frames) + lead);
     const auto count = static_cast<int>(std::max<int64_t>(0, target - st.inputPos));
-    SourceInput input{clip.source.get(), st.inputPos};
     float* outputs[2] = {outL, outR};
-    stretch.process(input, count, outputs, frames);
+    st.feed(*clip.source, st.inputPos, count, reads, [&](auto& input) { stretch.process(input, count, outputs, frames); });
     st.inputPos += count;
 
     // A crossfade from a render under way: the voice's share rises linearly.
@@ -324,17 +399,18 @@ void WarpVoice::render(const ClipRender& clip, int64_t position, int frames, boo
 // ---------------------------------------------------------------------------
 // Re-Pitch
 
-void renderResampled(const ClipRender& clip, int64_t position, int frames, float* outL, float* outR) noexcept {
-    const AudioSource& source = *clip.source;
-    const float* srcL = source.stereoChannel(0);
-    const float* srcR = source.stereoChannel(1);
-    const int64_t total = source.frames();
+namespace {
 
-    // Speeding up moves content above the output Nyquist: lower the cutoff (and
-    // widen the kernel) by the rate so it is filtered out instead of aliasing.
-    // (Under a curve, the fastest it goes in the block.)
-    const double fastest = clip.curve ? std::max(clip.rateAt(position), clip.rateAt(position + frames)) : clip.rate;
-    const double cutoff = 1.0 / std::clamp(fastest, 1.0, kMaxRateFiltered);
+// Source frames as the kernel reads them: left[k - first] and right[k - first] are frame k.
+struct SourceSpan {
+    const float* left;
+    const float* right;
+    int64_t first;
+};
+
+// Frames [position, position + frames) of the clip, the kernel scaled by `cutoff` (the block's), from `span`.
+void resampleFrames(const ClipRender& clip, int64_t position, int frames, float* outL, float* outR,
+                    const SourceSpan& span, int64_t total, double cutoff) noexcept {
     const double reach = kHalfWidth / cutoff;
     const auto gainScale = static_cast<float>(cutoff);
     const bool phased = cutoff == 1.0;  // at most the source's speed: the phase table
@@ -347,16 +423,60 @@ void renderResampled(const ClipRender& clip, int64_t position, int frames, float
             const double scaled = (pos - whole) * kResolution;
             const auto q = static_cast<size_t>(scaled);  // below kResolution: the fraction is below 1
             const auto frac = static_cast<float>(scaled - static_cast<double>(q));
-            phasedFrame(kSincPhases.rows[q].data(), kSincPhases.rows[q + 1].data(), frac, srcL + lowest,
-                        srcR + lowest, outL[i], outR[i]);
+            phasedFrame(kSincPhases.rows[q].data(), kSincPhases.rows[q + 1].data(), frac, span.left + (lowest - span.first),
+                        span.right + (lowest - span.first), outL[i], outR[i]);
             continue;
         }
         const auto first = std::max<int64_t>(0, static_cast<int64_t>(std::floor(pos - reach)) + 1);
         const auto last = std::min<int64_t>(total - 1, static_cast<int64_t>(std::floor(pos + reach)));
         float l = 0.f, r = 0.f;
-        if (first <= last) kernelFrame(srcL, srcR, pos, first, last, cutoff, l, r);
+        if (first <= last)
+            kernelFrame(span.left + (first - span.first), span.right + (first - span.first), pos, first, last, cutoff, l, r);
         outL[i] = l * gainScale;
         outR[i] = r * gainScale;
+    }
+}
+
+}  // namespace
+
+void renderResampled(const ClipRender& clip, int64_t position, int frames, float* outL, float* outR, float* span,
+                     StreamReads reads) noexcept {
+    const AudioSource& source = *clip.source;
+    const int64_t total = source.frames();
+
+    // Speeding up moves content above the output Nyquist: lower the cutoff (and
+    // widen the kernel) by the rate so it is filtered out instead of aliasing.
+    // (Under a curve, the fastest it goes in the block.)
+    const double fastest = clip.curve ? std::max(clip.rateAt(position), clip.rateAt(position + frames)) : clip.rate;
+    const double cutoff = 1.0 / std::clamp(fastest, 1.0, kMaxRateFiltered);
+    if (source.resident()) {
+        resampleFrames(clip, position, frames, outL, outR, {source.stereoChannel(0), source.stereoChannel(1), 0}, total,
+                       cutoff);
+        return;
+    }
+    if (!span) {
+        std::fill_n(outL, frames, 0.f);
+        std::fill_n(outR, frames, 0.f);
+        return;
+    }
+    // Streamed: the frames the kernel reaches over a piece of the block at a time, fetched into `span`.
+    const double reach = kHalfWidth / cutoff;
+    const SourceCursor cursor(source);
+    for (int done = 0; done < frames;) {
+        int piece = frames - done;
+        int64_t first = 0, end = 0;
+        for (;;) {  // (a piece whose frames fit)
+            const int64_t t = position + done;
+            first = std::max<int64_t>(0, static_cast<int64_t>(std::floor(clip.sourceAt(t) - reach)));
+            end = std::min<int64_t>(total, static_cast<int64_t>(std::floor(clip.sourceAt(t + piece - 1) + reach)) + 2);
+            if (end - first <= kResampleSpan || piece == 1) break;
+            piece = std::max(1, piece / 2);
+        }
+        end = std::min(end, first + kResampleSpan);
+        if (first < end) cursor.fetch(first, end - first, span, span + kResampleSpan, reads);
+        resampleFrames(clip, position + done, piece, outL + done, outR + done,
+                       {span, span + kResampleSpan, first}, total, cutoff);
+        done += piece;
     }
 }
 

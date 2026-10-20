@@ -14,6 +14,12 @@
 // half the range): value = 0.5 + (y - 0.5) * depth + offset / 2, held to 0..1.
 // Smooth eases it (a one-pole: a stepped curve without clicks).
 //
+// Follow Groove: synced and following the song, it plays its straight time
+// where the project's groove puts it (ProcessContext::groove): a cycle point
+// due at a beat comes where groove::place() moves that beat (the warp found back
+// from where the song is, every kGrooveStep samples, straight between), so a
+// 1/16 LFO swings with the hats. Without a project groove, as it is.
+//
 // Random plays a new random curve each cycle instead of the drawn one
 // (ModulatorDesign.h's randomPoints), from where the last one ended. A cycle
 // starts where the curve wraps round (after Phase), or where a note restarts it.
@@ -30,6 +36,8 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/ModulatorDesign.h"
+#include "music/Groove.h"
+#include "music/TempoMap.h"
 
 namespace sub {
 namespace {
@@ -40,6 +48,7 @@ class LfoProcessor final : public BuiltinProcessor {
 public:
     enum Param { Rate = 0, Sync, Synced, Depth, Offset, PhaseShift, Retrigger, Smooth, kFirstPoint };
     static constexpr int Random = kFirstPoint + md::kPoints * md::kPointParams;  // (after the points: added later)
+    static constexpr int FollowGroove = Random + 1;
     enum Display { ValueDisplay = 0, PhaseDisplay, KeyDisplay, SeedDisplay, StartDisplay };
 
     LfoProcessor()
@@ -83,6 +92,10 @@ protected:
                                    : std::clamp(static_cast<double>(param(Rate)), 0.001, 1000.0) / sampleRate_;
         const bool retrigger = isOn(Retrigger);
         const bool followsSong = synced && ctx.playing && !retrigger;
+        // Following the groove: the straight beat played at each kGrooveStep samples' beat.
+        const groove::Groove* follows = followsSong && isOn(FollowGroove) && ctx.tempoMap ? ctx.groove : nullptr;
+        double straightFrom = 0.0, straightTo = 0.0;
+        int straightAt = -1;
         const double shift = std::clamp(static_cast<double>(param(PhaseShift)), 0.0, 360.0) / 360.0;
         const float depth = std::clamp(param(Depth) / 100.f, 0.f, 1.f);
         const float offset = std::clamp(param(Offset) / 100.f, -1.f, 1.f) * 0.5f;
@@ -99,7 +112,20 @@ protected:
                 }
             }
             if (followsSong) {
-                const double beat = ctx.beatPos + i / samplesPerBeat;
+                double beat = ctx.beatPos + i / samplesPerBeat;
+                if (follows) {
+                    if (straightAt < 0 || i >= straightAt + kGrooveStep) {
+                        // (A window right after the last starts where that one ended.)
+                        const int at = i - i % kGrooveStep;
+                        straightFrom = straightAt >= 0 && at == straightAt + kGrooveStep
+                                           ? straightTo
+                                           : straightBeat(*follows, ctx.beatPos + at / samplesPerBeat, *ctx.tempoMap);
+                        straightAt = at;
+                        straightTo = straightBeat(*follows, ctx.beatPos + (straightAt + kGrooveStep) / samplesPerBeat,
+                                                  *ctx.tempoMap);
+                    }
+                    beat = straightFrom + (straightTo - straightFrom) * (i - straightAt) / kGrooveStep;
+                }
                 phase_ = beat / cycleBeats - std::floor(beat / cycleBeats);
             }
             double x = phase_ + shift;
@@ -130,6 +156,21 @@ protected:
     }
 
 private:
+    static constexpr int kGrooveStep = 32;  // samples between the points where Follow Groove finds its straight beat
+
+    // The straight beat a groove plays at `beat` (its timing's warp, found back: it only rises).
+    static double straightBeat(const groove::Groove& groove, double beat, const TempoMap& tempo) noexcept {
+        const auto placed = [&](double b) { return groove::place(groove, b, 60, 100.0, 0.0, tempo, {}).beat; };
+        // A groove moves a step by less than two steps and 100 ms (Timing at its most): within that either way.
+        const double reach = 2.0 * groove.stepBeats + 0.1 * tempo.bpmAt(beat) / 60.0;
+        double low = beat - reach, high = beat + reach;
+        for (int i = 0; i < 40 && high - low > 1e-9; ++i) {
+            const double mid = 0.5 * (low + high);
+            (placed(mid) < beat ? low : high) = mid;
+        }
+        return 0.5 * (low + high);
+    }
+
     static const std::vector<ParamInfo>& infos() {
         static const std::vector<ParamInfo> kInfos = [] {
             const std::vector<std::string>& kOnOff = offOnLabels();
@@ -146,6 +187,7 @@ private:
             };
             md::appendPointParams(list, md::trianglePoints());
             list.push_back({"random", "Random", "", 0.f, 1.f, 0.f, false, kOnOff});
+            list.push_back({"follow_groove", "Follow Groove", "", 0.f, 1.f, 0.f, false, kOnOff});
             return list;
         }();
         return kInfos;

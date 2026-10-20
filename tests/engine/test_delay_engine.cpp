@@ -1,5 +1,6 @@
 // The built-in Delay: synced and free times, offset, link, feedback, ping pong, freeze, the filter, the modes,
-// swing, drive and duck.
+// swing, drive and duck; and its Digital character (Valhalla Delay's Digital mode at its default preset): the
+// band-limit, the compressor, the modulation, equal-power dry/wet.
 
 #include <algorithm>
 #include <cmath>
@@ -7,6 +8,7 @@
 #include <utility>
 
 #include "Engine.h"
+#include "builtin/DelayCharacter.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
 
@@ -42,19 +44,43 @@ uint32_t delay(sub::Engine& engine, uint32_t track, const Values& values = {}) {
     return device;
 }
 
-// Where the channel's echoes are (the first sample of each).
-std::vector<int64_t> echoes(const Samples& channel, double threshold = 0.05) {
-    std::vector<int64_t> found;
-    const std::vector<int64_t> loud = above(channel, threshold);
-    for (size_t i = 0; i < loud.size(); ++i)
-        if (i == 0 || loud[i] - loud[i - 1] > 8) found.push_back(loud[i]);
-    return found;
+// The band-limit's taps at the engine's rate, and where its peak is (an echo of a click peaks that late).
+const std::vector<float>& bandLimit() {
+    static const std::vector<float> taps = sub::delay_character::DigitalDesign::bandLimit(kSampleRate);
+    return taps;
+}
+int64_t bandLimitPeak() {
+    const auto& taps = bandLimit();
+    return std::max_element(taps.begin(), taps.end()) - taps.begin();
+}
+double bandLimitHeight() { return *std::max_element(bandLimit().begin(), bandLimit().end()); }
+
+// Where a click's echo peaks when the line is read `delay` samples back: the modulation moves the read as the
+// device runs it from the render's start, and the band-limit adds its own lateness.
+int64_t echoPeak(int64_t click, double delay) {
+    sub::delay_character::DigitalModulation modulation;
+    modulation.prepare(kSampleRate);
+    const int64_t peak = bandLimitPeak();
+    for (int64_t t = 0;; ++t) {
+        const double reads = static_cast<double>(t) - delay - modulation.next();  // the line's sample read at t
+        if (reads >= static_cast<double>(click + peak) - 0.5) return t;
+    }
 }
 
-int64_t firstEcho(const Samples& channel, double threshold = 0.05) {
-    const auto found = echoes(channel, threshold);
-    REQUIRE(!found.empty());
-    return found[0];
+// The channel's loudest sample within `reach` of `around`.
+int64_t peakNear(const Samples& channel, int64_t around, int64_t reach = 400) {
+    const int64_t from = std::max<int64_t>(0, around - reach), to = std::min<int64_t>(channel.size(), around + reach);
+    int64_t best = from;
+    for (int64_t i = from; i < to; ++i)
+        if (std::abs(channel[i]) > std::abs(channel[best])) best = i;
+    return best;
+}
+
+double energyNear(const Samples& channel, int64_t at, int64_t reach = 300) {
+    double sum = 0;
+    for (int64_t i = std::max<int64_t>(0, at - reach); i < std::min<int64_t>(channel.size(), at + reach); ++i)
+        sum += static_cast<double>(channel[i]) * channel[i];
+    return sum;
 }
 
 }  // namespace
@@ -80,9 +106,13 @@ TEST_CASE("synced times follow the tempo") {
     delay(engine, track, {{"l_division", 2.f}, {"r_division", 3.f}});  // 3 and 4 sixteenths
     const Samples out = engine.renderOffline(0.0, kSampleRate);
     // Fully wet: the click itself is gone, its echo comes 3 (left) and 4 (right) sixteenths later.
-    CHECK_NEAR(firstEcho(channel(out, 0)), kClick + 3 * kSixteenth, 2);
-    CHECK_NEAR(firstEcho(channel(out, 1)), kClick + 4 * kSixteenth, 2);
-    CHECK_NEAR(maxAbs(channel(out, 0)), 1.0, 0.05);
+    const Samples left = channel(out, 0), right = channel(out, 1);
+    CHECK(maxAbs(slice(left, 0, kClick + kSixteenth)) < 1e-6);
+    const int64_t l = echoPeak(kClick, 3 * kSixteenth), r = echoPeak(kClick, 4 * kSixteenth);
+    CHECK_NEAR(peakNear(left, l), l, 2);
+    CHECK_NEAR(peakNear(right, r), r, 2);
+    // A click comes back band-limited: about as tall as the band-limit's peak (less, read between samples).
+    CHECK_APPROX_REL(maxAbs(left), bandLimitHeight(), 0.07);
 }
 
 TEST_CASE("offset, free time and link") {
@@ -92,26 +122,36 @@ TEST_CASE("offset, free time and link") {
     const uint32_t device =
         delay(engine, track, {{"l_division", 3.f}, {"l_offset", 25.f}, {"r_sync", 0.f}, {"r_time", 100.f}});
     Samples out = engine.renderOffline(0.0, kSampleRate);
-    CHECK_NEAR(firstEcho(channel(out, 0)), kClick + 1.25 * 4 * kSixteenth, 2);
-    CHECK_NEAR(firstEcho(channel(out, 1)), kClick + kSampleRate / 10, 2);
+    const int64_t l = echoPeak(kClick, 1.25 * 4 * kSixteenth), r = echoPeak(kClick, kSampleRate / 10);
+    CHECK_NEAR(peakNear(channel(out, 0), l), l, 2);
+    CHECK_NEAR(peakNear(channel(out, 1), r), r, 2);
 
     setParam(engine, device, "link", 1.f);
     setParam(engine, device, "mode", 2.f);  // Jump: no glide
     out = engine.renderOffline(0.0, kSampleRate);
-    CHECK_EQ(firstEcho(channel(out, 1)), firstEcho(channel(out, 0)));  // the right side follows the left
+    CHECK_EQ(peakNear(channel(out, 1), l), peakNear(channel(out, 0), l));  // the right side follows the left
 }
 
 TEST_CASE("feedback repeats") {
     DelayEngine e;
     auto& engine = e.engine;
-    const uint32_t track = clickTrack(engine);
+    const uint32_t track = clickTrack(engine, 0.1f, 0.1f);  // quiet: the compressor leaves it be
     delay(engine, track, {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"feedback", 50.f}});
     const Samples left = channel(engine.renderOffline(0.0, kSampleRate), 0);
     const int64_t step = kSampleRate / 10;
-    for (int n = 1; n < 4; ++n) {
+    // Each repeat half as loud as the last (a quarter of the energy), a little less as the band-limit
+    // (with its droop) goes round again.
+    int64_t at = echoPeak(kClick, step);
+    double last = energyNear(left, peakNear(left, at), 150);
+    CHECK(last > 0.0);
+    for (int n = 2; n < 5; ++n) {
         INFO("repeat " + std::to_string(n));
-        const int64_t at = kClick + n * step;
-        CHECK_APPROX_REL(maxOf(slice(left, at - 2, at + 3)), std::pow(0.5, n - 1), 0.02);
+        at = peakNear(left, echoPeak(at, step), 150);
+        const double now = energyNear(left, at, 150);
+        INFO("energy ratio " + std::to_string(now / last));
+        CHECK(now / last < 0.25);
+        CHECK(now / last > 0.25 * 0.6);
+        last = now;
     }
 }
 
@@ -122,15 +162,17 @@ TEST_CASE("ping pong bounces") {
     delay(engine, track,
           {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 50.f}, {"feedback", 50.f}, {"ping_pong", 1.f}});
     const Samples out = engine.renderOffline(0.0, kSampleRate / 2);
-    const auto left = echoes(channel(out, 0), 0.01), right = echoes(channel(out, 1), 0.01);
+    const Samples left = channel(out, 0), right = channel(out, 1);
     const int64_t stepL = kSampleRate / 10, stepR = kSampleRate / 20;
-    REQUIRE(left.size() >= 2);
-    REQUIRE(!right.empty());
-    // The input, summed to mono, goes left first, then bounces right, then left again.
-    CHECK_NEAR(left[0], kClick + stepL, 2);
-    CHECK_NEAR(right[0], kClick + stepL + stepR, 2);
-    CHECK_NEAR(left[1], kClick + 2 * stepL + stepR, 2);
-    CHECK_APPROX_REL(maxAbs(channel(out, 0)), 0.5, 0.02);  // half of the click, on each side
+    // The input, summed to mono, goes left first, then bounces right, then left again (each pass the band-limit's
+    // lateness later).
+    const int64_t first = echoPeak(kClick, stepL);
+    CHECK_NEAR(peakNear(left, first), first, 2);
+    CHECK(maxAbs(slice(right, 0, first + stepR - 200)) < 1e-6);
+    const int64_t second = echoPeak(first, stepR), third = echoPeak(second, stepL);
+    CHECK_NEAR(peakNear(right, second, 150), second, 3);
+    CHECK_NEAR(peakNear(left, third, 150), third, 3);
+    CHECK_APPROX_REL(maxAbs(left), 0.5 * bandLimitHeight(), 0.03);  // half of the click, on each side
 }
 
 TEST_CASE("freeze holds the loop and ignores new input") {
@@ -145,13 +187,13 @@ TEST_CASE("freeze holds the loop and ignores new input") {
     setParam(engine, device, "freeze", 0.f);
     setParam(engine, device, "feedback", 10.f);
     const Samples first = engine.renderOffline(0.0, kSampleRate / 4);  // the click goes in, and its first echo comes
-    CHECK_NEAR(maxAbs(channel(first, 0)), 1.0, 0.05);
+    CHECK_APPROX_REL(maxAbs(channel(first, 0)), bandLimitHeight(), 0.03);
 }
 
 TEST_CASE("the filter takes out what is outside its band") {
     DelayEngine e;
     auto& engine = e.engine;
-    const Samples low = sine(60.0, 2.0, 0.5);
+    const Samples low = sine(60.0, 2.0, 0.1);
     const std::string path = makeWav(stereo(low), 2);
     engine.loadSource(path);
     const uint32_t track = engine.addTrack();
@@ -161,8 +203,8 @@ TEST_CASE("the filter takes out what is outside its band") {
     for (const auto& [name, value] : Values{{"filter", 1.f}, {"freq", 4000.f}, {"width", 2.f}})  // 2 to 8 kHz
         setParam(engine, device, name, value);
     const double filtered = maxAbs(channel(frames(engine.renderOffline(0.0, kSampleRate), kSampleRate / 2), 0));
-    CHECK_APPROX_REL(unfiltered, 0.5, 0.02);
-    CHECK(filtered < 0.01);
+    CHECK_APPROX_REL(unfiltered, 0.1, 0.05);  // (Digital's high-passes take 0.3 dB at 60 Hz)
+    CHECK(filtered < 0.002);
 }
 
 TEST_CASE("time changes glide only in Repitch") {
@@ -180,8 +222,9 @@ TEST_CASE("time changes glide only in Repitch") {
         const float before = info.toNormalized(10.f), after = info.toNormalized(200.f);
         engine.setTrackAutomation(track, {{device, "l_time", {{0.0, before, 0.f}, {0.5, before, 0.f}, {0.5, after, 0.f}}}});
         const Samples out = engine.renderOffline(0.0, kSampleRate);
-        const int64_t at = firstEcho(channel(out, 0));
-        CHECK_EQ(std::abs(at - (click + kSampleRate / 5)) <= 2, exact);
+        const int64_t expected = echoPeak(click, kSampleRate / 5);
+        const int64_t at = peakNear(channel(out, 0), expected, 2000);
+        CHECK_EQ(std::abs(at - expected) <= 2, exact);
     }
 }
 
@@ -219,14 +262,14 @@ TEST_CASE("swing puts every other echo late") {
     const uint32_t track = clickTrack(engine);
     delay(engine, track,
           {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"feedback", 50.f}, {"swing", 50.f}});
-    const auto left = echoes(channel(engine.renderOffline(0.0, kSampleRate), 0), 0.02);
+    const Samples left = channel(engine.renderOffline(0.0, kSampleRate), 0);
     const int64_t step = kSampleRate / 10;
-    REQUIRE(left.size() >= 4);
-    // Half swing: the odd echoes a quarter of the time late, the even ones on time.
-    CHECK_NEAR(left[0], kClick + step + step / 4, 2);
-    CHECK_NEAR(left[1], kClick + 2 * step, 2);
-    CHECK_NEAR(left[2], kClick + 3 * step + step / 4, 2);
-    CHECK_NEAR(left[3], kClick + 4 * step, 2);
+    // Half swing: the odd echoes a quarter of the time late, the even ones on time (each echo a pass of the loop:
+    // its band-limit's lateness and the modulation's move).
+    const int64_t first = echoPeak(kClick, step + step / 4);
+    CHECK_NEAR(peakNear(left, first), first, 2);
+    const int64_t second = echoPeak(first, step - step / 4);
+    CHECK_NEAR(peakNear(left, second, 150), second, 3);
 }
 
 TEST_CASE("swing in ping pong") {
@@ -237,14 +280,12 @@ TEST_CASE("swing in ping pong") {
           {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"feedback", 50.f},
            {"ping_pong", 1.f}, {"swing", 100.f}});
     const Samples out = engine.renderOffline(0.0, kSampleRate / 2);
-    const auto left = echoes(channel(out, 0), 0.01), right = echoes(channel(out, 1), 0.01);
     const int64_t step = kSampleRate / 10;
-    REQUIRE(left.size() >= 2);
-    REQUIRE(!right.empty());
-    // Full swing: left half the time late, then right (half the time after it), then left again.
-    CHECK_NEAR(left[0], kClick + step + step / 2, 2);
-    CHECK_NEAR(right[0], kClick + 2 * step, 2);
-    CHECK_NEAR(left[1], kClick + 3 * step + step / 2, 2);
+    // Full swing: left half the time late, then right (half the time after it).
+    const int64_t first = echoPeak(kClick, step + step / 2);
+    CHECK_NEAR(peakNear(channel(out, 0), first), first, 2);
+    const int64_t second = echoPeak(first, step / 2);
+    CHECK_NEAR(peakNear(channel(out, 1), second, 150), second, 3);
 }
 
 TEST_CASE("drive saturates the echoes") {
@@ -255,9 +296,10 @@ TEST_CASE("drive saturates the echoes") {
         delay(engine, track, {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}});
     setParam(engine, device, "drive", 100.f);
     const Samples left = channel(engine.renderOffline(0.0, kSampleRate / 2), 0);
-    // A full-scale click into a tanh 8 times louder, and down as much after.
-    CHECK_APPROX_REL(maxAbs(left), std::tanh(8.0) / 8.0, 0.01);
-    CHECK_NEAR(firstEcho(left, 0.05), kClick + kSampleRate / 10, 2);
+    // The band-limited click into a tanh 8 times louder, and down as much after.
+    CHECK_APPROX_REL(maxAbs(left), std::tanh(8.0 * bandLimitHeight()) / 8.0, 0.03);
+    const int64_t expected = echoPeak(kClick, kSampleRate / 10);
+    CHECK_NEAR(peakNear(left, expected), expected, 2);
 }
 
 TEST_CASE("duck dips the echoes while the input plays") {
@@ -279,4 +321,80 @@ TEST_CASE("duck dips the echoes while the input plays") {
     const auto [ducked, after] = wetLevel(100.f);
     CHECK(ducked < 0.25 * playing);
     CHECK(after > 0.4 * open);  // swells back once the input stops
+}
+
+// --- Digital: Valhalla Delay's Digital mode -------------------------------------------------------
+
+namespace {
+
+// A tone's level through the delay, fully wet: its amplitude over the last half second of `seconds`.
+double toneThrough(double freq, double amplitude, const Values& values = {}, double seconds = 1.5) {
+    DelayEngine e;
+    auto& engine = e.engine;
+    const std::string path = makeWav(stereo(sine(freq, seconds, amplitude)), 2);
+    engine.loadSource(path);
+    const uint32_t track = engine.addTrack();
+    engine.setTrackClips(track, {clip(path, 0.0, seconds, 0.0, 1.f)});
+    Values all{{"l_sync", 0.f}, {"l_time", 20.f}, {"r_sync", 0.f}, {"r_time", 20.f}};
+    all.insert(all.end(), values.begin(), values.end());
+    delay(engine, track, all);
+    const Samples left = channel(engine.renderOffline(0.0, static_cast<int64_t>(seconds * kSampleRate)), 0);
+    const auto from = static_cast<int64_t>((seconds - 0.5) * kSampleRate);
+    return rms(slice(left, from, from + kSampleRate / 2)) * std::sqrt(2.0);
+}
+
+}  // namespace
+
+TEST_CASE("Digital's band-limit at rates it wasn't measured at keeps its gain") {
+    // Resampled from the nearest measured rate: the same response in time, so unity at DC still.
+    for (const double rate : {32000.0, 176400.0, 192000.0}) {
+        INFO(std::to_string(rate));
+        const std::vector<float> taps = sub::delay_character::DigitalDesign::bandLimit(rate);
+        double sum = 0.0;
+        for (const float t : taps) sum += t;
+        CHECK_NEAR(sum, 1.0, 0.01);
+    }
+}
+
+TEST_CASE("Digital band-limits each echo") {
+    // Valhalla's own: flat (-0.2 dB) at 1 kHz, a droop to -1.3 dB at 5 kHz, the band ending near 7.8 kHz.
+    CHECK_APPROX_REL(toneThrough(1000.0, 0.05), 0.05 * std::pow(10.0, -0.21 / 20), 0.02);
+    CHECK_APPROX_REL(toneThrough(5000.0, 0.05), 0.05 * std::pow(10.0, -1.25 / 20), 0.03);
+    CHECK(toneThrough(10000.0, 0.05) < 0.05 * 0.03);  // -34 dB there
+    CHECK(toneThrough(5.0, 0.05, {}, 3.0) < 0.05 * 0.4);  // the high-passes (5, 10, 10 Hz)
+}
+
+TEST_CASE("Digital's compressor holds loud echoes down, the treble sooner") {
+    // Valhalla's gains for a sine at full scale, over a quiet one's: 0.79 at 400 Hz, 0.69 at 1 kHz, 0.46 at 3 kHz.
+    CHECK_APPROX_REL(toneThrough(400.0, 1.0) / toneThrough(400.0, 0.05) * 0.05, 0.785, 0.04);
+    CHECK_APPROX_REL(toneThrough(1000.0, 1.0) / toneThrough(1000.0, 0.05) * 0.05, 0.686, 0.04);
+    CHECK_APPROX_REL(toneThrough(3000.0, 1.0) / toneThrough(3000.0, 0.05) * 0.05, 0.462, 0.08);
+}
+
+TEST_CASE("Digital's modulation sways the time ±2.67 ms on a 0.5 Hz triangle") {
+    sub::delay_character::DigitalModulation modulation;
+    modulation.prepare(kSampleRate);
+    double low = 1e9, high = -1e9;
+    std::vector<float> values;
+    for (int i = 0; i < 8 * kSampleRate; ++i) values.push_back(modulation.next());
+    for (size_t i = 2 * kSampleRate; i < values.size(); ++i) {
+        low = std::min<double>(low, values[i]);
+        high = std::max<double>(high, values[i]);
+    }
+    // The 2 Hz rounding takes the triangle's corners in a little: 227.8 samples top to bottom, as measured.
+    CHECK_NEAR(high - low, 227.8, 1.0);
+    CHECK_NEAR(values[0], 0.0, 1.0);  // from the middle, rising
+    CHECK(values[kSampleRate / 4] > 30.f);
+    for (size_t i = kSampleRate; i + 2 * kSampleRate < values.size(); i += 997)  // (once the rounding has settled)
+        CHECK_NEAR(values[i], values[i + 2 * kSampleRate], 0.05);
+}
+
+TEST_CASE("dry and wet cross over at equal power") {
+    DelayEngine e;
+    auto& engine = e.engine;
+    const uint32_t track = clickTrack(engine, 0.1f, 0.1f);
+    delay(engine, track, {{"l_sync", 0.f}, {"l_time", 100.f}, {"r_sync", 0.f}, {"r_time", 100.f}, {"mix", 50.f}});
+    const Samples left = channel(engine.renderOffline(0.0, kSampleRate / 2), 0);
+    CHECK_APPROX_REL(left[kClick], 0.1 * std::sqrt(0.5), 1e-3);
+    CHECK_APPROX_REL(maxAbs(slice(left, kClick + 1000, kSampleRate / 2)), 0.1 * std::sqrt(0.5) * bandLimitHeight(), 0.03);
 }

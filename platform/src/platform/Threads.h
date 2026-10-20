@@ -11,6 +11,13 @@ namespace sub::platform {
 // and the idle I/O class, for this thread only; elsewhere nothing yet.)
 void enterBackgroundMode();
 
+// The calling thread a little above normal, for good: threads the audio thread
+// depends on that aren't real-time themselves (the disk threads that read what
+// streams). Windows: THREAD_PRIORITY_ABOVE_NORMAL; Linux: the best-effort I/O
+// class at its highest level, and a nice value under 0 where the user may have
+// one; elsewhere nothing yet.
+void raiseNormalPriority();
+
 // The calling thread at real-time priority while the object lives, for threads
 // that render audio beside the driver's own (the render workers). Windows:
 // MMCSS's "Pro Audio" task. Linux: SCHED_FIFO, set directly where the user may

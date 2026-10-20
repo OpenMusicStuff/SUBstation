@@ -25,8 +25,10 @@ graph is spread over threads in [scheduler.md](scheduler.md).
 `RenderSnapshot` holds everything a chunk needs, with every position in samples:
 
 - `sampleRate`, the tempo map and time signatures (`tempoMap`, `meter`, never null; `tempoVersion`, a new
-  number with each new map) and the song's key (`keyTonic`, `keyMinor`: `Engine::setSongKey`), handed to every
-  device in its `ProcessContext`. `sampleAt(beat)`, `beatAt(sample)`, `tempoAt(sample)` and
+  number with each new map), the song's key (`keyTonic`, `keyMinor`: `Engine::setSongKey`) and the project's
+  default groove (`groove`: `Engine::setGroove`, normalized; null for none). The tempo map, the key and the groove
+  are handed to every device in its `ProcessContext` (`tempoMap`, `keyTonic`, `keyMinor`, `groove`).
+  `sampleAt(beat)`, `beatAt(sample)`, `tempoAt(sample)` and
   `samplesBetween(beat, beats)` convert by the map; one tempo throughout converts as it always has (beats
   times samples a beat), to the bit.
 - The loop (`loopEnabled`, `loopStart`, `loopEnd`): enabled only if the loop is at least 256
@@ -58,7 +60,7 @@ keeps them across snapshots, so a snapshot swap loses nothing:
 | Type | Holds | Written by |
 |---|---|---|
 | `TrackParams` | gain, pan, mute, solo (atomics the API writes); peaks (the audio thread writes, the API reads and resets); the fader's `SmoothedValue`s | API / rendering thread |
-| `TrackBuffers` | a track's signal for the chunk, its note events (up to 1024), the stretch voices its clips play through (up to 32), monitoring, solo flags, `audible`, and its measured `cost` | the prologue, then the thread rendering the track |
+| `TrackBuffers` | a track's signal for the chunk, its note events (up to 1024), its clips' notes handed early to its MIDI effects (`early`, up to 256), the stretch voices its clips play through (up to 32), monitoring, solo flags, `audible`, and its measured `cost` | the prologue, then the thread rendering the track |
 | `EdgeState` | a send's level (atomic), the edge's own signal buffer, whether solo lets it through this chunk, the level and audible ramps | API / rendering threads |
 | `DelayLine` | a stereo delay for one edge (or a sidechained device, or a rack chain); starts again from silence when the delay changes | rendering threads |
 
@@ -77,7 +79,7 @@ prologue (serial, the rendering thread)
   1. segments: the chunk split where the loop wraps; count-in; metronome ticks scheduled
   2. ProcessContext for the chunk; the recording's device input (recordInput)
   3. per track, in snapshot order: monitored? recorded?, note events (preview, MIDI input, clips),
-     stretch voices for its clips             -> its TrackBuffers
+     the clips' notes due early (buildEarlyEvents), stretch voices for its clips -> its TrackBuffers
      then each device fed another track's notes: a copy of that track's events -> its MidiFeed
   4. workOutSolo: which edges and tracks are heard
 graph (Scheduler: the rendering thread and the workers)
@@ -117,8 +119,11 @@ whole chunk too.
 
 `ProcessContext` carries the sample rate, sample and beat position, the tempo and time signature
 there and where its bar starts (`barStartBeat`: bars needn't be alike from beat 0; `barStart()`,
-`gridOffset()` for devices with a bar grid), set for each slice by `placeContext()`, playing, looping (recording too), the loop in beats, whether the render is offline, and
-the slice's events. See [devices.md](devices.md) for how processors use it.
+`gridOffset()` for devices with a bar grid), set for each slice by `placeContext()`, playing,
+looping (recording too), the loop in beats, whether the render is offline, the song's tempo map, key
+and default groove, the slice's events, and for a chain's first MIDI effect that asks for them the
+clips' notes handed early (`earlyEvents`, in the first slice only). See [devices.md](devices.md) for
+how processors use it.
 
 ### Transport in the renderer
 
@@ -131,6 +136,13 @@ sounding notes back to their beats, so they stay on the same beat; a tempo chang
 playing without a re-seek ([warp.md](warp.md)). Their beats are taken by the map before
 (`rememberBeats()`, after every chunk and locate): the renderer never reads a map but the
 snapshot's it renders, as the one before may be gone.
+
+**Pre-roll.** Play while stopped arms `preRollLeft_` (150 ms, `kPreRollSeconds`). Live, once a
+count-in is over, the playhead waits chunk by chunk (`waitsForStreams()`) until every page the
+snapshot's streamed clips play from over the next half second is in memory (`streamsReady()`), or
+the 150 ms are up: playback started where the disk hasn't been read yet comes in whole when it
+can, and late (counted) when it can't ([streaming.md](streaming.md#moving-the-playhead)). Without
+streamed sources nothing waits.
 
 ## Rendering a track
 
@@ -177,6 +189,12 @@ Then gain, the clip's fades (`ClipRender::fadeIn` / `fadeOut`, samples from each
 shaped by its curve with `automationShape()`), and the clip's pan as balance gains. Details of
 warping and the voices are in [warp.md](warp.md).
 
+A resident source (or render) is read in place. A streamed one ([streaming.md](streaming.md)) is
+fetched through its `SourceCursor` into the worker's scratch (`warpLeft`/`warpRight`; Re-Pitch's
+span into `span`), as the chunk's `StreamReads` say: live, never waiting (a page not in memory
+plays as silence, faded at its edges, and is counted; for `kJumpGrace` after the playhead jumps
+while playing, as expected); offline, waiting for the disk.
+
 The snapshot works out each clip's fades: its own (`ClipDesc::fadeInSec` / `fadeOutSec`, in source
 seconds, so on the timeline they follow the clip's speed; shortened in proportion where together
 they would be longer than it), or, at an edge without one, a short linear fade against clicks
@@ -196,6 +214,13 @@ removed track release notes. A bent note's bends (MIDI 2.0's per-note pitch bend
 note-on, one every 32 samples at most while its pitch moves. Events are sorted by offset, a
 note-off first at the same offset and a note's bends after its note-on. See [midi.md](midi.md).
 
+A chain's first MIDI effect that may play notes early (`Processor::earlyBeats()`: the Groove device)
+gets the clips' notes due within that many beats after the chunk, early: `buildEarlyEvents()`, after
+the track's events, puts them in `TrackBuffers::early` (round the loop once at most), each with the
+id it will come with in its time, and `processMidiEffects()` hands them over
+(`ProcessContext::earlyEvents`; a Drum Rack's pad, those of its key: `padEarly()`). See
+[midi.md](midi.md#early-notes).
+
 A device can take another track's notes instead of its own track's
 (`Engine::setProcessorMidiInput()`): once every track's events are built, the prologue copies
 the source track's into the device's own `MidiFeed` (`RenderSnapshot::midiFeeds`, allocated
@@ -210,7 +235,8 @@ passes it on to its devices). If no device is switched on, only the device taps 
 Otherwise it builds the slices and calls `processChain()`:
 
 ```
-MIDI effects of the chain, in order: each plays the notes the last one played (processMidiEffects)
+MIDI effects of the chain, in order: each plays the notes the last one played (processMidiEffects);
+    the first, if it asks (earlyBeats()), also gets the clips' notes handed early
 for each insert i of the chain:
     MIDI effect or modulator?  run before (the audio goes past it)
     rack?    processRack(...)
@@ -232,7 +258,8 @@ fader (muted, or left out when another chain of the rack is soloed; solo is read
 so its chains agree), then its line-up delay (`ChainRender::compensation`). The rack puts out the
 sum. An empty rack passes its input on. Every chain's devices get the strip's note events (as the
 strip's MIDI effects played them; a chain's own MIDI effects then play them for that chain), which
-is what layers instruments in an Instrument Rack. MIDI effects are in
+is what layers instruments in an Instrument Rack; a Drum Rack's pad gets its key's, as C3 (`padNotes()`), and
+of the notes handed early, its key's too (`padEarly()`). MIDI effects are in
 [devices.md](devices.md#midi-effects). Rack routing and latency are in
 [routing.md](routing.md#racks).
 
@@ -309,7 +336,9 @@ position). `isCountingIn()` reads `SharedState::countingIn`. Recording starts af
 `Engine::preview(path)` plays a source that is already loaded at the engine's rate straight into
 the master output. The handover is lock-free: the engine stores the source pointer and bumps
 `previewSerial`; `mixPreview()`, after each chunk, notices the new serial, starts the source from
-its beginning, and adds it at `previewGain` (0.8) after the master fader and the metronome.
+its beginning, and adds it at `previewGain` (0.8) after the master fader and the metronome (a
+streamed source fetched through its cursor; its position published in `previewPosition` for the
+disk threads to read ahead of).
 When it reaches the end it clears `previewActive` (unless a newer preview started). The engine
 keeps the source alive in `previewHold_` and retires the old one through the epoch pool. Offline
 renders never play the preview. Opening a device drops it.
@@ -447,3 +476,5 @@ In the engine's tests, [tests/engine](../../tests/engine):
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp), [test_warp.cpp](../../tests/engine/test_warp.cpp),
   [test_recording.cpp](../../tests/engine/test_recording.cpp): notes, warped clips, monitoring and the
   count-in.
+- [test_groove_engine.cpp](../../tests/engine/test_groove_engine.cpp): notes handed early to a chain's first MIDI
+  effect, across chunks, round the loop and to a Drum Rack's pad.

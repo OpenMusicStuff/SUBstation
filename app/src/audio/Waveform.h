@@ -3,7 +3,9 @@
 // sampler's): a handle on the engine's AudioSource, which is immutable once
 // decoded, so the handle can be kept and read from any thread. Its samples are
 // at the engine's sample rate; its peaks are min/max pairs at a few levels of
-// detail (level n: AudioSource's 32 * 4^n frames a peak).
+// detail (level n: AudioSource's 32 * 4^n frames a peak), always in memory. Its
+// samples are in memory (channelData()), or, for a long file while streaming is
+// on, read from disk as they are wanted (read(): docs/engine/streaming.md).
 //
 // A null Waveform (isNull()) stands for a file that isn't decoded (yet).
 
@@ -11,6 +13,7 @@
 #include <QString>
 
 #include <memory>
+#include <vector>
 
 namespace sub {
 class AudioSource;
@@ -30,8 +33,17 @@ public:
     int sampleRate() const;
     double duration() const;  // seconds
 
-    // Samples of channel `channel`, `frames()` of them (planar storage).
+    // Whether its samples are in memory: else streamed from disk, and channelData() is null.
+    bool resident() const;
+    // Samples of channel `channel`, `frames()` of them (planar storage); null if it streams.
     const float* channelData(int channel) const;
+    // Frames [start, start + count) of channel `channel` into `out`, from memory or from disk
+    // (waiting for the reads: not on a thread that mustn't wait). Frames outside the file are 0.
+    // False if a streamed file couldn't be read (they are 0 there).
+    bool read(int channel, qint64 start, qint64 count, float* out) const;
+    // A whole channel (`frames()` of them) in a vector of its own, however it is kept; `ok` (if
+    // given) false if a streamed file couldn't be read, as read() says.
+    std::vector<float> samples(int channel, bool* ok = nullptr) const;
 
     int peakLevels() const;
     static int samplesPerPeak(int level);

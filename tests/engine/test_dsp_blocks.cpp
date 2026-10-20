@@ -256,6 +256,57 @@ TEST_CASE("dsp blocks: oversampling is transparent in band, delayed by its laten
     }
 }
 
+TEST_CASE("dsp blocks: the half-band decimator, flat to its passband and as far down as asked where it folds") {
+    // Flat to 20 kHz at 44.1 and 48 kHz, 120 dB down where it would fold into that band: 171 and 95 taps.
+    for (const auto& [rate, taps] : std::vector<std::pair<double, int>>{{44100.0, 171}, {48000.0, 95}}) {
+        INFO(std::to_string(rate));
+        const double passband = std::min(20000.0 / rate, 0.4535);
+        dsp::HalfbandDecimator decimator;
+        decimator.design(passband, 120.0, 256);
+        CHECK_EQ(decimator.taps(), taps);
+        CHECK_EQ(decimator.delay(), (taps - 1) / 2);
+        // A sine made at twice the rate, in blocks of odd lengths: its output sample n is input 2n - delay.
+        const auto run = [&](double freq) {
+            decimator.reset();
+            const int frames = 24000;
+            std::vector<float> in(2 * frames), out(frames);
+            for (size_t i = 0; i < in.size(); ++i)
+                in[i] = static_cast<float>(0.5 * std::sin(2 * kPi * freq * double(i) / (2 * rate)));
+            for (int at = 0; at < frames;) {
+                const int n = std::min(173, frames - at);
+                decimator.process(in.data() + 2 * at, n, out.data() + at);
+                at += n;
+            }
+            double error = 0.0, energy = 0.0;
+            for (int i = 2000; i < frames; ++i) {
+                const double want = 0.5 * std::sin(2 * kPi * freq * double(2 * i - decimator.delay()) / (2 * rate));
+                error += (out[size_t(i)] - want) * (out[size_t(i)] - want);
+                energy += want * want;
+            }
+            return 10 * std::log10(error / energy + 1e-30);
+        };
+        for (const double freq : {50.0, 1000.0, 10000.0, 18000.0, passband * rate}) {
+            INFO("passes " + std::to_string(freq));
+            CHECK(run(freq) < -110.0);  // as it came, delay / 2 samples later (within 1e-5 dB)
+        }
+        // What would fold into the passband (from rate - passband up to the input's Nyquist) comes out 120 dB down.
+        for (const double freq : {rate * (1.0 - passband), rate * 0.75, rate * 0.99}) {
+            INFO("stops " + std::to_string(freq));
+            decimator.reset();
+            std::vector<float> in(2 * 12000), out(12000);
+            for (size_t i = 0; i < in.size(); ++i)
+                in[i] = static_cast<float>(std::sin(2 * kPi * freq * double(i) / (2 * rate)));
+            for (int at = 0; at < 12000; at += 240) decimator.process(in.data() + 2 * at, 240, out.data() + at);
+            CHECK(db(maxAbs(slice(out, 1000))) < -119.0);
+        }
+        // DC at unity.
+        std::vector<float> ones(512, 1.f), down(256);
+        decimator.reset();
+        decimator.process(ones.data(), 256, down.data());
+        CHECK_NEAR(down[255], 1.0, 1e-6);
+    }
+}
+
 TEST_CASE("dsp blocks: oversampled saturation folds back far less") {
     // A hard-clipped 7 kHz sine: at 1x its harmonics fold back everywhere; at 8x what folds back is tiny.
     auto aliasDb = [](int factorLog2) {

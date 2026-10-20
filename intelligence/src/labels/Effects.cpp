@@ -394,6 +394,7 @@ double fraction(const ParamFact& param) {
 Effect classify(const DeviceFact& device) {
     static const std::map<std::string, Effect, std::less<>> kBuiltins = {
         {"synth", E::Instrument},     {"sampler", E::Instrument}, {"vital", E::Instrument},
+        {"supersaw", E::Instrument},
         {"compressor", E::Compressor},
         {"delay", E::Delay},          {"eq", E::Eq},              {"ott", E::Ott},
         {"sidechain", E::Ducking},    {"utility", E::Utility},    {"reverb", E::Reverb},
@@ -402,7 +403,8 @@ Effect classify(const DeviceFact& device) {
         {"limiter", E::Limiter},      {"multiband", E::Compressor}, {"spectral", E::Compressor},
         {"transient", E::Transient},  {"vintage_hall", E::Reverb},  {"hue", E::PitchCorrection},
         {"gigatune", E::PitchCorrection}, {"vocoder", E::Vocoder},  {"vocal_rider", E::Rider},
-        {"tape_stop", E::Glitch},     {"glitch", E::Glitch},      {"changeling", E::PitchShift},
+        {"tape_stop", E::Glitch},     {"glitch", E::Glitch},      {"vintage_delay", E::Delay},
+        {"changeling", E::PitchShift},
     };
     if (device.kind == "rack") return E::None;
     if (device.kind != "plugin") {

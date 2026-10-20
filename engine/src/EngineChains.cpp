@@ -274,7 +274,7 @@ uint32_t Engine::addBuiltinProcessor(uint32_t chainId, const std::string& type, 
     // Files a device loads (a sampler's sample) come from the shared cache, at
     // the engine's rate. (Processors go before the engine does.)
     if (auto* builtin = dynamic_cast<BuiltinProcessor*>(processor.get())) {
-        builtin->setSourceLoader([this](const std::string& path) { return loadSource(path); });
+        builtin->setSourceLoader([this](const std::string& path) { return loadResidentSource(path); });
     }
     std::lock_guard lock(mutex_);
     chainLocked(chainId);

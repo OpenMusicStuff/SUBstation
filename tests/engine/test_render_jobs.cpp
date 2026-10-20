@@ -202,7 +202,7 @@ TEST_CASE("a render hears the project as it was when it started") {
     CHECK_EQ(exported->frames(), 2 * kBeat);
     for (uint32_t c = 0; c < exported->channels(); ++c) {
         INFO("channel " + std::to_string(c));
-        const Samples samples(exported->channelData(c), exported->channelData(c) + exported->frames());
+        const Samples samples = sourceChannel(*exported, c);
         CHECK_ALLCLOSE(samples, 0.5, 1e-6, 1e-12);  // (pytest.approx)
     }
     CHECK_EQ(at(engine.renderOffline(0.0, 100), 50, 0), 0.f);
@@ -230,7 +230,8 @@ TEST_CASE("an export as MP3: the mix, encoded at the bitrate asked for") {
     CHECK(decoded->frames() <= 2 * kBeat + 3 * 1152);
     CHECK_APPROX(at(engine.renderOffline(0.0, 100), 50, 0), 0.5);  // (live again)
     double sum = 0.0;
-    for (int64_t i = kBeat - 500; i < kBeat + 500; ++i) sum += decoded->channelData(1)[i];
+    const std::vector<float> right = sourceChannel(*decoded, 1);
+    for (int64_t i = kBeat - 500; i < kBeat + 500; ++i) sum += right[static_cast<size_t>(i)];
     CHECK(std::abs(sum / 1000.0 - 0.5) < 0.05);
 
     // Cancelled, it leaves nothing; a bitrate MP3 hasn't is refused before a file is made.

@@ -129,6 +129,7 @@ void EngineBridge::closeDevice() {
 
 bool EngineBridge::startAudio() {
     guarded("audio threads", [&] { applyAudioThreads(); });
+    guarded("streaming", [&] { applyStreaming(); });
     guarded("Constrain Delay Compensation", [&] { applyConstrainLatency(); });
     applyMidiImmediate();
     openMidiInputs();

@@ -99,7 +99,8 @@ folding, the master, the title bar and the transport bar, and projects.
 
 A clip's right-click menu has *Cut*, *Copy*, *Paste*, *Split Here*, *Duplicate*,
 *Consolidate*, *Reverse*, *Deactivate* (or *Activate*) and *Delete*; right-clicking anywhere in a time selection
-offers the same (but *Split Here*), for what is selected. An audio clip's also has *Find
+offers the same (but *Split Here*), for what is selected. A clip's menu also has *Apply Groove* (the selected clips'
+grooves written into them) and *Extract Groove* (a groove made of the clip's feel): see [grooves.md](grooves.md). An audio clip's also has *Find
 Similar Sounds* (see [browser.md](browser.md#find-similar-sounds)), *Hot-Swap Sample*
 (try samples from the browser in place of its file, everywhere it plays) and *Show in
 File Manager* (see [file-manager.md](file-manager.md)). Right-clicking an empty part
@@ -339,19 +340,32 @@ maximize button shows Windows' snap layouts.
 
 ## The transport bar
 
-The bar under the title bar holds, from left to right:
+The bar under the title bar has three groups. Values sit in displays set into it, each
+with its name under it: drag a number up or down (Shift for fine steps), or use the mouse
+wheel.
 
-- **Tempo** (drag it, Shift for fine steps, double-click to type) and the **time
-  signature**;
-- the **metronome** with its **count-in** drop-down ▾ on its right, as in Live (see
-  [recording.md](recording.md)), the **project key** (see [audio-clips.md](audio-clips.md))
-  and the **computer MIDI keyboard** button ⌨ (see [midi.md](midi.md));
-- the position (bars, beats, sixteenths), **Play**, **Stop**, **Record** and **Re-Enable
-  Automation** (see [automation.md](automation.md));
-- an **oscilloscope** of the master output as it plays (as in FL Studio). It starts each
-  picture at a rising zero crossing, so steady tones stand still;
-- **loop**, **follow** (the view follows the playhead), the **CPU meter**, and the audio
-  device: click it to open the preferences.
+- On the left, the **song**: the **tempo** (double-click it to type one), the **time
+  signature**, the **swing** (the project's default groove as a swing on 16ths, *Off*
+  (50 %) to 75 %, or the name of the groove it is: see
+  [grooves.md](grooves.md#the-default-groove)) and the **project key** (click it to choose;
+  see [audio-clips.md](audio-clips.md)). Then the **metronome** with its **count-in**
+  drop-down ▾ on its right, as in Live (see [recording.md](recording.md)); the **computer
+  MIDI keyboard** (the piano keys, see [midi.md](midi.md)); and **Constrain Delay
+  Compensation** (the stopwatch, see [audio-setup.md](audio-setup.md)).
+- In the middle of the window, the **transport**: the position (bar, beat, sixteenth),
+  **Play**, **Stop**, **Record**, **Re-Enable Automation** (see
+  [automation.md](automation.md)) and an **oscilloscope** of the master output as it plays
+  (as in FL Studio; it starts each picture at a rising zero crossing, so steady tones stand
+  still). In a narrow window the transport moves aside, and the oscilloscope goes when
+  there is no room for it.
+- On the right, **Punch In**, **loop**, **Punch Out** and **follow** (the view follows the
+  playhead), then the **CPU meter** (the audio thread's load, its last 12 seconds drawn
+  behind it), the **disk** while long files stream from it, and the **audio device** with
+  its sample rate: click it to open the preferences.
+
+Play and Record fill with their colours while on (green and red in the default theme);
+Re-Enable Automation fills while there is automation to bring back. The other switches
+light their icon in the theme's accent.
 
 **Space** plays and stops (stopping returns to the start marker). The **Stop** button
 stops; press it again to return to the start. **Home** goes to the start.

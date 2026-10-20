@@ -17,6 +17,8 @@
 #include <memory>
 #include <vector>
 
+#include "SourceCursor.h"
+
 namespace sub {
 
 // A warped clip's source position along it where the tempo changes under it:
@@ -117,9 +119,11 @@ public:
     // `position`, to outL/outR. `continuing` says the voice played this clip in
     // the previous block; it then carries on seamlessly if the source position
     // still lines up (e.g. across a tempo change), and otherwise re-seeks so the
-    // first frame is exactly aligned.
-    void render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL,
-                float* outR) noexcept;
+    // first frame is exactly aligned. A streamed source is read as `reads` says:
+    // live, a page not in memory is silence; offline, it is waited for (which
+    // allocates: never on the audio thread).
+    void render(const ClipRender& clip, int64_t position, int frames, bool continuing, float* outL, float* outR,
+                StreamReads reads = {}) noexcept;
 
     // Whether render() would carry on (not re-seek) playing `clip` from
     // timeline sample `position`, were it continuing: the source position its
@@ -149,6 +153,11 @@ using WarpVoiceSet = std::array<std::vector<std::shared_ptr<WarpVoice>>, kNumStr
 
 // Re-Pitch playback: band-limited (windowed-sinc) resampling of the source.
 // Writes (does not add) `frames` frames starting at timeline sample `position`.
-void renderResampled(const ClipRender& clip, int64_t position, int frames, float* outL, float* outR) noexcept;
+// A streamed source's frames are fetched, the span the kernel reaches a piece
+// of the block at a time, into `span` (2 * kResampleSpan floats), as `reads`
+// says; a resident one's are read in place.
+inline constexpr int64_t kResampleSpan = 8192;
+void renderResampled(const ClipRender& clip, int64_t position, int frames, float* outL, float* outR,
+                     float* span = nullptr, StreamReads reads = {}) noexcept;
 
 }  // namespace sub

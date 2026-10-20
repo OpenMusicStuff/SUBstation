@@ -8,14 +8,14 @@ their own page: [plugins.md](plugins.md).
 
 ## The device view
 
-- It shows the built-in Synth and Sampler instruments, the Arpeggiator MIDI effect, the
+- It shows the built-in Synth and Sampler instruments, the Arpeggiator and Groove MIDI effects, the
   Utility device, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral
   Compressor, Saturator, Overdrive, Amp, Erosion, Auto Filter, Bitcrusher, Tape Stop, Glitch, Delay,
   Chorus-Ensemble, Phaser-Flanger,
   Reverb, Vintage Hall, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ and Sidechain, the LFO
   and Envelope modulators, and plug-ins, all through the same interface: they show alike.
 - On a MIDI track the instrument comes first; the master takes audio effects only. A MIDI
-  effect (the Arpeggiator) sits after the instrument but plays before it: it changes the
+  effect (the Arpeggiator, the Groove) sits after the instrument but plays before it: it changes the
   notes the chain's instrument hears, wherever it is in the chain.
 - **Ctrl+Alt+L** (*View › Device View*) shows or hides it, with the info view.
 - The **info view**, at the bottom left, says what the control under the mouse is: its
@@ -49,7 +49,7 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
   Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Tape
   Stop, the Glitch, the Delay, the
   Chorus-Ensemble, the Phaser-Flanger, the Reverb, the Vintage Hall, the Disperser, the
-  Transient Shaper, the Vocoder, the Vocal Rider, the EQ, the Sidechain, the Arpeggiator, the LFO
+  Transient Shaper, the Vocoder, the Vocal Rider, the EQ, the Sidechain, the Arpeggiator, the Groove, the LFO
   and the Envelope have editors of their own (below).
 - Clicking a parameter shows its automation in the arrangement. Right-click one to
   *Show Automation*, *Delete Automation* or *Re-Enable Automation*, and, in a rack,
@@ -121,6 +121,67 @@ filter and volume. Velocity sets the level; each voice follows its note's bend
 | Cutoff | 20 Hz to 20 kHz |
 | Resonance | 0 to 100 % |
 | Volume | −60 to +6 dB |
+
+### Supersaw
+
+An instrument for one sound, the supersaw, as thick and as clean as it can be made: up
+to three stacks of detuned saws on every note, each of 1 to 64 saws, so a chord can
+hold thousands of them. 16 notes.
+
+- **Clean at any pitch.** Every saw is band-limited at the instant it jumps, to a
+  fraction of a sample, and made at twice the sample rate (below 80 kHz), so nothing
+  folds back into what you hear: its aliases are more than 130 dB down, even on the
+  highest notes and through bends and glides. The saws keep exact time and exact pitch,
+  and a stack is as loud with 64 saws as with one.
+- **A stack** is a number of saws spread around its pitch:
+  - **Saws** (1 to 64).
+  - **Detune**: how far the outermost saws are from the middle, up to a semitone (the
+    knob is squared, so most of it is where supersaws live: 50 % is 25 cents).
+  - **Curve**: above 0 the saws gather towards the middle (as Roland's JP-8000 spreads
+    them, which keeps their beating from settling into a pattern); below 0 towards the
+    edges, a wider wash; at 0 evenly spaced.
+  - **Blend**: the middle saw against the others. 0 % is the middle saw alone, 75 %
+    every saw alike, 100 % the others louder.
+  - **Width**: how far the saws spread across the stereo field. Each side hears flat
+    and sharp saws alike; at 0 % both sides are the same.
+  - **Transpose** (±48 semitones), **Fine** (±100 cents) and **Level**.
+
+  Stack 1 plays on its own at first; switch on stack 2 (an octave down) and stack 3 (an
+  octave up), or tune them anywhere, for the fattest stacks.
+- **Phase** (0 to 360°) and **Random Phase**: where the saws start on each note. At
+  100 % every saw starts anywhere (the classic supersaw); at 0 % they all start
+  together at Phase, and the note opens with one big edge before they spread out.
+- **Drift**: each saw wanders slowly in pitch on its own, a few cents at most, as an
+  analog oscillator does.
+- **Sub**: a sine 0, 1 or 2 octaves under the note (at 100 % as loud as a stack).
+- **Filter**: Off, Low 12, Low 24, High 12, High 24 (12 and 24 dB an octave) or Band,
+  with Cutoff, Resonance, Key Track (the cutoff follows the note) and Env (how far its
+  own envelope, Attack, Decay, Sustain and Release, moves the cutoff, up or down).
+- **Attack, Decay, Sustain, Release**, **Velocity** (how much a note's velocity sets
+  its level) and **Volume**.
+- **Mode**: Poly, Mono (one note at a time, its envelopes struck again by each note) or
+  Legato (one note, the envelopes struck again only when no key was held). **Glide**:
+  how long a note takes to slide from the last note's pitch (in Mono always; in Legato
+  between held keys; in Poly from the last note played). When a held key is let go in
+  Mono or Legato, it goes back to the newest key still held.
+- **Bends**: each voice follows its note's bend ([midi.md](midi.md#pitch-bends-vibrato-and-slides));
+  MIDI pitch bend bends every note over **Bend Range** (up to 24 semitones). The sustain
+  pedal holds notes. A 17th note takes the place of the quietest releasing one (else
+  the oldest), which fades out in 4 ms rather than stopping with a click.
+
+**Its editor** has three pages, named in its title bar: **Stacks**, **Filter** and
+**Voice**. On every page the stacks are drawn, a lane each: every saw where it plays,
+across by its detune and up and down by where it sits from left to right, as large as it
+is loud; while sound plays the saws glow and shimmer as fast as each one beats. Beside
+each lane is its stack's switch. Press a lane to show that stack's knobs; drag in it
+across for its Detune and up and down for its Width (Shift for finer steps), and
+double-click to reset them. Knobs that do nothing as things are (a stack's while it is
+off, Blend with fewer than three saws, the filter's while it is off) are dimmed, but you
+can still set them.
+
+It is a little late, by 0.5 ms at 48 kHz (1 ms at 44.1 kHz), the time its filters take
+to keep everything above 20 kHz from folding back; delay compensation lines it up with
+the other tracks.
 
 ### Vital
 
@@ -1080,6 +1141,9 @@ A stereo delay after Ableton's, with an editor laid out like it.
   a tape delay does; **Fade** crossfades to it; **Jump** switches at once.
 - **Ping Pong**: the input, in mono, goes left first, and the echoes bounce from side to
   side.
+- **Groove › Follow** (Follow Groove, beside Duck): the swing is the project's default groove's
+  ([grooves.md](grooves.md#the-default-groove)): every other echo comes as late as the
+  groove's offbeat steps are, on average. Without a default groove, Swing as it is set.
 - **Dry/Wet**: 0 to 100 %.
 
 ### Bitcrusher
@@ -1588,7 +1652,7 @@ fitted to the kick.
 - **Lows Only** ducks only what is below the **Crossover**, so the bass's upper
   harmonics carry on through the kick. The fit puts the crossover above the clash.
 
-## MIDI effects: Arpeggiator
+## MIDI effects: Arpeggiator and Groove
 
 A MIDI effect changes the notes its track plays before the instrument hears them. It goes
 on a MIDI track like an audio effect does (after the instrument), but it plays first,
@@ -1613,10 +1677,58 @@ Plays the notes held one after another, in a pattern, over one to four octaves.
 - **Swing** (0 to 100 %): every other step comes late, by up to half a step.
 - **Octaves** (1 to 4): the pattern climbs this many octaves before it starts again.
 - **Velocity**: as each key was played, or **Fixed** at a value (1 to 127).
+- **Groove** (Follow Groove, beside Hold): synced and while the song plays, its steps fall
+  where the project's default groove puts them ([grooves.md](grooves.md#the-default-groove)),
+  each as loud as the groove makes it, instead of Swing. Without a default groove (or
+  stopped, or free) it plays as it would.
 
 Its editor draws the pattern: sixteen steps of a three-note chord, walked as the style
 walks it, over the octaves, each as long as the gate and the odd ones late by the swing. As it
 plays, the active step lights up. Octaves and Velocity sit under Rate, Gate and Swing.
+
+### Groove
+
+Moves the notes reaching it into a groove ([grooves.md](grooves.md)): the same notes out,
+later or earlier, louder or softer, longer or shorter. Put it on a MIDI track (after the
+instrument, as any MIDI effect), or in a Drum Rack pad's chain to groove that pad alone: the
+hats swung and the kick straight, from one clip. (A pad's devices hear its notes as C3, so the
+groove's first lane, or a lane for key 60, plays them.)
+
+- **Groove** (the list over its steps): what it plays. **Swing** (its Swing and Step knobs),
+  **Project** (the project's default groove: [grooves.md](grooves.md#the-default-groove)), or
+  one of the project's grooves: edit it in *Edit › Grooves…* and the device follows. *Its own
+  groove* shows while it plays one of its own: a groove file it was loaded from, or a groove
+  removed from the project while it played it.
+- **Swing** (50 to 75 %) and **Step** (1/8, 1/8T, 1/16, 1/16T, 1/32), for Swing: every other
+  step late, landing that far through its pair of steps (66.7 %: a triplet feel). They are
+  dimmed for the other sources.
+- **Timing** (0 to 200 %), **Velocity** (−100 to 100 %), **Random** and **Quantize** (0 to
+  100 %): how much of the groove it plays ([grooves.md](grooves.md#how-a-groove-moves-notes)).
+- **Length** (0 to 100 %): how far notes take the lengths the groove's steps give them (0 %:
+  as they are).
+- **Early** (Allow Early, on at first): notes from clips may move earlier as well as later, by
+  up to half a step: SUBstation hands them to the device that much ahead of their time. Off,
+  notes only move later (a step the groove has early plays on time).
+- **Latency** (off at first): the device plays everything half a step later, and delay
+  compensation keeps the track in time with the others, so notes played live (and those an
+  Arpeggiator before it plays) can move earlier too. With it on, every note can move both
+  ways, Early or not.
+- Every knob can be automated and modulated: a note takes the values they have when it comes
+  in.
+- **Apply**: writes what it does into the notes of the track's MIDI clips (on a pad, that pad's
+  notes) and switches the device off, in one undo step. (With Early off, no note is written
+  earlier.)
+- **Add to Grooves**: puts the groove it plays into the project's grooves (named after the
+  track), to edit it and play it elsewhere; the device then plays that one.
+
+Its steps show what it plays: the first lane over the groove's cycle, each step where it plays
+and as tall as it is loud. As it plays, the step sounding lights up.
+
+A note it moves later is held back and played at its time, its end moved with it, and its
+bends follow it. Notes from clips can come early because SUBstation knows them ahead; notes
+played live, or played by an Arpeggiator before it, only move later unless Latency is on.
+While the transport is stopped, notes go straight through. Switched off, the notes sounding
+end and those held back are dropped. An export plays what you hear, Random too.
 
 ## Modulators: LFO and Envelope
 
@@ -1668,6 +1780,10 @@ up from the bottom to the top at half the cycle, and down again).
 - **Rate** in Hz (0.01 to 40), or with **Sync** in notes (1/64 to 8 bars). Synced, it
   follows the song's position while it plays (a 1/4 LFO starts its cycle on every beat,
   wherever playback starts or loops); stopped, it runs on at the tempo.
+- **Groove** (Follow Groove, beside Sync; only with Sync on): while it follows the song (not
+  with Retrig), its cycle swings with the project's default groove
+  ([grooves.md](grooves.md#the-default-groove)), its offbeats late as the groove's are: a 1/16
+  LFO swings with the hats. Without a default groove, it plays as it would.
 - **Retrig** (in the curve's right-click menu): every note it hears (its track's, or a MIDI track's: the **MIDI From**
   button) starts its cycle again, so it fits each note; it flashes as one comes.
 - **Depth** scales it round the middle of its targets' ranges; **Offset** moves it up or
@@ -1863,6 +1979,8 @@ key, which its devices hear as C3: a Sampler on a pad plays its sample at its ow
   project: it keeps its settings and loads once the plug-in is back. In a rack, the rest
   of the rack works.
 - Right-click beside the devices › *Load Preset…* loads a preset file from anywhere.
+- Groove files (in the library's *Grooves* folder) are listed and added as presets too: each
+  is a Groove device playing that groove (see [grooves.md](grooves.md#your-groove-files)).
 - Plug-ins also read and write their own `.vstpreset` files (see
   [plugins.md](plugins.md#presets)).
 

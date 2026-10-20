@@ -17,14 +17,17 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [Processor.h](../../engine/src/Processor.h) | `ProcessEvent`, `EventList`, `ProcessContext`, `ParamInfo`, `DisplayInfo`, `ParamAutomation`, `ProcessorEvent`, `Processor` |
 | [builtin/BuiltinProcessor.h](../../engine/src/builtin/BuiltinProcessor.h) / [.cpp](../../engine/src/builtin/BuiltinProcessor.cpp) | parameters as atomics (`param`, `isOn`, `choice`, `choiceIndex`, `offOnLabels`), automation by splitting blocks, displays, state as named text values, `loadSource()` |
 | [builtin/Dsp.h](../../engine/src/builtin/Dsp.h) | DSP the devices share, all inline: `dsp::kPi` and `kTwoPi`, the latency a device has told the engine (`LatencyReport`: its `idle()` returns `changed(latencySamples())`, its `prepare()` calls `reported(...)`), the state-variable filter section (`dsp::Svf`, `dsp::SvfCoefficients`), `hermite`, `followPeak`, `flushTiny`, the instruments' envelopes (`riseStep`, `fallCoefficient`, `kSilent`, `kFadeTo`), `renderBetweenNotes`, `kBendGlideSeconds` |
-| [builtin/DspBlocks.h](../../engine/src/builtin/DspBlocks.h) | Building blocks the effects share, beside Dsp.h's, all inline: one-pole and DC filters (`dsp::OnePole`, `onePoleCutoff`, `DcBlocker`), a delay line (`DelayLine`, read linearly or with Hermite interpolation), an envelope follower (`EnvelopeFollower`), white noise (`Noise`), `fastTanh`, an LFO with Ableton's shapes and synced rates (`Lfo`, `LfoShape`, `syncedDivisionLabels`, `syncedCycleBeats`), RBJ biquads (`BiquadCoefficients`, `Biquad`), a Linkwitz-Riley crossover and its all-pass (`Crossover`, `CrossoverAllpass`), a sliding maximum for lookahead (`SlidingMax`), linear-phase oversampling by 2, 4 or 8 (`Oversampler`) |
+| [builtin/DspBlocks.h](../../engine/src/builtin/DspBlocks.h) | Building blocks the effects share, beside Dsp.h's, all inline: one-pole and DC filters (`dsp::OnePole`, `onePoleCutoff`, `DcBlocker`), a delay line (`DelayLine`, read linearly or with Hermite interpolation), an envelope follower (`EnvelopeFollower`), white noise (`Noise`), `fastTanh`, an LFO with Ableton's shapes and synced rates (`Lfo`, `LfoShape`, `syncedDivisionLabels`, `syncedCycleBeats`), RBJ biquads (`BiquadCoefficients`, `Biquad`), a Linkwitz-Riley crossover and its all-pass (`Crossover`, `CrossoverAllpass`), a sliding maximum for lookahead (`SlidingMax`), linear-phase oversampling by 2, 4 or 8 (`Oversampler`), a half-band decimator designed to a passband and an attenuation (`HalfbandDecimator`: what is made at twice the rate taken down) |
 | [builtin/BuiltinRegistry.h](../../engine/src/builtin/BuiltinRegistry.h) / [.cpp](../../engine/src/builtin/BuiltinRegistry.cpp) | `BuiltinRegistry`, `BuiltinInfo`, `BuiltinCategory`, `SUB_REGISTER_BUILTIN` |
 | [builtin/devices/Synth.cpp](../../engine/src/builtin/devices/Synth.cpp) | the Synth instrument |
+| [builtin/devices/Supersaw.cpp](../../engine/src/builtin/devices/Supersaw.cpp) | the Supersaw instrument: up to three stacks of 1 to 64 band-limited saws a note, a sub sine, a filter with its envelope, the amplitude envelope, Poly, Mono or Legato with glide; its oscillators at twice the rate, a period at a time on a grid of its own time, a half-band decimator; its latency |
+| [builtin/SupersawDesign.h](../../engine/src/builtin/SupersawDesign.h) | The Supersaw's design: a stack's layout (`supersaw::layout`: each saw's cents, pan and gain; `detuneCents`, `curveExponent`, `middleWeight`, `sideWeight`, `panGains`) and the band-limited step (`StepTable`, `stepTable()`), shared with the application layer's `SupersawLayout.h` for the editor |
 | [builtin/devices/Vital.cpp](../../engine/src/builtin/devices/Vital.cpp) | the Vital instrument: Vital's engine as a device (engines handed to the rendering thread, notes on their own channels, MIDI) |
 | [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`), and what the editor draws (`wavetableFrames()`, `lfoShape()`) |
 | [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
 | [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
+| [builtin/devices/Groove.cpp](../../engine/src/builtin/devices/Groove.cpp) | the Groove device, a MIDI effect: the notes reaching it moved in time with a groove (`groove::place()`, [music/Groove.h](../../music/src/music/Groove.h); [groove.md](../groove.md)), held and played later, or placed both ways when the renderer hands them over early |
 | [builtin/SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h) / [.cpp](../../engine/src/builtin/SampleSlicing.cpp) | The Sampler's slicing (`detectOnsets`, `sliceStarts`) and Snap (`nearestZeroCrossing`), shared with the application layer's `sampleSlices` ([app/src/audio/SampleSlices.h](../../app/src/audio/SampleSlices.h)) for the editor |
 | [builtin/devices/Utility.cpp](../../engine/src/builtin/devices/Utility.cpp) | Utility: gain, pan, width |
 | [builtin/devices/Ott.cpp](../../engine/src/builtin/devices/Ott.cpp) | Over The Top: multiband upward/downward compression |
@@ -57,7 +60,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/OverdriveDesign.h](../../engine/src/builtin/OverdriveDesign.h) | The Overdrive's maths (`overdrive::bandEdges`, `driveGain`, `toneHz`, `shape` and its `Adaa`, `bandResponseDb`, `toneResponseDb`, `dynamicsGain`), shared with the application layer's `OverdriveResponse.h` for the editor |
 | [builtin/devices/AutoFilter.cpp](../../engine/src/builtin/devices/AutoFilter.cpp) | Auto Filter: a TPT state-variable filter (12 or 24 dB, five types by output weights, five circuits), its cutoff swept by an envelope follower (or the sidechain) and an LFO in chunks, glides, displays |
 | [builtin/AutoFilterDesign.h](../../engine/src/builtin/AutoFilterDesign.h) | The Auto Filter's maths (`autofilter::resonanceQ`, `cutoffHz`, `envelopeValue`, `sweepOctaves`, `weights` and `morphWeights`, the circuits' `saturate` and `stateLimit`, `responseDb`), shared with the application layer's `AutoFilterResponse.h` for the editor |
-| [builtin/devices/Delay.cpp](../../engine/src/builtin/devices/Delay.cpp) | Delay: synced or free times per side, filter, modes, ping pong, freeze |
+| [builtin/devices/Delay.cpp](../../engine/src/builtin/devices/Delay.cpp) | Delay: synced or free times per side, filter, modes, ping pong, freeze; swing, or the project's groove's (Follow Groove) |
 | [builtin/devices/Chorus.cpp](../../engine/src/builtin/devices/Chorus.cpp) | Chorus-Ensemble: modulated delays in three modes (Chorus with Taps and Time, Ensemble, Vibrato), feedback with Invert, Warmth, the high-pass split, Width |
 | [builtin/ChorusDesign.h](../../engine/src/builtin/ChorusDesign.h) | The Chorus-Ensemble's voices (`chorus::layout`, `centreMs`, `swingMs`, `voicePhase`, `lfoValue`, `delayMs`, the detune), its warmth's curve and filter and its feedback's limiter, shared with the application layer's `chorusDelayMs()` and neighbours for the editor's graph |
 | [builtin/devices/Phaser.cpp](../../engine/src/builtin/devices/Phaser.cpp) | Phaser-Flanger: a phaser, flanger and doubler, two LFOs and an envelope follower, feedback, Warmth, Safe Bass, displays |
@@ -69,7 +72,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Eq.cpp](../../engine/src/builtin/devices/Eq.cpp) | EQ: 24 bands, placement, output gain, gain scale |
 | [builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h) | The EQ's filter design (`eq::design`, `eq::responseDb`), shared with the application layer's `eqResponseDb()` for the editor's curves; `eq::Biquad::tick` (a sample through a section, transposed direct form II: the EQ's and the Sidechain's crossover) |
 | [builtin/devices/Sidechain.cpp](../../engine/src/builtin/devices/Sidechain.cpp) | Sidechain: a curve from each hit in the key (or on the beat), lookahead, lows only |
-| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth; Random (a new random curve each cycle: `modulator::randomPoints` from a seed it publishes, so the editor draws the one playing) |
+| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth; Random (a new random curve each cycle: `modulator::randomPoints` from a seed it publishes, so the editor draws the one playing); Follow Groove (synced, its time where the project's groove puts it) |
 | [builtin/devices/Envelope.cpp](../../engine/src/builtin/devices/Envelope.cpp) | Envelope: a modulator; a drawn curve played from each note or sidechain hit, in ms or synced, Depth, Velocity, Threshold, Smooth; Random (a new random curve from each trigger) |
 | [builtin/ModulatorDesign.h](../../engine/src/builtin/ModulatorDesign.h) | What the modulators share (`modulator::`): their curve's parameters (`appendPointParams`, `kPoints`), the curve as they play it (`Curve`, automation's shapes worked out once a segment, `fastmath::exp` a sample), the shapes they start with (`sinePoints`, `pluckPoints`), synced lengths, smoothing, `kDisplaySamples` |
 | [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc` (a modulator moving a parameter of a device on its track: its range and which way up), `modulationTarget`, `kMaxModulators`; see [automation.md](automation.md#modulation) |
@@ -114,6 +117,7 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
 | `automate()`, `clearAutomation()`, `automation()`, `numAutomation()` | automation for one `process()` call; see [automation.md](automation.md) |
 | `hasSidechain()`, `setSidechain()`, `setSidechainConnected()`, `sidechain(c)`, `sidechainConnected()` | the sidechain (aux) input; see below |
 | `isMidiEffect()`, `endMidiNotes(out)` | a MIDI effect: it plays its chain's notes, before the chain's other devices (see [MIDI effects](#midi-effects)); switched off, it ends the notes it was playing |
+| `earlyBeats()` | how far before their time a MIDI effect may play notes (beats; 0, the default: never): the first MIDI effect of a chain gets the clips' notes that much early (`ctx.earlyEvents`; see [MIDI effects](#midi-effects)). Any thread |
 | `acceptsMidi()` | it plays notes (an instrument, or an effect with a MIDI input, as a vocoder or a pitch corrector has): what can take another track's notes ([midi.md](midi.md#a-devices-midi-input-from-another-track)). Main thread; false by default |
 | `displays()`, `readDisplay()` | streams of values for a device's own editor |
 
@@ -128,10 +132,13 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
   bends after its note-on. A note-on with velocity 0 counts as a note-off (`startsNote()`, `endsNote()` say which an
   event is). Plug-in adapters translate them to their format's events. See [midi.md](midi.md) for where they come
   from.
-- `ProcessContext`: sample rate, `samplePos` and `beatPos` of the block's first frame, tempo, time signature,
-  the song's key (`keyTonic`, -1 when none is known, and `keyMinor`: `Engine::setSongKey`, which the application
-  sets from its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, `inEvents`,
-  and `outEvents` (a MIDI effect's notes, an `EventOutput`; null for every other device); `samplesPerBeat()` and
+- `ProcessContext`: sample rate, `samplePos` and `beatPos` of the block's first frame, tempo, time signature, the
+  song's key (`keyTonic`, -1 when none is known, and `keyMinor`: `Engine::setSongKey`, which the application sets from
+  its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, the song's
+  tempo map (`tempoMap`, a `TempoMap` from [music/](../music.md); null when none is known) and the project's default
+  groove (`groove`: `Engine::setGroove`, null for none, for devices that play on the beat and follow it), `inEvents`,
+  `outEvents` (a MIDI effect's notes, an `EventOutput`; null for every other device) and `earlyEvents` (the clips'
+  notes handed early to a chain's first MIDI effect: [MIDI effects](#midi-effects)); `samplesPerBeat()` and
   `beatsPerBar()` from them. The renderer splits blocks where the playhead jumps (a loop wrap), so a block is always
   one continuous stretch.
 
@@ -145,19 +152,30 @@ and alignment of sidechains are in [routing.md](routing.md).
 
 ### MIDI effects
 
-A MIDI effect (`isMidiEffect()`: the Arpeggiator) plays notes instead of audio. The renderer runs a chain's MIDI
-effects before the chain's other devices, in their order, wherever they sit in it (as it runs modulators before
-their strip: `Renderer::processMidiEffects`, from `processChain`, so a rack's chain runs its own): each gets the
-notes the one before it played (the first, the chunk's), slice by slice with its automation and modulation as any
-device's, in `ctx.inEvents`, and appends what it plays to `ctx.outEvents` (an `EventOutput`: offsets relative to
-its call, in time order; full, the rest is dropped). Those are the notes the chain's devices hear, kept in the
-worker's scratch (`midiNotes`, two buffers a depth). Raw MIDI it passes on itself. It never touches the audio, and
-in its place in the chain the audio goes past it.
+A MIDI effect (`isMidiEffect()`: the Arpeggiator, the Groove device) plays notes instead of audio. The renderer runs
+a chain's MIDI effects before the chain's other devices, in their order, wherever they sit in it (as it runs
+modulators before their strip: `Renderer::processMidiEffects`, from `processChain`, so a rack's chain runs its own):
+each gets the notes the one before it played (the first, the chunk's), slice by slice with its automation and
+modulation as any device's, in `ctx.inEvents`, and appends what it plays to `ctx.outEvents` (an `EventOutput`:
+offsets relative to its call, in time order; full, the rest is dropped). Those are the notes the chain's devices
+hear, kept in the worker's scratch (`midiNotes`, two buffers a depth). Raw MIDI it passes on itself. It never
+touches the audio, and in its place in the chain the audio goes past it.
 
 Switched off (or its automation switch off at the chunk's start) it isn't run and the notes go on as they come,
 after the note-offs of the notes it was still playing (`endMidiNotes()`, called each such chunk). One taken out
 of a chain, or moved to another, asks the chain's devices to reset (`Engine::resetChainLocked`), so an
 instrument doesn't hold the notes it was playing for ever.
+
+**Early notes.** A MIDI effect can't play a note before it comes in, but the clips' notes are known ahead. One whose
+`earlyBeats()` is more than 0 (the Groove device, with Allow Early on) is handed, if it is the first MIDI effect of
+its chain (a rack's chain or a pad counts as its own chain), the clips' notes due within that many beats after the
+chunk, and their note-offs: `ctx.earlyEvents`, an `EarlyList` of `EarlyEvent`s (the event, whose `sampleOffset`
+from the start of the call is at or past its end: where it would play; and `beat`, where that is on the timeline), in
+its first stretch of the chunk only. It plays them into `outEvents` as it plays any note, early or not. Each comes again
+in its time with the same note id, for the devices that didn't take it early, and the effect ignores it then. A
+handed note ended before its time (a locate, stopping) never sounded: the Groove device drops it. Notes the effects
+before it play, and live input, aren't known ahead. How the renderer finds and hands them over is in
+[midi.md](midi.md#early-notes).
 
 In the model it is an ordinary device after the instrument (the model keeps an instrument first in its chain);
 `BuiltinCategory::MidiEffect`, listed after the instruments.
@@ -203,9 +221,10 @@ What every built-in device shares ([BuiltinProcessor.h](../../engine/src/builtin
   ([app/src/model/DeviceState.h](../../app/src/model/DeviceState.h), namespace `deviceState`, has the same encoding),
   so it saves, loads and undoes as a plug-in's does.
 - **Audio files** come through `loadSource(path)` (not real-time). The engine sets a `SourceLoader` on every built-in
-  device it creates (`Engine::addBuiltinProcessor`), so files are shared with the engine's cache and decoded at the
-  engine's rate; without one (a device made outside an engine) it decodes the file at its own rate. See
-  [warp.md](warp.md#the-source-cache).
+  device it creates (`Engine::addBuiltinProcessor`): `Engine::loadResidentSource()`, so files are shared with the
+  engine's cache and decoded at the engine's rate, and always into memory, however long (a device reads its sample
+  anywhere, note by note; a clip of the same long file may stream: [streaming.md](streaming.md)); without one (a
+  device made outside an engine) it decodes the file at its own rate. See [warp.md](warp.md#the-source-cache).
 
 ## `BuiltinRegistry`
 
@@ -283,6 +302,109 @@ resonant low-pass filter. Mono, on both channels. Velocity sets the level.
   oscillator's increment is the key's times 2^(bend/12).
 - It *writes* (does not add) its output: it is the first device on a MIDI track. With no events and no active voice it
   writes silence and skips the work. `tailSamples()` is the release time.
+
+### Supersaw (`builtin:supersaw`, Instrument)
+
+An instrument for stacks of detuned saws, made as clean as saws can be: up to three stacks a note, each of 1 to 64 saws,
+band-limited to the fraction of a sample, at twice the rate below 80 kHz; a sub sine; a filter with an envelope of its
+own; Poly, Mono or Legato with glide. 16 notes. What the user sees is in
+[guide/devices.md](../guide/devices.md#supersaw).
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `s1_on`, `s2_on`, `s3_on` | Stack 1..3 | | Off, On | On, Off, Off |
+| `s<n>_saws` | Stack *n* Saws | # | 1..64 (steps) | 7, 7, 5 |
+| `s<n>_transpose` | Stack *n* Transpose | st | -48..48 (steps) | 0, -12, +12 |
+| `s<n>_fine` | Stack *n* Fine | ct | -100..100 | 0 |
+| `s<n>_detune` | Stack *n* Detune | % | 0..100 | 45, 35, 30 |
+| `s<n>_curve` | Stack *n* Curve | % | -100..100 | 35 |
+| `s<n>_blend` | Stack *n* Blend | % | 0..100 | 75 |
+| `s<n>_width` | Stack *n* Width | % | 0..100 | 100, 70, 100 |
+| `s<n>_level` | Stack *n* Level | dB | -60..6 | 0, -3, -6 |
+| `phase` | Phase | ° | 0..360 | 0 |
+| `random` | Random Phase | % | 0..100 | 100 |
+| `drift` | Drift | % | 0..100 | 15 |
+| `sub` | Sub | % | 0..100 | 0 |
+| `sub_octave` | Sub Octave | | 0, -1, -2 (a list) | -1 |
+| `filter_type` | Filter | | Off, Low 12, Low 24, High 12, High 24, Band (a list) | Low 24 |
+| `cutoff` | Cutoff | Hz | 20..20000, log | 20000 |
+| `resonance` | Resonance | % | 0..100 | 0 |
+| `key_track` | Key Track | % | 0..100 | 0 |
+| `filter_env` | Filter Env | % | -100..100 | 0 |
+| `filter_attack`, `filter_decay`, `filter_release` | Filter Attack, Decay, Release | ms | 1..5000, 1..10000, 1..10000, log | 2, 500, 300 |
+| `filter_sustain` | Filter Sustain | % | 0..100 | 50 |
+| `attack`, `decay`, `release` | Attack, Decay, Release | ms | 1..5000, 1..10000, 1..10000, log | 2, 600, 300 |
+| `sustain` | Sustain | % | 0..100 | 100 |
+| `velocity` | Velocity | % | 0..100 | 50 |
+| `mode` | Mode | | Poly, Mono, Legato (a list) | Poly |
+| `glide` | Glide | ms | 0..2000 | 0 |
+| `bend_range` | Bend Range | st | 0..24 (steps) | 2 |
+| `volume` | Volume | dB | -60..6 | 0 |
+
+**A stack** ([SupersawDesign.h](../../engine/src/builtin/SupersawDesign.h), `supersaw::layout`): N saws around the
+stack's pitch (the note, Transpose and Fine). Their places, from the flattest to the sharpest, are N points spread evenly
+over -1..1, bent by Curve (x becomes sign(x) |x|^e, e = 2^(1.5 Curve): above 0 the saws gather towards the middle, as
+the JP-8000's do, which keeps their beating from lining up into a pattern that repeats; below 0 towards the edges), times
+the outermost saws' detune, Detune² × 100 cents (50 % is 25 cents). Blend weighs the middle saw (an even stack's middle
+pair shares its weight) against the others: the middle at 1 - Blend / 3, each other at Blend (all alike at 75 %), then
+the whole made to unit power, so a stack is as loud whatever its count. Width spreads the saws over the stereo field:
+each mirrored pair (the flattest and the sharpest, and so on inwards) to opposite sides, the outer pairs widest, the flat
+one of each pair to the left and the right in turn, so each side hears flat and sharp saws alike; equal power, 1 at the
+middle (Width 0: both sides the same, to the bit). A note's stack at full velocity has the level of one saw of 0.25 (its
+RMS 0.25/√3); Level and Volume scale it.
+
+**Saws without aliasing.** A saw's phase is a 32-bit integer stepped by a 32-bit increment (the nearest to its
+frequency: within 3·10^-8 at 440 Hz): exact, wrapping by itself, and its value is the phase read as a signed number, a
+rise from -1 to 1. At each jump the device adds the difference between a band-limited step and the plain one (Brandt's
+BLEP) from `supersaw::StepTable`: the integral of a Kaiser-windowed sinc (β 13, ±9 samples), tabulated at 1024 fractions
+of a sample (linear between them, within 3·10^-7), flat to a quarter of the oscillators' rate and about 125 dB down
+from three quarters of it. Below 80 kHz the oscillators run at twice the rate and a half-band decimator
+(`dsp::HalfbandDecimator`: flat to 20 kHz, or to 0.4535 of the rate, and 120 dB down where it would fold into that band;
+171 taps at 44.1 kHz, 95 at 48 kHz) takes the mix down, filtering away what the step lets fold into the octave above the
+rate's Nyquist. So whatever isn't a harmonic is more than 130 dB under each saw's fundamental at any pitch (a plain saw's
+aliases are 17 to 55 dB down). At 88.2 kHz and above the oscillators run at the rate, without a decimator (what the step
+lets fold then lands above 24 kHz). The sub is a sine of the phase (a polynomial, within 6·10^-8), which has no jumps.
+
+**A voice, a period at a time.** Everything that controls the saws is worked out every 32 oscillator samples
+(`kControl`), on a grid of the device's own time: the pitch (the note, its glide, its note's bend and the wheel, each
+gliding), the stacks' saws' places (gliding about 12 ms when Detune or Curve moves) and gains (5 ms), each saw's drift,
+the filter's envelope and cutoff, the envelopes' settings. Since nothing a voice's oscillators do changes inside a period,
+they run a whole period at once at its start (a voice that starts inside one, from its note on): loops over each saw's
+samples that the compiler vectorises, each jump's correction scattered into the voice's accumulator, which reaches 9
+samples ahead (the step's reach: the voice's output is the accumulator 9 samples behind its oscillators, and its
+amplitude envelope runs as far ahead). The events inside a period then only touch the envelope and the filter, which go a
+sample at a time; gains and the filter's cutoff ramp linearly between updates, worked out from the period's start. So the
+output is the same to the bit however the blocks are cut (the sums add in the same order). Pitches step at the updates, in
+phase.
+
+- Drift: each saw's own slow wander, two one-poles (0.8 s each) on noise, scaled to a standard deviation of 4 cents at
+  100 %, each saw starting somewhere along it. Phase: where each saw starts; Random Phase: how much of a random phase is
+  added to it (100 %: anywhere; 0: every saw together, the note starting with one great jump). The random numbers come
+  from the device's own generator, seeded at every reset, so renders come out the same each time.
+- The filter, per voice and per side: TPT state-variable sections (Zavalishin/Simper) at the oscillators' rate. Low 12 and
+  High 12 one section, Low 24 and High 24 two (a 4-pole Butterworth's: damping 1.848 and 0.765), Band one, normalised to
+  unity at its centre. Resonance raises Q from Butterworth's to 12 (in the 24 dB types, the second section's). The cutoff
+  (gliding 5 ms, in octaves) moves by Key Track (100 %: the key's pitch from C3, an octave an octave) and by its envelope
+  (Filter Env ±100 %: ±10 octaves at its peak), limited to 0.45 of the oscillators' rate; g goes linearly through each
+  period. A new type starts its sections from rest.
+- Envelopes: as the Synth's (a linear attack; decay and release exponential, their times to -60 dB), the amplitude's a
+  sample at a time, the filter's a period at a time. Velocity: how much the velocity sets the level (0: none).
+- Notes: a note-on takes a free voice; with 16 sounding, the quietest releasing one (else the oldest) fades out over 4 ms
+  while the new note takes another of the 24 voices. Mono and Legato play one voice, remembering the keys held (the newest
+  plays; when it ends, the newest still held, gliding back): Mono strikes the envelopes again from where they are, Legato
+  only when no key was held; Glide (constant time, linear in pitch) in Mono always, in Legato between held keys, in Poly
+  from the last note's pitch. A changed Mode fades out what plays. A `NoteBend` bends its note's voice as the Synth's does
+  (±48 semitones, gliding 1 ms); MIDI pitch bend reaches every voice over Bend Range; CC64 (sustain) holds released notes;
+  CC120 fades everything out, CC123 releases it.
+- Latency: the step's 9 oscillator samples and the decimator's delay, (9 + delay) / 2 samples (47 at 44.1 kHz, 28 at
+  48 kHz); 9 at the rate itself. The engine compensates it like any device's. `tailSamples()` is the release and the
+  latency.
+- It *writes* its output: it is first on a MIDI track. Silent for 0.25 s with no voice, it sleeps (writes silence, skips
+  the work) until an event comes, waking with every glide at rest.
+- Its cost: the oscillators are most of it, about 0.3 ns a saw a sample at twice the rate (16 notes of three stacks of 64,
+  3072 saws, take about a fifth of a core at 48 kHz; four notes of seven, under 1 %).
+- Displays (for its editor): `output`, the output (left and right averaged) a value a sample, and `voices`, how many
+  notes sound, every 256 samples.
 
 ### Vital (`builtin:vital`, Instrument)
 
@@ -577,6 +699,7 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
 | `velocity` | Velocity | | Played, Fixed | Played |
 | `fixed_velocity` | Fixed Velocity | | 1..127 (whole) | 100 |
 | `hold` | Hold | | Off, On | Off |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **Held notes** (up to 32, by key and channel, with their velocity and the order they
   came): a note-on with none held down starts a new chord (with Hold, in place of the
@@ -588,6 +711,12 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
   own, from 0 at the chord's first note. Step k plays when the clock reaches
   k + (k odd ? 0.5 × Swing / 100 : 0). A chord starting no more than a tenth of a step
   after a step (`kLate`) plays that step at once; otherwise the next.
+- **Follow Groove**: synced while the song plays, with the project's groove (`ctx.groove`)
+  and the tempo map, step k plays where `groove::place()` puts its beat (k note values,
+  as key 60 plays it, at the default `Amounts`: Timing and Velocity 100 %, no Random or
+  Quantize), in place of Swing, and each step's notes are as loud as the groove makes
+  them on their key at that beat. Without a project groove, stopped or free, it plays as
+  it would.
 - **A step**: the pattern is the held notes low to high (Played: in the order they
   came), repeated an octave up for each octave (keys over 127 left out); `indexFor`
   picks one by the style and the steps played since the chord started (Up-Down and
@@ -600,6 +729,57 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
   won't hear their note-offs). `reset()` forgets everything.
 - **Display**: `step`, one value per 64 samples: the step (since the chord started, 0..15
   round and round) whose notes sound, or -1 while none does. Its editor lights that step.
+
+### Groove (`builtin:groove`, MidiEffect)
+
+Moves the notes reaching it in time with a groove (`groove::place()`: [music.md](../music.md#groove)), with their
+velocities and lengths as the groove has them; the feature as a whole is in [groove.md](../groove.md). See
+[MIDI effects](#midi-effects) for how its notes reach its chain.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `swing` | Swing | % | 50..75 | 50 |
+| `step` | Step | | 1/8, 1/8T, 1/16, 1/16T, 1/32 (`groove::kSteps`) | 1/16 |
+| `timing` | Timing | % | 0..200 | 100 |
+| `velocity` | Velocity | % | -100..100 | 100 |
+| `length` | Length | % | 0..100 | 0 |
+| `random` | Random | % | 0..100 | 0 |
+| `quantize` | Quantize | % | 0..100 | 0 |
+| `early` | Allow Early | | Off, On | On |
+| `latency` | Latency | | Off, On | Off |
+
+- **The groove** it plays is its source, a state value (`stateValues()`): `source` is `swing`
+  (Swing and Step: `groove::swing()`, made in place on the rendering thread, nothing
+  allocated), `project` (the project's default groove, `ctx.groove`; none: the notes as they
+  come) or `groove` (its own: `groove`, a groove's text, `groove::toText()`, read on the main
+  thread and handed to the rendering thread without locks). `seed` is Random's seed. Other
+  values (the application's `groove_id`: the library groove it is a copy of) it keeps and
+  gives back unread. Timing, Velocity, Length, Random and Quantize are the amounts it plays the
+  groove at (`groove::Amounts`); a note takes their values at the moment it comes in.
+- **Later**: a note-on is held (up to 64 notes, `kMaxNotes`; one more passes at once) and
+  played where the groove puts it; its note-off is moved by as much and by Length (the
+  note's length times its step's, as far as Length says), at least a sample after its
+  note-on, and its bends follow it by its note id. Raw MIDI passes at its time (with Latency, that much
+  later, as the notes are). What waits
+  is played in time order (4096 events at most), at one time note-offs first, then note-ons
+  and raw MIDI, then bends. A note on a key and channel one of its notes still sounds on
+  ends that one first. A note without an id finds its note-off by key and channel (the
+  oldest held).
+- **Early**: `earlyBeats()` is half a step (of the groove it plays) while Allow Early is on
+  and Latency off, else 0. The notes handed early (`ctx.earlyEvents`) it places both ways,
+  no earlier than half a step before their time nor before now, and remembers their ids
+  (256 at most), so their note-ons and note-offs coming again in their time are ignored. A
+  note handed early whose note-off comes before it started (a locate, stopping) is dropped:
+  it never sounded. Notes not handed early (live input, the notes of a MIDI effect before
+  it) move later only.
+- **Latency**: on, it reports half a step at the last tempo it played at as its latency
+  (`dsp::LatencyReport`), and plays every note (and raw MIDI) that much later, so delay
+  compensation lets every note, live input too, move both ways.
+- **Stopped** (`ctx.playing` false) notes pass as they come; the notes held that haven't
+  sounded when it stops are dropped. **Switched off**, `endMidiNotes()` plays the sounding
+  notes' note-offs and drops the held ones.
+- **Display**: `step`, one value per 64 samples: the step of the cycle the newest sounding
+  note fell on, or -1 while none sounds. Its editor lights that step.
 
 ### Utility (`builtin:utility`, AudioEffect)
 
@@ -1706,7 +1886,9 @@ A resonant filter with an envelope follower and an LFO, after Ableton's Auto Fil
 
 ### Delay (`builtin:delay`, AudioEffect)
 
-A stereo delay after Ableton's.
+A stereo delay after Ableton's, which sounds as Valhalla Delay's Digital mode at its default preset (its
+Digital character, below). The engine is [DelayDevice.h](../../engine/src/builtin/DelayDevice.h), shared with
+the Vintage Delay; the characters are [DelayCharacter.h](../../engine/src/builtin/DelayCharacter.h).
 
 | id | Name | Unit | Range | Default |
 |---|---|---|---|---|
@@ -1727,21 +1909,37 @@ A stereo delay after Ableton's.
 | `swing` | Swing | % | 0..100 | 0 |
 | `drive` | Drive | % | 0..100 | 0 |
 | `duck` | Duck | % | 0..100 | 0 |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **Times**: synced, `division × (15 / tempo) × (1 + offset / 100)` seconds; free, the
   time in ms. Linked, the right side uses the left's four parameters. At most 10 s
   (`kMaxDelaySeconds`); each delay line is that long (rounded up to a power of two),
   allocated in `prepare()`. Read with 4-point Hermite interpolation.
 - **Per side, two lines in a loop** (stages A and B, `stageOf(side, part)`): each is read
-  (`echo`), filtered and driven (`wet`); A is written with the input plus feedback × B's
+  (`echo`, at the time plus the character's modulation), given the character, filtered and driven (`wet`); A is written with the input plus feedback × B's
   wet, B with feedback × A's wet; the side's output is the sum of both wets. **Swing**
   reads A at the time × (1 + s) and B at the time × (1 − s), s = 0.5 × Swing / 100
   (`kMaxSwing`), so echoes come at T(1 + s), 2T, 3T(1 + s)…: without swing, exactly a
   single line of time T (A longer than a line holds reads at the line's end). Ping
   pong: the input summed to mono goes into the left's A, which feeds the right's B,
   which feeds the left's A (the left's B and the right's A rest). Frozen, each line is
-  written with the other's unfiltered echo (an exact loop) and the input is ignored;
+  written with the other's echo as it was read (an exact loop) and the input is ignored;
   feedback is 1.
+- **Follow Groove**: with the project's groove (`ctx.groove`), s is the groove's: how late
+  its offbeat steps are on average (its default lane's odd steps, their timing in beats
+  plus their milliseconds at the tempo), as a share of the side's time in beats, held to
+  0..0.5. So a 16th's echoes swing as the groove's 16ths do. Without one, Swing as set.
+- **Digital character** (Valhalla Delay's Digital mode, Era Past, Age 50 %, its modulation at 0.5 Hz and
+  50 %, measured from renders of it): the read swings ±2.667 ms on a 0.5 Hz triangle rounded by a 2 Hz
+  one-pole, starting at its middle, rising (`DigitalModulation`); each echo goes through high-passes at 5,
+  10 and 10 Hz (one-poles) and the plug-in's band-limit (about 7.8 kHz, a droop of 1.3 dB at 5 kHz; its
+  impulse response measured at 44.1, 48, 88.2 and 96 kHz, `DelayCharacterTables.h`, others resampled; 112
+  taps at 48 kHz, peaking 11 samples late); then a compressor on each side's echoes together (the plug-in's
+  one line holds every repeat at once): an RMS level of them through a high shelf (+12.5 dB above
+  3.75 kHz; 2 ms up, 0.94 ms down) and the gain (1 + (level / 0.847)^1.97)^(-1/1.97) on each. What goes
+  into the lines is rounded to 16 bits. Against the plug-in (time-aligned: its own time is off by up to
+  half a sample), the difference is -45 dB on music at moderate levels, -30 dB driven hot at 85 % feedback.
+- **Dry/Wet** crosses over at equal power: the dry × cos(90° × mix), the wet × sin(90° × mix).
 - **Drive**: after the filter, in the loop, `tanh(g·y) / g` with g = 1 + 7 × Drive / 100
   (`dsp::fastTanh`): unity for quiet echoes, loud ones rounded off; bypassed at 0.
 - **Duck**: the input's peak (the louder channel; 2 ms attack, 250 ms release:
@@ -1757,6 +1955,31 @@ A stereo delay after Ableton's.
   60 dB, at most 60 s.
 - **Display**: `input`, one value per sample: the input summed to mono. The editor
   draws its spectrum behind the filter curve.
+
+### Vintage Delay (`builtin:vintage_delay`, AudioEffect)
+
+The Delay's engine, parameters and editor (`DelayEditor.qml`) with the Tape character: Valhalla Delay's Tape
+mode at its default preset (Era Past, Age 50 %, Wow and Flutter 50 %), measured from renders of it. In
+[DelayCharacter.h](../../engine/src/builtin/DelayCharacter.h):
+
+- **The tape's speed** follows the time: slowdown k = time / 200 ms, kept in 1..3. Each echo's playback EQ
+  is a curve scaled down in frequency by k (a low shelf, a broad bump, the treble's roll-off), after a fixed
+  10 Hz high-pass and a fixed cut-off just under 24 kHz, 4.86 samples late; a shelf above 9 kHz follows the
+  plug-in's treble steps at the times measured (interpolated between). It follows the echo's time as it is
+  (gliding in Repitch), recomputed a block.
+- **Wander** (the same for both sides): cubic B-splines through random values (fixed seeds, so renders
+  repeat): a drift (a new value every 8.3 s, 2.6 ms RMS), wow (5 Hz, 0.32 ms RMS × (1 + 0.86 (k − 1))) and
+  flutter (33 Hz, 0.064 ms RMS × (1 + 0.5 (k − 1))); and the splice: once a pass of the 10 s × k loop (the
+  first 9.3 s in), the time bumps up 1.08 ms × k and settles (an impulse of 7.32 ms × k into exponentials of
+  0.1875 and 0.125 s, their difference), the echo dipping 12 % at the bump's height.
+- **Saturation**, on each side's echoes together: a fast compressor (an RMS level through +20 dB above
+  10 kHz, 0.48 ms up, 0.23 ms down; (1 + (level / 0.476)^1.92)^(-1/1.92), smoothed over 0.04 ms), then a
+  tanh well off centre (drive 0.368, bias -1.15), as a gain on each echo.
+- **Feedback path**: each echo fed back goes through a 100 Hz one-pole high-pass and +2 dB at 8.5 kHz, so
+  the repeats thin out at the bottom.
+- Against the plug-in: the wander's depth band by band, and the level band by band within 0.5 dB below
+  4 kHz (up to 2 dB above 8 kHz with feedback). Not modelled: what the plug-in's tape buffer puts above
+  14 kHz that isn't the input (images), and its quiet modulation noise.
 
 ### Chorus-Ensemble (`builtin:chorus`, AudioEffect)
 
@@ -2687,6 +2910,8 @@ see [automation.md](automation.md#modulation)). It never touches the audio.
 | `retrigger` | Retrigger | | Off, On | Off |
 | `smooth` | Smooth | ms | 0..250 | 0 |
 | `p1_used` .. `p32_curve` | Point n Used, Time, Level, Curve | | as the Sidechain's (hidden, not automatable) | a triangle (`modulator::trianglePoints`: 0, up to 1 at half the cycle, down to 0) |
+| `random` | Random | | Off, On | Off |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **The cycle**: 1 / Rate seconds, or the synced note value at the tempo. Synced while the song
   plays (and not retriggered) its position is the song's: frac(beat / cycle beats), exactly, so a
@@ -2694,6 +2919,12 @@ see [automation.md](automation.md#modulation)). It never touches the audio.
   retriggered, it runs on from where it is at the tempo; free in Hz it always runs on (from 0
   after a reset, so offline renders repeat). **Retrigger**: a note-on (`startsNote()`) sets it to
   the cycle's start.
+- **Follow Groove**: synced and following the song, with the project's groove (`ctx.groove`) and
+  the tempo map, its position is that of the straight beat the groove puts where the song is:
+  found back from `groove::place()` (key 60, the default `Amounts`; the warp only rises) by
+  bisection every 32 samples (`kGrooveStep`), straight between. So a cycle point due at a beat
+  comes where the groove moves that beat, and a 1/16 LFO swings with the hats. Without a project
+  groove, as it is.
 - **Its value**: the curve (`modulator::Curve`: automation's shapes, `kPoints` = 32 points) at
   the cycle's position plus Phase / 360 (wrapped), then 0.5 + (y − 0.5) · Depth + Offset / 2, held
   to 0..1, smoothed by a one-pole of Smooth ms (none at 0). Written into every frame of its first
@@ -2757,6 +2988,10 @@ readonly property var editors: ({
     "eq": "EqEditor.qml",
     "erosion": "ErosionEditor.qml",
     "gate": "GateEditor.qml",
+    "gigatune": "GigaTuneEditor.qml",
+    "groove": "GrooveEditor.qml",
+    "glitch": "GlitchEditor.qml",
+    "hue": "HueEditor.qml",
     "lfo": "LfoEditor.qml",
     "limiter": "LimiterEditor.qml",
     "multiband": "MultibandEditor.qml",
@@ -2767,7 +3002,10 @@ readonly property var editors: ({
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
     "spectral": "SpectralEditor.qml",
+    "supersaw": "SupersawEditor.qml",
+    "tape_stop": "TapeStopEditor.qml",
     "transient": "TransientEditor.qml",
+    "vintage_delay": "DelayEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
     "vital": "VitalEditor.qml",
     "vocal_rider": "VocalRiderEditor.qml",
@@ -2781,7 +3019,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are twenty-nine. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+- Today there are thirty-three. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
   playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
   threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
   The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
@@ -2802,7 +3040,10 @@ readonly property var editors: ({
   over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
   modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, the band glowing with `output` and the Drive knob warming with `drive`; the Auto Filter its response (from `autofilter::responseDb`) at Frequency as it is now moved by the sweep the engine publishes (`sweep_l`, `sweep_r`, played back by a `DisplayPlayback`, so an edit is drawn at once) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom, laid out as Live 12.2's (the LFO's strip along the display's bottom, the envelope's Attack and Release in the Sidechain fold); the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
   `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
-  mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
+  mirrored in the QML), the step `step` says lit; the Groove device the groove it plays (its source chosen above
+  it: Swing, Project, the project's grooves) as its default lane's steps over its cycle, each where it plays and as
+  tall as it is loud (`GrooveSteps`), the step `step` says lit, with Add to Grooves and Apply
+  ([groove.md](../groove.md)); the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from
   `phaser::curve`) at its parameters as they are moved by the modulation the engine publishes (`mod`, `mod_r`), its notches marked, and
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
@@ -2823,7 +3064,11 @@ readonly property var editors: ({
   with its markers, its loop, fades or slices (the engine's own, through the application layer's `sampleSlices`) and
   the playhead from `position` (drop or double-click to load a sample; loading is an undoable state change through
   `ProjectEditor::setDeviceState()`, the path kept in the device's state); Vital nine pages of its parameters and its
-  modulation matrix (see [ui/device-view.md](../ui/device-view.md#device-editors)).
+  modulation matrix; the Supersaw its three stacks, a lane each, every saw where the engine's layout puts it (from
+  `supersaw::layout`, through the application layer's `supersawLayout`), glowing and shimmering at its beat with the
+  `output` (see [ui/device-view.md](../ui/device-view.md#device-editors)).
+
+The Arpeggiator's, the Delay's and the LFO's editors have a **Groove** button: Follow Groove.
 
 See [ui/device-view.md](../ui/device-view.md#device-editors) for the editors and how to add one.
 
@@ -2935,7 +3180,8 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   samples too), the envelope follower's times, noise uniform and repeatable and `fastTanh` against tanh, the LFO's
   shapes and cycles, biquads responding as their magnitude says, the crossover's bands adding up flat (as its
   all-pass does), the sliding maximum over a changing window, oversampling transparent in band and delayed by its
-  latency, oversampled saturation folding back far less, and a low, narrow biquad ringing out to exact zeros.
+  latency, oversampled saturation folding back far less, a low, narrow biquad ringing out to exact zeros, and the half-band decimator (its taps for 20 kHz at
+  44.1 and 48 kHz, flat to its passband as a pure delay, 120 dB down where it would fold, unity at DC).
 - [test_compressor_engine.cpp](../../tests/engine/test_compressor_engine.cpp): its curve (hard knee follows the ratio;
   nothing below the knee), attack holding on low notes, sidechain keying, and its displays.
 - [test_gate_engine.cpp](../../tests/engine/test_gate_engine.cpp): its listing; opening at the threshold and closing
@@ -3078,6 +3324,16 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   rate's held samples, fully dry, and drive, dither and tone in range.
 - [test_arpeggiator_engine.cpp](../../tests/engine/test_arpeggiator_engine.cpp): a MIDI effect after the synth in
   its chain playing it: the styles, octaves, gate, swing, a free rate, Hold, switched off, in a rack's chain.
+- [test_groove_engine.cpp](../../tests/engine/test_groove_engine.cpp) (`engine_tests groove`, with the maths'
+  [test_groove.cpp](../../tests/engine/test_groove.cpp)): the Groove device's listing; swing moving the offbeats
+  later, their note-offs with them, and nothing at 50 %; a note's bends following it by its id; velocity and Length
+  from the groove's steps; on a Drum Rack's pad only that pad's notes (heard as C3); Timing automated taking effect
+  note by note; switched off mid-note, no note hanging; stopping dropping the held notes that haven't sounded. Early
+  notes: a clip's note grooved early playing early, to the sample, across a chunk's end in chunks of several sizes
+  (and on its time with Allow Early off); never more than half a step early; round the loop, before the loop's start,
+  each once; to a pad's Groove device (the rack's other chain hearing every note in its time, once); stopping and
+  locating dropping a note handed early that hasn't sounded. Follow Groove: the Arpeggiator's steps, the Delay's swing
+  and a synced LFO's phase following the project's groove, and not when it is off.
 - [test_chorus_engine.cpp](../../tests/engine/test_chorus_engine.cpp): its listing and the design's figures (the
   warmth's curve, its antiderivative and its stage among them); passing the input bit for bit fully dry (with the
   high-pass on, the crossover's all-pass); each layout a plain delay of its centre at Amount 0 (the impulses after
@@ -3188,6 +3444,16 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   the engine (the pitch holding); sleeping to exact zeros and waking; reset; presets written and read back, older ones
   upgraded, others refused; the sources and destinations; wavetables of shapes, from wavetable files (with their `clm `
   chunk), vocoded and pitched, from `.vitaltable` files; LFO shapes heard; through the engine.
+- [test_supersaw_engine.cpp](../../tests/engine/test_supersaw_engine.cpp): the Supersaw's listing and latency at every
+  rate; a saw jumping where its phase says, as late as the device reports, to a thousandth of a sample (timed by its
+  fundamental's phase); no alias of a saw within 130 dB of its fundamental at any pitch, at 44.1, 48 and 96 kHz; the
+  band-limited step (its ends, its symmetry); a stack's layout (places, Curve, pans, Blend, unit power, the pan law) and
+  each saw playing where it says, as loud; a stack as loud whatever its count; Width (0: both sides the same, to the bit;
+  wider, less alike, as loud); Transpose, Fine and three stacks; the sub; the envelopes, the filter's types, resonance,
+  key tracking and envelope; Phase and Random Phase; Drift; glide in Mono, Legato and Poly, going back to a key still
+  held; a new Mode taking the next note, asleep or not (even one in the same period); a note's bend and the wheel; the pedal; stealing; Saws changed mid-note, faded in; silence as zeros and
+  sleeping; the same output to the bit whatever the blocks (chords, bends, the wheel, automation, Mono); through the
+  engine, the same twice and on the beat; every rate; its cost.
 - [test_midi_engine.cpp](../../tests/engine/test_midi_engine.cpp): the Synth plays the right pitch and level.
 - [test_note_bends_engine.cpp](../../tests/engine/test_note_bends_engine.cpp): the Synth and the Sampler play a
   note's bend at its bent pitch, and the Synth bends only the note a bend names.
@@ -3208,6 +3474,7 @@ the Disperser, the EQ, the Sidechain) and what the editors share (`EditorKnob` a
 [the Amp's](../../tests/app/test_ui_device_editors_amp.cpp),
 [Erosion's](../../tests/app/test_ui_device_editors_erosion.cpp),
 [the Chorus-Ensemble's](../../tests/app/test_ui_device_editors_chorus.cpp),
-[the Phaser-Flanger's](../../tests/app/test_ui_device_editors_phaser.cpp) and
-[the Reverb's](../../tests/app/test_ui_device_editors_reverb.cpp); and
+[the Phaser-Flanger's](../../tests/app/test_ui_device_editors_phaser.cpp),
+[the Reverb's](../../tests/app/test_ui_device_editors_reverb.cpp) and
+[the Groove device's](../../tests/app/test_ui_device_editors_groove.cpp); and
 [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) the Sidechain's fit.

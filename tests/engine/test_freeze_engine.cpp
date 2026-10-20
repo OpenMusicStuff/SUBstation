@@ -58,8 +58,9 @@ int64_t tailAsCut(sub::Engine& engine, uint32_t track, double endBeat, double ta
     const auto source = engine.loadSource(path.string());
     REQUIRE(source->frames() == written);
     bool same = true;
+    const std::vector<float> channels[2] = {sourceChannel(*source, 0), sourceChannel(*source, 1)};
     for (int64_t f = 0; f < written; ++f) {
-        for (uint32_t c = 0; c < 2; ++c) same = same && source->channelData(c)[f] == whole[static_cast<size_t>(f) * 2 + c];
+        for (uint32_t c = 0; c < 2; ++c) same = same && channels[c][static_cast<size_t>(f)] == whole[static_cast<size_t>(f) * 2 + c];
     }
     CHECK(same);
     return written - frames;
@@ -145,7 +146,7 @@ TEST_CASE("the WAV has the range and its tail") {
     CHECK_EQ(source->frames(), written);
     CHECK_EQ(source->channels(), 2u);
     for (uint32_t c = 0; c < source->channels(); ++c) {
-        const Samples samples(source->channelData(c), source->channelData(c) + written);
+        const Samples samples = sourceChannel(*source, c);
         CHECK_ALLCLOSE(samples, 0.5, 1e-7, 1e-4);
     }
 }
@@ -347,8 +348,10 @@ TEST_CASE("the WAV keeps what is louder than full scale") {
     engine.renderTrackToWav(track, path.string(), 0.0, 1.0, 0.0);
     const auto source = engine.loadSource(path.string());
     float peak = 0.f;
-    for (uint32_t c = 0; c < source->channels(); ++c)
-        for (int64_t i = 4000; i < 4100; ++i) peak = std::max(peak, source->channelData(c)[i]);
+    for (uint32_t c = 0; c < source->channels(); ++c) {
+        const std::vector<float> samples = sourceChannel(*source, c);
+        for (int64_t i = 4000; i < 4100; ++i) peak = std::max(peak, samples[static_cast<size_t>(i)]);
+    }
     CHECK(peak > 1.5f);  // 32-bit float: not clipped
 }
 

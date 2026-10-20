@@ -57,8 +57,7 @@ inline std::vector<std::vector<float>> readTake(sub::Engine& engine, const sub::
     CHECK_EQ(static_cast<int>(source->channels()), take.channels);
     CHECK_EQ(source->sampleRate(), static_cast<uint32_t>(kRate));
     std::vector<std::vector<float>> channels;
-    for (uint32_t c = 0; c < source->channels(); ++c)
-        channels.emplace_back(source->channelData(c), source->channelData(c) + source->frames());
+    for (uint32_t c = 0; c < source->channels(); ++c) channels.push_back(sourceChannel(*source, c));
     return channels;
 }
 

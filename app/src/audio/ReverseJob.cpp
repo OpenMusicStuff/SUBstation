@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <exception>
+#include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace sub::app {
 
@@ -61,14 +63,21 @@ void ReverseJob::run() {
             throw std::runtime_error(file.errorString().toStdString());
         }
         QByteArray chunk;
+        std::vector<std::vector<float>> samples(static_cast<size_t>(channels));  // (from memory or from disk)
         qint64 end = frames_;
         while (end > 0 && !cancelled()) {
             const qint64 start = std::max<qint64>(0, end - chunk_);
+            for (int c = 0; c < channels; ++c) {
+                std::vector<float>& channel = samples[static_cast<size_t>(c)];
+                channel.resize(static_cast<size_t>(end - start));
+                if (!source.read(static_cast<uint32_t>(c), start, end - start, channel.data()))
+                    throw std::runtime_error("could not read " + source.path());
+            }
             chunk.resize(static_cast<qsizetype>((end - start) * channels * 4));
             char* out = chunk.data();
             for (qint64 frame = end - 1; frame >= start; --frame) {
                 for (int c = 0; c < channels; ++c) {
-                    qToLittleEndian(source.channelData(static_cast<uint32_t>(c))[frame], out);
+                    qToLittleEndian(samples[static_cast<size_t>(c)][static_cast<size_t>(frame - start)], out);
                     out += 4;
                 }
             }

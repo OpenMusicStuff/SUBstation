@@ -303,12 +303,15 @@ add_library(sub_engine STATIC
     src/AudioDevice.cpp
     src/backends/MiniaudioBackend.cpp
     src/AudioSource.cpp
+    src/CacheFile.cpp
     src/Renderer.cpp
     src/Scheduler.cpp
     src/Recorder.cpp
     src/Metronome.cpp
     src/MidiInput.cpp
     src/EditorHost.cpp
+    src/StreamCache.cpp
+    src/StreamScheduler.cpp
     src/Warp.cpp
     src/WarpCache.cpp
     src/builtin/BuiltinProcessor.cpp

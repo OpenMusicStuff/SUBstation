@@ -65,6 +65,8 @@
 #include "Routing.h"
 #include "Scheduler.h"
 #include "Snapshot.h"
+#include "StreamCache.h"
+#include "StreamScheduler.h"
 #include "Transport.h"
 #include "WarpCache.h"
 #include "rt/RtUtils.h"
@@ -295,6 +297,25 @@ struct DeviceStatus {
     uint64_t dropouts = 0;
 };
 
+// Streaming long files from disk instead of decoding them into memory
+// (docs/engine/streaming.md; Engine::setStreaming()).
+struct StreamingSettings {
+    bool enabled = false;  // (off by default until it has had a Canary release)
+    // Files at least this long stream; shorter ones (one-shots, loops) are decoded into memory.
+    double thresholdSeconds = 30.0;
+    // The memory the pages streamed through may take (the heads of files and the starts of clips,
+    // kept in memory, come on top).
+    size_t poolBytes = StreamCache::kDefaultPoolBytes;
+    // Where cache files (decoded files) and peak files go ("": StreamCache::defaultFolder()), and
+    // how much they may take there (the least recently used go first).
+    std::string cacheFolder;
+    uint64_t cacheBudgetBytes = StreamCache::kDefaultFolderBudget;
+    int diskThreads = StreamScheduler::kDefaultThreads;  // reads in flight: 1 for a spinning disk, more for an SSD
+    double horizonSeconds = StreamScheduler::kDefaultHorizon;  // how far ahead of the playhead the disk reads
+
+    friend bool operator==(const StreamingSettings&, const StreamingSettings&) = default;
+};
+
 // How long an edit waits for an audio callback under way to finish, and what it throws when one
 // is held up (a plug-in not returning) longer: nothing changed; it may be tried again.
 inline constexpr int kCallbackWaitMs = 500;
@@ -364,8 +385,15 @@ public:
     uint64_t masterScopeWritten() const { return shared_.scopeWritten.load(std::memory_order_acquire); }
 
     // --- Sources --------------------------------------------------------------
-    std::shared_ptr<AudioSource> loadSource(const std::string& path);  // cached; blocking
+    // Cached; blocking. A file long enough streams from disk while streaming is
+    // on (setStreaming()): its cache file and peak file are made here first if it
+    // needs them. One cached already is loaded again if streaming was switched
+    // since (the clips playing it go on with the old one until the new arrives).
+    std::shared_ptr<AudioSource> loadSource(const std::string& path);
     std::shared_ptr<AudioSource> cachedSource(const std::string& path);
+    // The file decoded into memory whatever its length (built-in devices' samples: a device reads its
+    // sample anywhere, note by note). Cached apart from loadSource()'s; blocking.
+    std::shared_ptr<AudioSource> loadResidentSource(const std::string& path);
     // A source loadSource() returned, cached again if releaseUnusedSources() let go of it
     // meanwhile (not one at another rate); the clips waiting for its file become audible.
     void cacheSource(std::shared_ptr<AudioSource> source);
@@ -737,6 +765,10 @@ public:
     // The song's key, for the devices that follow the harmony (ProcessContext::keyTonic, keyMinor): its tonic's
     // pitch class (0 = C), or -1 when none is known. Throws std::invalid_argument for a tonic past 11.
     void setSongKey(int tonic, bool minor);
+    // The project's default groove (music/Groove.h), for the devices that play on the beat and follow it
+    // (ProcessContext::groove: the Groove device's Project source, Follow Groove); none: straight. It is
+    // played as groove::normalized() makes it.
+    void setGroove(const std::optional<groove::Groove>& groove);
     void setLoop(bool enabled, double startBeat, double endBeat);
     // Punch In and Out: while recording, the tracks recorded play their clips
     // before the loop's start (In) and from its end (Out), loop on or not, as
@@ -753,6 +785,25 @@ public:
     // render the project needs is ready (tests and benchmarks; not under the
     // engine's mutex, which the renders don't need).
     void waitForWarpRenders();
+
+    // --- Streaming ------------------------------------------------------------
+    // Streaming long files from disk (docs/engine/streaming.md): sources loaded
+    // from now on follow the settings (loadSource()); the pool, the folder and the
+    // disk threads take them at once.
+    void setStreaming(const StreamingSettings& settings);
+    StreamingSettings streaming();
+    // The settings new engines start with (tests run every engine streaming with it).
+    static void setDefaultStreaming(const StreamingSettings& settings);
+    static StreamingSettings defaultStreaming();
+    // What streamed sources missed since the last call: frames the disk was late
+    // for (played as silence), and files that became unreadable. Any thread.
+    std::vector<StreamMiss> takeStreamMisses();
+    StreamCache::Stats streamingStats();
+    // Waits until the disk threads have read what the horizon and the pins want
+    // (tests and benchmarks; not under the engine's mutex).
+    void waitForStreams();
+    // Called on the disk threads before each read (tests slow the disk down).
+    void setStreamReadHook(StreamCache::ReadHook hook);
 
     // --- Browser preview ------------------------------------------------------
     void preview(const std::string& path);  // the source must already be loaded
@@ -993,6 +1044,12 @@ private:
     void closeDeviceLocked();
     void reloadSourcesLocked();
     std::shared_ptr<AudioSource> loadSourceImpl(const std::string& path, bool publish);
+    // Whether a file this long streams, as the settings are.
+    bool streamsLocked(double seconds) const { return streaming_.enabled && seconds >= streaming_.thresholdSeconds; }
+    void applyStreamingLocked();
+    void ensureStreamSchedulerLocked();  // once a source streams
+    // A snapshot build's pins: the starts of the clips of streamed sources, and of the loop.
+    void pinStreamsLocked(const RenderSnapshot& snap);
     // Waits until no audio callback that may have seen the state from before the call is still
     // running (none is: at once). False if one still is after kCallbackWaitMs (a plug-in is
     // holding it up): what it may be using must then be neither freed nor shared.
@@ -1153,6 +1210,7 @@ private:
     std::shared_ptr<const MeterMap> meter_ = std::make_shared<const MeterMap>();
     int keyTonic_ = -1;
     bool keyMinor_ = false;
+    std::shared_ptr<const groove::Groove> groove_;  // the project's default (null: none)
     bool loopEnabled_ = false;
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 16.0;
@@ -1186,7 +1244,14 @@ private:
     WarpCache warpCache_;
 
     std::unordered_map<std::string, std::shared_ptr<AudioSource>> sources_;
+    std::unordered_map<std::string, std::shared_ptr<AudioSource>> residentSources_;  // loadResidentSource()'s
     std::shared_ptr<const AudioSource> previewHold_;
+
+    // Streaming: the pages of streamed sources (each holds it too), and the disk
+    // threads, made once a source streams.
+    StreamingSettings streaming_;
+    std::shared_ptr<StreamCache> streamCache_;
+    std::unique_ptr<StreamScheduler> streamScheduler_;
 
     // The recording: the audio thread sees it through liveRecording_ (published
     // and taken away like the snapshot).

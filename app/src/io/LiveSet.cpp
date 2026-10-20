@@ -23,14 +23,13 @@ namespace {
 
 // What the importer never reads, left out as the file is read (a third of a
 // Live Set): Session View clips, frozen tracks' clips, MIDI controllers'
-// targets, take lanes, views, the groove pool, presets' and browsers' records.
+// targets, take lanes, views, presets' and browsers' records.
 const QSet<QString>& skippedElements() {
     static const QSet<QString> skipped{QStringLiteral("ClipSlotList"),
                                        QStringLiteral("FreezeSequencer"),
                                        QStringLiteral("MidiControllers"),
                                        QStringLiteral("TakeLanes"),
                                        QStringLiteral("ViewStates"),
-                                       QStringLiteral("GroovePool"),
                                        QStringLiteral("Scenes"),
                                        QStringLiteral("PreHearTrack"),
                                        QStringLiteral("SourceContext"),
@@ -234,6 +233,13 @@ QByteArray gunzip(const QByteArray& gzip, const QString& name, const ReadLimits&
 }
 
 std::unique_ptr<Element> parseLiveSet(const QByteArray& bytes, const QString& name, const ReadLimits& limits) {
+    std::unique_ptr<Element> root = parseAbleton(bytes, name, limits, QStringLiteral("an Ableton Live Set"));
+    if (!root->child(u"LiveSet")) throw ProjectFileError(QStringLiteral("%1 is not an Ableton Live Set").arg(name));
+    return root;
+}
+
+std::unique_ptr<Element> parseAbleton(const QByteArray& bytes, const QString& name, const ReadLimits& limits,
+                                      const QString& what) {
     const QByteArray xml = isGzip(bytes) ? gunzip(bytes, name, limits) : bytes;
     if (xml.size() > limits.bytes) tooLarge(name);
     QXmlStreamReader reader(xml);
@@ -301,9 +307,7 @@ std::unique_ptr<Element> parseLiveSet(const QByteArray& bytes, const QString& na
     if (reader.hasError()) {
         damaged(name, QStringLiteral("%1 (line %2)").arg(reader.errorString()).arg(reader.lineNumber()));
     }
-    if (!root || root->tag != u"Ableton" || !root->child(u"LiveSet")) {
-        throw ProjectFileError(QStringLiteral("%1 is not an Ableton Live Set").arg(name));
-    }
+    if (!root || root->tag != u"Ableton") throw ProjectFileError(QStringLiteral("%1 is not %2").arg(name, what));
     return root;
 }
 

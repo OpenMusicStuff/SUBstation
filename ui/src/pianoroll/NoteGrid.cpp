@@ -626,6 +626,8 @@ void NoteGrid::keyPressEvent(QKeyEvent* event) {
         roll->toggleSelectedActive();  // Ableton's: the selected notes deactivated, or activated if they all are
     } else if (ctrl && key == Qt::Key_A) {
         roll->selectNotes(roll->allNotes(), true);
+    } else if (ctrl && shift && key == Qt::Key_U) {
+        roll->applyGroove();  // the last groove applied, on the selected notes or all
     } else if (ctrl && key == Qt::Key_U) {
         roll->quantize();  // the selected notes, or all
     } else if (ctrl && key == Qt::Key_C) {

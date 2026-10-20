@@ -27,6 +27,7 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Plug-ins](guide/plugins.md) | VST3 and VST2: finding, using, editors, presets, latency |
 | [Audio clips](guide/audio-clips.md) | the clip view, warping, transposing, tempo and key from file names |
 | [MIDI](guide/midi.md) | MIDI clips, the piano roll, pitch bends and vibrato, MIDI input (MIDI 2.0 too), the computer MIDI keyboard |
+| [Grooves](guide/grooves.md) | swing and feel: the Groove device, clips' grooves, Apply Groove, the project's grooves and their editor, the default groove |
 | [Recording](guide/recording.md) | arming, inputs, monitoring, count-in, takes, resampling |
 | [Automation](guide/automation.md) | lanes, editing envelopes, locking, overrides |
 | [Browser](guide/browser.md) | places, search (by name, and by what sounds sound like), preview, the Rank sort (uses a week, lately), hiding from search, finding similar sounds |
@@ -52,9 +53,10 @@ How SUBstation behaves, feature by feature: [guide/](guide/README.md).
 | [Scheduler](engine/scheduler.md) | rendering the graph on several threads, deterministically |
 | [Audio devices](engine/audio-devices.md) | WASAPI and ASIO backends, driver events |
 | [Recording](engine/recording.md) | the recorder, take placement, input monitoring, resampling |
-| [MIDI](engine/midi.md) | MIDI playback, per-note pitch bends (MIDI 2.0), MIDI input, devices taking another track's notes |
+| [MIDI](engine/midi.md) | MIDI playback, per-note pitch bends (MIDI 2.0), notes handed early to MIDI effects, MIDI input, devices taking another track's notes |
 | [Automation](engine/automation.md) | envelopes, normalized parameters, sample-accurate playback |
 | [Warping and sources](engine/warp.md) | time stretching, Re-Pitch, decoding, peaks |
+| [Disk streaming](engine/streaming.md) | long files read from disk as they play: what streams, cache files and peak files, the head and clip starts, the audio thread's reads (`SourceCursor`), the disk threads, moving the playhead, each system's file calls |
 | [Devices](engine/devices.md) | the `Processor` interface and the built-in devices; adding one |
 | [Plug-in hosting](engine/plugins.md) | VST3 and VST2 hosting, editors, threading |
 | [Plug-in sandboxes](engine/sandboxes.md) | plug-ins in processes of their own: the hosting modes, the host program, messages, audio in shared memory, crashes |
@@ -101,7 +103,8 @@ operating system.
 
 | Page | Covers |
 |---|---|
-| [Musical time](music.md) | the tempo map (steady tempos, ramps, jumps) and time signature changes; beats, seconds, samples and bars, both ways |
+| [Musical time](music.md) | the tempo map (steady tempos, ramps, jumps) and time signature changes; beats, seconds, samples and bars, both ways; grooves: where a groove places a note |
+| [Groove](groove.md) | swing and feel: grooves (`music/Groove.h`) and where they come from (swing, built-in grooves, Extract Groove, `.gilgroove` and `.agr` files, Live Sets), the project's groove library and default groove, the Groove device and early notes, Follow Groove, clips' grooves, Apply Groove; the files, the tests, the decisions |
 
 ### Browser
 

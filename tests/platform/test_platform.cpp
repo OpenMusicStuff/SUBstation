@@ -17,6 +17,7 @@
 #include "platform/Cpu.h"
 #include "platform/Files.h"
 #include "platform/Paths.h"
+#include "platform/StreamFile.h"
 #include "platform/Threads.h"
 #include "platform/Unicode.h"
 
@@ -158,6 +159,60 @@ TEST_CASE("a file's or folder's last write in nanoseconds since 1970, the fracti
 #else
     CHECK_EQ(modifiedTime(file).value_or(0), when);
 #endif
+}
+
+TEST_CASE("a file streamed: aligned spans read, the last one short, several threads at once") {
+    std::string file = fromPath(subtest::tempDir());
+    appendName(file, std::string_view("stream" + utf8(0xE9) + ".bin"));
+    constexpr size_t kBlock = StreamFile::kAlignment;
+    std::string bytes(3 * kBlock + 100, '\0');
+    for (size_t i = 0; i < bytes.size(); ++i) bytes[i] = static_cast<char>((i * 7 + i / kBlock) & 0xFF);
+    REQUIRE(writeFileAtomically(file, bytes));
+
+    StreamFile missing;
+    CHECK(!missing.open(file + ".missing"));
+    CHECK(!missing.isOpen());
+    CHECK_EQ(missing.read(0, nullptr, kBlock), int64_t(-1));
+
+    StreamFile stream;
+    REQUIRE(stream.open(file));
+    CHECK(stream.isOpen());
+    CHECK_EQ(stream.size(), uint64_t(bytes.size()));
+    AlignedBuffer buffer(2 * kBlock);
+    CHECK_EQ(buffer.size(), 2 * kBlock);
+    CHECK_EQ(reinterpret_cast<uintptr_t>(buffer.data()) % kBlock, uintptr_t(0));
+    CHECK_EQ(stream.read(kBlock, buffer.data(), 2 * kBlock), int64_t(2 * kBlock));
+    CHECK(std::string(static_cast<const char*>(buffer.data()), 2 * kBlock) == bytes.substr(kBlock, 2 * kBlock));
+    // The last block: what there is of it.
+    CHECK_EQ(stream.read(3 * kBlock, buffer.data(), 2 * kBlock), int64_t(100));
+    CHECK(std::string(static_cast<const char*>(buffer.data()), 100) == bytes.substr(3 * kBlock));
+    CHECK_EQ(stream.read(4 * kBlock, buffer.data(), kBlock), int64_t(0));  // past the end
+    stream.willNeed(0, bytes.size());  // (a hint: nothing to see)
+
+    // Threads reading at once, each at offsets of its own.
+    std::vector<std::thread> readers;
+    std::vector<int> good(4, 0);
+    for (int t = 0; t < 4; ++t) {
+        readers.emplace_back([&, t] {
+            AlignedBuffer mine(kBlock);
+            for (int round = 0; round < 50; ++round) {
+                const size_t block = static_cast<size_t>((t + round) % 3);
+                if (stream.read(block * kBlock, mine.data(), kBlock) == int64_t(kBlock) &&
+                    std::string(static_cast<const char*>(mine.data()), kBlock) == bytes.substr(block * kBlock, kBlock))
+                    ++good[static_cast<size_t>(t)];
+            }
+        });
+    }
+    for (std::thread& reader : readers) reader.join();
+    for (const int count : good) CHECK_EQ(count, 50);
+    stream.close();
+    CHECK(!stream.isOpen());
+}
+
+TEST_CASE("the user's cache folder is an absolute path") {
+    const std::string folder = userCacheFolder();
+    REQUIRE(!folder.empty());
+    CHECK(toPath(folder).is_absolute());
 }
 
 TEST_CASE("real-time priority while the object lives, where the system allows, and as before after") {

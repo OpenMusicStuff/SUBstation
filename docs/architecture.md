@@ -6,9 +6,9 @@ and searches the sample browser's files, and the intelligence module, which work
 (how similar sounds are, in the background; a song's chords and key, from its MIDI). Under the engine, the browser and
 the intelligence module lies a small platform layer: what they need from the operating system, one file per system,
 so nothing above it has `#ifdef`s for one. Beside it, every layer shares one small library of musical time, `music/`:
-the song's tempo and time signatures along the timeline, so each counts beats, seconds and bars the same way. This
-page is the map; each part has its own pages (see the
-[index](README.md)).
+the song's tempo and time signatures along the timeline, so each counts beats, seconds and bars the same way, and
+grooves, so the engine's Groove device and the application's clip grooves and Apply Groove place notes the same
+way. This page is the map; each part has its own pages (see the [index](README.md)).
 
 ## Layers
 
@@ -60,7 +60,8 @@ page is the map; each part has its own pages (see the
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐
   music         │ sub_music, under every layer: the tempo map and time signatures,    │
-                │ beats <-> seconds <-> samples <-> bars. Pure functions, any thread  │
+                │ beats <-> seconds <-> samples <-> bars; grooves, swing and feel.    │
+                │ Pure functions, any thread                                          │
                 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,7 +72,7 @@ page is the map; each part has its own pages (see the
 | Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, the platform layer, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
 | Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library, the platform layer | [browser.md](browser.md) |
 | Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `audio/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
-| Musical time | [music/src/music](../music/src/music) | `sub_music` (namespace `sub`) | the C++ standard library | [music.md](music.md) |
+| Musical time | [music/src/music](../music/src/music) | `sub_music` (namespace `sub`; grooves in `sub::groove`) | the C++ standard library | [music.md](music.md), [groove.md](groove.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
 | Plug-in host | [tools/pluginhost](../tools/pluginhost/main.cpp) | `substation-plugin-host`, a program of its own: the plug-in sandboxes | `sub_engine` | [engine/sandboxes.md](engine/sandboxes.md) |
@@ -101,7 +102,7 @@ page is the map; each part has its own pages (see the
   (Multiband Dynamics' gain law and ranges), `builtin/SpectralDesign.h` (the Spectral Compressor's threshold, Below and
   Focus), `builtin/SaturatorDesign.h` (the Saturator's curve and Color), `builtin/AmpDesign.h` (the Amp's tone and
   transfer curves), `builtin/ErosionDesign.h` (Erosion's noise band and excursion), `builtin/ChorusDesign.h` (the
-  Chorus-Ensemble's voices), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
+  Chorus-Ensemble's voices), `builtin/SupersawDesign.h` (the Supersaw's stacks), `builtin/PhaserDesign.h` (the Phaser-Flanger's response and LFO shapes),
   `builtin/ReverbDesign.h` (the Reverb's decay curve, input filter, reflections and Spin's swing),
   `builtin/DisperserDesign.h` (the Disperser's group delay), `builtin/TransientDesign.h` (the Transient Shaper's
   detector, gain law and the hit its editor draws), `builtin/EqDesign.h` (the EQ's curves),
@@ -178,10 +179,11 @@ Envelopes) changes the project directly: it is saved, but isn't an undo step. Se
 | Qt Quick render thread | the scene graph's sync and rendering: every `SgCanvas` item's `paint()`, during the sync step, while the GUI thread is blocked. (Where Qt uses its basic render loop, this is the GUI thread itself.) | write anything: `paint()` reads the item and the model, and changes nothing (no property writes, signals, JavaScript or new QObjects) |
 | Audio thread (driver callback) | the `Renderer`, a chunk at a time; it hands tracks to the workers | lock, allocate, free, or wait for any other thread |
 | Render workers ([Scheduler](engine/scheduler.md)) | tracks of the routing graph, each after what goes into it | the same as the audio thread |
-| The bridge's decoding pool (`QThreadPool`, 2 threads) | decoding audio files into engine sources (`Engine::loadSource`); results come back to the GUI thread | touch the model |
+| The bridge's decoding pool (`QThreadPool`, 2 threads) | decoding audio files into engine sources (`Engine::loadSource`), or opening long ones to stream (making their cache and peak files first if they need them); results come back to the GUI thread | touch the model |
 | The bridge's state pool (`QThreadPool`, 1 thread) | restoring built-in devices' states (a sampler's sample), one at a time, in the order they were set | touch the model |
 | Recorder's disk writer | empties the recording rings into WAV files | — |
-| Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)) | take the engine's mutex |
+| Warp cache (`WarpCache`, background priority) | renders stretched clips whole, one at a time, for live playback to read ([engine/warp.md](engine/warp.md#the-warp-cache)); a streamed clip's into a file, streamed back | take the engine's mutex |
+| Disk threads (`StreamScheduler`, raised normal priority; while files stream) | a planner: what the snapshot plays soon, by deadline; readers (1 to 8): those pages of streamed files into the stream cache's pool ([engine/streaming.md](engine/streaming.md)) | take the engine's mutex |
 | Render jobs ([RenderJob](engine/README.md#in-the-background)) | an export or a freeze's render, on the snapshot it began with (live output is silent meanwhile) | take the engine's mutex |
 | Audio analysis (`AudioAnalysis`'s `QThreadPool`, 1 thread, low priority) | a decoded file's tempo, key and chords (`audio::analyze`), one file at a time; results come back to the GUI thread | touch the model |
 | Reverse jobs (`ReverseJob`) | a reversed copy of a decoded file written as a WAV file, then decoded | touch the model |

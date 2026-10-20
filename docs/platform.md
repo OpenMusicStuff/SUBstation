@@ -20,14 +20,15 @@ Headers are included by their folder: `#include "platform/Paths.h"`.
 |---|---|
 | [Unicode.h](../platform/src/platform/Unicode.h) / [.cpp](../platform/src/platform/Unicode.cpp) | WTF-8 one code point at a time (`decodeUtf8`, `appendUtf8`, inline: the browser's text matching runs on them), `isAscii`, and WTF-8 to UTF-16 and back (`toWide`, `fromWide`). |
 | [Paths.h](../platform/src/platform/Paths.h) | `NativeString` (UTF-16 on Windows, bytes elsewhere), `NativeChar`, `kSeparator`, `kCaseSensitivePaths`, `isSeparator()`, `appendName()`; `toNative()`/`fromNative()` and `toPath()`/`fromPath()` (a UTF-8 path as the system's calls and `std::filesystem` take it, and back); keys: `nameKey()`, `pathKey()`, `normalPath()`, `fileKey()`. |
-| [Files.h](../platform/src/platform/Files.h) / [Files.cpp](../platform/src/platform/Files.cpp) | By UTF-8 path: `FileStamp`/`stamp()` (size and last-write time), `modifiedTime()` (a file's or folder's last write, in nanoseconds since 1970, the same from every compiler), `replaceFile()`, `openFile()`, `readFile()` (a whole file), `writeFileAtomically()` (to `.tmp`, then over the file). |
+| [Files.h](../platform/src/platform/Files.h) / [Files.cpp](../platform/src/platform/Files.cpp) | By UTF-8 path: `FileStamp`/`stamp()` (size and last-write time), `modifiedTime()` (a file's or folder's last write, in nanoseconds since 1970, the same from every compiler), `replaceFile()`, `openFile()`, `readFile()` (a whole file), `writeFileAtomically()` (to `.tmp`, then over the file); `userCacheFolder()`, where the user's caches go (the engine's streaming keeps its cache files under it). |
+| [StreamFile.h](../platform/src/platform/StreamFile.h) | Files read for streaming ([engine/streaming.md](engine/streaming.md)): `StreamFile` (aligned reads at offsets, from several threads at once, past the system's cache where it allows) and `AlignedBuffer`: see [Streaming files](#streaming-files). |
 | [Bytes.h](../platform/src/platform/Bytes.h) | Binary files' fields, little-endian on every system: `ByteWriter`, `ByteReader` (a read past the end makes `ok()` false for good), and `fnv1a()`, their checksum (and a hash of keys). The browser's saved index and the sound similarity's store are made of these. |
 | [Cpu.h](../platform/src/platform/Cpu.h) / [Cpu.cpp](../platform/src/platform/Cpu.cpp) | `cpuRunsEngine()`: on x86-64, AVX2 and FMA by `cpuid`, with the system saving the YMM registers (`xgetbv`); elsewhere true. `reportUnsupportedCpu()`: a message box on Windows, standard error elsewhere. `ui/main.cpp` asks first thing, before anything built for AVX2 runs (this file is built without it). |
-| [Threads.h](../platform/src/platform/Threads.h) | Priorities: `enterBackgroundMode()` (the browser's indexer, the sound similarity's threads) and `ScopedRealtimePriority` (the engine's render workers); audio workgroups: `AudioWorkgroup`, `ScopedWorkgroupMembership`. |
+| [Threads.h](../platform/src/platform/Threads.h) | Priorities: `enterBackgroundMode()` (the browser's indexer, the sound similarity's threads), `raiseNormalPriority()` (the engine's disk threads) and `ScopedRealtimePriority` (the engine's render workers); audio workgroups: `AudioWorkgroup`, `ScopedWorkgroupMembership`. |
 | [Ipc.h](../platform/src/platform/Ipc.h) | Processes of our own: `ChildProcess` and its `Channel`, `parentChannel()` and `childProcessStarted()` (the child's), `SharedMemory`, `IpcSignal` (a wake-up on a shared counter), `uniqueIpcName()`: see [Processes](#processes). |
 | [IpcWin32.cpp](../platform/src/platform/IpcWin32.cpp), [IpcPosix.cpp](../platform/src/platform/IpcPosix.cpp) | `Ipc.h` on Windows (pipes, a job, file mappings, events) and elsewhere (a socket pair, `posix_spawn`, `shm_open`, futexes on Linux). |
-| [PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) | Windows: `LCMapStringEx` for keys, the wide (`W`) file calls, `MoveFileExW`, `THREAD_MODE_BACKGROUND_BEGIN`, MMCSS (`AvSetMmThreadCharacteristicsW`, "Pro Audio"). |
-| [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) | Elsewhere: `stat`, `rename`, `fopen`; on Linux the thread's nice value and idle I/O class, `SCHED_FIFO` and rtkit (libdbus, `dlopen`ed); on macOS the time-constraint policy and `os_workgroup`. |
+| [PlatformWin32.cpp](../platform/src/platform/PlatformWin32.cpp) | Windows: `LCMapStringEx` for keys, the wide (`W`) file calls, `MoveFileExW`, `%LOCALAPPDATA%`, `FILE_FLAG_NO_BUFFERING` and positional `ReadFile`, `THREAD_MODE_BACKGROUND_BEGIN`, `THREAD_PRIORITY_ABOVE_NORMAL`, MMCSS (`AvSetMmThreadCharacteristicsW`, "Pro Audio"). |
+| [PlatformPosix.cpp](../platform/src/platform/PlatformPosix.cpp) | Elsewhere: `stat`, `rename`, `fopen`, `XDG_CACHE_HOME`, `pread` (`O_DIRECT` and `posix_fadvise` on Linux, `F_NOCACHE` and `F_RDADVISE` on macOS); on Linux the thread's nice value and I/O class, `SCHED_FIFO` and rtkit (libdbus, `dlopen`ed); on macOS the time-constraint policy and `os_workgroup`. |
 
 ## Paths
 
@@ -50,6 +51,11 @@ system's separators): the engine's decoded sources and loaded plug-in modules ar
 `enterBackgroundMode()` lowers the calling thread for good: CPU, I/O and memory priority on Windows
 (`THREAD_MODE_BACKGROUND_BEGIN`), the lowest nice value and the idle I/O class on Linux (both per thread there). It
 does nothing yet on other systems.
+
+`raiseNormalPriority()` raises it a little, for good, for threads the audio thread depends on that aren't real-time
+themselves (the engine's disk threads, which read what streams): `THREAD_PRIORITY_ABOVE_NORMAL` on Windows; on Linux
+the best-effort I/O class at its highest level, and nice -5 where the user may have it (`CAP_SYS_NICE` or
+`RLIMIT_NICE`; else the nice value stays). It does nothing yet on other systems.
 
 `ScopedRealtimePriority` raises the calling thread while it lives, and puts it back as it was after: the engine's
 render workers ([engine/scheduler.md](engine/scheduler.md)) hold one for their lives. `active()` says whether the
@@ -81,6 +87,30 @@ system raised it; where it refuses, the thread stays as it was.
 `os_workgroup_join`/`leave`, macOS 11 and later), so the system schedules them with the device's thread, to its
 deadline, and on Apple Silicon keeps them on the performance cores. Other systems have none: every `AudioWorkgroup`
 is empty there and joining one does nothing.
+
+## Streaming files
+
+[StreamFile.h](../platform/src/platform/StreamFile.h) is what the engine's streamed sources are read with
+([engine/streaming.md](engine/streaming.md)): a file opened by UTF-8 path, read in spans whose offset, size and buffer
+are multiples of `StreamFile::kAlignment` (4 KiB: a memory page, and a multiple of every disk's sector), into an
+`AlignedBuffer` (aligned `operator new`). `read()` returns the bytes read: fewer at the end of the file, -1 on a
+failure (the disk, or the file gone); several threads may read one file at once. The point is to read past the
+system's file cache: the engine's pool of pages is the cache, and the system's copy would only push other programs out
+of memory.
+
+- **Windows**: `CreateFileW` with `FILE_FLAG_NO_BUFFERING`, sharing read, write and delete (a cache file made again
+  over it, or deleted, leaves the reader's handle as it was), and `ReadFile` with an `OVERLAPPED` holding each read's
+  offset (synchronous: threads reading at once don't move each other). Buffered, it asks for
+  `FILE_FLAG_SEQUENTIAL_SCAN`.
+- **Linux**: `open` with `O_DIRECT` where the file system takes it (not tmpfs), `pread`; buffered, with
+  `POSIX_FADV_SEQUENTIAL`, and `willNeed()` as `POSIX_FADV_WILLNEED`.
+- **macOS**: `F_NOCACHE`, `pread`, and `willNeed()` as `F_RDADVISE`.
+
+A file is opened unbuffered first, and its first block read: if the system refuses that (an alignment a volume won't
+take), it is opened again through the system's cache, so a read never fails for that later. `userCacheFolder()`
+([Files.h](../platform/src/platform/Files.h)) is where the user's caches go: `%LOCALAPPDATA%` on Windows,
+`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` (if absolute) or `~/.cache` elsewhere, the temporary folder if none
+is known.
 
 ## Processes
 

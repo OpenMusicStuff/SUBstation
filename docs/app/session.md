@@ -23,6 +23,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 | [Selection.h](../../app/src/session/Selection.h) | `Selection`: what is selected in the arrangement |
 | [ArrangementActions.h](../../app/src/session/ArrangementActions.h) | `ArrangementActions`: the clipboard for clips, automation and tracks, and what acts on the arrangement's selection |
 | [DeviceSelection.h](../../app/src/session/DeviceSelection.h) | `DeviceSelection`: the device view's selection, clipboard, presets and drops |
+| [GrooveLibrary.h](../../app/src/session/GrooveLibrary.h) | `GrooveLibrary`: the project's grooves for the UI (the groove editor's edits, what a Groove device and a clip play, the default groove, the user's groove files); `grooveFilesDir`, `grooveToMap` |
 | [RenderProgress.h](../../app/src/session/RenderProgress.h), [Renders.h](../../app/src/session/Renders.h) | The render progress the UI shows as a modal dialog; the renders in the background (`ExportAudioRender`, `FreezeTracksRender`, `ReverseClipsRender`) |
 | [ComputerKeyboard.h](../../app/src/session/ComputerKeyboard.h) | The computer MIDI keyboard |
 | [ModulationLearn.h](../../app/src/session/ModulationLearn.h) | A modulator's Map: the next parameter touched on its track is mapped to it |
@@ -41,7 +42,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 analyses the browser's files: [intelligence.md](../intelligence.md)), the `Harmony` (the song's chords and key), the
 `Humanizer`, the `TrackLabels` (what each track is, in words), the `TrackSearch` (finding tracks by their names and labels), the `BrowserController` (which starts the plug-in
 scan, and points the sound similarity at its index), the `PresetIndex`, the `RenderProgress`, and the parts `ArrangementActions`, `DeviceSelection`,
-`ComputerKeyboard`, `ModulationLearn`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, the `Updater`, and last the `McpServer` (its tools
+`GrooveLibrary`, `ComputerKeyboard`, `ModulationLearn`, `HotSwap`, `FileManager`, `AudioPreferences`, `MidiPreferences`, the `Updater`, and last the `McpServer` (its tools
 read the parts above). They are its children, and QML
 reads them as constant properties:
 
@@ -59,6 +60,7 @@ reads them as constant properties:
 | `trackSearch` | `TrackSearch` | the arrangement's find bar (Q): the tracks matching a query, names first, then labels ([intelligence.md](../intelligence.md#finding-tracks)) |
 | `arrangement` | `ArrangementActions` | [below](#the-arrangements-actions-arrangementactions) |
 | `deviceSelection` | `DeviceSelection` | [below](#the-device-view-deviceselection) |
+| `grooves` | `GrooveLibrary` | [below](#the-projects-grooves-groovelibrary) |
 | `render` | `RenderProgress` | [below](#renders-in-the-background) |
 | `cpuUsage` | `CpuUsage` | View › CPU Usage: each track's and device's share of a core, in a list model; while `active` the engine times them (`EngineBridge::setMeasuringCpu`, `Engine::takeCpu`) |
 | `computerKeyboard` | `ComputerKeyboard` | [below](#the-computer-midi-keyboard) |
@@ -86,9 +88,10 @@ The session connects its parts to each other in `Session::wire()`:
 
 - **The editor's hooks**: `setParamInfo` ← `EngineBridge::deviceParamInfo`, made a `ParamSpec` (`ParamSpec::fromInfo`),
   for macros; `setOwnValue` ← `EngineBridge::ownValue`; `setDeviceDefaults` ← `defaultDevice` (the user's default
-  presets, [io/Presets.h](../../app/src/io/Presets.h)).
+  presets, [io/Presets.h](../../app/src/io/Presets.h)); `setTransients` ← `EngineBridge::transients` (audio files'
+  transients, for audio clips' grooves and Extract Groove). The agents' editor gets the same.
 - **Messages**: the bridge's, the browser's, the plug-in index's, the arrangement's, the device view's, the computer
-  keyboard's, the humanizer's, the File Manager's and the hot swap's `statusMessage`, and the editor's `refused`, all go
+  keyboard's, the grooves', the humanizer's, the File Manager's and the hot swap's `statusMessage`, and the editor's `refused`, all go
   out on the session's `statusMessage`.
 - **Plug-ins**: the plug-in index's results go to `EngineBridge::setKnownPlugins` (so projects find plug-ins that
   moved); the editor's `pluginAdded` opens the plug-in's editor on the next turn of the event loop (the add, a drop,
@@ -291,6 +294,51 @@ Clicking a chain (`clickChain`) shows its rack's devices again.
   `dropPresets(paths, chain, index, intoDeviceId)` (onto a device of the preset's kind: loaded into it), `dragEnded()`.
 - Texts the view shows: `kEffectsHint`, `kInstrumentHint`, `kInstrumentRefused`.
 
+## The project's grooves (GrooveLibrary)
+
+`GrooveLibrary` (`Session.grooves`, [GrooveLibrary.h](../../app/src/session/GrooveLibrary.h)) is the project's grooves
+([model.md](model.md#grooves)) for the UI: the groove dialog (*Edit › Grooves…*), the Groove device's editor, the
+clip view's Groove, the piano roll's Groove menu, *Edit › Default Groove* and the transport's Swing
+([ui/README.md](../ui/README.md)). It reads the project and edits it through the editor, each edit undoable.
+
+- **Properties**: `grooves` (the library in order, `[{id, name}]`: `groovesChanged`), `builtins` (the built-in
+  grooves, `[{id, name}]`), `files` (the user's groove files, `[{path, name}]` by name: `filesChanged`), `stepNames`
+  ("1/8", "1/8T", "1/16", "1/16T", "1/32"), and the default groove: `defaultKind` ("": none, "swing", "library",
+  "own"), `defaultSwing` (50: none), `defaultGrooveId` ("": none) and `defaultName` ("None", "Swing 58.0 % (1/16)",
+  a groove's name), notified by `defaultChanged` (the library changing too: a name). `revision` counts the project's
+  changes that can change what plays a groove (devices, their parameters and states, clips, the library, the
+  default, a reset; `revisionChanged`): bindings on `deviceGroove()` and `clipGroove()` read it to be worked out again.
+- **A groove, for QML** (`grooveToMap`): `{id, name, step (beats), stepIndex (of stepNames; -1: none of them), bars,
+  base (beats), steps (in a cycle), lanes: [{keys, steps: [{timing, ms, velocity, length}]}], notes: [{beat, key,
+  velocity}]}`: `groove(id)` (a library groove's), `builtinGroove(id)`, `swingGroove(percent, stepIndex)`.
+- **What plays one**: `deviceGroove(track, device)` is `{kind, grooveId, name, groove}` (Swing's from the device's
+  Swing and Step, a library groove's and its own from the copy in its state, Project's the default's);
+  `clipGroove(track, clip)` is `{kind ("": none), grooveId, name, swing, stepIndex, timing, velocity, random,
+  quantize (fractions), groove}`. `find(idOrName)`: the library's groove named so, by id, else by name ignoring case
+  ("": none).
+- **The Groove device**: `setDeviceSource(track, device, kind, grooveId)` (`ProjectEditor::setDeviceGrooveSource`),
+  `applyDevice(track, device)` (`applyDeviceGroove`; nothing to move: the status line says so), `addFromDevice(track,
+  device)` (the groove it plays into the library, named "<track> Groove", and the device then playing it: one undo
+  step, "Add to Grooves").
+- **Into the library**, each giving the new groove's id ("": none): `addBuiltin(id)`, `addFile(path)` (a `.gilgroove`
+  or `.agr`, `loadGrooveFile`; one that can't be read: the status line says why), `addSwing(percent, stepIndex)`
+  (named as `describe()` shows it), `extract(track, clip, stepIndex, bars, perKeyLanes)`
+  (`ProjectEditor::extractGroove`; nothing to take it from: the status line says so). And `duplicate(id)`,
+  `rename(id, name)`, `remove(id)`.
+- **The user's groove files** are the preset library's `Grooves` folder (`grooveFilesDir()`: `libraryDir()/Grooves`),
+  `.gilgroove` and `.agr` files, which the browser lists with the presets
+  ([serialization.md](serialization.md#groove-files-gilgroove-agr)). `saveFile(id)` writes a library groove there,
+  named as it is (a file of that name replaced), and says so; `refreshFiles()` lists them again (the dialog does as
+  it opens).
+- **The groove editor's edits**, each through `ProjectEditor::setGroove` on the groove changed:
+  `setStep(id, lane, step, field, value, mergeKey)` (`field`: "timing" (-0.5..0.5 of a step), "ms", "velocity"
+  (-1..1), "length" (0.25..2); one merge key per drag, one undo step), `addLane(id, keys)` (its steps the default
+  lane's), `setLaneKeys(id, lane, keys)` (taken from the other lanes first), `removeLane(id, lane)` (neither for the
+  default lane), `resetLane(id, lane)` (every step straight), `setBars(id, bars)` (1, 2 or 4: the steps there were
+  repeated, or cut), `setBase(id, beats)`.
+- **The default groove**: `setDefaultSwing(percent, mergeKey)` (50: none), `setDefaultGroove(id)` ("": none),
+  `clearDefault()`.
+
 ## The File Manager and hot swaps (FileManager, HotSwap)
 
 The files a project plays are worked out from the project each time, never stored:
@@ -489,6 +537,8 @@ parts keep these QSettings keys:
   meanwhile, freezing and flattening, plug-ins loading after a project opens.
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp): what the engine hears of the edits.
 - [test_session_keyboard.cpp](../../tests/app/test_session_keyboard.cpp): the computer MIDI keyboard.
+- [test_grooves.cpp](../../tests/app/test_grooves.cpp): the grooves' model and editing under `GrooveLibrary`;
+  [test_ui_grooves.cpp](../../tests/app/test_ui_grooves.cpp) drives it through Edit › Grooves….
 - [test_file_manager.cpp](../../tests/app/test_file_manager.cpp): the project's files, replacing and relinking them,
   matching missing files and the search in the background (in the project's folder, a folder chosen, the browser's
   places), Locate, the File Manager's list, and hot swaps through the browser.

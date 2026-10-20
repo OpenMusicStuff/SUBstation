@@ -6,10 +6,12 @@
 #include "intelligence/AudioAnalysis.h"
 #include "model/Edits.h"
 #include "model/Errors.h"
+#include "model/Grooves.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
 #include "model/Timebase.h"
 #include "pianoroll/PianoRoll.h"
+#include "session/GrooveLibrary.h"
 #include "theme/Theme.h"
 
 #include <QJSValue>
@@ -110,6 +112,9 @@ void ClipViewController::setSession(app::Session* session) {
             }
         });
         connect(p, &app::Project::settingsChanged, this, &ClipViewController::refresh);
+        // (The grooves a clip's groove names: their names, what they play.)
+        connect(p, &app::Project::groovesChanged, this, &ClipViewController::refresh);
+        connect(p, &app::Project::defaultGrooveChanged, this, &ClipViewController::refresh);
         connect(p, &app::Project::trackChanged, this, &ClipViewController::refresh);
         connect(p, &app::Project::reset, this, &ClipViewController::close);
         connect(p, &app::Project::trackRemoved, this, &ClipViewController::dropMissing);
@@ -364,6 +369,10 @@ void ClipViewController::refresh() {
                 audioClips_.emplace_back(*shown.clip, Theme::trackColor(p->track(shown.trackId).color));
         }
     }
+    grooveable_ = !clips.empty() && std::any_of(clips.begin(), clips.end(),
+                                                [](const app::Clip* c) { return app::grooves::takesGroove(*c); });
+    groove_ = !items.empty() && session_ ? session_->grooves()->clipGroove(items.front().trackId, clips.front()->id)
+                                         : QVariantMap{{QStringLiteral("kind"), QString()}};
     knobs_.clear();
     for (const KnobSpec& spec : knobSpecs()) {
         const QString name = QLatin1String(spec.name);
@@ -543,6 +552,64 @@ void ClipViewController::nudge(const QString& knob, double value, const QString&
             return withKnobValue(clip, knob, integer ? app::roundHalfEven(moved) : moved);
         },
         QLatin1String(spec->text), gestureKey);
+}
+
+// --- Grooves ---------------------------------------------------------------------------------
+
+void ClipViewController::setGroove(const QString& kind, const QString& grooveId) {
+    const std::vector<Shown> items = existing(refs_);
+    if (!session_ || items.empty()) return;
+    std::optional<app::ClipGroove> wanted;
+    if (!kind.isEmpty()) {
+        const auto known = app::grooves::kindFromName(kind);
+        if (!known || *known == app::GrooveSource::Kind::Own) return;
+        app::ClipGroove setting = items.front().clip->groove.value_or(app::ClipGroove{});
+        setting.source.kind = *known;
+        setting.source.libraryId = *known == app::GrooveSource::Kind::Library ? grooveId : QString();
+        setting.source.own.reset();
+        if (*known == app::GrooveSource::Kind::Swing && setting.source.swing <= groove::kMinSwing)
+            setting.source.swing = 58.0;  // (a swing to hear: straight would do nothing)
+        wanted = setting;
+    }
+    edit([&] { session_->editor()->setClipGroove(refs_, wanted); });
+}
+
+void ClipViewController::setGrooveValue(const QString& field, double value, const QString& gestureKey) {
+    const auto change = [&](app::ClipGroove& g) {
+        if (field == u"swing") {
+            g.source.swing = std::clamp(value, groove::kMinSwing, groove::kMaxSwing);
+        } else if (field == u"step") {
+            const int last = static_cast<int>(groove::kSteps.size()) - 1;
+            g.source.stepBeats = groove::kSteps[static_cast<size_t>(std::clamp(static_cast<int>(value), 0, last))].beats;
+        } else if (field == u"timing") {
+            g.amounts.timing = std::clamp(value / 100.0, 0.0, groove::kMaxTimingAmount);
+        } else if (field == u"velocity") {
+            g.amounts.velocity = std::clamp(value / 100.0, -1.0, 1.0);
+        } else if (field == u"random") {
+            g.amounts.random = std::clamp(value / 100.0, 0.0, 1.0);
+        } else if (field == u"quantize") {
+            g.amounts.quantize = std::clamp(value / 100.0, 0.0, 1.0);
+        }
+    };
+    update(
+        [&](const app::Clip& clip) {
+            app::Clip changed = clip;
+            if (changed.groove) change(*changed.groove);
+            return changed;
+        },
+        QStringLiteral("Change Clip Groove"), gestureKey);
+}
+
+void ClipViewController::applyGroove() {
+    edit([&] { session_->editor()->applyClipGrooves(refs_); });
+}
+
+QString ClipViewController::extractGroove(int stepIndex, int bars, bool perKeyLanes) {
+    const std::vector<Shown> items = existing(refs_);
+    if (!session_ || items.empty()) return {};
+    QString id;
+    edit([&] { id = session_->grooves()->extract(items.front().trackId, items.front().clip->id, stepIndex, bars, perKeyLanes); });
+    return id;
 }
 
 }  // namespace sub::ui

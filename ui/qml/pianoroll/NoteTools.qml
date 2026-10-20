@@ -2,7 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// The note tools: Legato, timing ×2 and ÷2, Quantize, and Humanize (a menu:
+// The note tools: Legato, timing ×2 and ÷2, Quantize, Groove (a menu: Swing,
+// the project's default groove and its grooves, with the amounts they are
+// applied at; Ctrl+Shift+U applies the last one again), and Humanize (a menu:
 // Velocity, from the velocity model, and Timing, each with its own amount), in
 // a small rounded bar that glides in over the note grid next to a group of notes
 // selected by dragging a rubber band or with Ctrl+A (the roll's toolsShown).
@@ -130,6 +132,43 @@ Rectangle {
         }
     }
 
+    // One of Groove's amounts: a caption and its number box, in the menu (not an entry to choose).
+    component GrooveAmount: MenuItem {
+        id: amountItem
+
+        property real amount
+        property real from: 0
+        property real to: 100
+        property string amountName
+        property string amountTip
+        signal amountMoved(real value)
+
+        enabled: true
+        hoverEnabled: false
+        rightPadding: grooveAmountBox.width + 16
+        // (Clicking its caption chooses nothing.)
+        onTriggered: {}
+
+        ValueBox {
+            id: grooveAmountBox
+            objectName: amountItem.amountName
+            anchors.right: parent.right
+            anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            from: amountItem.from
+            to: amountItem.to
+            step: 1
+            decimals: 0
+            sampleText: "-100 %"
+            formatter: v => v.toFixed(0) + " %"
+            value: amountItem.amount
+            onMoved: value => amountItem.amountMoved(value)
+            ToolTip.visible: hovered && !dragging
+            ToolTip.text: amountItem.amountTip
+            ToolTip.delay: 700
+        }
+    }
+
     // The notes take the keyboard back (after a menu had it).
     function focusNotes() {
         if (parent)
@@ -202,6 +241,96 @@ Rectangle {
             ToolTip.visible: hovered && !dragging
             ToolTip.text: qsTr("Quantize amount: how far notes move toward the grid (100 %: all the way)")
             ToolTip.delay: 700
+        }
+        Separator {}
+        ToolsButton {
+            id: grooveButton
+            objectName: "groove"
+            text: qsTr("Groove ▾")
+            tooltip: qsTr("Move the selected notes into a groove: Swing, the project's default groove\nor one of its grooves (Ctrl+Shift+U: the last one again)")
+            onClicked: grooveMenu.popup(grooveButton, 0, grooveButton.height)
+
+            Menu {
+                id: grooveMenu
+                objectName: "grooveMenu"
+
+                property bool chosen: false
+                onClosed: {
+                    if (chosen)
+                        tools.focusNotes()
+                    chosen = false
+                }
+
+                HumanizeItem {
+                    objectName: "grooveSwing"
+                    text: qsTr("Swing")
+                    amount: tools.roll.grooveSwing
+                    amountName: "grooveSwingAmount"
+                    tip: qsTr("MPC swing on 16ths: every other one late")
+                    amountTip: qsTr("Swing: how far through its pair the late 16th lands (66.7 %: a triplet feel)")
+                    onAmountMoved: value => tools.roll.grooveSwing = Math.max(50, Math.min(75, value))
+                    onTriggered: {
+                        grooveMenu.chosen = true
+                        tools.roll.applyGroove("swing")
+                    }
+                }
+                MenuItem {
+                    objectName: "grooveProject"
+                    text: qsTr("Project: %1").arg(Session.grooves.defaultName)
+                    enabled: Session.grooves.defaultKind !== ""
+                    onTriggered: {
+                        grooveMenu.chosen = true
+                        tools.roll.applyGroove("project")
+                    }
+                }
+                Instantiator {
+                    model: Session.grooves.grooves
+                    delegate: MenuItem {
+                        required property var modelData
+                        objectName: "groove_" + modelData.id
+                        text: modelData.name
+                        checkable: false
+                        font.bold: modelData.id === tools.roll.grooveChoice
+                        onTriggered: {
+                            grooveMenu.chosen = true
+                            tools.roll.applyGroove(modelData.id)
+                        }
+                    }
+                    onObjectAdded: (index, object) => grooveMenu.insertItem(2 + index, object)
+                    onObjectRemoved: (index, object) => grooveMenu.removeItem(object)
+                }
+                MenuSeparator {}
+                GrooveAmount {
+                    text: qsTr("Timing")
+                    to: 200
+                    amount: tools.roll.grooveTiming
+                    amountName: "grooveTiming"
+                    amountTip: qsTr("How far notes move as the groove has them (100 %: as it has them)")
+                    onAmountMoved: value => tools.roll.grooveTiming = value
+                }
+                GrooveAmount {
+                    text: qsTr("Velocity")
+                    from: -100
+                    amount: tools.roll.grooveVelocity
+                    amountName: "grooveVelocity"
+                    amountTip: qsTr("How much the groove's accents change velocities (negative: turned round)")
+                    onAmountMoved: value => tools.roll.grooveVelocity = value
+                }
+                GrooveAmount {
+                    text: qsTr("Random")
+                    amount: tools.roll.grooveRandom
+                    amountName: "grooveRandom"
+                    amountTip: qsTr("A jitter on each note's start, up to a quarter step either way")
+                    onAmountMoved: value => tools.roll.grooveRandom = value
+                }
+                GrooveAmount {
+                    text: qsTr("Quantize")
+                    amount: tools.roll.grooveQuantize
+                    amountName: "grooveQuantize"
+                    amountTip: qsTr("Notes pulled onto the groove's grid before it moves them")
+                    onAmountMoved: value => tools.roll.grooveQuantize = value
+                }
+            }
         }
         Separator {}
         ToolsButton {

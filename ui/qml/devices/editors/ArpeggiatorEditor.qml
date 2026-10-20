@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// The Arpeggiator's editor: its Style (a list) and Hold over the pattern it
+// The Arpeggiator's editor: its Style (a list), Hold and Follow Groove over the pattern it
 // plays, drawn: sixteen steps of a three-note chord over its octaves, walked as
 // the engine walks it (Arpeggiator.cpp's indexFor), the odd steps late by the
 // swing and each as long as the gate; beside it its Rate (Sync on: a note
@@ -32,7 +32,8 @@ Item {
         id: p
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["style", "sync", "rate", "synced", "gate", "octaves", "swing", "velocity", "fixed_velocity", "hold"]
+        ids: ["style", "sync", "rate", "synced", "gate", "octaves", "swing", "velocity", "fixed_velocity", "hold",
+              "follow_groove"]
     }
     function value(id, otherwise) {
         const param = p.get(id)
@@ -108,7 +109,7 @@ Item {
             }
             ParamChoice {
                 objectName: "style"
-                width: parent.width - 2 * parent.spacing - styleCaption.width - 40
+                width: parent.width - 3 * parent.spacing - styleCaption.width - 40 - 44
                 param: p.get("style")
                 tooltip: qsTr("Style: the order the held notes play in")
             }
@@ -118,6 +119,13 @@ Item {
                 param: p.get("hold")
                 text: qsTr("Hold")
                 tooltip: qsTr("Hold: the notes play on after they are let go, until a new chord comes")
+            }
+            ParamButton {
+                objectName: "followGroove"
+                width: 44
+                param: p.get("follow_groove")
+                text: qsTr("Groove")
+                tooltip: qsTr("Follow Groove: synced and playing, its steps where the project's default groove\nputs them (Edit › Default Groove), as loud as it has them; Swing then does nothing")
             }
         }
 

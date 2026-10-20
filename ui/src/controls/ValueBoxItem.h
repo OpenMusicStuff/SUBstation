@@ -71,6 +71,13 @@ class ValueBoxItem : public SgCanvas {
     Q_PROPERTY(qreal fill READ fill WRITE setFill NOTIFY lookChanged)
     Q_PROPERTY(qreal fillFrom READ fillFrom WRITE setFillFrom NOTIFY lookChanged)
     Q_PROPERTY(QColor fillColor READ fillColor WRITE setFillColor NOTIFY lookChanged)
+    // A field of a display (the transport bar's): no box of its own (the
+    // display behind it is its container's), a faint tint while under the
+    // mouse or dragged.
+    Q_PROPERTY(bool bare READ bare WRITE setBare NOTIFY lookChanged)
+    // Room left along the bottom (a caption's, which its container draws): the
+    // value is centred above it.
+    Q_PROPERTY(qreal bottomPadding READ bottomPadding WRITE setBottomPadding NOTIFY lookChanged)
 
 public:
     static constexpr double kDragRate = 0.25;       // steps per pixel dragged
@@ -122,6 +129,10 @@ public:
     void setFillFrom(qreal from);
     QColor fillColor() const { return fillColor_; }
     void setFillColor(const QColor& color);
+    bool bare() const { return bare_; }
+    void setBare(bool bare);
+    qreal bottomPadding() const { return bottomPadding_; }
+    void setBottomPadding(qreal padding);
 
     // C++ alternatives to the JavaScript formatter and parser.
     void setFormatFunction(std::function<QString(double)> format);
@@ -216,6 +227,8 @@ private:
     qreal fill_ = -1.0;
     qreal fillFrom_ = 0.0;
     QColor fillColor_;
+    bool bare_ = false;
+    qreal bottomPadding_ = 0.0;
 };
 
 }  // namespace sub::ui

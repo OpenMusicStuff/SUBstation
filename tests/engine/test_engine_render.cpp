@@ -30,8 +30,9 @@ std::vector<Samples> sourceSamples(const sub::AudioSource& source, int64_t start
     count = std::clamp<int64_t>(count, 0, source.frames() - start);
     std::vector<Samples> out;
     for (uint32_t c = 0; c < source.channels(); ++c) {
-        const float* data = source.channelData(c) + start;
-        out.emplace_back(data, data + count);
+        Samples samples(static_cast<size_t>(count));
+        source.read(c, start, count, samples.data());
+        out.push_back(std::move(samples));
     }
     return out;
 }

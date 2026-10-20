@@ -24,6 +24,7 @@ Change it here.
 | *Exclusive mode* | WASAPI only: lower latency; other apps are silenced |
 | *Audio Threads* | How many threads render tracks at once |
 | *Constrain Latency Over* | The latency over which Constrain Delay Compensation bypasses a device ([below](#playing-live-in-a-project-full-of-latency)) |
+| *Disk Streaming* | Long files read from disk as they play, instead of all of them held in memory, and its settings ([below](#disk-streaming)) |
 
 Changes there apply at once, because what a driver offers is only known while it runs.
 The line below the settings shows the device running, its sample rate, buffer size and
@@ -77,6 +78,39 @@ Exports and freezing always hear every device.
 A MIDI track's name tooltip shows what a note you play on it is heard after, and why:
 *Played live: 9.3 ms = MIDI input 1.3 + devices 2.0 + delay compensation 0.0 + output 6.0*.
 The output part is what the driver reports (the buffer and the converters).
+
+### Disk streaming
+
+Every audio file a project plays is normally decoded into memory whole, as 32-bit floats at the device's rate: about
+twice the size of a 16-bit WAV, twenty times an MP3's. A project of many long tracks can take gigabytes. With
+**Stream long files from disk** checked, a file at least *Stream Files Longer Than* long (30 seconds by default) is
+read from disk as it plays instead: what is in memory is what plays in the next few seconds, the first two seconds of
+each file and of each clip (so playback starts at once from them), and its waveform. Shorter files (one-shots, loops)
+stay in memory, as before. It sounds the same either way, to the bit.
+
+| Setting | What it does |
+|---|---|
+| *Stream Files Longer Than* | Files at least this long stream (10 seconds to 5 minutes) |
+| *Streaming Memory* | What the audio read ahead of the playhead may take (256 MB by default). More holds more streamed tracks playing at once |
+| *Disk Reads at Once* | 1 for a spinning disk; an SSD reads faster with several (2 by default) |
+| *Cache Folder* | Where files that can't be read as they are (FLAC, MP3, another sample rate than the device's, more than two channels) are kept decoded, and every streamed file's waveform. **Choose…** picks another; **Default** goes back to the user's cache folder (`%LOCALAPPDATA%\SUBstation\Streaming` on Windows, `~/.cache/SUBstation/Streaming` on Linux) |
+| *Cache Size Limit* | What the cache folder may take (20 GB by default): past it, the files used least lately go, and are made again when needed |
+
+- WAV and AIFF files at the device's sample rate (16-bit, 24-bit or 32-bit float, mono or stereo: recordings too) are
+  read as they are. Any other file is decoded once, the first time it is loaded (in the background, as decoding
+  always was), into the cache folder; after that, opening a project that uses it reads no audio but the start of it.
+- Changing the sample rate makes those decoded files again, at the new rate, in the background; the clips waiting
+  for one are silent meanwhile, as a clip still loading always is.
+- Playing from somewhere that isn't in memory yet (after clicking into the middle of a long clip) waits up to
+  150 ms for the disk before the playhead moves.
+- If the disk can't keep up, what it missed plays as silence, faded at its edges. The transport bar shows **Disk**
+  while files stream, **Disk late N×** once it has come late, and the status line says how much of which file was
+  missed: more *Streaming Memory*, more *Disk Reads at Once* on an SSD, or a faster disk helps. Dragging the
+  playhead about while playing may miss a little where it lands; that isn't counted.
+- Built-in devices' samples (the Sampler's, Vital's) are always in memory.
+- Exports and freezing wait for the disk: they come out the same however slow it is.
+
+Streaming is off by default for now.
 
 ## ASIO
 

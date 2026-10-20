@@ -26,6 +26,8 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
   deviceParamChanged             ─► onDeviceParamChanged ─────────► setProcessorParam
   deviceStateChanged             ─► pushDeviceState ──────────────► setProcessorState
   settingsChanged                ─► pushSettings ─────────────────► setTempo, setTimeSignature, setLoop
+  groovesChanged,
+  defaultGrooveChanged           ─► pushGrooves ──────────────────► setGroove; grooved clips again (pushClips)
   automationChanged              ─► onAutomationChanged ──────────► setTrackAutomation
   reset                          ─► onReset: everything again
 
@@ -59,20 +61,20 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 | [EngineBridge.h](../../app/src/audio/EngineBridge.h) | `EngineBridge`: its whole API, signals and QML properties; its header comment is the design. Constants: `kComputerKeyboard`, `kFreezeTailSeconds`, `kMaxHiddenEditors`, `kPluginGapMs`, `kPluginRetryMs`, `kDisplayPollMs`, `kIdlePollMs`. |
 | [EngineBridge.cpp](../../app/src/audio/EngineBridge.cpp) | Start-up (the project's signals it listens to, its timers and pools), `shutdown()`, the ids |
 | [BridgePrivate.h](../../app/src/audio/BridgePrivate.h) | `EngineBridge::Private`: the maps from model ids to engine ids, and the last value given to the engine of everything it pushes only when it changes. What the bridge's files share: `BusyScope` (`busy` counted around a plug-in's or driver's call, however it ends), `stateBytes`/`stateData` (a processor's state as the engine and the model have it), `stringList`, `guarded`. The application layer's own (it includes `Engine.h`). |
-| [BridgeTracks.cpp](../../app/src/audio/BridgeTracks.cpp) | Engine tracks, mixers, outputs, sends, clips and notes (and a drag's preview of them), tempo and loop, audio threads |
+| [BridgeTracks.cpp](../../app/src/audio/BridgeTracks.cpp) | Engine tracks, mixers, outputs, sends, clips and notes (and a drag's preview of them), tempo and loop, the default groove and clips' grooves, audio threads |
 | [BridgeInputs.cpp](../../app/src/audio/BridgeInputs.cpp) | Tracks' audio and MIDI inputs and monitoring, the device's inputs, the MIDI inputs open |
 | [BridgeDevices.cpp](../../app/src/audio/BridgeDevices.cpp) | Devices' processors in every chain, racks, sidechains, parameters, states |
 | [BridgePlugins.cpp](../../app/src/audio/BridgePlugins.cpp) | Plug-ins' states, editors and reports; what a device's editor reads (`deviceParams`, `processorDisplays`...) |
 | [BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp) | A project's plug-ins loading after it opens, one at a time |
 | [BridgeParameters.cpp](../../app/src/audio/BridgeParameters.cpp) | Automation pushed to the engine, overrides, `ParamSpec`s for the UI |
-| [BridgeSources.cpp](../../app/src/audio/BridgeSources.cpp) | Decoding audio files in a thread pool; waveforms; file headers |
+| [BridgeSources.cpp](../../app/src/audio/BridgeSources.cpp) | Decoding audio files in a thread pool; waveforms; file headers; files' transients |
 | [BridgeTransport.cpp](../../app/src/audio/BridgeTransport.cpp) | Play, stop, locate, metronome, previews; polling the playhead, the meters, the plug-ins and the device |
 | [BridgeRecording.cpp](../../app/src/audio/BridgeRecording.cpp) | Recording takes, live takes |
 | [BridgeFreezing.cpp](../../app/src/audio/BridgeFreezing.cpp) | Frozen tracks in the engine, rendering a freeze, exporting |
 | [BridgeReversing.cpp](../../app/src/audio/BridgeReversing.cpp) | Reversed copies of files, for reversed clips |
 | [BridgeAudioDevice.cpp](../../app/src/audio/BridgeAudioDevice.cpp) | Opening the audio device, resets, its control panel, its events, `startAudio()` |
-| [BridgeTypes.h](../../app/src/audio/BridgeTypes.h), [Waveform.h](../../app/src/audio/Waveform.h), [LiveTake.h](../../app/src/audio/LiveTake.h), [RenderTask.h](../../app/src/audio/RenderTask.h), [ReverseJob.h](../../app/src/audio/ReverseJob.h), [GateResponse.h](../../app/src/audio/GateResponse.h), [LimiterResponse.h](../../app/src/audio/LimiterResponse.h), [MultibandResponse.h](../../app/src/audio/MultibandResponse.h), [SpectralResponse.h](../../app/src/audio/SpectralResponse.h), [SaturatorResponse.h](../../app/src/audio/SaturatorResponse.h), [AmpResponse.h](../../app/src/audio/AmpResponse.h), [ErosionResponse.h](../../app/src/audio/ErosionResponse.h), [ChorusVoices.h](../../app/src/audio/ChorusVoices.h), [PhaserResponse.h](../../app/src/audio/PhaserResponse.h), [ReverbResponse.h](../../app/src/audio/ReverbResponse.h), [DisperserResponse.h](../../app/src/audio/DisperserResponse.h), [TransientResponse.h](../../app/src/audio/TransientResponse.h), [VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h), [EqResponse.h](../../app/src/audio/EqResponse.h), [GigaTuneScale.h](../../app/src/audio/GigaTuneScale.h), [SampleSlices.h](../../app/src/audio/SampleSlices.h), [ModulatorRandom.h](../../app/src/audio/ModulatorRandom.h) | What the bridge hands the UI, as the application's own types (below); the Gate's, the Limiter's, Multiband Dynamics', the Spectral Compressor's, the Saturator's, the Amp's, Erosion's, the Chorus-Ensemble's, the Phaser-Flanger's, the Reverb's, the Disperser's, the Transient Shaper's and the EQ's curves, GigaTune's notes, the Vintage Hall's loop, the Sampler's slices and snapping and the modulators' random curves, the engine's own (for the editors) |
-| [EngineDescs.h](../../app/src/audio/EngineDescs.h) | Model to engine descriptions (clips, notes); the application layer's own |
+| [BridgeTypes.h](../../app/src/audio/BridgeTypes.h), [Waveform.h](../../app/src/audio/Waveform.h), [LiveTake.h](../../app/src/audio/LiveTake.h), [RenderTask.h](../../app/src/audio/RenderTask.h), [ReverseJob.h](../../app/src/audio/ReverseJob.h), [GateResponse.h](../../app/src/audio/GateResponse.h), [LimiterResponse.h](../../app/src/audio/LimiterResponse.h), [MultibandResponse.h](../../app/src/audio/MultibandResponse.h), [SpectralResponse.h](../../app/src/audio/SpectralResponse.h), [SaturatorResponse.h](../../app/src/audio/SaturatorResponse.h), [AmpResponse.h](../../app/src/audio/AmpResponse.h), [ErosionResponse.h](../../app/src/audio/ErosionResponse.h), [ChorusVoices.h](../../app/src/audio/ChorusVoices.h), [SupersawLayout.h](../../app/src/audio/SupersawLayout.h), [PhaserResponse.h](../../app/src/audio/PhaserResponse.h), [ReverbResponse.h](../../app/src/audio/ReverbResponse.h), [DisperserResponse.h](../../app/src/audio/DisperserResponse.h), [TransientResponse.h](../../app/src/audio/TransientResponse.h), [VintageHallResponse.h](../../app/src/audio/VintageHallResponse.h), [EqResponse.h](../../app/src/audio/EqResponse.h), [GigaTuneScale.h](../../app/src/audio/GigaTuneScale.h), [SampleSlices.h](../../app/src/audio/SampleSlices.h), [ModulatorRandom.h](../../app/src/audio/ModulatorRandom.h) | What the bridge hands the UI, as the application's own types (below); the Gate's, the Limiter's, Multiband Dynamics', the Spectral Compressor's, the Saturator's, the Amp's, Erosion's, the Chorus-Ensemble's, the Phaser-Flanger's, the Reverb's, the Disperser's, the Transient Shaper's and the EQ's curves, GigaTune's notes, the Vintage Hall's loop, the Sampler's slices and snapping, the Supersaw's stacks and the modulators' random curves, the engine's own (for the editors) |
+| [EngineDescs.h](../../app/src/audio/EngineDescs.h) | Model to engine descriptions (clips, notes), clips' grooves among them (`GrooveContext`, `groovedClip`); the application layer's own |
 | [AudioSettings.h](../../app/src/audio/AudioSettings.h) | `AudioSettings` (QSettings), `audioThreads`/`setAudioThreads`, `disabledMidiInputs`/`setMidiInputDisabled`, `recordQuantize`/`setRecordQuantize`/`recordQuantizeChoices`, `defaultDriver`, `audioDrivers`, `kBufferSizes`, `kSampleRates` |
 | [AudioFiles.h](../../app/src/audio/AudioFiles.h) | `recordingsFolder`, `takePath`, `freezeFolder`, `reversedFolder`, `reversedPath`, `makeFolder` (or why it can't be made), `floatWavHeader`, `writeFloatWav`, `isAudioFile`, `audioExtensions` |
 
@@ -84,7 +86,7 @@ UI shows of the engine comes as application-layer types:
 
 | Type | What it is |
 |---|---|
-| `Waveform` | a decoded file as the UI draws it: a handle on the engine's immutable `AudioSource` (frames, channels, sample rate, samples, min/max peaks at a few levels of detail), safe to keep and read from any thread, including the render thread |
+| `Waveform` | a decoded file as the UI draws it: a handle on the engine's immutable `AudioSource` (frames, channels, sample rate, samples, min/max peaks at a few levels of detail), safe to keep and read from any thread, including the render thread. A long file streamed from disk ([Streaming](#streaming)) has its peaks in memory but not its samples: `channelData()` is null, and `read()` and `samples()` read them from disk, waiting for it (the waveform at sample level, the Sampler's slices, audio analysis and reversing read so) |
 | `LiveTake`, `LiveNote` | a take while it records: an audio take's peaks, or a MIDI take's notes so far |
 | `MeterLevel`, `AudioFileInfo`, `AudioDeviceStatus`, `AudioDeviceCaps`, `AudioDeviceEntry` | meter readings, a file's header, the device running and what it offers (Q_GADGETs, so QML reads them as values) |
 | `ProcessorParam`, `ProcessorDisplay`, `ParamGroup` | a processor's parameters as a device's editor shows them (with the engine's normalized mapping), the streams its own editor draws (meters, curves), and an owner's automatable parameters as `ParamSpec`s |
@@ -218,6 +220,35 @@ too, and loaded) and `engineChainId(chain)` (a rack chain's engine chain) give t
   (`MovedRange::frozen`), so they are heard where they are going; the model changes once, when the drag ends.
   `endClipPreview()` pushes the model's clips again for every track previewed (the drop changed them, or not). A
   frozen track's clips aren't previewed (it plays its frozen audio), only its segments.
+
+### Grooves
+
+What the project's grooves change in the engine ([model.md](model.md#grooves); the design: [groove.md](../groove.md)):
+
+- **The default groove** goes to the engine as a setting: `pushGrooves` resolves `Project::defaultGroove()` against
+  the library and calls `Engine::setGroove` (none: straight), which devices read as they render
+  (`ProcessContext::groove`): the Groove device's Project source, and Follow Groove on the Arpeggiator, the Delay and
+  the LFO ([engine/devices.md](../engine/devices.md)). The Groove device's other sources need nothing here: its state
+  holds the groove it plays (a library groove's copy, which the editor keeps in step), pushed as any device's state.
+- **Clips' grooves** are worked out where the bridge describes the clips, through a `GrooveContext`
+  ([EngineDescs.h](../../app/src/audio/EngineDescs.h): the library, the default groove, the tempo map, and the files'
+  transients; `grooveContext()`). A MIDI clip's notes go to `setTrackNotes` grooved (`clipNoteDescs` through
+  `grooves::groovedNotes`); an audio clip goes to `setTrackClips` with its grooved warp markers (`clipDescs` through
+  `groovedClip()`: `grooves::groovedMarkers` on its file's transients, set on a copy with `setWarpMarkers`). The
+  engine plays it as any clip with warp markers ([engine/warp.md](../engine/warp.md)) and knows of no clip groove. A
+  drag's preview is grooved alike; a frozen track plays its frozen audio, as rendered.
+- **Transients**: `transients(path)` ([BridgeSources.cpp](../../app/src/audio/BridgeSources.cpp)) is a decoded
+  file's transients as Mark Transients finds them (`sampleSlices::transients`, those at least
+  `sampleSlices::kMarkStrength` strong), seconds from its start and strengths, found once and kept
+  (`Private::transients`, by `pathIdentity`); none while the file isn't decoded. The editor reads them too
+  (`ProjectEditor::setTransients`, wired by the session) for Apply and Extract Groove on audio clips.
+- **Waiting for the file**: an audio clip with a groove (warped, active) plays as it is until its file is decoded;
+  `pushClips` asks for the file with a callback that pushes the track's clips again then.
+- **Again when what they play changes**: `groovesChanged` and `defaultGrooveChanged` call `pushGrooves(true)`: the
+  default to the engine, then `pushClips` for every track with a grooved clip. A new tempo map does it too
+  (`pushSettings`, against `Private::grooveTempo`, the map they were last grooved at): a groove's milliseconds are
+  where the tempo puts them. On `reset` the clips are pushed grooved as their tracks are added, and
+  `pushGrooves(false)` sets only the default.
 
 ### Devices and racks
 
@@ -462,7 +493,8 @@ render of the engine's) live output is silent, and the project as it was when th
 
 ### Settings and transport
 
-`pushSettings` sets the engine's tempo, time signature and loop. Transport: `play`, `stop` (also ends a recording),
+`pushSettings` sets the engine's tempo, time signature and loop (and, the tempo map changed, pushes the grooved clips
+again: [Grooves](#grooves)). Transport: `play`, `stop` (also ends a recording),
 `locate(beat)`, `position`, `isPlaying`, `isCountingIn`, `setMetronome`. Previews: `previewFile` (decodes first; a
 later preview or stop cancels a preview still loading), `stopPreview`, `previewNote(track, pitch, velocity)` (velocity
 0 releases). Audio threads: `applyAudioThreads`, `chooseAudioThreads(n)` (saved; 0 when it is the engine's default),
@@ -524,7 +556,8 @@ one snapshot for a burst of them, not one a file. `requestSource(path, then)` de
 `pathIdentity(path)`, [model/Paths.h](../../app/src/model/Paths.h): absolute and clean, in any case on Windows, so
 two spellings of one file share one source), queues
 `then` callbacks while it loads, and emits `sourceReady(path)` or `sourceFailed(path, message)` on the GUI thread.
-`waveform(path)` gives the decoded file as a `Waveform` (null while it isn't decoded); `isLoading`, `loadError`,
+`waveform(path)` gives the decoded file as a `Waveform` (null while it isn't decoded), `transients(path)` its
+transients ([Grooves](#grooves)); `isLoading`, `loadError`,
 `fileInfo` (the header only, cached, `sub::AudioSource::probe`). A file that couldn't be decoded is said in the status
 line, but one that isn't there at all: the File Manager lists missing files ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)),
 and a project opening with some says how many once. After a sample-rate change every source is decoded
@@ -534,6 +567,28 @@ cache, but the bridge hasn't heard yet), a deactivated clip's, a frozen track's 
 them). So the bridge hands the engine its source again (`Engine::cacheSource`) when it hears a file is decoded and
 when a file it has is asked for: their clips play once they do, in whichever project is open by then. See
 [engine/warp.md](../engine/warp.md).
+
+## Streaming
+
+Long files may stream from disk instead of being decoded into memory ([engine/streaming.md](../engine/streaming.md)),
+as Preferences › Audio's *Disk Streaming* says ([BridgeStreaming.cpp](../../app/src/audio/BridgeStreaming.cpp)):
+
+- **The settings** are `StreamingPreferences` ([AudioSettings.h](../../app/src/audio/AudioSettings.h): on or off,
+  the threshold, the memory, the cache folder and its size, the reads at once), saved under `audio/stream*`
+  ([Settings storage](#settings-storage)). `startAudio()` applies them (`applyStreaming()`: `Engine::setStreaming()`).
+  The bridge's properties (`streaming`, `streamThreshold`, `streamMemory`, `streamCacheFolder` (empty: the default,
+  `defaultStreamCacheFolder`), `streamCacheSize`, `streamDiskThreads`) read the engine's and save and apply a
+  change at once (`streamingChanged`). When what streams changes (on, off, the threshold), every file in use is
+  fetched again (`refreshSources()`): each comes back kept as the settings now say, its clips playing the old one
+  meanwhile.
+- **Decoding** goes on as before ([Async decoding](#async-decoding)): `Engine::decodeSource()` opens a long file to
+  stream instead, on the decoding pool, making its cache file and peak file first if it needs them (an MP3, a FLAC,
+  another rate: decoded once).
+- **The disk late**: `pollStreams()` takes what each streamed file missed (`Engine::takeStreamMisses()`: frames the
+  disk came late for, played as silence; misses right after the playhead was dragged aren't counted). It counts
+  them (`diskLate`, `diskLateMs`, `diskLateChanged`: the transport bar's *Disk late N×*), says in the status line how
+  much of which file played as silence (at most every 2 s), and that a file can't be read any more (gone or cut
+  short: the File Manager lists it as missing when it next looks).
 
 ## Polling
 
@@ -553,7 +608,8 @@ the lower of the rate chosen in Preferences › Look and Feel and the screen's, 
   1. `pollLatencies`: `latenciesChanged` if a track's or the output's changed.
   2. `pollPlugins()`: `Engine::idle()` (the engine's GUI-thread housekeeping: freeing retired snapshots, destroying
      removed plug-ins a few at a time, plug-ins' main-thread work) and, unless busy, the plug-ins' reports.
-  3. Unless busy, `pollDevice` (not while a render runs in the background).
+  3. `pollStreams`: what streamed files missed ([Streaming](#streaming)).
+  4. Unless busy, `pollDevice` (not while a render runs in the background).
 
 None of these wait for a render in the background (`Engine::isRendering`): it renders without the engine's lock.
 
@@ -625,6 +681,12 @@ keeps them in the registry under `HKEY_CURRENT_USER\Software\SUBstation\SUBstati
 | `audio/output_channels` | `"2,3"`: the pair the master plays on; empty: the first two | |
 | `audio/input_channels` | inputs to open (ASIO, PipeWire); none until something records | |
 | `audio/threads` | render threads; 0: the engine's default (one per core but one) | `audioThreads()` |
+| `audio/streaming` | stream long files from disk (`"true"` / `"false"`; off by default) | `StreamingPreferences` |
+| `audio/stream_threshold_s` | files at least this long stream; default 30 | |
+| `audio/stream_memory_mb` | the memory streaming's pages may take; default 256 | |
+| `audio/stream_cache_folder` | where cache and peak files go; empty: the user's cache folder's `SUBstation/Streaming` | |
+| `audio/stream_cache_gb` | what they may take there; default 20 | |
+| `audio/stream_disk_threads` | reads at once; default 2 | |
 | `midi/disabled_inputs` | MIDI inputs turned off (every other input is used, so a new one just plays) | `disabledMidiInputs()` |
 | `record/quantize` | record quantization grid in beats; 0: as played (`recordQuantizeChoices()` lists the choices) | `recordQuantize()` |
 | `record/quantize_ends` | record quantization puts notes' ends on the grid too (off by default) | `recordQuantizeEnds()` |
@@ -703,6 +765,9 @@ the UI's window state. The user-facing side is in
   another track's notes; bent notes playing at their bent pitch, recorded bends.
 - [test_bridge_plugins.cpp](../../tests/app/test_bridge_plugins.cpp): plug-in loading (after a project opens too),
   missing and moved plug-ins, editors, edits for undo, automating plug-in parameters.
+- [test_bridge_grooves.cpp](../../tests/app/test_bridge_grooves.cpp): a MIDI clip's groove moving the notes the
+  engine plays (and back as it goes), a library groove edited heard where it plays, the Groove device playing the
+  project's default, an audio loop's transients heard on the grooved beats and back on their own when the groove goes.
 - [test_bridge_freeze.cpp](../../tests/app/test_bridge_freeze.cpp): frozen tracks in the engine (their frozen audio
   where a time selection moved it, and where a drag would take it), renders in the background, reversed copies.
 - [test_bridge_recording.cpp](../../tests/app/test_bridge_recording.cpp): what records, inputs and monitoring in the

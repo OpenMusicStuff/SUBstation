@@ -1,6 +1,7 @@
 // The platform layer elsewhere than Windows: POSIX calls; on Linux per-thread
 // priorities and rtkit, on macOS Mach's thread policies and audio workgroups.
 
+#include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/resource.h>
@@ -8,8 +9,13 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <climits>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -28,6 +34,7 @@
 
 #include "platform/Files.h"
 #include "platform/Paths.h"
+#include "platform/StreamFile.h"
 #include "platform/Threads.h"
 
 namespace sub::platform {
@@ -69,6 +76,102 @@ bool replaceFile(const std::string& from, const std::string& to) { return std::r
 
 std::FILE* openFile(const std::string& path, bool write) { return std::fopen(path.c_str(), write ? "wb" : "rb"); }
 
+std::string userCacheFolder() {
+    const char* home = std::getenv("HOME");
+#ifdef __APPLE__
+    if (home && *home) return std::string(home) + "/Library/Caches";
+#else
+    if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg == '/') return xdg;  // (relative: ignored, as the spec says)
+    if (home && *home) return std::string(home) + "/.cache";
+#endif
+    std::error_code ignored;
+    return fromPath(std::filesystem::temp_directory_path(ignored));
+}
+
+// --- StreamFile.h ----------------------------------------------------------------------
+
+StreamFile::~StreamFile() { close(); }
+
+bool StreamFile::open(const std::string& path) {
+    close();
+    // Unbuffered first; a file system that refuses it (O_DIRECT on tmpfs), or refuses
+    // our alignment (a disk with bigger sectors), is read through the cache instead.
+    return openAs(path, true) || openAs(path, false);
+}
+
+bool StreamFile::openAs(const std::string& path, bool unbuffered) {
+    int flags = O_RDONLY | O_CLOEXEC;
+#ifdef __linux__
+    if (unbuffered) flags |= O_DIRECT;
+#endif
+    const int fd = ::open(path.c_str(), flags);
+    if (fd < 0) return false;
+    struct stat st {};
+    if (::fstat(fd, &st) != 0 || S_ISDIR(st.st_mode)) {
+        ::close(fd);
+        return false;
+    }
+#ifdef __APPLE__
+    if (unbuffered && ::fcntl(fd, F_NOCACHE, 1) != 0) {
+        ::close(fd);
+        return false;
+    }
+#endif
+    fd_ = fd;
+    size_ = static_cast<uint64_t>(st.st_size);
+    unbuffered_ = unbuffered;
+    if (unbuffered && size_ > 0) {  // a first read says whether it is really taken
+        AlignedBuffer probe(kAlignment);
+        if (read(0, probe.data(), kAlignment) < 0) {
+            close();
+            return false;
+        }
+    }
+#ifdef __linux__
+    if (!unbuffered) ::posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+    return true;
+}
+
+void StreamFile::close() noexcept {
+    if (fd_ >= 0) ::close(fd_);
+    fd_ = -1;
+    size_ = 0;
+    unbuffered_ = false;
+}
+
+bool StreamFile::isOpen() const noexcept { return fd_ >= 0; }
+
+int64_t StreamFile::read(uint64_t offset, void* buffer, size_t bytes) noexcept {
+    if (fd_ < 0) return -1;
+    size_t done = 0;
+    while (done < bytes) {
+        const ssize_t n = ::pread(fd_, static_cast<char*>(buffer) + done, bytes - done, static_cast<off_t>(offset + done));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) break;  // the end of the file
+        done += static_cast<size_t>(n);
+        if (unbuffered_ && done % kAlignment != 0) break;  // (a direct read short of a block: the end)
+    }
+    return static_cast<int64_t>(done);
+}
+
+void StreamFile::willNeed(uint64_t offset, uint64_t bytes) noexcept {
+    if (fd_ < 0 || bytes == 0) return;
+#ifdef __linux__
+    if (!unbuffered_) ::posix_fadvise(fd_, static_cast<off_t>(offset), static_cast<off_t>(bytes), POSIX_FADV_WILLNEED);
+#elif defined(__APPLE__)  // (F_NOCACHE keeps nothing it reads; what is read ahead is still found)
+    radvisory advice{};
+    advice.ra_offset = static_cast<off_t>(offset);
+    advice.ra_count = static_cast<int>(std::min<uint64_t>(bytes, INT32_MAX));
+    ::fcntl(fd_, F_RDADVISE, &advice);
+#else
+    (void)offset;
+#endif
+}
+
 // --- Threads.h -------------------------------------------------------------------------
 
 void enterBackgroundMode() {
@@ -82,6 +185,20 @@ void enterBackgroundMode() {
     constexpr int kWhoProcess = 1, kClassIdle = 3, kClassShift = 13;
     if (syscall(SYS_ioprio_set, kWhoProcess, thread, kClassIdle << kClassShift) != 0) {
         // Not supported: best effort as before.
+    }
+#endif
+}
+
+void raiseNormalPriority() {
+#ifdef __linux__
+    const auto thread = static_cast<int>(syscall(SYS_gettid));
+    if (setpriority(PRIO_PROCESS, static_cast<id_t>(thread), -5) != 0) {
+        // Not allowed (it takes CAP_SYS_NICE, or RLIMIT_NICE): it stays at its priority.
+    }
+    // The best-effort I/O class at its highest level: its reads go before other programs' of the same class.
+    constexpr int kWhoProcess = 1, kClassBestEffort = 2, kClassShift = 13;
+    if (syscall(SYS_ioprio_set, kWhoProcess, thread, kClassBestEffort << kClassShift) != 0) {
+        // Not supported: as before.
     }
 #endif
 }

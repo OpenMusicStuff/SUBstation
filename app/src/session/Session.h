@@ -22,6 +22,8 @@
 //   for clips, automation and tracks (ArrangementActions);
 // - deviceSelection: the device view's selection, clipboard and actions
 //   (DeviceSelection);
+// - grooves: the project's grooves, the groove editor's edits, the default
+//   groove, the user's groove files (GrooveLibrary);
 // - render: the render running in the background, for its modal dialog
 //   (RenderProgress);
 // - computerKeyboard: the computer MIDI keyboard (ComputerKeyboard);
@@ -83,6 +85,7 @@ class PluginHostingPreferences;
 class BrowserController;
 class ComputerKeyboard;
 class DeviceSelection;
+class GrooveLibrary;
 class EngineBridge;
 class FileManager;
 class FreezeRender;
@@ -129,6 +132,7 @@ class Session : public QObject {
     Q_PROPERTY(sub::app::TrackSearch* trackSearch READ trackSearch CONSTANT)
     Q_PROPERTY(sub::app::ArrangementActions* arrangement READ arrangement CONSTANT)
     Q_PROPERTY(sub::app::DeviceSelection* deviceSelection READ deviceSelection CONSTANT)
+    Q_PROPERTY(sub::app::GrooveLibrary* grooves READ grooves CONSTANT)
     Q_PROPERTY(sub::app::RenderProgress* render READ render CONSTANT)
     Q_PROPERTY(sub::app::CpuUsage* cpuUsage READ cpuUsage CONSTANT)
     Q_PROPERTY(sub::app::ComputerKeyboard* computerKeyboard READ computerKeyboard CONSTANT)
@@ -241,6 +245,7 @@ public:
     TrackSearch* trackSearch() const { return trackSearch_; }
     ArrangementActions* arrangement() const { return arrangement_; }
     DeviceSelection* deviceSelection() const { return devices_; }
+    GrooveLibrary* grooves() const { return grooves_; }
     RenderProgress* render() const { return render_; }
     CpuUsage* cpuUsage() const { return cpuUsage_; }
     ComputerKeyboard* computerKeyboard() const { return keyboard_; }
@@ -571,6 +576,7 @@ private:
     CpuUsage* cpuUsage_ = nullptr;
     ArrangementActions* arrangement_ = nullptr;
     DeviceSelection* devices_ = nullptr;
+    GrooveLibrary* grooves_ = nullptr;
     ComputerKeyboard* keyboard_ = nullptr;
     ModulationLearn* learn_ = nullptr;
     HotSwap* hotSwap_ = nullptr;

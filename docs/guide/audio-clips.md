@@ -2,7 +2,7 @@
 
 Double-click an audio clip to open it in the clip view, which covers the arrangement:
 clip controls on the left, large waveforms on the right. Here you warp clips, change
-their pitch, gain and pan. Audio added from a file is set up from its name. MIDI clips
+their pitch, gain and pan, and give them a groove. Audio added from a file is set up from its name. MIDI clips
 open in the piano roll instead (see [midi.md](midi.md)).
 
 ## The clip view
@@ -15,13 +15,14 @@ open in the piano roll instead (see [midi.md](midi.md)).
 - **Shift+Tab** shows or hides the clip view; **Esc** (or the × button) goes back to
   the arrangement.
 
-Its controls come in three sections:
+Its controls come in four sections:
 
 | Section | Controls |
 |---|---|
 | Warp | **Warp** switch, warp mode, **Seg. BPM**, :2 and ×2 |
 | Pitch | **Transpose** (±48 semitones), **Detune** (±50 cents) |
 | Mix | Clip **Gain** (−70 to +24 dB), clip **Pan** |
+| Groove | **Groove**, **Swing** and **Step**, **Timing**, **Random**, **Quantize**; **Apply**, **Extract** (see [Groove](#groove)) |
 
 A clip's gain changes how loud it plays, and its waveform with it (in the arrangement
 and in the clip view): louder clips draw taller, cut off at the lane's edges.
@@ -63,6 +64,34 @@ down every stretch alike. A frozen track's clip follows the tempo it was rendere
 and takes no markers. Ableton Live sets keep their warp markers when imported, unless a
 stretch between two would play slower than 20 BPM or faster than 999 BPM: such a clip
 is cut into a clip per stretch instead.
+
+## Groove
+
+An audio clip can play in a groove ([grooves.md](grooves.md)): its hits (the transients *Mark
+Transients* finds) move to where the groove puts them, and the audio between them stretches to
+fit, through the clip's warp. A loop played straight can swing; with **Quantize** at 100 %, a
+loosely played one is put on the grid first, then takes the groove.
+
+- **Groove**, in the clip view's Groove section: *None*, *Swing*, *Project* (the project's
+  default groove), or one of the project's grooves. With Swing, **Swing** (50 to 75 %; 58 % to
+  start with) and **Step** (1/8 to 1/32).
+- **Timing**, **Random** and **Quantize**: how much of it plays
+  ([grooves.md](grooves.md#how-a-groove-moves-notes)). A groove's velocities aren't applied to
+  audio.
+- The clip must be warped: giving an unwarped clip a groove warps it (at the project's tempo,
+  as turning Warp on does). A frozen track's clips can't take one.
+- The clip's own warp markers stay as they are: the groove plays on top of them, and the
+  clip's start stays where it is. A hit the groove would move so far that a stretch would play
+  slower than 20 BPM or faster than 999 BPM isn't moved on its own: it goes along with the audio
+  around it.
+- Until the clip's file is loaded (and its transients found), it plays as it is.
+- **Apply** writes the groove into the clip's warp markers (a marker on each hit, where the
+  groove put it) and clears it; drag them then as any marker. **Extract** makes a groove of
+  the clip's feel (its hits against the 16th grid, over a bar, as loud as they are) in the
+  project's grooves.
+
+With several clips open, every one takes it (the controls show the first one's). *Apply
+Groove* and *Extract Groove* are in a clip's right-click menu in the arrangement too.
 
 ## Fades
 
@@ -116,7 +145,7 @@ detected (below).
 ### Key
 
 A key in the name (`Am`, `F#m`, `Eb`, `G minor`, `Cmaj`) transposes the clip to the
-**project key**, chosen next to the metronome in the transport bar.
+**project key**, chosen in the transport bar (*Key*, after the swing).
 
 - A minor key and its relative major count as the same (an A minor loop stays put in C
   major), and the clip takes the shortest shift (at most 6 semitones).
@@ -159,4 +188,5 @@ every clip playing it), or to find files that went missing, see
 ---
 
 For developers: [../ui/piano-roll.md](../ui/piano-roll.md) (the clip view),
-[../engine/warp.md](../engine/warp.md), [../app/model.md](../app/model.md).
+[../engine/warp.md](../engine/warp.md), [../app/model.md](../app/model.md),
+[../groove.md](../groove.md) (grooves).
