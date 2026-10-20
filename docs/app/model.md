@@ -50,7 +50,8 @@ session's ([session.md](session.md)).
 | [Automation.h](../../app/src/model/Automation.h) | `AutomationPoint`, `Envelope`, `AutomationView`, `kMaster`; in `sub::app::automation`: target keys, the mixer's normalized mappings, evaluation (`valueAt`, `leftValue`, `shape`), every envelope edit |
 | [ParamSpec.h](../../app/src/model/ParamSpec.h) | `ParamSpec`: any automatable parameter described alike, with the engine's normalized mapping; `mixerSpecs`, `sendSpec`, `chainSpecs`, `formatValue` |
 | [Edits.h](../../app/src/model/Edits.h) | `sub::app::edits`: pure clip maths for audio and MIDI clips alike: overlaps, cuts, trims, splits, ranges, tempo fitting, consolidating, reversing, stretching, slipping, fades; `sortByStart`, how clip lists are kept |
-| [Notes.h](../../app/src/model/Notes.h) | `sub::app::notes`: pure note maths for the piano roll: overlaps on a key, moves, resizes, velocity, legato, ×2/÷2, quantize, humanize timing, bends and vibratos; note names |
+| [Notes.h](../../app/src/model/Notes.h) | `sub::app::notes`: pure note maths for the piano roll: overlaps on a key, moves, resizes, velocity, legato, ×2/÷2, quantize, humanize timing, Apply Groove (`grooved`), bends and vibratos; note names |
+| [GrooveTypes.h](../../app/src/model/GrooveTypes.h), [Grooves.h](../../app/src/model/Grooves.h) | The project's grooves as values (`LibraryGroove`, `GrooveSource`, `ClipGroove`; apart so a `Clip` can hold one), and in `sub::app::grooves` what works on them: sources resolved and described, a clip's grooved notes and warp markers, Apply Groove, Extract Groove, the Groove device's state, the built-in grooves ([Grooves](#grooves)) |
 | [Commands.h](../../app/src/model/Commands.h) | The `QUndoCommand` subclasses and what they share: `ValueCommand` (a target, its old and new value), `MergeableCommand` (one that merges continuous gestures: `kMergeId`, `mergeId`), `InsertCommand`/`RemoveCommand` (a track into or out of the tracks or the returns) |
 | [Timebase.h](../../app/src/model/Timebase.h) | `TimeSignature`, beats and seconds, bar.beat.sixteenth formatting and parsing, dB and pan text |
 | [Keys.h](../../app/src/model/Keys.h) | Musical keys (`Key`), tempo and key from file names (`parseFilename`), what a dropped clip starts with (`clipSettings`) |
@@ -60,7 +61,7 @@ session's ([session.md](session.md)).
 | [Errors.h](../../app/src/model/Errors.h) | `EditError` (an edit the user can't make), `ProjectFileError` (a file that can't be read or written); both are `UserError`s, carrying a `QString` message for the user (one catch takes either) |
 | [Paths.h](../../app/src/model/Paths.h) | Paths as the application compares them: `absoluteCleanPath`, `pathIdentity` (absolute and clean, case folded where the system ignores case: `sub::platform::kCaseSensitivePaths`), `samePath`. Decoded sources, the File Manager's files and the recent projects are keyed by it. `withSafeCharacters`: the characters Windows forbids in file names made `_` (takes' and presets' file names) |
 | [Ids.h](../../app/src/model/Ids.h), [OrderedMap.h](../../app/src/model/OrderedMap.h), [Numbers.h](../../app/src/model/Numbers.h) | `newId()`, `optionalId()` (`""`: none); a map that keeps its keys in insertion order; rounding half to even, floor division that stays exact (`floorDiv`), Python's whole-number `%` (`floorMod`), fixed-point text |
-| [editor/](../../app/src/editor) | `ProjectEditor` ([ProjectEditor.h](../../app/src/editor/ProjectEditor.h)), one source file per area: `EditorTracks.cpp` (tracks, returns and sends, groups, inputs, recordings), `EditorSettings.cpp` (tempo, time signature, key, loop), `EditorClips.cpp` (clips and time selections), `EditorDeviceChains.cpp` (devices in chains), `EditorRacks.cpp` (racks, their chains and macros), `EditorDeviceSettings.cpp` (a device's parameters, state, presets, switch, sidechain), `EditorAutomation.cpp` (envelopes and the lanes shown), `EditorFreezing.cpp` (freezing, unfreezing, flattening, and what frozen tracks refuse), `EditorFiles.cpp` (the files clips and devices play: one put in another's place, files found somewhere else). Its value types: `ClipRef`/`ClipRefs`, `TimeRange`, `MovedRange`, `ClipboardContent`/`CopiedTrack`/`CopiedFreeze`, `CopiedTracks`, `CopiedAutomation`, `TrackParent`/`InsertionPoint` |
+| [editor/](../../app/src/editor) | `ProjectEditor` ([ProjectEditor.h](../../app/src/editor/ProjectEditor.h)), one source file per area: `EditorTracks.cpp` (tracks, returns and sends, groups, inputs, recordings), `EditorSettings.cpp` (tempo, time signature, key, loop), `EditorClips.cpp` (clips and time selections), `EditorDeviceChains.cpp` (devices in chains), `EditorRacks.cpp` (racks, their chains and macros), `EditorDeviceSettings.cpp` (a device's parameters, state, presets, switch, sidechain), `EditorAutomation.cpp` (envelopes and the lanes shown), `EditorFreezing.cpp` (freezing, unfreezing, flattening, and what frozen tracks refuse), `EditorFiles.cpp` (the files clips and devices play: one put in another's place, files found somewhere else), `EditorGrooves.cpp` (the project's grooves, clips' grooves, Apply and Extract Groove, the Groove device's source, the default groove). Its value types: `ClipRef`/`ClipRefs`, `TimeRange`, `MovedRange`, `ClipboardContent`/`CopiedTrack`/`CopiedFreeze`, `CopiedTracks`, `CopiedAutomation`, `TrackParent`/`InsertionPoint` |
 | [io/Serialization.h](../../app/src/io/Serialization.h), [io/Presets.h](../../app/src/io/Presets.h) | Project and preset files, the preset library: see [serialization.md](serialization.md) |
 
 ## Key types
@@ -121,6 +122,9 @@ both kinds are edited alike.
   never a deactivated note), so the
   bridge leaves it out and the song's chords don't count it; what is split, trimmed or copied from it is deactivated
   too.
+- Either kind's `groove` (`std::optional<ClipGroove>`, [Grooves](#grooves)): what it plays moved in time with a
+  groove where the bridge hands it to the engine (a MIDI clip's notes, an audio clip's audio through its warp
+  markers); its own notes and markers stay as they are. None: as it is. Its pieces keep it.
 - `Note`: `pitch` (60 = C3, Ableton's octave numbering), `start` and `length` in beats from the clip's content start,
   `velocity` 1..127, and `muted`: deactivated (0 in the piano roll), kept and edited as any other but not heard.
   `notes::withActive()` deactivates (or activates) some of a clip's notes where they are.
@@ -429,7 +433,8 @@ does (`BuiltinProcessor::encodeState`): `name=value` lines, a backslash escaping
 (see [ui/device-view.md](../ui/device-view.md)), and the reference its similar sounds come from
 ([SamplerState.h](../../app/src/model/SamplerState.h): `"similar_reference"`, and `"similar_reference_saved"` when the
 user saved it; `samplerState::loaded()`, `stepped()`, `referenceSet()` and `step()` are the rules, see
-[intelligence.md](../intelligence.md#swapping-in-similar-samples)); a Vital's are its patch's ([Vital](#vital)).
+[intelligence.md](../intelligence.md#swapping-in-similar-samples)); a Vital's are its patch's ([Vital](#vital)); the
+Groove device's are the groove it plays ([Grooves](#grooves)).
 
 ### Vital
 
@@ -458,6 +463,64 @@ every source and destination Vital's engine has and their names, a slot's parame
 Vital's own presets are [io/VitalPresets.h](../../app/src/io/VitalPresets.h)'s: see
 [serialization.md](serialization.md#vitals-presets).
 
+### Grooves
+
+A groove (`groove::Groove`: steps over a cycle of whole four-beat bars, counted from the song's start, with lanes for
+some keys) and where a note plays in it (`groove::place()`) are music/'s
+([music/Groove.h](../../music/src/music/Groove.h), [music.md](../music.md)); the design is [groove.md](../groove.md).
+The project's side is [GrooveTypes.h](../../app/src/model/GrooveTypes.h) (the values) and
+[Grooves.h](../../app/src/model/Grooves.h) (`sub::app::grooves`: pure functions, tested on their own):
+
+- `LibraryGroove{id, name, groove, notes}`: a groove of the project's library (`Project::grooves()`), and the notes
+  it was made from (an audio clip's hits: key 60), folded into its cycle's beats (`folded()`), which the groove editor
+  draws under it (none for one made otherwise).
+- `GrooveSource`: what plays a groove. `Kind::Swing` (`swing` percent, 50..75, on steps of `stepBeats`:
+  `groove::swing()`), `Project` (the project's default groove), `Library` (`libraryId`: edit that groove, and
+  everything playing it follows) or `Own` (`own`: what a library groove removed while it is used leaves its users, so
+  nothing changes sound). `kindName()` / `kindFromName()` ("swing", "project", "library", "own": as files save them
+  and QML and agents give them), `swingSource()`, `librarySource()`. `resolve(source, library, default)` is the groove
+  it plays, `groove::normalized()`; none for Project without a default, or a library groove that isn't there (the
+  default is never Project itself). `describe()` is how it shows ("Swing 66.7 % (1/16)", "Project", the groove's name,
+  "(missing groove)", "(own groove)"); `detached(source, id, groove)` turns a source playing library groove `id` into
+  its own copy and leaves the others as they are.
+- `ClipGroove{source, amounts}`: a clip's groove and how much of it plays (`groove::Amounts`: Timing, Velocity,
+  Random, Quantize and Random's seed; Length stays 0 for clips).
+- **A MIDI clip's groove** moves its notes where the bridge flattens them: `groovedNotes(clip, groove, amounts,
+  tempo)` is `heardNotes()`, each placed by `groove::place()` on the timeline (milliseconds where the tempo map puts
+  them), its length and velocity as the groove has them, and a note running into the next on its key ending where
+  that one starts.
+- **An audio clip's groove** moves its audio through its warp markers: `groovedMarkers(clip, transientSeconds, groove,
+  amounts, tempo)` is a marker at each of its own markers, its window's ends and each transient in its window, each on
+  the beat `place()` puts it on (Quantize first pulling it to the base grid); the clip's start stays where it is. A
+  point that would take a stretch's tempo out of `kMinSegmentBpm`..`kMaxSegmentBpm` is left out; a clip that isn't
+  warped gets none. `takesGroove()`: a MIDI clip, or an audio clip but a frozen track's (a source map without
+  markers); `warpedForGroove(clip, tempo)` warps an unwarped audio clip for it as warping it by hand does (at the
+  tempo at its start, if it had no segment BPM).
+- **Apply Groove**: `applied(clip, groove, transientSeconds, tempo)` is the clip as its groove plays it, written into
+  it (a MIDI clip's notes through `notes::grooved`, an audio clip's warp markers), its groove cleared; without a
+  groove resolved, only cleared.
+- **Extract Groove**: `fromMidiClip(clip, stepBeats, bars, perKeyLanes, &notes)` (its heard notes' offsets from the
+  grid, their velocities from the clip's average, on the timeline's beats: `groove::fromNotes`; a lane a key with
+  `perKeyLanes`) and `fromAudioClip(clip, transients, tempo, stepBeats, bars, &notes)` (its transients in its window
+  and their strengths, where they play on the timeline: through its warp, or unwarped at `tempo` from its start;
+  `groove::fromOnsets`), each handing over what it was made from, folded. Both count the cycle from the song's start,
+  as a groove plays.
+- **The Groove device** (`kDeviceKind`, the engine's `builtin:groove`) keeps its source in its state
+  ([DeviceState.h](../../app/src/model/DeviceState.h)): `source` (`swing`, `project` or `groove`), `groove_id` (the
+  library groove it plays), `groove` (what it plays as text, `groove::toText()`: a library groove's copy, which the
+  editor keeps in step with the library, or its own; the engine plays it and knows nothing of the library) and
+  `seed` (Random's). Swing's percent and step are its parameters, not its state. `deviceSource()`,
+  `deviceState(state, source, library, seedFrom)` (the rest of the state kept; a seed made from `seedFrom` if it has
+  none yet), `deviceSeed()`.
+- **The built-in grooves** (`builtins()`, `builtin(id)`; ids `builtin:...`): MPC swing at 50 to 75 % on 16ths and
+  8ths, triplet and lazy shuffles, and played drum grooves (Laid Back Backbeat, Boom Bap 16, Funk 16 Ghosts, Drunk 16,
+  Pushed Hats 16) with lanes for the kick (35, 36), the snare (37..40) or the hats (42, 44, 46). A project plays one
+  once it is added to its library (`ProjectEditor::addBuiltinGroove`: a copy).
+
+`notes::grooved(notes, groove, amounts, tempo)` ([Notes.h](../../app/src/model/Notes.h)) is Apply Groove on notes
+(the piano roll's, the MCP server's): each note placed on the timeline, untangled. A MIDI clip's groove plays notes
+where it would write them, and so does the Groove device while it may move them early.
+
 ## The Project object and its signals
 
 `Project` ([Project.h](../../app/src/model/Project.h)) holds the tempo (`tempoMap()`, a `Tempo`: one throughout, or
@@ -465,7 +528,9 @@ changing along the song; `tempo()` is the one at its start), the time signature 
 each starting a bar; `timeSignature()` the first), `key`, the loop
 (`loopEnabled`, `loopStart`, `loopEnd`, beats; `punchIn`, `punchOut`: recording kept only inside the loop brace), `automationLocked`, `master`, `tracks`, `returns`, `foldedDevices`,
 `shownChainLists` (the racks whose chain list shows: hidden by default), `hiddenRackDevices` (the racks whose
-chain's devices don't show beside them: shown by default) (ids, view state), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
+chain's devices don't show beside them: shown by default) (ids, view state), the project's grooves (`grooves()`, its
+library in order: `LibraryGroove`s; `findGroove(id)`) and its default groove (`defaultGroove()`: a `GrooveSource`, never
+`Project`; none: straight), and `path`. QML reads the settings as properties (`tempo`, `loopEnabled`, `loopStart`, `loopEnd`,
 `automationLocked`, `timeSignatureText`, `keyName`, `path`).
 
 | Signal | When |
@@ -483,6 +548,8 @@ chain's devices don't show beside them: shown by default) (ids, view state), and
 | `rackViewChanged(track id)` | a rack on it showed or hid its chain list, or its chain's devices |
 | `freezeChanged(track id)` | it was frozen or unfrozen |
 | `settingsChanged()` | tempo, time signature, key, loop, automation lock |
+| `groovesChanged()` | the groove library: a groove added, removed, renamed or edited (after `reset` too) |
+| `defaultGrooveChanged()` | the default groove (after `reset` too) |
 | `automationChanged(owner, key)` | an envelope was set or removed |
 | `automationViewChanged(owner)` | what its automation shows |
 | `reset()` | everything replaced (new, open) |
@@ -495,7 +562,8 @@ Mutators, called only from commands (or directly for view state): `insertTrack`,
 `setDevices`, `setChains` (several tracks' devices at once, all changed before any signal: a device moving between
 tracks), `updateChain`, `setDeviceMacros`,
 `setDeviceName`, `setDeviceParam(s)`, `setDeviceEnabled`, `setDeviceSidechain`, `setDeviceState`,
-`setDevicesFolded`, `addFoldedDevices`, `setChainListShown`, `setRackDevicesShown`, `updateSettings`, `setEnvelope` (an empty envelope removes the target's
+`setDevicesFolded`, `addFoldedDevices`, `setChainListShown`, `setRackDevicesShown`, `updateSettings`, `setGrooves`
+(the whole library), `setDefaultGroove` (a `Project` source is none), `setEnvelope` (an empty envelope removes the target's
 automation), `setAutomationView`, `replaceContents` (loading; emits `reset`), `clear`, `setPath`.
 `storePluginState()` keeps a plug-in's current state (and where it was found) in the model without a signal or an
 undo step: it isn't an edit, only what saving or copying the device needs (the bridge's `storePluginStates()`).
@@ -539,6 +607,8 @@ The session owns one `QUndoStack` and one `ProjectEditor(project, undoStack)`. T
 | `ReplaceFilesCommand` | other files in some files' place: the clip lists of the tracks playing them and the states of the built-in devices naming them (`DeviceStates`), together; merging per hot swap (the same tracks and devices); `relink` for files only found somewhere else (frozen tracks take those) |
 | `SetDeviceEnabledCommand`, `SetDeviceSidechainCommand`, `SetDeviceMidiFromCommand` | on/off; sidechain; MIDI input (`Device::midiFrom`, "Change MIDI Input" / "Remove MIDI Input") |
 | `SetEnvelopeCommand`, `SetEnvelopesCommand` | one envelope; several (a range moved on several lanes; with the Song Tempo lane among them, its tempo change as `SetTempoCommand`'s, merged alike) |
+| `SetGroovesCommand` | the groove library and what plays its grooves, together (`GroovesState`): the library, the states of the Groove devices playing a groove (their copies kept in step), and, a groove removed, the clip lists and the default groove left with their own copies; target the groove edited, so the groove editor's drags merge per gesture |
+| `SetDefaultGrooveCommand` | the project's default groove (merging per gesture: the transport's Swing) |
 
 How it fits together:
 
@@ -674,6 +744,23 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   (`pushModulatedParams`): the amount is kept from the new value (`ModulationMapping::setAmount`), in one
   `SetModulationsCommand`, which carries the parameters' values besides the mappings (as `SetMacrosCommand` does) so
   a drag is one undo step.
+- **Grooves** (EditorGrooves.cpp; [Grooves](#grooves)). The library, one `SetGroovesCommand` each, which also gives
+  the Groove devices playing a groove its new copy: `addGroove(name, groove, notes)` (its name made unique: "Groove
+  2"; its id), `addBuiltinGroove` [Q] (a copy of a built-in one), `duplicateGroove` [Q], `setGroove(id, groove,
+  mergeKey)` (the groove editor: a drag with a merge key is one step, worked out from the library and the devices as
+  they were when it began), `renameGroove` [Q], `removeGroove` [Q] (what played it, the tracks' clips, Groove devices and
+  the default groove, keeps its own copy, `grooves::detached`, in the same step). `extractGroove(track,
+  clip, stepBeats, bars, perKeyLanes)` [Q]: a clip's feel into the library, named "<track> Groove" ("" for a MIDI clip
+  with no notes heard, or an audio file not decoded yet or without transients). `setClipGroove(refs, groove,
+  mergeKey)` ("Set Clip Groove", "Remove Clip Groove"; clips that can't take one stay as they are, an unwarped audio
+  clip is warped for it) and `applyClipGrooves(refs)` ("Apply Groove": `grooves::applied`). A Groove device:
+  `setDeviceGrooveSource(track, device, kind, grooveId)` [Q] ("swing", "project", "library" with the groove's id, or
+  "own": what it plays now, apart from the library; "Change Groove") and `applyDeviceGroove(track, device)` [Q] (what
+  it does written into the notes of its track's MIDI clips, on a Drum Rack's pad that pad's key's, which it hears as
+  C3, no earlier than Allow Early or Latency lets it move them; and it switched off: one step; false if it isn't one or plays
+  none). The default groove: `setDefaultGroove(source, mergeKey)` (a swing of 50 % is none; a library groove that
+  isn't there changes nothing), `setDefaultSwing(percent, mergeKey)` [Q] (on the default swing's step, else 16ths),
+  `setDefaultGrooveId(id)` [Q] ("": none).
 - **Envelopes**: `setEnvelope`, `addAutomationPoint` [Q], `moveAutomationPoints`, `deleteAutomationPoints` [Q],
   `setAutomationCurve`, `clearEnvelope` [Q], `deleteAutomationRange`, `moveAutomationRange`,
   `duplicateAutomationRange`, `copyAutomationRange`, `cutAutomationRange`, `pasteAutomation`,
@@ -689,11 +776,13 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   reversed from it, on take lanes too, every device naming it, frozen tracks too; "Locate Missing Files"). What plays a file (`FileUses`) is
   [files/ProjectFiles.h](../../app/src/files/ProjectFiles.h)'s ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)).
 
-Three hooks connect it to the rest without it knowing the bridge or the preset library; the session sets them
+Four hooks connect it to the rest without it knowing the bridge or the preset library; the session sets them
 ([session.md](session.md#wiring)): `setParamInfo` (how `paramInfo()` learns a plug-in's or a rack's parameter
 mapping, for macros: the bridge's `deviceParamInfo`, made a `ParamSpec`), `setOwnValue` (a plug-in parameter's
-current value, set in its own editor, for a macro's undo: `EngineBridge::ownValue`), and `setDeviceDefaults` (new
-devices as the user's default preset has them: `defaultDevice` in [io/Presets.h](../../app/src/io/Presets.h)).
+current value, set in its own editor, for a macro's undo: `EngineBridge::ownValue`), `setDeviceDefaults` (new
+devices as the user's default preset has them: `defaultDevice` in [io/Presets.h](../../app/src/io/Presets.h)), and
+`setTransients` (an audio file's transients, seconds and strengths as Mark Transients finds them, none while it isn't
+decoded: `EngineBridge::transients`; `transientsOf(path)` reads it for Apply and Extract Groove on audio clips).
 
 ### Errors: EditError and the try forms
 
@@ -747,7 +836,8 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   their key (`resolveOverlaps`); notes changed together are made consistent by `untangle`. `normalize` sorts and
   removes exact duplicates. `legato`, `timeScaled`, `quantized` (`kQuantizeGrids`), `humanizedTiming`
   (starts only, by up to `kHumanizeBeats` = a 32nd at 100 %; a triangular random, more often a little than a lot,
-  from the `QRandomGenerator` given). Humanized velocities are the velocity model's
+  from the `QRandomGenerator` given), `grooved` (Apply Groove: each note where `groove::place()` puts it on the
+  timeline, its velocity and length as the groove has them; [Grooves](#grooves)). Humanized velocities are the velocity model's
   ([intelligence.md](../intelligence.md#humanizing-velocities-by-machine-learning)).
 - Bends, for the piano roll's bend mode: `withBendPoint` (a point added, kept sorted, after any other at its time;
   says where it went), `withBendPointsMoved` (points moved together stay in order between those not moved, and
@@ -781,6 +871,10 @@ refused because of frozen audio are said on `refused` too. The session shows `re
 - A note's bend points are sorted by time and its vibratos by start; edits keep vibratos from overlapping (each at
   least `kMinVibratoBeats` long) and every value within ±48 semitones, and loading sorts both and holds them to
   the range.
+- Library grooves' ids are unique. The default groove is never `Project`. Removing a library groove leaves its
+  users their own copy in the same step: the tracks' clips, Groove devices and the default (a source naming a
+  groove that isn't there, from an edited file, plays none). A Groove device playing a library groove holds its copy
+  as the library has it.
 
 ## Extending it
 
@@ -851,6 +945,11 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   playing at their bent pitch.
 - [test_file_manager.cpp](../../tests/app/test_file_manager.cpp): files replaced and relinked (the pure functions,
   the editor's one step, a hot swap's merging and its baseline, frozen tracks), the File Manager and hot swaps.
+- [test_grooves.cpp](../../tests/app/test_grooves.cpp): a MIDI clip's notes and an audio clip's warp markers as its
+  groove plays them, notes grooved as the device would play them, Apply Groove (clips, the device, a Drum Rack pad's
+  notes only), Extract Groove, the built-in grooves, sources resolved, the library with undo (a groove removed leaving
+  its users their own copy, one edited reaching the devices playing it), clips' grooves warping audio, the default
+  groove; grooves in project files, `.gilgroove` and `.agr` files.
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp) and the `test_bridge_*` tests: the engine
   hearing the editor's edits.
 

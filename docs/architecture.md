@@ -6,9 +6,9 @@ and searches the sample browser's files, and the intelligence module, which work
 (how similar sounds are, in the background; a song's chords and key, from its MIDI). Under the engine, the browser and
 the intelligence module lies a small platform layer: what they need from the operating system, one file per system,
 so nothing above it has `#ifdef`s for one. Beside it, every layer shares one small library of musical time, `music/`:
-the song's tempo and time signatures along the timeline, so each counts beats, seconds and bars the same way. This
-page is the map; each part has its own pages (see the
-[index](README.md)).
+the song's tempo and time signatures along the timeline, so each counts beats, seconds and bars the same way, and
+grooves, so the engine's Groove device and the application's clip grooves and Apply Groove place notes the same
+way. This page is the map; each part has its own pages (see the [index](README.md)).
 
 ## Layers
 
@@ -60,7 +60,8 @@ page is the map; each part has its own pages (see the
                 └─────────────────────────────────────────────────────────────────────┘
                 ┌─────────────────────────────────────────────────────────────────────┐
   music         │ sub_music, under every layer: the tempo map and time signatures,    │
-                │ beats <-> seconds <-> samples <-> bars. Pure functions, any thread  │
+                │ beats <-> seconds <-> samples <-> bars; grooves, swing and feel.    │
+                │ Pure functions, any thread                                          │
                 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,7 +72,7 @@ page is the map; each part has its own pages (see the
 | Audio engine | [engine/src](../engine/src) | `sub_engine` (namespace `sub`) | the C++ standard library, the platform layer, miniaudio, the VST 3 SDK | [engine/](engine/README.md) |
 | Browser backend | [browser/src](../browser/src) | `sub_browser` (namespace `sub::browser`) | the C++ standard library, the platform layer | [browser.md](browser.md) |
 | Intelligence | [intelligence/src](../intelligence/src): `core/`, `similarity/`, `harmony/`, `audio/`, `humanize/`, `labels/` | `sub_intelligence` (namespace `sub::intelligence`) | the C++ standard library, the platform layer, miniaudio (its decoders), Essentia (its descriptors: vendored, AGPLv3, [licensing.md](licensing.md)), HUMANBRO's runtime (`humanbro`, vendored; its model in intelligence/models) | [intelligence.md](intelligence.md) |
-| Musical time | [music/src/music](../music/src/music) | `sub_music` (namespace `sub`) | the C++ standard library | [music.md](music.md) |
+| Musical time | [music/src/music](../music/src/music) | `sub_music` (namespace `sub`; grooves in `sub::groove`) | the C++ standard library | [music.md](music.md), [groove.md](groove.md) |
 | Platform | [platform/src/platform](../platform/src/platform) | `sub_platform` (namespace `sub::platform`) | the C++ standard library and the system's own calls (one file per system) | [platform.md](platform.md) |
 | Plug-in scanner | [tools/scanner](../tools/scanner/main.cpp) | `substation-scan`, a program of its own | `sub_engine` | [app/plugin-scanner.md](app/plugin-scanner.md) |
 | Plug-in host | [tools/pluginhost](../tools/pluginhost/main.cpp) | `substation-plugin-host`, a program of its own: the plug-in sandboxes | `sub_engine` | [engine/sandboxes.md](engine/sandboxes.md) |

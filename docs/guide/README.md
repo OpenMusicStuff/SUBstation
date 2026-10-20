@@ -16,10 +16,11 @@ code is put together, [../README.md](../README.md).
 |---|---|
 | [arrangement.md](arrangement.md) | The timeline, clips and selecting, tracks and their headers, group tracks, folding, the master, the title bar and the transport bar, projects, undo and export |
 | [mixing.md](mixing.md) | Solo and mute, groups in the mix, return tracks and sends, sidechains, delay compensation, freezing and flattening |
-| [devices.md](devices.md) | The device view, the built-in devices (Vital, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ, Sidechain), the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
+| [devices.md](devices.md) | The device view, the built-in devices (Vital, Synth, Sampler, Utility, Over The Top, Compressor, Gate, Limiter, Multiband Dynamics, Spectral Compressor, Saturator, Amp, Erosion, Tape Stop, Glitch, Delay, Chorus-Ensemble, Phaser-Flanger, Reverb, Disperser, Transient Shaper, Vocoder, Vocal Rider, EQ, Sidechain), the Arpeggiator and Groove MIDI effects, the LFO and Envelope modulators and mapping them, racks, macros and presets, folding, cut/copy/paste |
 | [plugins.md](plugins.md) | VST3 and VST2 plug-ins: finding them, using them, their editors and presets, projects, latency |
-| [audio-clips.md](audio-clips.md) | The clip view for audio clips: warping, warp markers, warp modes, transpose and detune, clip gain and pan, reversing, tempo and key from file names |
-| [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, MIDI input, the computer MIDI keyboard |
+| [audio-clips.md](audio-clips.md) | The clip view for audio clips: warping, warp markers, an audio clip's groove, warp modes, transpose and detune, clip gain and pan, reversing, tempo and key from file names |
+| [midi.md](midi.md) | MIDI clips, the piano roll and its note tools, a MIDI clip's groove, MIDI input, the computer MIDI keyboard |
+| [grooves.md](grooves.md) | Swing and feel: how a groove moves notes, the project's grooves and the groove editor (Edit › Grooves…), groove files, the default groove and the transport's Swing |
 | [recording.md](recording.md) | Arming, inputs, monitoring, the count-in, takes, resampling |
 | [automation.md](automation.md) | Automation lanes and editing envelopes, Lock Envelopes, overriding and re-enabling |
 | [browser.md](browser.md) | The browser: categories, places, search, preview, ranking |
@@ -50,7 +51,9 @@ code is put together, [../README.md](../README.md).
 - Warping and transposing audio, set up from the file name.
 - A File Manager that finds missing samples and replaces one everywhere it plays, and
   hot-swapping samples from the browser (similar sounds listed first) while the song plays.
-- A piano roll with legato, timing, quantize and humanize tools (velocities by machine learning).
+- A piano roll with legato, timing, quantize, groove and humanize tools (velocities by machine learning).
+- Grooves (swing and feel) for MIDI and audio: the Groove device, clips' grooves, the project's grooves
+  with a groove editor, Ableton's grooves.
 - Audio and MIDI recording, resampling, MIDI input and a computer MIDI keyboard.
 - Automation of every device parameter and of volume, pan and sends.
 - Undo and redo for all edits, `.gilproj` projects and project templates, WAV and MP3
@@ -80,7 +83,7 @@ Folder…* (see [browser.md](browser.md)).
 |---|---|---|
 | Settings: the audio device, MIDI inputs, plug-in folders, the browser's places and sort, recent projects, the window's layout | the registry, `HKEY_CURRENT_USER\Software\SUBstation\SUBstation` | `~/.config/SUBstation/SUBstation.conf` |
 | The browser's index and use counts, the plug-in scan's cache | `%LOCALAPPDATA%\SUBstation` | `~/.local/share/SUBstation` |
-| Presets | `Documents\SUBstation\Presets` | `~/Documents/SUBstation/Presets` |
+| Presets (and groove files, in its `Grooves` folder) | `Documents\SUBstation\Presets` | `~/Documents/SUBstation/Presets` |
 | Recordings of a project not saved yet | `Music\SUBstation\Recordings` | `~/Music/SUBstation/Recordings` |
 
 A saved project's recordings go into a `Recordings` folder beside it.

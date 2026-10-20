@@ -16,7 +16,8 @@ Session::importLiveSet(path)                      (session/SessionFiles.cpp)
 
 | File | What |
 |---|---|
-| [io/LiveSet.h](../../app/src/io/LiveSet.h) / [.cpp](../../app/src/io/LiveSet.cpp) | `Element` (a tag, attributes, trimmed text, children; `at("A/B")`, `value()`, `number()`, `flag()`), `readLiveSet`, `parseLiveSet`, `gunzip`, `isGzip` |
+| [io/LiveSet.h](../../app/src/io/LiveSet.h) / [.cpp](../../app/src/io/LiveSet.cpp) | `Element` (a tag, attributes, trimmed text, children; `at("A/B")`, `value()`, `number()`, `flag()`), `readLiveSet`, `parseLiveSet`, `parseAbleton` (any of Live's files: a set, a groove), `gunzip`, `isGzip` |
+| [io/GrooveFiles.h](../../app/src/io/GrooveFiles.h) | `agrGroove`: Ableton's groove (a pool's `Groove`, an `.agr`'s `GrooveFile`) as a groove and its amounts ([serialization.md](serialization.md#groove-files-gilgroove-agr)) |
 | [io/LiveImport.h](../../app/src/io/LiveImport.h) / [.cpp](../../app/src/io/LiveImport.cpp) | `importLiveSet`, `ImportOptions` (the installed plug-ins), `ImportResult`; `vstPreset`, `vst2CompatibleState` |
 | [engine/src/plugins/vst3/Vst3Ids.h](../../engine/src/plugins/vst3/Vst3Ids.h) | VST3 class ids: from the four words Live stores to `PluginDescription::uid` (`classIdFromWords`), to a .vstpreset's spelling (`presetClassId`), and back (`wordsFromClassId`) |
 | [app/third_party/puff](../../app/third_party/puff) | Mark Adler's inflate (zlib licence), vendored unmodified |
@@ -29,13 +30,14 @@ anything else is "damaged". The trailer's length is taken only as far as deflate
 from one): a cut file's last bytes would otherwise ask for gigabytes. `ReadLimits` bounds what a
 set may take: 512 MB of XML (the file's length and gzip's are checked before anything is read or
 inflated) and 5 million elements kept; past them a set is "too large to read", before it takes all
-the memory there is. `parseLiveSet` builds the element tree with `QXmlStreamReader`:
+the memory there is. `parseLiveSet` builds the element tree with `QXmlStreamReader`
+(`parseAbleton`, which an `.agr` groove file is read with too, and then checks it is a set):
 
 - Element and attribute names are interned (a set has about a million elements of some 1500
   names), looked up by the reader's `QStringView` so no string is made for a name seen before.
 - Subtrees the importer never reads are skipped as they are read (`skippedElements()`: the Session
-  View's clip slots, frozen tracks' sequencers, MIDI controllers' targets, take lanes, views, the
-  groove pool, presets' and browsers' records...): about a third of a set.
+  View's clip slots, frozen tracks' sequencers, MIDI controllers' targets, take lanes, views,
+  presets' and browsers' records...): about a third of a set. (The groove pool is read.)
 - Text is kept only where there is some: plug-in states, in hex.
 
 A 55 MB set (a 3 MB file, some 750,000 elements kept) reads in about 2 s, 0.35 s of it inflating,
@@ -58,6 +60,15 @@ signature's targets are read by `readSettings` instead: their events become the 
 (`tempo_map`: Live's events are in beats, straight lines between them, as SUBstation's) and time
 signature changes (`time_signatures`); tempos past 20 to 999 BPM are held to them, and the notes say so.
 Unwarped clips are placed by that tempo map (`song_`: their seconds last what it makes them where they are).
+
+The groove pool is read before the tracks (`readGrooves`): Live's Global Amount
+(`MainTrack`'s, or `MasterTrack`'s, `DeviceChain/Mixer/GlobalGrooveAmount/Manual`: a percent, held to 0..131.25 %),
+then each `GroovePool/Grooves/Groove` through `agrGroove()` ([io/GrooveFiles.h](../../app/src/io/GrooveFiles.h): its
+clip's notes on its Base grid, and its Timing, Velocity, Random and Quantize) into the project's `grooves`, with a
+new id, named as Live names it (else its clip, else "Groove N"), and its amounts kept by Live's `Id` (`grooves_`).
+A clip playing one (`addGroove`: its `GrooveSettings/GrooveId`) gets a clip groove (`groove`, a `library` source) at
+that groove's amounts times the Global Amount, each held to its range. The notes say how many grooves came and how
+many clips play them.
 
 Values Live writes, and what they become:
 
@@ -89,6 +100,8 @@ Clips:
   file. Otherwise each span is cut at the markers in it; each piece is a clip at `60 * beats / seconds`
   BPM, pieces of one tempo that follow each other are joined, held to the file and to that range.
 - Fades go on the first and last piece, converted from beats (warped, through the markers) or seconds.
+- A MIDI clip playing a pool groove keeps it as its groove; an audio clip only while warped (Live grooves warped
+  clips only, as SUBstation does), each piece it is written as.
 
 Plug-ins:
 
@@ -147,7 +160,7 @@ Tracks are named in them as Live shows them ("31-Audio").
 
 [test_live_import.cpp](../../tests/app/test_live_import.cpp) writes sets as Live does (gzip or
 XML) and checks each part: reading and damage, the song's settings, tracks, groups, returns,
-mixers and routing, MIDI loops, audio clips and warping, plug-ins (.vstpreset chunks, VST2
+mixers and routing, MIDI loops, the groove pool and clips playing its grooves, audio clips and warping, plug-ins (.vstpreset chunks, VST2
 replacement states, a VST2 as itself), Live's own devices (and those translated by table, the
 Arpeggiator among them), Drum Racks, automation, and `Session::importLiveSet`.
 `test_ui_mainwindow`'s `templatesAndImportingALiveSet` goes through the menu and its dialog.

@@ -5,7 +5,8 @@ note on its own, as MIDI 2.0 addresses notes, with its bend: MIDI 2.0's per-note
 the piano roll plays, MIDI input from controllers (WinMM on Windows, ALSA's sequencer on Linux; MIDI 2.0's packets too) played live
 and recorded, and devices taking another track's notes. Playback is in the renderer
 ([Renderer.cpp](../../engine/src/Renderer.cpp): `buildNoteEvents`, `startNote`, `bendNotes`,
-`releaseNotes`, `syncTempo`); a bend's rules are in [NoteBend.h](../../engine/src/NoteBend.h); MIDI input
+`releaseNotes`, `syncTempo`, and the notes handed early, `buildEarlyEvents`); a bend's rules are in
+[NoteBend.h](../../engine/src/NoteBend.h); MIDI input
 devices and the audio clock are in [MidiInput.h](../../engine/src/MidiInput.h) /
 [MidiInput.cpp](../../engine/src/MidiInput.cpp), MIDI 2.0's packets in [Ump.h](../../engine/src/Ump.h);
 the engine's MIDI input API is in [EngineInput.cpp](../../engine/src/EngineInput.cpp); MIDI takes are in
@@ -35,6 +36,9 @@ opened). Everything else on this page works the same there, including input sent
   deleted while it sounds still ends.
 - Stopping, locating and wrapping around the loop release every sounding note. A tempo change moves the
   recorded note ends along with the playhead.
+- A chain's first MIDI effect that may play notes early (`Processor::earlyBeats()`: the Groove device) is
+  handed, after each chunk, the clips' notes due within that many beats, with the ids they will come with
+  in their time ([below](#early-notes)).
 - Notes the piano roll plays go through a lock-free queue to the next audio block, straight to the
   track's instrument.
 - Offline renders share devices with live playback, so the engine resets them before and after. A device
@@ -60,10 +64,10 @@ opened). Everything else on this page works the same there, including input sent
 | [Ump.h](../../engine/src/Ump.h) | MIDI 2.0's packets: `packetWords`, `decode` (into a `MidiInputEvent`), `bendSemitones`/`bendValue`, and packets to send (`noteOn`, `perNoteBend`, `perNoteManagement`...) |
 | [EngineTracks.cpp](../../engine/src/EngineTracks.cpp) | `setTrackNotes`, `previewNote` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | Notes into `NoteRender`s in samples; `MidiInputRoute`, monitoring and arming into `TrackRender` |
-| [Snapshot.h](../../engine/src/Snapshot.h) | `NoteRender` (and its `NoteBendRender`), `MidiInputRoute`, `TrackBuffers::events` (a track's note events per chunk, at most 1024), `MidiFeed` and `MidiFeedRender` (devices taking other tracks' notes; `StripRender::midiFeeds`, `RenderSnapshot::midiFeeds`) |
+| [Snapshot.h](../../engine/src/Snapshot.h) | `NoteRender` (and its `NoteBendRender`), `MidiInputRoute`, `TrackBuffers::events` (a track's note events per chunk, at most 1024), `TrackBuffers::early` (its clips' notes handed early per chunk, at most 256), `MidiFeed` and `MidiFeedRender` (devices taking other tracks' notes; `StripRender::midiFeeds`, `RenderSnapshot::midiFeeds`) |
 | [Transport.h](../../engine/src/Transport.h) | `PreviewNote`; in `SharedState`: `previewNotes` queue, `midiInput` queue and `midiInputMutex`, `midiInputDelay`, `midiSampleRate`, `clock` |
-| [Processor.h](../../engine/src/Processor.h) | `ProcessEvent` (`NoteOn`, `NoteOff`, `Midi`, `NoteBend`; `noteId`, `bend`), `acceptsMidi`, `setEnabled`, `requestReset`, `takeResetRequest`, `reset`, `resetOffline` |
-| [Renderer.h](../../engine/src/Renderer.h), [Renderer.cpp](../../engine/src/Renderer.cpp) | Note events, note ids, active notes and their bends, preview notes, MIDI input gathering and routing, live notes, MIDI recording, devices' MIDI feeds |
+| [Processor.h](../../engine/src/Processor.h) | `ProcessEvent` (`NoteOn`, `NoteOff`, `Midi`, `NoteBend`; `noteId`, `bend`), `acceptsMidi`, `setEnabled`, `requestReset`, `takeResetRequest`, `reset`, `resetOffline`; notes handed early: `EarlyEvent`, `EarlyList`, `ProcessContext::earlyEvents`, `earlyBeats` |
+| [Renderer.h](../../engine/src/Renderer.h), [Renderer.cpp](../../engine/src/Renderer.cpp) | Note events, note ids, active notes and their bends, notes handed early, preview notes, MIDI input gathering and routing, live notes, MIDI recording, devices' MIDI feeds |
 | [MidiInput.h](../../engine/src/MidiInput.h), [MidiInput.cpp](../../engine/src/MidiInput.cpp) | `MidiInputEvent`, `AudioClock`, `MidiInputDevices` (the same on every system: the names users see, which inputs are open, closing them) |
 | [backends/MidiDriver.h](../../engine/src/backends/MidiDriver.h) | What a system's MIDI API gives `MidiInputDevices`: `systemInputNames()`, `openSystemInput()` (an `InputConnection`, closed when it goes), `shortMessageSize()` |
 | [backends/MidiWinMM.cpp](../../engine/src/backends/MidiWinMM.cpp), [backends/MidiAlsa.cpp](../../engine/src/backends/MidiAlsa.cpp), [backends/MidiNone.cpp](../../engine/src/backends/MidiNone.cpp) | Those on Windows (WinMM), Linux (ALSA's sequencer), and elsewhere (no devices) |
@@ -146,14 +150,16 @@ while anything is sounding, queued or arriving, the renderer builds the track's 
    have no bend.
 2. **MIDI input** (`routeMidiInput`, below).
 3. If stopped, or the clips' notes don't play (monitoring `In` with MIDI input), every active note of
-   the track is released at offset 0 (`releaseNotes`).
+   the track is released at offset 0 (`releaseNotes`), those handed early too.
 4. For each segment of the chunk (a continuous stretch of the timeline; see [rendering.md](rendering.md)):
-   - a segment that `jump`s (a locate, a loop wrap) releases the track's sounding notes at its start;
+   - a segment that `jump`s (a locate, a loop wrap) releases the track's sounding notes at its start (at
+     a wrap, not those handed early for after it);
    - a segment that `chase`s (playback starts here) sounds the notes already underway from there;
    - note-ons for the notes starting in it (binary search on `start`; `startNote`), each with a fresh id
      (`newNoteId()`) and recorded as an `ActiveNote` (`trackId`, `key`, `end`, `noteId`, `start`, the
      note's index as a hint, the bend sent); a note that starts bent (or is joined bent: chased) gets its
-     bend there too, right after its note-on;
+     bend there too, right after its note-on. A note handed early goes out again with the id it was
+     handed with (`startHanded`, [below](#early-notes));
    - the sounding notes' bends (`bendNotes`, below), those ending in the segment included;
    - note-offs for active notes ending in it, those that just started included, with their ids.
 5. The arrangement's notes and the input are sorted by offset; at the same offset a note-off comes
@@ -173,6 +179,55 @@ its key's, as C3 ([routing.md](routing.md#racks)). Constrained, a track played l
 clips' notes `TrackRender::clipDelay` late, so only its input comes early
 ([routing.md](routing.md#delay-compensation)). A device then processes each stretch with the events
 that fall in it (`processInserts` splits them by slice).
+
+### Early notes
+
+A MIDI effect that moves notes earlier (the Groove device: [devices.md](devices.md#groove-builtingroove-midieffect),
+[groove.md](../groove.md)) can't play a note before it comes in, but a clip's notes are known ahead. A processor says
+how early it may play one: `Processor::earlyBeats()` (beats; 0, the default: never). After a track's events are
+built, for a track whose clips' notes play (not recorded, not monitoring `In`), the prologue hands them over
+(`buildEarlyEvents`):
+
+1. **How early**: `earlyBeatsOf()`: the `earlyBeats()` of the first MIDI effect on the notes' way (0 while it is
+   switched off): the strip's first, if it has one; else the largest of its racks' chains' (inner racks too). Only
+   the first: the notes the others hear (a rack's after the strip's MIDI effect too) are played by the effects
+   before them, which aren't known ahead. None more than 0: nothing to do.
+2. **Only while the playhead goes on from here**: playing, past any count-in, and the track's clips not played late
+   (a constrained live track's `clipDelay`: it gets none).
+3. **The window**: from where the next chunk starts, that many beats by the tempo map, round the loop once at most
+   (a window running past the loop's end goes on from its start). For each stretch of it, `handEarly()`:
+   - each note starting there that isn't an active note of the track already (handed before, or sounding from an
+     earlier pass round the loop with the same start and key, which keeps this one to its time): a note-on with a
+     fresh id (`newNoteId()`: the id is the note's from here on), its offset from the chunk's start (at or past its
+     end: where it plays) and its `beat`; and an `ActiveNote` for it marked `early` and `pending`;
+   - the note-offs of the notes handed early that end there, each once (`earlyOff`), but for a note handed for after
+     a wrap, which ends in its own pass.
+
+   Up to `TrackBuffers::kMaxEarly` (256) a chunk, within the 512 active notes.
+4. They are sorted by offset, a note-off first at one offset, into the track's `TrackBuffers::early`.
+
+During the graph, `renderTrack()` hands them to its strip (`WorkerScratch::early`), and `processMidiEffects()` gives
+them to a chain's first MIDI effect if its `earlyBeats()` is more than 0: `ProcessContext::earlyEvents`, an
+`EarlyList` of `EarlyEvent`s (the event, and `beat`, where it plays on the timeline), in the chain's first slice only
+(their offsets are from the chunk's start; a `BuiltinProcessor` passes them to its first stretch only). A Drum
+Rack's pad gets those of its key, as C3, as it gets its notes (`padEarly()`, into `WorkerScratch::padEarly`, by
+depth); a rack's other chains get the strip's. Past a chain's MIDI effects (`processChain`), its racks get none:
+their notes are those effects', played as they come.
+
+When a handed note's time comes, `buildNoteEvents` sends its note-on again with the id it was handed with, and its
+bend where it starts (`startHanded()`: the pending active note on its key whose start is within two samples of the
+note's, as a tempo change may round it). It is pending no more, and goes on as any active note: its bends, and its
+note-off from its record. So the devices that didn't take it early (a rack's chain without such an effect) hear it in
+its time, and the effect that took it knows it by its id and ignores it. A handed note gone from the clips since (an
+edit) is taken as started all the same where its start comes: its note-off comes from its record. While pending, a
+note is sent no bends and no note-off by the segments.
+
+- **The loop**: a wrap releases the track's sounding notes but keeps those handed for after it
+  (`releaseNotes(..., keepHanded)`).
+- **Locating and stopping** release them with the others: their note-offs go out with their ids, and the effect that
+  took them, never having played them, drops them. The window starts again from where the playhead goes.
+- **A tempo change** moves them as any active note (`syncTempo`, by their beats).
+- Offline renders hand them over the same way, so an export is what playback plays.
 
 ### Bends: MIDI 2.0's per-note pitch bend
 
@@ -434,6 +489,9 @@ hangs.
   device resets.
 - Every note-on from clips or MIDI input has an id of its own (counting up, never negative); its
   note-off and bends carry it. A bend never comes before its note-on, nor after its note-off.
+- A note handed early has its id from when it is handed: its early note-on, its note-on in its time and
+  its note-off all carry it. Only a chain's first MIDI effect asking for them (`earlyBeats()`) gets notes
+  early.
 - The audio thread never waits on MIDI producers: one mutex serialises the producers only.
 - Offline renders never hear MIDI input or preview notes, and never record (`flags.live` is false); they
   start clean (`prepare()` empties every note list) and reset the shared devices before and after.
@@ -458,9 +516,10 @@ hangs.
   of `ProcessEvent` beside `NoteBend`, sent along the note's curve the same way (`bendNotes`).
 - **MPE for plug-ins without note expression**: notes spread over channels with channel pitch bend; it
   needs the plug-in's bend range.
-- **More MIDI effects**: a built-in device of the `MidiEffect` category, as the Arpeggiator is: the
-  renderer runs a chain's MIDI effects on its notes before its devices hear them
-  ([devices.md](devices.md#midi-effects)). MIDI effect plug-ins would need an event output in
+- **More MIDI effects**: a built-in device of the `MidiEffect` category, as the Arpeggiator and the Groove
+  device are: the renderer runs a chain's MIDI effects on its notes before its devices hear them
+  ([devices.md](devices.md#midi-effects)); one that plays clips' notes before their time says how far with
+  `earlyBeats()` ([Early notes](#early-notes)). MIDI effect plug-ins would need an event output in
   `Vst3Processor` and `isMidiEffect()` from the plug-in's category.
 - **MIDI overdub** (recording into existing clips) is a model-side change: the engine already returns
   the notes.
@@ -480,6 +539,8 @@ hangs.
   but are never reached. A note moved (or its key changed) while it sounds is no longer found: it keeps
   the bend it reached until its note-off.
 - A device fed by another track hears that track's preview notes too (the piano roll's auditions).
+- A note handed early that a locate or stop releases before its time gets its note-off though its note-on
+  never came in its time: a device that didn't take it early gets a note-off for a note it never started.
 
 ## Tests
 
@@ -496,6 +557,10 @@ hangs.
   snapshot), recorded bends, and the Synth, the Sampler and SUB Test Synth (note expression) playing bent notes
   at their pitch, and the note after a bent one at its own (SUB Test Synth keeps a voice's last tuning, as
   Serum 2 can).
+- [tests/engine/test_groove_engine.cpp](../../tests/engine/test_groove_engine.cpp): notes handed early to a Groove
+  device, playing early to the sample across a chunk's end in chunks of several sizes, never twice, round the loop, to a
+  Drum Rack's pad (its other chains hearing every note in its time, once), and dropped when stopping or locating
+  before they sound.
 - [tests/engine/test_midi_routing_engine.cpp](../../tests/engine/test_midi_routing_engine.cpp): devices taking
   another track's notes: an instrument, an effect with a MIDI input (SUB Test Note Effect, to the sample),
   in racks and after moves, from frozen tracks, the source going, what is refused, bit-identical on any

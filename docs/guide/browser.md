@@ -167,6 +167,9 @@ on or off. A preview stops when you click anywhere outside the browser.
   manager) show up while the program runs.
 - Drag a preset onto the device view or a track, or double-click it, to add it as a new
   device; drop it onto a device of its kind to load it into that device.
+- Groove files (`.gilgroove`, and Ableton's `.agr`) in the library's *Grooves* folder are
+  listed too, under *Grooves*: each adds as a Groove device playing that groove (see
+  [grooves.md](grooves.md#your-groove-files)).
 - Right-click a preset › *Rename…*, *Delete* (to the Recycle Bin, or the trash on Linux,
   after asking) or *Show in Folder*; an audio file › *Find Similar Sounds*, *Show in
   Folder* or *Hide Tags* (*Show Tags* brings them back; remembered from one session to

@@ -16,8 +16,9 @@ This page is about the code.
 
 | File | What it holds |
 |---|---|
-| [ClipView.qml](../../ui/qml/clipview/ClipView.qml) | The clip view: its header (the track's colour, the name, a line about the clips; for a MIDI clip the key and Generate; ×), the audio clips' controls and waveforms, or the piano roll |
-| [ClipViewController](../../ui/src/pianoroll/ClipViewController.h) | What the clip view shows and does (the old `ClipView` without its widgets): which clips open, MIDI or audio, editing every open audio clip at once |
+| [ClipView.qml](../../ui/qml/clipview/ClipView.qml) | The clip view: its header (the track's colour, the name, a line about the clips; for a MIDI clip the key, Groove and Generate; ×), the audio clips' controls and waveforms, or the piano roll |
+| [ClipViewController](../../ui/src/pianoroll/ClipViewController.h) | What the clip view shows and does (the old `ClipView` without its widgets): which clips open, MIDI or audio, editing every open audio clip at once, the clips' groove |
+| [ClipGrooveControls.qml](../../ui/qml/clipview/ClipGrooveControls.qml) | A clip's groove: the audio controls' Groove section, and what the MIDI header's Groove menu shows ([below](#a-clips-groove)) |
 | [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h) | The audio clips' waveforms, each whole source file fitted to the width |
 | [ClipViewKnob.qml](../../ui/qml/clipview/ClipViewKnob.qml), [ClipViewSection.qml](../../ui/qml/clipview/ClipViewSection.qml) | A captioned knob with its readout; a titled box of controls |
 | [PianoRollView.qml](../../ui/qml/pianoroll/PianoRollView.qml) | The piano roll's layout: the headphones and bend buttons, the ruler, the keys, the note grid with the chord lane and the note tools over it, the velocity lane, the scroll bars |
@@ -29,12 +30,12 @@ This page is about the code.
 | [BendTools.qml](../../ui/qml/pianoroll/BendTools.qml) | The bend bar, at the grid's top right in bend mode (not in the Shift view): Draw, Vibrato and Glide, a new vibrato's rate, depth and ramp, with the glide tool a new slide's curve, Clear |
 | [PianoKeys](../../ui/src/pianoroll/PianoKeys.h), [PianoRuler](../../ui/src/pianoroll/PianoRuler.h), [VelocityLane](../../ui/src/pianoroll/VelocityLane.h), [RollPlayhead](../../ui/src/pianoroll/RollPlayhead.h) | The keyboard, the ruler, the velocities, and the playhead over each |
 | [ChordLane](../../ui/src/pianoroll/ChordLane.h) | The song's chords along the top of the notes |
-| [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) | The floating bar with Legato, ×2, ÷2, Quantize and Humanize (Velocity, Timing) |
+| [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) | The floating bar with Legato, ×2, ÷2, Quantize, Groove (Swing, the project's grooves, their amounts) and Humanize (Velocity, Timing) |
 | [NoteSet.h](../../ui/src/pianoroll/NoteSet.h) | `ClipNote` (a note of one of the clips shown); sets of notes and of ClipNotes as sorted vectors (`noteSet`, `clipNoteSet`, `contains`, `united`, `without`, `byTime`, `notesOf`, `tagged`, `clipsOf`) |
 
 The note maths is in the application layer's [model/Notes.h](../../app/src/model/Notes.h) (pure functions on
 `Note`s, tested without Qt): `place`, `shifted`, `resized`, `clampMove`, `withVelocity`, `legato`, `timeScaled`,
-`quantized`, `humanizedTiming`, `span`, `byTime`, `kMinNoteBeats`, `kQuantizeGrids`, `kHumanizeBeats`, and bends'
+`quantized`, `humanizedTiming`, `grooved`, `span`, `byTime`, `kMinNoteBeats`, `kQuantizeGrids`, `kHumanizeBeats`, and bends'
 `withBendPoint`, `withBendPointsMoved`, `withoutBendPoints`, `withBendCurve`, `withVibrato`, `withoutVibrato`,
 `nextNote`, `withSlide`. See
 [app/model.md](../app/model.md). Humanize › Velocity's velocities are the session's humanizer's (`Session.humanizer`,
@@ -68,17 +69,19 @@ keyboard.
 The header shows the lead track's colour, `name` (an audio clip's; for a MIDI clip, which has none, its track's) and
 `info` ("4.00 beats · 12 notes"; several MIDI clips: "3 MIDI Clips", "on 2 tracks · 12 notes · edited together";
 "2.50 s · 5.00 beats"; "on 2 tracks · changes apply to every selected clip"; with
-"· deactivated (0 activates)" when every clip shown is), and a × button.
+"· deactivated (0 activates)" when every clip shown is), and a × button. A MIDI clip's header also has the key,
+*Groove ▾* ([A clip's groove](#a-clips-groove)) and *Generate ▾* ([below](#chords-the-key-and-generate)).
 
 ### Audio clips
 
-The left column (`kControlsWidth` 260 px, scrollable) has three `ClipViewSection`s:
+The left column (`kControlsWidth` 260 px, scrollable) has four `ClipViewSection`s:
 
 - **Warp**: the Warp switch, the warp mode (`warpModes`, a tooltip each from `warpModeTips`; "Mixed" when the clips
   differ), *Seg. BPM* (`ValueBox`, 20 to 999), and :2 / ×2.
 - **Pitch**: Transpose (±48 semitones, whole numbers) and Detune (±50 cents). Greyed out, with a tooltip saying
   why, when every clip is warped in Re-Pitch (`repitch`).
 - **Mix**: clip gain (-70 to +24 dB; the waveforms are drawn scaled by it) and pan.
+- **Groove**: the clips' groove ([A clip's groove](#a-clips-groove)).
 
 Every control edits all open clips through `editor.updateClips(refs, change, text, mergeKey)` with a function from
 clip to new clip:
@@ -92,7 +95,7 @@ clip to new clip:
   `moveWarpMarker(index, sec, gestureKey)`, `removeWarpMarker(index)`, through `edits::addWarpMarker` and the rest,
   [model.md](../app/model.md)), while `warpMarkable` (one clip open, warped, not a frozen track's). *Mark Transients*
   (`markTransients()`) puts one on each transient between the clip's start and end (`edits::addWarpMarkers`). A
-  file's transients (`transients(path)`: seconds, those at least `kMinTransientStrength` (0.25) of the strongest)
+  file's transients (`transients(path)`: seconds, those at least `kMinTransientStrength` (`sampleSlices::kMarkStrength`, 0.25) of the strongest, as audio clips' grooves take them)
   are the Sampler's slicing's (`sampleSlices::transients`,
   [SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h)), found once the file is decoded and kept while the
   view is open.
@@ -118,6 +121,32 @@ resize over them. The file's transients are 5 px ticks along the top then; a dou
 adds the marker on it (`snappedSecAt`).
 
 Warping and its modes in the engine: [engine/warp.md](../engine/warp.md).
+
+### A clip's groove
+
+A clip's groove ([app/model.md](../app/model.md#grooves)) is set in the clip view: an audio clip's in the controls'
+**Groove** section, a MIDI clip's in the popup the header's *Groove ▾* opens (reading "Groove: <name> ▾" while the
+lead clip has one). Both are [ClipGrooveControls.qml](../../ui/qml/clipview/ClipGrooveControls.qml) over the
+controller (`midi` set for the header's: only it shows Velocity, which audio clips don't take):
+
+- `groove` is the lead clip's (`Session.grooves.clipGroove()`: kind "" for none, "swing", "project", "library" or
+  "own"; its swing, step, amounts, the groove it plays), worked out on every refresh, the library or the default
+  changing too; `grooveable` says whether any clip shown can take one (MIDI clips; audio clips but a frozen track's),
+  the controls disabled otherwise.
+- The chooser: None, Swing, Project (with the default's name), the project's grooves, and "Its own" while the lead
+  plays its own copy (shown, not chosen). `setGroove(kind, grooveId)` gives every clip shown that source at the
+  lead's amounts (from none: Timing and Velocity 100 %; Swing starts at 58 %), one undo step
+  (`ProjectEditor::setClipGroove`, which warps an unwarped audio clip for it); None takes it away.
+- Swing and Step (shown for Swing only), Timing (0 to 200 %), Velocity (MIDI; -100 to 100 %), Random and Quantize (0 to
+  100 %), shown while there is a groove: `setGrooveValue(field, value, gestureKey)` sets one on every clip shown with a
+  groove, one undo step a gesture ("Change Clip Groove").
+- **Apply** (`applyGroove()`: `ProjectEditor::applyClipGrooves`, one undo step) writes their grooves into them and
+  clears them; **Extract** (`extractGroove(stepIndex, bars, perKeyLanes)`: the controls ask for 16ths over a bar, one
+  lane) makes a groove of the lead clip's feel in the project's grooves (`Session.grooves.extract`; with nothing to
+  take it from, the status line says so).
+
+A MIDI clip's notes stay where they are in the piano roll: its groove moves what the engine plays
+([app/engine-bridge.md](../app/engine-bridge.md#grooves)), until Apply writes it into them.
 
 ## The piano roll
 
@@ -268,7 +297,7 @@ notch); otherwise it scrolls three rows a notch. The keys forward their wheel ev
 
 ### Keys
 
-The grid takes `Delete`/`Backspace`, `Ctrl+A`, `Ctrl+D`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+U`, the arrow keys,
+The grid takes `Delete`/`Backspace`, `Ctrl+A`, `Ctrl+D`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+U`, `Ctrl+Shift+U`, the arrow keys,
 `0`, `B` and `V` (`handles()`). In bend mode, Delete and Ctrl+A act on bend points instead (below). The main window has shortcuts for most of them too (for clips); the grid accepts their
 `ShortcutOverride` event in
 `event()`, so Qt delivers them to the grid as key presses instead of firing the window's actions, while it has the
@@ -278,6 +307,7 @@ focus. A hidden grid gives the focus up, so the window's shortcuts work again on
 |---|---|
 | Ctrl+A | selects every note (of every clip), with the tools |
 | Ctrl+U | `quantize()`: the selected notes, or every note when none are |
+| Ctrl+Shift+U | `applyGroove()`: the groove last applied (Swing at first), on the selected notes or every note |
 | Delete, Backspace | deletes the selected notes |
 | Ctrl+D | `duplicateSelected()`: copies of the selected notes by the selected stretch's length (right after it; a rubber band's stretch reaches from where the drag started), else right after the last of them; selected, and the stretch after it selected (Ctrl+D again goes on) |
 | Ctrl+C / Ctrl+X | `copySelected()` / `cutSelected()`: the selected notes copied (their track, their times from the stretch's start); cut takes them out |
@@ -314,7 +344,12 @@ notes' values show while dragging.
 ### Note tools
 
 [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) is a small rounded bar: a note count, Legato, ×2, ÷2, Quantize
-with its grid (`quantizeGrids`: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32; 1/16 at first) and amount (100 %), and Humanize ▾,
+with its grid (`quantizeGrids`: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32; 1/16 at first) and amount (100 %), Groove ▾, a
+menu (`grooveMenu`) of Swing (its percent in a box at its right, `grooveSwing`: 58 % at first, 50 to 75), Project
+(the default groove, named; greyed out without one: `Session.grooves.defaultKind`), the project's grooves (from
+`Session.grooves.grooves`; the last applied in bold), then the amounts the groove is applied at, each a caption and a
+number box that chooses nothing (`grooveTiming` 0 to 200 %, `grooveVelocity` -100 to 100 %, both 100 % at first;
+`grooveRandom`, `grooveQuantize` 0 to 100 %, 0 at first), and Humanize ▾,
 a menu (`humanizeMenu`) of Velocity (`humanizeVelocity`) and Timing (`humanizeTiming`), each with its own amount in a
 number box at its right (`humanizeVelocityAmount`, 100 % at first; `humanizeTimingAmount`, 25 %): clicking an entry's
 name humanizes, the box keeps its clicks. Velocity is greyed out ("Velocity (no model)") when the model isn't next to
@@ -338,12 +373,19 @@ The actions are the roll's: `legato()`, `scaleTime(2.0)` / `scaleTime(0.5)`, `qu
 computes the changed notes, and commits `notes::place(clip.notes, targets, changed)` for each clip as one undo step
 (`applyTool()`: "Humanize Velocity", "Humanize Timing"). Legato works in each clip on its own (up to its own notes and
 its end); Quantize, Humanize › Timing and ×2 / ÷2 work on the notes' times on the roll (`applyOnRoll()`: with several
-clips, the arrangement's grid), each note then back in its clip. `humanizeTiming` uses the roll's own
+clips, the arrangement's grid), each note then back in its clip. `humanizeTiming` (and Groove's Random) uses the roll's own
 `QRandomGenerator` (`seedRandom()` for tests); `humanizeVelocity` hands the targets (each with its track and clip) to
 `Session.humanizer`, which judges each track's notes with the notes it plays around them and levels the model's
 velocities to their own (nothing changes if the model can't be loaded: the status line says why). The parameters are
 the roll's properties: `quantizeGrid`, `quantizeAmount`, `humanizeVelocityAmount` (how far velocities move toward the
 model's), `humanizeTimingAmount` (at 100 %, notes move by up to `humanizeBeats`, a 32nd note).
+
+`applyGroove(choice)` (Apply Groove) is a tool too ("Apply Groove", through `applyOnRoll()`): `choice` is "swing"
+(`groove::swing(grooveSwing)`, on 16ths), "project" (the default groove; without one the roll's `statusMessage` says
+so, which the clip view passes on, and nothing changes) or a library groove's id; "" is the last one applied
+(`grooveChoice`, "swing" at first: Ctrl+Shift+U). The notes are placed on the timeline (roll beats plus `origin_`), so
+the groove's cycle counts from the song's start whatever clip they are in, by `notes::grooved` at the menu's amounts
+and a new Random seed each time (from the roll's generator).
 
 ### Bends, vibrato and slides
 
@@ -474,7 +516,8 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 - **A new key**: add it to `NoteGrid::handles()` (so it overrides a window shortcut with the same key) and to
   `keyPressEvent`.
 - **A new clip setting**: a method on `ClipViewController` that calls `update(change, text, mergeKey)` with a function
-  from clip to clip (or a knob in its `knobs` table and `nudge()`), and its control in ClipView.qml.
+  from clip to clip (or a knob in its `knobs` table and `nudge()`), and its control in ClipView.qml (a groove setting:
+  `setGrooveValue()` and ClipGrooveControls.qml).
 
 ## Gotchas
 
@@ -491,7 +534,7 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass |
+| [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
-| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them; going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them; an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); going back (Esc, ×, the clips deleted, the project reset) |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |
