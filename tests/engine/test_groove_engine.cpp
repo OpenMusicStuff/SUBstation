@@ -18,6 +18,7 @@
 #include "builtin/BuiltinRegistry.h"
 #include "harness/Fixtures.h"
 #include "harness/Signal.h"
+#include "harness/Standalone.h"
 #include "music/Groove.h"
 
 using namespace subtest;
@@ -269,6 +270,28 @@ TEST_CASE("groove: on a Drum Rack's pad it moves only that pad's notes") {
     checkPaired(*hats);
 }
 
+TEST_CASE("groove: a pad's device after the track's hears the notes as the track's plays them") {
+    // The track's Groove device swings; the pad's plays straight. The notes handed early are the track's
+    // device's (the first MIDI effect on their way): the pad's hears them as it plays them, late.
+    auto swung = grooveDevice({{"swing", static_cast<float>(sub::groove::kTripletSwing)}});
+    auto straight = grooveDevice();
+    auto hats = std::make_shared<NoteLog>();
+    auto rack = std::make_shared<sub::RackRender>();
+    sub::ChainRender pad;
+    pad.id = 10;
+    pad.params = std::make_shared<sub::TrackParams>();
+    pad.inserts = {straight, hats};
+    pad.receiveNote = 42;
+    rack->chains.push_back(std::move(pad));
+    sub::TrackRender track = trackOf({swung, std::make_shared<sub::RackProcessor>()}, sixteenths(42));
+    track.racks = {{}, rack};
+    auto snap = snapshotOf(std::move(track));
+    sub::Renderer renderer;
+    render(renderer, *snap, kBeat * 2, false, 1000);
+    CHECK(hats->onTimes() == (std::vector<int64_t>{0, 8000, 12000, 20000}));
+    checkPaired(*hats);
+}
+
 TEST_CASE("groove: Timing automated takes effect note by note") {
     auto groove = grooveDevice({{"swing", 75.f}, {"early", 0.f}});
     auto log = std::make_shared<NoteLog>();
@@ -433,4 +456,64 @@ TEST_CASE("groove: stopping drops a note handed early that hasn't sounded") {
     REQUIRE(log->onTimes().size() == 1);
     CHECK_EQ(log->onTimes()[0], 2 * kSixteenth);  // (no window ahead of it: on its time)
     checkPaired(*log);
+}
+
+// --- Follow Groove ---------------------------------------------------------------------------------
+
+TEST_CASE("groove: the Arpeggiator's steps follow the project's groove") {
+    for (const bool follow : {false, true}) {
+        INFO(follow ? "following" : "not following");
+        std::shared_ptr<sub::Processor> arp = sub::BuiltinRegistry::instance().create("arpeggiator");
+        arp->prepare(kSampleRate, sub::Renderer::kMaxBlock);
+        arp->setParam(paramIndex(*arp, "follow_groove"), follow ? 1.f : 0.f);
+        auto log = std::make_shared<NoteLog>();
+        auto snap = snapshotOf(trackOf({arp, log}, {noteOf(0, kBeat, 60)}));
+        snap->groove = std::make_shared<const sub::groove::Groove>(sub::groove::swing(75.0, 0.25));
+        sub::Renderer renderer;
+        render(renderer, *snap, kBeat, false, 1000);
+        const std::vector<int64_t> ons = log->onTimes();
+        REQUIRE(ons.size() >= 4);
+        CHECK((std::vector<int64_t>(ons.begin(), ons.begin() + 4) ==
+               (follow ? std::vector<int64_t>{0, 9000, 12000, 21000} : std::vector<int64_t>{0, 6000, 12000, 18000})));
+    }
+}
+
+TEST_CASE("groove: the Delay's swing follows the project's groove") {
+    const sub::groove::Groove triplet = sub::groove::swing(sub::groove::kTripletSwing, 0.25);
+    const sub::TempoMap tempo(120.0);
+    for (const bool follow : {false, true}) {
+        INFO(follow ? "following" : "not following");
+        Standalone delay("delay", kSampleRate,
+                         {{"l_sync", 1.f}, {"l_division", 0.f}, {"link", 1.f}, {"feedback", 0.f}, {"mix", 100.f},
+                          {"filter", 0.f}, {"follow_groove", follow ? 1.f : 0.f}});
+        delay.context().groove = &triplet;
+        delay.context().tempoMap = &tempo;
+        Samples in(kBeat, 0.f);
+        in[0] = 1.f;
+        const Samples out = delay.play(in);
+        // The first echo: a 16th late, swung onto the triplet when it follows the groove.
+        int64_t loudest = 0;
+        for (size_t i = 1; i < out.size(); ++i)
+            if (std::abs(out[i]) > std::abs(out[static_cast<size_t>(loudest)])) loudest = static_cast<int64_t>(i);
+        CHECK(std::abs(loudest - (follow ? 8000 : 6000)) <= 2);
+    }
+}
+
+TEST_CASE("groove: a synced LFO follows the project's groove") {
+    const sub::groove::Groove most = sub::groove::swing(75.0, 0.25);
+    const sub::TempoMap tempo(120.0);
+    for (const bool follow : {false, true}) {
+        INFO(follow ? "following" : "not following");
+        Standalone lfo("lfo", kSampleRate, {{"sync", 1.f}, {"synced", 6.f}, {"follow_groove", follow ? 1.f : 0.f}});
+        lfo.context().playing = true;
+        lfo.context().groove = &most;
+        lfo.context().tempoMap = &tempo;
+        lfo.play(Samples(12000, 0.f));
+        const std::vector<float> phase = lfo.display("phase");
+        REQUIRE(phase.size() > 140);
+        // At sample 9023 (the 141st value): a 1/8 cycle's phase there, of the straight time the groove puts there.
+        const double beat = 9023.0 / kSpb;
+        const double straight = follow ? 0.25 + 2.0 * (beat - 0.375) : beat;
+        CHECK(std::abs(phase[140] - straight / 0.5) < 0.002);
+    }
 }

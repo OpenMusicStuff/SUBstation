@@ -318,7 +318,7 @@ private:
         } else if (in.type == ProcessEvent::Type::NoteBend) {
             bend(in, at);
         } else {
-            enqueue(at, 1, -1, in);  // raw MIDI: as it comes
+            enqueue(at + p.latency, 1, -1, in);  // raw MIDI: as it comes (with Latency, as late as the notes)
         }
     }
 

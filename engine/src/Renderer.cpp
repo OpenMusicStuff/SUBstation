@@ -1246,6 +1246,11 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
     Slices slices = chunkSlices;
     ProcessEvent* events = chunkEvents;
     processMidiEffects(snap, chain, context, slices, events, left, right, frames, depth, scratch);
+    // Notes handed early go to the first MIDI effect on their way: past one (its racks), they come as it plays
+    // them. (Kept for the chains beside this one.)
+    const int numEarly = scratch.numEarly;
+    if (std::any_of(chain.inserts.begin(), chain.inserts.end(), [](const auto& p) { return p->isMidiEffect(); }))
+        scratch.numEarly = 0;
     // Each device over the whole chunk, then the next: a device sees the same
     // calls as if they went stretch by stretch through the chain, and a rack can
     // run its chains over the chunk.
@@ -1332,6 +1337,7 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             tapInto(snap, e, left, right, frames);
         }
     }
+    scratch.numEarly = numEarly;
 }
 
 namespace {
@@ -2049,14 +2055,12 @@ bool Renderer::startHanded(const TrackRender& track, size_t index, int32_t offse
 }
 
 double Renderer::earlyBeatsOf(const StripRender& chain) noexcept {
-    double beats = 0.0;
+    // The first MIDI effect on the notes' way: the others' notes aren't known ahead (nor its racks').
     for (size_t i = 0; i < chain.inserts.size(); ++i) {
         const Processor& insert = *chain.inserts[i];
-        if (insert.isMidiEffect()) {
-            if (insert.isActive()) beats = std::max(beats, insert.earlyBeats());
-            break;  // (the first: the others' notes aren't known ahead)
-        }
+        if (insert.isMidiEffect()) return insert.isActive() ? insert.earlyBeats() : 0.0;
     }
+    double beats = 0.0;
     for (const auto& rack : chain.racks) {
         if (!rack) continue;
         for (const ChainRender& inner : rack->chains) beats = std::max(beats, earlyBeatsOf(inner));

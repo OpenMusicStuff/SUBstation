@@ -83,6 +83,7 @@ struct NoteTime {
     int key = 60;
     double velocity = 100.0;
     double lengthBeats = 0.25;
+    friend bool operator==(const NoteTime&, const NoteTime&) = default;
 };
 
 // The steps the device, the clip view and the piano roll offer: (name, beats).
