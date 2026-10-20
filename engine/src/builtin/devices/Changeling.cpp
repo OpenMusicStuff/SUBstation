@@ -69,7 +69,6 @@ public:
     }
 
     void prepare(double sampleRate, int) override {
-        rate_ = sampleRate;
         shifter_.prepare(sampleRate);
         drive_.prepare(sampleRate, kMaxBlock);
         // the dry signal, as late as the wet at the longest latency
@@ -196,7 +195,6 @@ private:
     float mixTarget() const noexcept { return std::clamp(param(Mix) / 100.f, 0.f, 1.f); }
     float gainTarget() const noexcept { return dbToGain(param(Output)); }
 
-    double rate_ = 48000.0;
     cl::Shifter shifter_;
     cl::Drive drive_;
     std::array<dsp::DelayLine, 2> dry_;

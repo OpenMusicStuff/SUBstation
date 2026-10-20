@@ -971,7 +971,6 @@ struct PreparedCurve {
 double Drive::curve(double drive, double x, double envelope) noexcept { return PreparedCurve(drive)(x, envelope); }
 
 void Drive::prepare(double sampleRate, int maxBlock) {
-    rate_ = sampleRate;
     for (int c = 0; c < kMaxChannels; ++c) {
         oversamplers_[static_cast<size_t>(c)].prepare(maxBlock, 1);
         oversamplers_[static_cast<size_t>(c)].setFactorLog2(1);

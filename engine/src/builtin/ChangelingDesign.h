@@ -157,7 +157,6 @@ public:
 
 private:
     static constexpr int kMaxChannels = 2;
-    double rate_ = 48000.0;
     double drive_ = 0.0, active_ = 0.0;  // asked for, and the block's
     std::array<dsp::Oversampler, kMaxChannels> oversamplers_;
     std::array<dsp::DelayLine, kMaxChannels> delays_;
