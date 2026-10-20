@@ -231,6 +231,28 @@ TEST_CASE("redrawing keeps the locked chords where they are and draws the rest")
     CHECK(redrawIdea({}, {}, sad, 1).chords.empty());
 }
 
+TEST_CASE("a locked chord the draws never pick is kept, and the chords around it drawn to reach it") {
+    // A colour swapped in (the tonic's sus2) or a chord of another mood's: chords the model doesn't draw.
+    const ProgressionSettings sad{kCMajor, Mood::Sad, 4};
+    for (const Chord odd : {Chord{0, Quality::Sus2}, Chord{6, Quality::Augmented}}) {
+        const std::vector<Chord> chords{odd, {5, Quality::Major}, {7, Quality::Major}, {9, Quality::Minor}};
+        INFO(odd.name());
+        for (uint64_t seed = 0; seed < 10; ++seed) {
+            const Idea idea = redrawIdea(chords, {true}, sad, seed);
+            CHECK(idea.chords[0] == odd);
+            CHECK(idea.chords != chords);  // (drawn again, not left as it was)
+        }
+        const std::vector<Idea> variations = ideaVariations(chords, {true}, sad, 3, 1);
+        CHECK_EQ(variations.size(), size_t{3});
+        for (const Idea& v : variations) CHECK(v.chords[0] == odd);
+    }
+    // Ranked by what leads into it, not in the table's order: after Am, into F#aug, A minor's own chords first.
+    const std::vector<Chord> into{{9, Quality::Minor}, {5, Quality::Major}, {6, Quality::Augmented}, {7, Quality::Major}};
+    const std::vector<Chord> instead = chordAlternatives(into, 1, {kAMinor, Mood::Sad, 4}, 3);
+    REQUIRE(instead.size() == 3);
+    for (const Chord& c : instead) CHECK(kAMinor.isDiatonic(c));
+}
+
 TEST_CASE("variations change one or two chords that aren't locked") {
     const ProgressionSettings sad{kAMinor, Mood::Sad, 4};
     const std::vector<Chord> chords{{9, Quality::Minor}, {5, Quality::Major}, {2, Quality::Minor}, {4, Quality::Minor}};

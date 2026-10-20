@@ -106,6 +106,9 @@ struct Model {
     std::array<bool, kStates> drawn{};
 
     double chance(int from, int to) const { return from == to ? kRepeat : next[from * kStates + to]; }
+    // Into a chord that is fixed (locked, or kept from another mood): one the draws never pick (a colour swapped
+    // in) is still reached, rarely.
+    double reaching(int from, int to) const { return std::max(chance(from, to), kRepeat); }
 };
 
 Model buildModel(const ProgressionSettings& settings) {
@@ -191,6 +194,7 @@ std::vector<int> drawStates(const Model& m, std::vector<int> fixed, Random& rng)
     const int r = static_cast<int>(first - fixed.begin());
     const auto at = [&](int t) { return fixed[static_cast<size_t>((r + t) % n)]; };
     const auto allowed = [&](int t, int s) { return at(t) >= 0 ? at(t) == s : m.drawn[s]; };
+    const auto chance = [&](int from, int to, int t) { return at(t) >= 0 ? m.reaching(from, to) : m.chance(from, to); };
 
     // Backward: beta[t][s], the chance (scaled) of reaching y[n] from s at t.
     std::vector<Row> beta(static_cast<size_t>(n) + 1, Row{});
@@ -201,7 +205,7 @@ std::vector<int> drawStates(const Model& m, std::vector<int> fixed, Random& rng)
             if (!allowed(t, s)) continue;
             double v = 0.0;
             for (int u = 0; u < kStates; ++u) {
-                if (beta[t + 1][u] > 0.0) v += m.chance(s, u) * beta[t + 1][u];
+                if (beta[t + 1][u] > 0.0) v += chance(s, u, t + 1) * beta[t + 1][u];
             }
             beta[t][s] = v;
             sum += v;
@@ -214,7 +218,7 @@ std::vector<int> drawStates(const Model& m, std::vector<int> fixed, Random& rng)
     y[0] = at(0);
     for (int t = 1; t < n; ++t) {
         Row w{};
-        for (int s = 0; s < kStates; ++s) w[s] = m.chance(y[t - 1], s) * beta[t][s];
+        for (int s = 0; s < kStates; ++s) w[s] = chance(y[t - 1], s, t) * beta[t][s];
         y[t] = rng.pick(w);
         if (y[t] < 0) return {};
     }
@@ -425,7 +429,7 @@ std::vector<Chord> chordAlternatives(const std::vector<Chord>& chords, int index
     std::vector<std::pair<double, int>> scored;
     for (int s = 0; s < kStates; ++s) {
         if (s == current || !m.drawn[s]) continue;
-        scored.emplace_back(m.chance(before, s) * m.chance(s, after), s);
+        scored.emplace_back(m.chance(before, s) * m.reaching(s, after), s);
     }
     std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
     std::vector<Chord> result;

@@ -20,7 +20,8 @@
 //   chord never follows itself, and the last leads back into the first (a
 //   progression goes round): the chords are drawn together with what is fixed
 //   (locked chords, the first one) so that every drawn one fits both of its
-//   neighbours (forward filtering, backward sampling over the loop). A fresh
+//   neighbours (forward filtering, backward sampling over the loop); a fixed
+//   chord the draws never pick (a colour swapped in) is reached, rarely. A fresh
 //   draw starts on a chord the mood's progressions start on, has at least
 //   three different chords (two in a shorter one), and plays the key's tonic
 //   or its relative (i or III in a minor key, I or vi in a major one).

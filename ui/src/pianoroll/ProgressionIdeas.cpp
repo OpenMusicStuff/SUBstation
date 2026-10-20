@@ -215,7 +215,7 @@ void ProgressionIdeas::clear() {
     rows_.clear();
     current_ = tried_ = -1;
     triedClip_.clear();
-    base_ = written_ = {};
+    tries_.clear();
     triedChords_.clear();
     publish();
 }
@@ -314,16 +314,17 @@ void ProgressionIdeas::tryIdea(int row) {
         Q_EMIT statusMessage(tr("Open a MIDI clip to try progressions in"));
         return;
     }
-    const QString clipId = roll_->clipId();
+    const QString clip = clipKey();
+    const auto last = tries_.constFind(clip);
     PianoRoll::ClipBody base;
-    if (clipId == triedClip_ && *body == written_) {
-        base = base_;  // as the last try left it: over what it wrote over
+    if (last != tries_.constEnd() && *body == last->written) {
+        base = last->base;  // as its last try left it: over what that wrote over
     } else {
         base = *body;
-        if (clipId == triedClip_) {
-            // Changed since: without the notes the last try wrote, where they still are.
-            std::vector<app::Note> wrote = written_.notes;
-            for (const app::Note& n : base_.notes) {
+        if (last != tries_.constEnd()) {
+            // Changed since: without the notes its last try wrote, where they still are.
+            std::vector<app::Note> wrote = last->written.notes;
+            for (const app::Note& n : last->base.notes) {
                 const auto it = std::find(wrote.begin(), wrote.end(), n);
                 if (it != wrote.end()) wrote.erase(it);
             }
@@ -335,12 +336,11 @@ void ProgressionIdeas::tryIdea(int row) {
     }
     const std::vector<harmony::Chord> chords = played(row);
     writing_ = true;
-    const std::optional<PianoRoll::ClipBody> result = roll_->writeProgression(chords, bass_, base, kMergeKey + clipId);
+    const std::optional<PianoRoll::ClipBody> result = roll_->writeProgression(chords, bass_, base, kMergeKey + clip);
     writing_ = false;
     if (!result) return;
-    triedClip_ = clipId;
-    base_ = std::move(base);
-    written_ = *result;
+    tries_.insert(clip, {std::move(base), *result});
+    triedClip_ = clip;
     triedChords_ = chords;
     triedBass_ = bass_;
     tried_ = current_ = row;
@@ -362,10 +362,15 @@ void ProgressionIdeas::refreshTried() {
     if (tried_ >= count() || played(tried_) != triedChords_ || bass_ != triedBass_) tried_ = -1;
 }
 
+QString ProgressionIdeas::clipKey() const {
+    return roll_ && roll_->hasClip() ? roll_->trackId() + QLatin1Char('/') + roll_->clipId() : QString();
+}
+
 void ProgressionIdeas::clipChanged() {
     if (writing_ || tried_ < 0) return;
     const std::optional<PianoRoll::ClipBody> body = roll_ ? roll_->leadBody() : std::nullopt;
-    if (body && roll_->clipId() == triedClip_ && *body == written_) return;
+    const auto last = tries_.constFind(triedClip_);
+    if (body && clipKey() == triedClip_ && last != tries_.constEnd() && *body == last->written) return;
     tried_ = -1;
     publish();
 }

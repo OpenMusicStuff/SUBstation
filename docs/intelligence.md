@@ -506,7 +506,9 @@ chords), none with the chords of another or of one in `avoid`, alternately:
   multiplied, the square root of each: both must agree, so a chord the mood's progressions never play there comes
   up rarely, and the draws move in the ways real songs do. Chords drawn: those Billboard plays at least 1 in 400
   times in the key's mode, and those the mood's progressions play. A chord never follows itself (but where locked
-  chords make it, at a chance of 1 in 10 000), and the last leads back into the first. A draw is kept if it has
+  chords make it, at a chance of 1 in 10 000), and the last leads back into the first. A fixed chord the draws never
+  pick (a colour swapped in and locked, a chord kept from another mood's ideas) is reached at that chance at least, so
+  the chords around it can always be drawn. A draw is kept if it has
   three different chords or more (two in a shorter one) and the key's tonic or its relative (i or III in a minor
   key, I or vi in a major one), else drawn again (60 tries); it never has the chords of one of the mood's own still
   to come, which comes up as that one instead.
@@ -1340,7 +1342,7 @@ What it is used for:
   moods' progressions as free-midi-chords writes them; in the key (and the relative key), cut, repeated and filled
   out; ideas alternating, all different, avoiding those given, the same from the same seed; drawn ones playing like
   progressions in the key (three chords or more, the tonic or its relative, never a chord after itself, 95 % in the
-  key); redrawing round locked chords; variations; alternatives and colours; sevenths as the key has them; Roman
+  key); redrawing round locked chords (one the draws never pick too); variations; alternatives and colours; sevenths as the key has them; Roman
   numerals; a progression laid out a chord a bar.
 - [tests/app/test_ui_progressions.cpp](../tests/app/test_ui_progressions.cpp): the Progressions panel through the
   clip view (see [ui/piano-roll.md](ui/piano-roll.md#tests)).

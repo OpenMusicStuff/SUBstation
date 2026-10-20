@@ -18,10 +18,11 @@
 // idea's triads show and play with their sevenths as the key has them.
 //
 // Try writes an idea into the lead clip (PianoRoll::writeProgression), in
-// place of the one tried before: a run of tries is one undo step, each written
-// over the clip as it was before the first (the base). If the clip changed
-// since the last try (an edit, an undo), the base is the clip as it is now,
-// without the notes that try wrote. The idea the clip plays is tried(); an
+// place of the one tried in it before: a run of tries is one undo step, each
+// written over the clip as it was before the first (the base). If the clip
+// changed since its last try (an edit, an undo), the base is the clip as it is
+// now, without the notes that try wrote. Each clip's last try is kept (tries in
+// another clip in between don't count). The idea the clip plays is tried(); an
 // idea changed while it is (a chord swapped, Sevenths, Bass) is written again.
 // The arrow keys step through the ideas, trying each.
 //
@@ -34,6 +35,7 @@
 #include "pianoroll/PianoRoll.h"
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
@@ -181,11 +183,17 @@ private:
     quint64 seed_ = 0;
     std::optional<intelligence::harmony::Key> key_;  // the newest ideas'
     QString keySource_;
-    // What the last try wrote over, and what it left: the lead clip's id, and its body.
+    // Each clip's last try (by clipKey()): what it wrote over, and what it left.
+    struct Tried {
+        PianoRoll::ClipBody base;
+        PianoRoll::ClipBody written;
+    };
+    QHash<QString, Tried> tries_;
+    // The lead clip's key in tries_ ("" without one).
+    QString clipKey() const;
+    // The clip tried() was tried in, and the chords it wrote.
     QString triedClip_;
-    PianoRoll::ClipBody base_;
-    PianoRoll::ClipBody written_;
-    std::vector<intelligence::harmony::Chord> triedChords_;  // ... the chords it wrote
+    std::vector<intelligence::harmony::Chord> triedChords_;
     bool triedBass_ = false;
     bool writing_ = false;
 };

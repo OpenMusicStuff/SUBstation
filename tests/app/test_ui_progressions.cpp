@@ -8,12 +8,11 @@
 // length and the key; closing it. Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
-#include <QGuiApplication>
 #include <QQuickItem>
-#include <QStyleHints>
 #include <QQuickWindow>
 #include <QTest>
 #include <QUndoStack>
+#include <QtQuickTest/quicktest.h>
 
 #include <algorithm>
 #include <functional>
@@ -96,7 +95,11 @@ class TestUiProgressions : public QObject {
     // An idea's row, and an item in it (its chords "chord0"..., "tryIdea", "keepIdea", "moreLikeIdea").
     QQuickItem* row(int index) { return item(qPrintable(QStringLiteral("idea%1").arg(index)), panel()); }
     QQuickItem* inRow(int index, const char* name) { return item(name, row(index)); }
+    // What changed laid out: a Column, a Flow and a Repeater's new items are placed at the next polish, which a
+    // click mustn't beat (it would land where they were, or where new ones wait at 0, 0).
+    void settle() { QVERIFY(QQuickTest::qWaitForPolish(window_)); }
     void clickIn(int index, const char* name) {
+        settle();
         QQuickItem* target = inRow(index, name);
         QVERIFY(target && target->isVisible());
         test::click(window_, test::centerOf(target));
@@ -132,10 +135,12 @@ class TestUiProgressions : public QObject {
         QTRY_VERIFY(menu->property("opened").toBool());
         QQuickItem* entry = item("generateProgressions");
         QVERIFY(entry);
+        settle();
         test::click(window_, test::centerOf(entry));
         QTRY_VERIFY(!menu->property("visible").toBool());
         QTRY_VERIFY(panel()->isVisible());
         QTRY_VERIFY(row(ProgressionIdeas::kIdeas - 1) != nullptr);
+        settle();
     }
 
     // The notes an idea writes into the clip from its start, `length` beats of it.
@@ -228,6 +233,7 @@ private Q_SLOTS:
         QCOMPARE(ideas()->tried(), 1);
         QCOMPARE(sorted(clip().notes), expected(1, 16.0));
         // Clicking a row tries it too.
+        settle();
         test::click(window_, test::at(row(3), QPointF(row(3)->width() - 90, row(3)->height() - 2)));
         QCOMPARE(ideas()->tried(), 3);
         QCOMPARE(sorted(clip().notes), expected(3, 16.0));
@@ -264,6 +270,24 @@ private Q_SLOTS:
         QCOMPARE(undo().count(), steps + 2);
         undo().undo();
         QCOMPARE(sorted(clip().notes), sorted(edited));
+    }
+
+    // Each clip keeps its own last try: one in another clip in between doesn't make the next here keep this one's.
+    void eachClipsTryIsReplacedInIt() {
+        const auto other = session().editor()->addMidiClip(trackId_, 40.0, 4.0);
+        QVERIFY(other);
+        openPanel();
+        clickIn(0, "tryIdea");
+        QCOMPARE(sorted(clip().notes), expected(0, 16.0));
+        clipView_->setProperty("clipIds", QVariantList{other->clipId});
+        QTRY_COMPARE(roll()->clipId(), other->clipId);
+        clickIn(1, "tryIdea");
+        QVERIFY(!project().clip(trackId_, other->clipId).notes.empty());
+        clipView_->setProperty("clipIds", QVariantList{clipId_});
+        QTRY_COMPARE(roll()->clipId(), clipId_);
+        clickIn(2, "tryIdea");
+        QCOMPARE(sorted(clip().notes), expected(2, 16.0));  // idea 0's chords gone
+        QCOMPARE(ideas()->tried(), 2);
     }
 
     void bassAndSeventhsPlayAsTheyShow() {
@@ -321,10 +345,9 @@ private Q_SLOTS:
         const auto chip = [this] { return test::centerOf(inRow(0, "chord2")); };
         clickIn(0, "chord2");  // locked...
         QVERIFY(ideas()->isLocked(0, 2));
-        QTest::qWait(QGuiApplication::styleHints()->mouseDoubleClickInterval() + 50);
         clickIn(0, "chord2");  // ... and unlocked
         QVERIFY(!ideas()->isLocked(0, 2));
-        QTest::qWait(QGuiApplication::styleHints()->mouseDoubleClickInterval() + 50);
+        settle();
         QTest::mouseClick(window_, Qt::RightButton, {}, chip());
         QObject* popup = panel()->findChild<QObject*>(QStringLiteral("swapPopup"));
         QVERIFY(popup);
@@ -335,6 +358,7 @@ private Q_SLOTS:
         QVERIFY(choices.first().toMap().value(QStringLiteral("colour")).toBool());
         QQuickItem* instead = findIn(popup->property("contentItem").value<QQuickItem*>(), QStringLiteral("instead0"));
         QVERIFY(instead && instead->isVisible());
+        settle();
         test::screenshot(window_, QStringLiteral("progressions-swap"));
         test::click(window_, test::centerOf(instead));
         QTRY_VERIFY(!popup->property("visible").toBool());
