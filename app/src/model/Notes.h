@@ -3,6 +3,8 @@
 
 #include "model/Clip.h"
 
+#include "music/Groove.h"
+
 #include <QString>
 
 #include <array>
@@ -98,6 +100,12 @@ std::vector<Note> quantized(const std::vector<Note>& notes, double step, double 
 // to kHumanizeBeats either way, more often a little than a lot. Lengths and
 // velocities stay (velocities are the velocity model's: app::Humanizer).
 std::vector<Note> humanizedTiming(const std::vector<Note>& notes, QRandomGenerator& rng, double amount);
+// Apply Groove: each note placed by the groove (groove::place(): starts in timeline beats, where
+// `tempo` puts them), its velocity and length as the groove has them at `amounts`, untangled. A
+// MIDI clip's groove plays notes as this writes them; the Groove device too, but for moving none
+// earlier than half a step (none earlier at all with Allow Early off).
+std::vector<Note> grooved(const std::vector<Note>& notes, const groove::Groove& groove, const groove::Amounts& amounts,
+                          const Tempo& tempo);
 
 // --- Bends (MIDI 2.0's per-note pitch bend) ------------------------------------------------
 

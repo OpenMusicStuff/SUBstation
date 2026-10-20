@@ -30,6 +30,7 @@
 #include "session/CpuUsage.h"
 #include "devices/DisplayClock.h"
 #include "session/DeviceSelection.h"
+#include "session/GrooveLibrary.h"
 #include "session/DisplayPreferences.h"
 #include "session/ModulationLearn.h"
 #include "session/MidiPreferences.h"
@@ -77,6 +78,7 @@ void registerSession(sub::app::Session* session) {
     registerUncreatable<PluginFolderModel>("PluginFolderModel");
     registerUncreatable<ArrangementActions>("ArrangementActions");
     registerUncreatable<DeviceSelection>("DeviceSelection");
+    registerUncreatable<GrooveLibrary>("GrooveLibrary");
     registerUncreatable<RenderProgress>("RenderProgress");
     registerUncreatable<CpuUsage>("CpuUsage");
     registerUncreatable<ComputerKeyboard>("ComputerKeyboard");

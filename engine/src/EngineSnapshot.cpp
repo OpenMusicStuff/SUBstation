@@ -441,6 +441,7 @@ void Engine::buildSnapshotLocked() {
     snap->meter = meter_;
     snap->keyTonic = keyTonic_;
     snap->keyMinor = keyMinor_;
+    snap->groove = groove_;
     snap->loopStart = snap->sampleAt(loopStartBeat_);
     snap->loopEnd = snap->sampleAt(loopEndBeat_);
     snap->loopEnabled = loopEnabled_ && snap->loopEnd - snap->loopStart >= 256;

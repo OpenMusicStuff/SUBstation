@@ -1,7 +1,7 @@
 # MIDI
 
 MIDI tracks, MIDI clips and the piano roll that edits them, notes' pitch bends and
-vibrato (MIDI 2.0's per-note pitch bend), MIDI input from controllers and keyboards
+vibrato (MIDI 2.0's per-note pitch bend), clips' grooves, MIDI input from controllers and keyboards
 (MIDI 2.0 too), and the computer MIDI keyboard. Recording MIDI is in
 [recording.md](recording.md). A device on any track can play a MIDI track's notes
 (*MIDI From*, see [devices.md](devices.md#midi-from-another-track)).
@@ -68,6 +68,7 @@ double-clicked, if it plays there). Generate writes into the clip you double-cli
 | Ctrl+D | Duplicate the selected notes: by the stretch you dragged over to select them (from where the drag started), else right after the last of them |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut the selected notes; paste them at the paste marker (click the grid to place it), selected; pasting again goes on after them |
 | Ctrl+U | Quantize (every note, with nothing selected) |
+| Ctrl+Shift+U | Apply the groove last applied with *Groove ▾* (Swing at first; every note, with nothing selected) |
 | 0 | Deactivate the selected notes: they show grey and aren't heard (if they all are deactivated: activate them) |
 | Up / Down | Move a semitone (Shift: an octave) |
 | Left / Right | Move a grid step (Shift: a bar) |
@@ -95,6 +96,14 @@ on the selected notes and hides while you drag them. Each tool is one undo step.
 - **Quantize** (Ctrl+U) moves note starts onto a grid (1/4 to 1/32, or triplets; 1/16
   by default), by an amount from 0 to 100 %. Lengths stay. With nothing selected,
   Ctrl+U quantizes every note.
+- **Groove ▾** moves the notes into a groove ([grooves.md](grooves.md)) as Quantize moves
+  them onto the grid: their starts, and their velocities and lengths as the groove has them.
+  Click **Swing** (on 16ths; its percent in the box at its right, 58 % at first), **Project**
+  (the project's default groove; greyed out without one) or one of the project's grooves.
+  Under them are the amounts it is applied at: **Timing**, **Velocity**, **Random** and
+  **Quantize** ([what they do](grooves.md#how-a-groove-moves-notes)). **Ctrl+Shift+U**
+  applies the last groove again (Swing at first), with nothing selected to every note. The
+  groove counts its bars from the song's start, so notes in different clips take it alike.
 - **Humanize ▾** opens a menu of two, each with its own amount at its right (drag it, or
   double-click to type one); click a name to apply it:
   - **Velocity** gives the notes the velocities a model trained on pianists'
@@ -244,6 +253,26 @@ one on the same key is shortened or left out. The written notes are selected; ea
 Generate is one undo step. Write the chords into one clip and the bass into another, on tracks
 of their own, to hear them on different instruments.
 
+### A clip's groove
+
+*Groove ▾* in the clip view's header gives a MIDI clip a groove of its own
+([grooves.md](grooves.md)), as Ableton's groove pool does: its notes play grooved, while in the
+piano roll they stay where you put them. The button then says which ("Groove: Swing 58.0 %
+(1/16) ▾").
+
+- **Groove**: *None*, *Swing*, *Project* (the project's default groove), or one of the
+  project's grooves. With Swing, **Swing** (58 % to start with) and **Step**.
+- **Timing**, **Velocity**, **Random** and **Quantize**: how much of it plays
+  ([grooves.md](grooves.md#how-a-groove-moves-notes)).
+- **Apply** writes the groove into the notes (where you hear them) and clears it. **Extract**
+  makes a groove of the clip's own feel (its notes against the 16th grid, over a bar) in the
+  project's grooves.
+
+With several clips open, every one of them takes it. Pieces split or copied from a clip keep
+its groove. *Apply Groove* and *Extract Groove* are in a clip's right-click menu in the
+arrangement too. A [Groove device](devices.md#groove) does the same live, with knobs to
+automate, and can groove one Drum Rack pad alone.
+
 ## MIDI input
 
 MIDI input comes from controllers and keyboards (WinMM on Windows, ALSA's sequencer on
@@ -292,5 +321,5 @@ hear it too; it plays and records like any input).
 ---
 
 For developers: [../ui/piano-roll.md](../ui/piano-roll.md),
-[../engine/midi.md](../engine/midi.md), [../app/model.md](../app/model.md),
+[../engine/midi.md](../engine/midi.md), [../app/model.md](../app/model.md), [../groove.md](../groove.md) (grooves),
 [../ui/README.md](../ui/README.md#the-computer-midi-keyboard) (the computer MIDI keyboard).

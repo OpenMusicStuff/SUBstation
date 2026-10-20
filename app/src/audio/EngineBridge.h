@@ -176,6 +176,7 @@ struct ProcessorEventRecord;
 namespace sub::app {
 
 class Project;
+struct GrooveContext;  // audio/EngineDescs.h
 struct PluginInfo;
 
 // The MIDI input the computer keyboard plays into.
@@ -366,6 +367,9 @@ public:
     Q_INVOKABLE void requestSource(const QString& path) { requestSource(path, std::function<void()>()); }
     // The decoded file (null: not decoded, or not yet).
     std::shared_ptr<const sub::AudioSource> source(const QString& path) const;
+    // A decoded file's transients (seconds from its start, strength 0..1; at least
+    // sampleSlices::kMarkStrength: those Mark Transients marks), found once; none while it isn't decoded.
+    std::vector<std::pair<double, float>> transients(const QString& path) const;
     Q_INVOKABLE sub::app::Waveform waveform(const QString& path) const;
     Q_INVOKABLE bool isLoading(const QString& path) const;
     // Why a file couldn't be decoded ("": it could, or hasn't been tried).
@@ -698,6 +702,10 @@ private:
     void pushAllSends();
     void pushClips(const QString& trackId);
     void pushSettings();
+    // The project's default groove to the engine; with `clips`, the tracks whose clips have grooves
+    // again (the library, the default groove or the tempo changed what they play).
+    void pushGrooves(bool clips);
+    GrooveContext grooveContext() const;
     // Inputs (BridgeInputs.cpp).
     std::optional<quint32> inputSource(const Track& track) const;
     void pushInput(const QString& trackId);

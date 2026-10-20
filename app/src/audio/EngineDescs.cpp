@@ -1,5 +1,6 @@
 #include "audio/EngineDescs.h"
 
+#include "model/Grooves.h"
 #include "model/Timebase.h"
 
 namespace sub::app {
@@ -27,15 +28,32 @@ sub::ClipDesc clipDesc(const Clip& clip) {
     return desc;
 }
 
-std::vector<sub::ClipDesc> clipDescs(const std::vector<Clip>& clips) {
+Clip groovedClip(const Clip& clip, const GrooveContext& grooves) {
+    if (!clip.groove || !clip.isWarped() || !grooves.library) return clip;
+    const std::optional<groove::Groove> plays = grooves::resolve(clip.groove->source, *grooves.library, grooves.defaultGroove);
+    if (!plays) return clip;
+    const std::vector<double> transients = grooves.transients ? grooves.transients(clip.path) : std::vector<double>{};
+    if (transients.empty()) return clip;
+    const std::vector<WarpMarker> markers =
+        grooves::groovedMarkers(clip, transients, *plays, clip.groove->amounts, grooves.tempo);
+    if (markers.size() < 2) return clip;
+    Clip grooved = clip;
+    grooved.setWarpMarkers(markers);
+    return grooved;
+}
+
+std::vector<sub::ClipDesc> clipDescs(const std::vector<Clip>& clips, const GrooveContext* grooves) {
     std::vector<sub::ClipDesc> descs;
     for (const Clip& clip : clips) {
-        if (clip.plays()) descs.push_back(clipDesc(clip));
+        if (!clip.plays()) continue;
+        descs.push_back(clipDesc(grooves && clip.groove ? groovedClip(clip, *grooves) : clip));
     }
     return descs;
 }
 
-std::vector<sub::NoteDesc> noteDescs(const Track& track) { return clipNoteDescs(track.clips); }
+std::vector<sub::NoteDesc> noteDescs(const Track& track, const GrooveContext* grooves) {
+    return clipNoteDescs(track.clips, grooves);
+}
 
 sub::NoteDesc noteDesc(const PlayedNote& played) {
     sub::NoteDesc desc{played.start, played.end - played.start, played.note.pitch, played.note.velocity, {}, {}};
@@ -44,9 +62,19 @@ sub::NoteDesc noteDesc(const PlayedNote& played) {
     return desc;
 }
 
-std::vector<sub::NoteDesc> clipNoteDescs(const std::vector<Clip>& clips) {
+std::vector<sub::NoteDesc> clipNoteDescs(const std::vector<Clip>& clips, const GrooveContext* grooves) {
     std::vector<sub::NoteDesc> notes;
     for (const Clip& clip : clips) {
+        std::optional<groove::Groove> plays;
+        if (grooves && grooves->library && clip.groove && clip.plays()) {
+            plays = grooves::resolve(clip.groove->source, *grooves->library, grooves->defaultGroove);
+        }
+        if (plays) {
+            for (const PlayedNote& played : grooves::groovedNotes(clip, *plays, clip.groove->amounts, grooves->tempo)) {
+                notes.push_back(noteDesc(played));
+            }
+            continue;
+        }
         for (const PlayedNote& played : clip.heardNotes()) notes.push_back(noteDesc(played));
     }
     return notes;

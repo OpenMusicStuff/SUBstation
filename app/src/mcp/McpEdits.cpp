@@ -15,6 +15,7 @@
 #include "model/Automation.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
+#include "model/Grooves.h"
 #include "model/Notes.h"
 #include "model/Project.h"
 #include "plugins/PluginIndex.h"
@@ -219,6 +220,58 @@ public:
                                            : QRandomGenerator(QRandomGenerator::global()->generate());
                 onTimeline([&rng, amount](const std::vector<Note>& notes) { return notes::humanizedTiming(notes, rng, amount); });
                 done << QStringLiteral("humanize timing");
+            } else if (type == u"groove") {
+                // A groove of the project's library (by id or name), the project's default, or MPC swing.
+                const QString which = op.value(QStringLiteral("groove")).toString(QStringLiteral("swing"));
+                std::optional<groove::Groove> plays;
+                QString name;
+                if (which == u"swing") {
+                    const double percent = op.value(QStringLiteral("swing")).toDouble(groove::kTripletSwing);
+                    const double step = op.value(QStringLiteral("step")).toDouble(0.25);
+                    if (!(percent >= groove::kMinSwing && percent <= groove::kMaxSwing) || !(step > 0.0)) {
+                        return ToolResult::failure(QStringLiteral("groove's swing is 50 to 75 (percent; 66.7 a triplet feel), "
+                                                                  "its step in beats (0.25: 16ths)."));
+                    }
+                    plays = groove::swing(percent, step);
+                    name = QStringLiteral("swing %1 %").arg(number(percent, 1));
+                } else if (which == u"project") {
+                    if (project().defaultGroove()) {
+                        plays = grooves::resolve(*project().defaultGroove(), project().grooves(), std::nullopt);
+                    }
+                    if (!plays) return ToolResult::failure(QStringLiteral("The project has no default groove."));
+                    name = QStringLiteral("the project's groove");
+                } else {
+                    for (const LibraryGroove& g : project().grooves()) {
+                        if (g.id == which || g.name.compare(which, Qt::CaseInsensitive) == 0) {
+                            plays = groove::normalized(g.groove);
+                            name = g.name;
+                        }
+                    }
+                    if (!plays) {
+                        QStringList names;
+                        for (const LibraryGroove& g : project().grooves()) names << g.name;
+                        return ToolResult::failure(QStringLiteral("No groove \"%1\" in the project's library%2.")
+                                                       .arg(which, names.isEmpty() ? QStringLiteral(" (it has none: "
+                                                                                                    "use \"swing\")")
+                                                                                   : QStringLiteral(": ") + names.join(QStringLiteral(", "))));
+                    }
+                }
+                groove::Amounts amounts;
+                amounts.timing = op.value(QStringLiteral("timing")).toDouble(1.0);
+                amounts.velocity = op.value(QStringLiteral("velocity")).toDouble(1.0);
+                amounts.random = op.value(QStringLiteral("random")).toDouble(0.0);
+                amounts.quantize = op.value(QStringLiteral("quantize")).toDouble(0.0);
+                // (Any unsigned 32-bit seed: a JSON number, read whole; others 0.)
+                const double seed = op.value(QStringLiteral("seed")).toDouble(0.0);
+                amounts.seed = seed >= 0.0 && seed < 4294967296.0 ? static_cast<uint32_t>(seed) : 0u;
+                if (!(amounts.timing >= 0.0 && amounts.timing <= groove::kMaxTimingAmount) ||
+                    !(amounts.velocity >= -1.0 && amounts.velocity <= 1.0) || !(amounts.random >= 0.0 && amounts.random <= 1.0) ||
+                    !(amounts.quantize >= 0.0 && amounts.quantize <= 1.0)) {
+                    return ToolResult::failure(QStringLiteral("groove's timing is 0 to 2, velocity -1 to 1, random and quantize 0 to 1."));
+                }
+                const Tempo& tempo = project().tempoMap();
+                onTimeline([&](const std::vector<Note>& notes) { return notes::grooved(notes, *plays, amounts, tempo); });
+                done << QStringLiteral("groove (%1)").arg(name);
             } else if (type == u"scale_time") {
                 const double factor = op.value(QStringLiteral("factor")).toDouble(0.0);
                 if (!(factor > 0.0 && factor <= 16.0)) {
@@ -289,7 +342,8 @@ public:
                 done << QStringLiteral("delete");
             } else {
                 return ToolResult::failure(QStringLiteral("\"%1\" isn't an operation: transpose, shift, quantize, humanize_timing, "
-                                                          "scale_time, legato, length, velocity, humanize_velocity, mute, unmute or delete.")
+                                                          "groove, scale_time, legato, length, velocity, humanize_velocity, mute, "
+                                                          "unmute or delete.")
                                                .arg(type));
             }
         }
@@ -1125,7 +1179,11 @@ void addEditTools(Protocol& protocol, Session& session, const QString& edits) {
                        "those starting in a stretch (start_bar/end_bar or beats; default all), of some pitches or "
                        "clips if given. operations apply in order, e.g. [{\"type\": \"transpose\", \"semitones\": -12}, "
                        "{\"type\": \"quantize\", \"grid\": 0.25}]: transpose {semitones}; shift {beats} (in time); "
-                       "quantize {grid in beats, amount 0..1}; humanize_timing {amount 0..1, seed}; scale_time {factor: "
+                       "quantize {grid in beats, amount 0..1}; humanize_timing {amount 0..1, seed}; groove {groove: "
+                       "\"swing\" (with swing 50..75 percent, step in beats), \"project\" (its default groove) or a "
+                       "groove of the project's library by id or name; timing 0..2, velocity -1..1, random 0..1, "
+                       "quantize 0..1, seed} (the swing and feel Apply Groove writes, as the Groove device plays it); "
+                       "scale_time {factor: "
                        "2 twice as spread out}; legato (each note up to the next); length {beats, or factor}; velocity "
                        "{set, change or factor}; humanize_velocity {amount 0..1: a model's velocities, as a player's}; "
                        "mute; unmute; delete. Bends, vibrato and the notes it doesn't select stay as they are. Use it "

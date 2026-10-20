@@ -76,6 +76,7 @@ const std::vector<KeyMap::Command>& KeyMap::allCommands() {
         {"flatten", "Edit", "Flatten Track"},
         {"delete", "Edit", "Delete"},
         {"selectAll", "Edit", "Select All"},
+        {"grooves", "Edit", "Grooves…"},
         {"reEnableAutomation", "Edit", "Re-Enable Automation"},
         {"soloSelectedTracks", "Edit", "Solo Selected Tracks"},
         {"armSelectedTracks", "Edit", "Arm Selected Tracks"},

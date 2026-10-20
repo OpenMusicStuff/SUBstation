@@ -6,7 +6,7 @@
 #include "audio/AudioSettings.h"
 #include "audio/BridgePrivate.h"
 #include "audio/EngineDescs.h"
-
+#include "model/Grooves.h"
 #include "model/Paths.h"
 #include "model/Project.h"
 #include "model/Timebase.h"
@@ -18,6 +18,7 @@ namespace sub::app {
 void EngineBridge::onReset() {
     removeEngineTracks();
     Private& d = *d_;
+    d.transients.clear();
     d.devices.clear();
     d.pids.clear();
     d.where.clear();
@@ -75,6 +76,7 @@ void EngineBridge::onReset() {
     pushSidechains();
     pushMidiInputs();
     pushSettings();
+    pushGrooves(false);  // (the tracks' clips were pushed grooved, with the library already there)
     // Forget decoded audio the new project doesn't use.
     QSet<QString> used;
     for (const Track& track : project_->tracks()) {
@@ -379,13 +381,42 @@ void EngineBridge::pushClips(const QString& trackId) {
         engine_.setTrackClips(*engineId, clipDescs(segments));
         return;
     }
+    const GrooveContext grooves = grooveContext();
     if (track.isMidi()) {
-        engine_.setTrackNotes(*engineId, noteDescs(track));
+        engine_.setTrackNotes(*engineId, noteDescs(track, &grooves));
         return;
     }
-    // (Deactivated clips' files load too: their waveforms show.)
-    for (const Clip& clip : track.clips) requestSource(clip.path);
-    engine_.setTrackClips(*engineId, clipDescs(track.clips));
+    // (Deactivated clips' files load too: their waveforms show.) A clip with a groove plays as it
+    // is until its file is decoded (its transients found), then grooved.
+    for (const Clip& clip : track.clips) {
+        const bool waits = clip.groove && clip.isWarped() && clip.plays() && !source(clip.path);
+        requestSource(clip.path, waits ? std::function<void()>([this, trackId] {
+            if (project_->hasTrack(trackId)) pushClips(trackId);
+        })
+                                       : std::function<void()>());
+    }
+    engine_.setTrackClips(*engineId, clipDescs(track.clips, &grooves));
+}
+
+GrooveContext EngineBridge::grooveContext() const {
+    GrooveContext context{&project_->grooves(), project_->defaultGroove(), project_->tempoMap(), {}};
+    context.transients = [this](const QString& path) {
+        std::vector<double> seconds;
+        for (const auto& [sec, strength] : transients(path)) seconds.push_back(sec);
+        return seconds;
+    };
+    return context;
+}
+
+void EngineBridge::pushGrooves(bool clips) {
+    const std::optional<GrooveSource>& chosen = project_->defaultGroove();
+    engine_.setGroove(chosen ? grooves::resolve(*chosen, project_->grooves(), std::nullopt) : std::nullopt);
+    d_->grooveTempo = project_->tempoMap();
+    if (!clips) return;
+    for (const Track& track : project_->tracks()) {
+        const auto grooved = [](const Clip& clip) { return clip.groove.has_value(); };
+        if (std::any_of(track.clips.begin(), track.clips.end(), grooved)) pushClips(track.id);
+    }
 }
 
 void EngineBridge::previewClips(const QMap<QString, std::vector<Clip>>& clipsByTrack,
@@ -396,10 +427,11 @@ void EngineBridge::previewClips(const QMap<QString, std::vector<Clip>>& clipsByT
         const auto engineId = engineTrackId(trackId);
         if (!engineId || !project_->hasTrack(trackId) || project_->isFrozen(trackId)) continue;
         d_->previewing.insert(trackId);
+        const GrooveContext grooves = grooveContext();
         if (project_->track(trackId).isMidi()) {
-            engine_.setTrackNotes(*engineId, clipNoteDescs(it.value()));
+            engine_.setTrackNotes(*engineId, clipNoteDescs(it.value(), &grooves));
         } else {
-            engine_.setTrackClips(*engineId, clipDescs(it.value()));
+            engine_.setTrackClips(*engineId, clipDescs(it.value(), &grooves));
         }
     }
     // Frozen tracks play these segments of their frozen audio.
@@ -433,6 +465,8 @@ void EngineBridge::pushSettings() {
     engine_.setMeter(project_->meter());
     engine_.setLoop(project_->loopEnabled(), project_->loopStart(), project_->loopEnd());
     engine_.setPunch(project_->punchIn(), project_->punchOut());
+    // Grooves' milliseconds are where the tempo puts them: the grooved clips again, at a new tempo.
+    if (d_->grooveTempo && !(*d_->grooveTempo == project_->tempoMap())) pushGrooves(true);
 }
 
 void EngineBridge::applyAudioThreads() {

@@ -19,6 +19,7 @@
 #include "Processor.h"
 #include "Scheduler.h"
 #include "Warp.h"
+#include "music/Groove.h"
 #include "music/TempoMap.h"
 #include "rt/RtUtils.h"
 
@@ -447,6 +448,7 @@ struct MidiInputRoute {
 // DelayLine. A bus reads the signals of the tracks that go into it from theirs.
 struct TrackBuffers {
     static constexpr int kMaxEvents = 1024;     // note events per chunk
+    static constexpr int kMaxEarly = 256;       // its clips' notes handed early per chunk (Processor::earlyBeats())
     static constexpr int kMaxClipVoices = 32;   // stretched clips playing per chunk
     struct ClipVoice {                           // the stretcher a clip plays through in this chunk
         const ClipRender* clip = nullptr;
@@ -458,6 +460,10 @@ struct TrackBuffers {
     std::vector<float> left, right;  // its inputs summed, its clips (or live input), then its strip
     std::vector<ProcessEvent> events;  // its note events, in the order its devices get them
     int numEvents = 0;
+    // Its clips' notes due after the chunk, within its MIDI effects' earlyBeats(), handed to
+    // them early (ProcessContext::earlyEvents): offsets from the chunk's start, in time order.
+    std::vector<EarlyEvent> early;
+    int numEarly = 0;
     std::array<ClipVoice, kMaxClipVoices> voices{};  // in the order its clips play
     int numVoices = 0;
     bool monitored = false;  // plays its live input instead of its clips
@@ -477,7 +483,8 @@ struct TrackBuffers {
     std::atomic<float> cost{0.f};
 
     explicit TrackBuffers(int frames)
-        : left(static_cast<size_t>(frames), 0.f), right(static_cast<size_t>(frames), 0.f), events(kMaxEvents) {}
+        : left(static_cast<size_t>(frames), 0.f), right(static_cast<size_t>(frames), 0.f), events(kMaxEvents),
+          early(kMaxEarly) {}
     bool pushEvent(const ProcessEvent& event) noexcept {
         if (numEvents >= static_cast<int>(events.size())) return false;
         events[static_cast<size_t>(numEvents++)] = event;
@@ -546,6 +553,7 @@ struct RenderSnapshot {
     uint64_t tempoVersion = 0;
     int keyTonic = -1;  // the song's key (Engine::setSongKey): -1 none
     bool keyMinor = false;
+    std::shared_ptr<const groove::Groove> groove;  // the project's default groove (Engine::setGroove): null none
     bool loopEnabled = false;
     int64_t loopStart = 0;
     int64_t loopEnd = 0;

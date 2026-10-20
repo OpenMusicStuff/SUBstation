@@ -31,7 +31,7 @@ For what the user sees and does, read the [user guide](../guide/README.md); this
 | [ui/qml/files/](../../ui/qml/files) | The File Manager panel (`FileManagerPanel.qml`): [app/session.md](../app/session.md#the-file-manager-and-hot-swaps-filemanager-hotswap). |
 | [ui/qml/Main.qml](../../ui/qml/Main.qml), [ui/qml/TitleBar.qml](../../ui/qml/TitleBar.qml), [ui/qml/InfoView.qml](../../ui/qml/InfoView.qml), [ui/qml/Hints.qml](../../ui/qml/Hints.qml) | The main window, its title bar and its info view, which says the tooltips ([below](#the-main-window)). |
 | [ui/qml/transport/](../../ui/qml/transport) | `TransportBar.qml`. |
-| [ui/qml/dialogs/](../../ui/qml/dialogs) | Preferences (`PreferencesDialog`, `AudioPage`, `MidiPage`, `PluginsPage`, `LookAndFeelPage`, `KeyboardPage`, `AgentsPage`, `UpdatesPage`), `ExportDialog`, `RenderDialog`, `AboutDialog`, `UnsavedChangesDialog`, and what they share: `MessageBox`, `ChoiceBox`. |
+| [ui/qml/dialogs/](../../ui/qml/dialogs) | Preferences (`PreferencesDialog`, `AudioPage`, `MidiPage`, `PluginsPage`, `LookAndFeelPage`, `KeyboardPage`, `AgentsPage`, `UpdatesPage`), `ExportDialog`, `RenderDialog`, `AboutDialog`, `UnsavedChangesDialog`, the project's grooves (`GrooveDialog`, `GrooveLaneEditor`), and what they share: `MessageBox`, `ChoiceBox`. |
 | [ui/qml/](../../ui/qml) (top level) | The shared controls: `Knob`, `ValueBox`, `Oscilloscope`, `RoleButton`, `ToggleButton`, `IconButton`, `Icon`, `ButtonBackground`, `ButtonContent`; `Placeholder`. |
 | [ui/style/](../../ui/style) | The style: `ApplicationWindow`, `Button`, `CheckBox`, `ComboBox`, `Dialog`, `DialogButtonBox`, `Frame`, `GroupBox`, `ItemDelegate`, `Label`, `Menu`, `MenuBar`, `MenuBarItem`, `MenuItem`, `MenuSeparator`, `Pane`, `Popup`, `ProgressBar`, `ScrollBar`, `ScrollIndicator`, `SplitView`, `RadioButton`, `TabBar`, `TabButton`, `TextField`, `ToolButton`, `ToolTip`; the Basic style for the rest. |
 
@@ -63,7 +63,7 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
 
 - **QML reaches the application through the `Session` singleton** (`import SUBstation`): `Session.project`,
   `Session.undoStack`, `Session.editor`, `Session.selection`, `Session.bridge`, `Session.browser`,
-  `Session.plugins`, and the session's parts (`arrangement`, `deviceSelection`, `render`, `computerKeyboard`,
+  `Session.plugins`, and the session's parts (`arrangement`, `deviceSelection`, `grooves`, `render`, `computerKeyboard`,
   `audioPreferences`, `midiPreferences`). It reads their properties and calls their `Q_INVOKABLE`s: what the
   session is and does is in [app/session.md](../app/session.md). `registerSession()` in
   [AppTypes.cpp](../../ui/src/app/AppTypes.cpp) registers each of their types as uncreatable ("made by the
@@ -104,9 +104,9 @@ globbed ([ui/CMakeLists.txt](../../ui/CMakeLists.txt)): a new one is picked up b
   the time since its last tick (`DisplayClock::elapsed`), never by a share a tick, so it looks the same at any rate. See
   [app/engine-bridge.md](../app/engine-bridge.md).
 - **Status text.** The session forwards what the bridge, the browser, the plug-in index, the arrangement's and the
-  device view's actions, the computer keyboard and the editor's refusals (`refused`) say, as
+  device view's actions, the grooves, the computer keyboard and the editor's refusals (`refused`) say, as
   `Session.statusMessage`; the views' own `statusMessage` signals (the arrangement view, the device panel, the clip
-  view) reach the main window directly. `Main.qml`'s `showMessage()` shows a message for `Session.statusTimeout`
+  view, which passes on its piano roll's) reach the main window directly. `Main.qml`'s `showMessage()` shows a message for `Session.statusTimeout`
   (8000 ms). What were message boxes come as `Session.warning` and `Session.information`.
 
 ## The main window
@@ -176,7 +176,7 @@ id in [KeyMap](#keys-and-profiles-keymap)), and calls the session. The keys belo
 | Menu | Entries (shortcut → what it calls) |
 |---|---|
 | File | New Project (Ctrl+N), Open… (Ctrl+O), Open Recent, Backups, Save (Ctrl+S), Save As… (Ctrl+Shift+S), Export Audio… (Ctrl+Shift+R), Quit (Ctrl+Q) |
-| Edit | Undo (Ctrl+Z) and Redo (Ctrl+Y, Ctrl+Shift+Z) on `Session.undoStack`, their text following `undoText`/`redoText`; Cut, Copy, Paste, Duplicate (Ctrl+D), Rename (Ctrl+R), Split (Ctrl+E), Consolidate (Ctrl+J), Reverse Clips (R), Deactivate / Activate Clips (0); Freeze / Unfreeze Track (Ctrl+Shift+F), Flatten Track, Delete (Del, Backspace), Select All (Ctrl+A); Re-Enable Automation (enabled while `Session.automationOverridden`), Solo Selected Tracks (S), Arm Selected Tracks (Ctrl+Shift+A); Play / Stop (Space), Record (F9), Record Quantization (a checkable entry per `Session.recordQuantizeChoices`, then Quantize Note Ends: `Session.recordQuantizeEnds`), Go to Start (Home), Loop (Ctrl+L), Find in Browser (Ctrl+F) |
+| Edit | Undo (Ctrl+Z) and Redo (Ctrl+Y, Ctrl+Shift+Z) on `Session.undoStack`, their text following `undoText`/`redoText`; Cut, Copy, Paste, Duplicate (Ctrl+D), Rename (Ctrl+R), Split (Ctrl+E), Consolidate (Ctrl+J), Reverse Clips (R), Deactivate / Activate Clips (0); Freeze / Unfreeze Track (Ctrl+Shift+F), Flatten Track, Delete (Del, Backspace), Select All (Ctrl+A); Default Groove (a submenu of checkable entries: None, Swing 54, 58, 62, 66.7 and 71 %, then the project's grooves, from `Session.grooves`: `clearDefault()`, `setDefaultSwing(percent)`, `setDefaultGroove(id)`), Grooves… (no key: the [groove dialog](#dialogs)); Re-Enable Automation (enabled while `Session.automationOverridden`), Solo Selected Tracks (S), Arm Selected Tracks (Ctrl+Shift+A); Play / Stop (Space), Record (F9), Record Quantization (a checkable entry per `Session.recordQuantizeChoices`, then Quantize Note Ends: `Session.recordQuantizeEnds`), Go to Start (Home), Loop (Ctrl+L), Find in Browser (Ctrl+F) |
 | Create | Insert Audio Track (Ctrl+T), Insert MIDI Track (Ctrl+Shift+T), Insert Return Track (Ctrl+Alt+T), Insert MIDI Clip (Ctrl+Shift+D, Ctrl+Shift+M: on the arrangement's grid when snapping), Group Tracks (Ctrl+G), Ungroup Tracks (Ctrl+Shift+G), Delete Selected Tracks |
 | View | Browser, Device View, Info View, Clip View (Shift+Tab), Find Track (Q: the find bar, over the arrangement or the clip view: [arrangement.md](arrangement.md#finding-tracks)), Automation (A: `editor.toggleAllAutomation()`), Chords and Key (C: `harmony.shown`, checkable), Close Plug-in Editor (Ctrl+W, where editors are windows of their own: Windows, Linux's X11), Zoom In (+, =), Zoom Out (-), Zoom to Arrangement (Z), Narrow Grid (Ctrl+1), Widen Grid (Ctrl+2), Snap to Grid (Ctrl+4) |
 | Options | Preferences… (Ctrl+,), Rescan Plug-ins, Computer MIDI Keyboard (M), MCP Server (`Session.mcp.enabled`, checkable: [app/mcp.md](../app/mcp.md)), Lock Envelopes |
@@ -239,8 +239,8 @@ decides (`Session.cut()`, `copy()`, `paste()`, `duplicate()`, `deleteSelection()
 
 Ctrl+R asks `Session.renameTarget(browser.listFocused)` what to rename (the preset current in the browser's list
 while it has the focus, the rack chain last clicked in the device view, or the track last clicked) and starts the
-rename where it shows. The piano roll's note grid takes Delete, Backspace, Ctrl+A, Ctrl+D, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+U, the
-arrows and 0 (its notes deactivated) before these actions fire while it has the focus (see [piano-roll.md](piano-roll.md#keys)), and the computer MIDI
+rename where it shows. The piano roll's note grid takes Delete, Backspace, Ctrl+A, Ctrl+D, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+U,
+Ctrl+Shift+U (the last groove applied), the arrows and 0 (its notes deactivated) before these actions fire while it has the focus (see [piano-roll.md](piano-roll.md#keys)), and the computer MIDI
 keyboard takes its letters while it is on ([below](#the-computer-midi-keyboard)).
 
 ### Transport
@@ -476,6 +476,10 @@ it.
 - **Tempo** (`ValueBox`, 20 to 999 BPM, 0.25 a step) → `editor.setTempo(value, gestureKey)`. **Time signature**: two
   value boxes, the numerator 1 to 32, the denominator from `TransportState.denominators` →
   `editor.setTimeSignature(n, d)`.
+- **Swing** (`ValueBox`, 50 to 75 %, 0.5 a step): the project's default groove as a swing, `Session.grooves.defaultSwing`
+  → `grooves.setDefaultSwing(value, gestureKey)` (one undo step a drag). It reads "Off" without a default groove (50 %),
+  the percent for a swing, and the groove's name (`defaultName`) while the default is another groove; dragging it
+  makes the default a swing again (*Edit › Default Groove* chooses the rest).
 - **Metronome** → `bridge.metronome`. **Project key** (a `ChoiceBox` of "No Key" and every key,
   `TransportState.keys`) → `editor.setKeyByName(name)`: audio added with a key in its name is transposed to it (see
   [guide/audio-clips.md](../guide/audio-clips.md)).
@@ -546,6 +550,23 @@ application-layer object that holds the logic. What the preferences mean to the 
   while the loop is on and has a length) and the bit depth (`exportBitDepthChoices`: 16-bit, 24-bit, 32-bit float;
   24 at first); OK emits `exportChosen(range, bitDepth)` and the window goes on ([above](#files-and-unsaved-changes)).
 - **Render progress** (`RenderDialog`): [above](#renders-in-the-background).
+- **Grooves** ([GrooveDialog.qml](../../ui/qml/dialogs/GrooveDialog.qml): *Edit › Grooves…*, on `Session.grooves`,
+  [app/session.md](../app/session.md#the-projects-grooves-groovelibrary)): not modal, so the song plays on while a
+  groove is edited and what plays it follows each change; Esc or Close close it (the window takes the keys again). On
+  the left the project's grooves (`grooves`; the default marked), Add ▾ (a menu: *Built-in* from `builtins`, *From
+  Groove Files* from `files` (listed again as it opens: `refreshFiles()`), *Swing* at 54, 58, 62, 66.7 or 71 % on
+  16ths: `addBuiltin`, `addFile`, `addSwing`, the new groove shown), Duplicate, Remove (the first left shown), Save
+  File (`saveFile`) and Make the Project's Default (`setDefaultGroove`). On the right the groove shown
+  (`groove(id)`, read again on `revision`): its name (a text field: `rename` when it is done), Bars (1, 2, 4:
+  `setBars`), Base (1/4 to 1/32: `setBase`), its steps' size; then a
+  [GrooveLaneEditor](../../ui/qml/dialogs/GrooveLaneEditor.qml) per lane, by count so a drag's edits redraw the lanes
+  rather than make them again: the default lane ("Every key", but the other lanes' keys), another's keys as MIDI note
+  numbers (`setLaneKeys`), Straight (`resetLane`), × (`removeLane`); the timing row (a handle a step, at its grid point
+  moved by its timing, the line from the grid to it, the beats and bars, faintly the notes it was made from that the
+  lane plays: a press takes the nearest handle, a drag sets its timing to half a step either way, a double-click puts
+  it back) and the velocity row (a bar a step up or down from the middle: a press sets the step under it, a drag goes
+  on, a double-click puts it back), each drag `setStep` with a merge key of its own (one undo step); + Lane
+  (`addLane`, for the first of 42, 38, 36, 46, 44, 39, 37, 40, 35 no lane has: hats, snare, kick...).
 - **About** (`AboutDialog`): a `MessageBox` with the application's icon, `Session.aboutTitle` and
   `Session.aboutText`.
 - **Unsaved changes** (`UnsavedChangesDialog`): Save, Discard, Cancel ([above](#files-and-unsaved-changes)).
@@ -667,6 +688,7 @@ offscreen platform renders Qt Quick in software, without the items' geometry); w
 | [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | The layout and its look, every menu action calling the session, the shortcuts (every Action a KeyMap command, its keys followed at once), checkable actions kept in step with the model, Open Recent, files with the unsaved-changes question, closing (a render running, unsaved changes), the title, the status line, warnings, Export Audio, the clip view covering the arrangement, Rename, `PluginEditorKeys`, the window state kept |
 | [test_ui_transport.cpp](../../tests/app/test_ui_transport.cpp) | Each control of the transport bar and what it shows, whoever changed it; Play and Record following the bridge; nothing taking the keyboard |
 | [test_ui_dialogs.cpp](../../tests/app/test_ui_dialogs.cpp) | Preferences' pages on their controllers (Look and Feel's themes applied and kept, Keyboard's keys recorded, removed and reset, Agents' MCP server on and off and its port), Export Audio's choices, the render progress (modal, label, bar, Cancel) while exporting and freezing, the message boxes |
+| [test_ui_grooves.cpp](../../tests/app/test_ui_grooves.cpp) | Edit › Grooves… driven as a user would: the project's grooves listed and chosen, a built-in one added from Add, a step dragged late and its velocity up (one undo step each, the groove changing as the mouse moves), a double-click putting it back, lanes added for keys and removed, the cycle's bars, renaming, the default, removing (the groove shown going) |
 | [test_ui_controls.cpp](../../tests/app/test_ui_controls.cpp) | Knobs and value boxes dragged (one gesture key per drag), wheeled, double-clicked and typed into; the meter's fall and clip light; the oscilloscope's trigger and fade from a fake feed; buttons that never take the focus |
 | [test_ui_sg.cpp](../../tests/app/test_ui_sg.cpp) | `SgCanvas` and `SgPainter` rendered for real and checked pixel by pixel; the big-recording split; a benchmark of an arrangement's worth of rects |
 | [test_ui_theme.cpp](../../tests/app/test_ui_theme.cpp) | Every colour with its value, the themes (each complete, applied and kept), the button roles' looks, every icon (its colour, states, the disabled variant) and the image provider |

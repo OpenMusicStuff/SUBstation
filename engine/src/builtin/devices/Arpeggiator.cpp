@@ -19,6 +19,12 @@
 // Hold keeps the notes after they are let go, until a note comes with none
 // held: then those notes replace them.
 //
+// Follow Groove: synced while the song plays, its steps where the project's
+// groove puts them (ProcessContext::groove, groove::place(): step k at the beat
+// it moves k note values to), each step's notes as loud as the groove makes
+// them, in place of Swing. Without a project groove (or stopped, or free) it
+// plays as it would.
+//
 // Its editor lights the step playing: the display "step", one value per 64
 // samples: the pattern's step (from the chord's start, 0..15 round and round)
 // whose notes sound, or -1 while none does.
@@ -32,13 +38,17 @@
 #include "builtin/BuiltinProcessor.h"
 #include "builtin/BuiltinRegistry.h"
 #include "builtin/DspBlocks.h"
+#include "music/Groove.h"
+#include "music/TempoMap.h"
 
 namespace sub {
 namespace {
 
 class ArpeggiatorProcessor final : public BuiltinProcessor {
 public:
-    enum Param { Style = 0, Sync, Rate, Synced, Gate, Octaves, Swing, VelocityMode, FixedVelocity, Hold, NumParams };
+    enum Param {
+        Style = 0, Sync, Rate, Synced, Gate, Octaves, Swing, VelocityMode, FixedVelocity, Hold, FollowGroove, NumParams
+    };
     enum StyleKind { Up = 0, Down, UpDown, DownUp, Converge, Diverge, Played, Random, Chord };
     enum Velocity { AsPlayed = 0, Fixed };
 
@@ -96,6 +106,21 @@ protected:
             sync ? std::max(1.0, stepBeats * beatSamples) : sampleRate_ / std::max(0.01f, param(Rate));
         const bool grid = sync && ctx.playing && samplesPerBeat > 0.0;
         const double swing = kMaxSwing * param(Swing) / 100.0;
+        // Following the project's groove: its steps where the groove puts them (on the song's grid only).
+        const groove::Groove* follows = grid && isOn(FollowGroove) && ctx.tempoMap ? ctx.groove : nullptr;
+        if (follows != followed_) {
+            followed_ = follows;
+            dueStep_ = -1;
+        }
+        const auto due = [&](int64_t k) {
+            if (!follows) return stepTime(k, swing);
+            if (k != dueStep_) {  // (once a step: where the groove puts its beat, in steps)
+                dueStep_ = k;
+                dueAt_ = groove::place(*follows, static_cast<double>(k) * stepBeats, 60, 100.0, 0.0, *ctx.tempoMap, {})
+                             .beat / stepBeats;
+            }
+            return dueAt_;
+        };
         if (!isOn(Hold)) dropLetGo();
 
         size_t event = 0;
@@ -117,12 +142,13 @@ protected:
             if (running_ && numHeld_ > 0) {
                 // A step whose time has come (each odd one late by the swing).
                 const double now = grid ? steps : freeSteps_;
-                for (int played = 0; now >= stepTime(nextStep_, swing) - 1e-9; ++played) {
+                for (int played = 0; now >= due(nextStep_) - 1e-9; ++played) {
                     if (played == kMaxStepsAtOnce) {  // far behind (can't be, but): on from here
                         align(now);
                         break;
                     }
-                    playStep(ctx, i, stepSamples);
+                    // (Following the groove, its velocity at the step's beat.)
+                    playStep(ctx, i, stepSamples, follows, static_cast<double>(nextStep_) * stepBeats);
                     ++nextStep_;
                 }
             } else if (numHeld_ == 0) {
@@ -297,7 +323,8 @@ private:
         }
     }
 
-    void playStep(const ProcessContext& ctx, int offset, double stepSamples) noexcept {
+    void playStep(const ProcessContext& ctx, int offset, double stepSamples, const groove::Groove* follows,
+                  double stepBeat) noexcept {
         const auto style = choice<StyleKind>(Style);
         std::array<Held, kMaxHeld * kMaxOctaves> notes{};
         const int count = pattern(notes, style == Played);
@@ -316,9 +343,13 @@ private:
             }
             numSounding_ = kept;
             if (numSounding_ >= kMaxSounding) return;
-            const uint8_t velocity = choice<Velocity>(VelocityMode) == Fixed
-                                         ? static_cast<uint8_t>(std::clamp(choiceIndex(FixedVelocity), 1, 127))
-                                         : note.velocity;
+            uint8_t velocity = choice<Velocity>(VelocityMode) == Fixed
+                                   ? static_cast<uint8_t>(std::clamp(choiceIndex(FixedVelocity), 1, 127))
+                                   : note.velocity;
+            if (follows) {
+                const groove::Placed placed = groove::place(*follows, stepBeat, note.key, velocity, 0.0, *ctx.tempoMap, {});
+                velocity = static_cast<uint8_t>(std::clamp(std::lround(placed.velocity), 1L, 127L));
+            }
             ProcessEvent on = ProcessEvent::noteOn(offset, note.key, velocity);
             on.data[2] = note.channel;
             on.noteId = nextId_;
@@ -353,6 +384,7 @@ private:
             {"velocity", "Velocity", "", 0.f, 1.f, 0.f, false, {"Played", "Fixed"}},
             {"fixed_velocity", "Fixed Velocity", "", 1.f, 127.f, 100.f, false, {}, 126},
             {"hold", "Hold", "", 0.f, 1.f, 0.f, false, kOnOff},
+            {"follow_groove", "Follow Groove", "", 0.f, 1.f, 0.f, false, kOnOff},
         };
         return kInfos;
     }
@@ -373,6 +405,9 @@ private:
     int64_t patternStep_ = 0; // steps played since the pattern started
     int64_t lastStep_ = 0;    // the one played last (for the display)
     int displayCount_ = 0;    // samples since the display's last value
+    const groove::Groove* followed_ = nullptr;  // the groove its steps follow (Follow Groove), as last seen
+    int64_t dueStep_ = -1;    // the step whose grooved time dueAt_ is (-1: none)
+    double dueAt_ = 0.0;
 };
 
 }  // namespace

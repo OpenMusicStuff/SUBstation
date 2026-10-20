@@ -68,6 +68,7 @@ void Renderer::setScheduler(Scheduler* scheduler) {
             for (auto& buffer : depth) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         }
         for (auto& buffer : scratch.padNotes) buffer.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
+        for (auto& buffer : scratch.padEarly) buffer.assign(TrackBuffers::kMaxEarly, EarlyEvent{});
         scratch.modulatorNotes.assign(TrackBuffers::kMaxEvents, ProcessEvent{});
         for (std::vector<float>& values : scratch.modulation) values.assign(kMaxBlock, 0.f);
         scratch.modulationSpare.assign(kMaxBlock, 0.f);
@@ -360,6 +361,8 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
     placeContext(snap, context, chunkStart);
     context.keyTonic = snap.keyTonic;
     context.keyMinor = snap.keyMinor;
+    context.tempoMap = snap.tempoMap.get();
+    context.groove = snap.groove.get();
     context.playing = playing_;
     context.looping = flags.loop;
     context.loopStartBeat = snap.beatAt(static_cast<double>(snap.loopStart));
@@ -388,11 +391,13 @@ void Renderer::renderChunk(const RenderSnapshot& snap, int frames, ChunkFlags fl
         buffers.uncompensated = buffers.monitored || track.live;
         MidiRecordingTake* take = recording_ ? midiTake(track.id) : nullptr;
         buffers.numEvents = 0;
+        buffers.numEarly = 0;
+        const bool clipNotes = !buffers.recorded && !(hearsMidi && track.monitor == MonitorMode::In);
         if (!track.notes.empty() || numActiveNotes_ > 0 || numPreviewNotes_ > 0 || numInputEvents_ > 0 ||
             numLiveNotes_ > 0) {
-            const bool clipNotes = !buffers.recorded && !(hearsMidi && track.monitor == MonitorMode::In);
             buildNoteEvents(track, buffers, hearsMidi, clipNotes, take, rejoins);
         }
+        if (clipNotes && !track.notes.empty()) buildEarlyEvents(snap, track, buffers, frames);
         assignVoices(track, voices, flags.live, buffers);
     }
     // Devices taking another track's notes get a copy of them, before the graph
@@ -540,8 +545,12 @@ void Renderer::renderTrack(const RenderSnapshot& snap, int t, WorkerScratch& scr
         }
     }
     ProcessContext context = chunkContext_;  // its own: the inserts move it along the chunk's stretches
+    scratch.early = buffers.early.data();
+    scratch.numEarly = buffers.numEarly;
     processInserts(snap, track, context, buffers.events.data(), buffers.numEvents, left, right, frames,
                    buffers.uncompensated, scratch);
+    scratch.early = nullptr;
+    scratch.numEarly = 0;
     if (capturing_ && captureOf_[static_cast<size_t>(t)] >= 0) {  // what freezing it keeps
         float* captured = captured_.data() + static_cast<size_t>(captureOf_[static_cast<size_t>(t)]) * 2 * kMaxBlock;
         std::copy_n(left, frames, captured);
@@ -1240,6 +1249,11 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
     Slices slices = chunkSlices;
     ProcessEvent* events = chunkEvents;
     processMidiEffects(snap, chain, context, slices, events, left, right, frames, depth, scratch);
+    // Notes handed early go to the first MIDI effect on their way: past one (its racks), they come as it plays
+    // them. (Kept for the chains beside this one.)
+    const int numEarly = scratch.numEarly;
+    if (std::any_of(chain.inserts.begin(), chain.inserts.end(), [](const auto& p) { return p->isMidiEffect(); }))
+        scratch.numEarly = 0;
     // Each device over the whole chunk, then the next: a device sees the same
     // calls as if they went stretch by stretch through the chain, and a rack can
     // run its chains over the chunk.
@@ -1326,6 +1340,7 @@ void Renderer::processChain(const RenderSnapshot& snap, const StripRender& chain
             tapInto(snap, e, left, right, frames);
         }
     }
+    scratch.numEarly = numEarly;
 }
 
 namespace {
@@ -1419,9 +1434,16 @@ void Renderer::processMidiEffects(const RenderSnapshot& snap, const StripRender&
                                   int depth, WorkerScratch& scratch) noexcept {
     auto& buffers = scratch.midiNotes[static_cast<size_t>(std::clamp(depth, 0, kMaxRackDepth))];
     size_t next = 0;  // the buffer the next one writes (the other may hold its input)
+    bool first = true;
     for (size_t i = 0; i < chain.inserts.size(); ++i) {
         Processor& insert = *chain.inserts[i];
         if (!insert.isMidiEffect()) continue;
+        // The first, if it plays notes early, takes those handed early (the others' notes aren't known ahead).
+        EarlyList early;
+        if (first && scratch.numEarly > 0 && insert.earlyBeats() > 0.0) {
+            early = {scratch.early, static_cast<size_t>(scratch.numEarly)};
+        }
+        first = false;
         std::vector<ProcessEvent>& buffer = buffers[next];
         EventOutput out{buffer.data(), buffer.size(), 0};
         Slices played = slices;
@@ -1436,7 +1458,7 @@ void Renderer::processMidiEffects(const RenderSnapshot& snap, const StripRender&
             }
         }
         if (on) {
-            processDevice(snap, chain, i, context, slices, events, left, right, frames, scratch, &out, &played);
+            processDevice(snap, chain, i, context, slices, events, left, right, frames, scratch, &out, &played, early);
         } else {
             insert.endMidiNotes(out);
             if (out.count == 0) continue;  // the notes go on as they are
@@ -1457,7 +1479,7 @@ void Renderer::processMidiEffects(const RenderSnapshot& snap, const StripRender&
 
 void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chain, size_t i, ProcessContext& context,
                              const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
-                             WorkerScratch& scratch, EventOutput* out, Slices* outSlices) noexcept {
+                             WorkerScratch& scratch, EventOutput* out, Slices* outSlices, EarlyList early) noexcept {
     Processor& insert = *chain.inserts[i];
     const auto measuredFrom = measureChunk_ ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     static const std::vector<int> kNone;
@@ -1524,8 +1546,11 @@ void Renderer::processDevice(const RenderSnapshot& snap, const StripRender& chai
         }
         const size_t written = out ? out->count : 0;
         context.outEvents = out;
+        // (Slices start from the chunk's start: the first's offsets are the chunk's.)
+        context.earlyEvents = s == 0 ? early : EarlyList{};
         insert.process(context, channels, 2, slice.length);
         context.outEvents = nullptr;
+        context.earlyEvents = {};
         if (out) {
             outSlices->slice[static_cast<size_t>(s)].firstEvent = static_cast<int>(written);
             outSlices->slice[static_cast<size_t>(s)].endEvent = static_cast<int>(out->count);
@@ -1612,6 +1637,16 @@ void Renderer::padNotes(int key, const Slices& slices, const ProcessEvent* event
     }
 }
 
+int Renderer::padEarly(int key, const EarlyEvent* events, int count, EarlyEvent* out) noexcept {
+    int n = 0;
+    for (int e = 0; e < count && n < TrackBuffers::kMaxEarly; ++e) {
+        if (events[e].event.data[0] != key) continue;
+        out[n] = events[e];
+        out[n++].event.data[0] = 60;  // (as padNotes() hands its notes on: C3)
+    }
+    return n;
+}
+
 void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, ProcessContext& context,
                            const Slices& slices, ProcessEvent* events, float* left, float* right, int frames,
                            [[maybe_unused]] bool monitored, WorkerScratch& scratch) noexcept {
@@ -1634,11 +1669,20 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
         if (takeResets(chain)) {
             if (chain.receiveNote >= 0) {  // a Drum Rack's pad: its own key's notes
                 Slices padSlices;
-                ProcessEvent* padEvents =
-                    scratch.padNotes[static_cast<size_t>(std::clamp(rack.depth, 0, kMaxRackDepth - 1))].data();
+                const auto depth = static_cast<size_t>(std::clamp(rack.depth, 0, kMaxRackDepth - 1));
+                ProcessEvent* padEvents = scratch.padNotes[depth].data();
                 padNotes(chain.receiveNote, slices, events, padEvents, padSlices);
+                // And of those handed early.
+                const EarlyEvent* early = scratch.early;
+                const int numEarly = scratch.numEarly;
+                if (numEarly > 0) {
+                    scratch.numEarly = padEarly(chain.receiveNote, early, numEarly, scratch.padEarly[depth].data());
+                    scratch.early = scratch.padEarly[depth].data();
+                }
                 processChain(snap, chain, context, padSlices, padEvents, chainL, chainR, frames, false, rack.depth + 1,
                              scratch);
+                scratch.early = early;
+                scratch.numEarly = numEarly;
             } else {
                 processChain(snap, chain, context, slices, events, chainL, chainR, frames, false, rack.depth + 1,
                              scratch);
@@ -1973,9 +2017,9 @@ void Renderer::renderClips(const TrackRender& track, const Segment& segment, con
     });
 }
 
-void Renderer::releaseNotes(uint32_t trackId, int offset, TrackBuffers& out) noexcept {
+void Renderer::releaseNotes(uint32_t trackId, int offset, TrackBuffers& out, bool keepHanded) noexcept {
     for (int a = 0; a < numActiveNotes_;) {
-        if (activeNotes_[a].trackId != trackId) {
+        if (activeNotes_[a].trackId != trackId || (keepHanded && activeNotes_[a].pending)) {
             ++a;
             continue;
         }
@@ -2005,6 +2049,116 @@ bool Renderer::startNote(const TrackRender& track, size_t index, int32_t offset,
     return true;
 }
 
+bool Renderer::startHanded(const TrackRender& track, size_t index, int32_t offset, TrackBuffers& out) noexcept {
+    const NoteRender& note = track.notes[index];
+    constexpr int64_t kSlack = 2;  // (a tempo change may round its start a sample either way)
+    for (int a = 0; a < numActiveNotes_; ++a) {
+        ActiveNote& handed = activeNotes_[a];
+        if (handed.trackId != track.id || !handed.pending || handed.key != note.key ||
+            std::abs(handed.start - note.start) > kSlack) {
+            continue;
+        }
+        ProcessEvent on = ProcessEvent::noteOn(offset, note.key, note.velocity);
+        on.noteId = handed.noteId;
+        if (out.pushEvent(on) && note.bend) {
+            const auto bend = static_cast<float>(note.bend->at(0.0));
+            if (std::abs(bend) >= kBendEpsilon && out.pushEvent(ProcessEvent::noteBend(offset, note.key, on.noteId, bend))) {
+                handed.bend = bend;
+            }
+        }
+        handed.pending = false;
+        handed.index = static_cast<int>(index);
+        return true;
+    }
+    return false;
+}
+
+double Renderer::earlyBeatsOf(const StripRender& chain) noexcept {
+    // The first MIDI effect on the notes' way: the others' notes aren't known ahead (nor its racks').
+    for (size_t i = 0; i < chain.inserts.size(); ++i) {
+        const Processor& insert = *chain.inserts[i];
+        if (insert.isMidiEffect()) return insert.isActive() ? insert.earlyBeats() : 0.0;
+    }
+    double beats = 0.0;
+    for (const auto& rack : chain.racks) {
+        if (!rack) continue;
+        for (const ChainRender& inner : rack->chains) beats = std::max(beats, earlyBeatsOf(inner));
+    }
+    return beats;
+}
+
+void Renderer::buildEarlyEvents(const RenderSnapshot& snap, const TrackRender& track, TrackBuffers& out,
+                                int frames) noexcept {
+    // Only while the playhead goes on from here: playing, past any count-in, its notes on time.
+    if (!playing_ || countIn_ > 0 || numSegments_ == 0 || track.clipDelay > 0 || out.clipDelay > 0) return;
+    const double beats = earlyBeatsOf(track);
+    if (!(beats > 0.0)) return;
+    // From where the next chunk starts, round the loop once at most.
+    int64_t at = position_;
+    int64_t remaining = static_cast<int64_t>(std::llround(snap.samplesBetween(snap.beatAt(static_cast<double>(at)), beats)));
+    int64_t offset = frames;
+    bool wrapped = false;
+    while (remaining > 0) {
+        int64_t to = at + remaining;
+        const bool loop = chunkLoop_ && chunkLoopEnd_ > chunkLoopStart_ && at < chunkLoopEnd_;
+        if (loop && to > chunkLoopEnd_) to = chunkLoopEnd_;
+        handEarly(track, out, at, to, offset);
+        remaining -= to - at;
+        offset += to - at;
+        if (!(loop && to == chunkLoopEnd_) || wrapped) break;
+        at = chunkLoopStart_;
+        wrapped = true;
+    }
+    // In time order, note-offs first at one time.
+    std::sort(out.early.begin(), out.early.begin() + out.numEarly, [](const EarlyEvent& a, const EarlyEvent& b) {
+        if (a.event.sampleOffset != b.event.sampleOffset) return a.event.sampleOffset < b.event.sampleOffset;
+        return a.event.endsNote() && !b.event.endsNote();
+    });
+}
+
+void Renderer::handEarly(const TrackRender& track, TrackBuffers& out, int64_t from, int64_t to, int64_t offset) noexcept {
+    const auto push = [&out](const ProcessEvent& event, double beat) {
+        if (out.numEarly >= TrackBuffers::kMaxEarly) return false;
+        out.early[static_cast<size_t>(out.numEarly++)] = {event, beat};
+        return true;
+    };
+    const auto offsetOf = [&](int64_t t) {
+        return static_cast<int32_t>(std::min<int64_t>(offset + (t - from), std::numeric_limits<int32_t>::max()));
+    };
+    // The notes starting here, not handed yet (nor started: a note sounding from an earlier pass round the loop
+    // with the same start and key keeps this one to its time).
+    auto it = std::lower_bound(track.notes.begin(), track.notes.end(), from,
+                               [](const NoteRender& note, int64_t value) { return note.start < value; });
+    for (; it != track.notes.end() && it->start < to; ++it) {
+        const NoteRender& note = *it;
+        const bool known = std::any_of(activeNotes_.begin(), activeNotes_.begin() + numActiveNotes_,
+                                       [&](const ActiveNote& a) {
+                                           return a.trackId == track.id && a.key == note.key && a.start == note.start;
+                                       });
+        if (known) continue;
+        if (numActiveNotes_ == static_cast<int>(activeNotes_.size()) || out.numEarly >= TrackBuffers::kMaxEarly) break;
+        ProcessEvent on = ProcessEvent::noteOn(offsetOf(note.start), note.key, note.velocity);
+        on.noteId = newNoteId();
+        push(on, note.startBeat);
+        ActiveNote handed{track.id, note.key, note.end, on.noteId, note.start,
+                          static_cast<int>(it - track.notes.begin()), 0.f, note.startBeat, note.endBeat};
+        handed.early = true;
+        handed.pending = true;
+        activeNotes_[numActiveNotes_++] = handed;
+    }
+    // The note-offs of the notes handed early ending here.
+    for (int a = 0; a < numActiveNotes_; ++a) {
+        ActiveNote& note = activeNotes_[a];
+        if (note.trackId != track.id || !note.early || note.earlyOff || note.end < from || note.end >= to) continue;
+        // (One handed for after a wrap ends after its own start, in its own pass.)
+        if (note.pending && note.start < from) continue;
+        ProcessEvent off = ProcessEvent::noteOff(offsetOf(note.end), note.key);
+        off.noteId = note.noteId;
+        if (!push(off, note.endBeat)) break;
+        note.earlyOff = true;
+    }
+}
+
 const NoteRender* Renderer::findNote(const TrackRender& track, ActiveNote& note) const noexcept {
     const auto& notes = track.notes;
     const auto at = static_cast<size_t>(note.index);
@@ -2025,7 +2179,7 @@ void Renderer::bendNotes(const TrackRender& track, const Segment& segment, Track
     const int64_t segEnd = segment.position + segment.length;
     for (int a = 0; a < numActiveNotes_; ++a) {
         ActiveNote& note = activeNotes_[a];
-        if (note.trackId != track.id) continue;
+        if (note.trackId != track.id || note.pending) continue;
         // (Found again where it was, unless the notes changed: a bend drawn while
         // it sounds is heard at once; one taken away, or the note, leaves it as it was.)
         const NoteRender* render = findNote(track, note);
@@ -2159,7 +2313,7 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
 
     for (int s = 0; s < numSegments && clipNotes; ++s) {
         const Segment& segment = segments[s];
-        if (segment.jump) releaseNotes(track.id, segment.offset, out);
+        if (segment.jump) releaseNotes(track.id, segment.offset, out, segment.wrap);
         const int64_t segEnd = segment.position + segment.length;
 
         // Notes already underway where playback starts (or its clips play again) sound from there.
@@ -2177,7 +2331,16 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
                                    [](const NoteRender& note, int64_t value) { return note.start < value; });
         for (; it != track.notes.end() && it->start < segEnd; ++it) {
             const auto offset = static_cast<int32_t>(segment.offset + (it->start - segment.position));
-            if (!startNote(track, static_cast<size_t>(it - track.notes.begin()), offset, 0, out)) break;
+            const auto index = static_cast<size_t>(it - track.notes.begin());
+            if (startHanded(track, index, offset, out)) continue;  // (handed early: again, with its id)
+            if (!startNote(track, index, offset, 0, out)) break;
+        }
+        // Notes handed early whose start this is, but gone from the clips since: they started all the same.
+        for (int a = 0; a < numActiveNotes_; ++a) {
+            ActiveNote& note = activeNotes_[a];
+            if (note.trackId == track.id && note.pending && note.start >= segment.position && note.start < segEnd) {
+                note.pending = false;
+            }
         }
 
         // The sounding notes' bends, those ending here too (before their note-offs go).
@@ -2186,7 +2349,7 @@ void Renderer::buildNoteEvents(const TrackRender& track, TrackBuffers& out, bool
         // Note-offs due in this segment, including for notes that just started.
         for (int a = 0; a < numActiveNotes_;) {
             const ActiveNote& note = activeNotes_[a];
-            if (note.trackId != track.id || note.end >= segEnd) {
+            if (note.trackId != track.id || note.end >= segEnd || note.pending) {
                 ++a;
                 continue;
             }

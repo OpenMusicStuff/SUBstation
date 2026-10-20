@@ -131,9 +131,12 @@ TEST_CASE("the LFO and the Envelope are listed as modulators") {
         CHECK(device->isModulator());
         CHECK(device->acceptsMidi());
         const std::vector<std::string> ids = paramIds(info.params);
-        REQUIRE(ids.size() == (std::string(kind) == "lfo" ? 8u : 7u) + 32 * 4 + 1);
-        CHECK_EQ(ids[ids.size() - 2], std::string("p32_curve"));
-        CHECK_EQ(ids.back(), std::string("random"));
+        // (The LFO's Follow Groove came after Random.)
+        const bool lfo = std::string(kind) == "lfo";
+        REQUIRE(ids.size() == (lfo ? 8u : 7u) + 32 * 4 + 1 + (lfo ? 1u : 0u));
+        CHECK_EQ(ids[ids.size() - (lfo ? 3 : 2)], std::string("p32_curve"));
+        CHECK_EQ(ids[ids.size() - (lfo ? 2 : 1)], std::string("random"));
+        if (lfo) CHECK_EQ(ids.back(), std::string("follow_groove"));
         for (const sub::ParamInfo& p : info.params) {
             if (p.id[0] != 'p' || p.id == "phase") continue;
             INFO(p.id);

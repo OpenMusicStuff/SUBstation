@@ -45,6 +45,7 @@ QtObject {
         "gate": "GateEditor.qml",
         "gigatune": "GigaTuneEditor.qml",
         "glitch": "GlitchEditor.qml",
+        "groove": "GrooveEditor.qml",
         "hue": "HueEditor.qml",
         "lfo": "LfoEditor.qml",
         "limiter": "LimiterEditor.qml",

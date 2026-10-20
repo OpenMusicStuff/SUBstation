@@ -469,7 +469,9 @@ selected range), Paste (copied automation) and the lane's own entries ([below](#
 (it is selected first unless it already was), or anywhere in the selected time range: Cut, Copy, Paste, Split Here
 (on a clip: at the snapped beat under the mouse), Duplicate, Consolidate (`canConsolidate()`), Reverse
 (`canReverse()`: an audio clip in it), Deactivate (Activate when every clip in it is deactivated; enabled with a
-clip in it not frozen: `activates()`), Delete. Elsewhere: Paste at the snapped beat on that track, Insert MIDI Clip
+clip in it not frozen: `activates()`), on a clip Apply Groove (the selected clips' grooves written into them and
+cleared: `ProjectEditor::applyClipGrooves`; enabled while one of them has a groove) and Extract Groove (the clip's
+feel, on 16ths over a bar, into the project's grooves: `Session.grooves.extract`), Delete. Elsewhere: Paste at the snapped beat on that track, Insert MIDI Clip
 (MIDI tracks), Insert Audio/MIDI Track (after it, in its group: `insertTrackAfter()`), Delete Track.
 
 ### Drag and drop
@@ -551,7 +553,7 @@ runs), volume and pan, the meter and the choosers.
 | Bottom 4 px of the own lane (`kResizeGrab`) | resize (`editor.setTrackHeight`); not while folded |
 | Fold button (each click of a double-click counts) | `toggleFold()`: every one of `draggedTracks()` takes the clicked one's new state |
 | Ctrl+R, the menu's Rename | rename in place: `startRename()` shows a `TextField` with the name template (`nameTemplate`: `"# Kick"`, all selected); `finishRename(text)` → `editor.renameTrack` (blank: no change) |
-| Hover over the name (a track's, a group's, a return's, the master's) | its tooltip: `nameToolTip`, what the track is in words (`Session.trackLabels.toolTip()`: its label, then what that was made from, a line each; [intelligence.md](../intelligence.md#track-labels)). In the main window it shows in the info view (the label its title); else it pops up. A `HoverHandler` on an item over the name rect (`nameHover`), hidden while renaming: presses go through to the header. `nameToolTipChanged` follows `TrackLabels::changed` (once edits settle). |
+| Hover over the name (a track's, a group's, a return's, the master's) | its tooltip: `nameToolTip`, what the track is in words (`Session.trackLabels.toolTip()`: its label, then what that was made from, a line each; [intelligence.md](../intelligence.md#track-labels-what-each-track-is-in-words)). In the main window it shows in the info view (the label its title); else it pops up. A `HoverHandler` on an item over the name rect (`nameHover`), hidden while renaming: presses go through to the header. `nameToolTipChanged` follows `TrackLabels::changed` (once edits settle). |
 | Alt+wheel (over the header or any control in it) | `Arrangement::wheelResize()`; the wheel alone scrolls the headers |
 | Solo | `soloClicked()`: exclusive unless Ctrl is held; unsoloing exclusively unsoloes every track (`Project::senders()`); a selected track's button acts on all selected → `editor.soloTracks(tracks, on, exclusive)` |
 | Arm | `armClicked()`: exclusive unless Ctrl is held, a selected track's acting on all selected → `editor.armTracks`; says so if the track has no input |

@@ -25,6 +25,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/VitalEngine.h](../../engine/src/builtin/VitalEngine.h) | `vitalpatch::Engine`: Vital's `SoundEngine` with its wavetable creators and tuning, built whole from a patch (`buildEngine()`) |
 | [third_party/vital](../../engine/third_party/vital) | Vital's synthesis source, vendored (GPLv3; [VERSION.txt](../../engine/third_party/vital/VERSION.txt) says what and how), built without JUCE |
 | [builtin/devices/Sampler.cpp](../../engine/src/builtin/devices/Sampler.cpp) | the Sampler instrument |
+| [builtin/devices/Groove.cpp](../../engine/src/builtin/devices/Groove.cpp) | the Groove device, a MIDI effect: the notes reaching it moved in time with a groove (`groove::place()`, [music/Groove.h](../../music/src/music/Groove.h); [groove.md](../groove.md)), held and played later, or placed both ways when the renderer hands them over early |
 | [builtin/SampleSlicing.h](../../engine/src/builtin/SampleSlicing.h) / [.cpp](../../engine/src/builtin/SampleSlicing.cpp) | The Sampler's slicing (`detectOnsets`, `sliceStarts`) and Snap (`nearestZeroCrossing`), shared with the application layer's `sampleSlices` ([app/src/audio/SampleSlices.h](../../app/src/audio/SampleSlices.h)) for the editor |
 | [builtin/devices/Utility.cpp](../../engine/src/builtin/devices/Utility.cpp) | Utility: gain, pan, width |
 | [builtin/devices/Ott.cpp](../../engine/src/builtin/devices/Ott.cpp) | Over The Top: multiband upward/downward compression |
@@ -55,7 +56,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/OverdriveDesign.h](../../engine/src/builtin/OverdriveDesign.h) | The Overdrive's maths (`overdrive::bandEdges`, `driveGain`, `toneHz`, `shape` and its `Adaa`, `bandResponseDb`, `toneResponseDb`, `dynamicsGain`), shared with the application layer's `OverdriveResponse.h` for the editor |
 | [builtin/devices/AutoFilter.cpp](../../engine/src/builtin/devices/AutoFilter.cpp) | Auto Filter: a TPT state-variable filter (12 or 24 dB, five types by output weights, five circuits), its cutoff swept by an envelope follower (or the sidechain) and an LFO in chunks, glides, displays |
 | [builtin/AutoFilterDesign.h](../../engine/src/builtin/AutoFilterDesign.h) | The Auto Filter's maths (`autofilter::resonanceQ`, `cutoffHz`, `envelopeValue`, `sweepOctaves`, `weights` and `morphWeights`, the circuits' `saturate` and `stateLimit`, `responseDb`), shared with the application layer's `AutoFilterResponse.h` for the editor |
-| [builtin/devices/Delay.cpp](../../engine/src/builtin/devices/Delay.cpp) | Delay: synced or free times per side, filter, modes, ping pong, freeze |
+| [builtin/devices/Delay.cpp](../../engine/src/builtin/devices/Delay.cpp) | Delay: synced or free times per side, filter, modes, ping pong, freeze; swing, or the project's groove's (Follow Groove) |
 | [builtin/devices/Chorus.cpp](../../engine/src/builtin/devices/Chorus.cpp) | Chorus-Ensemble: modulated delays in three modes (Chorus with Taps and Time, Ensemble, Vibrato), feedback with Invert, Warmth, the high-pass split, Width |
 | [builtin/ChorusDesign.h](../../engine/src/builtin/ChorusDesign.h) | The Chorus-Ensemble's voices (`chorus::layout`, `centreMs`, `swingMs`, `voicePhase`, `lfoValue`, `delayMs`, the detune), its warmth's curve and filter and its feedback's limiter, shared with the application layer's `chorusDelayMs()` and neighbours for the editor's graph |
 | [builtin/devices/Phaser.cpp](../../engine/src/builtin/devices/Phaser.cpp) | Phaser-Flanger: a phaser, flanger and doubler, two LFOs and an envelope follower, feedback, Warmth, Safe Bass, displays |
@@ -67,7 +68,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/devices/Eq.cpp](../../engine/src/builtin/devices/Eq.cpp) | EQ: 24 bands, placement, output gain, gain scale |
 | [builtin/EqDesign.h](../../engine/src/builtin/EqDesign.h) | The EQ's filter design (`eq::design`, `eq::responseDb`), shared with the application layer's `eqResponseDb()` for the editor's curves; `eq::Biquad::tick` (a sample through a section, transposed direct form II: the EQ's and the Sidechain's crossover) |
 | [builtin/devices/Sidechain.cpp](../../engine/src/builtin/devices/Sidechain.cpp) | Sidechain: a curve from each hit in the key (or on the beat), lookahead, lows only |
-| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth; Random (a new random curve each cycle: `modulator::randomPoints` from a seed it publishes, so the editor draws the one playing) |
+| [builtin/devices/Lfo.cpp](../../engine/src/builtin/devices/Lfo.cpp) | LFO: a modulator; a drawn curve played over and over, in Hz or synced (following the song), Depth, Offset, Phase, Retrigger, Smooth; Random (a new random curve each cycle: `modulator::randomPoints` from a seed it publishes, so the editor draws the one playing); Follow Groove (synced, its time where the project's groove puts it) |
 | [builtin/devices/Envelope.cpp](../../engine/src/builtin/devices/Envelope.cpp) | Envelope: a modulator; a drawn curve played from each note or sidechain hit, in ms or synced, Depth, Velocity, Threshold, Smooth; Random (a new random curve from each trigger) |
 | [builtin/ModulatorDesign.h](../../engine/src/builtin/ModulatorDesign.h) | What the modulators share (`modulator::`): their curve's parameters (`appendPointParams`, `kPoints`), the curve as they play it (`Curve`, automation's shapes worked out once a segment, `fastmath::exp` a sample), the shapes they start with (`sinePoints`, `pluckPoints`), synced lengths, smoothing, `kDisplaySamples` |
 | [Modulation.h](../../engine/src/Modulation.h) | `ModulationDesc` (a modulator moving a parameter of a device on its track: its range and which way up), `modulationTarget`, `kMaxModulators`; see [automation.md](automation.md#modulation) |
@@ -112,6 +113,7 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
 | `automate()`, `clearAutomation()`, `automation()`, `numAutomation()` | automation for one `process()` call; see [automation.md](automation.md) |
 | `hasSidechain()`, `setSidechain()`, `setSidechainConnected()`, `sidechain(c)`, `sidechainConnected()` | the sidechain (aux) input; see below |
 | `isMidiEffect()`, `endMidiNotes(out)` | a MIDI effect: it plays its chain's notes, before the chain's other devices (see [MIDI effects](#midi-effects)); switched off, it ends the notes it was playing |
+| `earlyBeats()` | how far before their time a MIDI effect may play notes (beats; 0, the default: never): the first MIDI effect of a chain gets the clips' notes that much early (`ctx.earlyEvents`; see [MIDI effects](#midi-effects)). Any thread |
 | `acceptsMidi()` | it plays notes (an instrument, or an effect with a MIDI input, as a vocoder or a pitch corrector has): what can take another track's notes ([midi.md](midi.md#a-devices-midi-input-from-another-track)). Main thread; false by default |
 | `displays()`, `readDisplay()` | streams of values for a device's own editor |
 
@@ -126,10 +128,13 @@ Everything else is called from the main (UI) thread, as plug-in formats require,
   bends after its note-on. A note-on with velocity 0 counts as a note-off (`startsNote()`, `endsNote()` say which an
   event is). Plug-in adapters translate them to their format's events. See [midi.md](midi.md) for where they come
   from.
-- `ProcessContext`: sample rate, `samplePos` and `beatPos` of the block's first frame, tempo, time signature,
-  the song's key (`keyTonic`, -1 when none is known, and `keyMinor`: `Engine::setSongKey`, which the application
-  sets from its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, `inEvents`,
-  and `outEvents` (a MIDI effect's notes, an `EventOutput`; null for every other device); `samplesPerBeat()` and
+- `ProcessContext`: sample rate, `samplePos` and `beatPos` of the block's first frame, tempo, time signature, the
+  song's key (`keyTonic`, -1 when none is known, and `keyMinor`: `Engine::setSongKey`, which the application sets from
+  its harmony, for devices that follow it), `playing`, `looping` with loop start and end beats, `offline`, the song's
+  tempo map (`tempoMap`, a `TempoMap` from [music/](../music.md); null when none is known) and the project's default
+  groove (`groove`: `Engine::setGroove`, null for none, for devices that play on the beat and follow it), `inEvents`,
+  `outEvents` (a MIDI effect's notes, an `EventOutput`; null for every other device) and `earlyEvents` (the clips'
+  notes handed early to a chain's first MIDI effect: [MIDI effects](#midi-effects)); `samplesPerBeat()` and
   `beatsPerBar()` from them. The renderer splits blocks where the playhead jumps (a loop wrap), so a block is always
   one continuous stretch.
 
@@ -143,19 +148,30 @@ and alignment of sidechains are in [routing.md](routing.md).
 
 ### MIDI effects
 
-A MIDI effect (`isMidiEffect()`: the Arpeggiator) plays notes instead of audio. The renderer runs a chain's MIDI
-effects before the chain's other devices, in their order, wherever they sit in it (as it runs modulators before
-their strip: `Renderer::processMidiEffects`, from `processChain`, so a rack's chain runs its own): each gets the
-notes the one before it played (the first, the chunk's), slice by slice with its automation and modulation as any
-device's, in `ctx.inEvents`, and appends what it plays to `ctx.outEvents` (an `EventOutput`: offsets relative to
-its call, in time order; full, the rest is dropped). Those are the notes the chain's devices hear, kept in the
-worker's scratch (`midiNotes`, two buffers a depth). Raw MIDI it passes on itself. It never touches the audio, and
-in its place in the chain the audio goes past it.
+A MIDI effect (`isMidiEffect()`: the Arpeggiator, the Groove device) plays notes instead of audio. The renderer runs
+a chain's MIDI effects before the chain's other devices, in their order, wherever they sit in it (as it runs
+modulators before their strip: `Renderer::processMidiEffects`, from `processChain`, so a rack's chain runs its own):
+each gets the notes the one before it played (the first, the chunk's), slice by slice with its automation and
+modulation as any device's, in `ctx.inEvents`, and appends what it plays to `ctx.outEvents` (an `EventOutput`:
+offsets relative to its call, in time order; full, the rest is dropped). Those are the notes the chain's devices
+hear, kept in the worker's scratch (`midiNotes`, two buffers a depth). Raw MIDI it passes on itself. It never
+touches the audio, and in its place in the chain the audio goes past it.
 
 Switched off (or its automation switch off at the chunk's start) it isn't run and the notes go on as they come,
 after the note-offs of the notes it was still playing (`endMidiNotes()`, called each such chunk). One taken out
 of a chain, or moved to another, asks the chain's devices to reset (`Engine::resetChainLocked`), so an
 instrument doesn't hold the notes it was playing for ever.
+
+**Early notes.** A MIDI effect can't play a note before it comes in, but the clips' notes are known ahead. One whose
+`earlyBeats()` is more than 0 (the Groove device, with Allow Early on) is handed, if it is the first MIDI effect of
+its chain (a rack's chain or a pad counts as its own chain), the clips' notes due within that many beats after the
+chunk, and their note-offs: `ctx.earlyEvents`, an `EarlyList` of `EarlyEvent`s (the event, whose `sampleOffset`
+from the start of the call is at or past its end: where it would play; and `beat`, where that is on the timeline), in
+its first stretch of the chunk only. It plays them into `outEvents` as it plays any note, early or not. Each comes again
+in its time with the same note id, for the devices that didn't take it early, and the effect ignores it then. A
+handed note ended before its time (a locate, stopping) never sounded: the Groove device drops it. Notes the effects
+before it play, and live input, aren't known ahead. How the renderer finds and hands them over is in
+[midi.md](midi.md#early-notes).
 
 In the model it is an ordinary device after the instrument (the model keeps an instrument first in its chain);
 `BuiltinCategory::MidiEffect`, listed after the instruments.
@@ -576,6 +592,7 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
 | `velocity` | Velocity | | Played, Fixed | Played |
 | `fixed_velocity` | Fixed Velocity | | 1..127 (whole) | 100 |
 | `hold` | Hold | | Off, On | Off |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **Held notes** (up to 32, by key and channel, with their velocity and the order they
   came): a note-on with none held down starts a new chord (with Hold, in place of the
@@ -587,6 +604,12 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
   own, from 0 at the chord's first note. Step k plays when the clock reaches
   k + (k odd ? 0.5 × Swing / 100 : 0). A chord starting no more than a tenth of a step
   after a step (`kLate`) plays that step at once; otherwise the next.
+- **Follow Groove**: synced while the song plays, with the project's groove (`ctx.groove`)
+  and the tempo map, step k plays where `groove::place()` puts its beat (k note values,
+  as key 60 plays it, at the default `Amounts`: Timing and Velocity 100 %, no Random or
+  Quantize), in place of Swing, and each step's notes are as loud as the groove makes
+  them on their key at that beat. Without a project groove, stopped or free, it plays as
+  it would.
 - **A step**: the pattern is the held notes low to high (Played: in the order they
   came), repeated an octave up for each octave (keys over 127 left out); `indexFor`
   picks one by the style and the steps played since the chord started (Up-Down and
@@ -599,6 +622,57 @@ Plays the notes held one after another (see [MIDI effects](#midi-effects) for ho
   won't hear their note-offs). `reset()` forgets everything.
 - **Display**: `step`, one value per 64 samples: the step (since the chord started, 0..15
   round and round) whose notes sound, or -1 while none does. Its editor lights that step.
+
+### Groove (`builtin:groove`, MidiEffect)
+
+Moves the notes reaching it in time with a groove (`groove::place()`: [music.md](../music.md#groove)), with their
+velocities and lengths as the groove has them; the feature as a whole is in [groove.md](../groove.md). See
+[MIDI effects](#midi-effects) for how its notes reach its chain.
+
+| id | Name | Unit | Range | Default |
+|---|---|---|---|---|
+| `swing` | Swing | % | 50..75 | 50 |
+| `step` | Step | | 1/8, 1/8T, 1/16, 1/16T, 1/32 (`groove::kSteps`) | 1/16 |
+| `timing` | Timing | % | 0..200 | 100 |
+| `velocity` | Velocity | % | -100..100 | 100 |
+| `length` | Length | % | 0..100 | 0 |
+| `random` | Random | % | 0..100 | 0 |
+| `quantize` | Quantize | % | 0..100 | 0 |
+| `early` | Allow Early | | Off, On | On |
+| `latency` | Latency | | Off, On | Off |
+
+- **The groove** it plays is its source, a state value (`stateValues()`): `source` is `swing`
+  (Swing and Step: `groove::swing()`, made in place on the rendering thread, nothing
+  allocated), `project` (the project's default groove, `ctx.groove`; none: the notes as they
+  come) or `groove` (its own: `groove`, a groove's text, `groove::toText()`, read on the main
+  thread and handed to the rendering thread without locks). `seed` is Random's seed. Other
+  values (the application's `groove_id`: the library groove it is a copy of) it keeps and
+  gives back unread. Timing, Velocity, Length, Random and Quantize are the amounts it plays the
+  groove at (`groove::Amounts`); a note takes their values at the moment it comes in.
+- **Later**: a note-on is held (up to 64 notes, `kMaxNotes`; one more passes at once) and
+  played where the groove puts it; its note-off is moved by as much and by Length (the
+  note's length times its step's, as far as Length says), at least a sample after its
+  note-on, and its bends follow it by its note id. Raw MIDI passes at its time (with Latency, that much
+  later, as the notes are). What waits
+  is played in time order (4096 events at most), at one time note-offs first, then note-ons
+  and raw MIDI, then bends. A note on a key and channel one of its notes still sounds on
+  ends that one first. A note without an id finds its note-off by key and channel (the
+  oldest held).
+- **Early**: `earlyBeats()` is half a step (of the groove it plays) while Allow Early is on
+  and Latency off, else 0. The notes handed early (`ctx.earlyEvents`) it places both ways,
+  no earlier than half a step before their time nor before now, and remembers their ids
+  (256 at most), so their note-ons and note-offs coming again in their time are ignored. A
+  note handed early whose note-off comes before it started (a locate, stopping) is dropped:
+  it never sounded. Notes not handed early (live input, the notes of a MIDI effect before
+  it) move later only.
+- **Latency**: on, it reports half a step at the last tempo it played at as its latency
+  (`dsp::LatencyReport`), and plays every note (and raw MIDI) that much later, so delay
+  compensation lets every note, live input too, move both ways.
+- **Stopped** (`ctx.playing` false) notes pass as they come; the notes held that haven't
+  sounded when it stops are dropped. **Switched off**, `endMidiNotes()` plays the sounding
+  notes' note-offs and drops the held ones.
+- **Display**: `step`, one value per 64 samples: the step of the cycle the newest sounding
+  note fell on, or -1 while none sounds. Its editor lights that step.
 
 ### Utility (`builtin:utility`, AudioEffect)
 
@@ -1726,6 +1800,7 @@ A stereo delay after Ableton's.
 | `swing` | Swing | % | 0..100 | 0 |
 | `drive` | Drive | % | 0..100 | 0 |
 | `duck` | Duck | % | 0..100 | 0 |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **Times**: synced, `division × (15 / tempo) × (1 + offset / 100)` seconds; free, the
   time in ms. Linked, the right side uses the left's four parameters. At most 10 s
@@ -1741,6 +1816,10 @@ A stereo delay after Ableton's.
   which feeds the left's A (the left's B and the right's A rest). Frozen, each line is
   written with the other's unfiltered echo (an exact loop) and the input is ignored;
   feedback is 1.
+- **Follow Groove**: with the project's groove (`ctx.groove`), s is the groove's: how late
+  its offbeat steps are on average (its default lane's odd steps, their timing in beats
+  plus their milliseconds at the tempo), as a share of the side's time in beats, held to
+  0..0.5. So a 16th's echoes swing as the groove's 16ths do. Without one, Swing as set.
 - **Drive**: after the filter, in the loop, `tanh(g·y) / g` with g = 1 + 7 × Drive / 100
   (`dsp::fastTanh`): unity for quiet echoes, loud ones rounded off; bypassed at 0.
 - **Duck**: the input's peak (the louder channel; 2 ms attack, 250 ms release:
@@ -2601,6 +2680,8 @@ see [automation.md](automation.md#modulation)). It never touches the audio.
 | `retrigger` | Retrigger | | Off, On | Off |
 | `smooth` | Smooth | ms | 0..250 | 0 |
 | `p1_used` .. `p32_curve` | Point n Used, Time, Level, Curve | | as the Sidechain's (hidden, not automatable) | a triangle (`modulator::trianglePoints`: 0, up to 1 at half the cycle, down to 0) |
+| `random` | Random | | Off, On | Off |
+| `follow_groove` | Follow Groove | | Off, On | Off |
 
 - **The cycle**: 1 / Rate seconds, or the synced note value at the tempo. Synced while the song
   plays (and not retriggered) its position is the song's: frac(beat / cycle beats), exactly, so a
@@ -2608,6 +2689,12 @@ see [automation.md](automation.md#modulation)). It never touches the audio.
   retriggered, it runs on from where it is at the tempo; free in Hz it always runs on (from 0
   after a reset, so offline renders repeat). **Retrigger**: a note-on (`startsNote()`) sets it to
   the cycle's start.
+- **Follow Groove**: synced and following the song, with the project's groove (`ctx.groove`) and
+  the tempo map, its position is that of the straight beat the groove puts where the song is:
+  found back from `groove::place()` (key 60, the default `Amounts`; the warp only rises) by
+  bisection every 32 samples (`kGrooveStep`), straight between. So a cycle point due at a beat
+  comes where the groove moves that beat, and a 1/16 LFO swings with the hats. Without a project
+  groove, as it is.
 - **Its value**: the curve (`modulator::Curve`: automation's shapes, `kPoints` = 32 points) at
   the cycle's position plus Phase / 360 (wrapped), then 0.5 + (y − 0.5) · Depth + Offset / 2, held
   to 0..1, smoothed by a one-pole of Smooth ms (none at 0). Written into every frame of its first
@@ -2671,6 +2758,10 @@ readonly property var editors: ({
     "eq": "EqEditor.qml",
     "erosion": "ErosionEditor.qml",
     "gate": "GateEditor.qml",
+    "gigatune": "GigaTuneEditor.qml",
+    "groove": "GrooveEditor.qml",
+    "glitch": "GlitchEditor.qml",
+    "hue": "HueEditor.qml",
     "lfo": "LfoEditor.qml",
     "limiter": "LimiterEditor.qml",
     "multiband": "MultibandEditor.qml",
@@ -2681,6 +2772,7 @@ readonly property var editors: ({
     "saturator": "SaturatorEditor.qml",
     "sidechain": "SidechainEditor.qml",
     "spectral": "SpectralEditor.qml",
+    "tape_stop": "TapeStopEditor.qml",
     "transient": "TransientEditor.qml",
     "vintage_hall": "VintageHallEditor.qml",
     "vital": "VitalEditor.qml",
@@ -2695,7 +2787,7 @@ readonly property var editors: ({
 - It draws with [DeviceCanvas](../../ui/src/devices/DeviceCanvas.h) items: `refreshDisplays()` is called as the meters
   update (while the item is visible), and `readDisplay(id)` returns the values the device published since the last
   call (through `EngineBridge::readProcessorDisplay()`; the item keeps the position per processor and display).
-- Today there are twenty-nine. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
+- Today there are thirty-two. The LFO and the Envelope draw their curve to edit (`ModulatorGraph`), the
   playhead riding it from `phase`, what they put out (`value`) and, for the Envelope, the key against its
   threshold, and list what they move (`ModulatorTargets`); see [ui/device-view.md](../ui/device-view.md#modulators).
   The Compressor draws its gain reduction over the last 240 display values (about 1.3 s at
@@ -2716,7 +2808,10 @@ readonly property var editors: ({
   over a spectrum of `input`, laid out as Ableton's with its Character (Swing, Drive, Duck) where Ableton's has its
   modulation; the Overdrive its band (from `overdrive::bandResponseDb`) with Tone dashed over it, over a spectrum of `input`, the band glowing with `output` and the Drive knob warming with `drive`; the Auto Filter its response (from `autofilter::responseDb`) at Frequency as it is now moved by the sweep the engine publishes (`sweep_l`, `sweep_r`, played back by a `DisplayPlayback`, so an edit is drawn at once) over a spectrum of `input`, glowing with `env`, the dot's halo breathing with `lfo`, and the modulation's reach along the bottom, laid out as Live 12.2's (the LFO's strip along the display's bottom, the envelope's Attack and Release in the Sidechain fold); the Bitcrusher a cycle of a sine crushed as its parameters say (worked out in the QML), running along while
   `level` comes; the Arpeggiator sixteen steps of its pattern for a three-note chord (the engine's `indexFor`,
-  mirrored in the QML), the step `step` says lit; the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
+  mirrored in the QML), the step `step` says lit; the Groove device the groove it plays (its source chosen above
+  it: Swing, Project, the project's grooves) as its default lane's steps over its cycle, each where it plays and as
+  tall as it is loud (`GrooveSteps`), the step `step` says lit, with Add to Grooves and Apply
+  ([groove.md](../groove.md)); the Chorus-Ensemble each voice's delay as it moves (from `ChorusDesign.h`'s maths at
   the LFO's `phase`, glowing with `level`), dragged for the Rate and the Amount; the Phaser-Flanger its response (from
   `phaser::curve`) at its parameters as they are moved by the modulation the engine publishes (`mod`, `mod_r`), its notches marked, and
   the LFO's shape and phase; the Reverb its input filter's band over a spectrum of `signal`, its early reflections as
@@ -2738,6 +2833,8 @@ readonly property var editors: ({
   the playhead from `position` (drop or double-click to load a sample; loading is an undoable state change through
   `ProjectEditor::setDeviceState()`, the path kept in the device's state); Vital nine pages of its parameters and its
   modulation matrix (see [ui/device-view.md](../ui/device-view.md#device-editors)).
+
+The Arpeggiator's, the Delay's and the LFO's editors have a **Groove** button: Follow Groove.
 
 See [ui/device-view.md](../ui/device-view.md#device-editors) for the editors and how to add one.
 
@@ -2991,6 +3088,16 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   rate's held samples, fully dry, and drive, dither and tone in range.
 - [test_arpeggiator_engine.cpp](../../tests/engine/test_arpeggiator_engine.cpp): a MIDI effect after the synth in
   its chain playing it: the styles, octaves, gate, swing, a free rate, Hold, switched off, in a rack's chain.
+- [test_groove_engine.cpp](../../tests/engine/test_groove_engine.cpp) (`engine_tests groove`, with the maths'
+  [test_groove.cpp](../../tests/engine/test_groove.cpp)): the Groove device's listing; swing moving the offbeats
+  later, their note-offs with them, and nothing at 50 %; a note's bends following it by its id; velocity and Length
+  from the groove's steps; on a Drum Rack's pad only that pad's notes (heard as C3); Timing automated taking effect
+  note by note; switched off mid-note, no note hanging; stopping dropping the held notes that haven't sounded. Early
+  notes: a clip's note grooved early playing early, to the sample, across a chunk's end in chunks of several sizes
+  (and on its time with Allow Early off); never more than half a step early; round the loop, before the loop's start,
+  each once; to a pad's Groove device (the rack's other chain hearing every note in its time, once); stopping and
+  locating dropping a note handed early that hasn't sounded. Follow Groove: the Arpeggiator's steps, the Delay's swing
+  and a synced LFO's phase following the project's groove, and not when it is off.
 - [test_chorus_engine.cpp](../../tests/engine/test_chorus_engine.cpp): its listing and the design's figures (the
   warmth's curve, its antiderivative and its stage among them); passing the input bit for bit fully dry (with the
   high-pass on, the crossover's all-pass); each layout a plain delay of its centre at Amount 0 (the impulses after
@@ -3121,6 +3228,7 @@ the Disperser, the EQ, the Sidechain) and what the editors share (`EditorKnob` a
 [the Amp's](../../tests/app/test_ui_device_editors_amp.cpp),
 [Erosion's](../../tests/app/test_ui_device_editors_erosion.cpp),
 [the Chorus-Ensemble's](../../tests/app/test_ui_device_editors_chorus.cpp),
-[the Phaser-Flanger's](../../tests/app/test_ui_device_editors_phaser.cpp) and
-[the Reverb's](../../tests/app/test_ui_device_editors_reverb.cpp); and
+[the Phaser-Flanger's](../../tests/app/test_ui_device_editors_phaser.cpp),
+[the Reverb's](../../tests/app/test_ui_device_editors_reverb.cpp) and
+[the Groove device's](../../tests/app/test_ui_device_editors_groove.cpp); and
 [test_sidechain_fit.cpp](../../tests/app/test_sidechain_fit.cpp) the Sidechain's fit.

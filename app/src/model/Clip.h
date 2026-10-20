@@ -34,6 +34,7 @@
 // heardNotes(). Its pieces (split, trimmed, copied) are deactivated too. So
 // can single notes of a MIDI clip (Note::muted).
 
+#include "model/GrooveTypes.h"
 #include "model/Timebase.h"
 
 #include <QString>
@@ -173,6 +174,11 @@ struct Clip {
     double durationBeats = 0.0;
     double offsetBeats = 0.0;
     std::vector<Note> notes;  // sorted by start, then pitch
+
+    // Either kind's groove (Grooves.h): what it plays moved in time with a groove, where the engine
+    // bridge hands it to the engine (a MIDI clip's notes, an audio clip's audio through its warp
+    // markers); its own notes and markers stay as they are. None: as it is. Its pieces keep it.
+    std::optional<ClipGroove> groove;
 
     // An audio clip playing `durationSec` of `path` from `startBeat`.
     static Clip audio(const QString& id, const QString& path, const QString& name, double startBeat,

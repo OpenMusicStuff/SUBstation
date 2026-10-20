@@ -19,6 +19,11 @@
 
 namespace sub {
 
+class TempoMap;  // music/TempoMap.h
+namespace groove {
+struct Groove;  // music/Groove.h
+}
+
 // A timestamped event delivered to a processor within a block. The renderer
 // sends each track's notes to every processor on the track (audio effects
 // ignore them; a device may take another track's instead: Engine::
@@ -81,6 +86,21 @@ struct EventList {
     size_t count = 0;
 };
 
+// A note handed to a MIDI effect before its time (Processor::earlyBeats()): a
+// note-on of a clip's note, or a note-off, `event.sampleOffset` samples from the
+// start of the process() call it comes in (at or past its end: when it would
+// play), `beat` where on the timeline that is. Its note-on (or note-off) comes
+// again in its time with the same note id, for the devices that didn't take it early.
+struct EarlyEvent {
+    ProcessEvent event;
+    double beat = 0.0;
+};
+
+struct EarlyList {
+    const EarlyEvent* events = nullptr;
+    size_t count = 0;
+};
+
 // Where a MIDI effect (Processor::isMidiEffect()) writes the notes it plays:
 // appended in time order, offsets relative to the start of its process() call.
 // Full, the rest is dropped.
@@ -115,8 +135,15 @@ struct ProcessContext {
     int keyTonic = -1;
     bool keyMinor = false;
     bool offline = false;    // rendering an export (or a test), not live
+    // The song's tempo map (null: none known; `tempo` holds), and its groove: the project's default
+    // (Engine::setGroove; null: none), for devices that play on the beat and follow it.
+    const TempoMap* tempoMap = nullptr;
+    const groove::Groove* groove = nullptr;
     EventList inEvents;
     EventOutput* outEvents = nullptr;  // a MIDI effect's notes, for the devices after it (null for the others)
+    // The first MIDI effect of a chain whose earlyBeats() is more than 0, in its first stretch of a chunk:
+    // the clips' notes due in the next earlyBeats() (that the last chunks didn't hand it), early.
+    EarlyList earlyEvents;
 
     // Samples a beat lasts at the block's tempo (0 without one).
     double samplesPerBeat() const noexcept { return tempo > 0.0 ? sampleRate * 60.0 / tempo : 0.0; }
@@ -440,6 +467,11 @@ public:
     // run and the chain hears the notes as they come; the notes it was still
     // playing it ends here (note-offs at offset 0 into `out`), each chunk it is off.
     virtual void endMidiNotes(EventOutput& /*out*/) noexcept {}
+    // How far before their time it may play notes (beats; 0: never early): the
+    // renderer hands a chain's first MIDI effect the clips' notes that much
+    // early (ctx.earlyEvents), so it can play them early, as it plays any
+    // note. Any thread (the renderer asks each chunk).
+    virtual double earlyBeats() const noexcept { return 0.0; }
     // Rendering thread: the value it ended its last chunk on, which the
     // parameters it moves keep while it isn't run (switched off).
     float heldModulation() const noexcept { return heldModulation_; }

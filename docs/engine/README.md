@@ -153,7 +153,8 @@ whole edit model into a new `RenderSnapshot` every time, in which positions are 
 converted to samples by the tempo map and the sample rate. In order:
 
 1. Transport values: sample rate, the tempo map and time signatures (`tempoMap_`, `meter_`,
-   [music.md](../music.md); `tempoVersion_` a new number with each new map), the loop in samples (only enabled if
+   [music.md](../music.md); `tempoVersion_` a new number with each new map), the song's key and the project's
+   default groove (`groove_`: `Engine::setGroove`, [groove.md](../groove.md)), the loop in samples (only enabled if
    at least 256 samples long), the short clip fade's length (against clicks where clips cut into
    their files).
 2. The routing graph: `routeEdgesLocked()` lists every edge, `topologicalOrder()` puts each
@@ -250,7 +251,9 @@ meter timer, every 33 ms: `EngineBridge::pollPlugins()`). It:
 producer). The live renderer drains them at the start of each callback. `requestedPlaying_`
 answers `isPlaying()` at once, and `setPositionBeats()` stores the new position for immediate
 feedback; the audio thread confirms it. Tempo, time signature, loop and clip fades are snapshot
-values (a rebuild). The tempo is a map (`setTempoMap()`: steady stretches, ramps and jumps; `setTempo()`
+values (a rebuild), as are the song's key (`setSongKey()`) and the project's default groove (`setGroove()`: a
+groove, or none for straight; pushed again unchanged, it builds nothing). The tempo is a map
+(`setTempoMap()`: steady stretches, ramps and jumps; `setTempo()`
 is a map of one tempo) and the time signature a list of changes (`setMeter()`; `setTimeSignature()`
 one throughout); pushed again unchanged, they build nothing. The metronome switch is an atomic. See [rendering.md](rendering.md).
 
@@ -466,7 +469,7 @@ state without a device, chains and moves), [test_render_jobs.cpp](../../tests/en
 | [scheduler.md](scheduler.md) | `Scheduler`, `TaskGraph`, workers, MMCSS, heaviest-path ordering, determinism |
 | [audio-devices.md](audio-devices.md) | `AudioDevice`, `DeviceConfig`, WASAPI and ASIO backends, driver events and resets, COM apartments, `EngineDevice.cpp` |
 | [recording.md](recording.md) | `Recorder`, takes and their placement, resampling, input monitoring, `EngineInput.cpp` |
-| [midi.md](midi.md) | MIDI playback (notes to events, note-offs, preview queue) and MIDI input |
+| [midi.md](midi.md) | MIDI playback (notes to events, note-offs, preview queue, notes handed early to MIDI effects) and MIDI input |
 | [automation.md](automation.md) | `Automation.h`, `ParamInfo`'s normalized mapping, `Processor::automate`, faders, sends, overrides |
 | [warp.md](warp.md) | `Warp.cpp`, stretch voices, the Re-Pitch resampler, `AudioSource` decoding and peaks |
 | [streaming.md](streaming.md) | streaming long files from disk: cache files and peak files, the stream cache and its pool, the disk threads, `SourceCursor`, the platform's `StreamFile` |

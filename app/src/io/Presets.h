@@ -12,7 +12,10 @@
 // ungrouped.
 //
 // A preset loads as a new device (loadPreset), or into a device of the same kind
-// (loadsInto, the editor's loadPresetInto).
+// (loadsInto, the editor's loadPresetInto). A groove file (.gilgroove, .agr:
+// io/GrooveFiles.h) is a Groove device's preset: it loads as one playing it (the
+// library's Grooves folder holds those saved from the groove library), and a
+// Vital preset (.vital) a Vital's; renamed, each stays its own kind of file.
 //
 // Default presets: a device saved as the default for its kind (a built-in
 // device by its kind, a plug-in by its class id; not racks) is what new devices

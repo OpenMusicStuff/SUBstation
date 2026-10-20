@@ -28,13 +28,27 @@ What SUBstation doesn't do yet, by area.
 ## MIDI editing
 
 - Looping MIDI clips.
-- MIDI effects besides the built-in Arpeggiator. A MIDI effect plays before its chain's
+- MIDI effects besides the built-in Arpeggiator and Groove. A MIDI effect plays before its chain's
   instrument wherever it sits in the chain (it can't be put before the instrument).
 - Note bends edit pitch only: MIDI 2.0's other per-note expressions (pressure,
   brightness, per-note controllers) can't be drawn.
 - Chords and the key are worked out from MIDI only, not from audio clips, and they
   count bars of the song's first time signature. Generate writes block chords and
   bass lines; melodies and accompaniment with rhythms of their own are to come.
+
+## Grooves
+
+- The Groove device moves notes played live, and notes an Arpeggiator before it plays, only
+  later (a step the groove has early plays on time), unless its *Latency* is on: only clips'
+  notes are known ahead.
+- An audio clip's groove moves its hits in time but not in level: the groove's *Velocity*
+  isn't applied to audio (there is no Velocity for audio clips).
+- A groove's cycle counts bars of four beats from the song's start: it doesn't follow time
+  signature changes (a 7/8 bar takes a groove's steps as four beats would have them).
+- The groove editor drags each step's timing and velocity; a step's milliseconds and length
+  (which built-in and extracted grooves can have) aren't edited there.
+- *Extract* takes 16ths over one bar, in one lane: other steps, longer cycles and a lane a
+  key (a drummer's hats and snare apart) aren't offered.
 
 ## Automation and tempo
 

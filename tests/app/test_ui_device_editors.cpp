@@ -210,7 +210,7 @@ private Q_SLOTS:
 
     void registry() {
         for (const char* kind : {"amp", "arpeggiator", "auto_filter", "bitcrusher", "chorus", "compressor", "delay",
-                                 "disperser", "envelope", "eq", "erosion", "gate", "gigatune", "glitch", "lfo",
+                                 "disperser", "envelope", "eq", "erosion", "gate", "gigatune", "glitch", "groove", "lfo",
                                  "limiter", "multiband", "overdrive", "phaser", "reverb", "sampler", "saturator",
                                  "sidechain", "spectral", "tape_stop", "transient", "vintage_hall", "vital",
                                  "vocal_rider", "vocoder"}) {

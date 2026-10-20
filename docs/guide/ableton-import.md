@@ -106,10 +106,17 @@ out; the message lists them.
 of devices' on/off, of plug-ins' parameters and of the parameters of Live's devices that
 came across, each where its target now is (a pad's on its track).
 
+**Grooves.** The set's groove pool comes into the project's grooves (*Edit › Grooves…*),
+each made from its notes on its Base grid and named as in Live. A MIDI clip, or a warped
+audio clip, playing one of them plays it as its groove ([grooves.md](grooves.md)), at that
+groove's Timing, Random, Velocity and Quantize, as Live's Global Amount scales them. The
+message says how many grooves came and how many clips play them. Ableton's groove files
+(`.agr`) can be added to any project too ([grooves.md](grooves.md#your-groove-files)).
+
 ## What doesn't
 
 - The Session View.
-- Clip envelopes, grooves, follow actions, take lanes.
+- Clip envelopes, follow actions, take lanes.
 - Live devices SUBstation has nothing like, MIDI effects but the Arpeggiator, Max for
   Live devices, racks' macros and their mappings, Drum Racks' return chains.
 - Multiband Dynamics' ratios (Live keeps them in a form of its own).

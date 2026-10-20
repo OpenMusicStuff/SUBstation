@@ -23,6 +23,7 @@
 #include "session/ArrangementActions.h"
 #include "session/ComputerKeyboard.h"
 #include "session/DeviceSelection.h"
+#include "session/GrooveLibrary.h"
 #include "session/Selection.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
@@ -1426,6 +1427,26 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
                                          [actions] { actions->toggleActivation(); });
         activation.shortcut = KeyMap::hint("toggleClipActivation");
         activation.enabled = activates.has_value();
+        if (hit) {
+            // Grooves: the selected clips' written into them and cleared; this clip's feel made a groove of the
+            // project's (on 16ths, over a bar).
+            menu.addSeparator();
+            const auto& selected = selection.clips();
+            const app::ClipRefs refs(selected.begin(), selected.end());
+            app::ProjectEditor* editor = s->editor();
+            MenuEntry& apply = menu.add(QStringLiteral("Apply Groove"), [editor, refs] { editor->applyClipGrooves(refs); });
+            apply.enabled = std::any_of(refs.begin(), refs.end(), [s](const app::ClipRef& ref) {
+                const app::Clip* clip = s->project()->findClip(ref.trackId, ref.clipId);
+                return clip && clip->groove;
+            });
+            apply.toolTip = QStringLiteral("Write each selected clip's groove into it (a MIDI clip's notes, an audio "
+                                           "clip's warp markers) and clear it");
+            app::GrooveLibrary* grooves = s->grooves();
+            const app::ClipRef ref{hit->trackId, hit->clip.id};
+            menu.add(QStringLiteral("Extract Groove"), [grooves, ref] { grooves->extract(ref.trackId, ref.clipId, 2, 1, false); })
+                .toolTip = QStringLiteral("Make a groove of the clip's feel (its notes or transients against the 16th "
+                                          "grid, over a bar), into the project's grooves (Edit › Grooves…)");
+        }
         if (hit && hit->clip.isAudio()) {
             // The browser lists the sounds most like the part of its file the clip plays.
             app::BrowserController* browser = s->browser();

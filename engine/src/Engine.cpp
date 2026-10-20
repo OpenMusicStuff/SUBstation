@@ -343,6 +343,15 @@ void Engine::setSongKey(int tonic, bool minor) {
     rebuildSnapshotLocked();
 }
 
+void Engine::setGroove(const std::optional<groove::Groove>& groove) {
+    std::shared_ptr<const groove::Groove> made =
+        groove ? std::make_shared<const groove::Groove>(groove::normalized(*groove)) : nullptr;
+    std::lock_guard lock(mutex_);
+    if (made == groove_ || (made && groove_ && *made == *groove_)) return;
+    groove_ = std::move(made);
+    rebuildSnapshotLocked();
+}
+
 void Engine::setLoop(bool enabled, double startBeat, double endBeat) {
     std::lock_guard lock(mutex_);
     const double start = std::max(0.0, startBeat);

@@ -16,7 +16,8 @@ command with its keys. The keys here are the *Ableton Live* profile's, the defau
   the profile's.
 - The search field finds commands by their name, their menu or their keys.
 
-Changes apply at once and are kept. The menus and the right-click menus show the keys as
+Changes apply at once and are kept. Some commands have no key to begin with (*Edit ›
+Grooves…*, *Edit › Flatten Track*...): give them one here. The menus and the right-click menus show the keys as
 they are. Only the menus' commands can be changed: the keys of the views themselves (the
 find bar's, holding F for fades) and the mouse's modifiers stay as below.
 
@@ -122,7 +123,9 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Octave down / up (while it is on) | Z / X |
 
 In the piano roll, Delete, Ctrl+A, Ctrl+D and Ctrl+C / Ctrl+X / Ctrl+V act on notes (Ctrl+V
-pastes at the paste marker: click the grid to place it), Ctrl+U quantizes them, and
+pastes at the paste marker: click the grid to place it), Ctrl+U quantizes them,
+Ctrl+Shift+U applies the groove last applied with the note tools' *Groove ▾* (Swing at
+first; see [grooves.md](grooves.md)), and
 arrow keys move them (Up/Down a semitone, Shift an octave; Left/Right a grid step, Shift
 a bar). 0 deactivates the selected notes (or activates them, if they all are), not the
 clip. C shows or hides the song's chords and key over the notes. B turns bend mode on
