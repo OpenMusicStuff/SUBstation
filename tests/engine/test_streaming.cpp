@@ -8,6 +8,7 @@
 // of the run's own: every test that plays a file plays it streamed, and must
 // come out as it does from memory.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -17,6 +18,7 @@
 #include <fstream>
 #include <random>
 #include <thread>
+#include <vector>
 
 #include "CacheFile.h"
 #include "Engine.h"
@@ -591,6 +593,41 @@ TEST_CASE("the pool lets the least recently wanted pages go, never pinned ones, 
     for (int64_t k = 32; k < 60; ++k) cache->load(*stream, k, 1, false, buffer);
     CHECK(!stream->loaded(18));  // let go of...
     CHECK_EQ(held.channel(0)[7], before);  // ...but not reused
+}
+
+TEST_CASE("readers off the audio thread lease pages safely while the cache lets them go and frees them") {
+    const std::string path = writeWavAs(tempDir() / "leases.wav", testSignal(40 * sub::kStreamPageFrames / double(kSampleRate), 2),
+                                        2, kSampleRate, 16, false);
+    const auto resident = sub::AudioSource::load(path, kSampleRate);
+    const auto cache = testCache();  // (no audio thread: a page let go of is free at once, unless leased)
+    const auto source = cache->open(path, kSampleRate);
+    std::atomic<bool> stop{false};
+    std::atomic<int> wrong{0};
+    std::vector<std::thread> readers;
+    for (uint32_t t = 0; t < 4; ++t) {
+        readers.emplace_back([&, t] {
+            std::vector<float> got(4096);
+            std::minstd_rand random(t + 1);
+            while (!stop) {
+                const auto start = static_cast<int64_t>(random() % uint64_t(source->frames() - 4096));
+                const auto c = static_cast<uint32_t>(random() % 2);
+                if (!source->read(c, start, 4096, got.data()) ||
+                    !std::equal(got.begin(), got.end(), resident->channelData(c) + start))
+                    ++wrong;
+            }
+        });
+    }
+    // Meanwhile passes that want nothing (any page may go), and the pool shrunk and grown again (the
+    // pages over it freed).
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
+    for (int i = 0; std::chrono::steady_clock::now() < until; ++i) {
+        cache->plan({});
+        cache->setPoolBytes((i % 2 ? 16 : 24) * sub::StreamCache::kPageBytes);
+    }
+    stop = true;
+    for (auto& reader : readers) reader.join();
+    CHECK_EQ(wrong.load(), 0);
+    CHECK(cache->stats().evicted > 0);
 }
 
 // --- Playing --------------------------------------------------------------------

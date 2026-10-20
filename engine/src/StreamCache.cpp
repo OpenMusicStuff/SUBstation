@@ -150,14 +150,16 @@ int64_t StreamedAudio::noteMissing(int64_t start, int64_t n, bool expected) cons
 
 StreamLease StreamedAudio::lease(int64_t k) const {
     if (k < 0 || k >= pages_) return {};
-    // Leased, then looked at again: a page the cache took out of the table meanwhile is let go, and read again.
+    // Found and leased under the cache's lock: a page is taken out of its table, reused and freed only
+    // under it too, so the one found can't go before its lease counts. (The audio thread alone reads
+    // the table without it: the audio epochs keep its pages.)
     for (int attempt = 0; attempt < 1000; ++attempt) {
-        StreamPage* page = table_[k].load(std::memory_order_seq_cst);
-        if (page) {
-            page->leases.fetch_add(1, std::memory_order_seq_cst);
-            if (table_[k].load(std::memory_order_seq_cst) == page) return StreamLease(page);
-            page->leases.fetch_sub(1, std::memory_order_seq_cst);
-            continue;
+        {
+            std::lock_guard lock(cache_->mutex_);
+            if (StreamPage* page = table_[k].load(std::memory_order_seq_cst)) {
+                page->leases.fetch_add(1, std::memory_order_seq_cst);
+                return StreamLease(page);
+            }
         }
         if (!cache_->loadBlocking(*this, k)) return {};
     }

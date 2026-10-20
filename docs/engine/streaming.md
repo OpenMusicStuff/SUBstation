@@ -205,7 +205,8 @@ publishes, and wakes it on a locate (`locate()`), Play, a new preview and new pi
 - **Offline renders and exports** (and freezing) render on a thread of their own (or under the engine's lock) and
   can wait: their reads (`StreamReads{blocking}`) lease each page (`StreamedAudio::lease()`), reading it first if it
   isn't in memory (and the next 3 with it: they read on). A leased page isn't reused while held, even if the pool
-  lets it go meanwhile. An export of a project is the same whether its files are in memory or on a slow disk.
+  lets it go meanwhile; it is found and leased under the cache's lock, under which pages are let go of and freed, so
+  it can't go between the two. An export of a project is the same whether its files are in memory or on a slow disk.
 - **Off the audio thread** (the waveform drawn at sample level, the Sampler's slices and Mark Transients, audio
   analysis, reversing a clip): they read through `AudioSource::read(channel, start, count, out)` (the application's
   `Waveform::read()` and `samples()`), which leases the pages it needs, waiting for the disk. `channelData()` is null
