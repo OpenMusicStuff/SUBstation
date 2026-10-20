@@ -17,6 +17,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace sub::app;
@@ -415,6 +416,43 @@ private Q_SLOTS:
         // Without a track to go after: last.
         const QString last = f.editor.padToTrack(track, snare);
         QCOMPARE(f.project.trackIndex(last), int(f.project.tracks().size()) - 1);
+    }
+
+    // Separated, a pad of a Drum Rack in a pad stays that pad's on the track the
+    // outer pad becomes; and a frozen track's device keyed by a pad follows it
+    // there too (the same signal: its frozen audio holds it already), still
+    // there once unfrozen.
+    void padSidechainsFollowIntoNestedRacksAndFrozenTracks() {
+        EditorFixture f;
+        const auto [track, rackId] = drums(f);
+        const QString outer = f.editor.loadDrumPad(track, rackId, 36, QStringLiteral("/s/Kick.wav"));
+        const QString snare = f.editor.loadDrumPad(track, rackId, 38, QStringLiteral("/s/Snare.wav"));
+        const QString nested = f.editor.addDevice(track, kDrumRackKind, -1, outer);  // (in place of its Sampler)
+        QVERIFY(!nested.isEmpty());
+        const QString inner = f.editor.loadDrumPad(track, nested, 36, QStringLiteral("/s/Sub.wav"));
+        QVERIFY(!inner.isEmpty());
+        const QString bass = f.editor.addAudioTrack();
+        const QString onInner = f.editor.addDevice(bass, QStringLiteral("utility"));
+        f.editor.setDeviceSidechain(bass, onInner, Sidechain{track, kPostFader, inner});
+        const QString frozen = f.editor.addAudioTrack();
+        const QString onFrozen = f.editor.addDevice(frozen, QStringLiteral("utility"));
+        f.editor.setDeviceSidechain(frozen, onFrozen, Sidechain{track, kPreFader, snare});
+        f.editor.freezeTracks({{frozen, Freeze{QStringLiteral("frozen.wav"), 2.0, 120.0}}});
+        QVERIFY(f.project.isFrozen(frozen));
+
+        const QStringList made = f.editor.separatePads(track, rackId);
+        QCOMPARE(made.size(), 2);
+        QCOMPARE(f.project.device(bass, onInner).sidechain, std::optional<Sidechain>(Sidechain{made[0], kPostFader, inner}));
+        const std::optional<Sidechain> followed(Sidechain{made[1], kPreFader});
+        QCOMPARE(f.project.device(frozen, onFrozen).sidechain, followed);
+        f.editor.unfreezeTracks({frozen});
+        QCOMPARE(f.project.device(frozen, onFrozen).sidechain, followed);
+        // Set by hand on a frozen track, a sidechain is still refused.
+        f.editor.freezeTracks({{frozen, Freeze{QStringLiteral("frozen.wav"), 2.0, 120.0}}});
+        QSignalSpy refused(&f.editor, &ProjectEditor::refused);
+        f.editor.trySetDeviceSidechain(frozen, onFrozen, made[0]);
+        QCOMPARE(refused.count(), 1);
+        QCOMPARE(f.project.device(frozen, onFrozen).sidechain, followed);
     }
 
     // A pad dropped into a group a device of which it keys: nothing feeds the

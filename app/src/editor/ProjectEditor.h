@@ -986,9 +986,10 @@ private:
     bool pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
                              const QMap<DeviceParam, double>& old, const QString& text, const QString& mergeKey);
 
-    // The sidechains taken from pads of `trackId` now tracks of their own (a pad, and each device in it ->
-    // the pad's track) take theirs: that track's tap where the pad's was (its Pre FX, Post FX, Post Mixer),
-    // or after the same device.
+    // The sidechains taken from pads of `trackId` now tracks of their own (a pad, and each device and rack
+    // chain in it -> the pad's track) take theirs: that track's tap where the pad's was (its Pre FX, Post FX,
+    // Post Mixer), after the same device, or the same pad of a Drum Rack in it. Frozen tracks' too (the same
+    // signal: SetDeviceSidechainCommand::follows).
     void padSidechainsToTracks(const QString& trackId, const QHash<QString, QString>& padTracks, const QString& text);
     // Drum Racks' pads named after the samples these Samplers played (device,
     // its sample before) named after the ones they play now (EditorDrumRacks.cpp).

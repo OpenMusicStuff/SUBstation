@@ -57,11 +57,12 @@ bool isMidiEffect(const Device& device) {
     return builtin != nullptr && builtin->midiEffect;
 }
 
-// A pad, and every device in it, to the track the pad becomes (the sidechains
-// taken from it, or after one of its devices, are taken from that track).
+// A pad, and every device and rack chain in it (a Drum Rack's pads in it), to
+// the track the pad becomes (the sidechains taken from them are taken there).
 void addPadTrack(QHash<QString, QString>& padTracks, const Chain& pad, const QString& trackId) {
     padTracks.insert(pad.id, trackId);
     for (const Device* device : iterDevices(pad.devices)) padTracks.insert(device->id, trackId);
+    for (const ConstRackChain& inner : iterChains(pad.devices)) padTracks.insert(inner.chain->id, trackId);
 }
 
 // A pad of `drums`' Drum Rack as a MIDI track of its own (its group and place
@@ -255,7 +256,6 @@ void ProjectEditor::padSidechainsToTracks(const QString& trackId, const QHash<QS
     };
     std::vector<Keyed> keyed;
     for (const Track* owner : project_->allTracks()) {
-        if (project_->isFrozen(owner->id)) continue;  // (its devices don't play: theirs stay)
         for (const Device* device : iterDevices(owner->devices)) {
             const auto& sidechain = device->sidechain;
             if (sidechain && sidechain->trackId == trackId && padTracks.contains(from(*sidechain)))
@@ -263,9 +263,15 @@ void ProjectEditor::padSidechainsToTracks(const QString& trackId, const QHash<QS
         }
     }
     for (const Keyed& k : keyed) {
-        // (A device keeps its id on the pad's track: a tap after it stays after it.)
-        const Sidechain moved{padTracks.value(from(k.sidechain)), k.sidechain.tap};
-        push(std::make_unique<SetDeviceSidechainCommand>(project_, k.trackId, k.deviceId, k.sidechain, moved, text));
+        // (A device keeps its id on the pad's track: a tap after it stays after it. So does a pad of a Drum
+        // Rack in the pad: its own taps stay its own; the pad that became the track has the track's.)
+        const QString to = padTracks.value(from(k.sidechain));
+        const bool inner =
+            !k.sidechain.chain.isEmpty() && findChain(project_->track(to).devices, k.sidechain.chain).chain != nullptr;
+        const Sidechain moved{to, k.sidechain.tap, inner ? k.sidechain.chain : QString()};
+        // (The same signal, where it went: frozen tracks take it too.)
+        push(std::make_unique<SetDeviceSidechainCommand>(project_, k.trackId, k.deviceId, k.sidechain, moved, text,
+                                                         true));
     }
 }
 
