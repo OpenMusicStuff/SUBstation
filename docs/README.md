@@ -102,6 +102,7 @@ operating system.
 | Page | Covers |
 |---|---|
 | [Musical time](music.md) | the tempo map (steady tempos, ramps, jumps) and time signature changes; beats, seconds, samples and bars, both ways |
+| [Groove](groove.md) | the plan for swing and feel (not implemented yet): grooves and the project's library, the Groove device, clips' grooves, Apply Groove, the steps |
 
 ### Browser
 
