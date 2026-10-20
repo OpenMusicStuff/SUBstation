@@ -737,6 +737,10 @@ public:
     // The song's key, for the devices that follow the harmony (ProcessContext::keyTonic, keyMinor): its tonic's
     // pitch class (0 = C), or -1 when none is known. Throws std::invalid_argument for a tonic past 11.
     void setSongKey(int tonic, bool minor);
+    // The project's default groove (music/Groove.h), for the devices that play on the beat and follow it
+    // (ProcessContext::groove: the Groove device's Project source, Follow Groove); none: straight. It is
+    // played as groove::normalized() makes it.
+    void setGroove(const std::optional<groove::Groove>& groove);
     void setLoop(bool enabled, double startBeat, double endBeat);
     // Punch In and Out: while recording, the tracks recorded play their clips
     // before the loop's start (In) and from its end (Out), loop on or not, as
@@ -1153,6 +1157,7 @@ private:
     std::shared_ptr<const MeterMap> meter_ = std::make_shared<const MeterMap>();
     int keyTonic_ = -1;
     bool keyMinor_ = false;
+    std::shared_ptr<const groove::Groove> groove_;  // the project's default (null: none)
     bool loopEnabled_ = false;
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 16.0;

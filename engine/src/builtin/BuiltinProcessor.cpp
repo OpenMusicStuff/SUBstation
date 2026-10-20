@@ -127,6 +127,7 @@ void BuiltinProcessor::process(const ProcessContext& ctx, float* const* channels
         stretch.samplePos = ctx.samplePos + position;
         if (samplesPerBeat > 0.0) stretch.beatPos = ctx.beatPos + position / samplesPerBeat;
         stretch.inEvents = {events_.data(), numEvents};
+        if (position > 0) stretch.earlyEvents = {};  // (the first stretch's: their offsets are from its start)
         for (int c = 0; c < numOut; ++c) part[c] = channels[c] + position;
         stretchStart_ = position;
         render(stretch, part, numOut, end - position);
