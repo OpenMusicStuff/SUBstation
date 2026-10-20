@@ -726,6 +726,9 @@ private:
     // (kPostFader, kPreFader, kPreFx: a MIDI track's after its instrument; or a
     // device's id, after it: before the fader while it isn't on the source).
     std::pair<sub::SidechainTap, quint32> engineTap(const QString& sourceId, const QString& tap);
+    // The same of a rack's chain on the source (a pad: kPreFx after its instrument, if it
+    // starts with one); none while the engine hasn't that chain on that source.
+    std::optional<SidechainState> engineChainTap(const QString& sourceId, const QString& chainId, const QString& tap);
     std::optional<SidechainState> wantedSidechain(const Device& device, quint32 processorId);
     void pushSidechains();
     void dropSidechain(quint32 processorId);

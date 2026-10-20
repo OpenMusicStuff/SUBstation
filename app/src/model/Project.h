@@ -65,8 +65,8 @@
 // stay live. What goes into a frozen group or return is in its frozen audio, so
 // nothing in a frozen group can be changed (isFrozen) until it is unfrozen. A
 // tempo change plays the frozen audio warped. A track whose signal another
-// track's sidechain takes after one of its devices (or before them) can't be
-// frozen: that tap isn't in the frozen audio (freezeProblem). Flattening a
+// track's sidechain takes after one of its devices (or before them, or from one
+// of its pads) can't be frozen: that tap isn't in the frozen audio (freezeProblem). Flattening a
 // frozen audio or MIDI track makes it an audio track playing its frozen audio as
 // a clip, without its devices (one undo step).
 //

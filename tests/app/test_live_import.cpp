@@ -1436,15 +1436,20 @@ private Q_SLOTS:
         drums.envelopes =
             envelope(950 + 38, floatEvent(0, 1.0) + floatEvent(4, 0.5)) + envelope(950 + 41, floatEvent(0, 0.5));
         LiveTrack bass{QStringLiteral("AudioTrack"), 6, QStringLiteral("6-Bass")};
-        bass.devices = element(
-            QStringLiteral("Compressor2"),
-            param(QStringLiteral("On"), true) +
-                element(QStringLiteral("SideChain"),
-                        param(QStringLiteral("OnOff"), true) +
-                            element(QStringLiteral("RoutedInput"),
-                                    element(QStringLiteral("Routable"),
-                                            value(QStringLiteral("Target"),
-                                                  QStringLiteral("AudioIn/Track.5/DeviceOut.0.B0,PreFxOut"))))));
+        // Compressors keyed by the pads: the Kick's (branch 0) Pre FX, the Snare's (branch 1) Post FX, and a
+        // branch the Drum Rack hasn't (the whole track's, noted).
+        const auto keyedBy = [&](const QString& target) {
+            return element(QStringLiteral("Compressor2"),
+                           param(QStringLiteral("On"), true) +
+                               element(QStringLiteral("SideChain"),
+                                       param(QStringLiteral("OnOff"), true) +
+                                           element(QStringLiteral("RoutedInput"),
+                                                   element(QStringLiteral("Routable"),
+                                                           value(QStringLiteral("Target"), target)))));
+        };
+        bass.devices = keyedBy(QStringLiteral("AudioIn/Track.5/DeviceOut.0.B0,PreFxOut")) +
+                       keyedBy(QStringLiteral("AudioIn/Track.5/DeviceOut.0.B1,PostFxOut")) +
+                       keyedBy(QStringLiteral("AudioIn/Track.5/DeviceOut.0.B9,PreFxOut"));
         song.tracks = track(drums) + track(bass);
         auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
         const Project& p = imported->project;
@@ -1480,10 +1485,11 @@ private Q_SLOTS:
         QCOMPARE(std::count_if(notes.begin(), notes.end(), [](const Note& n) { return n.pitch == 36; }), 2);
         QCOMPARE(std::count_if(notes.begin(), notes.end(), [](const Note& n) { return n.pitch == 38; }), 1);
         QVERIFY(noteSays(imported->notes, QStringLiteral("Left out (clip envelopes): 5-Drum Rack.")));
-        const Device& ducking = p.tracks()[1].devices[0];
-        QVERIFY(ducking.sidechain);
-        QCOMPARE(ducking.sidechain->trackId, drumTrack.id);
-        QCOMPARE(ducking.sidechain->tap, kPreFx);
+        const std::vector<Device>& keyed = p.tracks()[1].devices;
+        QCOMPARE(keyed.size(), size_t{3});
+        QCOMPARE(keyed[0].sidechain, std::optional<Sidechain>(Sidechain{drumTrack.id, kPreFx, kickPad->id}));
+        QCOMPARE(keyed[1].sidechain, std::optional<Sidechain>(Sidechain{drumTrack.id, kPreFader, snarePad->id}));
+        QCOMPARE(keyed[2].sidechain, std::optional<Sidechain>(Sidechain{drumTrack.id, kPreFx}));
         QVERIFY(noteSays(imported->notes, QStringLiteral("Sidechains from a Drum Rack's pad hear the whole rack: 5-Drum Rack.")));
     }
 

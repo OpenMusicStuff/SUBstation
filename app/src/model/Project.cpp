@@ -420,6 +420,11 @@ std::optional<QString> Project::freezeProblem(const QString& trackId) const {
     for (const Track* owner : allTracks()) {
         for (const Device* device : iterDevices(owner->devices)) {
             const auto& sidechain = device->sidechain;
+            if (sidechain && sidechain->trackId == trackId && !sidechain->chain.isEmpty()) {
+                return QStringLiteral("%1 takes the signal of one of %2's pads as a sidechain, "
+                                      "which its frozen audio doesn't have")
+                    .arg(owner->name, frozenTrack.name);
+            }
             if (sidechain && sidechain->trackId == trackId && sidechain->tap != kPostFader &&
                 sidechain->tap != kPreFader) {
                 return QStringLiteral("%1 takes %2's signal before its devices or after one of them as a sidechain, "

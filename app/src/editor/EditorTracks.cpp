@@ -624,6 +624,17 @@ QStringList ProjectEditor::insertCopies(const CopiedTracks& copied, int index, s
         for (QString& lane : view.lanes) lane = renamedKey(lane, ids);
         copies.push_back(std::move(track));
     }
+    // A sidechain from a copied track, taken after one of its devices or from
+    // one of its pads: after the copy's, from the copy's.
+    const QList<QString> copiedIds = renamed.values();
+    for (Track& track : copies) {
+        for (Device* device : iterDevices(track.devices)) {
+            if (!device->sidechain || !copiedIds.contains(device->sidechain->trackId)) continue;
+            Sidechain& sidechain = *device->sidechain;
+            if (sidechain.tapDevice()) sidechain.tap = deviceCopies.value(sidechain.tap, sidechain.tap);
+            if (!sidechain.chain.isEmpty()) sidechain.chain = deviceCopies.value(sidechain.chain, sidechain.chain);
+        }
+    }
     // Outputs: into the copy of a copied track (or device), or into the one
     // they went into if it is still there; a copy going into another group than
     // its original's goes into that group, as a track moved there does.

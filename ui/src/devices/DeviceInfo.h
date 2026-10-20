@@ -12,7 +12,8 @@
 // where it is taken, and the menu (No Sidechain, the tracks, groups and returns
 // it can come from, those that would close a cycle greyed out; then where it is
 // taken along the source: Pre FX, after each of its effects (those in its racks
-// too), Post FX, Post Mixer); and for a device that plays notes (an
+// too), Post FX, Post Mixer; then a submenu for each of its Drum Racks' pads,
+// with the pad's own: Pre FX, after its effects, Post FX, Post Mixer); and for a device that plays notes (an
 // instrument, an effect with a MIDI input) its MIDI input: the button lit while
 // it takes another track's notes, the tooltip naming that track, and the menu
 // (Own Track, then the MIDI tracks). It reads the project again whenever what
@@ -142,11 +143,12 @@ public:
     Q_INVOKABLE void openEditor();
 
     // The sidechain menu's entries, in order: {text, checkable, checked,
-    // enabled, source, tap}, {separator: true}, or {search: true, children}
-    // (a search field over the tracks, entries as the others). Choosing one is
-    // setSidechain(source, tap) (source "": no sidechain).
+    // enabled, source, tap, chain}, {separator: true}, {search: true, children}
+    // (a search field over the tracks, entries as the others), or {submenu:
+    // title, children} (a pad's taps). Choosing one is setSidechain(source,
+    // tap, chain) (source "": no sidechain).
     Q_INVOKABLE QVariantList sidechainMenu() const;
-    Q_INVOKABLE void setSidechain(const QString& sourceTrackId, const QString& tap);
+    Q_INVOKABLE void setSidechain(const QString& sourceTrackId, const QString& tap, const QString& chain = {});
     // The MIDI From menu's entries: {text, checkable, checked, enabled,
     // source}: Own Track (source ""), then the MIDI tracks whose notes it
     // could take, under a search field ({search: true, children}).
@@ -154,15 +156,31 @@ public:
     Q_INVOKABLE QVariantList midiFromMenu() const;
     Q_INVOKABLE void setMidiFrom(const QString& sourceTrackId);
 
+    // One place a sidechain can be taken: its label, and its tap and chain (Sidechain).
+    struct TapChoice {
+        QString label;
+        QString tap;
+        QString chain;
+    };
     // Where a sidechain from a track can be taken, along its signal, as in
     // Ableton: before its devices, after each (in its racks' chains too, before
-    // the rack: "After Rack › Chain › EQ"), after them all, after its fader
-    // (label, tap). On a MIDI track, Pre FX is after the instrument; devices of
-    // the same name in a chain are numbered.
-    std::vector<std::pair<QString, QString>> tapChoices(const QString& sourceTrackId) const;
-    // Where a sidechain is taken now: after a device that has left its source,
-    // before the fader; after its instrument, before its effects.
-    QString tapOf(const sub::app::Sidechain& sidechain) const;
+    // the rack: "After Rack › Chain › EQ"), after them all, after its fader;
+    // then, a Drum Rack pad by pad (its name; "Rack › Pad" with several Drum
+    // Racks), the pad's own: before its devices, after each, after them all,
+    // after its fader (its devices aren't listed with the track's). On a MIDI
+    // track (and a pad), Pre FX is after the instrument; devices of the same
+    // name in a chain are numbered.
+    struct TapChoices {
+        std::vector<TapChoice> track;
+        std::vector<std::pair<QString, std::vector<TapChoice>>> pads;
+    };
+    TapChoices tapChoices(const QString& sourceTrackId) const;
+    // Where a sidechain is taken now (tap, chain): after a device that has left
+    // its source, or from a pad that has, before the fader; after its instrument
+    // (a pad's), before its effects.
+    std::pair<QString, QString> tapOf(const sub::app::Sidechain& sidechain) const;
+    // The label of where a sidechain is taken ("Post Mixer", "Kick › Post FX").
+    QString tapLabel(const sub::app::Sidechain& sidechain) const;
 
     // Reads it all again.
     Q_INVOKABLE void refresh();

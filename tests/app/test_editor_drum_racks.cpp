@@ -3,7 +3,8 @@
 // each with a Sampler, named after its sample), pads added, duplicated and
 // moved to other keys, locked; saving and loading them; samples loaded by
 // hand, and swapped for similar sounds, with the reference those come from
-// (model/SamplerState.h); the stepping itself.
+// (model/SamplerState.h); the stepping itself; pads as tracks of their own
+// (sidechains taken from them taken from their tracks).
 
 #include "EditorFixture.h"
 #include "TestSupport.h"
@@ -329,6 +330,14 @@ private Q_SLOTS:
         Clip played = f.track(track).clips.at(0);
         played.notes = {{36, 0.0, 0.25, 100}, {38, 1.0, 0.25, 90}, {36, 2.0, 0.25, 110}, {50, 3.0, 0.25, 100}};
         f.editor.replaceClip(track, played, QStringLiteral("Notes"));
+        // Sidechains taken from the pads: from their tracks next.
+        const QString bass = f.editor.addAudioTrack();
+        const QString onKick = f.editor.addDevice(bass, QStringLiteral("utility"));
+        const QString onSnare = f.editor.addDevice(bass, QStringLiteral("utility"));
+        const QString onDrums = f.editor.addDevice(bass, QStringLiteral("utility"));
+        f.editor.setDeviceSidechain(bass, onKick, Sidechain{track, kPreFx, kick});
+        f.editor.setDeviceSidechain(bass, onSnare, Sidechain{track, kPostFader, snare});
+        f.editor.setDeviceSidechain(bass, onDrums, Sidechain{track, kPreFader});
         const std::vector<Track> before = f.project.tracks();
         const int steps = f.stack.count();
 
@@ -361,6 +370,9 @@ private Q_SLOTS:
         QCOMPARE(snareTrack.automation.value(automation::kMixerVolume), ramp);
         QCOMPARE(snareTrack.automation.value(automation::deviceKey(snareSampler, QStringLiteral("volume"))), ramp);
         QVERIFY(kickTrack.automation.isEmpty());
+        QCOMPARE(f.project.device(bass, onKick).sidechain, std::optional<Sidechain>(Sidechain{made[0], kPreFx}));
+        QCOMPARE(f.project.device(bass, onSnare).sidechain, std::optional<Sidechain>(Sidechain{made[1], kPostFader}));
+        QCOMPARE(f.project.device(bass, onDrums).sidechain, std::optional<Sidechain>(Sidechain{track, kPreFader}));
         f.stack.undo();
         QCOMPARE(f.project.tracks(), before);
         // A track's own Drum Rack only.
@@ -379,10 +391,13 @@ private Q_SLOTS:
         Clip played = f.track(track).clips.at(0);
         played.notes = {{36, 0.0, 0.25, 100}, {38, 1.0, 0.25, 90}};
         f.editor.replaceClip(track, played, QStringLiteral("Notes"));
+        const QString keyed = f.editor.addDevice(other, QStringLiteral("utility"));
+        f.editor.setDeviceSidechain(other, keyed, Sidechain{track, kPreFader, snare});
         const std::vector<Track> before = f.project.tracks();
 
         const QString made = f.editor.padToTrack(track, snare, other);
         QVERIFY(!made.isEmpty());
+        QCOMPARE(f.project.device(other, keyed).sidechain, std::optional<Sidechain>(Sidechain{made, kPreFader}));
         QCOMPARE(f.project.trackIndex(made), f.project.trackIndex(other) + 1);
         const Track& snareTrack = f.track(made);
         QCOMPARE(snareTrack.name, QStringLiteral("Snare"));

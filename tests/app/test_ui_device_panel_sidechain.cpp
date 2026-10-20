@@ -5,7 +5,9 @@
 // (greyed out where that would close a cycle) and where it is taken, along the
 // source's signal as in Ableton: Pre FX (before its devices; after a MIDI
 // track's instrument), after one of its devices (in its racks too), Post FX
-// (before its fader) or Post Mixer (after it). The master's devices take any track. Built-in devices
+// (before its fader) or Post Mixer (after it); and each Drum Rack pad's own, in
+// a submenu of the pad's: its Pre FX (after its Sampler), after its effects, Post FX,
+// Post Mixer. The master's devices take any track. Built-in devices
 // with a sidechain input (the Compressor, the Sidechain device, whose hint over
 // its curve opens the menu) have the button too. The tracks are under a search
 // field that has the keyboard as the menu opens. Driven in a window with a real
@@ -25,6 +27,7 @@
 #include "editor/ProjectEditor.h"
 #include "model/Automation.h"
 #include "model/Device.h"
+#include "model/Devices.h"
 #include "model/Project.h"
 #include "session/DeviceSelection.h"
 #include "session/Selection.h"
@@ -79,6 +82,25 @@ class TestUiDevicePanelSidechain : public QObject {
         QVERIFY2(ui_.choose(entry), qPrintable(entry));
     }
     bool checked(const QString& entry) { return test::menuChecked(ui_.menu(), entry); }
+    // A submenu of the open menu (a pad's), opened as the mouse comes over its entry (null: it didn't).
+    QObject* openSubmenu(const QString& title) {
+        QQuickItem* item = test::menuItem(ui_.menu(), title);
+        auto* submenu = item ? item->property("subMenu").value<QObject*>() : nullptr;
+        if (!submenu) return nullptr;
+        test::moveTo(window(), ui_.placed(item), {}, Qt::NoButton);
+        if (!QTest::qWaitFor([submenu] { return submenu->property("opened").toBool(); }, 3000)) return nullptr;
+        return submenu;
+    }
+    // Chooses an entry of an open submenu with a click (false: no such entry enabled, or the menu didn't close).
+    bool chooseIn(QObject* submenu, const QString& text) {
+        QQuickItem* item = test::menuItem(submenu, text);
+        if (!item || !item->isEnabled()) return false;
+        const QPoint at = ui_.placed(item);
+        test::moveTo(window(), at, {}, Qt::NoButton);
+        test::click(window(), at);
+        QObject* m = ui_.menu();
+        return QTest::qWaitFor([m] { return !m->property("visible").toBool(); }, 3000);
+    }
     // The open menu's search field (MenuSearch), and its list.
     QQuickItem* search() {
         QObject* menu = ui_.menu();
@@ -257,6 +279,59 @@ private Q_SLOTS:
         // The device out of the source: before its fader.
         editor().removeDevice(kick, second);
         QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Kick, Post FX"));
+    }
+
+    void padsHaveTapsOfTheirOwn() {
+        // A Drum Rack's pads: a submenu each (after the track's own taps, which
+        // don't list the pads' devices), with the pad's Pre FX (after its
+        // Sampler), after its effects, Post FX and Post Mixer.
+        test::TempDir dir;
+        const auto wav = [&dir](const QString& name) {
+            return test::writeWav(dir.path(name), std::vector<float>(size_t(test::kSampleRate) / 4, 0.25f));
+        };
+        const QString drums = editor().addMidiTrack(-1, QStringLiteral("Drums"), sub::app::kDrumRackKind);
+        const QString rack = project().track(drums).devices.at(0).id;
+        const QString kick = editor().loadDrumPad(drums, rack, 36, wav(QStringLiteral("Kick.wav")));
+        editor().loadDrumPad(drums, rack, 38, wav(QStringLiteral("Snare.wav")));
+        const QString drive = editor().addDevice(drums, QStringLiteral("utility"), -1, kick);
+        const QString bass = editor().addAudioTrack(-1, QStringLiteral("Bass"));
+        session().selection()->selectTrack(bass);
+        const QString keyed = editor().addDevice(bass, QStringLiteral("compressor"));
+        editor().setDeviceSidechain(bass, keyed, Sidechain{drums});
+        QStringList entries = openMenu(keyed);
+        QCOMPARE(entries.mid(entries.indexOf(QStringLiteral("Pre FX"))),
+                 (QStringList{"Pre FX", "Post FX", "Post Mixer", "", "Kick", "Snare"}));
+        QObject* pad = openSubmenu(QStringLiteral("Kick"));
+        QVERIFY(pad);
+        QCOMPARE(test::menuTexts(pad), (QStringList{"Pre FX", "After Utility", "Post FX", "Post Mixer"}));
+        QVERIFY(!test::menuChecked(pad, QStringLiteral("Post Mixer")));
+        ui_.screenshot(QStringLiteral("sidechain-pad-menu"), true);
+        QVERIFY(chooseIn(pad, QStringLiteral("Post Mixer")));
+        QCOMPARE(sidechain(bass, keyed), (Sidechain{drums, sub::app::kPostFader, kick}));
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › Post Mixer"));
+        openMenu(keyed);
+        QVERIFY(checked(QStringLiteral("Drums")) && !checked(QStringLiteral("Post Mixer")));  // (the track's own isn't)
+        pad = openSubmenu(QStringLiteral("Kick"));
+        QVERIFY(pad);
+        QVERIFY(test::menuChecked(pad, QStringLiteral("Post Mixer")));
+        QVERIFY(chooseIn(pad, QStringLiteral("After Utility")));
+        QCOMPARE(sidechain(bass, keyed), (Sidechain{drums, drive}));
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › After Utility"));
+        // After the pad's Sampler is its Pre FX.
+        const QString sampler = sub::app::padSampler(*sub::app::findChain(project().track(drums).devices, kick).chain)->id;
+        editor().setDeviceSidechain(bass, keyed, Sidechain{drums, sampler});
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › Pre FX"));
+        // The source chosen again (from a pad): the track's own, after its fader.
+        openMenu(keyed);
+        QVERIFY(ui_.choose(QStringLiteral("Drums")));
+        QCOMPARE(sidechain(bass, keyed), (Sidechain{drums, sub::app::kPostFader}));
+        editor().setDeviceSidechain(bass, keyed, Sidechain{drums, sub::app::kPreFader, kick});
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › Post FX"));
+        // The pad deleted: before the track's fader, until it comes back.
+        editor().removeRackChains(drums, {kick});
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Post FX"));
+        undo().undo();
+        QCOMPARE(tip(keyed), QStringLiteral("Sidechain: Drums, Kick › Post FX"));
     }
 
     void theMastersDevicesTakeAnyTrack() {

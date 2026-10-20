@@ -43,22 +43,50 @@ QStringList numberedNames(const std::vector<Device>& devices) {
     return numbered;
 }
 
+using TapChoice = DeviceInfo::TapChoice;
+using PadTaps = std::pair<QString, std::vector<TapChoice>>;
+
+std::vector<TapChoice> padTaps(const sub::app::Chain& pad, const QString& name, bool rackNames,
+                               std::vector<PadTaps>& pads);
+
 // "After <device>" for each device of a chain along the signal: a rack's
 // chains' devices ("Rack › Device", "Rack › Chain › Device" with several
-// chains) before the rack itself. Not the track's instrument: after it is Pre FX.
-void addTaps(const std::vector<Device>& devices, const QString& path, bool own,
-             std::vector<std::pair<QString, QString>>& choices) {
+// chains) before the rack itself. Not the track's (or a pad's) instrument:
+// after it is Pre FX. A Drum Rack's pads have taps of their own, onto `pads`,
+// not among these: named `padPath` and the pad's name ("Rack › Pad" with
+// `rackNames`, for several Drum Racks), each before the pads of Drum Racks in it.
+void addTaps(const std::vector<Device>& devices, const QString& path, bool own, std::vector<TapChoice>& choices,
+             std::vector<PadTaps>& pads, const QString& padPath, bool rackNames) {
     const QStringList names = numberedNames(devices);
     for (int i = 0; i < int(devices.size()); ++i) {
         const Device& device = devices[size_t(i)];
         for (const sub::app::Chain& chain : device.chains) {
             const QString inner = path + names[i] + QStringLiteral(" › ") +
                                   (device.chains.size() > 1 ? chain.name + QStringLiteral(" › ") : QString());
-            addTaps(chain.devices, inner, false, choices);
+            if (!device.isDrumRack()) {
+                addTaps(chain.devices, inner, false, choices, pads, padPath, rackNames);
+                continue;
+            }
+            const QString rackPath = rackNames ? path + names[i] + QStringLiteral(" › ") : QString();
+            const QString name = padPath + rackPath + chain.name;
+            const size_t at = pads.size();
+            pads.emplace_back(name, std::vector<TapChoice>{});
+            std::vector<TapChoice> taps = padTaps(chain, name, rackNames, pads);
+            pads[at].second = std::move(taps);
         }
         if (!(own && i == 0 && sub::app::deviceIsInstrument(device)))
-            choices.emplace_back(QStringLiteral("After ") + path + names[i], device.id);
+            choices.push_back({QStringLiteral("After ") + path + names[i], device.id, QString()});
     }
+}
+
+// A pad's own taps, along its signal: Pre FX (after its instrument), after each of its effects, Post FX, Post Mixer.
+std::vector<TapChoice> padTaps(const sub::app::Chain& pad, const QString& name, bool rackNames,
+                               std::vector<PadTaps>& pads) {
+    std::vector<TapChoice> choices{{QStringLiteral("Pre FX"), sub::app::kPreFx, pad.id}};
+    addTaps(pad.devices, QString(), true, choices, pads, name + QStringLiteral(" › "), rackNames);
+    choices.push_back({QStringLiteral("Post FX"), sub::app::kPreFader, pad.id});
+    choices.push_back({QStringLiteral("Post Mixer"), sub::app::kPostFader, pad.id});
+    return choices;
 }
 
 }  // namespace
@@ -174,26 +202,66 @@ std::optional<Sidechain> DeviceInfo::currentSidechain() const {
     return device->sidechain;
 }
 
-std::vector<std::pair<QString, QString>> DeviceInfo::tapChoices(const QString& sourceTrackId) const {
-    std::vector<std::pair<QString, QString>> choices{{QStringLiteral("Pre FX"), sub::app::kPreFx}};
+DeviceInfo::TapChoices DeviceInfo::tapChoices(const QString& sourceTrackId) const {
+    TapChoices choices;
+    choices.track.push_back({QStringLiteral("Pre FX"), sub::app::kPreFx, QString()});
     const Track* source = session_ ? session_->project()->findTrack(sourceTrackId) : nullptr;
-    if (source != nullptr)
-        addTaps(source->devices, QString(), true, choices);
-    choices.emplace_back(QStringLiteral("Post FX"), sub::app::kPreFader);
-    choices.emplace_back(QStringLiteral("Post Mixer"), sub::app::kPostFader);
+    if (source != nullptr) {
+        const auto drumRacks = std::ranges::count_if(sub::app::iterDevices(source->devices),
+                                                     [](const Device* device) { return device->isDrumRack(); });
+        addTaps(source->devices, QString(), true, choices.track, choices.pads, QString(), drumRacks > 1);
+    }
+    choices.track.push_back({QStringLiteral("Post FX"), sub::app::kPreFader, QString()});
+    choices.track.push_back({QStringLiteral("Post Mixer"), sub::app::kPostFader, QString()});
     return choices;
 }
 
-QString DeviceInfo::tapOf(const Sidechain& sidechain) const {
+std::pair<QString, QString> DeviceInfo::tapOf(const Sidechain& sidechain) const {
     const Track* source = session_ ? session_->project()->findTrack(sidechain.trackId) : nullptr;
-    if (sidechain.tapDevice() && source != nullptr) {
+    if (source == nullptr)
+        return {sidechain.tap, sidechain.chain};
+    if (!sidechain.chain.isEmpty()) {
+        if (sub::app::findChain(source->devices, sidechain.chain).chain == nullptr)
+            return {sub::app::kPreFader, QString()};
+    } else if (sidechain.tapDevice()) {
         if (sub::app::findDevice(source->devices, sidechain.tap) == nullptr)
-            return sub::app::kPreFader;
-        const std::vector<Device>& own = source->devices;
-        if (own.front().id == sidechain.tap && sub::app::deviceIsInstrument(own.front()))
-            return sub::app::kPreFx;
+            return {sub::app::kPreFader, QString()};
+        // After the instrument the track (or one of its pads) starts with: its Pre FX.
+        const std::optional<QString> container = sub::app::containerOf(source->devices, sidechain.tap);
+        const std::vector<Device>* chain = sub::app::chainDevices(source->devices, container);
+        if (chain != nullptr && chain->front().id == sidechain.tap && sub::app::deviceIsInstrument(chain->front())) {
+            if (!container)
+                return {sub::app::kPreFx, QString()};
+            if (const sub::app::ConstRackChain pad = sub::app::findChain(source->devices, *container);
+                pad.rack != nullptr && pad.rack->isDrumRack())
+                return {sub::app::kPreFx, *container};
+        }
     }
-    return sidechain.tap;
+    return {sidechain.tap, sidechain.chain};
+}
+
+QString DeviceInfo::tapLabel(const Sidechain& sidechain) const {
+    const auto [tap, chain] = tapOf(sidechain);
+    const TapChoices choices = tapChoices(sidechain.trackId);
+    for (const TapChoice& choice : choices.track) {
+        if (choice.tap == tap && choice.chain == chain)
+            return choice.label;
+    }
+    for (const auto& [pad, taps] : choices.pads) {
+        for (const TapChoice& choice : taps) {
+            if (choice.tap == tap && choice.chain == chain)
+                return pad + QStringLiteral(" › ") + choice.label;
+        }
+    }
+    // A chain of another rack (none of the menu's): by its name.
+    const Track* source = session_ ? session_->project()->findTrack(sidechain.trackId) : nullptr;
+    const sub::app::Chain* other = source ? sub::app::findChain(source->devices, chain).chain : nullptr;
+    if (other == nullptr)
+        return {};
+    const QString where = tap == sub::app::kPreFx      ? QStringLiteral("Pre FX")
+                          : tap == sub::app::kPreFader ? QStringLiteral("Post FX")
+                                                       : QStringLiteral("Post Mixer");
+    return other->name + QStringLiteral(" › ") + where;
 }
 
 void DeviceInfo::refresh() {
@@ -255,16 +323,8 @@ void DeviceInfo::refresh() {
         s.hasSidechainInput = bridge->hasSidechainInput(trackId_, deviceId_);
         if (const std::optional<Sidechain> sidechain = currentSidechain()) {
             s.sidechainOn = true;
-            const QString tap = tapOf(*sidechain);
-            QString where;
-            for (const auto& [label, choice] : tapChoices(sidechain->trackId)) {
-                if (choice == tap) {
-                    where = label;
-                    break;
-                }
-            }
-            s.sidechainToolTip =
-                QStringLiteral("Sidechain: %1, %2").arg(project->track(sidechain->trackId).name, where);
+            s.sidechainToolTip = QStringLiteral("Sidechain: %1, %2")
+                                     .arg(project->track(sidechain->trackId).name, tapLabel(*sidechain));
         } else {
             s.sidechainToolTip = QStringLiteral("Sidechain: none (click to choose a track)");
         }
@@ -337,10 +397,12 @@ QVariantList DeviceInfo::sidechainMenu() const {
         return entries;
     const Project* project = session_->project();
     const std::optional<Sidechain> current = currentSidechain();
-    auto entry = [](const QString& text, bool checked, bool enabled, const QString& source, const QString& tap) {
+    auto entry = [](const QString& text, bool checked, bool enabled, const QString& source, const QString& tap,
+                    const QString& chain = {}) {
         return QVariantMap{{QStringLiteral("text"), text},          {QStringLiteral("checkable"), true},
                            {QStringLiteral("checked"), checked},    {QStringLiteral("enabled"), enabled},
-                           {QStringLiteral("source"), source},      {QStringLiteral("tap"), tap}};
+                           {QStringLiteral("source"), source},      {QStringLiteral("tap"), tap},
+                           {QStringLiteral("chain"), chain}};
     };
     const QVariantMap separator{{QStringLiteral("separator"), true}};
     entries << entry(QStringLiteral("No Sidechain"), !current, true, QString(), QString());
@@ -348,8 +410,9 @@ QVariantList DeviceInfo::sidechainMenu() const {
     QVariantList tracks;
     for (const Track* source : project->sidechainSources(trackId_)) {
         const bool usable = !project->sidechainWouldCycle(trackId_, source->id);
-        // A new source: taken where the old one was (after its fader if after a device of it).
-        const QString tap = !current || current->tapDevice() ? sub::app::kPostFader : current->tap;
+        // A new source: taken where the old one was (after its fader if after a device or from a pad of it).
+        const QString tap =
+            !current || current->tapDevice() || !current->chain.isEmpty() ? sub::app::kPostFader : current->tap;
         tracks << entry(usable ? source->name : source->name + QStringLiteral(" (this track feeds it)"),
                         current && current->trackId == source->id, usable, source->id, tap);
     }
@@ -359,9 +422,21 @@ QVariantList DeviceInfo::sidechainMenu() const {
         entries << QVariantMap{{QStringLiteral("search"), true}, {QStringLiteral("children"), tracks}};
     if (current) {
         entries << separator;
-        const QString tap = tapOf(*current);
-        for (const auto& [label, choice] : tapChoices(current->trackId))
-            entries << entry(label, choice == tap, true, current->trackId, choice);
+        const auto [tap, chain] = tapOf(*current);
+        const TapChoices choices = tapChoices(current->trackId);
+        for (const TapChoice& choice : choices.track)
+            entries << entry(choice.label, choice.tap == tap && choice.chain == chain, true, current->trackId,
+                             choice.tap, choice.chain);
+        // Then each Drum Rack pad's own, in a submenu.
+        if (!choices.pads.empty())
+            entries << separator;
+        for (const auto& [pad, taps] : choices.pads) {
+            QVariantList children;
+            for (const TapChoice& choice : taps)
+                children << entry(choice.label, choice.tap == tap && choice.chain == chain, true, current->trackId,
+                                  choice.tap, choice.chain);
+            entries << QVariantMap{{QStringLiteral("submenu"), pad}, {QStringLiteral("children"), children}};
+        }
     }
     return entries;
 }
@@ -394,12 +469,12 @@ void DeviceInfo::setMidiFrom(const QString& sourceTrackId) {
     refresh();
 }
 
-void DeviceInfo::setSidechain(const QString& sourceTrackId, const QString& tap) {
+void DeviceInfo::setSidechain(const QString& sourceTrackId, const QString& tap, const QString& chain) {
     if (!session_ || !session_->project()->hasDevice(trackId_, deviceId_))
         return;
     // (A source gone meanwhile is refused: the editor says so, on the status line.)
     session_->editor()->trySetDeviceSidechain(trackId_, deviceId_, sourceTrackId,
-                                              tap.isEmpty() ? sub::app::kPostFader : tap);
+                                              tap.isEmpty() ? sub::app::kPostFader : tap, chain);
     refresh();
 }
 

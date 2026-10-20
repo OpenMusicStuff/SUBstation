@@ -96,8 +96,10 @@ A **Drum Rack** becomes a Drum Rack on its track, with a pad for each of Live's 
 same key, named as in Live: its devices (its Simpler a Sampler), its volume, pan and
 activator, and their automation; the clips keep their notes. A pad plays its devices at
 C3, so one that sent Live's devices another note is listed in the message. A compressor
-sidechained from a pad listens to the whole Drum Rack (its track, after the rack). To
-mix the pads on tracks of their own, *Separate Pads into Tracks* ([devices.md](devices.md#drum-rack)).
+sidechained from a pad listens to that pad, where Live took it (Pre FX, Post FX, Post
+Mixer); from a pad of a Drum Rack inside another rack, to the whole Drum Rack (its track,
+after the rack), as the message says. To mix the pads on tracks of their own, *Separate
+Pads into Tracks* ([devices.md](devices.md#drum-rack)).
 
 Other Live devices, MIDI effects but the Arpeggiator, and Max for Live devices are left
 out; the message lists them.

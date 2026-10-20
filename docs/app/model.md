@@ -339,10 +339,14 @@ nowhere.
 Silent at `kMinVolumeDb` (the default for a new send). A muted track sends nothing either way. `Track::sends` is
 replaced whole, never changed in place.
 
-`Sidechain{trackId, tap}`: what a device's aux input hears. `tap` is `kPostFader` (`"post"`, Ableton's *Post
+`Sidechain{trackId, tap, chain}`: what a device's aux input hears. `tap` is `kPostFader` (`"post"`, Ableton's *Post
 Mixer*), `kPreFader` (`"pre"`, *Post FX*), `kPreFx` (`"pre-fx"`: before all the source's devices; on a MIDI track,
 after its instrument), or a device id (after that device; before the fader while that device isn't on the source).
-`tapDevice()` is that id, or none.
+`tapDevice()` is that id, or none. `chain`, when set, is a rack's chain on the source (a Drum Rack's pad) whose own
+tap it is: `kPostFader` after the pad's fader (its pan, mute and solo among the rack's chains), `kPreFader` after its
+devices, `kPreFx` before them (after its instrument, if it starts with one); while that chain isn't on the source,
+before the source's fader. Never with a device id as `tap` (`setDeviceSidechain` refuses it, and a chain that isn't
+the source's). A source copied with the device (`insertCopies`) gives the copy its copied device or chain.
 
 `routingGraph(tracks, returns)` maps each track and return to what its signal goes into: where its output goes
 (its group by default), the returns it sends to, the tracks taking their input from it, and the tracks whose
@@ -729,7 +733,8 @@ Main operations, by area (`[Q]`: `Q_INVOKABLE`, callable from QML):
   pad's devices, copies of the track's MIDI effects, its fader, its automation (its chain's faders as the track's
   volume and pan) and its key's notes at `kDrumPadNote`; devices taking the track's notes take their own again) and
   `padToTrack` [Q] (one pad so, after a track (`insertionPoint`), the pad and its notes leaving the Drum Rack's
-  track); one step each.
+  track); one step each. Sidechains taken from those pads are taken from their tracks, as they were in the pads
+  (`padSidechainsToTracks`; not on frozen tracks).
 - **Modulation** (EditorModulation.cpp): `mapModulation` (a parameter of another device on the modulator's track,
   over `low`..`high`, which way up; it moves over from another modulator in the same step, "Map Modulation" through
   `setDevices`; `EditError` for a device that isn't a modulator, the modulator itself, another track's device, a

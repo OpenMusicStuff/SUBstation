@@ -48,7 +48,9 @@ and takes about 330 MB.
 `Importer` makes two passes over `LiveSet/Tracks`:
 
 1. `assignIds()`: an id for every track and return, so routing to a track further down
-   (outputs, inputs, sidechains) resolves in the second pass.
+   (outputs, inputs, sidechains) resolves in the second pass; and for every pad of a Drum Rack
+   on a track's own chain (`padIds_`, by Live's name for it as a source, `<track Id>/DeviceOut.<device>.B<branch>`;
+   `branchIds_`, by its branch, which `rack()` gives it), so a sidechain from a pad resolves to it.
 2. `run()`: each track, return and the main track translated (`translateTrack`,
    `translateReturn`, `translateMaster`), then their automation.
 
@@ -78,6 +80,7 @@ Values Live writes, and what they become:
 | Time signature: `numerator - 1 + 99 * log2(denominator)` | numerator, denominator |
 | Colour: an index into Live's 70 colours | `kLiveColors` (its first 13 are `kTrackColors`) |
 | Drum Rack pad `ReceivingNote`: `128 - note` | the pad's key (`receive_note`; none: the loader gives it a free one) |
+| A routing target from a pad: `AudioIn/Track.<Id>/DeviceOut.<device>.B<branch>,<PreFxOut, PostFxOut...>` (the track's device, the Drum Rack's branch) | a sidechain from that pad (`chain`), its Pre FX, Post FX or Post Mixer; a pad of a Drum Rack not on the track's own chain (or an input from one): the track's Pre FX, noted |
 | 32-bit words (class id fields, VST3 `ParameterId`, a VST2's id): signed or unsigned | `liveWord()`: unsigned; a `ParameterId` of -1 is a slot with none |
 | Colour: `Color` (Live 11, 12) or `ColorIndex` (Live 10) | `colorOf()` |
 | Utility gain, Compressor threshold: linear amplitude | dB |

@@ -147,10 +147,15 @@ public:
         // What it hears or plays from elsewhere.
         if (device.sidechain) {
             const Track* source = project().findTrack(device.sidechain->trackId);
-            out.insert(QStringLiteral("sidechain"),
-                       QJsonObject{{QStringLiteral("trackId"), device.sidechain->trackId},
-                                   {QStringLiteral("trackName"), source ? source->name : QString()},
-                                   {QStringLiteral("tap"), device.sidechain->tap}});
+            QJsonObject sidechain{{QStringLiteral("trackId"), device.sidechain->trackId},
+                                  {QStringLiteral("trackName"), source ? source->name : QString()},
+                                  {QStringLiteral("tap"), device.sidechain->tap}};
+            if (!device.sidechain->chain.isEmpty()) {  // a pad's (a rack's chain's) tap
+                const Chain* pad = source ? findChain(source->devices, device.sidechain->chain).chain : nullptr;
+                sidechain.insert(QStringLiteral("chainId"), device.sidechain->chain);
+                sidechain.insert(QStringLiteral("chainName"), pad ? pad->name : QString());
+            }
+            out.insert(QStringLiteral("sidechain"), sidechain);
         }
         if (!device.midiFrom.isEmpty()) out.insert(QStringLiteral("midiFrom"), device.midiFrom);
         // What it moves: a modulator's parameters, a rack's macros'.

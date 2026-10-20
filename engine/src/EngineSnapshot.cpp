@@ -246,6 +246,10 @@ void Engine::buildChainLocked(uint32_t chainId, const StripBuild& build, int dep
                 const auto taps = build.chainTaps->find(model.id);
                 if (taps != build.chainTaps->end()) render.deviceTaps = taps->second;
             }
+            if (build.chainFaderTaps) {  // and after its fader
+                const auto taps = build.chainFaderTaps->find(model.id);
+                if (taps != build.chainFaderTaps->end()) render.faderTaps = taps->second;
+            }
             rack->chains.push_back(std::move(render));
         }
         racks[i] = std::move(rack);
@@ -564,6 +568,7 @@ void Engine::buildSnapshotLocked() {
     std::vector<std::vector<int>> incoming(tracks_.size()), outgoing(tracks_.size());  // by snapshot index
     std::vector<std::vector<int>> deviceTaps(tracks_.size());                             // by snapshot index
     std::unordered_map<uint32_t, std::vector<int>> chainTaps;  // rack chain -> the taps after its devices
+    std::unordered_map<uint32_t, std::vector<int>> chainFaderTaps;  // rack chain -> the taps after its fader
     std::vector<std::vector<std::pair<int, int>>> sidechains(tracks_.size() + 1);       // (device, edge), the master last
     std::vector<int> inputEdge(tracks_.size(), -1);  // by snapshot index: the input edge it takes, if any
     std::vector<int> inputArrival(tracks_.size(), 0);  // by snapshot index: how late that edge leaves its source
@@ -583,9 +588,31 @@ void Engine::buildSnapshotLocked() {
             // Where a tap leaves the source: after a device (in the source's own
             // chain, or in a rack's chain there: that chain writes it), or before
             // them all (also while the source plays without its devices); else
-            // before or after the fader.
+            // before or after the fader. A rack's chain's: before its devices or
+            // after them (that chain writes it), or after its fader (the rack does).
             const auto tapAt = [&](SidechainTap where) {
-                if (route.tap >= 0) {
+                if (route.tapRack >= 0) {
+                    edge.tap = EdgeRender::Tap::AfterDevice;
+                    const auto& sourceSlots = slotsOf[static_cast<size_t>(t)];
+                    const auto rack = static_cast<size_t>(route.tapRack);
+                    const std::vector<uint32_t>* rackChains =
+                        rack < sourceSlots.size() && sourceSlots[rack].isRack
+                            ? &processors_.at(sourceSlots[rack].processorId).chains
+                            : nullptr;
+                    if (!rackChains || route.tapChain < 0 ||
+                        static_cast<size_t>(route.tapChain) >= rackChains->size()) {
+                        deviceTaps[static_cast<size_t>(edge.from)].push_back(index);  // (played without its devices)
+                        return;
+                    }
+                    const uint32_t chain = (*rackChains)[static_cast<size_t>(route.tapChain)];
+                    if (where == SidechainTap::PostFader) {
+                        chainFaderTaps[chain].push_back(index);
+                    } else {
+                        edge.tapDevice =
+                            where == SidechainTap::PreFx ? -1 : static_cast<int>(chains_.at(chain).inserts.size()) - 1;
+                        chainTaps[chain].push_back(index);
+                    }
+                } else if (route.tap >= 0) {
                     edge.tap = EdgeRender::Tap::AfterDevice;
                     const auto& sourceSlots = slotsOf[static_cast<size_t>(t)];
                     std::optional<uint32_t> tapChain;
@@ -634,7 +661,8 @@ void Engine::buildSnapshotLocked() {
                 ProcessorEntry& device = processors_.at(origin.processor);
                 SidechainModel& sidechain = *device.sidechain;
                 edge.state = sidechain.state;
-                tapAt(sidechain.tap);
+                // (Of a rack's chain that has left the source: before the source's fader.)
+                tapAt(sidechain.tapChain != 0 && route.tapRack < 0 ? SidechainTap::PreFader : sidechain.tap);
                 intoDevice(device);
                 ensureDelay(sidechain.delay, edge.compensation);
                 edge.delay = sidechain.delay;
@@ -702,6 +730,7 @@ void Engine::buildSnapshotLocked() {
         }
         build.snap = snap.get();
         build.chainTaps = &chainTaps;
+        build.chainFaderTaps = &chainFaderTaps;
         return build;
     };
 

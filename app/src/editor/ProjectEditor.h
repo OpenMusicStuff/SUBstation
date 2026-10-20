@@ -588,14 +588,16 @@ public:
     // same id: its mixer, sends, routing and the effects after the rack stay
     // its), with a MIDI track in it for each pad: the pad's devices, its fader,
     // its automation, and the notes of its key on the track's clips, at C3 (as
-    // the pad's devices heard them); the track's MIDI effects play on each.
-    // Only a Drum Rack of the track's own chain (not in a rack). One undo step;
-    // the new tracks' ids (none if refused).
+    // the pad's devices heard them); the track's MIDI effects play on each. A
+    // sidechain taken from a pad is taken from its track (as the pad's: Pre FX,
+    // Post FX, Post Mixer). Only a Drum Rack of the track's own chain (not in a
+    // rack). One undo step; the new tracks' ids (none if refused).
     Q_INVOKABLE QStringList separatePads(const QString& trackId, const QString& rackId);
     // One pad as a MIDI track of its own (as separatePads makes them), after
     // `afterTrackId` and what is in it, in its group (""): last, in no group):
-    // the pad leaves the rack, and the notes of its key the track's clips. One
-    // undo step; the new track's id ("" if refused).
+    // the pad leaves the rack, and the notes of its key the track's clips; a
+    // sidechain taken from the pad, from the track. One undo step; the new
+    // track's id ("" if refused).
     Q_INVOKABLE QString padToTrack(const QString& trackId, const QString& chainId, const QString& afterTrackId = {});
 
     // --- Grooves (EditorGrooves.cpp; model/Grooves.h) ---
@@ -771,9 +773,10 @@ public:
     Q_INVOKABLE void setDeviceEnabled(const QString& trackId, const QString& deviceId, bool enabled);
     // What a device's sidechain (aux) input hears: a track's (a group's, a
     // return's) signal, after its fader, before it, or after one of its devices
-    // (in a rack there too); none: nothing. EditError for a source it can't
-    // take (the master, its own track, or one its track feeds: a cycle) or a
-    // tap after a device that isn't on the source.
+    // (in a rack there too), or one of its racks' chains' (a Drum Rack's pad's:
+    // Sidechain::chain); none: nothing. EditError for a source it can't
+    // take (the master, its own track, or one its track feeds: a cycle), a
+    // tap after a device that isn't on the source, or of a chain that isn't.
     void setDeviceSidechain(const QString& trackId, const QString& deviceId, const std::optional<Sidechain>& sidechain);
     // A device's MIDI input: the MIDI track whose notes it plays instead of its
     // own track's ("" or its own track: its own track's). EditError for a source
@@ -886,9 +889,11 @@ public:
     // `enabled` false: no MIDI input. device "": every input; channel 0: every channel.
     Q_INVOKABLE bool trySetTrackMidiInput(const QString& trackId, bool enabled, const QString& device = {},
                                           int channel = 0);
-    // sourceTrackId "": none. tap: kPostFader, kPreFader, kPreFx or a device id.
+    // sourceTrackId "": none. tap: kPostFader, kPreFader, kPreFx or a device id;
+    // chain: a rack's chain on the source (a pad) whose kPostFader, kPreFader or kPreFx it is.
     Q_INVOKABLE bool trySetDeviceSidechain(const QString& trackId, const QString& deviceId,
-                                           const QString& sourceTrackId, const QString& tap = QStringLiteral("post"));
+                                           const QString& sourceTrackId, const QString& tap = QStringLiteral("post"),
+                                           const QString& chain = {});
     // sourceId "": its own track's notes.
     Q_INVOKABLE bool trySetDeviceMidiFrom(const QString& trackId, const QString& deviceId, const QString& sourceId);
     Q_INVOKABLE QString tryAddRackChain(const QString& trackId, const QString& rackId, int index = -1,
@@ -980,6 +985,9 @@ private:
     bool pushModulatedParams(const QString& trackId, const QMap<DeviceParam, double>& nw,
                              const QMap<DeviceParam, double>& old, const QString& text, const QString& mergeKey);
 
+    // The sidechains taken from pads of `trackId` now tracks of their own (pad -> its track) take theirs:
+    // that track's tap where the pad's was (its Pre FX, Post FX, Post Mixer).
+    void padSidechainsToTracks(const QString& trackId, const QHash<QString, QString>& padTracks, const QString& text);
     // Drum Racks' pads named after the samples these Samplers played (device,
     // its sample before) named after the ones they play now (EditorDrumRacks.cpp).
     void renamePadsFollowing(const QString& trackId, const QList<QPair<QString, QString>>& samplersBefore,

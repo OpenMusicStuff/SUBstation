@@ -174,7 +174,7 @@ values, or a sixth value that isn't an object, makes the file damaged.
 | `params` | `{param id: plain value}`; a rack's are its macros (`"macro1"`.., one per macro, normalized) |
 | `plugin` | plug-ins only: `{"format": "VST3", "uid", "name", "vendor", "path", "instrument"}` |
 | `state` | base64: a plug-in's whole state (a `.vstpreset`), or a built-in device's non-parameter values; omitted when a built-in device has none |
-| `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}` |
+| `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}`, and `"chain"`: a rack's chain on the source (a Drum Rack's pad) whose `"post"`, `"pre"` or `"pre-fx"` it is, only when taken from one |
 | `midi_from` | only when set: the id of the MIDI track whose notes it plays instead of its own track's (version 22) |
 | `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23), and `"bipolar": true` for a bipolar one (its knob's handle drags it either side of the knob's value; older versions read it as unipolar) |
 | `name` | racks only, when set: the preset it was saved as or loaded from |
@@ -281,6 +281,7 @@ that makes an older file load as it was, and saving writes the current version.
 | 26 | the song's tempo map and time signature changes (`tempo_map`, `time_signatures`) | one tempo and one time signature |
 | 27 | audio clips' warp markers (`warp_markers`) | none: a clip at its segment BPM throughout |
 | 28 | grooves: the library (`grooves`), the default groove (`default_groove`), clips' grooves (`groove`) | none: nothing grooved |
+| 29 | sidechains taken from a rack's chain (a Drum Rack's pad: `chain` on a `sidechain`) | every sidechain taken from its track itself |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and

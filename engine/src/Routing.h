@@ -28,7 +28,10 @@
 // lines up with the signal at that device (the devices before the rack, then
 // those before it in its chain), and a delay before the device makes its chain
 // later, and so maybe the rack. A tap after a device in a chain leaves as that
-// device's signal does: before the chain's fader and the delay lining it up.
+// device's signal does: before the chain's fader and the delay lining it up. A
+// tap of a chain itself (a Drum Rack's pad) leaves as the chain hears its input,
+// or as its fader hears its signal (before the fader or after it, as late
+// either way): before the delay lining it up too.
 
 #include <algorithm>
 #include <cstddef>
@@ -48,6 +51,11 @@ struct RouteEdge {
     // the chain's fader); 0: before them all; -1: after all of them (an output, a
     // send, a pre-fader tap).
     int tap = -1;
+    // Or where it leaves one of the chains of the rack in slot `tapRack` (-1:
+    // none), `tapChain` its place among them: as that chain hears its input
+    // (`tap` 0), or as its fader hears its signal, after its devices (`tap` -1).
+    int tapRack = -1;
+    int tapChain = 0;
     // A sidechain: the device of `to` it goes into (its slot: ChainSlot), where
     // it is aligned; -1: none (or one not aligned: a device switched off).
     int device = -1;
@@ -193,7 +201,15 @@ inline GraphLatencies alignGraph(const std::vector<int>& order, const std::vecto
         // After the device in slot tap - 1: as it leaves it (not as late as the
         // next one hears it: a delay before that comes later).
         int latency = result.deviceLatency[from].back();  // after all of them
-        if (edge.tap == 0) {
+        if (edge.tapRack >= 0 && static_cast<size_t>(edge.tapRack) < out.size()) {
+            // A rack's chain: as the rack hears its input, or as the chain's fader hears it.
+            const auto rack = static_cast<size_t>(edge.tapRack);
+            const auto& ends = result.chainEnd[from][rack];
+            latency = result.deviceLatency[from][rack];
+            if (edge.tap != 0 && edge.tapChain >= 0 && static_cast<size_t>(edge.tapChain) < ends.size()) {
+                latency = ends[static_cast<size_t>(edge.tapChain)];
+            }
+        } else if (edge.tap == 0) {
             latency = 0;
         } else if (edge.tap > 0 && static_cast<size_t>(edge.tap) <= out.size()) {
             latency = out[static_cast<size_t>(edge.tap) - 1];

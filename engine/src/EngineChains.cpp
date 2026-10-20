@@ -455,7 +455,7 @@ uint32_t Engine::processorMidiInput(uint32_t processorId) {
 }
 
 void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId, SidechainTap tap,
-                                   uint32_t tapProcessorId) {
+                                   uint32_t tapProcessorId, uint32_t tapChainId) {
     std::lock_guard lock(mutex_);
     const auto processor = processorLocked(processorId);
     ProcessorEntry& entry = processors_[processorId];
@@ -467,6 +467,7 @@ void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId,
     }
     arrangementTrackLocked(sourceTrackId);
     tapProcessorId = tapProcessorLocked(tap, tapProcessorId, sourceTrackId);
+    tapChainId = tapChainLocked(tap, tapChainId, sourceTrackId);
     if (!entry.sidechain || entry.sidechain->source != sourceTrackId) {
         checkSidechainLocked(sourceTrackId, chainLocked(entry.chainId).stripId);
     }
@@ -477,6 +478,7 @@ void Engine::setProcessorSidechain(uint32_t processorId, uint32_t sourceTrackId,
     entry.sidechain->source = sourceTrackId;
     entry.sidechain->tap = tap;
     entry.sidechain->tapProcessor = tapProcessorId;
+    entry.sidechain->tapChain = tapChainId;
     rebuildSnapshotLocked();
 }
 
@@ -494,7 +496,8 @@ std::optional<SidechainInfo> Engine::processorSidechain(uint32_t processorId) {
     processorLocked(processorId);
     const ProcessorEntry& entry = processors_[processorId];
     if (!entry.sidechain) return std::nullopt;
-    return SidechainInfo{entry.sidechain->source, entry.sidechain->tap, entry.sidechain->tapProcessor};
+    return SidechainInfo{entry.sidechain->source, entry.sidechain->tap, entry.sidechain->tapProcessor,
+                         entry.sidechain->tapChain};
 }
 
 std::vector<ParamInfo> Engine::processorParams(uint32_t processorId) { return processor(processorId)->params(); }

@@ -106,8 +106,9 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // changes ("tempo_map", "time_signatures"; "tempo" and "time_signature" stay the
 // song's start, so a reader of 25 plays it at one tempo), 27: audio clips' warp markers
 // ("warp_markers": [[seconds, beat], ...]; "segment_bpm" stays their first stretch's), 28: grooves (the
-// library, the default groove, clips' grooves)
-inline constexpr int kProjectVersion = 28;
+// library, the default groove, clips' grooves), 29: sidechains taken from a rack's chain (a Drum Rack's
+// pad: a sidechain's "chain")
+inline constexpr int kProjectVersion = 29;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

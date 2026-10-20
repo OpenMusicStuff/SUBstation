@@ -290,11 +290,38 @@ std::pair<sub::SidechainTap, quint32> EngineBridge::engineTap(const QString& sou
     return {sub::SidechainTap::AfterDevice, *tapped};
 }
 
+std::optional<EngineBridge::SidechainState> EngineBridge::engineChainTap(const QString& sourceId,
+                                                                           const QString& chainId,
+                                                                           const QString& tap) {
+    const Track* sourceTrack = project_->findTrack(sourceId);
+    const auto chain = engineChainId(chainId);
+    if (sourceTrack == nullptr || !chain || d_->chainOwner.value(chainId) != sourceId) return std::nullopt;
+    const Chain* pad = findChain(sourceTrack->devices, chainId).chain;
+    if (pad == nullptr) return std::nullopt;
+    if (tap == kPreFx) {
+        // A pad's own audio is its instrument's: before its effects.
+        if (!pad->devices.empty() && deviceIsInstrument(pad->devices.front())) {
+            if (const auto instrument = engineDeviceId(sourceId, pad->devices.front().id)) {
+                return SidechainState{0, sub::SidechainTap::AfterDevice, *instrument, 0};
+            }
+        }
+        return SidechainState{0, sub::SidechainTap::PreFx, 0, *chain};
+    }
+    return SidechainState{0, tap == kPreFader ? sub::SidechainTap::PreFader : sub::SidechainTap::PostFader, 0, *chain};
+}
+
 std::optional<EngineBridge::SidechainState> EngineBridge::wantedSidechain(const Device& device, quint32 processorId) {
     if (!device.sidechain || device.sidechain->trackId == kMaster) return std::nullopt;
     const Sidechain sidechain = *device.sidechain;
     const auto source = engineTrackId(sidechain.trackId);
     if (!source || !engine_.processorInfo(processorId).hasSidechain) return std::nullopt;
+    if (!sidechain.chain.isEmpty()) {
+        // A rack's chain (a pad): its own taps; before the source's fader while it isn't on the source.
+        SidechainState state = engineChainTap(sidechain.trackId, sidechain.chain, sidechain.tap)
+                                   .value_or(SidechainState{0, sub::SidechainTap::PreFader, 0, 0});
+        state.source = *source;
+        return state;
+    }
     const auto [tap, tapProcessor] = engineTap(sidechain.trackId, sidechain.tap);
     return SidechainState{*source, tap, tapProcessor};
 }
@@ -332,7 +359,7 @@ void EngineBridge::pushSidechains() {
     for (const auto& [processorId, state] : wanted) {
         if (d.sidechains.count(processorId) > 0) continue;
         try {
-            engine_.setProcessorSidechain(processorId, state.source, state.tap, state.tapProcessor);
+            engine_.setProcessorSidechain(processorId, state.source, state.tap, state.tapProcessor, state.tapChain);
         } catch (const std::invalid_argument&) {
             continue;  // a cycle with a route another change hasn't undone yet: it comes with that change
         }

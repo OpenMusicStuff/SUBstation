@@ -1140,6 +1140,7 @@ void Renderer::tapSkippedRack(const RenderSnapshot& snap, const RackRender& rack
                               const float* right, int frames) noexcept {
     for (const ChainRender& chain : rack.chains) {
         for (const int e : chain.deviceTaps) tapInto(snap, e, left, right, frames);
+        for (const int e : chain.faderTaps) tapInto(snap, e, left, right, frames);
         for (const auto& inner : chain.racks) {
             if (inner) tapSkippedRack(snap, *inner, left, right, frames);
         }
@@ -1696,6 +1697,7 @@ void Renderer::processRack(const RenderSnapshot& snap, const RackRender& rack, P
         applyFader(snap, *chain.params, chain.volume, chain.pan, nullptr, audible, chainL, chainR, frames,
                    chunkFlags_.live,
                    scratch, nullptr);
+        for (const int e : chain.faderTaps) tapInto(snap, e, chainL, chainR, frames);  // (a pad's Post Mixer)
         // Lined up with the slowest chain (not skipped while monitored: chains
         // out of line with each other would comb-filter).
         if (DelayLine* delay = chainDelayLine(chain)) delay->process(chainL, chainR, frames, chain.compensation);

@@ -1,6 +1,6 @@
 // What the engine hears of the editor's edits, now that the session has both
 // (what the editor's and the bridge's own tests leave to it): groups as buses,
-// returns and sends, inputs from tracks, sidechains, racks (their chains,
+// returns and sends, inputs from tracks, sidechains (from Drum Rack pads too), racks (their chains,
 // faders, automation and macros), presets rendering as the devices they were
 // saved from (plug-ins too; missing ones loading as missing devices; default
 // presets), frozen tracks playing their frozen audio, and the notes a MIDI clip
@@ -303,6 +303,55 @@ private Q_SLOTS:
         f.editor().addDevice(keys, QStringLiteral("synth"));  // another instrument, in its place
         QCOMPARE(sidechain(pad, keyed),
                  expect(keys, sub::SidechainTap::AfterDevice, f.deviceOf(keys, project.track(keys).devices[0].id)));
+    }
+
+    void theEngineTakesSidechainsFromPads() {
+        // A Drum Rack pad's own taps: after its fader, before it, and before
+        // its effects (after its Sampler: a pad's own audio is its instrument's).
+        const auto ref = testPlugin(QStringLiteral("SUB Test Sidechain"));
+        if (!ref) QSKIP("test plug-ins not built");
+        Bridged f;
+        TempDir dir;
+        Project& project = f.project();
+        sub::Engine& engine = f.engine;
+        const QString drums = f.editor().addMidiTrack(-1, {}, kDrumRackKind);
+        const QString rack = project.track(drums).devices.at(0).id;
+        const QString kick = f.editor().loadDrumPad(drums, rack, 36, dcWav(dir));
+        const QString bass = f.editor().addAudioTrack();
+        const QString keyed = f.editor().addDevice(bass, kPluginKind, -1, ref);
+        const auto sidechain = [&]() -> QString {
+            const auto info = engine.processorSidechain(f.deviceOf(bass, keyed));
+            if (!info) return QStringLiteral("none");
+            return QStringLiteral("%1 %2 %3 %4")
+                .arg(info->trackId)
+                .arg(static_cast<int>(info->tap))
+                .arg(info->tapProcessorId)
+                .arg(info->tapChainId);
+        };
+        const auto expect = [&](sub::SidechainTap tap, quint32 tapped, bool fromPad) {
+            const quint32 chain = fromPad ? *f.bridge().engineChainId(kick) : 0;
+            return QStringLiteral("%1 %2 %3 %4").arg(f.trackOf(drums)).arg(static_cast<int>(tap)).arg(tapped).arg(chain);
+        };
+        f.editor().setDeviceSidechain(bass, keyed, Sidechain{drums, kPostFader, kick});
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PostFader, 0, true));
+        f.editor().setDeviceSidechain(bass, keyed, Sidechain{drums, kPreFader, kick});
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PreFader, 0, true));
+        f.editor().setDeviceSidechain(bass, keyed, Sidechain{drums, kPreFx, kick});
+        const QString sampler = padSampler(*findChain(project.track(drums).devices, kick).chain)->id;
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::AfterDevice, f.deviceOf(drums, sampler), false));
+        f.editor().removeDevice(drums, sampler);  // without an instrument: what the pad hears
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PreFx, 0, true));
+        f.stack().undo();
+        // The pad deleted: before the track's fader, until it comes back.
+        f.editor().setDeviceSidechain(bass, keyed, Sidechain{drums, kPostFader, kick});
+        f.editor().removeRackChains(drums, {kick});
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PreFader, 0, false));
+        f.stack().undo();
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PostFader, 0, true));
+        // Opened again.
+        loadInto(project, projectToJson(project));
+        f.bridge().loadPendingPlugins();
+        QCOMPARE(sidechain(), expect(sub::SidechainTap::PostFader, 0, true));
     }
 
     // --- Racks ---
