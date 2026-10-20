@@ -65,7 +65,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 28; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 29; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
@@ -174,7 +174,7 @@ values, or a sixth value that isn't an object, makes the file damaged.
 | `params` | `{param id: plain value}`; a rack's are its macros (`"macro1"`.., one per macro, normalized) |
 | `plugin` | plug-ins only: `{"format": "VST3", "uid", "name", "vendor", "path", "instrument"}` |
 | `state` | base64: a plug-in's whole state (a `.vstpreset`), or a built-in device's non-parameter values; omitted when a built-in device has none |
-| `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}`, and `"chain"`: a rack's chain on the source (a Drum Rack's pad) whose `"post"`, `"pre"` or `"pre-fx"` it is, only when taken from one |
+| `sidechain` | only when set: `{"track": source id, "tap": "post" / "pre" / "pre-fx" / a device id}`, and `"chain"`: a rack's chain on the source (a Drum Rack's pad) whose `"post"`, `"pre"` or `"pre-fx"` it is, only when taken from one (version 29) |
 | `midi_from` | only when set: the id of the MIDI track whose notes it plays instead of its own track's (version 22) |
 | `modulations` | a modulator's (the LFO's, the Envelope's), only when it moves something: `[{"device", "param", "low", "high", "invert"}]`, normalized (`low` > `high`: the other way round; version 23), and `"bipolar": true` for a bipolar one (its knob's handle drags it either side of the knob's value; older versions read it as unipolar) |
 | `name` | racks only, when set: the preset it was saved as or loaded from |
