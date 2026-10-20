@@ -3,11 +3,13 @@
 #include "arrangement/WaveformCache.h"
 #include "audio/EngineBridge.h"
 #include "audio/Waveform.h"
+#include "input/GestureKey.h"
 #include "model/Numbers.h"
 #include "model/Timebase.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
 
+#include <QCursor>
 #include <QFontMetrics>
 
 #include <algorithm>
@@ -37,7 +39,10 @@ void drawWaveform(SgPainter& p, const app::Waveform& source, const QRectF& area,
 
 }  // namespace
 
-ClipWaveform::ClipWaveform(QQuickItem* parent) : SgCanvas(parent) {}
+ClipWaveform::ClipWaveform(QQuickItem* parent) : SgCanvas(parent) {
+    setAcceptedMouseButtons(Qt::LeftButton);
+    setAcceptHoverEvents(true);
+}
 
 void ClipWaveform::setSession(app::Session* session) {
     if (session == session_) return;
@@ -65,7 +70,9 @@ void ClipWaveform::refreshBands() {
     if (controller_ && session_) {
         const app::EngineBridge* bridge = session_->bridge();
         for (const auto& [clip, color] : controller_->audioClips())
-            bands_.push_back({clip, color, bridge->waveform(clip.path), bridge->loadError(clip.path)});
+            bands_.push_back({clip, color, bridge->waveform(clip.path), bridge->loadError(clip.path), {}});
+        if (controller_->warpMarkable() && bands_.size() == 1)
+            bands_.front().transients = controller_->transients(bands_.front().clip.path);
     }
     update();
 }
@@ -149,7 +156,100 @@ double ClipWaveform::drawBand(SgPainter& p, const Band& band, const QRectF& area
         p.fillRect(flag, Theme::text());
         p.drawText(flag, Qt::AlignCenter, label, Theme::accentText(), font);
     }
+
+    // Transients: ticks along the top.
+    QColor tick = Theme::text();
+    tick.setAlpha(110);
+    for (double sec : band.transients) p.fillRect(QRectF(app::roundHalfEven(xAt(sec)), area.top(), 1, 5), tick);
+
+    // Warp markers: a line through the waveform under a tab.
+    if (clip.isWarped()) {
+        QColor line = Theme::accent();
+        line.setAlpha(170);
+        for (const app::WarpMarker& m : clip.warpMarkers) {
+            const double x = app::roundHalfEven(xAt(m.sec));
+            p.fillRect(QRectF(x, area.top(), 1, area.height()), line);
+            p.fillRect(QRectF(x - kMarkerTab / 2.0, area.top(), kMarkerTab, kMarkerTab), Theme::accent());
+        }
+    }
     return totalSec;
+}
+
+// --- Editing warp markers ----------------------------------------------------------------------
+
+double ClipWaveform::editableSec() const {
+    if (!controller_ || bands_.size() != 1) return 0.0;
+    const Band& band = bands_.front();
+    const app::Clip& clip = band.clip;
+    if (!clip.isWarped() || (clip.warpMarkers.empty() && clip.sourceMap) || band.source.isNull() ||
+        band.source.frames() <= 0)
+        return 0.0;
+    return static_cast<double>(band.source.frames()) / band.source.sampleRate();
+}
+
+double ClipWaveform::secAt(double x) const {
+    return width() > 0 ? std::clamp(x / width(), 0.0, 1.0) * editableSec() : 0.0;
+}
+
+int ClipWaveform::markerAt(double x) const {
+    const double totalSec = editableSec();
+    if (totalSec <= 0) return -1;
+    int best = -1;
+    double nearest = kMarkerTab / 2.0 + 1;
+    const auto& markers = bands_.front().clip.warpMarkers;
+    for (size_t i = 0; i < markers.size(); ++i) {
+        const double distance = std::abs(markers[i].sec / totalSec * width() - x);
+        if (distance <= nearest) {
+            nearest = distance;
+            best = static_cast<int>(i);
+        }
+    }
+    return best;
+}
+
+double ClipWaveform::snappedSecAt(double x) const {
+    const double totalSec = editableSec();
+    double best = secAt(x);
+    double nearest = kMarkerTab / 2.0 + 1;
+    for (double sec : bands_.front().transients) {
+        const double distance = std::abs(sec / totalSec * width() - x);
+        if (distance <= nearest) {
+            nearest = distance;
+            best = sec;
+        }
+    }
+    return best;
+}
+
+void ClipWaveform::mousePressEvent(QMouseEvent* event) {
+    if (event->flags() & Qt::MouseEventCreatedDoubleClick) return;  // (the double-click stands for it)
+    const int index = markerAt(event->position().x());
+    if (event->button() != Qt::LeftButton || index < 0) {
+        event->ignore();
+        return;
+    }
+    drag_ = Drag{index, newGestureKey()};
+}
+
+void ClipWaveform::mouseMoveEvent(QMouseEvent* event) {
+    if (drag_ && editableSec() > 0) controller_->moveWarpMarker(drag_->index, secAt(event->position().x()), drag_->key);
+}
+
+void ClipWaveform::mouseReleaseEvent(QMouseEvent*) { drag_.reset(); }
+
+void ClipWaveform::mouseUngrabEvent() { drag_.reset(); }
+
+void ClipWaveform::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() != Qt::LeftButton || editableSec() <= 0) return;
+    const double x = event->position().x();
+    if (const int index = markerAt(x); index >= 0)
+        controller_->removeWarpMarker(index);
+    else
+        controller_->addWarpMarker(snappedSecAt(x));
+}
+
+void ClipWaveform::hoverMoveEvent(QHoverEvent* event) {
+    setCursor(markerAt(event->position().x()) >= 0 ? Qt::SizeHorCursor : Qt::ArrowCursor);
 }
 
 void ClipWaveform::drawLabel(SgPainter& p, const QRectF& band, const QString& name) const {

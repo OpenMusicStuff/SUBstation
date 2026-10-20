@@ -338,6 +338,11 @@ QJsonObject clipToJson(const Clip& clip, const QString& base) {
     data[QStringLiteral("warp")] = clip.warp;
     data[QStringLiteral("warp_mode")] = clip.warpMode;
     data[QStringLiteral("segment_bpm")] = clip.segmentBpm;
+    if (!clip.warpMarkers.empty()) {
+        QJsonArray markers;
+        for (const WarpMarker& m : clip.warpMarkers) markers.append(QJsonArray{m.sec, m.beat});
+        data[QStringLiteral("warp_markers")] = markers;
+    }
     data[QStringLiteral("transpose")] = clip.transpose;
     data[QStringLiteral("detune")] = clip.detune;
     data[QStringLiteral("pan")] = clip.pan;
@@ -684,6 +689,19 @@ Clip audioClipFromJson(const QJsonValue& value, const QString& base) {
     clip.warp = truthy(c.value(QStringLiteral("warp")));
     clip.warpMode = warpModeOf(c.value(QStringLiteral("warp_mode")));
     clip.segmentBpm = floatOr(c, QStringLiteral("segment_bpm"), 0.0);
+    if (const QJsonValue markers = c.value(QStringLiteral("warp_markers")); markers.isArray()) {
+        std::vector<WarpMarker> read;
+        for (const QJsonValue& m : markers.toArray()) {
+            if (!m.isArray() || m.toArray().size() != 2) damaged(QStringLiteral("a warp marker is a time and a beat"));
+            read.push_back({toFloat(m.toArray().at(0)), toFloat(m.toArray().at(1))});
+        }
+        clip.setWarpMarkers(std::move(read));
+        // (Editing keeps every stretch's tempo in range, and the edits that scale them rely on it.)
+        for (const double bpm : clip.warpTempos()) {
+            if (!std::isfinite(bpm) || bpm < kMinSegmentBpm * (1 - 1e-6) || bpm > kMaxSegmentBpm * (1 + 1e-6))
+                damaged(QStringLiteral("a warp marker's stretch isn't within 20..999 BPM"));
+        }
+    }
     clip.transpose = c.contains(QStringLiteral("transpose")) ? toSmallInt(c.value(QStringLiteral("transpose"))) : 0;
     clip.detune = floatOr(c, QStringLiteral("detune"), 0.0);
     clip.pan = floatOr(c, QStringLiteral("pan"), 0.0);

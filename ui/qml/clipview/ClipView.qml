@@ -235,7 +235,7 @@ FocusScope {
                             readonly property real other: 34 + extra / 3
 
                             width: parent.width
-                            height: halveBpm.y + halveBpm.height
+                            height: markTransients.y + markTransients.height
 
                             ToggleButton {
                                 objectName: "warp"
@@ -330,6 +330,19 @@ FocusScope {
                                 text: "×2"
                                 tooltip: qsTr("Double each clip's segment BPM (warped clips play half as fast)")
                                 onClicked: clipController.scaleBpm(2.0)
+                            }
+                            RoleButton {
+                                id: markTransients
+                                objectName: "markTransients"
+                                y: halveBpm.y + halveBpm.height + 4
+                                width: parent.width
+                                height: 20
+                                topPadding: 0
+                                bottomPadding: 0
+                                enabled: clipController.warpMarkable
+                                text: qsTr("Mark Transients")
+                                tooltip: qsTr("A warp marker on each transient the clip plays (the ticks along the waveform's top), to drag onto the grid")
+                                onClicked: clipController.markTransients()
                             }
                         }
                     }

@@ -38,6 +38,32 @@ play twice as fast, or half as fast). **Alt**-dragging a clip's edge in the arra
 stretches it to any length, warping it if it isn't (see
 [arrangement.md](arrangement.md#clips)).
 
+### Warp markers
+
+Warp markers pin moments of a warped clip's audio to beats, so a recording that drifts,
+or a loop played with feel, can be lined up with the grid. They stand on the waveform as
+small tabs. With one warped clip open:
+
+- **Double-click** the waveform to add a marker there. It goes on the beat that moment
+  plays on now, so nothing moves yet. The first one also adds markers at the clip's start
+  and end.
+- **Drag** a marker sideways to move that moment of the audio; its beat stays. The audio
+  before it plays slower and the audio after it faster, or the other way round. A marker
+  stops where a stretch would play slower than 20 BPM or faster than 999 BPM. The clip
+  stays where it is and as long.
+- **Double-click** a marker to remove it.
+- **Mark Transients** (under :2 and ×2) puts a marker on every transient the clip plays:
+  the attacks of its hits and notes, shown as short ticks along the waveform's top. Drag
+  the ones that are early or late onto the beat. A marker added by double-clicking close
+  to a tick goes exactly on it.
+
+Between two markers the audio plays at the tempo that joins them; *Seg. BPM* shows the
+first stretch's tempo, and changing it, :2, ×2 or Alt-stretching the clip speed up or slow
+down every stretch alike. A frozen track's clip follows the tempo it was rendered under
+and takes no markers. Ableton Live sets keep their warp markers when imported, unless a
+stretch between two would play slower than 20 BPM or faster than 999 BPM: such a clip
+is cut into a clip per stretch instead.
+
 ## Fades
 
 Hold **F** in the arrangement to drag an audio clip's fades by the squares at its top

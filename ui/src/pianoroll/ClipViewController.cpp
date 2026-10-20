@@ -1,7 +1,10 @@
 #include "pianoroll/ClipViewController.h"
 
+#include "audio/EngineBridge.h"
+#include "audio/SampleSlices.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/AudioAnalysis.h"
+#include "model/Edits.h"
 #include "model/Errors.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
@@ -235,6 +238,7 @@ void ClipViewController::forget() {
     refs_.clear();
     midi_ = false;
     baseline_.reset();
+    transients_.clear();
     if (pianoRoll_) pianoRoll_->setClip({}, {});
     refresh();
 }
@@ -297,6 +301,7 @@ void ClipViewController::refresh() {
         warp_ = false;
         warpModeIndex_ = -1;
         repitch_ = false;
+        warpMarkable_ = false;
     } else {
         const app::Project* p = project();
         const app::Clip& lead = *clips.front();
@@ -353,6 +358,7 @@ void ClipViewController::refresh() {
         segmentBpm_ = lead.segmentBpm ? lead.segmentBpm : p->tempo();
         repitch_ = std::all_of(clips.begin(), clips.end(),
                                [](const app::Clip* c) { return c->isWarped() && c->warpMode == kRePitch; });
+        warpMarkable_ = !midi_ && clips.size() == 1 && lead.isWarped() && (!lead.warpMarkers.empty() || !lead.sourceMap);
         if (!midi_) {
             for (const Shown& shown : items)
                 audioClips_.emplace_back(*shown.clip, Theme::trackColor(p->track(shown.trackId).color));
@@ -418,6 +424,12 @@ void ClipViewController::update(const std::function<app::Clip(const app::Clip&)>
     edit([&] { session_->editor()->updateClips(refs_, change, text, mergeKey); });
 }
 
+void ClipViewController::updateLead(const std::function<app::Clip(const app::Clip&)>& change, const QString& text,
+                                    const QString& mergeKey) {
+    if (midi_) return;
+    edit([&] { session_->editor()->updateClips({refs_.first()}, change, text, mergeKey); });
+}
+
 void ClipViewController::setWarp(bool on) {
     const double tempo = project() ? project()->tempo() : 120.0;
     update(
@@ -444,11 +456,7 @@ void ClipViewController::setWarpMode(int index) {
 
 void ClipViewController::setSegmentBpm(double bpm, const QString& gestureKey) {
     update(
-        [bpm](const app::Clip& clip) {
-            app::Clip changed = clip;
-            changed.segmentBpm = bpm;
-            return changed;
-        },
+        [bpm](const app::Clip& clip) { return app::edits::setWarpTempo(clip, bpm); },
         QStringLiteral("Change Segment BPM"), gestureKey);
 }
 
@@ -456,12 +464,62 @@ void ClipViewController::scaleBpm(double factor) {
     const double tempo = project() ? project()->tempo() : 120.0;
     update(
         [factor, tempo](const app::Clip& clip) {
-            app::Clip changed = clip;
             const double bpm = clip.segmentBpm ? clip.segmentBpm : tempo;
-            changed.segmentBpm = round2(std::clamp(bpm * factor, kMinBpm, kMaxBpm));
-            return changed;
+            return app::edits::setWarpTempo(clip, round2(std::clamp(bpm * factor, kMinBpm, kMaxBpm)));
         },
         QStringLiteral("Change Segment BPM"));
+}
+
+QVariantList ClipViewController::warpMarkers() const {
+    QVariantList markers;
+    if (audioClips_.empty()) return markers;
+    for (const app::WarpMarker& m : audioClips_.front().first.warpMarkers)
+        markers.append(QVariantMap{{QStringLiteral("sec"), m.sec}, {QStringLiteral("beat"), m.beat}});
+    return markers;
+}
+
+const std::vector<double>& ClipViewController::transients(const QString& path) const {
+    static const std::vector<double> none;
+    if (const auto it = transients_.constFind(path); it != transients_.constEnd()) return *it;
+    if (!session_) return none;
+    const app::Waveform waveform = session_->bridge()->waveform(path);
+    if (waveform.isNull() || waveform.frames() <= 0) return none;
+    std::vector<double> seconds;
+    for (const auto& transient : app::sampleSlices::transients(waveform, false)) {
+        if (transient.strength >= kMinTransientStrength)
+            seconds.push_back(static_cast<double>(transient.frame) / waveform.sampleRate());
+    }
+    return *transients_.insert(path, std::move(seconds));
+}
+
+void ClipViewController::markTransients() {
+    if (!warpMarkable_) return;
+    const app::Clip& lead = audioClips_.front().first;
+    std::vector<double> seconds;
+    for (double sec : transients(lead.path)) {
+        if (sec > lead.offsetSec && sec < lead.offsetSec + lead.durationSec) seconds.push_back(sec);
+    }
+    if (seconds.empty()) {
+        Q_EMIT statusMessage(QStringLiteral("No transients in the clip to mark"));
+        return;
+    }
+    updateLead([&seconds](const app::Clip& clip) { return app::edits::addWarpMarkers(clip, seconds); },
+               QStringLiteral("Mark Transients"));
+}
+
+void ClipViewController::addWarpMarker(double sec) {
+    updateLead([sec](const app::Clip& clip) { return app::edits::addWarpMarker(clip, sec); },
+               QStringLiteral("Add Warp Marker"));
+}
+
+void ClipViewController::moveWarpMarker(int index, double sec, const QString& gestureKey) {
+    updateLead([index, sec](const app::Clip& clip) { return app::edits::moveWarpMarker(clip, index, sec); },
+               QStringLiteral("Move Warp Marker"), gestureKey);
+}
+
+void ClipViewController::removeWarpMarker(int index) {
+    updateLead([index](const app::Clip& clip) { return app::edits::removeWarpMarker(clip, index); },
+               QStringLiteral("Remove Warp Marker"));
 }
 
 void ClipViewController::nudge(const QString& knob, double value, const QString& gestureKey) {

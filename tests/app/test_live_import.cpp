@@ -631,6 +631,32 @@ private Q_SLOTS:
     // Audio clips: their files where the set moved; unwarped ones at their own
     // speed (markers in seconds); warped ones at the tempo their markers say, a
     // clip a stretch; loops written out; gain, pitch, fades, warp mode.
+    // Markers SUBstation can't play as they are (a stretch past 999 BPM): cut into a clip a stretch, each
+    // at its tempo, held to the range, and the notes say so.
+    void warpMarkersPastTheTempoRangeAreCutIntoStretches() {
+        TempDir dir;
+        QDir().mkpath(dir.path(QStringLiteral("Samples")));
+        test::writeWav(dir.path(QStringLiteral("Samples/loop.wav")), std::vector<float>(2 * 48000 * 4, 0.1f), 2);
+        Song song;
+        song.tempo = 120.0;
+        LiveTrack t{QStringLiteral("AudioTrack"), 1, QStringLiteral("1-Audio")};
+        AudioClipXml fast;  // its first 2 beats in 1 s (120), the next 40 in 1 s (2400 BPM)
+        fast.time = 0.0;
+        fast.length = 42.0;
+        fast.loopXml = loop(0.0, 42.0, 0.0, false);
+        fast.sample = sampleRef(QStringLiteral("F:/x/loop.wav"), QStringLiteral("Samples/loop.wav"), 4 * 48000, 48000);
+        fast.markers = marker(0.0, 0.0) + marker(1.0, 2.0) + marker(2.0, 42.0);
+        t.clips = audioClip(fast);
+        song.tracks = track(t);
+        auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
+        const std::vector<Clip>& clips = imported->project.tracks()[0].clips;
+        QVERIFY(clips.size() >= 2);
+        QVERIFY(clips[0].warpMarkers.empty());
+        QVERIFY(std::abs(clips[0].segmentBpm - 120.0) < 1e-6);
+        QVERIFY(std::abs(clips[1].segmentBpm - kMaxSegmentBpm) < 1e-6);
+        QVERIFY(noteSays(imported->notes, QStringLiteral("stretched past")));
+    }
+
     void audioClipsAndWarping() {
         TempDir dir;
         QDir().mkpath(dir.path(QStringLiteral("Samples")));
@@ -658,7 +684,7 @@ private Q_SLOTS:
         warped.markers = marker(0.0, 0.0) + marker(60.0 / 140.0, 1.0);
         warped.fadeIn = 0.5;
         warped.warpMode = 6;
-        AudioClipXml stretched;  // its first 2 beats in 1 s (120), the next 2 in 2 s (60): two clips
+        AudioClipXml stretched;  // its first 2 beats in 1 s (120), the next 2 in 2 s (60): one clip, its markers kept
         stretched.time = 16.0;
         stretched.length = 4.0;
         stretched.loopXml = loop(0.0, 4.0, 0.0, false);
@@ -679,7 +705,7 @@ private Q_SLOTS:
         song.tracks = track(t);
         auto imported = load(liveSet(song), dir.path(QStringLiteral("song.als")));
         const std::vector<Clip>& clips = imported->project.tracks()[0].clips;
-        QCOMPARE(clips.size(), size_t{1 + 1 + 2 + 3 + 1});
+        QCOMPARE(clips.size(), size_t{1 + 1 + 1 + 3 + 1});
 
         const Clip& a = clips[0];
         QCOMPARE(QFileInfo(a.path).canonicalFilePath(), QFileInfo(wav).canonicalFilePath());  // found beside the set
@@ -701,20 +727,21 @@ private Q_SLOTS:
         QVERIFY(std::abs(b.fadeInSec - 0.5 * 60.0 / 140.0) < 1e-9);
         QCOMPARE(b.warpMode, QStringLiteral("Formants"));  // (Complex Pro)
 
-        QVERIFY(std::abs(clips[2].segmentBpm - 120.0) < 1e-6 && std::abs(clips[3].segmentBpm - 60.0) < 1e-6);
-        QCOMPARE(clips[2].startBeat, 16.0);
-        QCOMPARE(clips[2].durationSec, 1.0);
-        QCOMPARE(clips[3].startBeat, 18.0);
-        QCOMPARE(clips[3].offsetSec, 1.0);
-        QCOMPARE(clips[3].durationSec, 2.0);
+        const Clip& c = clips[2];
+        QCOMPARE(c.warpMarkers, (std::vector<WarpMarker>{{0.0, 0.0}, {1.0, 2.0}, {3.0, 4.0}}));
+        QCOMPARE(c.warpTempos(), (std::vector<double>{120.0, 60.0}));
+        QCOMPARE(c.startBeat, 16.0);
+        QCOMPARE(c.durationSec, 3.0);
+        QVERIFY(std::abs(c.lengthBeats(Tempo(97.0)) - 4.0) < 1e-9);
+        QVERIFY(std::abs(c.beatsToSource(2.0, Tempo(97.0)) - 1.0) < 1e-9);  // (its second marker on its third beat)
 
         for (int i = 0; i < 3; ++i) {
-            const Clip& piece = clips[size_t(4 + i)];
+            const Clip& piece = clips[size_t(3 + i)];
             QCOMPARE(piece.startBeat, 24.0 + i);
             QCOMPARE(piece.offsetSec, 0.0);
             QCOMPARE(piece.durationSec, i < 2 ? 0.5 : 0.25);
         }
-        QCOMPARE(clips[7].path, QStringLiteral("F:/Gone/gone.wav"));  // (the File Manager finds it)
+        QCOMPARE(clips[6].path, QStringLiteral("F:/Gone/gone.wav"));  // (the File Manager finds it)
         QVERIFY(noteSays(imported->notes, QStringLiteral("1 audio file isn't where the set says")));
     }
 

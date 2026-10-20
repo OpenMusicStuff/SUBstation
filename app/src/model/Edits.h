@@ -55,6 +55,28 @@ std::optional<std::pair<Clip, Clip>> splitClip(const Clip& clip, double atBeat, 
 Clip trimStart(const Clip& clip, double newStartBeat, const Tempo& tempo);
 // Move the right edge, limited by the end of the source file (MIDI clips can grow freely).
 Clip trimEnd(const Clip& clip, double newEndBeat, const Tempo& tempo);
+// An audio clip's tempo (its segment BPM) set to `bpm`: with warp markers, every stretch's scales as
+// much (held so all stay within kMinSegmentBpm..kMaxSegmentBpm), the first's becoming `bpm`.
+Clip setWarpTempo(const Clip& clip, double bpm);
+// Warp markers (the clip view's), on a warped audio clip (others, and a frozen track's clip, whose
+// tempo follows the map it was rendered under, come back as they are). Markers closer than
+// kMinWarpMarkerGapSec are one.
+inline constexpr double kMinWarpMarkerGapSec = 0.001;
+// A marker at `sec` into its file, on the beat it plays there now: nothing moves. A clip without
+// markers gets them at its start and end too.
+Clip addWarpMarker(const Clip& clip, double sec);
+// ... at each of `seconds` (those outside its file left out): a transient's, so the audio can be
+// lined up with the grid by dragging them.
+Clip addWarpMarkers(const Clip& clip, const std::vector<double>& seconds);
+// Its marker `index` moved to `sec`, keeping its beat: the audio around it plays faster on one side
+// and slower on the other. It is held where the stretches either side keep their tempos within
+// kMinSegmentBpm..kMaxSegmentBpm, and to the file. The clip plays the beats of its own it played (as
+// Live's start and end markers stay on theirs), so it stays where it is and as long, the audio
+// moving under it (held to the file).
+Clip moveWarpMarker(const Clip& clip, int index, double sec);
+// Its marker `index` gone (as moving it, the clip on the same beats). With one left, none: the
+// clip at the tempo of the stretch the two made.
+Clip removeWarpMarker(const Clip& clip, int index);
 // Stretch the clip by an edge (Alt-dragging it): that edge (`left`: the start)
 // goes to `edgeBeat`, the other stays, and the clip plays the same audio (or
 // notes) faster or slower to fill the new length. An audio clip is warped to

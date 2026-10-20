@@ -91,7 +91,12 @@ both kinds are edited alike.
   `segmentBpm > 0`), the audio is taken to be at `segmentBpm`, so its length in beats is fixed. A warped clip whose
   source has a tempo that changes along it (a track frozen under a tempo map) has `sourceMap`: where the file's
   seconds fall in its beats; the clip's offset plays at its start beat and its beats follow the map's from there
-  (the engine's `ClipDesc::sourceMap`, sent only when it isn't one tempo). `sourceTempo()`,
+  (the engine's `ClipDesc::sourceMap`, sent only when it isn't one tempo). Its warp markers (`warpMarkers`,
+  `WarpMarker{sec, beat}`: moments of the file pinned to beats of its own) are none or two and more, rising in both;
+  `setWarpMarkers()` keeps those that go on and makes `sourceMap` from them (a steady tempo between two, the end
+  stretches' beyond) and `segmentBpm` their first stretch's tempo. `warpTempos()` gives each stretch's,
+  `scaleWarp()` speeds them all up as much, `warpBeatAt()` and `warpSecondsAt()` convert a file's second to the
+  clip's own beat and back (without markers, by `segmentBpm`). `sourceTempo()`,
   `beatsToSource()` and `sourceToBeats()` convert between the two, from the clip's start (`beatsToSourceFrom()`,
   `sourceToBeatsFrom()`: from another beat; a fade-out's beats count back from its end). They take a `Tempo`
   ([Timebase.h](../../app/src/model/Timebase.h)): the song's tempo map (music/TempoMap.h, [music.md](../music.md)),
@@ -722,8 +727,15 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   [Paths.h](../../app/src/model/Paths.h)).
 - `stretchClip(clip, edgeBeat, left, tempo)` (Alt-dragging an edge): that edge moves, the other stays, and the
   content plays faster or slower to fill it: an audio clip is warped to the segment BPM that makes it that long
-  (within `kMinSegmentBpm`..`kMaxSegmentBpm`, 20..999), a MIDI clip's notes and offset are scaled; never before
-  beat 0. `slipClip(clip, deltaBeats, tempo)` (Ctrl+Shift-dragging the body): the clip stays, its content moves by
+  (within `kMinSegmentBpm`..`kMaxSegmentBpm`, 20..999; a clip with warp markers has every stretch's tempo scaled
+  as much, all held to that range), a MIDI clip's notes and offset are scaled; never before beat 0.
+  `setWarpTempo(clip, bpm)` sets an audio clip's segment BPM, its markers' stretches scaled with it.
+  `addWarpMarker(clip, sec)` marks a moment on the beat it plays now (the first also marks the clip's start and end;
+  `addWarpMarkers(clip, seconds)` several, a clip's transients),
+  `moveWarpMarker(clip, index, sec)` moves one keeping its beat (held where its stretches' tempos stay in range, and
+  to the file), `removeWarpMarker(clip, index)` removes one; moving and removing keep the clip on the beats of its own
+  it played, so it stays where it is and as long, the audio moving under it. Unwarped clips, and a frozen track's
+  clip (a source map without markers), take none. `slipClip(clip, deltaBeats, tempo)` (Ctrl+Shift-dragging the body): the clip stays, its content moves by
   the delta (audio within its file; a MIDI clip's notes anywhere, shifted as `trimStart` does when the offset would
   go below 0). `fadeClip(clip, out, beats, tempo)` and `curveFade(clip, out, curve)` set a fade (held to what the
   other leaves) and its curve.
@@ -813,6 +825,8 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   [test_automation_model.cpp](../../tests/app/test_automation_model.cpp),
   [test_timebase.cpp](../../tests/app/test_timebase.cpp), [test_keys.cpp](../../tests/app/test_keys.cpp): the pure
   functions, the parameter mappings against the engine's.
+- [test_warp_markers.cpp](../../tests/app/test_warp_markers.cpp): warp markers: a clip's beats and seconds through
+  them, those left out, split, stretched, retimed and reversed with them, saved, and the engine's source map.
 - [test_editor_edits.cpp](../../tests/app/test_editor_edits.cpp): overlaps, trims, splits, ranges, tempo fitting,
   moves across tracks, gesture merging, inputs undoable and arming not, recorded takes, copy and paste and automation
   carried with clips, time selections over groups and tracks without clips, `movedRange`, reversing.

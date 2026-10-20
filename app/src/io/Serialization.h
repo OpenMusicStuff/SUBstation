@@ -101,8 +101,9 @@ inline const QString kProjectFormat = QStringLiteral("gilstudio-project");
 // Racks (a rack's `drum`, its chains' `receive_note` and `locked`), 25: take
 // lanes (Track::takes, takesShown), 26: the tempo along the song and time signature
 // changes ("tempo_map", "time_signatures"; "tempo" and "time_signature" stay the
-// song's start, so a reader of 25 plays it at one tempo)
-inline constexpr int kProjectVersion = 26;
+// song's start, so a reader of 25 plays it at one tempo), 27: audio clips' warp markers
+// ("warp_markers": [[seconds, beat], ...]; "segment_bpm" stays their first stretch's)
+inline constexpr int kProjectVersion = 27;
 inline constexpr int kNameTemplatesVersion = 19;
 inline const QString kPresetFormat = QStringLiteral("gilstudio-preset");
 inline constexpr int kPresetVersion = 1;

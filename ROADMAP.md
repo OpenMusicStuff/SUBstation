@@ -121,7 +121,10 @@ These basics every competitor has are listed in order of everyday impact per uni
   range, Live's curved tempo, and the piano roll and harmony counting bars by the first time signature.
 
 ### 12. Audio editing depth. Effort: L
-- **Warp markers.** One BPM per clip today. The stretcher already works by segment, and Live import flattens Live's markers.
+- **Warp markers.** Done: a clip's markers (`Clip::warpMarkers`, saved since version 27) play through its source map,
+  the clip view's waveform adds, drags and removes them, and Live import keeps Live's (cutting the clip into stretches
+  only where a stretch's tempo is out of range). Mark Transients puts markers on the clip's transients (the Sampler's detection), drawn as ticks to snap to. Still
+  open: quantizing markers to the grid, auto-warping a drifting performance, MCP tools.
 - **Crossfades** between overlapping clips; comp seams click today.
 - **Audio bounce in place / consolidate** of a selection. Consolidate is MIDI-only today (`EditorClips.cpp:428`).
 - **Clip gain envelopes.**

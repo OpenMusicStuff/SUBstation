@@ -83,10 +83,12 @@ Clips:
   (`noteClipEnvelopes`), not once per pad.
 - Samples are looked for once each (`resolvedPaths_`): where the set says, beside it, a folder up.
 - Warped audio: `WarpMap` maps content beats to file seconds through the warp markers (straight
-  between them, the end stretches' tempo beyond). Each span is cut at the markers in it; each piece
-  is a clip at `60 * beats / seconds` BPM, pieces of one tempo that follow each other are joined.
-  Pieces are held to the file (from 0 to its length), tempos to `kMinSegmentBpm`..`kMaxSegmentBpm`.
-- Fades go on the first and last piece, converted from beats (warped) or seconds.
+  between them, the end stretches' tempo beyond), and back (`beatAt`). When its markers make a clip
+  SUBstation can play (`playable()`: seconds rising, every stretch's tempo within
+  `kMinSegmentBpm`..`kMaxSegmentBpm`), each span is one clip carrying them (`warp_markers`), held to the
+  file. Otherwise each span is cut at the markers in it; each piece is a clip at `60 * beats / seconds`
+  BPM, pieces of one tempo that follow each other are joined, held to the file and to that range.
+- Fades go on the first and last piece, converted from beats (warped, through the markers) or seconds.
 
 Plug-ins:
 

@@ -63,7 +63,7 @@ source-audio seconds; volumes are dB; pan is -1..1; automation values are normal
 | Field | Type | Meaning |
 |---|---|---|
 | `format` | `"gilstudio-project"` | must match, or the file is refused ("Not a SUBstation project") |
-| `version` | int | `kProjectVersion`, now 26; a larger one is refused ("This project was saved by a newer version of SUBstation") |
+| `version` | int | `kProjectVersion`, now 27; a larger one is refused ("This project was saved by a newer version of SUBstation") |
 | `tempo` | float | BPM (default 120) |
 | `key` | string or null | the project key as `Key::name()` (`"Am"`, `"F#"`, `"Bb"`); null: *No Key* |
 | `time_signature` | `[numerator, denominator]` | default `[4, 4]` |
@@ -128,6 +128,7 @@ Each entry of `returns` has `id`, `kind` (`"return"`), `name`, `color`, `volume_
 | `duration_sec`, `offset_sec`, `source_duration_sec` | the window onto the source, in source seconds |
 | `gain_db`, `pan` | clip gain and pan |
 | `warp`, `warp_mode`, `segment_bpm` | warping (`segment_bpm` 0: not set) |
+| `warp_markers` | only for a clip with warp markers: `[[seconds, beat], ...]`, seconds into its file and its own beat there (version 27); on load those that don't go on in both are left out (`Clip::setWarpMarkers`), and `segment_bpm` becomes the first stretch's tempo; a stretch outside 20..999 BPM makes the file damaged |
 | `transpose`, `detune` | semitones (int), cents |
 | `fade_in_sec`, `fade_in_curve`, `fade_out_sec`, `fade_out_curve` | only where the clip has that fade: its length in source seconds, and its curve (-1..1, 0 a straight line). On load they are held to the clip (`Clip::fitFades`) |
 | `reversed_from`, `reversed_from_relative` | only for a reversed clip: the file `path` (its reversed copy) was made from, absolute and relative |
@@ -236,6 +237,8 @@ that makes an older file load as it was, and saving writes the current version.
 | 23 | modulators' mappings (`modulations`) | none (no modulators either) |
 | 24 | Drum Racks (`drum` on a rack, `receive_note` and `locked` on its chains) | none: every rack an Instrument or Audio Effect Rack |
 | 25 | take lanes (`takes`, `takes_shown`) | none |
+| 26 | the song's tempo map and time signature changes (`tempo_map`, `time_signatures`) | one tempo and one time signature |
+| 27 | audio clips' warp markers (`warp_markers`) | none: a clip at its segment BPM throughout |
 
 `folded_devices` has no version of its own: files without it load with no device folded. Nor have
 `chain_lists_shown` and `rack_devices_hidden`: files without them show no chain list, and

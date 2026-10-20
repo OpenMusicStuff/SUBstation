@@ -21,7 +21,9 @@
 // the segment BPM set the same value on all of them.
 //
 // Warp locks a clip to the beat grid: its audio is taken to be at the segment
-// BPM and is stretched to follow the project tempo. Transpose and detune shift
+// BPM and is stretched to follow the project tempo. Warp markers pin moments of
+// the lead clip's file to its beats (the waveform adds, drags and removes them;
+// Mark Transients puts one on each transient the clip plays). Transpose and detune shift
 // the pitch without changing the speed, warped or not (except in Re-Pitch
 // mode, where speed and pitch move together like a turntable and transposing
 // does nothing).
@@ -32,6 +34,7 @@
 #include "session/Session.h"
 
 #include <QColor>
+#include <QHash>
 #include <QMap>
 #include <QObject>
 #include <QPointer>
@@ -82,6 +85,10 @@ class ClipViewController : public QObject {
     Q_PROPERTY(int warpModeIndex READ warpModeIndex NOTIFY changed)
     Q_PROPERTY(double segmentBpm READ segmentBpm NOTIFY changed)
     Q_PROPERTY(bool repitch READ repitch NOTIFY changed)
+    // The lead clip's warp markers: {sec, beat} maps, by time.
+    Q_PROPERTY(QVariantList warpMarkers READ warpMarkers NOTIFY changed)
+    // Whether warp markers can be edited: one clip open, warped, not a frozen track's.
+    Q_PROPERTY(bool warpMarkable READ warpMarkable NOTIFY changed)
     // The knobs, by name ("transpose", "detune", "gain", "pan"): each a map of
     // caption, from, to, defaultValue, bipolar, tooltip, and the clips' value
     // (the first's), text (its readout: the range when they differ) and differs.
@@ -94,6 +101,8 @@ public:
     static constexpr int kHeaderHeight = 30;
     static constexpr double kMinBpm = app::kMinSegmentBpm;
     static constexpr double kMaxBpm = app::kMaxSegmentBpm;
+    // The weakest transient shown and marked (0..1 of the file's strongest).
+    static constexpr double kMinTransientStrength = 0.25;
 
     explicit ClipViewController(QObject* parent = nullptr);
     ~ClipViewController() override;
@@ -127,6 +136,11 @@ public:
     int warpModeIndex() const { return warpModeIndex_; }
     double segmentBpm() const { return segmentBpm_; }
     bool repitch() const { return repitch_; }
+    QVariantList warpMarkers() const;
+    bool warpMarkable() const { return warpMarkable_; }
+    // The transients of a file (seconds from its start, at least kMinTransientStrength), found once
+    // it is decoded and kept; none until then.
+    const std::vector<double>& transients(const QString& path) const;
     QVariantMap knobs() const { return knobs_; }
     static QStringList warpModes();
     static QStringList warpModeTips();
@@ -141,6 +155,13 @@ public:
     Q_INVOKABLE void setSegmentBpm(double bpm, const QString& gestureKey = {});
     // :2 (0.5) and ×2 (2.0): each clip's own segment BPM.
     Q_INVOKABLE void scaleBpm(double factor);
+    // The lead clip's warp markers (edits::addWarpMarker and the rest): one added at `sec` into its
+    // file, one moved there (one undo step per gesture key), one removed.
+    Q_INVOKABLE void addWarpMarker(double sec);
+    Q_INVOKABLE void moveWarpMarker(int index, double sec, const QString& gestureKey = {});
+    Q_INVOKABLE void removeWarpMarker(int index);
+    // A warp marker on each transient the lead clip plays (between its start and end).
+    Q_INVOKABLE void markTransients();
     // A knob turned to `value`: every clip moves by the lead's change (one undo
     // step per gesture key).
     Q_INVOKABLE void nudge(const QString& knob, double value, const QString& gestureKey);
@@ -179,6 +200,9 @@ private:
     void edit(const std::function<void()>& change);
     void update(const std::function<app::Clip(const app::Clip&)>& change, const QString& text,
                 const QString& mergeKey = {});
+    // ... the lead clip alone.
+    void updateLead(const std::function<app::Clip(const app::Clip&)>& change, const QString& text,
+                    const QString& mergeKey = {});
 
     QPointer<app::Session> session_;
     QPointer<PianoRoll> pianoRoll_;
@@ -195,6 +219,8 @@ private:
     int warpModeIndex_ = -1;
     double segmentBpm_ = 120.0;
     bool repitch_ = false;
+    bool warpMarkable_ = false;
+    mutable QHash<QString, std::vector<double>> transients_;  // by path
     QVariantMap knobs_;
     std::vector<std::pair<app::Clip, QColor>> audioClips_;
     // (gesture key, knob, {clip id: value when the gesture started})
