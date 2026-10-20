@@ -205,8 +205,9 @@ private Q_SLOTS:
         QCOMPARE(b.width(), 300.0);
         QCOMPARE(a.bottom(), b.bottom());
         QVERIFY(b.bottom() < i.top() && a.bottom() < d.top());
-        QCOMPARE(i.left(), 8.0);  // (the device view's margin)
+        QCOMPARE(i.left(), 8.0);  // (the device view's margin, above and below it too)
         QCOMPARE(i.top(), d.top() + 8);
+        QCOMPARE(i.bottom(), d.bottom() - 8);
         QCOMPARE(d.left(), i.right());
         QCOMPARE(d.right(), qreal(window_->width()));
         QCOMPARE(d.bottom(), qreal(window_->height()));

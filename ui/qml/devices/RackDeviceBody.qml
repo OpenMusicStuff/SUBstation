@@ -199,7 +199,7 @@ Item {
                     leftPadding: 2
                     text: qsTr("No chains: the rack passes its input on.\nDrop devices here, or add a chain.")
                     wrapMode: Text.Wrap
-                    color: Theme.textDisabled
+                    color: Theme.textDim
                     font: Theme.uiFont(8)
                 }
             }

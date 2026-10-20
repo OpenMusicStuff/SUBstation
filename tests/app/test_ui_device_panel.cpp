@@ -135,7 +135,7 @@ private Q_SLOTS:
         }
         QCOMPARE(frame(ids[0])->width(), 216.0);  // DEVICE_WIDTH
         QCOMPARE(frame(ids[1])->mapToScene(QPointF()).x() - frame(ids[0])->mapToScene(QPointF(216, 0)).x(),
-                 8.0);  // the chain's spacing (a grip in it)
+                 8.0);  // the chain's spacing (a meter in it)
         QCOMPARE(partOf(ids[0], "title")->property("text").toString(), QStringLiteral("Utility"));
         // A MIDI track without an instrument asks for one, after its effects.
         const QString midi = editor().addMidiTrack(-1, QStringLiteral("Keys"), QStringLiteral("synth"));
@@ -146,8 +146,12 @@ private Q_SLOTS:
         ui_.polish();
         QVERIFY(hint->isVisible() && frame(effect));
         QVERIFY(hint->mapToScene(QPointF()).x() > frame(effect)->mapToScene(QPointF()).x() + 216);
-        // The panel is as tall as the tallest device wants.
+        // The panel is as tall as the tallest device wants, as far above its devices as below them.
         QCOMPARE(int(ui_.panel()->implicitHeight()), 2 * 8 + ui_.panel()->property("deviceHeight").toInt());
+        const QRectF panel = ui_.panel()->mapRectToScene(ui_.panel()->boundingRect());
+        const QRectF device = frame(effect)->mapRectToScene(frame(effect)->boundingRect());
+        QCOMPARE(device.top() - panel.top(), 8.0);
+        QCOMPARE(panel.bottom() - device.bottom(), 8.0);
     }
 
     // A device's content is as far from its title bar as from its bottom edge:

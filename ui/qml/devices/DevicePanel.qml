@@ -5,13 +5,14 @@ import SUBstation
 
 // The device view, along the bottom of the window (beside the info view, as
 // Ableton's): the selected track's (or a return's, or the master's) chain of
-// devices, left to right on the window's colour with a grip between them,
-// built-in devices and plug-ins alike, racks with their macros and chains, and
-// after a rack the chain it shows, in a bracket (DeviceChain, DeviceFrame);
-// what may be dropped there, or that no track is selected, or that it is
-// frozen (Session.deviceSelection.hint). It scrolls sideways without a scroll bar:
-// Shift+wheel, or Ctrl+Alt-drag anywhere on it (DeviceChainArea, which also
-// takes the drops and starts the drags).
+// devices, left to right on the window's colour with a meter of what each puts
+// out in the gap after it, built-in devices and plug-ins alike, racks with
+// their macros and chains, and after a rack the chain it shows, in a bracket
+// (DeviceChain, DeviceFrame); what may be dropped there (in an empty place as
+// tall as a device, while a track is shown), or that no track is selected, or
+// that it is frozen (Session.deviceSelection.hint). It scrolls sideways without
+// a scroll bar: Shift+wheel, or Ctrl+Alt-drag anywhere on it (DeviceChainArea,
+// which also takes the drops and starts the drags).
 //
 // What it is to the main window:
 // - startChainRename(rackId, chainId): Ctrl+R on a rack's chain
@@ -398,19 +399,38 @@ Rectangle {
                 panel: panel
             }
 
-            Text {
-                id: hint
-                objectName: "hint"
+            // The hint; while a track is shown, in an empty place as tall as a device, where what it asks
+            // for drops (EMPTY_AREA in a line of DEVICE_HEADER, at least as wide as a device).
+            Item {
+                id: hintPlace
+                readonly property bool boxed: Session.deviceSelection.trackId !== ""
+                width: boxed ? Math.max(216, hint.implicitWidth + 2 * 16) : hint.implicitWidth
                 height: chainContent.height
-                visible: text !== ""
-                text: Session.deviceSelection.hint
-                verticalAlignment: Text.AlignVCenter
-                color: Theme.textDisabled
-                font: Theme.font
+                visible: hint.text !== ""
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: hintPlace.boxed
+                    radius: Theme.radius
+                    color: Theme.emptyArea
+                    border.color: Theme.deviceHeader
+                }
+                Text {
+                    id: hint
+                    objectName: "hint"
+                    x: Math.round((parent.width - width) / 2)
+                    height: parent.height
+                    visible: text !== ""
+                    text: Session.deviceSelection.hint
+                    verticalAlignment: Text.AlignVCenter
+                    color: Theme.textDim
+                    font: Theme.font
+                }
             }
         }
 
-        // Where dragged devices would go: a line between devices; or the device a preset would load into, outlined.
+        // Where dragged devices would go: a line between devices; or the device a preset would load into,
+        // outlined in the accent (its corners the frame's) over a faint wash of it.
         Item {
             x: -area.contentX
             Rectangle {
@@ -421,6 +441,7 @@ Rectangle {
                 y: area.dropMarker.y
                 width: area.dropMarker.width
                 height: area.dropMarker.height
+                radius: 1
                 color: Theme.accent
             }
             Rectangle {
@@ -431,8 +452,8 @@ Rectangle {
                 y: area.loadMarker.y
                 width: area.loadMarker.width
                 height: area.loadMarker.height
-                color: "transparent"
-                radius: 4
+                color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
+                radius: Theme.radius
                 border.width: 2
                 border.color: Theme.accent
             }
@@ -446,7 +467,7 @@ Rectangle {
     }
     FontMetrics {
         id: titleMetrics
-        font: Theme.uiFont(9, true)
+        font: Theme.titleFont
     }
 
     PanelMenu {

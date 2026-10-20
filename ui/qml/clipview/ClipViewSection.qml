@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// One of the clip view's boxes of controls: a bold title over its content, on
+// One of the clip view's boxes of controls: a title (semibold) over its content, on
 // PANEL_ALT with a BORDER line and 4 px corners.
 Rectangle {
     id: section
@@ -20,7 +20,7 @@ Rectangle {
         x: 8
         y: 6
         text: section.title
-        font: Theme.uiFont(9, true)
+        font: Theme.titleFont
     }
 
     Column {
