@@ -313,6 +313,7 @@ add_library(sub_engine STATIC
     src/WarpCache.cpp
     src/builtin/BuiltinProcessor.cpp
     src/builtin/BuiltinRegistry.cpp
+    src/builtin/ChangelingDesign.cpp
     src/builtin/GigaTuneDesign.cpp
     src/builtin/SwiftF0.cpp
     src/builtin/SampleSlicing.cpp

@@ -297,6 +297,7 @@ public:
         reset();
     }
     Quality quality() const noexcept { return quality_; }
+    void setRescue(bool rescue) noexcept { rescue_ = rescue; }
     int delay(Quality quality) const noexcept {
         return quality == Quality::HighQuality ? highDelay_ : frame_ / 2 + lag_ * hop_;
     }
@@ -364,12 +365,16 @@ public:
 
 private:
     static constexpr double kMinWindowSeconds = 0.01;
+    // Rescue (setRescue()): pYIN's chance the frame is voiced at least this (and the period as clear as High
+    // Quality's rescue asks, kRescuePeriodicity).
+    static constexpr double kRescueProbability = 0.25;
     static constexpr int kTaps = 9;                   // lags past the search for the interpolation (8 a side)
     static constexpr double kRefineCutoff = 8000.0;   // Hz, the refinement's low-pass
     static constexpr double kRefineCutoffShare = 0.18;  // of the rate, at the most
     struct Candidate {
         int bin = 0;
         double f0 = 0.0;
+        double logp = 0.0;  // pYIN's observation log probability of it
     };
     struct Biquad {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
@@ -428,7 +433,7 @@ private:
         for (uint32_t c = obs.cbegin; c < obs.cend; ++c) {
             const fastpitch::detail::Cand& cand = batch_.cands[c];
             obsVoiced_[static_cast<size_t>(cand.bin)] = cand.logp;
-            if (count < maxCandidates_) candidates[count++] = {cand.bin, cand.f0};
+            if (count < maxCandidates_) candidates[count++] = {cand.bin, cand.f0, cand.logp};
         }
         candidateCount_[slot] = count;
         voicedProb_[slot] = obs.voiced_prob;
@@ -509,6 +514,23 @@ private:
             const double start = f.candidate > 0.0 ? f.candidate : m.freqs[static_cast<size_t>(f.bin)];
             double periodicity;
             f.f0 = std::clamp(refine(g * hop_, start, kSearchLow, periodicity), lowestF0(), kFmax * kRangeMargin);
+        } else if (rescue_ && f.voicedProb >= kRescueProbability) {
+            // Rescued (setRescue()): the path is unvoiced here, but the frame alone is likely voiced and its period
+            // clear, at pYIN's likeliest candidate (a short note between rests, which the path's switches cost too
+            // much to take).
+            int likeliest = -1;
+            for (int c = 0; c < candidateCount_[slot]; ++c)
+                if (likeliest < 0 || candidates[c].logp > candidates[likeliest].logp) likeliest = c;
+            if (likeliest >= 0) {
+                double periodicity = 1.0;
+                const double refined = refine(g * hop_, candidates[likeliest].f0, kSearchLow, periodicity);
+                if (periodicity < kRescuePeriodicity) {
+                    f.voiced = true;
+                    f.bin = candidates[likeliest].bin;
+                    f.candidate = candidates[likeliest].f0;
+                    f.f0 = std::clamp(refined, lowestF0(), kFmax * kRangeMargin);
+                }
+            }
         }
         decided_ = f;
         decidedUpTo_ = g + 1;
@@ -640,6 +662,7 @@ private:
     std::vector<double> ring_, low_, frameBuffer_, span_, difference_;
     std::array<Biquad, 4> lowpass_{};
     Quality quality_ = Quality::LowLatency;
+    bool rescue_ = false;
     swiftf0::Detector swift_;
     std::array<SwiftFrame, 64> swiftFrames_{};  // SwiftF0's frames as they become final, by index
     double swiftHop_ = 768.0;
@@ -652,11 +675,6 @@ private:
 
 // --- Reading between samples ----------------------------------------------------------------------
 
-// A Kaiser-windowed sinc (beta 9, 16 zero crossings each side), tabulated over [0, 16] for linear
-// interpolation. Zero at every whole number but 0: a read at a whole sample is that sample.
-constexpr int kSincHalf = 16;
-constexpr int kSincResolution = 1024;
-
 double besselI0(double x) {
     double sum = 1.0, term = 1.0;
     for (int k = 1; k < 64 && term > 1e-17 * sum; ++k) {
@@ -667,7 +685,9 @@ double besselI0(double x) {
     return sum;
 }
 
-const std::vector<double>& sincTable() {
+}  // namespace
+
+const double* sincTable() {
     static const std::vector<double> kTable = [] {
         constexpr double kBeta = 9.0;
         std::vector<double> table(static_cast<size_t>(kSincHalf * kSincResolution) + 2, 0.0);
@@ -684,18 +704,8 @@ const std::vector<double>& sincTable() {
         }
         return table;
     }();
-    return kTable;
+    return kTable.data();
 }
-
-inline double sincAt(const double* table, double x) noexcept {
-    const double position = std::abs(x) * kSincResolution;
-    if (!(position < kSincHalf * kSincResolution)) return 0.0;
-    const auto i = static_cast<size_t>(position);
-    const double f = position - static_cast<double>(i);
-    return table[i] + (table[i + 1] - table[i]) * f;
-}
-
-}  // namespace
 
 // --- PitchTracker -----------------------------------------------------------------------------------
 
@@ -711,10 +721,13 @@ int PitchTracker::frameLength() const noexcept { return impl_->tracker.frameLeng
 int PitchTracker::hop() const noexcept { return impl_->tracker.hop(); }
 int PitchTracker::lag() const noexcept { return impl_->tracker.lag(); }
 void PitchTracker::setQuality(Quality quality) noexcept { impl_->tracker.setQuality(quality); }
+void PitchTracker::setRescue(bool rescue) noexcept { impl_->tracker.setRescue(rescue); }
 Quality PitchTracker::quality() const noexcept { return impl_->tracker.quality(); }
 int PitchTracker::delay(Quality quality) const noexcept { return impl_->tracker.delay(quality); }
 bool PitchTracker::push(double x) noexcept { return impl_->tracker.push(x); }
 const PitchFrame& PitchTracker::decided() const noexcept { return impl_->tracker.decided(); }
+int64_t PitchTracker::written() const noexcept { return impl_->tracker.written(); }
+double PitchTracker::lowAt(int64_t n) const noexcept { return impl_->tracker.lowAt(n); }
 void PitchTracker::flush(std::vector<PitchFrame>& out) { impl_->tracker.flush(out); }
 
 std::vector<PitchFrame> offlinePyin(const std::vector<double>& x, double sampleRate) {
@@ -814,7 +827,7 @@ struct Corrector::Impl {
 
     void prepare(double sampleRate) {
         rate = sampleRate;
-        sinc = sincTable().data();
+        sinc = sincTable();
         tracker.prepare(sampleRate, kLag);
         hop = tracker.hop();
         unvoicedPeriod = kUnvoicedPeriod * rate;
