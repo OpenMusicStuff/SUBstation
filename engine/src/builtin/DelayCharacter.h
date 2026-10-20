@@ -27,8 +27,9 @@
 //     0.32 ms RMS at full speed) and flutter (33 Hz, 0.064 ms); the latter two
 //     deeper on slower tape;
 //   - the splice: once a pass of the 10 s (× k) loop, the time bumps up by
-//     7.3 ms × k and settles (0.19 s and 0.125 s exponentials), the echo dipping
-//     a little with it;
+//     1.08 ms × k and settles (0.19 s and 0.125 s exponentials: an impulse of
+//     7.32 ms × k into both, their difference peaking at 0.148 of it), the echo
+//     dipping a little with it;
 //   - a fast compressor (its level the RMS of the echoes through a treble
 //     shelf, +20 dB above 10 kHz) and a tanh well off centre: tape's soft
 //     saturation, treble first, with even harmonics;
@@ -224,7 +225,7 @@ struct DigitalDesign {
                 const double window = 0.5 + 0.5 * std::cos(std::numbers::pi * x / (kHalf + 1));
                 sum += best->taps[i] * sinc * window;
             }
-            out[n] = static_cast<float>(sum / ratio);
+            out[n] = static_cast<float>(sum * ratio);  // a tap a source sample's share of the time
         }
         return out;
     }
@@ -313,7 +314,7 @@ public:
     static constexpr double kWowHz = 5.0, kWowMs = 0.318, kWowSlope = 0.86;
     static constexpr double kFlutterHz = 33.0, kFlutterMs = 0.0635, kFlutterSlope = 0.5;
     static constexpr double kLoopSeconds = 10.0, kFirstSplice = 9.3;  // at full speed
-    static constexpr double kSpliceMs = 7.32, kSpliceSlow = 0.1875, kSpliceFast = 0.125;
+    static constexpr double kSpliceMs = 7.32, kSpliceSlow = 0.1875, kSpliceFast = 0.125;  // the impulse's (ms at k = 1)
     static constexpr float kSpliceDip = 0.12f;  // the echo's level at the bump's height: 1 - this
 
     void prepare(double sr) noexcept {

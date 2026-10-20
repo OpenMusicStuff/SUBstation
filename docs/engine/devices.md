@@ -1968,8 +1968,8 @@ mode at its default preset (Era Past, Age 50 %, Wow and Flutter 50 %), measured 
 - **Wander** (the same for both sides): cubic B-splines through random values (fixed seeds, so renders
   repeat): a drift (a new value every 8.3 s, 2.6 ms RMS), wow (5 Hz, 0.32 ms RMS × (1 + 0.86 (k − 1))) and
   flutter (33 Hz, 0.064 ms RMS × (1 + 0.5 (k − 1))); and the splice: once a pass of the 10 s × k loop (the
-  first 9.3 s in), the time bumps up 7.32 ms × k and settles (exponentials of 0.1875 and 0.125 s), the echo
-  dipping 12 % at the bump's height.
+  first 9.3 s in), the time bumps up 1.08 ms × k and settles (an impulse of 7.32 ms × k into exponentials of
+  0.1875 and 0.125 s, their difference), the echo dipping 12 % at the bump's height.
 - **Saturation**, on each side's echoes together: a fast compressor (an RMS level through +20 dB above
   10 kHz, 0.48 ms up, 0.23 ms down; (1 + (level / 0.476)^1.92)^(-1/1.92), smoothed over 0.04 ms), then a
   tanh well off centre (drive 0.368, bias -1.15), as a gain on each echo.

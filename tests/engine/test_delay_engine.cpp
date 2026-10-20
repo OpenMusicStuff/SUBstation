@@ -345,6 +345,17 @@ double toneThrough(double freq, double amplitude, const Values& values = {}, dou
 
 }  // namespace
 
+TEST_CASE("Digital's band-limit at rates it wasn't measured at keeps its gain") {
+    // Resampled from the nearest measured rate: the same response in time, so unity at DC still.
+    for (const double rate : {32000.0, 176400.0, 192000.0}) {
+        INFO(std::to_string(rate));
+        const std::vector<float> taps = sub::delay_character::DigitalDesign::bandLimit(rate);
+        double sum = 0.0;
+        for (const float t : taps) sum += t;
+        CHECK_NEAR(sum, 1.0, 0.01);
+    }
+}
+
 TEST_CASE("Digital band-limits each echo") {
     // Valhalla's own: flat (-0.2 dB) at 1 kHz, a droop to -1.3 dB at 5 kHz, the band ending near 7.8 kHz.
     CHECK_APPROX_REL(toneThrough(1000.0, 0.05), 0.05 * std::pow(10.0, -0.21 / 20), 0.02);
