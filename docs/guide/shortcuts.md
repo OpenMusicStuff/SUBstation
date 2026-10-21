@@ -89,9 +89,9 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 
 | Action | Keys |
 |---|---|
-| Zoom in / out / to arrangement | + / − / Z |
-| Zoom around the mouse | Ctrl+wheel (or drag vertically in the ruler) |
-| Scroll horizontally | Shift+wheel (or drag horizontally in the ruler) |
+| Zoom in / out / to arrangement (in the clip view: the clips shown, or the whole of the audio clips' files) | + / − / Z |
+| Zoom around the mouse (the arrangement, the piano roll, the audio clips' waveforms) | Ctrl+wheel (or drag vertically in the ruler) |
+| Scroll horizontally | Shift+wheel (or drag horizontally in the ruler; over audio clips' waveforms the wheel too) |
 | Scroll in any direction | Ctrl+Alt drag |
 | Narrow / widen grid, toggle snap | Ctrl+1 / Ctrl+2 / Ctrl+4 |
 | Toggle browser / device view | Ctrl+Alt+B / Ctrl+Alt+L |

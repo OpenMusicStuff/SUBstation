@@ -2,8 +2,12 @@
 // its settings and waveform; several clips edited in unison; warping and
 // transposing reaching the audio; warp markers on the waveform and at
 // transients; the clip gain making the waveform taller; which clips open with
-// a MIDI clip among them; an audio clip's groove (set, applied, extracted); going
-// back (Esc, ×, the clips deleted, the project reset). Runs on a display (xvfb here). With
+// a MIDI clip among them, and the switch between the audio and the MIDI ones;
+// an audio clip's groove (set, applied, extracted); the start marker and the
+// playhead on the waveform, its ruler playing from where it is clicked; zooming
+// and scrolling the waveform (Ctrl+wheel, the wheel, Ctrl+Alt drags, the
+// ruler, the window's zoom keys); going back (Esc, ×, the clips deleted, the
+// project reset). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
 #include <QQuickItem>
@@ -21,10 +25,12 @@
 #include "audio/EngineBridge.h"
 #include "editor/ProjectEditor.h"
 #include "model/Clip.h"
+#include "model/Numbers.h"
 #include "model/Project.h"
 #include "pianoroll/ClipViewController.h"
 #include "pianoroll/ClipWaveform.h"
 #include "pianoroll/NoteGrid.h"
+#include "pianoroll/PianoRoll.h"
 #include "session/Selection.h"
 #include "theme/Theme.h"
 
@@ -108,6 +114,15 @@ class TestUiClipView : public QObject {
         return item(name)->findChild<QObject*>(QStringLiteral("readout"))->property("text").toString();
     }
     const Clip& clip(int index) { return project().clip(clips_[index].trackId, clips_[index].clipId); }
+    sub::ui::ClipWaveform* waveform() { return qobject_cast<sub::ui::ClipWaveform*>(item("clipWaveform")); }
+    // The share of the files the waveform shows.
+    double shownSpan() { return waveform()->viewTo() - waveform()->viewFrom(); }
+    // What the waveform shows at `x` (a share of the file).
+    double shownAt(double x) { return waveform()->viewFrom() + x / waveform()->width() * shownSpan(); }
+    // The colour on screen at a point of an item.
+    QColor colourAt(QQuickItem* on, const QPointF& local) {
+        return window_->grabWindow().pixelColor(test::at(on, local));
+    }
 
     // Three tracks with a tone each (tone0: 2 s at 220 Hz from beat 0, tone1:
     // 3 s at 440 Hz from beat 2, tone2: 4 s at 660 Hz from beat 4), decoded.
@@ -602,6 +617,150 @@ private Q_SLOTS:
         QMetaObject::invokeMethod(groove("extractGroove"), "clicked");
         QCOMPARE(project().grooves().size(), size_t(1));
         QCOMPARE(project().grooves().front().notes.size(), size_t(3));
+    }
+
+    void theStartMarkerAndThePlayheadShowOnTheWaveform() {
+        threeTracks();
+        open({clips_[0]});  // tone0: 2 s, beats 0..4 (a beat is half a second)
+        sub::ui::ClipWaveform* shown = waveform();
+        const double middle = shown->height() / 2;
+        const double oneSecond = sub::app::roundHalfEven(shown->width() / 2);  // (the file's middle)
+        // The start marker, where the song starts playing in the clip's file: beat 2, a second in.
+        session().selection()->setInsert(2.0);
+        QTRY_COMPARE(colourAt(shown, QPointF(oneSecond, middle)).rgb(), sub::ui::Theme::insertMarker().rgb());
+        session().selection()->setInsert(6.0);  // past the clip: none
+        QTRY_VERIFY(colourAt(shown, QPointF(oneSecond, middle)).rgb() != sub::ui::Theme::insertMarker().rgb());
+
+        // A click on the ruler plays from the moment clicked: 1.5 s in is beat 3.
+        QSignalSpy located(clipView_, SIGNAL(locateRequested(double)));
+        test::click(window_, test::at(shown, QPointF(shown->width() * 0.75, 10)));
+        QCOMPARE(located.count(), 1);
+        QVERIFY(std::abs(located.first().at(0).toDouble() - 3.0) < 0.01);
+
+        // Playing inside the clip, the playhead shows where its file is playing (ClipPlayhead draws it).
+        QVERIFY(clipView_->findChild<QQuickItem*>(QStringLiteral("clipPlayhead")));
+        sub::app::EngineBridge* bridge = session().bridge();
+        bridge->locate(1.0);
+        QVERIFY(!shown->playheadSecs().front());  // (stopped: the start marker only)
+        bridge->play();
+        if (!bridge->isPlaying()) QSKIP("the engine doesn't play without an audio device here");
+        QVERIFY(shown->playheadSecs().front());
+        QVERIFY(std::abs(*shown->playheadSecs().front() - 0.5) < 0.05);
+        test::screenshot(window_, QStringLiteral("clip-view-playhead"));
+        bridge->stop();
+        QVERIFY(!shown->playheadSecs().front());
+        bridge->locate(5.0);  // past the clip
+        bridge->play();
+        QVERIFY(!shown->playheadSecs().front());
+        bridge->stop();
+    }
+
+    void theWaveformZoomsAndScrolls() {
+        threeTracks();
+        open({clips_[0]});
+        sub::ui::ClipWaveform* shown = waveform();
+        QCOMPARE(shownSpan(), 1.0);  // the whole file
+        QVERIFY(!item("waveformBar")->isVisible());
+        // Ctrl+wheel zooms around the mouse: what is under it stays there.
+        const double x = std::floor(shown->width() / 4);
+        const QPoint mouse = test::at(shown, QPointF(x, shown->height() / 2));
+        const double under = shownAt(x);
+        test::wheel(window_, mouse, 2, Qt::ControlModifier);
+        QVERIFY(std::abs(shownSpan() - 1 / (1.2 * 1.2)) < 1e-9);
+        QVERIFY(std::abs(shownAt(x) - under) < 1e-9);
+        QVERIFY(item("waveformBar")->isVisible());
+        test::screenshot(window_, QStringLiteral("clip-view-zoomed"));
+        // The wheel scrolls sideways (down: later), as Shift+wheel does.
+        double from = shown->viewFrom();
+        test::wheel(window_, mouse, -1);
+        QVERIFY(std::abs(shown->viewFrom() - (from + 80 / shown->width() * shownSpan())) < 1e-9);
+        from = shown->viewFrom();
+        test::wheel(window_, mouse, 1, Qt::ShiftModifier);
+        QVERIFY(shown->viewFrom() < from);
+        // Ctrl+Alt drags it: what was grabbed follows the mouse.
+        from = shown->viewFrom();
+        test::drag(window_, mouse, mouse - QPoint(100, 0), Qt::ControlModifier | Qt::AltModifier);
+        QVERIFY(std::abs(shown->viewFrom() - (from + 100 / shown->width() * shownSpan())) < 1e-9);
+        // The ruler goes with it: a click there plays from the moment shown under it.
+        QSignalSpy located(shown, &sub::ui::ClipWaveform::locateRequested);
+        const QPoint onRuler = test::at(shown, QPointF(x, 10));
+        test::click(window_, onRuler);
+        QCOMPARE(located.count(), 1);
+        QVERIFY(std::abs(located.first().at(0).toDouble() - shownAt(x) * 4.0) < 0.02);  // (2 s: 4 beats)
+        // A drag down the ruler zooms in, up out; sideways, it scrolls. None plays from there.
+        double span = shownSpan();
+        test::drag(window_, onRuler, onRuler + QPoint(0, 40));
+        QVERIFY(shownSpan() < span);
+        span = shownSpan();
+        test::drag(window_, onRuler, onRuler - QPoint(0, 15));
+        QVERIFY(shownSpan() > span);
+        from = shown->viewFrom();
+        test::drag(window_, onRuler, onRuler + QPoint(60, 0));
+        QVERIFY(shown->viewFrom() < from);
+        QCOMPARE(located.count(), 1);
+        // The window's Zoom In and Out, and Z: the whole file again.
+        span = shownSpan();
+        QMetaObject::invokeMethod(clipView_, "zoom", Q_ARG(QVariant, QVariant(1 / 1.4)));
+        QVERIFY(std::abs(shownSpan() - span * 1.4) < 1e-9);
+        QMetaObject::invokeMethod(clipView_, "zoomToFit");
+        QCOMPARE(shown->viewFrom(), 0.0);
+        QCOMPARE(shown->viewTo(), 1.0);
+        QVERIFY(!item("waveformBar")->isVisible());
+        // Never further in than a frame across a few pixels; other clips open whole.
+        for (int i = 0; i < 200; ++i) shown->zoomAt(x, 2.0);
+        QVERIFY(shownSpan() * 2.0 * kRate >= shown->width() / sub::ui::ClipWaveform::kMaxPixelsPerFrame - 1e-6);
+        open({clips_[1]});
+        QCOMPARE(shownSpan(), 1.0);
+    }
+
+    void bothKindsOpenedSwitchBetweenAudioAndMidi() {
+        threeTracks();
+        const QString midiTrack = editor().addMidiTrack(-1, {}, QStringLiteral("synth"));
+        const auto first = editor().addMidiClip(midiTrack, 0.0, 4.0);
+        const auto second = editor().addMidiClip(midiTrack, 8.0, 4.0);
+        QVERIFY(first && second);
+        // A stretch of both kinds selected, led by an audio clip: the audio clips, and a switch to the MIDI ones.
+        open({clips_[0], *first, clips_[1], *second}, clips_[1].clipId);
+        QVERIFY(!controller()->midi());
+        QVERIFY(controller()->mixed());
+        QCOMPARE(controller()->audioCount(), 2);
+        QCOMPARE(controller()->midiCount(), 2);
+        QVERIFY(item("kindSwitch")->isVisible());
+        test::screenshot(window_, QStringLiteral("clip-view-both-kinds"));
+        QVERIFY(item("showAudio")->property("checked").toBool());
+        QCOMPARE(item("showMidi")->property("text").toString(), QStringLiteral("MIDI 2"));
+        test::click(window_, test::centerOf(item("showMidi")));
+        QVERIFY(controller()->midi());
+        QCOMPARE(controller()->refs(), (ClipRefs{*first, *second}));
+        QTRY_VERIFY(item("pianoRollView")->isVisible());
+        auto* grid = clipView_->findChild<sub::ui::NoteGrid*>(QStringLiteral("noteGrid"));
+        QVERIFY(grid->hasActiveFocus());
+        QCOMPARE(grid->roll()->clipCount(), 2);
+        QVERIFY(item("showMidi")->property("checked").toBool());
+        // Shown again (Shift+Tab), the same clips show their MIDI ones still...
+        clipView_->setVisible(false);
+        clipView_->setVisible(true);
+        QVERIFY(controller()->midi());
+        // ...and the audio ones a click away.
+        test::click(window_, test::centerOf(item("showAudio")));
+        QVERIFY(!controller()->midi());
+        QCOMPARE(controller()->refs(), (ClipRefs{clips_[0], clips_[1]}));
+        QVERIFY(clipView_->hasActiveFocus());
+        // Other clips asked for: the lead's kind.
+        test::click(window_, test::centerOf(item("showMidi")));
+        open({clips_[0], *first}, clips_[0].clipId);
+        QVERIFY(!controller()->midi());
+        // The MIDI clips deleted while they show: the audio ones show.
+        test::click(window_, test::centerOf(item("showMidi")));
+        QVERIFY(controller()->midi());
+        editor().deleteClips({*first});
+        QVERIFY(!controller()->midi());
+        QCOMPARE(controller()->refs(), ClipRefs{clips_[0]});
+        QVERIFY(!controller()->mixed());
+        QVERIFY(!item("kindSwitch")->isVisible());
+        // One kind alone: no switch.
+        open({clips_[0], clips_[1]});
+        QVERIFY(!item("kindSwitch")->isVisible());
     }
 
     void severalClipsAreStackedInBands() {

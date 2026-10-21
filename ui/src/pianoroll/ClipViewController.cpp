@@ -104,7 +104,7 @@ void ClipViewController::setSession(app::Session* session) {
     if (session) {
         app::Project* p = session->project();
         connect(p, &app::Project::clipsChanged, this, [this](const QString& trackId) {
-            for (const app::ClipRef& ref : refs_) {
+            for (const app::ClipRef& ref : requested_) {  // (those not shown count too)
                 if (ref.trackId == trackId) {
                     dropMissing();
                     return;
@@ -198,7 +198,20 @@ std::vector<ClipViewController::Shown> ClipViewController::existing(const app::C
 }
 
 void ClipViewController::open(const app::ClipRefs& refs, const std::optional<app::ClipRef>& lead) {
-    std::vector<Shown> clips = existing(refs);
+    if (refs != requested_ || lead != lead_) chosenMidi_.reset();  // (other clips: the lead's kind)
+    requested_ = refs;
+    lead_ = lead;
+    show();
+}
+
+void ClipViewController::showKind(bool midi) {
+    if (refs_.isEmpty() || midi == midi_ || !(midi ? midiCount_ : audioCount_)) return;
+    chosenMidi_ = midi;
+    show();
+}
+
+void ClipViewController::show() {
+    std::vector<Shown> clips = existing(requested_);
     baseline_.reset();
     if (clips.empty()) {
         forget();  // nothing to show (yet): an empty view
@@ -212,9 +225,18 @@ void ClipViewController::open(const app::ClipRefs& refs, const std::optional<app
     });
     Shown first = clips.front();
     for (const Shown& shown : clips) {
-        if (lead && shown.trackId == lead->trackId && shown.clip->id == lead->clipId) {
+        if (lead_ && shown.trackId == lead_->trackId && shown.clip->id == lead_->clipId) {
             first = shown;
             break;
+        }
+    }
+    if (chosenMidi_ && *chosenMidi_ != first.clip->isMidi()) {
+        // The kind chosen, if any are left: its first clip leads.
+        for (const Shown& shown : clips) {
+            if (shown.clip->isMidi() == *chosenMidi_) {
+                first = shown;
+                break;
+            }
         }
     }
     midi_ = first.clip->isMidi();
@@ -259,7 +281,13 @@ void ClipViewController::dropMissing() {
     app::ClipRefs kept;
     for (const Shown& shown : existing(refs_)) kept.append({shown.trackId, shown.clip->id});
     if (kept.isEmpty()) {
-        close();
+        // None of the kind shown are left: the other kind's, if any are.
+        if (!existing(requested_).empty()) {
+            chosenMidi_ = !midi_;
+            show();
+        } else {
+            close();
+        }
         return;
     }
     // (The piano roll skips clips that are gone; it is given the rest when its lead goes.)
@@ -299,6 +327,10 @@ void ClipViewController::refresh() {
     std::vector<const app::Clip*> clips;
     for (const Shown& shown : items) clips.push_back(shown.clip);
     audioClips_.clear();
+    audioCount_ = midiCount_ = 0;
+    if (!items.empty()) {
+        for (const Shown& shown : existing(requested_)) ++(shown.clip->isMidi() ? midiCount_ : audioCount_);
+    }
     if (clips.empty()) {
         name_.clear();
         info_.clear();

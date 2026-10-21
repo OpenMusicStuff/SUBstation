@@ -16,10 +16,11 @@ This page is about the code.
 
 | File | What it holds |
 |---|---|
-| [ClipView.qml](../../ui/qml/clipview/ClipView.qml) | The clip view: its header (the track's colour, the name, a line about the clips; for a MIDI clip the key, Groove and Generate; ×), the audio clips' controls and waveforms, or the piano roll |
-| [ClipViewController](../../ui/src/pianoroll/ClipViewController.h) | What the clip view shows and does (the old `ClipView` without its widgets): which clips open, MIDI or audio, editing every open audio clip at once, the clips' groove |
+| [ClipView.qml](../../ui/qml/clipview/ClipView.qml) | The clip view: its header (the track's colour, the Audio and MIDI switch when both kinds were opened, the name, a line about the clips; for a MIDI clip the key, Notes, Groove and Generate; ×), the audio clips' controls, waveforms, playhead and scroll bar, or the piano roll; `zoom(factor)` and `zoomToFit()` for the window's zoom keys |
+| [ClipViewController](../../ui/src/pianoroll/ClipViewController.h) | What the clip view shows and does (the old `ClipView` without its widgets): which clips open, MIDI or audio (and the other kind, `showKind()`), editing every open audio clip at once, the clips' groove |
 | [ClipGrooveControls.qml](../../ui/qml/clipview/ClipGrooveControls.qml) | A clip's groove: the audio controls' Groove section, and what the MIDI header's Groove menu shows ([below](#a-clips-groove)) |
-| [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h) | The audio clips' waveforms, each whole source file fitted to the width |
+| [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h) | The audio clips' waveforms, each source file across the width (all of it, or the share zoomed into), the start marker, and where the playhead is in each file; zooming and scrolling; the ruler's clicks |
+| [ClipPlayhead](../../ui/src/pianoroll/ClipPlayhead.h) | The playhead over the waveforms, an item of its own |
 | [ClipViewKnob.qml](../../ui/qml/clipview/ClipViewKnob.qml), [ClipViewSection.qml](../../ui/qml/clipview/ClipViewSection.qml) | A captioned knob with its readout; a titled box of controls |
 | [PianoRollView.qml](../../ui/qml/pianoroll/PianoRollView.qml) | The piano roll's layout: the headphones and bend buttons, the ruler, the keys, the note grid with the chord lane and the note tools over it, the velocity lane, the scroll bars |
 | [PianoRoll](../../ui/src/pianoroll/PianoRoll.h) | The piano roll's state (the old `PianoRoll` without its widgets): the clips it shows, its own time axis and row height, the selected notes (and the stretch a rubber band selected), the paste marker, the notes copied, the playhead, the keys sounding, the note tools' settings and actions, the song's chords and key over the clips, Generate; bend mode, its tool, the Shift view of the notes in it (`peeking`, `bendView`) and the vibrato's settings, the selected bend points, bend edits |
@@ -32,7 +33,7 @@ This page is about the code.
 | [ChordLane](../../ui/src/pianoroll/ChordLane.h) | The song's chords along the top of the notes |
 | [ProgressionPanel.qml](../../ui/qml/clipview/ProgressionPanel.qml) | Progression ideas beside the piano roll (Generate ▾ › Progressions…): the mood, the length, 7ths, Bass, New Ideas and the key; a row per idea (its chords, ▶, ★, ≈), the swap menu ([below](#progression-ideas)) |
 | [ProgressionIdeas](../../ui/src/pianoroll/ProgressionIdeas.h) | The ideas the panel shows (a list model): made, locked, kept, swapped and varied by the intelligence module's [harmony/Progressions.h](../../intelligence/src/harmony/Progressions.h), and tried in the lead clip (`PianoRoll::writeProgression`) |
-| [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) | The floating bar with Legato, ×2, ÷2, Quantize, Groove (Swing, the project's grooves, their amounts) and Humanize (Velocity, Timing) |
+| [NoteTools.qml](../../ui/qml/pianoroll/NoteTools.qml) | The floating bar with Legato, ×2, ÷2, Quantize, Groove (Swing, the project's grooves, their amounts) and Humanize (Velocity, Timing) (the clip view's header has a Notes menu too: [below](#the-clip-view)) |
 | [NoteSet.h](../../ui/src/pianoroll/NoteSet.h) | `ClipNote` (a note of one of the clips shown); sets of notes and of ClipNotes as sorted vectors (`noteSet`, `clipNoteSet`, `contains`, `united`, `without`, `byTime`, `notesOf`, `tagged`, `clipsOf`) |
 
 The note maths is in the application layer's [model/Notes.h](../../app/src/model/Notes.h) (pure functions on
@@ -63,16 +64,31 @@ If the lead clip (the one double-clicked; by default the first) is a MIDI clip, 
 the piano roll, edited together, the lead first (`pianoRoll.setClips()`; `refs()` in that order); otherwise every
 audio clip among them opens together. It shows them only while `active`
 (bound to the view's `visible`): becoming active opens them afresh (the piano roll fitted to the clip again), going
-inactive forgets them (a key sounding stops). Deleted clips or tracks are dropped; with none left, or on a project
-reset, it emits `closeRequested` (the piano roll skips a clip that is gone, and is given the rest when its lead
-goes). When clips open (`opened`) the notes (MIDI) or the view (audio, for Esc) take the
-keyboard.
+inactive forgets them (a key sounding stops). Deleted clips or tracks are dropped; with none of the kind shown left,
+the other kind's show, and with none left at all, or on a project reset, it emits `closeRequested` (the piano roll
+skips a clip that is gone, and is given the rest when its lead goes). When clips open (`opened`) the notes (MIDI) or
+the view (audio, for Esc) take the keyboard.
+
+**Both kinds.** The clips asked for are kept (`requested_`, with the lead), the shown kind's in `refs()`;
+`audioCount` and `midiCount` count those that exist of each, and `mixed` says there are both. Then the header shows
+a switch before the name (`kindSwitch`: `showAudio` and `showMidi`, "Audio 3" and "MIDI 5", in the track headers'
+monitor style), and `showKind(midi)` shows the other kind (its first clip leads: `show()`). The choice
+(`chosenMidi_`) stays while the same clips and lead are asked for (shown again with Shift+Tab, it shows the same
+kind), and goes with a new request. A clip deleted on any of their tracks updates the counts (`clipsChanged` for a
+track of `requested_`).
 
 The header shows the lead track's colour, `name` (an audio clip's; for a MIDI clip, which has none, its track's) and
 `info` ("4.00 beats · 12 notes"; several MIDI clips: "3 MIDI Clips", "on 2 tracks · 12 notes · edited together";
 "2.50 s · 5.00 beats"; "on 2 tracks · changes apply to every selected clip"; with
 "· deactivated (0 activates)" when every clip shown is), and a × button. A MIDI clip's header also has the key,
-*Groove ▾* ([A clip's groove](#a-clips-groove)) and *Generate ▾* ([below](#chords-the-key-and-generate)).
+*Notes ▾*, *Groove ▾* ([A clip's groove](#a-clips-groove)) and *Generate ▾* ([below](#chords-the-key-and-generate)).
+
+*Notes ▾* (`notesMenu`) is the note tools for many clips at once, without selecting a group first: its first line
+(`notesTarget`, disabled) says what it acts on ("The 3 selected notes", or "Every note of the 8 clips"), then
+Transpose Up and Down, Octave Up and Down (`roll.transpose(±1)`, `transpose(±12)`), Legato, Quantize (at the note
+tools' grid), Timing ×2 and ÷2, and Select All Notes (`roll.selectAll()`, as Ctrl+A). They are the roll's tools
+([Note tools](#note-tools)): on the selected notes, or every note of every clip shown. Closing it gives the notes the
+keyboard back.
 
 ### Audio clips
 
@@ -106,14 +122,40 @@ clip to new clip:
   every clip by the lead's change, measured from where the gesture started (the baseline keeps each clip's value at
   the gesture's first event), so a clip held at a limit keeps its offset to the others when the knob comes back.
 
-The right side, [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h), draws each clip's whole source file fitted to
-the width, in its track's colour and scaled by its gain (rounded to 0.1 dB), the part the clip plays tinted, the rest
-dimmed, and S and E flags at its start and end, as in Ableton's sample editor. Columns come from the source's peaks
-(or its samples, zoomed in that far), blurred lightly when from peaks, as the arrangement's tiles are, but drawn
-without a cache: the whole file is one width. One clip gets a time ruler (steps from a fixed list, at least 70 px
+The right side, [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h), draws each clip's source file across the width
+(the whole of it at first), in its track's colour and scaled by its gain (rounded to 0.1 dB), the part the clip plays
+tinted, the rest dimmed, and S and E flags at its start and end, as in Ableton's sample editor. Columns come from the
+source's peaks (or its samples, zoomed in that far), blurred lightly when from peaks, as the arrangement's tiles are,
+but drawn without a cache: what shows is one width. One clip gets a time ruler (steps from a fixed list, at least 70 px
 apart: `formatTime()`); several are stacked in bands of at least `kMinBandHeight` (40 px), labelled, with "+N more"
 when they don't fit. What it draws (each clip's colour, its source, why it couldn't be loaded) is worked out on the
-GUI thread.
+GUI thread. `placed()` says where each band is drawn: its area, its file's length, and the part of it shown (`fromSec`,
+`spanSec`); `xAt(placed, sec)` and `secAt(placed, x)` convert, and everything drawn or hit goes through them.
+
+**Zooming and scrolling.** What shows is a share of each file, `viewFrom` to `viewTo` (0..1): one clip zooms as any
+view does, and several, each across the width, zoom together. `zoomAt(x, factor)` keeps the moment under `x` in place,
+held to `minSpan()` (the first clip's file at `kMaxPixelsPerFrame`, 8 px a frame) and to the whole file;
+`scrollTo(from)` keeps the zoom; `zoomToFit()` shows the whole of each (on `opened`: other clips open whole). The
+mouse is as in the arrangement and the piano roll: Ctrl+wheel zooms around the mouse (`kWheelZoom`, 1.2 a notch), the
+wheel (Shift, or a horizontal one) scrolls sideways (`kWheelScroll`, 80 px a notch: there is nothing to scroll up and
+down), Ctrl+Alt drags it (`ViewDrag`), and a press on the ruler (one clip) is a click or a drag decided on its first 3
+px, as the piano roll's ruler decides: sideways scrolls, up and down zooms around the press (1.012 a pixel, down in),
+and a click (on the release) plays from the moment clicked (`locateRequested(beat)`: `clip.startBeat` plus the
+clip's beats to it, held to the part the clip plays; the clip view passes it on as its own `locateRequested`). Under
+the waveforms a `ScrollBar` (`waveformBar`) shows while zoomed in. The window's Zoom In, Zoom Out and Zoom to
+Arrangement (+, −, Z) call the clip view's `zoom(factor)` and `zoomToFit()` while it shows (Main.qml's
+`window.zoom()` and `window.zoomToFit()`): the waveforms' (about their middle), or the piano roll's
+(`PianoRoll::zoomAt()` about the grid's middle, `PianoRoll::zoomToFit()`: fitted again as when it opened).
+
+**Where the song is.** As in the arrangement, the start marker (`Selection::insertBeat()`, while inside the part a
+clip plays: `startSecs_`, worked out on `insertChanged`) is a line through its waveform in `Theme::insertMarker()`, and
+a triangle at the top of the ruler; the playhead, while playing inside a clip (`playheadSecs()`, worked out on the
+bridge's `positionChanged` and `transportChanged`, and on a tempo change), is a line in `Theme::playhead()` through its
+waveform and a triangle at the ruler's foot. The second of a clip's file at a beat is `clip.offsetSec +
+clip.beatsToSource(beat - clip.startBeat, tempo)` (`secAtBeat()`), so warping, warp markers and the tempo map count.
+The playhead is drawn by [ClipPlayhead](../../ui/src/pianoroll/ClipPlayhead.h), an item over the waveforms
+(`clipPlayhead`) that repaints alone on `playheadChanged`, as `RollPlayhead` does over the notes: the waveforms aren't
+drawn again every frame.
 
 A warped clip's warp markers stand on its waveform: a line under a `kMarkerTab` (8 px) tab in the accent colour. With
 one clip open whose markers can be edited (warped, and not a frozen track's clip with a source map of its own:
@@ -371,7 +413,8 @@ The bar sits centred above the notes (below them when there is no room), kept in
 off, taking the rest of its time.
 
 The actions are the roll's: `legato()`, `scaleTime(2.0)` / `scaleTime(0.5)`, `quantize()`, `humanizeVelocity()`,
-`humanizeTiming()`. Each takes `toolTargets()` (the selected notes, or all when none are, by time on the roll),
+`humanizeTiming()`, and `transpose(semitones)` (the header's Notes menu: all the targets together, held by
+`notes::clampMove` so none leaves the keyboard; with none able to move the roll's `statusMessage` says so). Each takes `toolTargets()` (the selected notes, or all when none are, by time on the roll),
 computes the changed notes, and commits `notes::place(clip.notes, targets, changed)` for each clip as one undo step
 (`applyTool()`: "Humanize Velocity", "Humanize Timing"). Legato works in each clip on its own (up to its own notes and
 its end); Quantize, Humanize › Timing and ×2 / ÷2 work on the notes' times on the roll (`applyOnRoll()`: with several
@@ -583,8 +626,8 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
+| [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the header's Notes menu on every note of the clips shown (or the selected ones); the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
-| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them; an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them, and the Audio and MIDI switch (the choice kept when shown again, gone with other clips, the other kind shown when the clips shown are deleted); an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); the start marker and the playhead on the waveform, a click on the ruler playing from there; zooming and scrolling (Ctrl+wheel around the mouse, the wheel and Shift+wheel, Ctrl+Alt drags, the ruler's drags, the window's zoom keys, the closest zoom, other clips opening whole); going back (Esc, ×, the clips deleted, the project reset) |
 | [test_ui_progressions.cpp](../../tests/app/test_ui_progressions.cpp) | Progression ideas through the clip view: Generate › Progressions… opening the panel beside the roll with ideas in the song's key (A minor without one), × and Esc; trying an idea writing its chords (the clip made four bars long), ↑ and ↓, a click on a row, a run of tries one undo step; the clip's own notes kept, and an edit between tries; each clip's last try replaced in it after a try in another; Bass and 7ths writing the tried idea again; locked chords and kept ideas staying for New Ideas; a chord swapped from the right-click menu; More Like This; eight bars, another mood, the project's key |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |

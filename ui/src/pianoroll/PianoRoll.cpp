@@ -428,6 +428,23 @@ void PianoRoll::legato() {
     applyTool(from, to, QStringLiteral("Legato"));
 }
 
+void PianoRoll::transpose(int semitones) {
+    const std::vector<ClipNote> targets = toolTargets();
+    if (targets.empty() || !semitones) return;
+    std::vector<Note> all;
+    all.reserve(targets.size());
+    for (const ClipNote& note : targets) all.push_back(note.note);
+    const int pitch = notes::clampMove(all, 0.0, semitones).second;
+    if (!pitch) {
+        Q_EMIT statusMessage(semitones > 0 ? QStringLiteral("The highest note is as high as notes go")
+                                           : QStringLiteral("The lowest note is as low as notes go"));
+        return;
+    }
+    std::vector<ClipNote> changed = targets;
+    for (ClipNote& note : changed) note.note.pitch += pitch;
+    applyTool(targets, changed, QStringLiteral("Transpose Notes"));
+}
+
 void PianoRoll::scaleTime(double factor) {
     applyOnRoll(toolTargets(), [factor](const std::vector<Note>& notes) { return notes::timeScaled(notes, factor); },
                 factor > 1 ? QStringLiteral("Timing ×2") : QStringLiteral("Timing ÷2"));
@@ -903,6 +920,11 @@ void PianoRoll::setScrollY(double y) {
 
 void PianoRoll::zoomAt(double x, double factor) {
     if (view_.zoomAt(x, factor)) viewMoved();
+}
+
+void PianoRoll::zoomToFit() {
+    fitPending_ = clip() != nullptr;
+    fitIfReady();
 }
 
 void PianoRoll::zoomRows(double notches, double anchorY) {

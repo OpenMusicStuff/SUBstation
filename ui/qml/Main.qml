@@ -72,8 +72,18 @@ ApplicationWindow {
     }
 
     function zoom(factor) {
-        if (arrangement.zoom)
+        if (arrangementArea.clipViewShown)
+            clipView.zoom(factor)  // (what it shows: the waveforms, or the piano roll)
+        else if (arrangement.zoom)
             arrangement.zoom(factor)
+    }
+
+    // Zoom to Arrangement (Z): the whole song, or in the clip view the clips shown.
+    function zoomToFit() {
+        if (arrangementArea.clipViewShown)
+            clipView.zoomToFit()
+        else if (arrangement.zoomToArrangement)
+            arrangement.zoomToArrangement()
     }
 
     // --- Files ---------------------------------------------------------------------------------
@@ -739,7 +749,7 @@ ApplicationWindow {
                     objectName: "zoomToArrangement"
                     text: qsTr("Zoom to &Arrangement")
                     shortcut: window.keyOf(objectName)
-                    onTriggered: if (arrangement.zoomToArrangement) arrangement.zoomToArrangement()
+                    onTriggered: window.zoomToFit()
                 }
                 MenuSeparator {}
                 Action { objectName: "narrowGrid"; text: qsTr("Narrow Grid"); shortcut: window.keyOf(objectName); onTriggered: if (arrangement.narrowGrid) arrangement.narrowGrid() }

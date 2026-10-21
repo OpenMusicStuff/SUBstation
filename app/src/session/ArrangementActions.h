@@ -115,6 +115,17 @@ public:
     Q_INVOKABLE void consolidate();
     // A clip's menu's Split Here: the selected clips at `beat`.
     Q_INVOKABLE void splitAt(double beat);
+    // --- The notes of the selected MIDI clips (a clip's menu's MIDI Notes) ---
+    // Every note of every selected MIDI clip (Selection::clips()), one undo step:
+    // up or down by `semitones` together (as far as the highest or lowest note
+    // can go: the status line says so when none can); each clip's notes legato
+    // (up to its own next notes, the last ones to its end); their starts on the
+    // song's grid of `step` beats.
+    Q_INVOKABLE void transposeNotes(int semitones);
+    Q_INVOKABLE void legatoNotes();
+    Q_INVOKABLE void quantizeNotes(double step);
+    // The selected MIDI clips, in order (by track, then time).
+    ClipRefs selectedMidiClips() const;
     // Whether the menu's Consolidate, Reverse and Deactivate can act on the selection.
     Q_INVOKABLE bool canConsolidate() const;
     Q_INVOKABLE bool canReverse() const;
@@ -175,6 +186,8 @@ Q_SIGNALS:
     void clipViewRequested(const QVariantList& refs, const QString& leadTrackId, const QString& leadClipId);
 
 private:
+    // The selected MIDI clips' notes changed: `change` gives each clip's new notes. One undo step.
+    void editNotes(const std::function<std::vector<Note>(const Clip&)>& change, const QString& text);
     void pasteTracks(const CopiedTracks& content, QString after);
     void pasteAutomation(const CopiedAutomation& content, double atBeat, std::optional<QList<LaneRef>> lanes = {});
     void reverseWith(double start, double end, const QStringList& trackIds,
