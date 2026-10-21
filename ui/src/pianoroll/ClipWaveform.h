@@ -240,6 +240,8 @@ private:
     // A warped band's song beats on its grid: every `step` song beats while
     // they are at least kMinGridPixels apart (0.25, 0.5, 1, then bars).
     double gridStep(const Placed& placed) const;
+    // A grid of bars (`step` over a beat): every how many bars a line is drawn (and a dragged marker snaps to).
+    int64_t barsPerLine(const Placed& placed, double step) const;
 
     QPointer<app::Session> session_;
     QPointer<ClipViewController> controller_;

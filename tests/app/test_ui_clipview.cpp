@@ -550,6 +550,35 @@ private Q_SLOTS:
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
     }
 
+    void aMarkerSnapsToTheBarLinesDrawn() {
+        // A minute of audio (120 beats across: bars drawn, not beats), 4/4 then 3/4 from beat 8: bar lines at
+        // 0, 4, 8, 11, 14... A marker dragged near beat 11 goes onto 11, the line drawn there (not onto 12).
+        const QString path = test::writeWav(dir_->path(QStringLiteral("long.wav")), tone(60.0, 220.0), 2);
+        const ClipRefs refs = editor().addClips(QString(), 0.0, {{path, 60.0}}, 0);
+        clips_ = refs;
+        QTRY_VERIFY(!session().bridge()->waveform(path).isNull());
+        editor().setMeter(sub::MeterMap({{0.0, 4, 4}, {8.0, 3, 4}}));
+        editor().updateClips({refs[0]}, [](const Clip& c) {
+            Clip warped = c;
+            warped.warp = true;
+            warped.segmentBpm = 120.0;
+            warped.setWarpMarkers({{0.0, 0.0}, {30.0, 60.0}, {60.0, 120.0}});
+            return warped;
+        }, QStringLiteral("Warp"));
+        open(refs);
+        sub::ui::ClipWaveform* shown = waveform();
+        using sub::ui::ClipWaveform;
+        const ClipWaveform::Placed band = shown->placed().front();
+        QVERIFY(band.clip);
+        QVERIFY(band.area.width() / band.spanBeat < 10.0);  // (too close for beats)
+        const auto at = [&](double beat) {
+            return test::at(shown, QPointF(ClipWaveform::xAtBeat(band, beat), band.area.center().y()));
+        };
+        test::drag(window_, at(60.0), at(11.3));
+        QVERIFY2(std::abs(clip(0).warpMarkers[1].beat - 11.0) < 1e-9, qPrintable(QString::number(clip(0).warpMarkers[1].beat)));
+        QCOMPARE(clip(0).warpMarkers[1].sec, 30.0);
+    }
+
     void aWarpedClipsRulerCountsBarsAndBeats() {
         using sub::ui::ClipWaveform;
         const sub::MeterMap four(4, 4);

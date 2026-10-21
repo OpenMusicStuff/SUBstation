@@ -434,6 +434,12 @@ double ClipWaveform::gridStep(const Placed& placed) const {
     return barBeats * every;
 }
 
+int64_t ClipWaveform::barsPerLine(const Placed& placed, double step) const {
+    if (!session_) return 1;
+    const double barBeats = session_->project()->meter().at(std::max(0.0, placed.fromBeat)).beatsPerBar();
+    return static_cast<int64_t>(std::max(1.0, std::round(step / std::max(1.0, barBeats))));
+}
+
 void ClipWaveform::drawWarpedGrid(SgPainter& p, const Placed& placed) const {
     // The song's beats and bars across a warped band (laid out in beats: the
     // grid is even, the waveform stretched over it), bars numbered along the
@@ -472,7 +478,7 @@ void ClipWaveform::drawWarpedGrid(SgPainter& p, const Placed& placed) const {
         return;
     }
     // Too close for beats: bars, every so many.
-    const auto every = static_cast<int64_t>(std::max(1.0, std::round(step / std::max(1.0, meter.at(std::max(0.0, b0)).beatsPerBar()))));
+    const int64_t every = barsPerLine(placed, step);
     for (int64_t index = meter.barAt(std::max(0.0, b0)).index / every * every; meter.barStart(index) <= b1; index += every)
         if (meter.barStart(index) >= b0) line(meter.barStart(index), barLine, index);
 }
@@ -598,7 +604,16 @@ double ClipWaveform::snappedBeatAt(const Placed& placed, double x, bool free) co
     if (!free) {
         // Onto the grid's line near it (as drawn: sixteenths to bars, by the zoom).
         const double step = gridStep(placed);
-        const double snapped = std::round(song / step) * step;
+        double snapped = std::round(song / step) * step;
+        if (step > 1.0 && session_) {
+            // Bars, every so many: the nearer of the drawn lines either side (bars as long as their signatures make them).
+            const MeterMap meter = session_->project()->meter();
+            const int64_t every = barsPerLine(placed, step);
+            const int64_t index = meter.barAt(song).index;
+            const int64_t below = (index >= 0 ? index : index - every + 1) / every * every;
+            const double before = meter.barStart(below), after = meter.barStart(below + every);
+            snapped = song - before <= after - song ? before : after;
+        }
         if (std::abs(xAtBeat(placed, snapped) - x) <= kSnapPixels) song = snapped;
     }
     return ownBeat(*placed.clip, song);
