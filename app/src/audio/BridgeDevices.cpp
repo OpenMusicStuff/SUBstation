@@ -549,6 +549,7 @@ void EngineBridge::pluginFailed(const QString& deviceId, const QString& message)
 void EngineBridge::setPluginState(quint32 processorId, const QString& name, const QByteArray& state) {
     const BusyScope busy(d_->busy);
     pluginStateChanged(processorId);
+    ++d_->stateSets[processorId];
     try {
         engine_.setProcessorState(processorId, stateBytes(state));
     } catch (const std::exception& error) {
@@ -588,6 +589,7 @@ void EngineBridge::forgetProcessor(const QString& deviceId, std::optional<quint3
     }
     d.stateChanges.remove(id);
     d.stateKept.remove(id);
+    d.stateSets.remove(id);
     d.enabled.remove(id);
     d.sidechains.erase(id);
     d.midiInputs.erase(id);

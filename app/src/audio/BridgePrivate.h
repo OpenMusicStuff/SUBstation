@@ -45,12 +45,14 @@ struct EngineBridge::SidechainState {
 };
 
 // A loaded plug-in device: its track, itself, its processor, and how many times
-// its state had changed (Private::stateChanges) when it was asked for.
+// its state had changed (Private::stateChanges), and been set from the model
+// (Private::stateSets), when it was asked for.
 struct EngineBridge::LoadedPlugin {
     QString trackId;
     QString deviceId;
     quint32 processorId = 0;
     quint32 changes = 0;
+    quint32 sets = 0;
 };
 
 // Where a track's output goes as the engine has it: an engine track (or
@@ -113,6 +115,9 @@ struct EngineBridge::Private {
     // for: the same, and its editor closed, it holds it as it is (gatherPluginStates() asks no more).
     QHash<quint32, quint32> stateChanges;
     QHash<quint32, quint32> stateKept;
+    // Processor -> how many times the model's state has been set in it (an undo, a preset): an answer
+    // asked for before is older than the model's.
+    QHash<quint32, quint32> stateSets;
     // A backup's plug-in states being gathered (gatherPluginStates()): those asked in their
     // sandboxes, those of this process still to read (one a turn), and what waits for them.
     struct Gathering {

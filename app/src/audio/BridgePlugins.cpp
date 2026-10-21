@@ -115,7 +115,8 @@ std::vector<EngineBridge::LoadedPlugin> EngineBridge::loadedPlugins(const std::o
             if (!device->isPlugin()) continue;
             const auto processorId = engineDeviceId(track->id, device->id);
             if (!processorId || !d_->pluginIds.contains(*processorId)) continue;
-            plugins.push_back({track->id, device->id, *processorId, d_->stateChanges.value(*processorId)});
+            plugins.push_back({track->id, device->id, *processorId, d_->stateChanges.value(*processorId),
+                               d_->stateSets.value(*processorId)});
         }
     }
     return plugins;
@@ -129,28 +130,27 @@ bool EngineBridge::stillLoaded(const LoadedPlugin& plugin) const {
 void EngineBridge::keepPluginState(const LoadedPlugin& plugin, const StateRead& read) {
     // (Copied first: a plug-in in this process may run a message loop as it is read, in which the
     // device may go.)
-    const Device& device = project_->device(plugin.trackId, plugin.deviceId);
-    const QString name = device.plugin->name;
-    QString state = device.state.value_or(QString());
+    const QString name = project_->device(plugin.trackId, plugin.deviceId).plugin->name;
+    std::optional<std::vector<uint8_t>> got;
     bool answered = false;  // (by the plug-in: not the last state known standing in)
     try {
         const BusyScope busy(d_->busy);
-        if (const auto got = read(answered)) {
-            state = QString::fromLatin1(stateData(*got).toBase64());
-        } else {
-            answered = false;
-        }
+        got = read(answered);
     } catch (const std::exception& error) {
-        answered = false;
         Q_EMIT statusMessage(name + QStringLiteral(": ") + QString::fromStdString(error.what()));
     }
     if (!stillLoaded(plugin)) return;  // (gone meanwhile)
+    // The model's state set in it since it was asked for (an undo, a preset): newer than its answer.
+    if (d_->stateSets.value(plugin.processorId) != plugin.sets) got.reset();
+    if (!got) answered = false;
     // It answered, nothing changed it since it was asked, and no editor of its is open (changing it
     // unsaid): the model holds it as it is.
     if (answered && d_->stateChanges.value(plugin.processorId) == plugin.changes &&
         !d_->editorsWanted.contains(plugin.deviceId)) {
         d_->stateKept.insert(plugin.processorId, plugin.changes);
     }
+    const QString state = got ? QString::fromLatin1(stateData(*got).toBase64())
+                              : project_->device(plugin.trackId, plugin.deviceId).state.value_or(QString());
     // (And where it was found, if it moved.)
     project_->storePluginState(plugin.trackId, plugin.deviceId, state, d_->pluginIds.value(plugin.processorId));
 }

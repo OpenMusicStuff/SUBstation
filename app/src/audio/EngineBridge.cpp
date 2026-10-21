@@ -133,6 +133,7 @@ void EngineBridge::shutdown() {
     d_->pluginIds.clear();
     d_->stateChanges.clear();
     d_->stateKept.clear();
+    d_->stateSets.clear();
     for (const std::string& name : engine_.openMidiInputs()) engine_.closeMidiInput(name);
     engine_.idle(true);
 }
