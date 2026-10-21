@@ -247,6 +247,12 @@ menus, drops), and the session dispatches the Edit menu's commands to it.
 - `deleteArea()`, `duplicateArea()`, `copyArea()`, `cutArea()`, `copyAutomation()`, `cutAutomation()`,
   `copyTracks(ids)`, `cutTracks(ids)`, `duplicateTracks(ids)`, `consolidate()`, `splitAt(beat)`, `canConsolidate()`,
   `canReverse()`, `insertMidiClip(trackId, beat, gridStep)`, `insertTrackAfter(trackId, midi)`.
+- **The selected MIDI clips' notes** (a clip's menu's *MIDI Notes*): `selectedMidiClips()` (the MIDI clips among
+  `Selection::clips()`, by track, then time), and on every note of each, one undo step through
+  `ProjectEditor::setClipsNotes` (the notes placed with `notes::place`, as the piano roll's tools place them):
+  `transposeNotes(semitones)` (all together, held by `notes::clampMove` so none leaves the keyboard; none can move:
+  the status line says so), `legatoNotes()` (`notes::legato` in each clip, to its own next notes and its end) and
+  `quantizeNotes(step)` (`notes::quantized` on the song's grid: each note where it plays on the timeline, and back).
 - **Deactivating** (0, `toggleActivation()`): the clips in the selected area, audio and MIDI, deactivated
   (`ProjectEditor::setRangeActive`: just the stretch of each inside it, one undo step), or activated again if they
   all are; frozen tracks' clips stay as they are (their frozen audio holds them). `activates()` says which (none:
@@ -525,7 +531,7 @@ parts keep these QSettings keys:
 
 - [test_selection.cpp](../../tests/app/test_selection.cpp): the selection's rules.
 - [test_session_edit.cpp](../../tests/app/test_session_edit.cpp): the Edit and Create commands, the clipboard,
-  reversing.
+  reversing, the selected MIDI clips' notes at once.
 - [test_session_devices.cpp](../../tests/app/test_session_devices.cpp): the device view's selection, clipboard, racks,
   drops and presets.
 - [test_backups.cpp](../../tests/app/test_backups.cpp): backups per project and how many stay, only unsaved changes

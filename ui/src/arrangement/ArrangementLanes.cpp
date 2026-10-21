@@ -17,6 +17,7 @@
 #include "model/Devices.h"
 #include "model/Edits.h"
 #include "model/Errors.h"
+#include "model/Notes.h"
 #include "model/Numbers.h"
 #include "model/Project.h"
 #include "model/Timebase.h"
@@ -1170,7 +1171,8 @@ void ArrangementLanes::mouseDoubleClickEvent(QMouseEvent* event) {
     }
     const auto hit = hitClip(pos);
     if (!hit) return;
-    // Double-clicking one of several selected clips opens them all.
+    // The clip opens alone: the double-click's first click selected just it, as
+    // a click does (Shift+Tab opens every selected clip).
     app::Selection& selection = *session()->selection();
     const app::ClipRef ref{hit->trackId, hit->clip.id};
     if (!selection.clips().contains(ref)) selection.selectClips(*session()->editor(), {ref});
@@ -1427,6 +1429,27 @@ MenuEntries ArrangementLanes::contextMenu(const QPointF& pos) {
                                          [actions] { actions->toggleActivation(); });
         activation.shortcut = KeyMap::hint("toggleClipActivation");
         activation.enabled = activates.has_value();
+        if (const int midiClips = static_cast<int>(actions->selectedMidiClips().size())) {
+            // Every note of every selected MIDI clip at once, without opening them (one undo step each).
+            MenuEntry& notesMenu = menu.addSubmenu(midiClips > 1 ? QStringLiteral("MIDI Notes (%1 Clips)").arg(midiClips)
+                                                                 : QStringLiteral("MIDI Notes"));
+            arrangement::MenuList notes(notesMenu.children);
+            notes.add(QStringLiteral("Transpose Up"), [actions] { actions->transposeNotes(1); }).toolTip =
+                QStringLiteral("Every note of the selected MIDI clips a semitone up");
+            notes.add(QStringLiteral("Transpose Down"), [actions] { actions->transposeNotes(-1); }).toolTip =
+                QStringLiteral("Every note of the selected MIDI clips a semitone down");
+            notes.add(QStringLiteral("Octave Up"), [actions] { actions->transposeNotes(12); });
+            notes.add(QStringLiteral("Octave Down"), [actions] { actions->transposeNotes(-12); });
+            notes.addSeparator();
+            notes.add(QStringLiteral("Legato"), [actions] { actions->legatoNotes(); }).toolTip =
+                QStringLiteral("Each note lasts until the next one starts (a chord's notes together), in each clip");
+            arrangement::MenuList grids(notes.addSubmenu(QStringLiteral("Quantize")).children);
+            for (const app::notes::QuantizeGrid& grid : app::notes::kQuantizeGrids) {
+                const double step = grid.beats;
+                grids.add(QString::fromLatin1(grid.name), [actions, step] { actions->quantizeNotes(step); }).toolTip =
+                    QStringLiteral("Every note's start onto the song's %1 grid").arg(QString::fromLatin1(grid.name));
+            }
+        }
         if (hit) {
             // Grooves: the selected clips' written into them and cleared; this clip's feel made a groove of the
             // project's (on 16ths, over a bar).

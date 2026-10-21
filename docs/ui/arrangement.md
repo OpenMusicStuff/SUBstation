@@ -395,7 +395,9 @@ the computer MIDI keyboard plays it; its release, or the window losing the focus
 the gesture's `finish()`; losing the mouse grab (a popup) calls its `cancel()`.
 
 Double-click on a clip selects it (unless it was among the selected clips) and asks the `Arrangement` to open the
-selected clips, it first (`openClips()` → `Session.arrangement.requestClipView()`). With F held, a double-click on
+selected clips, it first (`openClips()` → `Session.arrangement.requestClipView()`). Its first click has selected just
+that clip already, as a click does (on one of several selected clips, on its release), so it opens alone; Shift+Tab
+(`Arrangement::openClipView()`) opens every selected clip. With F held, a double-click on
 a fade's dot straightens it (`edits::curveFade(..., 0)`) and on its square removes the fade (`edits::fadeClip(...,
 0)`), each one undo step. On an automation lane a double-click starts another `envelopes::press()`: each click of it
 counts.
@@ -469,7 +471,9 @@ selected range), Paste (copied automation) and the lane's own entries ([below](#
 (it is selected first unless it already was), or anywhere in the selected time range: Cut, Copy, Paste, Split Here
 (on a clip: at the snapped beat under the mouse), Duplicate, Consolidate (`canConsolidate()`), Reverse
 (`canReverse()`: an audio clip in it), Deactivate (Activate when every clip in it is deactivated; enabled with a
-clip in it not frozen: `activates()`), on a clip Apply Groove (the selected clips' grooves written into them and
+clip in it not frozen: `activates()`), with MIDI clips selected MIDI Notes ("MIDI Notes (N Clips)" for several: a
+submenu of Transpose Up and Down, Octave Up and Down, Legato and Quantize's grids, `notes::kQuantizeGrids`; the
+`ArrangementActions` methods of [session.md](../app/session.md#the-arrangements-actions-arrangementactions)), on a clip Apply Groove (the selected clips' grooves written into them and
 cleared: `ProjectEditor::applyClipGrooves`; enabled while one of them has a groove) and Extract Groove (the clip's
 feel, on 16ths over a bar, into the project's grooves: `Session.grooves.extract`), Delete. Elsewhere: Paste at the snapped beat on that track, Insert MIDI Clip
 (MIDI tracks), Insert Audio/MIDI Track (after it, in its group: `insertTrackAfter()`), Delete Track.
@@ -748,11 +752,11 @@ from it. The clip view draws its waveforms without a cache ([piano-roll.md](pian
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_arrangement.cpp](../../tests/app/test_ui_arrangement.cpp) | Dragging and Ctrl-dragging clips and undo, trimming, selecting below the tracks, the clip body setting the insert marker, Shift-click ranges, drags ending in the clip band, clips heard where a drag (or trim) takes them, the ruler's loop brace and scrub zoom, zoom, scroll and follow, Alt+wheel resizing and folding, Ctrl+Alt drags, files, devices and presets dropped, double-click opening the clip view, the lanes' menus, MIDI clips, reversing, the live take reaching the playhead |
+| [test_ui_arrangement.cpp](../../tests/app/test_ui_arrangement.cpp) | Dragging and Ctrl-dragging clips and undo, trimming, selecting below the tracks, the clip body setting the insert marker, Shift-click ranges, drags ending in the clip band, clips heard where a drag (or trim) takes them, the ruler's loop brace and scrub zoom, zoom, scroll and follow, Alt+wheel resizing and folding, Ctrl+Alt drags, files, devices and presets dropped, double-click opening the clip view (one of several selected clips: it alone), the lanes' menus (MIDI Notes on the selected MIDI clips), MIDI clips, reversing, the live take reaching the playhead |
 | [test_ui_arrangement_automation.cpp](../../tests/app/test_ui_arrangement_automation.cpp) | A, parameters showing their lanes, clicking on the line, dragging and bending breakpoints, segments and steps, deleting, time ranges (clear, duplicate, move), the lanes' menus, overriding and re-enabling, controls following automation, the master's lane, lanes below tracks, saving, automation moving with a dragged clip, lane ranges dragged down over several tracks' lanes and extended with Shift-click, drags reaching up into the clips |
 | [test_ui_arrangement_clips.cpp](../../tests/app/test_ui_arrangement_clips.cpp) | Alt on a clip's edge stretching it (the cursor as Alt is pressed, heard while dragging, Shift off the grid, a MIDI clip's notes), Ctrl+Shift on its body sliding its audio or notes (by grid steps, to the file's ends, Alt freely), F showing the fade handles and dragging fades and their curves (heard as they go), double-clicks straightening and removing them, F playing a note instead while the computer MIDI keyboard is on, MIDI clips without fades |
 | [test_ui_arrangement_selection.cpp](../../tests/app/test_ui_arrangement_selection.cpp) | A group's selection shown over the rows it covers and acting on what is in it, drags over every kind of track (folded, frozen, folded groups), Shift-clicks extending clip ranges, a frozen track's stretch dragged with its frozen audio and a move off it refused |
 | [test_ui_mainwindow.cpp](../../tests/app/test_ui_mainwindow.cpp) | `findingTracks`: Q, typing jumping to the best match, Enter and Up, Shift+Enter settling and Ctrl+Enter going back, a match unfolded from its group and scrolled into view, letters typed into the field, Esc; `findingTracksFromTheClipView`: Q over the clip view, a match's clip in the same beats opened there, one without shown in the arrangement, Esc giving the clip view the keyboard back |
 | [test_ui_arrangement_tracks.cpp](../../tests/app/test_ui_arrangement_tracks.cpp) | Groups (folding, the group's header and bands, dragging headers by their name bars into and out of groups, folded tracks' clips as bars and their lanes as grids, cut, copy and paste), returns and sends, following the playhead while scrolling by hand, the header's controls (volume, solo, the activator, arming, renaming in place), the In/Out column (Audio From and its channel or tap, MIDI From, the monitoring buttons, Audio To and where it goes, hiding the column, a set routed as Ableton users route theirs), sidechains greying out sends, the track menu's freezing and flattening, resizing a track by its bottom edge |
-| [test_session_edit.cpp](../../tests/app/test_session_edit.cpp) | The area commands and the clipboard as the session drives them: splitting, selecting all, duplicating and deleting the selected area, cutting, copying and pasting clips, automation and tracks, reversing (at once and in the background) |
+| [test_session_edit.cpp](../../tests/app/test_session_edit.cpp) | The area commands and the clipboard as the session drives them: splitting, selecting all, duplicating and deleting the selected area, cutting, copying and pasting clips, automation and tracks, reversing (at once and in the background), the selected MIDI clips' notes at once |
 | [test_selection.cpp](../../tests/app/test_selection.cpp) | The selection's rules |

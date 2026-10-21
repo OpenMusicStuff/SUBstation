@@ -264,6 +264,8 @@ public:
     void selectNotes(const std::vector<ClipNote>& notes, bool tools = false);
     // The same with notes of the lead clip.
     void setSelection(const std::vector<app::Note>& notes, bool tools = false);
+    // Ctrl+A: every note of every clip shown, with the note tools.
+    Q_INVOKABLE void selectAll() { selectNotes(allNotes(), true); }
     // The selected notes, sorted (a set: no two alike).
     const std::vector<ClipNote>& selectedNotes() const { return selected_; }
     // ... as notes (with one clip shown: the lead's).
@@ -309,6 +311,9 @@ public:
     // (Ctrl+U with nothing selected).
     std::vector<ClipNote> toolTargets() const;
     Q_INVOKABLE void legato();
+    // Up or down by `semitones` (all together, as far as the highest or lowest
+    // note can go: the status line says so when none can).
+    Q_INVOKABLE void transpose(int semitones);
     // ×2 (2.0) and ÷2 (0.5).
     Q_INVOKABLE void scaleTime(double factor);
     Q_INVOKABLE void quantize();
@@ -471,6 +476,8 @@ public:
     Q_INVOKABLE void setScrollY(double y);
     // Zoom time keeping the beat under `x` in place.
     Q_INVOKABLE void zoomAt(double x, double factor);
+    // Fitted to the clips again, as they opened (Z): the parts they play across the grid, their notes in the middle.
+    Q_INVOKABLE void zoomToFit();
     // Make the keys' rows taller (or shorter), keeping the pitch under
     // `anchorY` (a note grid y) in place.
     Q_INVOKABLE void zoomRows(double notches, double anchorY);

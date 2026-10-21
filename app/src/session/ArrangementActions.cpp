@@ -17,6 +17,7 @@
 #include "editor/ProjectEditor.h"
 #include "intelligence/AudioAnalysis.h"
 #include "model/Keys.h"
+#include "model/Notes.h"
 #include "io/Serialization.h"
 #include "model/Devices.h"
 #include "model/Errors.h"
@@ -236,6 +237,76 @@ void ArrangementActions::splitAt(double beat) {
     QList<ClipRef> refs(selection_->clips().begin(), selection_->clips().end());
     std::sort(refs.begin(), refs.end());
     editor_->splitClips(refs, beat);
+}
+
+// --- The notes of the selected MIDI clips --------------------------------------------------------
+
+ClipRefs ArrangementActions::selectedMidiClips() const {
+    ClipRefs refs;
+    for (const ClipRef& ref : selection_->clips()) {
+        const Clip* clip = project_->findClip(ref.trackId, ref.clipId);
+        if (clip && clip->isMidi()) refs.append(ref);
+    }
+    std::sort(refs.begin(), refs.end(), [this](const ClipRef& a, const ClipRef& b) {
+        const int ta = project_->trackIndex(a.trackId), tb = project_->trackIndex(b.trackId);
+        if (ta != tb) return ta < tb;
+        return project_->clip(a.trackId, a.clipId).startBeat < project_->clip(b.trackId, b.clipId).startBeat;
+    });
+    return refs;
+}
+
+void ArrangementActions::editNotes(const std::function<std::vector<Note>(const Clip&)>& change, const QString& text) {
+    std::vector<std::pair<ClipRef, std::vector<Note>>> changes;
+    for (const ClipRef& ref : selectedMidiClips()) {
+        const Clip& clip = project_->clip(ref.trackId, ref.clipId);
+        std::vector<Note> notes = change(clip);
+        // (As the piano roll's tools place them: the changed notes win where they overlap.)
+        notes = notes::place(clip.notes, clip.notes, notes);
+        if (notes != clip.notes) changes.emplace_back(ref, std::move(notes));
+    }
+    if (changes.empty()) return;
+    try {
+        editor_->setClipsNotes(changes, text);
+    } catch (const EditError& error) {
+        Q_EMIT statusMessage(error.message());
+    }
+}
+
+void ArrangementActions::transposeNotes(int semitones) {
+    std::vector<Note> all;
+    for (const ClipRef& ref : selectedMidiClips()) {
+        const Clip& clip = project_->clip(ref.trackId, ref.clipId);
+        all.insert(all.end(), clip.notes.begin(), clip.notes.end());
+    }
+    if (all.empty() || !semitones) return;
+    const int pitch = notes::clampMove(all, 0.0, semitones).second;
+    if (!pitch) {
+        Q_EMIT statusMessage(semitones > 0 ? QStringLiteral("The highest note is as high as notes go")
+                                           : QStringLiteral("The lowest note is as low as notes go"));
+        return;
+    }
+    editNotes([pitch](const Clip& clip) { return notes::shifted(clip.notes, 0.0, pitch); },
+              QStringLiteral("Transpose Notes"));
+}
+
+void ArrangementActions::legatoNotes() {
+    editNotes([](const Clip& clip) { return notes::legato(clip.notes, clip.notes, clip.windowEnd()); },
+              QStringLiteral("Legato"));
+}
+
+void ArrangementActions::quantizeNotes(double step) {
+    if (step <= 0) return;
+    editNotes(
+        [step](const Clip& clip) {
+            // On the song's grid: each note where it plays on the timeline, and back.
+            const double shift = clip.startBeat - clip.offsetBeats;
+            std::vector<Note> onTimeline = clip.notes;
+            for (Note& note : onTimeline) note.start += shift;
+            std::vector<Note> quantized = notes::quantized(onTimeline, step);
+            for (Note& note : quantized) note.start = std::max(0.0, note.start - shift);
+            return quantized;
+        },
+        QStringLiteral("Quantize"));
 }
 
 bool ArrangementActions::canConsolidate() const {

@@ -647,6 +647,7 @@ private Q_SLOTS:
         QCOMPARE(opened.count(), 4);
         QCOMPARE(opened.last().at(0).toList().size(), 1);
         QCOMPARE(opened.last().at(2).toString(), clipOf(1).id);
+        QCOMPARE(selection().clips(), refs({{trackId(1), clipOf(1).id}}));
         // Nothing selected: nothing to open.
         selection().clear();
         QMetaObject::invokeMethod(h_->view(), "openClipView");
@@ -936,6 +937,19 @@ private Q_SLOTS:
         QCOMPARE(undo().undoText(), QStringLiteral("Consolidate"));
         QCOMPARE(selection().clips(), refs({{track, clipOf(0).id}}));
         undo().undo();
+        // MIDI Notes: every note of the selected MIDI clips at once, without opening them.
+        selection().selectClips(editor(), {{track, clipOf(0, 0).id}, {track, clipOf(0, 1).id}});
+        menu = lanes()->contextMenu(h_->lanePoint(0, 5.0, true));
+        QVERIFY(menu.find(QStringLiteral("MIDI Notes (2 Clips)")));
+        QVERIFY(menu.triggerText(QStringLiteral("MIDI Notes (2 Clips)/Octave Up")));
+        QCOMPARE(clipOf(0, 0).notes.front().pitch, 72);
+        QCOMPARE(clipOf(0, 1).notes.back().pitch, 76);
+        QCOMPARE(undo().undoText(), QStringLiteral("Transpose Notes"));
+        QVERIFY(menu.find(QStringLiteral("MIDI Notes (2 Clips)/Quantize/1/16")));
+        QVERIFY(menu.triggerText(QStringLiteral("MIDI Notes (2 Clips)/Legato")));
+        QCOMPARE(undo().undoText(), QStringLiteral("Legato"));
+        undo().undo();
+        undo().undo();
         // An audio clip can't be dragged onto the MIDI track.
         const QString path = test::writeWav(dir_->path(QStringLiteral("a.wav")), test::tone(1.0, 220.0), 2);
         const auto audio = editor().addClips(QString(), 0.0, {{path, 1.0}}, 1);
@@ -987,6 +1001,7 @@ private Q_SLOTS:
         QVERIFY(selection().clipRange() && selection().clips().isEmpty());
         menu = lanes()->contextMenu(QPointF(h_->x(1.5), h_->row(0).top + h_->row(0).mainHeight - 4));
         QVERIFY(menu.find(QStringLiteral("Reverse")) && menu.find(QStringLiteral("Reverse"))->enabled);
+        QVERIFY(!menu.find(QStringLiteral("MIDI Notes")));  // (no MIDI clips selected)
     }
 
     void reversingNeedsAudioClips() {

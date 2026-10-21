@@ -14,6 +14,11 @@ open in the piano roll instead (see [midi.md](midi.md)).
   same value on all of them. Where clips differ, the value's tooltip says so.
 - **Shift+Tab** shows or hides the clip view; **Esc** (or the × button) goes back to
   the arrangement.
+- Selected a stretch with audio and MIDI clips in it? **Shift+Tab** opens the kind of the
+  first one (top track first), and the **Audio** and **MIDI** buttons at the top left
+  (each with how many there are) switch between them: the audio clips' settings and
+  waveforms, or the MIDI clips in the piano roll. The choice stays while you reopen the
+  same clips.
 
 Its controls come in four sections:
 
@@ -26,6 +31,22 @@ Its controls come in four sections:
 
 A clip's gain changes how loud it plays, and its waveform with it (in the arrangement
 and in the clip view): louder clips draw taller, cut off at the lane's edges.
+
+### Waveforms, the playhead and zooming
+
+Each clip's waveform shows its whole file at first, the part it plays lit (between the
+**S** and **E** flags).
+
+- While the song plays inside a clip, the **playhead** moves along its waveform, at the
+  moment of the file playing; the **start marker** (where playback starts) shows as a
+  line too when it is inside the clip.
+- **Click the ruler** (one clip open) to play from that moment of the file (before or after
+  the part the clip plays: from its start or its end).
+- **Ctrl+wheel** zooms in and out around the mouse; the **wheel** (or **Shift+wheel**)
+  scrolls sideways; **Ctrl+Alt drag** moves it; dragging in the ruler scrolls (sideways)
+  or zooms (up and down), as the arrangement's ruler does. A scroll bar shows under the
+  waveforms while zoomed in. **+** and **−** zoom in and out, and **Z** shows the whole
+  file again. Several clips zoom together, each across the width.
 
 ## Warping
 

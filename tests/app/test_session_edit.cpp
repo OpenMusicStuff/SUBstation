@@ -3,7 +3,8 @@
 // selecting all, duplicating and deleting the selected area, cutting, copying
 // and pasting clips, automation and tracks (one clipboard), groups, return
 // tracks, duplicating tracks, inserting tracks after the selected one, reversing
-// clips (at once, and in the background), deactivating clips (0), and what the
+// clips (at once, and in the background), deactivating clips (0), the selected
+// MIDI clips' notes transposed, made legato and quantized at once, and what the
 // engine plays.
 
 #include "EditorFixture.h"
@@ -981,6 +982,73 @@ private Q_SLOTS:
         QCOMPARE(f.project().clip(other, made.value(QStringLiteral("clipId")).toString()).startBeat, 13.3);
         QCOMPARE(f.selection().insertBeat(), 13.3);
         QVERIFY(s.arrangement()->insertMidiClip(audio, 1.0).isEmpty());
+    }
+
+    // --- The selected MIDI clips' notes (a clip's menu's MIDI Notes) ---------------------------
+
+    void theSelectedMidiClipsNotesAreEditedAtOnce() {
+        SessionFixture f;
+        Session& s = f.s();
+        ArrangementActions& actions = *s.arrangement();
+        const QString keys = s.insertMidiTrack();
+        const QString bass = s.insertMidiTrack();
+        const auto chords = f.editor().addMidiClip(keys, 0.0, 4.0);
+        const auto line = f.editor().addMidiClip(bass, 2.5, 4.0);  // (off the song's beats)
+        QVERIFY(chords && line);
+        const auto note = [](int pitch, double start, double length) { return Note{pitch, start, length, 100}; };
+        f.editor().setClipNotes(*chords, {note(60, 0, 0.5), note(64, 0, 0.5), note(67, 2, 0.5)}, QStringLiteral("Notes"));
+        f.editor().setClipNotes(*line, {note(40, 0.75, 0.25), note(43, 2.25, 0.5)}, QStringLiteral("Notes"));
+        const auto pitches = [&](const ClipRef& ref) {
+            QList<int> list;
+            for (const Note& n : f.project().clip(ref.trackId, ref.clipId).notes) list << n.pitch;
+            return list;
+        };
+        f.selection().selectClips(f.editor(), {*line, *chords});
+        QCOMPARE(actions.selectedMidiClips(), (ClipRefs{*chords, *line}));  // by track, then time
+
+        // Up a semitone and down an octave: every note of both clips, an undo step each.
+        const int depth = f.stack().count();
+        actions.transposeNotes(1);
+        QCOMPARE(pitches(*chords), (QList<int>{61, 65, 68}));
+        QCOMPARE(pitches(*line), (QList<int>{41, 44}));
+        QCOMPARE(f.stack().count(), depth + 1);
+        QCOMPARE(f.stack().undoText(), QStringLiteral("Transpose Notes"));
+        actions.transposeNotes(-12);
+        QCOMPARE(pitches(*chords), (QList<int>{49, 53, 56}));
+        QCOMPARE(pitches(*line), (QList<int>{29, 32}));
+        f.stack().undo();
+        f.stack().undo();
+        QCOMPARE(pitches(*chords), (QList<int>{60, 64, 67}));
+
+        // Legato: in each clip, each note to the next (a chord's together), the last ones to the clip's end.
+        actions.legatoNotes();
+        const std::vector<Note> legato = f.project().clip(chords->trackId, chords->clipId).notes;
+        QCOMPARE(legato, (std::vector<Note>{note(60, 0, 2), note(64, 0, 2), note(67, 2, 2)}));
+        QCOMPARE(f.project().clip(line->trackId, line->clipId).notes,
+                 (std::vector<Note>{note(40, 0.75, 1.5), note(43, 2.25, 1.75)}));
+        QCOMPARE(f.stack().undoText(), QStringLiteral("Legato"));
+        f.stack().undo();
+
+        // Quantize: on the song's grid (the clip starts half a beat off it), not the clip's own.
+        actions.quantizeNotes(1.0);
+        const std::vector<Note> quantized = f.project().clip(line->trackId, line->clipId).notes;
+        QCOMPARE(quantized.size(), size_t(2));
+        QCOMPARE(quantized[0].start, 0.5);  // song beat 3.25 -> 3 (in the clip's own beats, 0.75 -> 1)
+        QCOMPARE(quantized[1].start, 2.5);  // song beat 4.75 -> 5
+        QCOMPARE(f.stack().undoText(), QStringLiteral("Quantize"));
+        f.stack().undo();
+
+        // As high as notes go: nothing moves, and the status line says why.
+        f.editor().setClipNotes(*chords, {note(127, 0, 1)}, QStringLiteral("Notes"));
+        const int before = f.stack().count();
+        actions.transposeNotes(1);
+        QCOMPARE(f.stack().count(), before);
+        QCOMPARE(f.lastMessage(), QStringLiteral("The highest note is as high as notes go"));
+        // No MIDI clips selected: nothing.
+        f.selection().clear();
+        QVERIFY(actions.selectedMidiClips().isEmpty());
+        actions.legatoNotes();
+        QCOMPARE(f.stack().count(), before);
     }
 };
 

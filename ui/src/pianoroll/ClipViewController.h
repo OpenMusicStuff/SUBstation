@@ -6,8 +6,12 @@
 // is a MIDI clip, every MIDI clip among them opens in the piano roll, edited
 // together (the lead first: it leads the roll); otherwise every audio clip
 // among them opens together: their settings on the left, their waveforms on the
-// right. Deleted clips (or tracks) are dropped; when none are left, or the
-// project is reset, it asks to be closed (closeRequested). It shows them only
+// right. With both kinds among them (`mixed`), showKind() shows the other
+// kind's (the header's Audio and MIDI switch): the first of them leads, and
+// the choice stays while the same clips are asked for. Deleted clips (or
+// tracks) are dropped; when none of the kind shown are left, the other kind's
+// show, and when none are left at all, or the project is reset, it asks to be
+// closed (closeRequested). It shows them only
 // while `active` (the view shown): becoming active opens them afresh (the piano
 // roll fitted to the clip again), and going inactive forgets them, as the old
 // view's open_clips and close_view did.
@@ -72,6 +76,11 @@ class ClipViewController : public QObject {
     // What shows: a MIDI clip in the piano roll, or audio clips (none: count 0).
     Q_PROPERTY(bool midi READ midi NOTIFY changed)
     Q_PROPERTY(int count READ count NOTIFY changed)
+    // How many of the clips asked for are audio clips and MIDI clips (shown or
+    // not), and whether there are both (showKind() switches between them).
+    Q_PROPERTY(int audioCount READ audioCount NOTIFY changed)
+    Q_PROPERTY(int midiCount READ midiCount NOTIFY changed)
+    Q_PROPERTY(bool mixed READ mixed NOTIFY changed)
     Q_PROPERTY(QStringList shownTrackIds READ shownTrackIds NOTIFY changed)
     Q_PROPERTY(QStringList shownClipIds READ shownClipIds NOTIFY changed)
     // The header: a name (a MIDI clip's track's: it has none), a line about the
@@ -133,6 +142,11 @@ public:
 
     bool midi() const { return midi_; }
     int count() const { return static_cast<int>(refs_.size()); }
+    int audioCount() const { return audioCount_; }
+    int midiCount() const { return midiCount_; }
+    bool mixed() const { return audioCount_ > 0 && midiCount_ > 0; }
+    // Show the MIDI clips asked for (in the piano roll), or the audio clips; nothing if there are none.
+    Q_INVOKABLE void showKind(bool midi);
     QStringList shownTrackIds() const;
     QStringList shownClipIds() const;
     QString name() const { return name_; }
@@ -211,6 +225,8 @@ private:
     app::Project* project() const;
     // Opens the clips asked for (while active).
     void reopen();
+    // Shows the kind chosen (else the lead's) of the clips asked for (requested_).
+    void show();
     // Shows nothing (without asking to be closed).
     void forget();
     // (track id, clip) for each clip of `refs` that still exists.
@@ -233,6 +249,12 @@ private:
     bool active_ = true;
     app::ClipRefs refs_;  // the first one leads: knobs show its values
     bool midi_ = false;
+    // The clips asked for (open()) and their lead, and the kind chosen with showKind() for them (none: the lead's).
+    app::ClipRefs requested_;
+    std::optional<app::ClipRef> lead_;
+    std::optional<bool> chosenMidi_;
+    int audioCount_ = 0;
+    int midiCount_ = 0;
     QString name_;
     QString info_;
     QColor color_;

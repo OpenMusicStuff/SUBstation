@@ -51,7 +51,8 @@
 //                                        insert marker at the snapped beat;
 //                                        TimeSelectGesture (a folded track's lane
 //                                        too: it is a grid like any other)
-// Double-click a clip: the selected clips (or just it) open in the clip view;
+// Double-click a clip: it opens in the clip view (its first click selected just
+// it, as a click does: Shift+Tab opens every selected clip);
 // with F held, a fade's dot straightens its curve and its square removes it.
 // On an automation lane each click of a double-click counts, and a third click
 // soon after (a triple-click) selects everything on its track, clips and
