@@ -487,13 +487,20 @@ private Q_SLOTS:
         const auto atSec = [&](double sec) {
             return test::at(waveform, QPointF(sec / 2.0 * waveform->width(), waveform->height() / 2));
         };
-        const auto near = [](double a, double b) { return std::abs(a - b) < 0.01; };
+        // Where a second of the file is drawn now (laid out in beats once warped).
+        const auto xOf = [&](double sec) { return sub::ui::ClipWaveform::xAt(this->waveform()->placed().front(), sec); };
+        const auto atDrawn = [&](double sec) { return test::at(waveform, QPointF(xOf(sec), waveform->height() / 2)); };
+        const auto near = [](double a, double b, double within = 0.01) { return std::abs(a - b) < within; };
         // Unwarped: no markers to set.
         test::doubleClick(window_, atSec(1.0));
         QVERIFY(clip(0).warpMarkers.empty());
+        QVERIFY(!this->waveform()->placed().front().warped);  // (laid out in seconds)
 
-        // Warped, a double-click marks the moment on the beat it plays now, with the clip's start and end.
+        // Warped, it is laid out in its beats (0..4 across, as its seconds were at 120 BPM). A double-click
+        // marks the moment on the beat it plays now, with the clip's start and end.
         controller()->setWarp(true);
+        QVERIFY(this->waveform()->placed().front().warped);
+        QVERIFY(near(xOf(1.0), waveform->width() / 2, 0.5));
         test::doubleClick(window_, atSec(1.0));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
         QVERIFY(near(clip(0).warpMarkers[1].sec, 1.0));
@@ -502,19 +509,36 @@ private Q_SLOTS:
         QCOMPARE(undo().undoText(), QStringLiteral("Add Warp Marker"));
         QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
 
-        // Dragged to 1.5 s, still on beat 2: the first half slower, the second faster; one undo step.
+        // Dragged (as in Live) to beat 3: its moment of the audio with it, the first stretch faster,
+        // the second slower; the clip as long; one undo step; the waveform stretched to match.
         const int steps = undo().count();
-        test::drag(window_, atSec(clip(0).warpMarkers[1].sec), atSec(1.5));
-        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.5));
-        QVERIFY(near(clip(0).warpTempos()[0], 80.0));
-        QVERIFY(std::abs(clip(0).warpTempos()[1] - 240.0) < 6.0);
+        test::drag(window_, atDrawn(1.0), test::at(waveform, QPointF(waveform->width() * 3 / 4 + 2, waveform->height() / 2)));
+        QVERIFY2(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9), qPrintable(QString::number(clip(0).warpMarkers[1].beat)));  // (snapped)
+        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.0, 1e-9));
+        QVERIFY(near(clip(0).warpTempos()[0], 180.0));
+        QVERIFY(near(clip(0).warpTempos()[1], 60.0));
         QCOMPARE(undo().count(), steps + 1);
         QCOMPARE(undo().undoText(), QStringLiteral("Move Warp Marker"));
         QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
+        QVERIFY(near(xOf(1.0), waveform->width() * 3 / 4, 0.5));
         test::screenshot(window_, QStringLiteral("clip-view-warp-markers"));
 
+        // Alt: off the grid.
+        test::drag(window_, atDrawn(1.0), atDrawn(1.0) + QPoint(3, 0), Qt::AltModifier);
+        QVERIFY(!near(clip(0).warpMarkers[1].beat, 3.0, 1e-3));
+        undo().undo();
+        QVERIFY(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9));
+
+        // Shift: the waveform under it, half a beat later (half a second of the 60 BPM stretch): the
+        // marker's moment half a second earlier, still on beat 3.
+        test::drag(window_, atDrawn(1.0), atDrawn(1.0) + QPoint(int(waveform->width() / 8), 0), Qt::ShiftModifier);
+        QVERIFY2(near(clip(0).warpMarkers[1].sec, 0.5, 0.01), qPrintable(QString::number(clip(0).warpMarkers[1].sec)));
+        QVERIFY(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9));
+        QCOMPARE(undo().undoText(), QStringLiteral("Move Warp Marker"));
+        undo().undo();
+
         // Double-clicked: gone.
-        test::doubleClick(window_, atSec(clip(0).warpMarkers[1].sec));
+        test::doubleClick(window_, atDrawn(clip(0).warpMarkers[1].sec));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{2});
         QCOMPARE(undo().undoText(), QStringLiteral("Remove Warp Marker"));
         undo().undo();
@@ -524,6 +548,16 @@ private Q_SLOTS:
         open({clips_[0], clips_[1]});
         test::doubleClick(window_, test::at(waveform, QPointF(waveform->width() / 4, 10)));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+    }
+
+    void aWarpedClipsRulerCountsBarsAndBeats() {
+        using sub::ui::ClipWaveform;
+        const sub::MeterMap four(4, 4);
+        QCOMPARE(ClipWaveform::formatBeat(four, 0.0), QStringLiteral("1"));
+        QCOMPARE(ClipWaveform::formatBeat(four, 5.0), QStringLiteral("2.2"));
+        QCOMPARE(ClipWaveform::formatBeat(four, 5.25), QStringLiteral("2.2.2"));
+        const sub::MeterMap sixEight(6, 8);
+        QCOMPARE(ClipWaveform::formatBeat(sixEight, 3.5), QStringLiteral("2.2"));
     }
 
     void transientsAreMarkedAndSnappedTo() {

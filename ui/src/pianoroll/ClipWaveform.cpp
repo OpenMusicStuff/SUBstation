@@ -31,24 +31,36 @@ constexpr std::array<double, 19> kTimeSteps{0.001, 0.002, 0.005, 0.01, 0.02, 0.0
 
 // A source's waveform over `placed`'s area, the part of it shown across the
 // width, as the arrangement draws it (arrangement::waveformOutline), scaled by
-// `gain`; both channels apart when `split` (and stereo).
+// `gain`; both channels apart when `split` (and stereo). Laid out in beats, a
+// piece at a time over which its seconds go evenly (arrangement::linearPieces).
 void drawWaveform(SgPainter& p, const app::Waveform& source, const ClipWaveform::Placed& placed, const QColor& color,
                   bool split, double gain) {
     const QRectF& area = placed.area;
-    const int columns = static_cast<int>(std::ceil(area.width()));
-    if (source.frames() <= 0 || columns <= 0 || placed.spanSec <= 0) return;
+    if (source.frames() <= 0 || area.width() <= 0 || placed.spanSec <= 0) return;
     const double rate = source.sampleRate();
-    const double fpp = placed.spanSec * rate / std::max(1.0, area.width());
-    // Columns are counted from the file's first frame; the first shown starts part of one in.
-    const double startColumn = placed.fromSec * rate / fpp;
-    const auto first = static_cast<qint64>(std::floor(startColumn)) - 1;
-    const arrangement::WaveformOutline outline =
-        arrangement::waveformOutline(source, fpp, first, columns + 3, static_cast<int>(area.height()), split, gain);
-    outline.draw(p, area.left() + (static_cast<double>(first) - startColumn), area.top(), color);
+    const auto secondsAt = [&](double x) { return ClipWaveform::secAt(placed, x); };
+    for (const arrangement::LinearPiece& piece : arrangement::linearPieces(secondsAt, area.left(), area.right(), rate)) {
+        const double fpp = piece.framesPerPixel;
+        // Columns are counted from the file's first frame; the first shown starts part of one in.
+        const double startColumn = piece.sec0 * rate / fpp;
+        const auto first = static_cast<qint64>(std::floor(startColumn)) - 1;
+        const int columns = static_cast<int>(std::ceil(piece.x1 - piece.x0));
+        const arrangement::WaveformOutline outline = arrangement::waveformOutline(
+            source, fpp, first, columns + 3, static_cast<int>(area.height()), split, gain);
+        const double left = std::floor(piece.x0), right = piece.x1 >= area.right() ? area.right() : std::floor(piece.x1);
+        if (right <= left) continue;
+        p.save();
+        p.setClipRect(QRectF(left, area.top(), right - left, area.height()));
+        outline.draw(p, piece.x0 + (static_cast<double>(first) - startColumn), area.top(), color);
+        p.restore();
+    }
 }
+
 
 constexpr double kMinGridPixels = 10.0;   // between the warped grid's lines
 constexpr double kMinBarLabel = 28.0;     // between bar numbers
+constexpr double kMinRulerStep = 70.0;    // between the ruler's steps
+constexpr double kSnapPixels = 6.0;       // how near a grid line a dragged marker goes onto it
 constexpr QColor kFadeVeil{0, 0, 0, 80};  // over what a fade takes away (as in the arrangement)
 constexpr QColor kFadeLine{255, 255, 255, 190};
 constexpr double kFadeStep = 3.0;         // pixels between the points a fade's curve is drawn through
@@ -189,7 +201,21 @@ std::vector<ClipWaveform::Placed> ClipWaveform::placed() const {
     };
     const auto add = [&](const QRectF& area, const Band& band) {
         const double total = lengthOf(band);
-        result.push_back({area, total, viewFrom_ * total, (viewTo_ - viewFrom_) * total});
+        Placed placed{area, total, viewFrom_ * total, (viewTo_ - viewFrom_) * total, std::nullopt, 0.0, 0.0};
+        if (band.clip.isWarped() && total > 0 && area.width() > 0) {
+            // In its own beats, from its file's start to its end (held still while a marker is dragged).
+            const auto [b0, b1] = heldBeats_ && result.empty()
+                                      ? *heldBeats_
+                                      : std::pair{band.clip.warpBeatAt(0.0), band.clip.warpBeatAt(total)};
+            if (b1 > b0) {
+                placed.warped = band.clip;
+                placed.fromBeat = b0 + viewFrom_ * (b1 - b0);
+                placed.spanBeat = (viewTo_ - viewFrom_) * (b1 - b0);
+                placed.fromSec = secAt(placed, area.left());
+                placed.spanSec = secAt(placed, area.right()) - placed.fromSec;
+            }
+        }
+        result.push_back(std::move(placed));
     };
     if (bands_.size() == 1) {
         add(QRectF(0, kRulerHeight, width(), height() - kRulerHeight), bands_.front());
@@ -308,57 +334,65 @@ double ClipWaveform::drawBand(SgPainter& p, size_t index, const Placed& placed) 
     return totalSec;
 }
 
+double ClipWaveform::gridStep(const Placed& placed) const {
+    if (!session_ || placed.spanBeat <= 0 || placed.area.width() <= 0) return 1.0;
+    const double pxPerBeat = placed.area.width() / placed.spanBeat;
+    for (const double step : {0.25, 0.5, 1.0})
+        if (step * pxPerBeat >= kMinGridPixels) return step;
+    const double song = placed.warped ? songBeat(*placed.warped, placed.fromBeat) : 0.0;
+    const double barBeats = std::max(1.0, session_->project()->meter().at(std::max(0.0, song)).beatsPerBar());
+    double every = 1;
+    while (pxPerBeat * barBeats * every < kMinGridPixels && every < 1e6) every *= 2;
+    return barBeats * every;
+}
+
 void ClipWaveform::drawWarpedGrid(SgPainter& p, const app::Clip& clip, const Placed& placed) const {
-    // The song's beats and bars where the clip plays them in its file: each
-    // stretch between warp markers squeezes or spreads them, so moving a marker
-    // bends the grid under the waveform (the waveform stays as the file is).
-    if (!session_ || placed.spanSec <= 0) return;
-    const app::Project& project = *session_->project();
-    const app::Tempo& tempo = project.tempoMap();
-    const MeterMap meter = project.meter();
+    // The song's beats and bars across a warped band (laid out in beats: the
+    // grid is even, the waveform stretched over it), bars numbered along the
+    // bottom.
+    if (!session_ || !placed.warped || placed.spanBeat <= 0) return;
+    const MeterMap meter = session_->project()->meter();
     const QRectF& area = placed.area;
-    const auto beatAt = [&](double sec) { return clip.startBeat + clip.sourceToBeats(sec - clip.offsetSec, tempo); };
-    const auto xOfBeat = [&](double beat) {
-        return xAt(placed, clip.offsetSec + clip.beatsToSource(beat - clip.startBeat, tempo));
-    };
-    const double b0 = beatAt(placed.fromSec), b1 = beatAt(placed.fromSec + placed.spanSec);
-    if (!(b1 > b0)) return;
-    const double pxPerBeat = area.width() / (b1 - b0);  // (on average: stretches differ)
-    QColor barLine = Theme::text(), beatLine = Theme::text();
+    const double b0 = songBeat(clip, placed.fromBeat), b1 = songBeat(clip, placed.fromBeat + placed.spanBeat);
+    const auto xOfSong = [&](double song) { return xAtBeat(placed, ownBeat(clip, song)); };
+    QColor barLine = Theme::text(), beatLine = Theme::text(), subLine = Theme::text();
     barLine.setAlpha(60);
-    beatLine.setAlpha(24);
+    beatLine.setAlpha(28);
+    subLine.setAlpha(14);
     const QFont font = uiFont(7);
     QColor label = Theme::text();
     label.setAlpha(140);
     double lastLabel = -1e9;
-    const auto line = [&](double beat, bool bar, int64_t index) {
-        const double x = app::roundHalfEven(xOfBeat(beat));
+    const auto line = [&](double song, const QColor& color, std::optional<int64_t> bar) {
+        const double x = app::roundHalfEven(xOfSong(song));
         if (x < area.left() - 1 || x > area.right() + 1) return;
-        p.fillRect(QRectF(x, area.top(), 1, area.height()), bar ? barLine : beatLine);
+        p.fillRect(QRectF(x, area.top(), 1, area.height()), color);
         if (bar && x - lastLabel >= kMinBarLabel && area.height() >= 30) {
-            p.drawText(QPointF(x + 3, area.bottom() - 3), QString::number(index + 1), label, font);
+            p.drawText(QPointF(x + 3, area.bottom() - 3), QString::number(*bar + 1), label, font);
             lastLabel = x;
         }
     };
-    if (pxPerBeat >= kMinGridPixels) {
-        for (double beat = std::ceil(b0); beat <= b1; beat += 1.0) {
-            const MeterMap::Bar bar = meter.barAt(beat);
-            line(beat, std::abs(bar.start - beat) < 1e-9, bar.index);
+    const double step = gridStep(placed);
+    if (step <= 1.0) {
+        for (double song = std::ceil(b0 / step) * step; song <= b1; song += step) {
+            const MeterMap::Bar bar = meter.barAt(song);
+            if (std::abs(bar.start - song) < 1e-9)
+                line(song, barLine, bar.index);
+            else
+                line(song, std::abs(song - std::round(song)) < 1e-9 ? beatLine : subLine, std::nullopt);
         }
         return;
     }
     // Too close for beats: bars, every so many.
-    const double barBeats = std::max(1.0, meter.at(b0).beatsPerBar());
-    int64_t every = 1;
-    while (pxPerBeat * barBeats * static_cast<double>(every) < kMinGridPixels && every < (int64_t{1} << 20)) every *= 2;
-    int64_t index = meter.barAt(std::max(0.0, b0)).index / every * every;
-    for (; meter.barStart(index) <= b1; index += every)
-        if (meter.barStart(index) >= b0) line(meter.barStart(index), true, index);
+    const auto every = static_cast<int64_t>(std::max(1.0, std::round(step / std::max(1.0, meter.at(std::max(0.0, b0)).beatsPerBar()))));
+    for (int64_t index = meter.barAt(std::max(0.0, b0)).index / every * every; meter.barStart(index) <= b1; index += every)
+        if (meter.barStart(index) >= b0) line(meter.barStart(index), barLine, index);
 }
 
 void ClipWaveform::drawFades(SgPainter& p, const app::Clip& clip, const Placed& placed) const {
     // Its fades, as the arrangement draws them: a curve from silence (the
-    // bottom) to full level (the top), a veil over what it takes away.
+    // bottom) to full level (the top), a veil over what it takes away (in
+    // seconds of the file: through the stretches when laid out in beats).
     if (placed.spanSec <= 0) return;
     const QRectF& area = placed.area;
     const double top = area.top() + 1, bottom = area.bottom() - 1;
@@ -376,7 +410,7 @@ void ClipWaveform::drawFades(SgPainter& p, const app::Clip& clip, const Placed& 
         QPolygonF points;
         for (int i = 0; i <= steps; ++i) {
             const double x = a + (b - a) * i / steps;
-            const double along = (x - xa) / (xb - xa);
+            const double along = std::clamp((secAt(placed, x) - from) / length, 0.0, 1.0);
             const double gain = app::Clip::fadeGain(out ? 1.0 - along : along, curve);
             points << QPointF(x, bottom - gain * (bottom - top));
         }
@@ -453,7 +487,20 @@ void ClipWaveform::mousePressEvent(QMouseEvent* event) {
         event->ignore();
         return;
     }
-    drag_ = Drag{index, newGestureKey()};
+    const Placed lead = placed().front();
+    const app::Clip& clip = bands_.front().clip;
+    drag_ = Drag{index, newGestureKey(), lead, pos.x(), clip.warpMarkers[static_cast<size_t>(index)].sec};
+    heldBeats_ = {clip.warpBeatAt(0.0), clip.warpBeatAt(lead.totalSec)};
+}
+
+double ClipWaveform::snappedBeatAt(const Placed& placed, double x, bool free) const {
+    const double beat = beatAt(placed, x);
+    if (free || !placed.warped) return beat;
+    // Onto the grid's line near it (as drawn: sixteenths to bars, by the zoom).
+    const app::Clip& clip = *placed.warped;
+    const double step = gridStep(placed);
+    const double snapped = ownBeat(clip, std::round(songBeat(clip, beat) / step) * step);
+    return std::abs(xAtBeat(placed, snapped) - x) <= kSnapPixels ? snapped : beat;
 }
 
 void ClipWaveform::mouseMoveEvent(QMouseEvent* event) {
@@ -473,12 +520,25 @@ void ClipWaveform::mouseMoveEvent(QMouseEvent* event) {
         }
         return;
     }
-    if (drag_ && editableSec() > 0) controller_->moveWarpMarker(drag_->index, editableSecAt(pos.x()), drag_->key);
+    if (!drag_ || editableSec() <= 0) return;
+    const Drag& d = *drag_;
+    if (event->modifiers() & Qt::ShiftModifier) {
+        // The waveform under it, with the mouse: its moment of the file moves the other way, its beat kept.
+        const double moved = secAt(d.at, pos.x()) - secAt(d.at, d.pressX);
+        controller_->moveWarpMarker(d.index, std::clamp(d.sec - moved, 0.0, editableSec()), d.key);
+    } else {
+        // To the beat under the mouse, its moment of the file with it.
+        controller_->moveWarpMarkerBeat(d.index, snappedBeatAt(d.at, pos.x(), event->modifiers() & Qt::AltModifier),
+                                        d.key);
+    }
 }
 
 void ClipWaveform::mouseReleaseEvent(QMouseEvent*) {
     const std::optional<ViewDrag> view = std::exchange(viewDrag_, std::nullopt);
-    drag_.reset();
+    if (std::exchange(drag_, std::nullopt)) {
+        heldBeats_.reset();  // (the view fitted to the file as it is now)
+        update();
+    }
     if (view && !view->ruler) setCursor(Qt::ArrowCursor);
     if (!view || !view->ruler || view->moved || !session_ || bands_.empty()) return;
     // A click on the ruler: play from the moment clicked (held to the part the clip plays).
@@ -493,7 +553,10 @@ void ClipWaveform::mouseReleaseEvent(QMouseEvent*) {
 void ClipWaveform::mouseUngrabEvent() {
     if (viewDrag_ && !viewDrag_->ruler) setCursor(Qt::ArrowCursor);
     viewDrag_.reset();
-    drag_.reset();
+    if (std::exchange(drag_, std::nullopt)) {
+        heldBeats_.reset();
+        update();
+    }
 }
 
 void ClipWaveform::wheelEvent(QWheelEvent* event) {
@@ -545,6 +608,58 @@ void ClipWaveform::drawLabel(SgPainter& p, const QRectF& band, const QString& na
 
 void ClipWaveform::drawRuler(SgPainter& p, const Placed& placed) const {
     p.fillRect(QRectF(0, 0, width(), kRulerHeight), Theme::panel());
+    if (placed.warped && session_)
+        drawBeatRuler(p, placed);
+    else
+        drawTimeRuler(p, placed);
+    p.fillRect(QRectF(0, kRulerHeight - 1, width(), 1), Theme::border());  // the 1 px line at 19.5
+    // The start marker: a triangle at the top, as the arrangement's ruler has it.
+    if (!startSecs_.empty() && startSecs_.front()) {
+        const double sx = app::roundHalfEven(xAt(placed, *startSecs_.front()));
+        p.fillPolygon(QPolygonF({QPointF(sx - 5, 1), QPointF(sx + 5, 1), QPointF(sx, 8)}), Theme::insertMarker());
+    }
+}
+
+QString ClipWaveform::formatBeat(const MeterMap& meter, double song) {
+    // Bars and beats from 1, as the arrangement's ruler counts them: "5", "5.2", "5.2.3" (sixteenths).
+    const MeterMap::Bar bar = meter.barAt(song);
+    const double into = song - bar.start;
+    const double beatLength = 4.0 / bar.denominator;
+    const auto beat = static_cast<int64_t>(std::floor(into / beatLength + 1e-9));
+    const double rest = into - static_cast<double>(beat) * beatLength;
+    QString text = QString::number(bar.index + 1);
+    if (std::abs(into) < 1e-9) return text;
+    text += QStringLiteral(".%1").arg(beat + 1);
+    if (rest > 1e-9) text += QStringLiteral(".%1").arg(static_cast<int64_t>(std::round(rest / 0.25)) + 1);
+    return text;
+}
+
+void ClipWaveform::drawBeatRuler(SgPainter& p, const Placed& placed) const {
+    // A warped band's: the song's bars and beats where the clip plays them.
+    const app::Clip& clip = *placed.warped;
+    const MeterMap meter = session_->project()->meter();
+    const double pxPerBeat = placed.area.width() / placed.spanBeat;
+    const double b0 = songBeat(clip, placed.fromBeat), b1 = songBeat(clip, placed.fromBeat + placed.spanBeat);
+    const QFont font = uiFont(7.5);
+    const auto tick = [&](double song) {
+        const double x = app::roundHalfEven(xAtBeat(placed, ownBeat(clip, song)));
+        p.fillRect(QRectF(x, kRulerHeight - 6, 1, 6), Theme::textDim());
+        p.drawText(QPointF(x + 3, kRulerHeight - 7), formatBeat(meter, song), Theme::textDim(), font);
+    };
+    for (const double step : {0.25, 0.5, 1.0}) {
+        if (step * pxPerBeat >= kMinRulerStep) {
+            for (double song = std::ceil(b0 / step) * step; song <= b1; song += step) tick(song);
+            return;
+        }
+    }
+    const double barBeats = std::max(1.0, meter.at(std::max(0.0, b0)).beatsPerBar());
+    int64_t every = 1;
+    while (pxPerBeat * barBeats * static_cast<double>(every) < kMinRulerStep && every < (int64_t{1} << 20)) every *= 2;
+    for (int64_t index = meter.barAt(std::max(0.0, b0)).index / every * every; meter.barStart(index) <= b1; index += every)
+        if (meter.barStart(index) >= b0) tick(meter.barStart(index));
+}
+
+void ClipWaveform::drawTimeRuler(SgPainter& p, const Placed& placed) const {
     const double pxPerSec = placed.area.width() / placed.spanSec;
     double step = kTimeSteps.back();
     for (double s : kTimeSteps) {
@@ -561,12 +676,6 @@ void ClipWaveform::drawRuler(SgPainter& p, const Placed& placed) const {
         const double x = app::roundHalfEven(xAt(placed, seconds));
         p.fillRect(QRectF(x, kRulerHeight - 6, 1, 6), Theme::textDim());
         p.drawText(QPointF(x + 3, kRulerHeight - 7), formatTime(seconds, step), Theme::textDim(), font);
-    }
-    p.fillRect(QRectF(0, kRulerHeight - 1, width(), 1), Theme::border());  // the 1 px line at 19.5
-    // The start marker: a triangle at the top, as the arrangement's ruler has it.
-    if (!startSecs_.empty() && startSecs_.front()) {
-        const double sx = app::roundHalfEven(xAt(placed, *startSecs_.front()));
-        p.fillPolygon(QPolygonF({QPointF(sx - 5, 1), QPointF(sx + 5, 1), QPointF(sx, 8)}), Theme::insertMarker());
     }
 }
 

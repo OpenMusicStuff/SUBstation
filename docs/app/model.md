@@ -829,7 +829,8 @@ refused because of frozen audio are said on `refused` too. The session shows `re
   `addWarpMarker(clip, sec)` marks a moment on the beat it plays now (the first also marks the clip's start and end;
   `addWarpMarkers(clip, seconds)` several, a clip's transients),
   `moveWarpMarker(clip, index, sec)` moves one keeping its beat (held where its stretches' tempos stay in range, and
-  to the file), `removeWarpMarker(clip, index)` removes one; moving and removing keep the clip on the beats of its own
+  to the file), `moveWarpMarkerBeat(clip, index, beat)` moves one to another beat keeping its moment of the file
+  (Live's drag: held where its stretches' tempos stay in range), `removeWarpMarker(clip, index)` removes one; moving and removing keep the clip on the beats of its own
   it played, so it stays where it is and as long, the audio moving under it. Unwarped clips, and a frozen track's
   clip (a source map without markers), take none. `slipClip(clip, deltaBeats, tempo)` (Ctrl+Shift-dragging the body): the clip stays, its content moves by
   the delta (audio within its file; a MIDI clip's notes anywhere, shifted as `trimStart` does when the offset would

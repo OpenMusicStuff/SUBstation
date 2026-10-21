@@ -110,7 +110,7 @@ clip to new clip:
 - :2 and ×2 scale each clip's own segment BPM (`scaleBpm(0.5)`, `scaleBpm(2.0)`). The segment BPM goes through
   `edits::setWarpTempo`, so a clip with warp markers has every stretch scaled alike.
 - Warp markers are the lead clip's alone (`warpMarkers`: {sec, beat} maps; `addWarpMarker(sec)`,
-  `moveWarpMarker(index, sec, gestureKey)`, `removeWarpMarker(index)`, through `edits::addWarpMarker` and the rest,
+  `moveWarpMarker(index, sec, gestureKey)`, `moveWarpMarkerBeat(index, beat, gestureKey)`, `removeWarpMarker(index)`, through `edits::addWarpMarker` and the rest,
   [model.md](../app/model.md)), while `warpMarkable` (one clip open, warped, not a frozen track's). *Mark Transients*
   (`markTransients()`) puts one on each transient between the clip's start and end (`edits::addWarpMarkers`). A
   file's transients (`transients(path)`: seconds, those at least `kMinTransientStrength` (`sampleSlices::kMarkStrength`, 0.25) of the strongest, as audio clips' grooves take them)
@@ -123,14 +123,19 @@ clip to new clip:
   the gesture's first event), so a clip held at a limit keeps its offset to the others when the knob comes back.
 
 The right side, [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h), draws each clip's source file across the width
-(the whole of it at first), in its track's colour and scaled by its gain (rounded to 0.1 dB), the part the clip plays
+(the whole of it at first): an unwarped clip's in seconds, a warped clip's in its own beats, as Live's clip view lays
+them out (below), in its track's colour and scaled by its gain (rounded to 0.1 dB), the part the clip plays
 tinted, the rest dimmed, and S and E flags at its start and end, as in Ableton's sample editor. Columns come from the
 source's peaks (or its samples, zoomed in that far), blurred lightly when from peaks, as the arrangement's tiles are,
 but drawn without a cache: what shows is one width. One clip gets a time ruler (steps from a fixed list, at least 70 px
 apart: `formatTime()`); several are stacked in bands of at least `kMinBandHeight` (40 px), labelled, with "+N more"
 when they don't fit. What it draws (each clip's colour, its source, why it couldn't be loaded) is worked out on the
 GUI thread. `placed()` says where each band is drawn: its area, its file's length, and the part of it shown (`fromSec`,
-`spanSec`); `xAt(placed, sec)` and `secAt(placed, x)` convert, and everything drawn or hit goes through them.
+`spanSec`: the seconds at its edges; a warped band's `warped` clip, `fromBeat` and `spanBeat`: its own beats,
+`Clip::warpBeatAt`, from its file's start to its end); `xAt(placed, sec)` and `secAt(placed, x)` convert (through
+`warpBeatAt` and `warpSecondsAt` for a warped band), and everything drawn or hit goes through them. The waveform is
+drawn a piece at a time over which its seconds go evenly with x (`arrangement::linearPieces`, as the arrangement's
+warped clips are), so in beats each stretch between warp markers shows as fast or slow as it plays.
 
 **Zooming and scrolling.** What shows is a share of each file, `viewFrom` to `viewTo` (0..1): one clip zooms as any
 view does, and several, each across the width, zoom together. `zoomAt(x, factor)` keeps the moment under `x` in place,
@@ -160,17 +165,20 @@ drawn again every frame.
 A warped clip's warp markers stand on its waveform: a line under a `kMarkerTab` (8 px) tab in the accent colour. With
 one clip open whose markers can be edited (warped, and not a frozen track's clip with a source map of its own:
 `editableSec()`), double-clicking adds one where the mouse is, double-clicking within half a tab of one removes it,
-and pressing one drags it (`moveWarpMarker` with one gesture key a drag: one undo step), the cursor a horizontal
-resize over them. The file's transients are 5 px ticks along the top then; a double-click within half a tab of one
-adds the marker on it (`snappedSecAt`).
+and pressing one drags it, as in Live: to the beat under the mouse, its moment of the file with it
+(`moveWarpMarkerBeat`), onto the grid's line when within `kSnapPixels` (6 px) of it (`snappedBeatAt()`; Alt: freely);
+with Shift, the waveform under it instead, moving as the mouse does (`moveWarpMarker`: its moment of the file the other
+way, its beat kept). A drag is one gesture key (one undo step) and works from the band as it was at the press
+(`Drag::at`), the band's beats held (`heldBeats_`) so the view stays still under the mouse until the release. The
+cursor is a horizontal resize over them. The file's transients are 5 px ticks along the top then; a double-click
+within half a tab of one adds the marker on it (`snappedSecAt`).
 
-A warped clip has the song's beats and bars drawn under its waveform where it plays them (`drawWarpedGrid()`: each
-beat's second `clip.offsetSec + clip.beatsToSource(beat - clip.startBeat, tempo)`, bars by the project's meter, a
-bar's number along the bottom at least `kMinBarLabel` px apart), so a stretch between markers squeezes or spreads
-them and dragging a marker bends the grid as it goes; beats while they are at least `kMinGridPixels` (10 px) apart on
-average, else bars, every 1, 2, 4... of them. Its fades are drawn over the waveform as the arrangement draws them
-(`drawFades()`: a curve from the bottom to the top, a veil over what it takes away; they are in seconds of the file,
-so they stand on it as they are).
+A warped band has the song's beats and bars across it (`drawWarpedGrid()`: song beat = `clip.startBeat` + its own beat
+less that at its start, `songBeat()` and `ownBeat()`; bars by the project's meter, a bar's number along the bottom at
+least `kMinBarLabel` px apart; sixteenths, eighths or beats while at least `kMinGridPixels` (10 px) apart, else bars,
+every 1, 2, 4... of them: `gridStep()`), and its ruler counts them (`drawBeatRuler()`, steps at least 70 px apart,
+named by `formatBeat()`: "5", "5.2", "5.2.3"); an unwarped band's ruler is in seconds (`drawTimeRuler()`). Its fades are drawn over the waveform as the arrangement draws them
+(`drawFades()`: a curve from the bottom to the top, a veil over what it takes away, by the file's seconds at each x).
 
 Warping and its modes in the engine: [engine/warp.md](../engine/warp.md).
 
@@ -636,6 +644,6 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 |---|---|
 | [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the header's Notes menu on every note of the clips shown (or the selected ones); the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
-| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; warp markers added, dragged and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them, and the Audio and MIDI switch (the choice kept when shown again, gone with other clips, the other kind shown when the clips shown are deleted); an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); the start marker and the playhead on the waveform, a click on the ruler playing from there; zooming and scrolling (Ctrl+wheel around the mouse, the wheel and Shift+wheel, Ctrl+Alt drags, the ruler's drags, the window's zoom keys, the closest zoom, other clips opening whole); going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; a warped clip laid out in beats, its ruler in bars and beats; warp markers added, dragged to beats (snapped, Alt freely), Shift-dragged under, and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them, and the Audio and MIDI switch (the choice kept when shown again, gone with other clips, the other kind shown when the clips shown are deleted); an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); the start marker and the playhead on the waveform, a click on the ruler playing from there; zooming and scrolling (Ctrl+wheel around the mouse, the wheel and Shift+wheel, Ctrl+Alt drags, the ruler's drags, the window's zoom keys, the closest zoom, other clips opening whole); going back (Esc, ×, the clips deleted, the project reset) |
 | [test_ui_progressions.cpp](../../tests/app/test_ui_progressions.cpp) | Progression ideas through the clip view: Generate › Progressions… opening the panel beside the roll with ideas in the song's key (A minor without one), × and Esc; trying an idea writing its chords (the clip made four bars long), ↑ and ↓, a click on a row, a run of tries one undo step; the clip's own notes kept, and an edit between tries; each clip's last try replaced in it after a try in another; Bass and 7ths writing the tried idea again; locked chords and kept ideas staying for New Ideas; a chord swapped from the right-click menu; More Like This; eight bars, another mood, the project's key |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |

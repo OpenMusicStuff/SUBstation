@@ -74,6 +74,10 @@ Clip addWarpMarkers(const Clip& clip, const std::vector<double>& seconds);
 // Live's start and end markers stay on theirs), so it stays where it is and as long, the audio
 // moving under it (held to the file).
 Clip moveWarpMarker(const Clip& clip, int index, double sec);
+// Its marker `index` moved to its own beat `beat`, keeping its moment of the file (Live's way of
+// dragging one): the stretches either side squeezed or spread, held so their tempos stay within
+// kMinSegmentBpm..kMaxSegmentBpm. The clip plays the beats of its own it played, as moveWarpMarker().
+Clip moveWarpMarkerBeat(const Clip& clip, int index, double beat);
 // Its marker `index` gone (as moving it, the clip on the same beats). With one left, none: the
 // clip at the tempo of the stretch the two made.
 Clip removeWarpMarker(const Clip& clip, int index);

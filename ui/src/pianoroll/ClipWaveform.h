@@ -14,18 +14,23 @@
 // file (`viewFrom` to `viewTo`, 0..1), so several clips, each across the width,
 // zoom together. Opening clips shows the whole of each again (zoomToFit()).
 //
-// A warped clip has the song's beats and bars drawn under its waveform where
-// it plays them, numbered by bar along the bottom: each stretch between warp
-// markers squeezes or spreads them, so warping shows as it is done. Its fades
-// show over its waveform as the arrangement draws them.
+// A warped clip is laid out as Live lays it out: in its own beats (Placed's
+// `warped`), its waveform drawn stretch by stretch as fast or slow as it plays
+// (arrangement::linearPieces), over the song's beats and bars, numbered by bar
+// along the bottom, with a ruler of bars and beats. An unwarped one is laid out
+// in seconds of its file. Its fades show over its waveform as the arrangement
+// draws them.
 //
 // A clip's warp markers stand on its waveform, a tab at the top of each. With
-// one warped clip open they are edited there: double-clicking the waveform adds
-// one (on the beat the audio plays there now: nothing moves), dragging one moves
-// that moment of the file (its beat kept: one undo step a drag), double-clicking
-// one removes it (ClipViewController::addWarpMarker and the rest). Its file's
-// transients show then as short ticks under the ruler, as in Live; a marker
-// added by double-clicking near one goes on it.
+// one warped clip open they are edited there, as in Live: double-clicking the
+// waveform adds one (on the beat the audio plays there now: nothing moves),
+// dragging one moves it to another beat, its moment of the audio with it, the
+// waveform stretching either side (snapped to the grid's lines near it; Alt:
+// freely); Shift-dragging one moves the waveform under it instead (its beat
+// kept); double-clicking one removes it. A drag is one undo step, and the view
+// holds still while it lasts. Its file's transients show then as short ticks
+// under the ruler, as in Live; a marker added by double-clicking near one goes
+// on it.
 //
 // Where the song is in each clip's file shows as in the arrangement: the start
 // marker (the arrangement's insert marker, while it is in the part a clip
@@ -36,6 +41,7 @@
 
 #include "audio/Waveform.h"
 #include "model/Clip.h"
+#include "music/TempoMap.h"
 #include "pianoroll/ClipViewController.h"
 #include "sg/SgCanvas.h"
 #include "session/Session.h"
@@ -50,6 +56,7 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace sub::ui {
@@ -81,6 +88,8 @@ public:
     // A time on the ruler: seconds (minutes:seconds from a minute), with as
     // many decimals as the step needs.
     static QString formatTime(double seconds, double step);
+    // A song beat as the beat ruler names it: bars and beats from 1 ("5", "5.2", "5.2.3" for sixteenths).
+    static QString formatBeat(const MeterMap& meter, double song);
 
     double viewFrom() const { return viewFrom_; }
     double viewTo() const { return viewTo_; }
@@ -97,8 +106,12 @@ public:
     struct Placed {
         QRectF area;
         double totalSec = 0.0;
-        double fromSec = 0.0;
-        double spanSec = 0.0;
+        double fromSec = 0.0;  // the file's second at the left edge
+        double spanSec = 0.0;  // ... to the right edge's
+        // A warped clip, laid out in its own beats (Clip::warpBeatAt): from `fromBeat` at the left edge, `spanBeat` across.
+        std::optional<app::Clip> warped;
+        double fromBeat = 0.0;
+        double spanBeat = 0.0;
     };
     std::vector<Placed> placed() const;
     // The ruler shows (one clip open).
@@ -107,10 +120,26 @@ public:
     const std::vector<std::optional<double>>& playheadSecs() const { return playheadSecs_; }
     // The x of `sec` into a band's file, and back.
     static double xAt(const Placed& placed, double sec) {
+        if (placed.warped) return xAtBeat(placed, placed.warped->warpBeatAt(sec));
         return placed.area.left() + (sec - placed.fromSec) / placed.spanSec * placed.area.width();
     }
     static double secAt(const Placed& placed, double x) {
+        if (placed.warped) return placed.warped->warpSecondsAt(beatAt(placed, x));
         return placed.fromSec + (x - placed.area.left()) / placed.area.width() * placed.spanSec;
+    }
+    // A warped band's: the x of its own beat `beat`, and back.
+    static double xAtBeat(const Placed& placed, double beat) {
+        return placed.area.left() + (beat - placed.fromBeat) / placed.spanBeat * placed.area.width();
+    }
+    static double beatAt(const Placed& placed, double x) {
+        return placed.fromBeat + (x - placed.area.left()) / placed.area.width() * placed.spanBeat;
+    }
+    // A warped clip's song beat at its own beat `beat` (the beat it plays at in the arrangement), and back.
+    static double songBeat(const app::Clip& clip, double beat) {
+        return clip.startBeat + beat - clip.warpBeatAt(clip.offsetSec);
+    }
+    static double ownBeat(const app::Clip& clip, double song) {
+        return song - clip.startBeat + clip.warpBeatAt(clip.offsetSec);
     }
 
 Q_SIGNALS:
@@ -162,6 +191,8 @@ private:
     void drawFades(SgPainter& painter, const app::Clip& clip, const Placed& placed) const;
     void drawLabel(SgPainter& painter, const QRectF& band, const QString& name) const;
     void drawRuler(SgPainter& painter, const Placed& placed) const;
+    void drawBeatRuler(SgPainter& painter, const Placed& placed) const;
+    void drawTimeRuler(SgPainter& painter, const Placed& placed) const;
     // The one clip open's source's length when its warp markers can be edited (0: they can't).
     double editableSec() const;
     // The second of the one clip's file at `x`, held to the file.
@@ -170,6 +201,11 @@ private:
     int markerAt(double x) const;
     // Where a marker added at `x` goes: the transient near it, else there.
     double snappedSecAt(double x) const;
+    // A marker dragged to `x` of `placed`: the own beat there, on the grid's line near it unless `free`.
+    double snappedBeatAt(const Placed& placed, double x, bool free) const;
+    // A warped band's song beats on its grid: every `step` song beats while
+    // they are at least kMinGridPixels apart (0.25, 0.5, 1, then bars).
+    double gridStep(const Placed& placed) const;
 
     QPointer<app::Session> session_;
     QPointer<ClipViewController> controller_;
@@ -181,8 +217,13 @@ private:
     struct Drag {
         int index = -1;
         QString key;
+        Placed at;            // the lead band as it was at the press (the view holds still)
+        double pressX = 0.0;
+        double sec = 0.0;     // the marker's second at the press
     };
     std::optional<Drag> drag_;  // a warp marker dragged
+    // While one is: the lead band's beats from its file's start to its end, as they were at the press.
+    std::optional<std::pair<double, double>> heldBeats_;
     // Ctrl+Alt dragging the view, or a press on the ruler (a click plays from there, a drag scrolls or zooms).
     struct ViewDrag {
         QPointF press;

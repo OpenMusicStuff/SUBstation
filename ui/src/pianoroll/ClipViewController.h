@@ -181,6 +181,8 @@ public:
     // file, one moved there (one undo step per gesture key), one removed.
     Q_INVOKABLE void addWarpMarker(double sec);
     Q_INVOKABLE void moveWarpMarker(int index, double sec, const QString& gestureKey = {});
+    // ... or to its own beat `beat`, its moment of the file kept (edits::moveWarpMarkerBeat).
+    Q_INVOKABLE void moveWarpMarkerBeat(int index, double beat, const QString& gestureKey = {});
     Q_INVOKABLE void removeWarpMarker(int index);
     // A warp marker on each transient the lead clip plays (between its start and end).
     Q_INVOKABLE void markTransients();

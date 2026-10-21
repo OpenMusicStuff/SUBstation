@@ -558,6 +558,11 @@ void ClipViewController::moveWarpMarker(int index, double sec, const QString& ge
                QStringLiteral("Move Warp Marker"), gestureKey);
 }
 
+void ClipViewController::moveWarpMarkerBeat(int index, double beat, const QString& gestureKey) {
+    updateLead([index, beat](const app::Clip& clip) { return app::edits::moveWarpMarkerBeat(clip, index, beat); },
+               QStringLiteral("Move Warp Marker"), gestureKey);
+}
+
 void ClipViewController::removeWarpMarker(int index) {
     updateLead([index](const app::Clip& clip) { return app::edits::removeWarpMarker(clip, index); },
                QStringLiteral("Remove Warp Marker"));

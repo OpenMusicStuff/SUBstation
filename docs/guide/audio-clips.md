@@ -37,7 +37,8 @@ arrangement: [arrangement.md](arrangement.md#clips)).
 ### Waveforms, the playhead and zooming
 
 Each clip's waveform shows its whole file at first, the part it plays lit (between the
-**S** and **E** flags).
+**S** and **E** flags): an unwarped clip's in seconds, with a ruler of seconds, a warped
+clip's in beats (see [Warp markers](#warp-markers)).
 
 - While the song plays inside a clip, the **playhead** moves along its waveform, at the
   moment of the file playing; the **start marker** (where playback starts) shows as a
@@ -71,15 +72,17 @@ small tabs. With one warped clip open:
 - **Double-click** the waveform to add a marker there. It goes on the beat that moment
   plays on now, so nothing moves yet. The first one also adds markers at the clip's start
   and end.
-- **Drag** a marker sideways to move that moment of the audio; its beat stays. The audio
-  before it plays slower and the audio after it faster, or the other way round. A marker
-  stops where a stretch would play slower than 20 BPM or faster than 999 BPM. The clip
-  stays where it is and as long.
+- **Drag** a marker sideways to move it to another beat, as in Live: its moment of the
+  audio comes with it, and the waveform squeezes on one side and stretches on the other.
+  It snaps to the grid's lines near it; hold **Alt** to place it freely. **Shift-drag** a
+  marker to move the waveform under it instead: the marker stays on its beat and the audio
+  slides beneath it. Either way a marker stops where a stretch would play slower than
+  20 BPM or faster than 999 BPM, and the clip stays where it is and as long.
 - **Double-click** a marker to remove it.
-- The song's **beats and bars** show under a warped clip's waveform where it plays them,
-  bars numbered along the bottom: dragging a marker squeezes the grid on one side of it and
-  spreads it on the other, so you see the warp as you make it. In the arrangement the
-  clip's waveform follows its markers too: each stretch drawn as fast or slow as it plays.
+- A warped clip is shown **in beats**, as Live shows it: the ruler counts the song's bars
+  and beats, the grid under the waveform is even, and each stretch of the waveform is drawn
+  as fast or slow as it plays, so you see the warp as you make it. In the arrangement the
+  clip's waveform follows its markers too.
 - **Mark Transients** (under :2 and ×2) puts a marker on every transient the clip plays:
   the attacks of its hits and notes, shown as short ticks along the waveform's top. Drag
   the ones that are early or late onto the beat. A marker added by double-clicking close
