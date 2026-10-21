@@ -129,12 +129,19 @@ int ClipWaveform::bandAt(double y) const {
 double ClipWaveform::contentHeight() const { return shared() ? bandHeight() * static_cast<double>(bands_.size()) : 0.0; }
 
 void ClipWaveform::setScrollY(double y) {
+    // (Notifies even when held where it was: the bands' height may have changed with the clips or the item's size.)
     y = std::clamp(y, 0.0, std::max(0.0, contentHeight() - (height() - kRulerHeight)));
-    if (y == scrollY_) return;
+    const bool moved = y != scrollY_;
     scrollY_ = y;
     Q_EMIT viewChanged();
+    if (!moved) return;
     Q_EMIT playheadChanged();
     update();
+}
+
+void ClipWaveform::geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) {
+    SgCanvas::geometryChange(newGeometry, oldGeometry);
+    if (newGeometry.size() != oldGeometry.size()) setScrollY(scrollY_);  // (held to the new height)
 }
 
 void ClipWaveform::setView(double from, double to) {

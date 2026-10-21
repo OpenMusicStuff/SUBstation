@@ -295,7 +295,7 @@ void WaveformCache::drawMapped(SgPainter& p, const app::Waveform& source, const 
     if (x1 <= x0 || source.isNull()) return;
     for (const LinearPiece& piece : linearPieces(secondsAt, x0, x1, source.sampleRate())) {
         // (Each piece's own pixels: whole ones, so neighbours neither overlap nor leave a gap.)
-        const double left = std::floor(piece.x0), right = piece.x1 >= x1 ? body.right() : std::floor(piece.x1);
+        const double left = std::floor(piece.x0), right = piece.x1 >= x1 ? x1 : std::floor(piece.x1);
         if (right <= left) continue;
         const QRectF part(left, body.top(), right - left, body.height());
         p.save();

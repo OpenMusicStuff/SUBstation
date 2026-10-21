@@ -188,6 +188,7 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void hoverEnterEvent(QHoverEvent* event) override { hoverMoveEvent(event); }
     void hoverMoveEvent(QHoverEvent* event) override;
+    void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
 
 private:
     // A clip as it is drawn: its track's colour, its source (null while it

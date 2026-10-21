@@ -883,6 +883,7 @@ private Q_SLOTS:
         test::screenshot(window_, QStringLiteral("clip-view-bands-scrolled"));
         window_->resize(window_->width(), height);
         QTRY_VERIFY(!item("bandsBar")->isVisible());
+        QCOMPARE(shown->scrollY(), 0.0);  // (they fit again: back to the top)
 
         // A click on a clip: it and its track selected, and it asked for alone (a drag isn't a click).
         QSignalSpy chosen(clipView_, SIGNAL(clipChosen(QString, QString)));
