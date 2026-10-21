@@ -44,15 +44,17 @@ struct EngineBridge::SidechainState {
     friend bool operator==(const SidechainState&, const SidechainState&) = default;
 };
 
-// A loaded plug-in device: its track, itself, its processor, and how many times
-// its state had changed (Private::stateChanges), and been set from the model
-// (Private::stateSets), when it was asked for.
+// A loaded plug-in device: its track, itself, its processor, how many times its
+// state had changed (Private::stateChanges), and been set from the model
+// (Private::stateSets), when it was asked for, and whether it is asked again
+// (gatherPluginStates(): it changed while asked the first time).
 struct EngineBridge::LoadedPlugin {
     QString trackId;
     QString deviceId;
     quint32 processorId = 0;
     quint32 changes = 0;
     quint32 sets = 0;
+    bool again = false;
 };
 
 // Where a track's output goes as the engine has it: an engine track (or

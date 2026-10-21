@@ -338,9 +338,11 @@ up to 15 s's wait for one in a sandbox ([engine/sandboxes.md](../engine/sandboxe
   this process are read one a turn of the event loop (not while a plug-in's call runs a message loop: `busy`); `done`
   runs once every state is in the model. A second call while one is under way waits for it. A plug-in gone meanwhile
   is skipped.
-- **An answer older than the model's isn't taken.** A state the model set in a plug-in after it was asked for (an
-  undo, a preset loaded: `setPluginState()`, counted in `Private::stateSets`) is newer than what it answers, so the
-  model's stays (and the next backup asks again).
+- **A plug-in that changed while it was asked is asked again.** Its answer may be from before the change (a
+  parameter edited, a state set, an event it reported), so `gatherPluginStates` asks it once more and the backup has
+  the change. Whatever happens, an answer older than the model's state isn't taken: a state the model set in a plug-in
+  after it was asked for (an undo, a preset loaded: `setPluginState()`, counted in `Private::stateSets`) is newer
+  than what it answers, so the model's stays (and the next backup asks again).
 - **Unchanged states aren't asked for again.** The bridge counts each processor's changes (`Private::stateChanges`,
   `pluginStateChanged()`): a parameter set through it, a state set or restored, an event it reported (an edit in its
   editor, `StateDirty`, a preset, its parameters changing...), its editor opened, reloaded. A state the plug-in

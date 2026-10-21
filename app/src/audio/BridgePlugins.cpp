@@ -229,6 +229,7 @@ void EngineBridge::gatherStep() {
             qWarning("EngineBridge (gathering plug-in states): %s", error.what());
         }
     };
+    std::vector<LoadedPlugin> again;
     std::erase_if(d.gathering->asked, [&](const LoadedPlugin& plugin) {
         if (!stillLoaded(plugin)) return true;  // (gone meanwhile)
         std::optional<std::vector<uint8_t>> state;
@@ -240,6 +241,19 @@ void EngineBridge::gatherStep() {
         } catch (...) {
             failure = std::current_exception();
         }
+        // Changed while it was asked (a parameter edited, a state set, an event it reported): its answer
+        // may be from before. Asked again, once, so the backup has the change.
+        const quint32 changes = d.stateChanges.value(plugin.processorId);
+        if (answered && !plugin.again && changes != plugin.changes) {
+            try {
+                if (engine_.requestProcessorState(plugin.processorId)) {
+                    again.push_back({plugin.trackId, plugin.deviceId, plugin.processorId, changes,
+                                     d.stateSets.value(plugin.processorId), true});
+                    return true;
+                }
+            } catch (const std::exception&) {  // (the answer it gave is kept)
+            }
+        }
         keep(plugin, [&](bool& answeredHere) {
             if (failure) std::rethrow_exception(failure);
             answeredHere = answered;
@@ -247,6 +261,7 @@ void EngineBridge::gatherStep() {
         });
         return true;
     });
+    d.gathering->asked.insert(d.gathering->asked.end(), again.begin(), again.end());
     if (!d.gathering->toRead.empty()) {
         const LoadedPlugin plugin = d.gathering->toRead.front();
         d.gathering->toRead.erase(d.gathering->toRead.begin());
