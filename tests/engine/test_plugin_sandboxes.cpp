@@ -294,9 +294,13 @@ TEST_CASE("sandbox: states asked for all at once, each taken as it comes") {
     }));
     CHECK(gotA == wantA);
     CHECK(gotB == wantB);
-    // Asked again, and waited for.
+    // Asked again, and waited for: its answer, not the last state known.
+    CHECK(engine.processorAnswersState(b));
     REQUIRE(engine.requestProcessorState(b));
-    CHECK(engine.requestedProcessorState(b, std::chrono::steady_clock::now() + std::chrono::seconds(10)) == wantB);
+    bool answered = false;
+    CHECK(engine.requestedProcessorState(b, std::chrono::steady_clock::now() + std::chrono::seconds(10), &answered) ==
+          wantB);
+    CHECK(answered);
 
     // In the engine's own process it isn't asked so: processorState() it.
     SandboxEngine local(PluginHosting::InProcess);
@@ -331,8 +335,11 @@ TEST_CASE("sandbox: a state asked for whose sandbox ends is the last one known, 
     BlockThrough block;
     block(*first, false, {sub::ProcessEvent::noteOn(0, 0, 100)});  // note 0 crashes it, on the sandbox's audio thread
     const auto started = std::chrono::steady_clock::now();
-    CHECK(first->requestedState(std::chrono::steady_clock::now() + std::chrono::seconds(10)) == known);
+    bool answered = true;
+    CHECK(first->requestedState(std::chrono::steady_clock::now() + std::chrono::seconds(10), &answered) == known);
     CHECK(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1000));
+    CHECK(!answered);  // (the last state known stood in: it isn't kept as the plug-in's)
+    CHECK(!first->answersState());
 }
 
 TEST_CASE("sandbox: adding a plug-in doesn't wait for it to load") {

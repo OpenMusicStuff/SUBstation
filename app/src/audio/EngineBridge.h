@@ -771,8 +771,11 @@ private:
     struct LoadedPlugin;
     std::vector<LoadedPlugin> loadedPlugins(const std::optional<QSet<QString>>& deviceIds) const;
     bool stillLoaded(const LoadedPlugin& plugin) const;
-    // Stores a state read (none: it couldn't be; `read` throws as the engine does) in the model.
-    void keepPluginState(const LoadedPlugin& plugin, const std::function<std::optional<std::vector<uint8_t>>()>& read);
+    // Stores a state read (none: it couldn't be; `read` throws as the engine does, and says whether it
+    // is the plug-in's answer or the last state known) in the model.
+    using StateRead = std::function<std::optional<std::vector<uint8_t>>(bool& answered)>;
+    void keepPluginState(const LoadedPlugin& plugin, const StateRead& read);
+    StateRead readPluginState(quint32 processorId);  // (asked now, on this thread)
     void pluginStateChanged(quint32 processorId);  // (the model's copy of its state is stale)
     void gatherStep();
     // Loading (BridgeLoading.cpp).

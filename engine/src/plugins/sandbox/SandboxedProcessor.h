@@ -89,8 +89,10 @@ public:
 
     std::vector<uint8_t> getState() override;
     void setState(const std::vector<uint8_t>& state) override;
+    bool answersState() const override { return loaded() && !ended(); }
     bool requestState() override;
-    std::optional<std::vector<uint8_t>> requestedState(std::chrono::steady_clock::time_point until) override;
+    std::optional<std::vector<uint8_t>> requestedState(std::chrono::steady_clock::time_point until,
+                                                       bool* answered = nullptr) override;
     std::string presetName() const override;
 
     bool idle() override;

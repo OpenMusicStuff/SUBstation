@@ -711,14 +711,19 @@ public:
     void setProcessorEnabled(uint32_t processorId, bool enabled);
     std::vector<uint8_t> processorState(uint32_t processorId);
     void setProcessorState(uint32_t processorId, const std::vector<uint8_t>& state);
+    // Whether processorState() asks the processor now (Processor::answersState()):
+    // false where the last state known stands in.
+    bool processorAnswersState(uint32_t processorId);
     // A processor's state without waiting for it here, where it can be: a plug-in
     // in a sandbox answers in its own process, so every one can be asked at once
     // (Processor::requestState()). False if it can't be asked so: processorState()
     // it. The answer: none until it has come (by `until`, waiting until then at
-    // most), then what processorState() would have answered, once.
+    // most), then what processorState() would have answered, once; `answered` (if
+    // given) says whether it is the processor's answer or the last state known.
     bool requestProcessorState(uint32_t processorId);
     std::optional<std::vector<uint8_t>> requestedProcessorState(uint32_t processorId,
-                                                                std::chrono::steady_clock::time_point until = {});
+                                                                std::chrono::steady_clock::time_point until = {},
+                                                                bool* answered = nullptr);
     // Plug-in editors, in windows owned by `ownerWindow` (an HWND; 0 for none).
     bool openEditor(uint32_t processorId, uintptr_t ownerWindow, const std::string& title);
     void closeEditor(uint32_t processorId);

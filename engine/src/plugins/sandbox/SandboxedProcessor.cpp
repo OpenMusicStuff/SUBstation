@@ -343,8 +343,10 @@ bool SandboxedProcessor::requestState() {
     return true;
 }
 
-std::optional<std::vector<uint8_t>> SandboxedProcessor::requestedState(std::chrono::steady_clock::time_point until) {
+std::optional<std::vector<uint8_t>> SandboxedProcessor::requestedState(std::chrono::steady_clock::time_point until,
+                                                                       bool* answered) {
     using Clock = std::chrono::steady_clock;
+    if (answered) *answered = false;
     std::optional<Reply> answer;
     {
         std::unique_lock lock(stateMutex_);
@@ -367,6 +369,7 @@ std::optional<std::vector<uint8_t>> SandboxedProcessor::requestedState(std::chro
     if (answer) {
         if (!answer->ok) throw std::runtime_error(answer->data);
         lastState_.assign(answer->data.begin(), answer->data.end());
+        if (answered) *answered = true;
         return lastState_;
     }
     if (ended()) return lastState_;  // (as getState() has it)

@@ -340,9 +340,11 @@ up to 15 s's wait for one in a sandbox ([engine/sandboxes.md](../engine/sandboxe
   is skipped.
 - **Unchanged states aren't asked for again.** The bridge counts each processor's changes (`Private::stateChanges`,
   `pluginStateChanged()`): a parameter set through it, a state set or restored, an event it reported (an edit in its
-  editor, `StateDirty`, a preset, its parameters changing...), its editor opened, reloaded. A state taken while
-  nothing changed since it was asked for, and with no editor of its open (where a plug-in can change unsaid), is the
-  model's as it is (`Private::stateKept`), and `gatherPluginStates` doesn't ask for it again until the count moves.
+  editor, `StateDirty`, a preset, its parameters changing...), its editor opened, reloaded. A state the plug-in
+  answered with (not the last state known standing in: `Engine::processorAnswersState()`, `requestedProcessorState()`'s
+  `answered`), taken while nothing changed since it was asked for, and with no editor of its open (where a plug-in can
+  change unsaid), is the model's as it is (`Private::stateKept`), and `gatherPluginStates` doesn't ask for it again
+  until the count moves.
   `storePluginStates` always asks. Parameters that automation, modulators and macros move as they play aren't
   changes: the envelopes and mappings that move them are the project's.
 

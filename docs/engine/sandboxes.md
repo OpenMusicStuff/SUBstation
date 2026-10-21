@@ -176,7 +176,8 @@ Questions wait for their answer only when the sandbox is free (not `Busy`), and 
   until then at most; the wait goes on while the sandbox is heard from (`Sandbox::lastHeard()`: it answers what was
   asked before it, one after another on its main thread), up to 15 s after it last was, and a minute after it was
   asked at most (a plug-in that runs a message loop as it saves could keep its sandbox talking for good); past
-  that, or with the sandbox gone, the last state known again;
+  that, or with the sandbox gone, the last state known again (said so: `answered` false, as
+  `answersState()` is while it loads or once its sandbox ended);
 - a state set (`setState`): up to 10 s, to hear whether it was taken; while loading, the answer comes later (`Problem`
   if it wasn't).
 

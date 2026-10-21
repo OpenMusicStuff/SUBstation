@@ -126,27 +126,28 @@ bool EngineBridge::stillLoaded(const LoadedPlugin& plugin) const {
            d_->pluginIds.contains(plugin.processorId);
 }
 
-void EngineBridge::keepPluginState(const LoadedPlugin& plugin,
-                                   const std::function<std::optional<std::vector<uint8_t>>()>& read) {
+void EngineBridge::keepPluginState(const LoadedPlugin& plugin, const StateRead& read) {
     // (Copied first: a plug-in in this process may run a message loop as it is read, in which the
     // device may go.)
     const Device& device = project_->device(plugin.trackId, plugin.deviceId);
     const QString name = device.plugin->name;
     QString state = device.state.value_or(QString());
-    bool taken = false;
+    bool answered = false;  // (by the plug-in: not the last state known standing in)
     try {
         const BusyScope busy(d_->busy);
-        if (const auto got = read()) {
+        if (const auto got = read(answered)) {
             state = QString::fromLatin1(stateData(*got).toBase64());
-            taken = true;
+        } else {
+            answered = false;
         }
     } catch (const std::exception& error) {
+        answered = false;
         Q_EMIT statusMessage(name + QStringLiteral(": ") + QString::fromStdString(error.what()));
     }
     if (!stillLoaded(plugin)) return;  // (gone meanwhile)
-    // Nothing changed it since it was asked for, and no editor of its is open (changing it unsaid): the
-    // model holds it as it is.
-    if (taken && d_->stateChanges.value(plugin.processorId) == plugin.changes &&
+    // It answered, nothing changed it since it was asked, and no editor of its is open (changing it
+    // unsaid): the model holds it as it is.
+    if (answered && d_->stateChanges.value(plugin.processorId) == plugin.changes &&
         !d_->editorsWanted.contains(plugin.deviceId)) {
         d_->stateKept.insert(plugin.processorId, plugin.changes);
     }
@@ -160,6 +161,13 @@ void EngineBridge::pluginStateChanged(quint32 processorId) {
     d_->stateKept.remove(processorId);
 }
 
+EngineBridge::StateRead EngineBridge::readPluginState(quint32 processorId) {
+    return [this, processorId](bool& answered) -> std::optional<std::vector<uint8_t>> {
+        answered = engine_.processorAnswersState(processorId);
+        return engine_.processorState(processorId);
+    };
+}
+
 void EngineBridge::storePluginStates(const std::optional<QSet<QString>>& deviceIds) {
     const std::vector<LoadedPlugin> plugins = loadedPlugins(deviceIds);
     // Those in sandboxes asked first, all at once: they answer in their own processes meanwhile.
@@ -171,12 +179,13 @@ void EngineBridge::storePluginStates(const std::optional<QSet<QString>>& deviceI
         }
     }
     for (size_t i = 0; i < plugins.size(); ++i) {
-        if (!asked[i]) keepPluginState(plugins[i], [&] { return engine_.processorState(plugins[i].processorId); });
+        if (!asked[i]) keepPluginState(plugins[i], readPluginState(plugins[i].processorId));
     }
     for (size_t i = 0; i < plugins.size(); ++i) {
         if (asked[i]) {
-            keepPluginState(plugins[i], [&] {
-                return engine_.requestedProcessorState(plugins[i].processorId, std::chrono::steady_clock::time_point::max());
+            keepPluginState(plugins[i], [&](bool& answered) {
+                return engine_.requestedProcessorState(plugins[i].processorId,
+                                                       std::chrono::steady_clock::time_point::max(), &answered);
             });
         }
     }
@@ -213,7 +222,7 @@ void EngineBridge::gatherStep() {
         d.gatherTimer.start(kPluginRetryMs);
         return;
     }
-    const auto keep = [this](const LoadedPlugin& plugin, const std::function<std::optional<std::vector<uint8_t>>()>& read) {
+    const auto keep = [this](const LoadedPlugin& plugin, const StateRead& read) {
         try {
             if (stillLoaded(plugin)) keepPluginState(plugin, read);
         } catch (const std::exception& error) {
@@ -223,15 +232,17 @@ void EngineBridge::gatherStep() {
     std::erase_if(d.gathering->asked, [&](const LoadedPlugin& plugin) {
         if (!stillLoaded(plugin)) return true;  // (gone meanwhile)
         std::optional<std::vector<uint8_t>> state;
+        bool answered = false;
         std::exception_ptr failure;  // (said as it is kept)
         try {
-            state = engine_.requestedProcessorState(plugin.processorId);
+            state = engine_.requestedProcessorState(plugin.processorId, {}, &answered);
             if (!state) return false;  // (on its way)
         } catch (...) {
             failure = std::current_exception();
         }
-        keep(plugin, [&] {
+        keep(plugin, [&](bool& answeredHere) {
             if (failure) std::rethrow_exception(failure);
+            answeredHere = answered;
             return state;
         });
         return true;
@@ -239,7 +250,7 @@ void EngineBridge::gatherStep() {
     if (!d.gathering->toRead.empty()) {
         const LoadedPlugin plugin = d.gathering->toRead.front();
         d.gathering->toRead.erase(d.gathering->toRead.begin());
-        keep(plugin, [&] { return engine_.processorState(plugin.processorId); });
+        keep(plugin, readPluginState(plugin.processorId));
         if (!d.gathering) return;  // (let go of meanwhile: the bridge shut down)
     }
     if (d.gathering->asked.empty() && d.gathering->toRead.empty()) {
