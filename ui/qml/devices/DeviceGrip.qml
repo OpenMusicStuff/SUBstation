@@ -1,8 +1,9 @@
 import QtQuick
 import SUBstation
 
-// The grip between two devices in the device view (as Ableton's): two short
-// dark lines, upright in the middle of the gap's height. Put it in the gap.
+// The grip in the gap between the info view and the devices (as Ableton's; the
+// gaps between devices hold their meters): two short dark lines, upright in
+// the middle of the gap's height. Put it in the gap.
 Item {
     implicitWidth: 5
 

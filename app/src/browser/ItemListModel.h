@@ -36,7 +36,7 @@ public:
         KeyRole,
         DisplayRole,     // the name, and for a plug-in or preset its detail: "Name   (Vendor)"
         ToolTipRole,     // the item's tooltip (or path), and how often it was used
-        IconRole,        // "waveform", "plugin" or "preset"
+        IconRole,        // "waveform", "plugin", "preset", or a built-in device's by its category: "keyboard", "note", "sliders", "wave_sine"
         UsesRole,        // how often it was used
         InstrumentRole,  // a plug-in that is an instrument
         PluginRole,      // a plug-in's PluginRef fields (PluginInfo::toRef), else nothing

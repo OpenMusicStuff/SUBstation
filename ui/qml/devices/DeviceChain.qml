@@ -2,10 +2,11 @@ import QtQuick
 import SUBstation
 
 // One chain of the track the device view shows, left to right: a frame per
-// device and, after a rack that isn't folded and has chains, the chain it shows
-// (the one last clicked in its chain list, else its first) in its bracket, with
-// its devices, and so on inside. The frames are made again only when the
-// chain's devices change (DeviceChainList).
+// device (a meter of what it puts out in the gap after it) and, after a rack
+// that isn't folded and has chains, the chain it shows (the one last clicked in
+// its chain list, else its first) in its bracket, in the rack's title bar's
+// colour, with its devices, and so on inside. The frames are made again only
+// when the chain's devices change (DeviceChainList).
 Row {
     id: chain
 
@@ -14,7 +15,7 @@ Row {
     readonly property alias list: list
     readonly property int count: list.count
 
-    spacing: 8  // DeviceChainArea.kSpacing: a device's grip in the middle
+    spacing: 8  // DeviceChainArea.kSpacing: a device's meter in the middle
 
     DeviceChainList {
         id: list
@@ -53,13 +54,17 @@ Row {
                 // (By its file: a chain shows chains in turn.)
                 function load() {
                     if (active)
-                        setSource(Qt.resolvedUrl("RackChainView.qml"), { panel: chain.panel, chainId: frame.shownChain })
+                        setSource(Qt.resolvedUrl("RackChainView.qml"), { panel: chain.panel, chainId: frame.shownChain,
+                                                                         bracketColor: frame.headerColor })
                     else
                         source = ""
                 }
                 onActiveChanged: load()
                 Component.onCompleted: load()
-                onLoaded: item.chainId = Qt.binding(() => frame.shownChain)
+                onLoaded: {
+                    item.chainId = Qt.binding(() => frame.shownChain)
+                    item.bracketColor = Qt.binding(() => frame.headerColor)  // (teal with its rack selected)
+                }
             }
         }
     }

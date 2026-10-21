@@ -304,7 +304,7 @@ Item {
                     leftPadding: 2
                     text: qsTr("No pads yet.\nDrop samples on the pads.")
                     wrapMode: Text.Wrap
-                    color: Theme.textDisabled
+                    color: Theme.textDim
                     font: Theme.uiFont(8)
                 }
             }

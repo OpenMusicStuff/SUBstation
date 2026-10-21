@@ -413,8 +413,9 @@ fresh, other items are the ones handed over with `setItems()`, by key.
 
 `ItemListModel` roles: `name`, `path`, `kind`, `detail`, `key`, `display` (the name, and for a plug-in or a preset its
 detail: "Name   (Vendor)"), `toolTip` (the item's tooltip or path, and how often it was used), `icon` ("waveform",
-"plugin" or "preset"), `uses`, `instrument`, `plugin` (a plug-in's `PluginRef` fields), `tags` (a file's label: what
-the sound tagger hears in it). `get(row)` returns every role
+"plugin", "preset", or a built-in device's by its category: "keyboard" (instruments), "note" (MIDI effects),
+"sliders" (audio effects), "wave_sine" (modulators)), `uses`, `instrument`, `plugin` (a plug-in's `PluginRef`
+fields), `tags` (a file's label: what the sound tagger hears in it). `get(row)` returns every role
 of a row by name (`rowMap()`, [ListModels.h](../app/src/ListModels.h), as the plug-ins' and the File Manager's lists do).
 
 [SidebarModel](../app/src/browser/SidebarModel.h) is the sidebar as a flat list: *CATEGORIES* (All, Samples, Built-in
@@ -520,7 +521,9 @@ application ends, which stops the backend's threads (saving the index) and waits
 [BrowserPanel.qml](../ui/qml/browser/BrowserPanel.qml) on `Session.browser`:
 
 - **The search field and the sort.** Typing sets `searchText`; Enter or Down selects the first result; a ✕ clears it.
-  The sort is a `ChoiceBox` of `sorts` (Rank, Name; Similarity while the list shows similar sounds).
+  The sort is a `ChoiceBox` of `sorts` (Rank, Name; Similarity while the list shows similar sounds). They are
+  `Theme.controlHeight` (26 px) high, in a band as high as the arrangement's ruler: the lists start 44 px down, level
+  with its first lane. The field has a magnifier on its left; the ✕s (the field's, the bars') are the `close` icon.
 - **The similar bar** (`similarBar`), under them while `similarTo` is set: "Similar to *name*" (the path as its
   tooltip) and a ✕ (`clearSimilar()`). The main window shows the browser when Find Similar starts (from a clip's menu
   with the browser hidden).
@@ -528,9 +531,11 @@ application ends, which stops the backend's threads (saving the index) and waits
   (*uses*)", its Similar (`HotSwap::findSimilar`: the sounds like the one swapped in now) and a ✕ (`stop()`). Esc
   with the list (or the tree) having the keyboard ends the hot swap too; a hot swap starting gives it the keyboard.
   A press elsewhere in the window leaves it running; a drag starting from the panel (`startDrag`) ends it.
-- **The sidebar** ([BrowserSidebar.qml](../ui/qml/browser/BrowserSidebar.qml)) in a `SplitView` beside the results: a
-  click sets `scope`; Add Folder… asks for a folder (`FolderDialog`, `addPlaceRequested`); a right-click opens the
-  entry's `ActionMenu`.
+- **The sidebar** ([BrowserSidebar.qml](../ui/qml/browser/BrowserSidebar.qml)) in a `SplitView` beside the results
+  (120 px to start with; their handle a gutter of `window`, `border` under the mouse): a click sets `scope`; Add
+  Folder… asks for a folder (`FolderDialog`, `addPlaceRequested`); a right-click opens the entry's `ActionMenu`.
+  Only the top level has icons: a sub-entry is a level (20 px) in, its title under its parent's, and Add Folder… keeps
+  an empty icon's place.
 - **The results** ([BrowserResults.qml](../ui/qml/browser/BrowserResults.qml)) or, while `showingTree`, the folder tree
   ([BrowserFolderTree.qml](../ui/qml/browser/BrowserFolderTree.qml) over a
   [FolderTreeModel](../ui/src/mainwindow/FolderTreeModel.h): the `QFileSystemModel` under the place flattened into rows
@@ -545,12 +550,20 @@ application ends, which stops the backend's threads (saving the index) and waits
   counts the items as used.
 - **Renaming a preset** in place (Ctrl+R with the list focused, or its menu's Rename…): a text field over its row;
   Enter applies (`renamePreset`), Esc cancels. Deleting asks first ("Move the preset to the Recycle Bin?").
-- **The footer**: the headphones (`previewEnabled`) and the status.
+- **The footer**: the headphones (`previewEnabled`; on, in the accent, their icon `accentText`) and the status, elided
+  in the middle (a place's path keeps its last folder).
 - **A file's label**: on the right of its row, dimmed (`tagsLabel` in `tagsBox`), behind the name: the name has the
   whole row (elided only at its end), and the label is cut off where the name ends, fading in over `fade` (28 px).
-- **Text**: the sidebar's entries, the results and the folder tree in `Theme.listFont` (10 pt, a point more than the
-  rest of the UI: Qt Quick draws small text smaller than the widgets did), the sidebar's headings in
-  `Theme.listHeadingFont` (8.5 pt bold); a row is its text's height and 4 px (at least 20 px, 22 in the sidebar).
+- **Text and rows**: the sidebar's entries, the results and the folder tree in `Theme.listFont` (10 pt, a point more
+  than the rest of the UI: Qt Quick draws small text smaller than the widgets did), the sidebar's headings in
+  `Theme.listHeadingFont` (8 pt semibold, spaced out), 4 px under them and 10 over (the first, 4: its capitals level
+  with the list's first name). A row is its text's height and 4 px, at least `Theme.listRowHeight` (22 px), in every
+  list; its icon (`Theme.iconSize`, 14 px) is 6 px in (in the tree, after the arrows' 20 px a level), its text 6 px
+  after it.
+- **Selection**: a list's selected rows are in `accent`, their text and icons in `accentText`, while the list has the
+  keyboard; without it they are on a wash of the accent (`selectionWash`: 14 % of it over `panel`) in their own
+  colours, so the list that Up and Down move shows. The sidebar's entry shown is on the same wash, with a 2 px stripe
+  of `accent` on its left.
 - **Stopping a preview**: an [OutsidePresses](../ui/src/mainwindow/OutsidePresses.h) on the panel, enabled while
   `previewing`, sees a press anywhere outside the panel (in its window or another of the application's) and calls
   `stopPreview()`; presses while the panel's own menus are open count as inside.

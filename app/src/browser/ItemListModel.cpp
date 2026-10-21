@@ -95,8 +95,17 @@ QVariant ItemListModel::data(const QModelIndex& index, int role) const {
             return tip;
         }
         case IconRole:
-            if (it->kind == ItemKind::Preset) return QStringLiteral("preset");
-            return it->kind == ItemKind::Audio ? QStringLiteral("waveform") : QStringLiteral("plugin");
+            switch (it->kind) {
+                case ItemKind::Audio: return QStringLiteral("waveform");
+                case ItemKind::Preset: return QStringLiteral("preset");
+                case ItemKind::Plugin: return QStringLiteral("plugin");
+                case ItemKind::Device: break;
+            }
+            // A built-in device, by its category (the detail).
+            if (it->detail == QLatin1String("Instruments")) return QStringLiteral("keyboard");
+            if (it->detail == QLatin1String("MIDI Effects")) return QStringLiteral("note");
+            if (it->detail == QLatin1String("Modulators")) return QStringLiteral("wave_sine");
+            return QStringLiteral("sliders");
         case UsesRole: return library_ ? library_->uses(it->key()) : 0;
         case InstrumentRole: return it->plugin && it->plugin->instrument;
         case PluginRole: return it->plugin ? QVariant(it->plugin->toRef()) : QVariant();

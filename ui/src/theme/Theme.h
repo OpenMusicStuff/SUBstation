@@ -27,8 +27,10 @@ class QQmlEngine;
 
 namespace sub::ui {
 
-// The UI font: Segoe UI, 9 pt by default.
+// The UI font: Inter (bundled), 9 pt by default; bold, or at a weight of its own
+// (the bundled weights: Regular, Medium, SemiBold, Bold).
 QFont uiFont(qreal pointSize = 9.0, bool bold = false);
+QFont uiFont(qreal pointSize, QFont::Weight weight);
 // The fixed-width font (Consolas) at a size.
 QFont monoFont(qreal pointSize = 9.0);
 
@@ -111,17 +113,20 @@ class Theme : public QObject {
 
     // Fonts: the UI font (9 pt), the small one buttons with a role use (8 pt),
     // the browser's lists' (10 pt: Qt Quick draws small text smaller than the
-    // widgets did at the same size) and their headings (8.5 pt, bold), and the
-    // fixed-width family.
+    // widgets did at the same size) and their headings (8 pt, semibold, spaced
+    // out as capitals read best), the titles of panels and devices (9 pt,
+    // semibold), and the fixed-width family.
     Q_PROPERTY(QFont font READ font CONSTANT)
     Q_PROPERTY(QFont smallFont READ smallFont CONSTANT)
     Q_PROPERTY(QFont listFont READ listFont CONSTANT)
     Q_PROPERTY(QFont listHeadingFont READ listHeadingFont CONSTANT)
+    Q_PROPERTY(QFont titleFont READ titleFont CONSTANT)
     Q_PROPERTY(QString monoFontFamily READ monoFontFamily CONSTANT)
 
     // Metrics the stylesheet used everywhere.
     Q_PROPERTY(int radius READ radius CONSTANT)                  // boxes, line edits: 3 px corners (buttons are square)
     Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)    // the transport bar's displays and buttons
+    Q_PROPERTY(int listRowHeight READ listRowHeight CONSTANT)    // a row of the browser's lists, at least: 22 px
     Q_PROPERTY(int scrollBarWidth READ scrollBarWidth CONSTANT)  // 12 px
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)              // a button's icon: 14 px
 
@@ -130,6 +135,7 @@ public:
     static constexpr const char* kMonoFontFamily = "Consolas";  // MONO_FONT
     static constexpr int kRadius = 3;
     static constexpr int kControlHeight = 26;
+    static constexpr int kListRowHeight = 22;
     static constexpr int kScrollBarWidth = 12;
     static constexpr int kIconSize = 14;
     static constexpr const char* kSettingsKey = "ui/theme";  // the theme's name in QSettings
@@ -237,9 +243,11 @@ public:
     QFont smallFont() const;
     QFont listFont() const;
     QFont listHeadingFont() const;
+    QFont titleFont() const;
     QString monoFontFamily() const;
     int radius() const { return kRadius; }
     int controlHeight() const { return kControlHeight; }
+    int listRowHeight() const { return kListRowHeight; }
     int scrollBarWidth() const { return kScrollBarWidth; }
     int iconSize() const { return kIconSize; }
 

@@ -11,11 +11,11 @@ The sidebar has two sections:
 - **Categories**: *All* (built-in devices, plug-ins, presets and samples at once),
   *Samples* (the audio files under your places, and under it what they sound like: *Kicks*,
   *Snares*, *Claps*, *Hats*, *Cymbals*, *Toms*, *Percussion*, *Bass*, *Synths*, *Keys*,
-  *Guitars*, *Vocals*, *Loops*; [below](#what-sounds-are)), *Built-in* (*Instruments*, *Audio
-  Effects*), *Plug-ins* (*Instruments*, *Audio Effects*; see [plugins.md](plugins.md))
-  *Presets* (by device; see [Presets](#presets)) and, while you have hidden anything,
-  *Hidden* ([below](#hiding-from-search)). The arrow at the right of an entry
-  collapses or expands what is under it; *Samples* starts collapsed, and the browser
+  *Guitars*, *Vocals*, *Loops*; [below](#what-sounds-are)), *Built-in* (*Instruments*, *MIDI
+  Effects*, *Audio Effects*, *Modulators*), *Plug-ins* (*Instruments*, *Audio Effects*; see
+  [plugins.md](plugins.md)), *Presets* (by device; see [Presets](#presets)) and, while you
+  have hidden anything, *Hidden* ([below](#hiding-from-search)). The arrow at the right of
+  an entry collapses or expands what is under it; *Samples* starts collapsed, and the browser
   remembers what you open or close.
 - **Places**: folders of your own, which you browse as a folder tree. The browser starts
   with your Music folder as a place. Add more with *Add Folder…* (at the end of the
@@ -23,6 +23,13 @@ The sidebar has two sections:
   it away.
 
 The files listed are WAV, FLAC and MP3 files.
+
+Each item's icon says what it is: a waveform for a sample, a plug for a plug-in, three
+sliders for a preset, and for a built-in device its kind: a keyboard (an instrument), a
+note (a MIDI effect), faders (an audio effect) or a wave (a modulator). What you select is
+lit in the accent colour while its list has the keyboard (the arrow keys move it), and
+only tinted with it once you click elsewhere. The entry shown in the sidebar is tinted,
+with a bar of the accent on its left.
 
 ## Search
 
@@ -145,7 +152,7 @@ See [file-manager.md](file-manager.md#hot-swap).
 ## Preview
 
 Click a file to preview it. The headphones button in the browser's footer turns preview
-on or off. A preview stops when you click anywhere outside the browser.
+on or off (lit while it is on). A preview stops when you click anywhere outside the browser.
 
 ## Adding to the project
 
