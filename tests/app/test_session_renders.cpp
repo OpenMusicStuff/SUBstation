@@ -3,8 +3,8 @@
 // while one runs, the window going on meanwhile; freezing and unfreezing the
 // selected tracks (Ctrl+Shift+F), what the device view says of a frozen track,
 // the track menu's freeze actions, flattening; and a project's plug-ins
-// loading after it opens (the selected track's first; renders wait for them;
-// saved meanwhile, they keep their state).
+// loading after it opens (the selected track's first; renders wait for them,
+// and for its files still decoding; saved meanwhile, they keep their state).
 
 #include "BridgeTestSupport.h"
 #include "SessionFixture.h"
@@ -472,6 +472,31 @@ private Q_SLOTS:
         float most = 0.f;
         for (int64_t i = 0; i < kRate / 2; ++i) most = std::max(most, std::abs(exported->channelData(0)[i]));
         QVERIFY(most > 0.01f);  // the synth played
+    }
+
+    // And for the audio files still being decoded (a project just opened, a new sample rate): their
+    // clips aren't heard until they are.
+    void rendersWaitForTheFilesStillDecoding() {
+        SessionFixture f;
+        Session& s = f.s();
+        TempDir dir;
+        f.clipTrack(dcWav(dir));
+        const QString path = dir.path(QStringLiteral("song.gilproj"));
+        QVERIFY(s.saveProjectAs(path));
+        s.newProject();
+        QVERIFY(s.openProject(path));
+        QCOMPARE(f.bridge().sourcesLoading(), 1);  // (decoded in the bridge's pool: heard of on this thread)
+        QStringList labels;  // while it waits (a busy bar)
+        connect(s.render(), &RenderProgress::changed, this, [&] {
+            if (s.render()->busy() && !labels.contains(s.render()->label())) labels.append(s.render()->label());
+        });
+        const QString target = dir.path(QStringLiteral("mix.wav"));
+        QVERIFY(s.exportAudio(target, QStringLiteral("arrangement"), 24));
+        QVERIFY(f.waitForRender());
+        QCOMPARE(labels, QStringList{QStringLiteral("Loading audio files (1 to go)…")});
+        QCOMPARE(f.bridge().sourcesLoading(), 0);
+        const auto exported = f.engine.loadSource(target.toStdString());
+        QVERIFY(std::abs(exported->channelData(0)[kRate / 2] - 0.5f) < 1e-3f);  // the clip played
     }
 
     void savedBeforeItsPluginsLoadAProjectKeepsTheirState() {

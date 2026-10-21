@@ -583,7 +583,8 @@ one snapshot for a burst of them, not one a file. `requestSource(path, then)` de
 two spellings of one file share one source), queues
 `then` callbacks while it loads, and emits `sourceReady(path)` or `sourceFailed(path, message)` on the GUI thread.
 `waveform(path)` gives the decoded file as a `Waveform` (null while it isn't decoded), `transients(path)` its
-transients ([Grooves](#grooves)); `isLoading`, `loadError`,
+transients ([Grooves](#grooves)); `isLoading`, `sourcesLoading` (how many are being decoded: renders wait for
+them), `loadError`,
 `fileInfo` (the header only, cached, `sub::AudioSource::probe`). A file that couldn't be decoded is said in the status
 line, but one that isn't there at all: the File Manager lists missing files ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)),
 and a project opening with some says how many once. After a sample-rate change every source is decoded

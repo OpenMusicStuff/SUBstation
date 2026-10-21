@@ -372,6 +372,9 @@ public:
     std::vector<std::pair<double, float>> transients(const QString& path) const;
     Q_INVOKABLE sub::app::Waveform waveform(const QString& path) const;
     Q_INVOKABLE bool isLoading(const QString& path) const;
+    // How many files are being decoded now (renders wait for them: after a sample-rate change,
+    // every file the project plays is decoded again, its clips silent meanwhile).
+    int sourcesLoading() const;
     // Why a file couldn't be decoded ("": it could, or hasn't been tried).
     Q_INVOKABLE QString loadError(const QString& path) const;
     // Length and format from the file's header (cached); none if unreadable (and said so).

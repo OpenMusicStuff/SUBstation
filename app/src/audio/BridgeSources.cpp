@@ -41,6 +41,8 @@ std::vector<std::pair<double, float>> EngineBridge::transients(const QString& pa
 
 bool EngineBridge::isLoading(const QString& path) const { return d_->loading.contains(pathIdentity(path)); }
 
+int EngineBridge::sourcesLoading() const { return static_cast<int>(d_->loading.size()); }
+
 QString EngineBridge::loadError(const QString& path) const { return d_->failed.value(pathIdentity(path)); }
 
 void EngineBridge::requestSource(const QString& path, std::function<void()> then) {

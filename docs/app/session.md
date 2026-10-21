@@ -418,9 +418,10 @@ and by Cancel. There are **no nested event loops**: nothing waits in a local loo
 re-enter the session meanwhile. Each render:
 
 1. shows itself in the session's `RenderProgress` (`begin(title)`);
-2. waits, if it must, until every device is ready to render offline (a project's plug-ins still loading, samples): a
-   busy bar meanwhile, saying what it waits for, polling `EngineBridge::devicesReady()` every 30 ms (the bridge goes on
-   loading them meanwhile);
+2. waits, if it must, until every device is ready to render offline (a project's plug-ins still loading, samples) and
+   every audio file is decoded (a project just opened, a new sample rate: their clips aren't heard until then): a busy
+   bar meanwhile, saying what it waits for, polling `EngineBridge::devicesReady()` and `sourcesLoading()` every 30 ms
+   (the bridge goes on loading them meanwhile);
 3. starts its task(s) and follows each, its part of the progress bar, until it ends;
 4. finishes it (`finishExport`, `finishFreezes`, `finishReversed`), says what came of it (`statusMessage`, `warning`),
    ends the progress, and deletes itself.
@@ -549,7 +550,8 @@ parts keep these QSettings keys:
   Audio's choices, count-in and record quantization, the preferences (the display rate too: kept, applied to the
   bridge, capped by the screen's).
 - [test_session_renders.cpp](../../tests/app/test_session_renders.cpp): renders in the background, Cancel, closing
-  meanwhile, freezing and flattening, plug-ins loading after a project opens.
+  meanwhile, freezing and flattening, plug-ins loading after a project opens, renders waiting for them and for files
+  still decoding.
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp): what the engine hears of the edits.
 - [test_session_keyboard.cpp](../../tests/app/test_session_keyboard.cpp): the computer MIDI keyboard.
 - [test_grooves.cpp](../../tests/app/test_grooves.cpp): the grooves' model and editing under `GrooveLibrary`;

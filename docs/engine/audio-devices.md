@@ -422,8 +422,9 @@ silence.
   loading.
 - Only one ASIO device per process: a second engine (in tests) can't open ASIO while another has it.
 - `AudioDevice::resetConfig()` must run before closing: it asks the open driver.
-- A sample-rate change reloads every decoded source and remakes the stretch voices; the bridge also
-  refreshes its sources (`EngineBridge::refreshSources()`).
+- A sample-rate change decodes nothing as the device opens: the sources stay cached at the old rate (their
+  clips silent) until the bridge decodes them again in its pool (`EngineBridge::refreshSources()`); the
+  stretch voices are made again. Renders wait for those files first.
 - WASAPI's `sampleTime` restarts at 0 on every open; ASIO's comes from the driver when it is valid;
   PipeWire's is the graph clock's position (shared by every node the device drives).
 - PipeWire runs the whole graph at one quantum and rate: another application asking for a smaller buffer

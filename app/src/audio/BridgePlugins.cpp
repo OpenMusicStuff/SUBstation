@@ -128,19 +128,27 @@ bool EngineBridge::stillLoaded(const LoadedPlugin& plugin) const {
 
 void EngineBridge::keepPluginState(const LoadedPlugin& plugin,
                                    const std::function<std::optional<std::vector<uint8_t>>()>& read) {
+    // (Copied first: a plug-in in this process may run a message loop as it is read, in which the
+    // device may go.)
     const Device& device = project_->device(plugin.trackId, plugin.deviceId);
+    const QString name = device.plugin->name;
     QString state = device.state.value_or(QString());
+    bool taken = false;
     try {
-        if (const auto taken = read()) {
-            state = QString::fromLatin1(stateData(*taken).toBase64());
-            // Nothing changed it since it was asked for, and no editor of its is open (changing it unsaid):
-            // the model holds it as it is.
-            if (d_->stateChanges.value(plugin.processorId) == plugin.changes && !d_->editorsWanted.contains(plugin.deviceId)) {
-                d_->stateKept.insert(plugin.processorId, plugin.changes);
-            }
+        const BusyScope busy(d_->busy);
+        if (const auto got = read()) {
+            state = QString::fromLatin1(stateData(*got).toBase64());
+            taken = true;
         }
     } catch (const std::exception& error) {
-        Q_EMIT statusMessage(device.plugin->name + QStringLiteral(": ") + QString::fromStdString(error.what()));
+        Q_EMIT statusMessage(name + QStringLiteral(": ") + QString::fromStdString(error.what()));
+    }
+    if (!stillLoaded(plugin)) return;  // (gone meanwhile)
+    // Nothing changed it since it was asked for, and no editor of its is open (changing it unsaid): the
+    // model holds it as it is.
+    if (taken && d_->stateChanges.value(plugin.processorId) == plugin.changes &&
+        !d_->editorsWanted.contains(plugin.deviceId)) {
+        d_->stateKept.insert(plugin.processorId, plugin.changes);
     }
     // (And where it was found, if it moved.)
     project_->storePluginState(plugin.trackId, plugin.deviceId, state, d_->pluginIds.value(plugin.processorId));
@@ -197,11 +205,22 @@ void EngineBridge::gatherPluginStates(std::function<void()> done) {
 }
 
 // The gathering's turn: the answers that came are kept, and one of this process's plug-ins read.
+// Nothing that goes wrong with one plug-in stops it: it goes on, and ends.
 void EngineBridge::gatherStep() {
     Private& d = *d_;
     if (!d.gathering) return;
-    Private::Gathering& gathering = *d.gathering;
-    std::erase_if(gathering.asked, [&](const LoadedPlugin& plugin) {
+    if (d.busy) {  // (inside a plug-in's message loop, this step's own read among them: not now)
+        d.gatherTimer.start(kPluginRetryMs);
+        return;
+    }
+    const auto keep = [this](const LoadedPlugin& plugin, const std::function<std::optional<std::vector<uint8_t>>()>& read) {
+        try {
+            if (stillLoaded(plugin)) keepPluginState(plugin, read);
+        } catch (const std::exception& error) {
+            qWarning("EngineBridge (gathering plug-in states): %s", error.what());
+        }
+    };
+    std::erase_if(d.gathering->asked, [&](const LoadedPlugin& plugin) {
         if (!stillLoaded(plugin)) return true;  // (gone meanwhile)
         std::optional<std::vector<uint8_t>> state;
         std::exception_ptr failure;  // (said as it is kept)
@@ -211,28 +230,25 @@ void EngineBridge::gatherStep() {
         } catch (...) {
             failure = std::current_exception();
         }
-        keepPluginState(plugin, [&] {
+        keep(plugin, [&] {
             if (failure) std::rethrow_exception(failure);
             return state;
         });
         return true;
     });
-    if (!gathering.toRead.empty()) {
-        if (d.busy) {  // (inside a plug-in's message loop: not another plug-in's call)
-            d.gatherTimer.start(kPluginRetryMs);
-            return;
-        }
-        const LoadedPlugin plugin = gathering.toRead.front();
-        gathering.toRead.erase(gathering.toRead.begin());
-        if (stillLoaded(plugin)) keepPluginState(plugin, [&] { return engine_.processorState(plugin.processorId); });
+    if (!d.gathering->toRead.empty()) {
+        const LoadedPlugin plugin = d.gathering->toRead.front();
+        d.gathering->toRead.erase(d.gathering->toRead.begin());
+        keep(plugin, [&] { return engine_.processorState(plugin.processorId); });
+        if (!d.gathering) return;  // (let go of meanwhile: the bridge shut down)
     }
-    if (gathering.asked.empty() && gathering.toRead.empty()) {
-        const std::vector<std::function<void()>> done = std::move(gathering.done);
+    if (d.gathering->asked.empty() && d.gathering->toRead.empty()) {
+        const std::vector<std::function<void()>> done = std::move(d.gathering->done);
         d.gathering.reset();
         for (const auto& then : done) guarded("plug-in states gathered", then);
         return;
     }
-    d.gatherTimer.start(gathering.toRead.empty() ? kIdlePollMs : 0);  // (the window's turn between reads)
+    d.gatherTimer.start(d.gathering->toRead.empty() ? kIdlePollMs : 0);  // (the window's turn between reads)
 }
 
 std::optional<QString> EngineBridge::paramIdAt(quint32 processorId, int index) {
