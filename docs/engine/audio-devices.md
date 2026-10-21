@@ -145,9 +145,10 @@ SUBstation has no ASIO support (the ASIO SDK was missing)".
    for `stopRecording()`; see [recording.md](recording.md)), frees retired snapshots and services the
    transport on the edit side.
 3. `AudioDevice::open(config, this)`.
-4. If the rate differs from the engine's, sets `sampleRate_`, reloads every source at the new rate
-   (`reloadSourcesLocked`) and drops the live stretch voices (they are sized for the old rate; the next
-   snapshot makes new ones).
+4. If the rate differs from the engine's, sets `sampleRate_` and drops the live stretch voices (they are
+   sized for the old rate; the next snapshot makes new ones). It decodes nothing: the sources stay cached
+   at the old rate, their clips left out of the snapshot until each is loaded again (the engine bridge has
+   every one decoded again in its pool: [warp.md](warp.md#the-source-cache)).
 5. Records the open input channels (`openInputChannels_`, in callback order; track inputs name device
    channels and are mapped to these indices in `inputEdgeLocked`), clears the input meters, drops the
    browser preview.

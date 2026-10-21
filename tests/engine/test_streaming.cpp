@@ -447,6 +447,43 @@ TEST_CASE("a cache file is made again when its file changes, or at another rate"
     checkSameSource(*streamed, *sub::AudioSource::load(utf8(path), kSampleRate));
 }
 
+TEST_CASE("a long file decoded into memory takes its peaks from its peak file, which a stream of it shares") {
+    const auto cache = testCache();
+    // At 44.1 kHz (resampled): past kPeakFileFrames at the engine's rate.
+    const std::string path = writeWavAs(tempDir() / "long.wav", testSignal(22.0, 1, 44100, 3), 1, 44100, 16, false);
+    std::string peakPath = cache->folder();
+    sub::platform::appendName(peakPath,
+                              std::string_view(sub::cacheFileName(path, *sub::platform::stamp(path), kSampleRate)));
+    peakPath += sub::kPeakFileExtension;
+    const auto made = sub::AudioSource::load(path, kSampleRate);  // (its peaks made from its frames)
+    REQUIRE(made->frames() >= sub::StreamCache::kPeakFileFrames);
+    const auto first = cache->loadResident(path, kSampleRate);
+    CHECK(first->resident());
+    checkSameSource(*first, *made);
+    REQUIRE(std::filesystem::exists(sub::platform::toPath(peakPath)));
+
+    // The next time they are read from it, not made again: a peak changed there shows.
+    auto changed = sub::readPeakFile(peakPath, 1, made->frames());
+    REQUIRE(changed);
+    (*changed)[0][1] = 0.75f;  // (the first peak's maximum)
+    REQUIRE(sub::writePeakFile(peakPath, 1, made->frames(), *changed));
+    CHECK_EQ(cache->loadResident(path, kSampleRate)->peaks(0)[1], 0.75f);
+
+    // A stream of it makes and reads the same file: the same peaks, to the bit.
+    REQUIRE(sub::writePeakFile(peakPath, 1, made->frames(), made->peakLevels()));
+    checkSameSource(*cache->open(path, kSampleRate), *made);
+    checkSameSource(*cache->loadResident(path, kSampleRate), *made);
+
+    // A short file's peaks are made as it is decoded: no peak file.
+    const std::string shortPath = writeWavAs(tempDir() / "short.wav", testSignal(1.0, 1, 44100, 4), 1, 44100, 16, false);
+    std::string shortPeaks = cache->folder();
+    sub::platform::appendName(shortPeaks, std::string_view(sub::cacheFileName(shortPath, *sub::platform::stamp(shortPath),
+                                                                              kSampleRate)));
+    shortPeaks += sub::kPeakFileExtension;
+    checkSameSource(*cache->loadResident(shortPath, kSampleRate), *sub::AudioSource::load(shortPath, kSampleRate));
+    CHECK(!std::filesystem::exists(sub::platform::toPath(shortPeaks)));
+}
+
 TEST_CASE("cache files keep the decoder's integers where they hold every sample exactly") {
     // A big-endian WAV (RIFX) isn't read as it is, but its samples are 16-bit integers.
     const Samples signal = testSignal(1.0, 2);

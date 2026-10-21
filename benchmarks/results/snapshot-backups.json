@@ -1,0 +1,51 @@
+{
+  "notes": 256,
+  "audio_every": 4,
+  "results": [
+    {
+      "tracks": 32,
+      "open_ms": 20.94,
+      "open_builds": 1,
+      "decoded_ms": 0.69,
+      "decoded_builds": 1,
+      "edit_ms": 0.1285,
+      "edit_builds": 1,
+      "drag_ms": 1.974,
+      "drag_builds": 2,
+      "backup_json_ms": 7.52,
+      "backup_write_ms": 13.7,
+      "close_ms": 0.74,
+      "close_builds": 1
+    },
+    {
+      "tracks": 128,
+      "open_ms": 113.54,
+      "open_builds": 1,
+      "decoded_ms": 0.98,
+      "decoded_builds": 0,
+      "edit_ms": 0.5606,
+      "edit_builds": 1,
+      "drag_ms": 8.655,
+      "drag_builds": 2,
+      "backup_json_ms": 36.99,
+      "backup_write_ms": 58.77,
+      "close_ms": 3.75,
+      "close_builds": 1
+    },
+    {
+      "tracks": 256,
+      "open_ms": 292.96,
+      "open_builds": 1,
+      "decoded_ms": 2.12,
+      "decoded_builds": 0,
+      "edit_ms": 1.3863,
+      "edit_builds": 1,
+      "drag_ms": 23.166,
+      "drag_builds": 2,
+      "backup_json_ms": 64.3,
+      "backup_write_ms": 127.49,
+      "close_ms": 13.48,
+      "close_builds": 1
+    }
+  ]
+}

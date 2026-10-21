@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,8 +72,13 @@ public:
                        const std::function<void(const float* interleaved, int64_t frames)>& take);
 
     // Decodes the whole file to float, resampled to `sampleRate`. Mono files stay
-    // mono; anything with more than two channels is downmixed to stereo.
-    static std::shared_ptr<AudioSource> load(const std::string& utf8Path, uint32_t sampleRate);
+    // mono; anything with more than two channels is downmixed to stereo. Its
+    // peaks are made from its frames, unless `knownPeaks` has them for its
+    // channels and frames (a peak file's: StreamCache::loadResident()).
+    using PeakLookup =
+        std::function<std::optional<std::vector<std::vector<float>>>(uint32_t channels, int64_t frames)>;
+    static std::shared_ptr<AudioSource> load(const std::string& utf8Path, uint32_t sampleRate,
+                                             const PeakLookup& knownPeaks = {});
     // Samples already in memory (planar: channel c at [c * frames, (c + 1) *
     // frames), one or two channels), at `sampleRate`: what load() decodes from
     // the 32-bit float file of them at that rate (a track's render, freezing it:

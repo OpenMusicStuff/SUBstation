@@ -400,8 +400,20 @@ public:
     // Copies every loaded plug-in's state (or those of `deviceIds`) into the
     // model, for saving the project (or copying devices, duplicating tracks,
     // saving presets), and where a plug-in was found if it moved. Device::state
-    // of a plug-in is stale until then.
+    // of a plug-in is stale until then. Plug-ins in sandboxes are asked first, all
+    // at once (Engine::requestProcessorState()): they answer in their own
+    // processes while those in this one are read, so it waits for the slowest
+    // sandbox, not for every plug-in one after another.
     void storePluginStates(const std::optional<QSet<QString>>& deviceIds = std::nullopt);
+    // The same for a backup, without holding up the window: `done` runs (on this
+    // thread) once every state is in the model. A plug-in whose state the model
+    // holds as it is now is not asked again: nothing changed it since it was last
+    // taken (no parameter or state set, nothing it reported, no editor of its
+    // open since). Those in sandboxes are asked all at once and their answers
+    // taken as they come; those in this process are read one a turn of the event
+    // loop. Parameters that automation, modulators and macros move as they play
+    // are the project's envelopes and mappings, not changes of its state.
+    void gatherPluginStates(std::function<void()> done);
     // Whether a device has a sidechain (aux) input (not while it isn't loaded).
     Q_INVOKABLE bool hasSidechainInput(const QString& trackId, const QString& deviceId);
     // Whether a device plays notes (an instrument, or an effect with a MIDI
@@ -753,6 +765,13 @@ private:
     void updateEditorTitles(const QString& trackId);
     void noteEditorClosed(const QString& trackId, const QString& deviceId);
     void dispatchProcessorEvents(const std::vector<sub::ProcessorEventRecord>& events);
+    struct LoadedPlugin;
+    std::vector<LoadedPlugin> loadedPlugins(const std::optional<QSet<QString>>& deviceIds) const;
+    bool stillLoaded(const LoadedPlugin& plugin) const;
+    // Stores a state read (none: it couldn't be; `read` throws as the engine does) in the model.
+    void keepPluginState(const LoadedPlugin& plugin, const std::function<std::optional<std::vector<uint8_t>>()>& read);
+    void pluginStateChanged(quint32 processorId);  // (the model's copy of its state is stale)
+    void gatherStep();
     // Loading (BridgeLoading.cpp).
     void deferPlugin(const QString& deviceId);
     void startLoadingPlugins();

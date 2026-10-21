@@ -1,5 +1,5 @@
-// VST3 plug-ins through the bridge: projects keeping them and their state, a
-// project's plug-ins loading after it opens (one at a time, the selected track's
+// VST3 plug-ins through the bridge: projects keeping them and their state (a
+// backup's taken again only where something changed it), a project's plug-ins loading after it opens (one at a time, the selected track's
 // first, a waiting one moved or deleted, renders waiting for them), missing and
 // moved plug-ins, devices keeping their processor (and state) as they move,
 // what plug-ins report (edits for undo only from a shown editor), editors as far
@@ -299,6 +299,60 @@ private Q_SLOTS:
         QVERIFY(bridge.isAutomated(a, key) && !bridge.isAutomated(b, key));
         studio.stack.redo();
         QCOMPARE(*bridge.engineDeviceId(b, effect), processor);
+    }
+
+    // A backup's plug-in states (gatherPluginStates()): taken without the caller waiting, and those
+    // the model holds as they are (nothing changed them since they were taken) not asked again.
+    void backupsGatherOnlyChangedPluginStates() {
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        const QString track = studio.edit.addAudioTrack(QStringLiteral("Bus"));
+        const QString device = studio.edit.addDevice(track, kPluginKind, effect_);
+        const quint32 processor = *bridge.engineDeviceId(track, device);
+        const QString paramId = QString::fromStdString(studio.engine.processorParams(processor)[test::kEffectGain].id);
+        const auto state = [&] { return studio.project.device(track, device).state.value_or(QString()); };
+        const auto gather = [&] {
+            bool done = false;
+            bridge.gatherPluginStates([&] { done = true; });
+            QVERIFY(!done);  // (its plug-in read at the event loop's next turn)
+            QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
+        };
+        gather();  // (never taken: asked)
+        const QString first = state();
+        QVERIFY(QByteArray::fromBase64(first.toLatin1()).startsWith("VST3"));
+
+        // Changed where only the engine knows: not asked again, the model's kept.
+        studio.engine.setProcessorParam(processor, test::kEffectGain, 0.3f);
+        gather();
+        QCOMPARE(state(), first);
+        // Saving asks every one.
+        bridge.storePluginStates();
+        const QString saved = state();
+        QVERIFY(saved != first);
+        gather();
+        QCOMPARE(state(), saved);
+
+        // A parameter set through the bridge: asked again.
+        studio.edit.setDeviceParam(track, device, paramId, 0.6);
+        gather();
+        const QString edited = state();
+        QVERIFY(edited != saved);
+        // Something it reported (its state changed in a way no parameter shows): asked again.
+        studio.engine.setProcessorParam(processor, test::kEffectGain, 0.1f);
+        gather();
+        QCOMPARE(state(), edited);
+        BridgeTestAccess::injectEvents(bridge, {report(sub::ProcessorEvent::Type::StateDirty, processor)});
+        bridge.pollPlugins();
+        gather();
+        QVERIFY(state() != edited);
+        QCOMPARE(QByteArray::fromBase64(state().toLatin1()), *bridge.pluginState(track, device));
+
+        // Gone meanwhile: what waited for it is done all the same.
+        studio.edit.setDeviceParam(track, device, paramId, 0.2);
+        bool done = false;
+        bridge.gatherPluginStates([&] { done = true; });
+        studio.edit.removeDevices(track, {device});
+        QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
     }
 
     void aPluginReportingItsOwnChangesMakesNoUndoSteps() {

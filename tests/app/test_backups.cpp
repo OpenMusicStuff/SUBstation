@@ -1,5 +1,7 @@
 // Backups (session/Backups.h): unsaved changes written to a folder of the
-// project's own, the newest kept; a crashed session's latest backup offered
+// project's own, the newest kept; the timer's written in the background once
+// the plug-ins' states are gathered, one at a time, and let go of if the project
+// is saved meanwhile; a crashed session's latest backup offered
 // when the next one starts (its lock free), not a running one's; and the
 // session recovering a backup as the project it was of, unsaved.
 
@@ -19,6 +21,8 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTest>
+
+#include <functional>
 
 using namespace sub::app;
 using sub::app::test::SessionFixture;
@@ -96,9 +100,63 @@ private Q_SLOTS:
         backups.changed();
         QSignalSpy backedUp(&backups, &Backups::backedUp);
         QMetaObject::invokeMethod(&backups, "tick");
-        QCOMPARE(backedUp.count(), 1);
+        QVERIFY(backedUp.wait(5000));  // (written in the background)
         QMetaObject::invokeMethod(&backups, "tick");  // (nothing changed since)
+        QVERIFY(!backups.backingUp());
+        QTest::qWait(100);
         QCOMPARE(backedUp.count(), 1);
+        backups.finish();
+    }
+
+    // The timer's: the plug-ins' states gathered first (without waiting), then
+    // written on a thread of its own; one at a time; one under way when the
+    // project is saved is let go of.
+    void backupsAreWrittenInTheBackground() {
+        TempDir dir;
+        Project project;
+        Backups backups(&project, dir.path(QStringLiteral("Backups")));
+        std::function<void()> gathered;
+        int gathers = 0;
+        backups.setGatherBeforeBackup([&](std::function<void()> then) {
+            ++gathers;
+            gathered = std::move(then);
+        });
+        backups.start();
+        QSignalSpy backedUp(&backups, &Backups::backedUp);
+        backups.changed();
+        backups.backUpInBackground();
+        QCOMPARE(gathers, 1);
+        QVERIFY(backups.backingUp());
+        backups.backUpInBackground();  // (one at a time)
+        QCOMPARE(gathers, 1);
+        QVERIFY(backups.backupsOfProject().isEmpty());  // (nothing written until the states are in)
+        gathered();
+        QVERIFY(backedUp.wait(5000));
+        QVERIFY(!backups.backingUp());
+        const QList<Backups::Backup> written = backups.backupsOfProject();
+        QCOMPARE(written.size(), 1);
+        QCOMPARE(backedUp.first().first().toString(), written.first().path);
+        // The session's mark says it.
+        const QStringList marks =
+            QDir(dir.path(QStringLiteral("Backups/sessions"))).entryList({QStringLiteral("*.json")}, QDir::Files);
+        QCOMPARE(marks.size(), 1);
+        QCOMPARE(Backups::backupOf(written.first().path)->first, QString());
+        QFile mark(dir.path(QStringLiteral("Backups/sessions/") + marks.first()));
+        QVERIFY(mark.open(QIODevice::ReadOnly));
+        QCOMPARE(parseJsonObject(mark.readAll())->value(QStringLiteral("backup")).toString(), written.first().path);
+        backups.backUpInBackground();  // (nothing changed since)
+        QCOMPARE(gathers, 1);
+
+        // Saved while its states are gathered: let go of, nothing written.
+        backups.changed();
+        backups.backUpInBackground();
+        QCOMPARE(gathers, 2);
+        backups.saved();
+        QVERIFY(!backups.backingUp());
+        gathered();
+        QTest::qWait(200);
+        QCOMPARE(backedUp.count(), 1);
+        QCOMPARE(backups.backupsOfProject().size(), 1);
         backups.finish();
     }
 

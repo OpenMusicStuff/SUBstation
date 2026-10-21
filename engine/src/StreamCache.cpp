@@ -371,6 +371,38 @@ std::shared_ptr<AudioSource> StreamCache::open(const std::string& path, uint32_t
     return AudioSource::streamed(path, sampleRate, fileRate, std::move(stream), std::move(peaks));
 }
 
+std::shared_ptr<AudioSource> StreamCache::loadResident(const std::string& path, uint32_t sampleRate) {
+    // (The stamp before it is read: a file written meanwhile has its peaks made again next time.)
+    const platform::FileStamp stamp = platform::stamp(path).value_or(platform::FileStamp{});
+    std::string peakPath = folder();
+    platform::appendName(peakPath, std::string_view(cacheFileName(path, stamp, sampleRate)));
+    peakPath += kPeakFileExtension;
+    bool found = false;
+    auto source = AudioSource::load(path, sampleRate, [&](uint32_t channels, int64_t frames) {
+        std::optional<std::vector<std::vector<float>>> peaks;
+        if (frames >= kPeakFileFrames) peaks = readPeakFile(peakPath, channels, frames);
+        found = peaks.has_value();
+        return peaks;
+    });
+    if (source->frames() < kPeakFileFrames) return source;
+    if (found) {
+        touch(peakPath);  // (used now: the folder's budget lets go of the least recently used first)
+        return source;
+    }
+    {
+        std::lock_guard lock(mutex_);
+        if (!making_.insert(peakPath).second) return source;  // (another decoding of it writes it: the same peaks)
+    }
+    const bool wrote = writePeakFile(peakPath, source->channels(), source->frames(), source->peakLevels());
+    {
+        std::lock_guard lock(mutex_);
+        making_.erase(peakPath);
+    }
+    made_.notify_all();
+    if (wrote) trimFolder();
+    return source;
+}
+
 std::shared_ptr<StreamedAudio> StreamCache::openFile(const StreamLayout& layout, uint32_t sampleRate,
                                                      const std::string& sourcePath, bool temporary) {
     auto stream = std::shared_ptr<StreamedAudio>(

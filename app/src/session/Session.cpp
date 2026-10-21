@@ -268,6 +268,7 @@ void Session::wire() {
     connect(this, &Session::cleanChanged, this, &Session::titleChanged);
     // Backups: unsaved changes written every minute (Backups.h).
     backups_->setBeforeBackup([this] { bridge_->storePluginStates(); });
+    backups_->setGatherBeforeBackup([this](std::function<void()> then) { bridge_->gatherPluginStates(std::move(then)); });
     backups_->setUnsaved([this] { return !clean(); });
     backups_->setUntitledName([this] { return untitledName_.isEmpty() ? QStringLiteral("Untitled") : untitledName_; });
     connect(undoStack_, &QUndoStack::indexChanged, backups_, &Backups::changed);

@@ -42,12 +42,13 @@ What the user sees (the clip view, warp modes, transpose, tempo and key from fil
 | File | What it holds |
 |---|---|
 | [AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | `AudioFileInfo`, `AudioSource::probe()`, `decode()`, `load()`, planar data (or a streamed file: [streaming.md](streaming.md)), `read()`, peak mipmaps (`PeakBuilder`) |
+| [Resampler.h](../../engine/src/Resampler.h) / [.cpp](../../engine/src/Resampler.cpp) | `Resampler`: decoding's sample-rate conversion, a polyphase Kaiser-windowed sinc filter, a stream of frames at a time; `outputFrames()` |
 | [SourceCursor.h](../../engine/src/SourceCursor.h) | `SourceCursor`: a source's frames wherever they are (memory, or the stream cache's pages), real-time or waiting for the disk |
 | [Warp.h](../../engine/src/Warp.h) / [.cpp](../../engine/src/Warp.cpp) | `WarpMode`, `StretchConfig`, `stretchConfigFor()`, `stretchTiming()`, `configureStretcher()`, `kStretchSeed`, `WarpVoice` (and its inputs: `SourceInput`, `StreamInput`, `LeasedInput`), `WarpVoiceSet`, `renderResampled()` (and, inside, its kernel: `SincTable`, `SincPhases`, `SourceSpan`, `phasedFrame()`, `kernelFrame()`) |
 | [WarpCache.h](../../engine/src/WarpCache.h) / [.cpp](../../engine/src/WarpCache.cpp) | `WarpRender` (a stretched clip rendered whole), `WarpCache` (its thread, `request()`, the budget) |
 | [Snapshot.h](../../engine/src/Snapshot.h) | `ClipRender` (`Playback::Direct / Resample / Stretch`, `rate`, `sourceAt()`, `key`, `rendered`), `TrackBuffers::kMaxClipVoices` |
 | [EngineSnapshot.cpp](../../engine/src/EngineSnapshot.cpp) | clips to `ClipRender`s, choosing the playback, asking the warp cache for renders; `ensureWarpVoicesLocked()` |
-| [Engine.cpp](../../engine/src/Engine.cpp) | the source cache: `loadSource()`, `cachedSource()`, `releaseUnusedSources()`, `reloadSourcesLocked()`, `sourceKey()` |
+| [Engine.cpp](../../engine/src/Engine.cpp) | the source cache: `loadSource()`, `cachedSource()`, `releaseUnusedSources()`, `sourceKey()` (a new rate: `openDeviceLocked()`, [EngineDevice.cpp](../../engine/src/EngineDevice.cpp)) |
 | [EngineOffline.cpp](../../engine/src/EngineOffline.cpp) | fresh voices for offline renders (`prepareOfflineLocked`) |
 | [Renderer.cpp](../../engine/src/Renderer.cpp) | `assignVoices()` (a render or a voice), `carriedOn()`, `acquireVoice()`, `renderClips()` |
 | [third_party/signalsmith-stretch](../../engine/third_party/signalsmith-stretch) | Signalsmith Stretch 1.3.2 (MIT), one header, unmodified |
@@ -64,13 +65,14 @@ Both Signalsmith libraries are added as `SYSTEM` include directories in [CMakeLi
 `AudioSource::load(utf8Path, sampleRate)` decodes with miniaudio's decoder (WAV, FLAC and MP3):
 
 1. It opens the file once to learn its native channel count, rate and sample format.
-2. It opens it again asking for float output at the engine's rate, with miniaudio's linear resampler at its highest
-   low-pass filter order (`MA_MAX_FILTER_ORDER`). Mono files stay mono; anything with two or more channels is decoded
-   as stereo (more than two are downmixed by miniaudio).
+2. It opens it again asking for float output at the file's own rate. Mono files stay mono; anything with two or more
+   channels is decoded as stereo (more than two are downmixed by miniaudio). A file at another rate than the
+   engine's goes through a `Resampler` ([Resampling](#resampling-a-file-to-the-engines-rate)) as it is read.
 3. It reads 16384 frames at a time, de-interleaving each straight into its place in one planar buffer (channel `c`
    occupies `[c * frames, (c + 1) * frames)`), made as long as the decoder expects (longer if it was wrong: copied
    once then), the second channel moved down at the end if the file was shorter. No second copy of the file.
-4. It builds the peaks.
+4. It builds the peaks, unless they are known already: a long file's come from its peak file
+   ([Peak mipmaps](#peak-mipmaps)).
 
 Steps 1 to 3 are `AudioSource::decode(path, rate, begin, take)`, which hands over the decoded format and then the
 frames a chunk at a time: the stream cache's cache files are decoded through it too ([streaming.md](streaming.md)),
@@ -83,6 +85,35 @@ Windows path works, and its narrow one elsewhere, so a path never goes through t
 `AudioSource::probe(utf8Path)` reads only what is needed for length and format (`AudioFileInfo`: frames at the file's
 own rate, channels, rate, duration). For streams that report no length it counts the frames by decoding.
 
+### Resampling a file to the engine's rate
+
+[Resampler.h](../../engine/src/Resampler.h) converts a stream of frames from the file's rate to the engine's, chunk by
+chunk as `decode()` reads them. It replaced miniaudio's linear resampler (with its 8th-order low-pass), whose images
+and aliasing were audible going between 44.1 and 48 kHz.
+
+- **The filter**: each output frame sits at its exact place in the input (frame *k* at *k* · in / out) and is the sum
+  of the input frames around it weighed by a sinc low-pass cut off at the lower rate's Nyquist frequency, under a
+  Kaiser window: 36 zero crossings of the sinc at the lower rate on each side (`kZeroCrossings`; 72 taps for 44.1 to
+  48 kHz, 80 for 48 to 44.1, 160 for 96 to 44.1), β = 10.06 for 100 dB (`kStopbandDb`). Each phase's taps are
+  normalised to sum to 1 (in doubles, then stored as floats), so a constant stays that constant to within 1e-6.
+- **The transition band** lies around the lower Nyquist frequency, about 9 % of it each way: at 44.1 kHz the response
+  is flat to 20 kHz (-0.3 dB at 21 kHz), and what lies between 22.05 and 24.1 kHz in a 48 kHz file (attenuated, 25 dB at
+  23 kHz) folds back above 20 kHz only. Nothing folds below 20 kHz.
+- **Phases**: the output frame's place past its input frame is one of `out / gcd(in, out)` phases (160 for 44.1 to
+  48 kHz, 147 back), each a row of taps made once (in doubles, stored as floats), so every frame's taps are exact.
+  Rates whose ratio needs more than `kMaxPhases` (4096; 44.1 to 47.999 kHz needs 47999) interpolate linearly between
+  the rows of a table of at most that many (fewer for the long filters of steep downsampling, which are smooth: 2²¹
+  taps in all at most, and 256 rows at least).
+- **Its sums** are made in eight lanes (which the compiler makes one vector) added pairwise at the end, in a fixed
+  order: the output is the same, to the bit, whatever the chunks the input comes in, so a cache file made from a
+  stream decodes to what `load()` decodes ([streaming.md](streaming.md)).
+- **Length**: frames before the input's start and after its end count as silence, and the output is the input's
+  duration: `ceil(frames · out / in)` frames (`outputFrames()`).
+- **What it measures** ([test_resampler.cpp](../../tests/engine/test_resampler.cpp)): a tone in the passband (1, 9 and
+  19.5 kHz, at 44.1, 48, 96 and 22.05 kHz both ways) is within 100 to 122 dB of the ideal tone, at its place (nothing
+  early or late); tones past the stopband's edge (24.5, 30 and 45 kHz from 96 to 44.1 kHz) come out 116 to 128 dB down,
+  and so do the images going up (15 kHz from 44.1 to 96 kHz). What it costs: [decode_bench](../../benchmarks/README.md#decoding).
+
 Accessors: `path()`, `channels()`, `frames()`, `sampleRate()` (the rate it was decoded at), `fileSampleRate()`,
 `duration()`, `resident()`, `data()`, `channelData(c)` (null for a streamed source), `stream()` (a streamed source's
 `StreamedAudio`), and `read(channel, start, count, out)`: frames from memory, or from disk through the stream cache,
@@ -93,6 +124,14 @@ waiting for its reads (any thread but the audio thread's).
 Six levels (`kNumPeakLevels`). Level *n* holds one (min, max) pair per channel for every `32 * 4^n` frames
 (`samplesPerPeak(level)`: 32, 128, 512, 2048, 8192, 32768). Level 0 is computed from the samples; each coarser level
 combines four peaks of the one below. The layout of `peaks(level)` is `[numPeaks][channels][2]`.
+
+A long file decoded into memory keeps its peaks on disk, so opening it again reads them instead of making them:
+`StreamCache::loadResident()` (which `Engine::loadSource()` decodes through) gives `load()` the peaks of the file's
+peak file, the one a streamed source of it has ([streaming.md](streaming.md): named by the file's key, its stamp and
+the engine's rate, in the stream cache's folder and under its budget), when it holds them for the frames and channels
+decoded; else they are made, and the peak file written. Only for files of at least `StreamCache::kPeakFileFrames`
+(2²⁰ frames, 22 seconds at 48 kHz): a short file's peaks are made quicker than a file is read
+([decode_bench](../../benchmarks/README.md#decoding)).
 
 The application layer hands them to the UI without copying: a `Waveform`
 ([app/src/audio/Waveform.h](../../app/src/audio/Waveform.h), from `EngineBridge::waveform(path)`) holds a
@@ -116,9 +155,11 @@ lower-cased, so two spellings of a path share it).
   at the engine rate), and rebuilds the snapshot as `loadSource()` does. The engine bridge hands back what it holds:
   a file it decoded, by the time it hears so, or one it asks for again.
 - `releaseUnusedSources()` drops sources no clip uses (except the one previewing).
-- When the device's sample rate changes, `reloadSourcesLocked()` decodes every cached source again at the new rate;
-  files that vanished or became unreadable are dropped, and their clips go silent. (Streamed ones are opened again
-  where no new cache file is needed, else let go of until they are loaded again: [streaming.md](streaming.md).)
+- When the device's sample rate changes, nothing is decoded as the device opens (that was the GUI thread, under the
+  engine's lock, one file after another): the sources stay cached at the old rate, which leaves their clips out of
+  the snapshot, and the engine bridge has every one decoded again in its pool, as loading does
+  ([app/engine-bridge.md](../app/engine-bridge.md)); `loadSource()` and `cacheSource()` take the place of one at
+  another rate. Files that vanished or became unreadable meanwhile fail to load, and their clips stay silent.
 - While streaming is on, `loadSource()` opens a file at least the threshold long streamed
   ([streaming.md](streaming.md)).
 - A snapshot only includes a clip whose source is cached *at the engine rate*; until then the clip is skipped
@@ -406,6 +447,12 @@ and the profiles behind them in [benchmarks/README.md](../../benchmarks/README.m
   too (the `-cached` cases), and from a streamed source (the `-streamed` cases).
 - [tests/engine/test_engine_render.cpp](../../tests/engine/test_engine_render.cpp): source peaks and samples,
   resampling to the engine rate, `probe`, clips waiting for their source.
+- [tests/engine/test_resampler.cpp](../../tests/engine/test_resampler.cpp): decoding's resampler: a constant stays
+  that constant; tones in the passband come out as they were, where they were; nothing above the lower rate's
+  Nyquist folds back, and no images; the input's duration; the same to the bit whatever the chunks; stereo;
+  interpolated phases; a file decoded through it.
+- [benchmarks/decode_bench.cpp](../../benchmarks/decode_bench.cpp) (not a test): loading a file into memory at its own
+  rate and resampled (against miniaudio's linear resampler), peaks made or read from their file.
 - [tests/engine/test_streaming.cpp](../../tests/engine/test_streaming.cpp): streamed sources play the frames and
   peaks resident ones have; Direct, Re-Pitch and stretched clips of them render the same, live and offline; a streamed
   clip's render is the in-memory one's. CTest's `engine_streamed` runs every engine test again with every file

@@ -64,7 +64,7 @@ preferences ([AudioSettings.h](../../app/src/audio/AudioSettings.h)) and where t
 | [BridgeTracks.cpp](../../app/src/audio/BridgeTracks.cpp) | Engine tracks, mixers, outputs, sends, clips and notes (and a drag's preview of them), tempo and loop, the default groove and clips' grooves, audio threads |
 | [BridgeInputs.cpp](../../app/src/audio/BridgeInputs.cpp) | Tracks' audio and MIDI inputs and monitoring, the device's inputs, the MIDI inputs open |
 | [BridgeDevices.cpp](../../app/src/audio/BridgeDevices.cpp) | Devices' processors in every chain, racks, sidechains, parameters, states |
-| [BridgePlugins.cpp](../../app/src/audio/BridgePlugins.cpp) | Plug-ins' states, editors and reports; what a device's editor reads (`deviceParams`, `processorDisplays`...) |
+| [BridgePlugins.cpp](../../app/src/audio/BridgePlugins.cpp) | Plug-ins' states (stored for a save, gathered for a backup: [Plug-in states](#plug-in-states)), editors and reports; what a device's editor reads (`deviceParams`, `processorDisplays`...) |
 | [BridgeLoading.cpp](../../app/src/audio/BridgeLoading.cpp) | A project's plug-ins loading after it opens, one at a time |
 | [BridgeParameters.cpp](../../app/src/audio/BridgeParameters.cpp) | Automation pushed to the engine, overrides, `ParamSpec`s for the UI |
 | [BridgeSources.cpp](../../app/src/audio/BridgeSources.cpp) | Decoding audio files in a thread pool; waveforms; file headers; files' transients |
@@ -286,7 +286,8 @@ concerned (see [Freezing](#freezing)).
   deleted, or its track, so undo brings it back as it was), else from `Device::state` (base64 `.vstpreset`).
   `storePluginStates()` copies every loaded plug-in's state (or those of some devices) back into the model
   (`Project::storePluginState`), for saving, copying devices, duplicating tracks and saving presets; it also records a
-  moved plug-in's new path. `pluginState(track, device)` reads one directly; `applyPluginState` gives one a
+  moved plug-in's new path. `gatherPluginStates(done)` does the same for a backup without holding up the window
+  ([Plug-in states](#plug-in-states)). `pluginState(track, device)` reads one directly; `applyPluginState` gives one a
   `.vstpreset` read from a file (the caller records the undo step).
 - **Presets**: `pluginPresetName(track, device)` is the preset a loaded plug-in says it has ("" if none; none if it
   isn't loaded: [engine/plugins.md](../engine/plugins.md#preset-names)); `pluginPresetChanged` says when it is another.
@@ -322,6 +323,28 @@ concerned (see [Freezing](#freezing)).
   wait.
 
 See [engine/plugins.md](../engine/plugins.md) for the engine side.
+
+### Plug-in states
+
+Asking a plug-in for its state is a call into it: on the GUI thread for a plug-in in this process (VST3 says so), and
+up to 15 s's wait for one in a sandbox ([engine/sandboxes.md](../engine/sandboxes.md#what-the-engine-keeps-of-a-sandboxed-plug-in)).
+
+- **`storePluginStates()`** (saving, copying): those in sandboxes are asked first, all at once
+  (`Engine::requestProcessorState()`), and answer in their own processes while those in this process are read
+  (`Engine::processorState()`); then their answers are waited for (`requestedProcessorState()`). A save waits for the
+  slowest sandbox, not for every plug-in in turn.
+- **`gatherPluginStates(done)`** (the backups', [session.md](session.md)): nothing waits. From the event loop's next
+  turn, those in sandboxes are asked at once and their answers taken as they come (every `kIdlePollMs`), and those in
+  this process are read one a turn of the event loop (not while a plug-in's call runs a message loop: `busy`); `done`
+  runs once every state is in the model. A second call while one is under way waits for it. A plug-in gone meanwhile
+  is skipped.
+- **Unchanged states aren't asked for again.** The bridge counts each processor's changes (`Private::stateChanges`,
+  `pluginStateChanged()`): a parameter set through it, a state set or restored, an event it reported (an edit in its
+  editor, `StateDirty`, a preset, its parameters changing...), its editor opened, reloaded. A state taken while
+  nothing changed since it was asked for, and with no editor of its open (where a plug-in can change unsaid), is the
+  model's as it is (`Private::stateKept`), and `gatherPluginStates` doesn't ask for it again until the count moves.
+  `storePluginStates` always asks. Parameters that automation, modulators and macros move as they play aren't
+  changes: the envelopes and mappings that move them are the project's.
 
 ### Built-in devices' state
 
@@ -564,7 +587,9 @@ transients ([Grooves](#grooves)); `isLoading`, `loadError`,
 `fileInfo` (the header only, cached, `sub::AudioSource::probe`). A file that couldn't be decoded is said in the status
 line, but one that isn't there at all: the File Manager lists missing files ([session.md](session.md#the-file-manager-and-hot-swaps-filemanager-hotswap)),
 and a project opening with some says how many once. After a sample-rate change every source is decoded
-again (`refreshSources`). On `reset` the bridge forgets sources the new project doesn't use and calls
+again (`refreshSources`), in this pool: the engine decodes nothing as the device opens (it used to, on the GUI thread
+under its lock, one file after another), and keeps the sources at the old rate until they arrive, their clips silent
+meanwhile, as when a project opens. On `reset` the bridge forgets sources the new project doesn't use and calls
 `Engine::releaseUnusedSources()`. That lets go of more than the bridge does: a file still decoding (in the engine's
 cache, but the bridge hasn't heard yet), a deactivated clip's, a frozen track's clips' (no clip of the engine's plays
 them). So the bridge hands the engine its source again (`Engine::cacheSource`) when it hears a file is decoded and
@@ -767,7 +792,8 @@ the UI's window state. The user-facing side is in
   [test_note_bends.cpp](../../tests/app/test_note_bends.cpp): an instrument and an effect with a MIDI input playing
   another track's notes; bent notes playing at their bent pitch, recorded bends.
 - [test_bridge_plugins.cpp](../../tests/app/test_bridge_plugins.cpp): plug-in loading (after a project opens too),
-  missing and moved plug-ins, editors, edits for undo, automating plug-in parameters.
+  missing and moved plug-ins, a backup's states taken again only where something changed them, editors, edits for
+  undo, automating plug-in parameters.
 - [test_bridge_grooves.cpp](../../tests/app/test_bridge_grooves.cpp): a MIDI clip's groove moving the notes the
   engine plays (and back as it goes), a library groove edited heard where it plays, the Groove device playing the
   project's default, an audio loop's transients heard on the grooved beats and back on their own when the groove goes.
@@ -778,7 +804,8 @@ the UI's window state. The user-facing side is in
 - [test_bridge_settings.cpp](../../tests/app/test_bridge_settings.cpp): `AudioSettings` and the other keys, the files'
   folders and names, `writeFloatWav`, the EQ's curve, device status, the scope, MIDI inputs, `startAudio`.
 - [test_bridge_pipewire.cpp](../../tests/app/test_bridge_pipewire.cpp) (Linux, with a PipeWire daemon of its own): a
-  device that went away opening again when it is back, a track's input opening the device again with it.
+  device that went away opening again when it is back, a track's input opening the device again with it, another rate
+  decoding nothing as the device opens (the files decoded again in the pool).
 - [test_session_engine.cpp](../../tests/app/test_session_engine.cpp), [test_session_keyboard.cpp](../../tests/app/test_session_keyboard.cpp),
   [test_engine_render.cpp](../../tests/engine/test_engine_render.cpp) and the engine's MIDI input tests: the engine side
   of the same.

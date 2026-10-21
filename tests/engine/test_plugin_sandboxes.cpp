@@ -19,6 +19,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -261,6 +262,77 @@ TEST_CASE("sandbox: a state that comes while it is loading is its state once it 
     REQUIRE(until(engine, [&] { return engine.processorInfo(effect).status == PluginStatus::Ready; }));
     CHECK_APPROX(engine.processorParam(effect, FX_GAIN), 0.1);
     CHECK_ALLCLOSE(engine.renderOffline(0.0, 1000), 0.1, 1e-6, 0.0);
+}
+
+TEST_CASE("sandbox: states asked for all at once, each taken as it comes") {
+    const ScopedEnvironment slow("SUB_TEST_PLUGIN_SLOW_LOAD_MS", "1000");
+    SandboxEngine e;  // (together: one sandbox, whose main thread does one thing at a time)
+    auto& engine = e.engine;
+    const uint32_t clip = clipTrack(engine, dcWav());
+    const uint32_t a = addPlugin(engine, engine.trackChain(clip), "SUB Test Effect");
+    const uint32_t b = addPlugin(engine, engine.trackChain(clip), "SUB Test Effect");
+    REQUIRE(engine.waitForPlugins(10000));
+    engine.setProcessorParam(a, FX_GAIN, 0.1f);
+    engine.setProcessorParam(b, FX_GAIN, 0.3f);
+    const std::vector<uint8_t> wantA = engine.processorState(a);
+    const std::vector<uint8_t> wantB = engine.processorState(b);
+    CHECK(wantA != wantB);
+
+    // The sandbox loading another plug-in (1 s): they are asked, not waited for, and answered after.
+    addPlugin(engine, engine.trackChain(clip), "SUB Test Crasher");
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const auto asked = std::chrono::steady_clock::now();
+    REQUIRE(engine.requestProcessorState(a));
+    REQUIRE(engine.requestProcessorState(b));
+    CHECK(!engine.requestedProcessorState(a));  // (not yet)
+    CHECK(std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(200));
+    std::optional<std::vector<uint8_t>> gotA, gotB;
+    CHECK(until(engine, [&] {
+        if (!gotA) gotA = engine.requestedProcessorState(a);
+        if (!gotB) gotB = engine.requestedProcessorState(b);
+        return gotA && gotB;
+    }));
+    CHECK(gotA == wantA);
+    CHECK(gotB == wantB);
+    // Asked again, and waited for.
+    REQUIRE(engine.requestProcessorState(b));
+    CHECK(engine.requestedProcessorState(b, std::chrono::steady_clock::now() + std::chrono::seconds(10)) == wantB);
+
+    // In the engine's own process it isn't asked so: processorState() it.
+    SandboxEngine local(PluginHosting::InProcess);
+    const uint32_t here = addPlugin(local.engine, local.engine.trackChain(clipTrack(local.engine, dcWav())), "SUB Test Effect");
+    CHECK(!local.engine.requestProcessorState(here));
+}
+
+TEST_CASE("sandbox: a state asked for whose sandbox ends is the last one known, at once") {
+    requireTestPlugins();
+    const ScopedEnvironment slow("SUB_TEST_PLUGIN_SLOW_LOAD_MS", "1500");
+    sub::sandbox::PluginSandboxes sandboxes;
+    sandboxes.setProgram(pluginHost());
+    sandboxes.setHosting(PluginHosting::Together);
+    const auto crasher = [&] {
+        return std::make_shared<sub::sandbox::SandboxedProcessor>(
+            sandboxes, sub::sandbox::PluginOrigin{testPluginsBundle(), testPluginUids().at("SUB Test Crasher"),
+                                                  "SUB Test Crasher", "SUB Crash Works"},
+            std::vector<uint8_t>{}, kSampleRate, 1024);
+    };
+    const auto first = crasher();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (first->status() == sub::sandbox::SandboxedProcessor::Status::Loading && std::chrono::steady_clock::now() < deadline) {
+        first->idle();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(first->status() == sub::sandbox::SandboxedProcessor::Status::Ready);
+    const std::vector<uint8_t> known = first->getState();
+    const auto second = crasher();  // (its sandbox's main thread loads it for 1.5 s: the state waits behind it)
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    REQUIRE(first->requestState());
+    CHECK(!first->requestedState(std::chrono::steady_clock::now()));
+    BlockThrough block;
+    block(*first, false, {sub::ProcessEvent::noteOn(0, 0, 100)});  // note 0 crashes it, on the sandbox's audio thread
+    const auto started = std::chrono::steady_clock::now();
+    CHECK(first->requestedState(std::chrono::steady_clock::now() + std::chrono::seconds(10)) == known);
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1000));
 }
 
 TEST_CASE("sandbox: adding a plug-in doesn't wait for it to load") {

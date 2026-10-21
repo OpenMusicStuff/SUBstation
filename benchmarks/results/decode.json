@@ -1,0 +1,50 @@
+{
+  "seconds": 180.0,
+  "results": [
+    {
+      "case": "48 kHz as it is",
+      "ms": 98.69,
+      "realtime": 1823.9
+    },
+    {
+      "case": "48 kHz, peaks from their file",
+      "ms": 84.39,
+      "realtime": 2132.9
+    },
+    {
+      "case": "44.1 -> 48 kHz, linear (before)",
+      "ms": 598.57,
+      "realtime": 300.7
+    },
+    {
+      "case": "44.1 -> 48 kHz",
+      "ms": 335.25,
+      "realtime": 536.9
+    },
+    {
+      "case": "48 -> 44.1 kHz, linear (before)",
+      "ms": 441.94,
+      "realtime": 407.3
+    },
+    {
+      "case": "48 -> 44.1 kHz",
+      "ms": 308.66,
+      "realtime": 583.2
+    },
+    {
+      "case": "96 -> 48 kHz, linear (before)",
+      "ms": 762.16,
+      "realtime": 236.2
+    },
+    {
+      "case": "96 -> 48 kHz",
+      "ms": 420.04,
+      "realtime": 428.5
+    },
+    {
+      "case": "44.1 -> 48 kHz, peaks from their file",
+      "ms": 305.93,
+      "realtime": 588.4
+    }
+  ]
+}

@@ -40,7 +40,10 @@ void Engine::openDeviceLocked(const DeviceConfig& config) {
         const double rate = state.sampleRate;
         if (rate != sampleRate_) {
             sampleRate_ = rate;
-            reloadSourcesLocked();
+            // Nothing is decoded again here, under the lock: the sources stay cached at the old rate, their
+            // clips left out of the snapshot, until each is loaded again (the engine bridge has every one
+            // decoded again in its pool): loadSource() and cacheSource() take the place of one at another rate.
+            residentSources_.clear();  // (the devices keep theirs at the rate they loaded them)
             warpVoices_ = {};  // stretchers are sized for the old rate; the next snapshot makes new ones
         }
         openInputs_ = static_cast<uint32_t>(state.inputChannels.size());

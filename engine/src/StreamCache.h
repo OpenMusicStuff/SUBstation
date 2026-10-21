@@ -215,6 +215,11 @@ public:
     // is read before it returns. Throws std::runtime_error if the file can't be read or decoded.
     // Without `mayMake`, null where a cache file or peak file would have to be made first.
     std::shared_ptr<AudioSource> open(const std::string& path, uint32_t sampleRate, bool mayMake = true);
+    // The file decoded whole into memory (AudioSource::load()) at `sampleRate`. A long one's peaks (at
+    // least kPeakFileFrames) come from its peak file (a streamed source of it has the same), made once:
+    // reading them is quicker than making them again. A short one's are made, quicker than a file read.
+    static constexpr int64_t kPeakFileFrames = int64_t{1} << 20;
+    std::shared_ptr<AudioSource> loadResident(const std::string& path, uint32_t sampleRate);
     // A cache file written already (a stretched clip's render: WarpCache.h): streamed from `layout`,
     // its head read first; `temporary`: the file goes when the stream does.
     std::shared_ptr<StreamedAudio> openFile(const StreamLayout& layout, uint32_t sampleRate, const std::string& sourcePath,
@@ -299,7 +304,7 @@ private:
     std::string folder_;
     uint64_t folderBudget_ = kDefaultFolderBudget;
     bool rendersCleared_ = false;
-    std::set<std::string> making_;  // cache files being made (a second open waits for the first)
+    std::set<std::string> making_;  // cache files being made (a second open waits for the first), peak files
     std::condition_variable made_;
     const std::atomic<uint64_t>* begun_ = nullptr;
     const std::atomic<uint64_t>* finished_ = nullptr;

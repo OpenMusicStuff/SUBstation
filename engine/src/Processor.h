@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -345,6 +346,17 @@ public:
     // Empty for processors whose parameters are their whole state.
     virtual std::vector<uint8_t> getState() { return {}; }
     virtual void setState(const std::vector<uint8_t>& /*state*/) {}
+    // The state asked for without waiting for it here, where it can be (a plug-in
+    // in a sandbox answers in its own process: many can be asked at once).
+    // requestState() asks; false if it can't be asked so (getState() it then).
+    // requestedState() waits until `until` at most for the answer: none if it
+    // hasn't come by then, else what getState() would have answered (the state;
+    // past the wait getState() allows, the last state known; it throws as
+    // getState() does). An answer is taken once; asking again forgets the last.
+    virtual bool requestState() { return false; }
+    virtual std::optional<std::vector<uint8_t>> requestedState(std::chrono::steady_clock::time_point /*until*/) {
+        return std::nullopt;
+    }
 
     // The preset (patch, instrument) a plug-in has loaded, as far as it tells ("" if
     // unknown, or for devices that have none). Thread-safe; it changes with

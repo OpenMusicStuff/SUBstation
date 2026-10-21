@@ -87,12 +87,16 @@ engine's mutex (like the warp cache's thread: what they need is in the snapshot 
   `PeakBuilder`, the same min/max levels `AudioSource::buildPeaks()` makes, and kept in a peak file beside the cache
   file (`.subpeaks`; files streamed as they are have theirs there too). Opening a streamed source then reads no
   audio but its head: its peaks come from their file. All six levels stay in memory (level 0 is 1/16 of the float
-  data).
-- **A sample rate change** makes the cache files at the old rate useless for playback. `reloadSourcesLocked()`
-  opens again, under the engine's lock, only what needs no new file (`StreamCache::open(..., mayMake = false)`: a WAV
-  at the new rate with its peak file, or a cache file at that rate made before); the rest are let go, and the engine
-  bridge, which fetches every source again after a rate change, has them made in the background meanwhile, their
-  clips left out of the snapshot until they are ready (as a clip whose source is cached at another rate always was).
+  data). A long file decoded into memory (at least `kPeakFileFrames`: `StreamCache::loadResident()`, which
+  `Engine::loadSource()` decodes through) reads its peaks from the same file, and makes it if there is none: a source
+  has the same peaks streamed or not ([warp.md](warp.md#peak-mipmaps)).
+- Cache and peak files are of a version (in their headers): 2 since decoding resamples with `Resampler.h`
+  ([warp.md](warp.md#resampling-a-file-to-the-engines-rate)), so those made before (by miniaudio's linear resampler)
+  are made again, and play what `load()` decodes now.
+- **A sample rate change** makes the cache files at the old rate useless for playback. Nothing is opened again as the
+  device opens: the sources stay cached at the old rate, their clips left out of the snapshot, and the engine bridge,
+  which fetches every source again after a rate change, has them opened (and their cache files made, if they must be)
+  in its decoding pool meanwhile ([warp.md](warp.md#the-source-cache)).
 
 ## The head and the clip starts
 
@@ -268,7 +272,7 @@ at once. Each system's code is in its platform file:
 |---|---|
 | [engine/src/AudioSource.h](../../engine/src/AudioSource.h) / [.cpp](../../engine/src/AudioSource.cpp) | a source's storage: resident (`channelData()`) or streamed (`stream()`); `decode()` (the decoding loop `load()` and cache files share); `read()` for readers off the audio thread; `PeakBuilder` |
 | [engine/src/CacheFile.h](../../engine/src/CacheFile.h) / [.cpp](../../engine/src/CacheFile.cpp) | `StreamLayout` (where pages are, converting them), `asIsLayout()` (WAV and AIFF), cache files (`cacheFileName()`, `readCacheFile()`, `CacheFileWriter`, `makeCacheFile()`), peak files, `scanPeaks()` |
-| [engine/src/StreamCache.h](../../engine/src/StreamCache.h) / [.cpp](../../engine/src/StreamCache.cpp) | `StreamedAudio` (a streamed file: its page table, the real-time `fetch()`/`sample()`, leases, `read()`), `StreamCache` (opening, the pool, pins, eviction by epochs, loads, the cache folder and its budget, misses) |
+| [engine/src/StreamCache.h](../../engine/src/StreamCache.h) / [.cpp](../../engine/src/StreamCache.cpp) | `StreamedAudio` (a streamed file: its page table, the real-time `fetch()`/`sample()`, leases, `read()`), `StreamCache` (opening, a long resident file's peak file: `loadResident()`, the pool, pins, eviction by epochs, loads, the cache folder and its budget, misses) |
 | [engine/src/StreamScheduler.h](../../engine/src/StreamScheduler.h) / [.cpp](../../engine/src/StreamScheduler.cpp) | `clipSpans()`, `streamsReady()`, `StreamScheduler` (the planner, the readers, the horizon, deadlines) |
 | [engine/src/SourceCursor.h](../../engine/src/SourceCursor.h) | `SourceCursor`: `fetch()` (real-time), `fetchBlocking()` (offline); `StreamReads` |
 | [platform/src/platform/StreamFile.h](../../platform/src/platform/StreamFile.h), and its code in `PlatformWin32.cpp` / `PlatformPosix.cpp` | unbuffered, aligned reads by UTF-8 path; `AlignedBuffer`; `userCacheFolder()` and `raiseNormalPriority()` beside them |
@@ -289,7 +293,8 @@ themselves, and converting a page (a few tenths of a millisecond).
 - [tests/engine/test_streaming.cpp](../../tests/engine/test_streaming.cpp): WAVs (16-bit, 24-bit, float,
   extensible, mono and stereo) and AIFFs stream as they are and play the frames and peaks `load()` has; another rate,
   three channels, an MP3 stream from a cache file made once (and read, not decoded, the next time), made again when
-  the file or the rate changes; integers kept where they hold every sample exactly; the folder's budget; a missing
+  the file or the rate changes; a long file decoded into memory takes its peaks from its peak file (the one a stream
+  of it has), a short one makes them; integers kept where they hold every sample exactly; the folder's budget; a missing
   page is silence, faded at its edges, counted (expected misses apart); the pool lets the least recently wanted pages
   go, never pinned ones nor those wanted now, and reuses one only once the audio thread is done with it and no lease
   holds it; offline renders (and freezing a track's signal) are the same streamed as from memory, to the bit, with a

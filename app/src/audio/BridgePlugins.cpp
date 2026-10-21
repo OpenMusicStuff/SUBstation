@@ -11,6 +11,8 @@
 #include "plugins/PluginInfo.h"
 
 #include <algorithm>
+#include <chrono>
+#include <exception>
 
 namespace sub::app {
 
@@ -96,6 +98,7 @@ QString EngineBridge::applyPluginState(const QString& trackId, const QString& de
     const auto processorId = engineDeviceId(trackId, deviceId);
     if (!processorId || !d_->pluginIds.contains(*processorId)) return QStringLiteral("the plug-in isn't loaded.");
     const BusyScope busy(d_->busy);  // (the plug-in may run a message loop)
+    pluginStateChanged(*processorId);
     try {
         engine_.setProcessorState(*processorId, stateBytes(state));
     } catch (const std::exception& error) {  // another plug-in's settings
@@ -104,27 +107,132 @@ QString EngineBridge::applyPluginState(const QString& trackId, const QString& de
     return {};
 }
 
-void EngineBridge::storePluginStates(const std::optional<QSet<QString>>& deviceIds) {
-    std::vector<std::pair<QString, QString>> plugins;  // (track, device)
+std::vector<EngineBridge::LoadedPlugin> EngineBridge::loadedPlugins(const std::optional<QSet<QString>>& deviceIds) const {
+    std::vector<LoadedPlugin> plugins;
     for (const Track* track : project_->allTracks()) {
         for (const Device* device : iterDevices(track->devices)) {
             if (deviceIds && !deviceIds->contains(device->id)) continue;
-            if (device->isPlugin()) plugins.emplace_back(track->id, device->id);
+            if (!device->isPlugin()) continue;
+            const auto processorId = engineDeviceId(track->id, device->id);
+            if (!processorId || !d_->pluginIds.contains(*processorId)) continue;
+            plugins.push_back({track->id, device->id, *processorId, d_->stateChanges.value(*processorId)});
         }
     }
-    for (const auto& [trackId, deviceId] : plugins) {
-        const auto processorId = engineDeviceId(trackId, deviceId);
-        if (!processorId || !d_->pluginIds.contains(*processorId)) continue;
-        const Device& device = project_->device(trackId, deviceId);
-        QString state = device.state.value_or(QString());
+    return plugins;
+}
+
+bool EngineBridge::stillLoaded(const LoadedPlugin& plugin) const {
+    return engineDeviceId(plugin.trackId, plugin.deviceId) == plugin.processorId &&
+           d_->pluginIds.contains(plugin.processorId);
+}
+
+void EngineBridge::keepPluginState(const LoadedPlugin& plugin,
+                                   const std::function<std::optional<std::vector<uint8_t>>()>& read) {
+    const Device& device = project_->device(plugin.trackId, plugin.deviceId);
+    QString state = device.state.value_or(QString());
+    try {
+        if (const auto taken = read()) {
+            state = QString::fromLatin1(stateData(*taken).toBase64());
+            // Nothing changed it since it was asked for, and no editor of its is open (changing it unsaid):
+            // the model holds it as it is.
+            if (d_->stateChanges.value(plugin.processorId) == plugin.changes && !d_->editorsWanted.contains(plugin.deviceId)) {
+                d_->stateKept.insert(plugin.processorId, plugin.changes);
+            }
+        }
+    } catch (const std::exception& error) {
+        Q_EMIT statusMessage(device.plugin->name + QStringLiteral(": ") + QString::fromStdString(error.what()));
+    }
+    // (And where it was found, if it moved.)
+    project_->storePluginState(plugin.trackId, plugin.deviceId, state, d_->pluginIds.value(plugin.processorId));
+}
+
+void EngineBridge::pluginStateChanged(quint32 processorId) {
+    if (!d_->pluginIds.contains(processorId)) return;  // (a built-in device's state is the model's)
+    ++d_->stateChanges[processorId];
+    d_->stateKept.remove(processorId);
+}
+
+void EngineBridge::storePluginStates(const std::optional<QSet<QString>>& deviceIds) {
+    const std::vector<LoadedPlugin> plugins = loadedPlugins(deviceIds);
+    // Those in sandboxes asked first, all at once: they answer in their own processes meanwhile.
+    std::vector<bool> asked(plugins.size(), false);
+    for (size_t i = 0; i < plugins.size(); ++i) {
         try {
-            state = QString::fromLatin1(stateData(engine_.processorState(*processorId)).toBase64());
-        } catch (const std::exception& error) {
-            Q_EMIT statusMessage(device.plugin->name + QStringLiteral(": ") + QString::fromStdString(error.what()));
+            asked[i] = engine_.requestProcessorState(plugins[i].processorId);
+        } catch (const std::exception&) {  // (read below, as it says)
         }
-        // (And where it was found, if it moved.)
-        project_->storePluginState(trackId, deviceId, state, d_->pluginIds.value(*processorId));
     }
+    for (size_t i = 0; i < plugins.size(); ++i) {
+        if (!asked[i]) keepPluginState(plugins[i], [&] { return engine_.processorState(plugins[i].processorId); });
+    }
+    for (size_t i = 0; i < plugins.size(); ++i) {
+        if (asked[i]) {
+            keepPluginState(plugins[i], [&] {
+                return engine_.requestedProcessorState(plugins[i].processorId, std::chrono::steady_clock::time_point::max());
+            });
+        }
+    }
+}
+
+void EngineBridge::gatherPluginStates(std::function<void()> done) {
+    Private& d = *d_;
+    if (d.gathering) {  // (already under way: it waits for that)
+        if (done) d.gathering->done.push_back(std::move(done));
+        return;
+    }
+    Private::Gathering& gathering = d.gathering.emplace();
+    if (done) gathering.done.push_back(std::move(done));
+    for (const LoadedPlugin& plugin : loadedPlugins(std::nullopt)) {
+        const auto kept = d.stateKept.constFind(plugin.processorId);
+        if (kept != d.stateKept.constEnd() && *kept == plugin.changes && !d.editorsWanted.contains(plugin.deviceId))
+            continue;  // (the model holds its state as it is)
+        bool asked = false;
+        try {
+            asked = engine_.requestProcessorState(plugin.processorId);
+        } catch (const std::exception&) {
+        }
+        (asked ? gathering.asked : gathering.toRead).push_back(plugin);
+    }
+    d.gatherTimer.start(0);  // (from the event loop's next turn: `done` never runs inside this call)
+}
+
+// The gathering's turn: the answers that came are kept, and one of this process's plug-ins read.
+void EngineBridge::gatherStep() {
+    Private& d = *d_;
+    if (!d.gathering) return;
+    Private::Gathering& gathering = *d.gathering;
+    std::erase_if(gathering.asked, [&](const LoadedPlugin& plugin) {
+        if (!stillLoaded(plugin)) return true;  // (gone meanwhile)
+        std::optional<std::vector<uint8_t>> state;
+        std::exception_ptr failure;  // (said as it is kept)
+        try {
+            state = engine_.requestedProcessorState(plugin.processorId);
+            if (!state) return false;  // (on its way)
+        } catch (...) {
+            failure = std::current_exception();
+        }
+        keepPluginState(plugin, [&] {
+            if (failure) std::rethrow_exception(failure);
+            return state;
+        });
+        return true;
+    });
+    if (!gathering.toRead.empty()) {
+        if (d.busy) {  // (inside a plug-in's message loop: not another plug-in's call)
+            d.gatherTimer.start(kPluginRetryMs);
+            return;
+        }
+        const LoadedPlugin plugin = gathering.toRead.front();
+        gathering.toRead.erase(gathering.toRead.begin());
+        if (stillLoaded(plugin)) keepPluginState(plugin, [&] { return engine_.processorState(plugin.processorId); });
+    }
+    if (gathering.asked.empty() && gathering.toRead.empty()) {
+        const std::vector<std::function<void()>> done = std::move(gathering.done);
+        d.gathering.reset();
+        for (const auto& then : done) guarded("plug-in states gathered", then);
+        return;
+    }
+    d.gatherTimer.start(gathering.toRead.empty() ? kIdlePollMs : 0);  // (the window's turn between reads)
 }
 
 std::optional<QString> EngineBridge::paramIdAt(quint32 processorId, int index) {
@@ -153,6 +261,7 @@ bool EngineBridge::openPluginEditor(const QString& trackId, const QString& devic
     const auto processorId = engineDeviceId(trackId, deviceId);
     if (!processorId) return false;
     const QString title = editorTitle(trackId, deviceId);
+    pluginStateChanged(*processorId);  // (what is done in it may change its state unsaid)
     bool opened = false;
     {
         const BusyScope busy(d_->busy);
@@ -315,6 +424,7 @@ void EngineBridge::dispatchProcessorEvents(const std::vector<sub::ProcessorEvent
     };
     using Type = sub::ProcessorEvent::Type;
     for (const sub::ProcessorEventRecord& event : events) {
+        pluginStateChanged(event.processorId);  // (whatever it said: an edit, its state dirty, a preset...)
         const auto found = places.constFind(event.processorId);
         if (found == places.constEnd()) continue;
         const auto [trackId, deviceId] = *found;
@@ -500,6 +610,7 @@ void EngineBridge::reloadPlugin(const QString& trackId, const QString& deviceId)
                               d.hiddenEditors.end());
         {
             const BusyScope busy(d.busy);  // (in this process, loading may run a message loop)
+            pluginStateChanged(*processorId);
             try {
                 engine_.reloadProcessor(*processorId);
             } catch (const std::exception& error) {

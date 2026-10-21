@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 #include "MiniaudioFiles.h"
+#include "Resampler.h"
 #include "StreamCache.h"
 
 namespace sub {
@@ -75,13 +77,15 @@ void AudioSource::decode(const std::string& utf8Path, uint32_t sampleRate,
         if (nativeFormat == ma_format_s24 || nativeFormat == ma_format_s32) format.integerBits = 24;
     }
 
-    ma_decoder_config config = ma_decoder_config_init(ma_format_f32, format.channels, sampleRate);
-    config.resampling.linear.lpfOrder = MA_MAX_FILTER_ORDER;
+    // At the file's own rate (mixed down by miniaudio), then resampled by ours if it must be.
+    const ma_decoder_config config = ma_decoder_config_init(ma_format_f32, format.channels, format.fileRate);
     Decoder decoder(utf8Path, config);
+    std::optional<Resampler> resampler;
+    if (format.fileRate != sampleRate) resampler.emplace(format.channels, format.fileRate, sampleRate);
 
     ma_uint64 expected = 0;
     ma_decoder_get_length_in_pcm_frames(decoder.get(), &expected);
-    format.expectedFrames = static_cast<int64_t>(expected);
+    format.expectedFrames = Resampler::outputFrames(static_cast<int64_t>(expected), format.fileRate, sampleRate);
     begin(format);
 
     constexpr ma_uint64 kChunk = 16384;
@@ -89,12 +93,20 @@ void AudioSource::decode(const std::string& utf8Path, uint32_t sampleRate,
     for (;;) {
         ma_uint64 read = 0;
         const ma_result result = ma_decoder_read_pcm_frames(decoder.get(), interleaved.data(), kChunk, &read);
-        if (read > 0) take(interleaved.data(), static_cast<int64_t>(read));
+        if (read > 0) {
+            if (resampler) {
+                resampler->push(interleaved.data(), static_cast<int64_t>(read), take);
+            } else {
+                take(interleaved.data(), static_cast<int64_t>(read));
+            }
+        }
         if (read < kChunk || result != MA_SUCCESS) break;
     }
+    if (resampler) resampler->finish(take);
 }
 
-std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint32_t sampleRate) {
+std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint32_t sampleRate,
+                                               const PeakLookup& knownPeaks) {
     auto source = std::shared_ptr<AudioSource>(new AudioSource());
     std::vector<float>& data = source->data_;
     // Decoded in place: each channel straight into its part of the planar
@@ -137,7 +149,12 @@ std::shared_ptr<AudioSource> AudioSource::load(const std::string& utf8Path, uint
     source->channels_ = channels;
     source->sampleRate_ = sampleRate;
     source->frames_ = frames;
-    source->buildPeaks();
+    if (auto peaks = knownPeaks ? knownPeaks(channels, frames) : std::nullopt) {
+        peaks->resize(kNumPeakLevels);
+        source->peaks_ = std::move(*peaks);
+    } else {
+        source->buildPeaks();
+    }
     return source;
 }
 

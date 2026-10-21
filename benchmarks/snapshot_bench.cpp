@@ -15,11 +15,13 @@
 //   decoded      then until every file has been decoded and arrived
 //   one edit     a change that rebuilds the snapshot once (the loop switched)
 //   drag         a drag's preview of every clip a beat later, and its end
+//   backup       a backup: the project turned into JSON on the GUI thread (json),
+//                then written (write), which Backups does on a thread of its own
 //   close        the bridge letting go of every track (closing the project, quitting)
 //
 // For each, the wall time and how many snapshots the engine built
 // (Engine::snapshotBuilds(); "-" when the engine doesn't count them, before it
-// could). The application layer without a UI; QT_QPA_PLATFORM=offscreen is fine.
+// could); for the backup, the time alone. The application layer without a UI; QT_QPA_PLATFORM=offscreen is fine.
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -36,6 +38,7 @@
 #include "BridgeTestSupport.h"
 #include "Json.h"
 #include "TestSupport.h"
+#include "io/Json.h"
 #include "io/Serialization.h"
 #include "model/Automation.h"
 
@@ -154,6 +157,7 @@ QJsonObject makeProject(const Options& o, int tracks, const app::test::TempDir& 
 struct Result {
     int tracks = 0;
     double openMs = 0.0, decodedMs = 0.0, editMs = 0.0, dragMs = 0.0, closeMs = 0.0;
+    double backupJsonMs = 0.0, backupWriteMs = 0.0;
     int64_t openBuilds = -1, decodedBuilds = -1, editBuilds = -1, dragBuilds = -1, closeBuilds = -1;
 };
 
@@ -217,6 +221,15 @@ Result measure(const Options& o, int tracks) {
     after = builds(studio.engine);
     r.dragBuilds = before < 0 ? -1 : (after - before) / o.repeats;
 
+    // A backup: the project into JSON (the GUI thread's part), then written (the writer's).
+    QJsonObject backup;
+    timer.start();
+    for (int i = 0; i < o.repeats; ++i) backup = app::projectToJson(studio.project, studio.project.path());
+    r.backupJsonMs = static_cast<double>(timer.nsecsElapsed()) / 1e6 / o.repeats;
+    timer.start();
+    for (int i = 0; i < o.repeats; ++i) app::writeJsonFile(dir.path(QStringLiteral("backup.gilproj")), backup);
+    r.backupWriteMs = static_cast<double>(timer.nsecsElapsed()) / 1e6 / o.repeats;
+
     before = after;
     timer.start();
     studio.bridge->shutdown();
@@ -233,15 +246,16 @@ int main(int argc, char** argv) {
     try {
         const Options o = parse(argc, argv);
         app::test::prepareApplication();
-        std::printf("%7s %12s %8s %12s %8s %12s %8s %12s %8s %12s %8s\n", "tracks", "open ms", "builds", "decoded ms",
-                    "builds", "edit ms", "builds", "drag ms", "builds", "close ms", "builds");
+        std::printf("%7s %12s %8s %12s %8s %12s %8s %12s %8s %12s %12s %12s %8s\n", "tracks", "open ms", "builds",
+                    "decoded ms", "builds", "edit ms", "builds", "drag ms", "builds", "json ms", "write ms", "close ms",
+                    "builds");
         Json results = Json::array();
         for (const int tracks : o.tracks) {
             const Result r = measure(o, tracks);
-            std::printf("%7d %12.1f %8s %12.1f %8s %12.3f %8s %12.2f %8s %12.1f %8s\n", r.tracks, r.openMs,
-                        count(r.openBuilds).c_str(), r.decodedMs, count(r.decodedBuilds).c_str(), r.editMs,
-                        count(r.editBuilds).c_str(), r.dragMs, count(r.dragBuilds).c_str(), r.closeMs,
-                        count(r.closeBuilds).c_str());
+            std::printf("%7d %12.1f %8s %12.1f %8s %12.3f %8s %12.2f %8s %12.1f %12.1f %12.1f %8s\n", r.tracks,
+                        r.openMs, count(r.openBuilds).c_str(), r.decodedMs, count(r.decodedBuilds).c_str(), r.editMs,
+                        count(r.editBuilds).c_str(), r.dragMs, count(r.dragBuilds).c_str(), r.backupJsonMs,
+                        r.backupWriteMs, r.closeMs, count(r.closeBuilds).c_str());
             std::fflush(stdout);
             Json row = Json::object();
             row.set("tracks", r.tracks);
@@ -253,6 +267,8 @@ int main(int argc, char** argv) {
             row.set("edit_builds", r.editBuilds);
             row.set("drag_ms", sub::bench::rounded(r.dragMs, 3));
             row.set("drag_builds", r.dragBuilds);
+            row.set("backup_json_ms", sub::bench::rounded(r.backupJsonMs, 2));
+            row.set("backup_write_ms", sub::bench::rounded(r.backupWriteMs, 2));
             row.set("close_ms", sub::bench::rounded(r.closeMs, 2));
             row.set("close_builds", r.closeBuilds);
             results.push(std::move(row));

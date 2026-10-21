@@ -17,7 +17,7 @@ accessors. The UI shows dialogs and asks the session to act; the session itself 
 |---|---|
 | [Session.h](../../app/src/session/Session.h) | `Session`: its parts, properties, invokables and signals; its header comment is the overview. `Session.cpp`: making the parts and wiring them, the title, start-up and shut-down |
 | [SessionFiles.cpp](../../app/src/session/SessionFiles.cpp) | New, open, save, the template, the recent projects, the last folder, recovering backups, Export Audio |
-| [Backups.h](../../app/src/session/Backups.h) / [Backups.cpp](../../app/src/session/Backups.cpp) | `Backups`: unsaved changes backed up every minute, the marks running sessions keep, what a crash left |
+| [Backups.h](../../app/src/session/Backups.h) / [Backups.cpp](../../app/src/session/Backups.cpp) | `Backups`: unsaved changes backed up every minute (written on a thread of its own), the marks running sessions keep, what a crash left |
 | [SessionEditing.cpp](../../app/src/session/SessionEditing.cpp) | The Create and Edit commands on what is selected (dispatched to the arrangement's actions, or the device view's while it has the focus), adding to the selected track, freezing |
 | [SessionTransport.cpp](../../app/src/session/SessionTransport.cpp) | Play, record (with the count-in), stop, locate |
 | [Selection.h](../../app/src/session/Selection.h) | `Selection`: what is selected in the arrangement |
@@ -192,13 +192,20 @@ The session never asks the user anything; the UI does, and then calls it:
   as a single string, is read as a list too.
 - **Backups** ([Backups.h](../../app/src/session/Backups.h); `Options::backups`, off in the tests): while the session
   isn't `clean`, the project is written every `Backups::kIntervalMs` (a minute) after a change (the undo stack's
-  `indexChanged`, an agent's change), the plug-ins' states stored first as Save stores them, to a folder of the
-  project's own under `Backups::defaultFolder()` (`Backups` in the local data folder, or `SUBSTATION_BACKUPS`): "<name>
+  `indexChanged`, an agent's change), to a folder of the project's own under `Backups::defaultFolder()` (`Backups` in the local data folder, or `SUBSTATION_BACKUPS`): "<name>
   <8 hex digits of its path's MD5>" for a saved project, "Untitled <session id>" for one never saved. A backup is the
   project as Save writes it (relative paths to the project's own file), named by when it was made
   (`2026-10-16 14-03-22.gilproj`), plus `backup_of` (the project's file, "" for none) and `backup_name`. The newest
-  `kKeep` (20) of a folder stay. Saving, opening, New and importing mark the project as its file has it
-  (`Backups::saved()`: nothing to back up or recover); an import, untitled and unsaved, is backed up as it changes.
+  `kKeep` (20) of a folder stay. The timer's backups don't hold up the window (`backUpInBackground()`): the plug-ins'
+  states are gathered first without waiting for them (`setGatherBeforeBackup`: the bridge's `gatherPluginStates`,
+  which asks again only for those something changed: [engine-bridge.md](engine-bridge.md#plug-in-states)), then the
+  project is turned into JSON on the GUI thread (`projectToJson`), and encoded, written and the oldest pruned on a
+  thread of its own (a `QThreadPool` of one); `backedUp(path)` comes back on the GUI thread, and the session's mark
+  is written then. One at a time; one under way when the project is saved (or the session finishes) is let go of
+  (written, if it was being, but not marked). A write that fails is tried again at the next interval. `backupNow()`
+  does it all at once, the plug-ins' states stored as Save stores them (the tests'). Saving, opening, New and
+  importing mark the project as its file has it (`Backups::saved()`: nothing to back up or recover); an import,
+  untitled and unsaved, is backed up as it changes.
   Each running session keeps a mark in `sessions/`: `<id>.lock` (a `QLockFile` it holds, with no stale time: only a
   session whose process is gone lets go) and `<id>.json` (`backup`: its latest backup while unsaved, else "";
   `project`, `name`). `start()` (from `Session::start()`) takes the marks whose locks are free (sessions that ended
@@ -529,7 +536,9 @@ parts keep these QSettings keys:
 - [test_session_devices.cpp](../../tests/app/test_session_devices.cpp): the device view's selection, clipboard, racks,
   drops and presets.
 - [test_backups.cpp](../../tests/app/test_backups.cpp): backups per project and how many stay, only unsaved changes
-  backed up, a crashed session's backup offered (not a running one's, not a saved one's), the session recovering one.
+  backed up, the timer's written in the background once the plug-ins' states are gathered (one at a time, let go of
+  when saved meanwhile), a crashed session's backup offered (not a running one's, not a saved one's), the session
+  recovering one.
 - [test_session_files.cpp](../../tests/app/test_session_files.cpp): files, the title, the recent projects, Export
   Audio's choices, count-in and record quantization, the preferences (the display rate too: kept, applied to the
   bridge, capped by the screen's).

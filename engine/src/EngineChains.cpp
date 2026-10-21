@@ -540,6 +540,13 @@ void Engine::setProcessorEnabled(uint32_t processorId, bool enabled) {
 
 std::vector<uint8_t> Engine::processorState(uint32_t processorId) { return processor(processorId)->getState(); }
 
+bool Engine::requestProcessorState(uint32_t processorId) { return processor(processorId)->requestState(); }
+
+std::optional<std::vector<uint8_t>> Engine::requestedProcessorState(uint32_t processorId,
+                                                                    std::chrono::steady_clock::time_point until) {
+    return processor(processorId)->requestedState(until);
+}
+
 void Engine::setProcessorState(uint32_t processorId, const std::vector<uint8_t>& state) {
     processor(processorId)->setState(state);
 }
