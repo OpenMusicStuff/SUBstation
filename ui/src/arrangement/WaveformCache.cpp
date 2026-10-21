@@ -13,6 +13,61 @@ double quantizedGain(double gain) {
     return std::pow(10.0, app::roundHalfEven(20.0 * std::log10(gain) * 10.0) / 10.0 / 20.0);
 }
 
+namespace {
+
+// `fpp` to 24 bits of its mantissa: the same stretch, measured afresh, gives the same tiles.
+double roundedFramesPerPixel(double fpp) {
+    int exponent = 0;
+    const double mantissa = std::frexp(fpp, &exponent);
+    return std::ldexp(std::round(std::ldexp(mantissa, 24)), exponent - 24);
+}
+
+}  // namespace
+
+std::vector<LinearPiece> linearPieces(const std::function<double(double)>& secondsAt, double x0, double x1,
+                                      double sampleRate) {
+    std::vector<LinearPiece> pieces;
+    if (!(x1 > x0) || sampleRate <= 0) return pieces;
+    // Halves until straight: tried at its quarters, so a kink anywhere inside
+    // shows (a piece within the tolerance there is within 4/3 of it everywhere).
+    const auto split = [&](auto&& self, double a, double b, double sa, double sb, int depth) -> void {
+        const double slope = (sb - sa) / (b - a);  // seconds per pixel
+        bool straight = b - a <= 2.0 || depth >= 24 || slope <= 0;
+        double sm = 0.0;
+        if (!straight) {
+            straight = true;
+            for (const double t : {0.25, 0.5, 0.75}) {
+                const double s = secondsAt(a + (b - a) * t);
+                if (t == 0.5) sm = s;
+                if (std::abs(s - (sa + (sb - sa) * t)) > kLinearTolerance * slope) straight = false;
+            }
+        }
+        if (straight) {
+            if (slope > 0) pieces.push_back({a, b, sa, slope * sampleRate});
+            return;
+        }
+        const double m = (a + b) / 2;
+        self(self, a, m, sa, sm, depth + 1);
+        self(self, m, b, sm, sb, depth + 1);
+    };
+    split(split, x0, x1, secondsAt(x0), secondsAt(x1), 0);
+    // Pieces in line with the one before join it (a stretch the halving cut up).
+    std::vector<LinearPiece> joined;
+    for (const LinearPiece& piece : pieces) {
+        if (!joined.empty()) {
+            LinearPiece& last = joined.back();
+            const double ratio = piece.framesPerPixel / last.framesPerPixel;
+            if (std::abs(ratio - 1.0) < 1e-7 && std::abs(piece.x0 - last.x1) < 1e-9) {
+                last.x1 = piece.x1;
+                continue;
+            }
+        }
+        joined.push_back(piece);
+    }
+    for (LinearPiece& piece : joined) piece.framesPerPixel = roundedFramesPerPixel(piece.framesPerPixel);
+    return joined;
+}
+
 WaveformOutline waveformOutline(const app::Waveform& source, double framesPerPixel, qint64 first, int count,
                                 int height, bool splitChannels, double gain) {
     WaveformOutline outline;
@@ -132,6 +187,41 @@ void WaveformOutline::draw(SgPainter& p, double x0, double top, const QColor& co
     }
 }
 
+std::optional<WaveformOutline> WaveformOutline::tapered(double x0, int height,
+                                                       const std::function<double(double)>& gainAt) const {
+    if (!gainAt || count <= 0 || tops.empty()) return std::nullopt;
+    std::vector<double> gains(static_cast<size_t>(count));
+    bool turned = false;
+    for (int i = 0; i < count; ++i) {
+        gains[static_cast<size_t>(i)] = std::clamp(gainAt(x0 + i + 0.5), 0.0, 1.0);
+        turned = turned || gains[static_cast<size_t>(i)] < 1.0 - 1e-6;
+    }
+    if (!turned) return std::nullopt;
+    WaveformOutline copy = *this;
+    const int half = height / 2;
+    for (size_t lane = 0; lane < copy.tops.size(); ++lane) {
+        // (The lanes as waveformOutline() lays them out: one, or a channel each.)
+        const int laneTop = copy.tops.size() == 2 && lane == 1 ? half : 0;
+        const int laneHeight = copy.tops.size() == 2 ? (lane == 0 ? half : height - half) : height;
+        const double middle = std::floor(laneTop + laneHeight / 2.0) + 0.5;
+        const double thickness = std::min<double>(kMinThickness, laneHeight);
+        for (int i = 0; i < count; ++i) {
+            const double gain = gains[static_cast<size_t>(i)];
+            float& top = copy.tops[lane][static_cast<size_t>(i)];
+            float& bottom = copy.bottoms[lane][static_cast<size_t>(i)];
+            double t = middle + (top - middle) * gain, b = middle + (bottom - middle) * gain;
+            if (b - t < thickness) {  // (never thinner than the line through silence)
+                const double centre = (t + b) / 2;
+                t = centre - thickness / 2;
+                b = centre + thickness / 2;
+            }
+            top = static_cast<float>(t);
+            bottom = static_cast<float>(b);
+        }
+    }
+    return copy;
+}
+
 std::shared_ptr<const WaveformCache::Tile> WaveformCache::renderTile(const app::Waveform& source,
                                                                      double framesPerPixel, int index, int height,
                                                                      bool splitChannels, double gain) {
@@ -173,7 +263,7 @@ std::shared_ptr<const WaveformCache::Tile> WaveformCache::tile(const app::Wavefo
 
 void WaveformCache::draw(SgPainter& p, const app::Waveform& source, const QRectF& body, double clipX,
                          double offsetSec, double framesPerPixel, const QColor& color, bool splitChannels,
-                         const QRectF& visible, double gain) {
+                         const QRectF& visible, double gain, const std::function<double(double)>& taper) {
     const double x0 = std::max(body.left(), visible.left());
     const double x1 = std::min(body.right(), visible.right());
     if (x1 <= x0 || framesPerPixel <= 0 || source.isNull()) return;
@@ -188,7 +278,30 @@ void WaveformCache::draw(SgPainter& p, const app::Waveform& source, const QRectF
         const double x = app::roundHalfEven(clipX + index * kTile - offset);
         p.save();
         p.setClipRect(QRectF(x, body.top(), kTile, body.height()));  // (its outer points are its neighbours')
-        made->draw(p, x - 1.0, body.top(), color);
+        if (const auto turned = made->tapered(x - 1.0, height, taper))
+            turned->draw(p, x - 1.0, body.top(), color);
+        else
+            made->draw(p, x - 1.0, body.top(), color);
+        p.restore();
+    }
+}
+
+void WaveformCache::drawMapped(SgPainter& p, const app::Waveform& source, const QRectF& body,
+                               const std::function<double(double)>& secondsAt, const QColor& color,
+                               bool splitChannels, const QRectF& visible, double gain,
+                               const std::function<double(double)>& taper) {
+    const double x0 = std::max(body.left(), visible.left());
+    const double x1 = std::min(body.right(), visible.right());
+    if (x1 <= x0 || source.isNull()) return;
+    for (const LinearPiece& piece : linearPieces(secondsAt, x0, x1, source.sampleRate())) {
+        // (Each piece's own pixels: whole ones, so neighbours neither overlap nor leave a gap.)
+        const double left = std::floor(piece.x0), right = piece.x1 >= x1 ? x1 : std::floor(piece.x1);
+        if (right <= left) continue;
+        const QRectF part(left, body.top(), right - left, body.height());
+        p.save();
+        p.setClipRect(part);
+        draw(p, source, QRectF(piece.x0, body.top(), right - piece.x0, body.height()), piece.x0, piece.sec0,
+             piece.framesPerPixel, color, splitChannels, part, gain, taper);
         p.restore();
     }
 }

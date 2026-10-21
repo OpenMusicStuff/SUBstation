@@ -62,7 +62,8 @@ folding, the master, the title bar and the transport bar, and projects.
   than a few pixels has a dot on its curve: drag it up to bend the fade up (the level rises
   sooner, or stays up longer before it falls), down to bend it down; **Shift** for finer
   steps. Double-click the dot to straighten the curve, the square to take the fade away.
-  Fades show over the waveform, and are heard as you drag. A fade stays at its clip's end
+  Fades show over the waveform, which tapers through them as the audio does, and are heard
+  as you drag. A fade stays at its clip's end
   when the clip is trimmed or stretched; splitting keeps the fade in on the left and the
   fade out on the right. While the computer MIDI keyboard is on, F plays a note instead.
 - **Clicks at clip edges**: where a clip without a fade of its own starts or ends inside its

@@ -181,12 +181,16 @@ public:
     // file, one moved there (one undo step per gesture key), one removed.
     Q_INVOKABLE void addWarpMarker(double sec);
     Q_INVOKABLE void moveWarpMarker(int index, double sec, const QString& gestureKey = {});
+    // ... or to its own beat `beat`, its moment of the file kept (edits::moveWarpMarkerBeat).
+    Q_INVOKABLE void moveWarpMarkerBeat(int index, double beat, const QString& gestureKey = {});
     Q_INVOKABLE void removeWarpMarker(int index);
     // A warp marker on each transient the lead clip plays (between its start and end).
     Q_INVOKABLE void markTransients();
     // A knob turned to `value`: every clip moves by the lead's change (one undo
     // step per gesture key).
     Q_INVOKABLE void nudge(const QString& knob, double value, const QString& gestureKey);
+    // What is typed into a knob, as its value (pan: "50L", "C"; else the number typed); null if it isn't one.
+    Q_INVOKABLE QVariant parse(const QString& knob, const QString& text) const;
     // A knob's value as its readout and tooltip show it.
     Q_INVOKABLE QString format(const QString& knob, double value) const;
     // Every shown clip's groove (model/Grooves.h): none (""), "swing", "project" or "library" (with

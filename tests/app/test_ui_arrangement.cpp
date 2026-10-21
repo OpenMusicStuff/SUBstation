@@ -1101,6 +1101,96 @@ private Q_SLOTS:
         QVERIFY(!arr::WaveformCache::renderTile(source, 100.0, lastTile + 1, 64, false));
     }
 
+    void aWaveformIsDrawnInStraightPieces() {
+        // A file's seconds 0.01 a pixel up to x 100, then 0.02: two pieces (and
+        // at most a sliver of a couple of pixels about the kink), each at its
+        // own frames per pixel; an even stretch, one piece.
+        const double rate = 48000.0;
+        const auto kinked = [](double x) { return x < 100 ? x * 0.01 : 1.0 + (x - 100) * 0.02; };
+        const std::vector<arr::LinearPiece> pieces = arr::linearPieces(kinked, 0.0, 300.0, rate);
+        QVERIFY2(pieces.size() >= 2 && pieces.size() <= 3, qPrintable(QString::number(pieces.size())));
+        QCOMPARE(pieces.front().x0, 0.0);
+        QCOMPARE(pieces.back().x1, 300.0);
+        for (size_t i = 1; i < pieces.size(); ++i) QCOMPARE(pieces[i].x0, pieces[i - 1].x1);
+        QVERIFY(std::abs(pieces.front().framesPerPixel - 480.0) < 1e-3);
+        QVERIFY(std::abs(pieces.back().framesPerPixel - 960.0) < 1e-3);
+        QVERIFY(pieces.front().x1 >= 98.0 && pieces.back().x0 <= 102.0);
+        QVERIFY(std::abs(pieces.back().sec0 - kinked(pieces.back().x0)) < 1e-12);
+        const auto even = arr::linearPieces([](double x) { return 2.0 + x * 0.001; }, 10.0, 900.0, rate);
+        QCOMPARE(even.size(), size_t{1});
+        QCOMPARE(even.front().sec0, 2.01);
+        // (The same stretch measured from elsewhere: the same frames per pixel, so the same tiles.)
+        const auto scrolled = arr::linearPieces([](double x) { return 2.0 + x * 0.001; }, 13.7, 611.3, rate);
+        QCOMPARE(scrolled.front().framesPerPixel, even.front().framesPerPixel);
+    }
+
+    void aWarpedClipsWaveformFollowsItsMarkers() {
+        // A click 1.1 s into a 2 s file at 120 BPM: beat 2.2 of the clip. Warp
+        // markers putting 1 s on beat 3 move it to beat 3.1, and the waveform
+        // with it.
+        std::vector<float> click(size_t(test::kSampleRate) * 2 * 2);
+        for (size_t i = 0; i < 64; ++i) click[2 * (size_t(test::kSampleRate * 1.1) + i)] = click[2 * (size_t(test::kSampleRate * 1.1) + i) + 1] = 0.9f;
+        const QString path = test::writeWav(dir_->path(QStringLiteral("click.wav")), click, 2);
+        const auto added = editor().addClips(QString(), 0.0, {{path, 2.0}});
+        QVERIFY(waitForSource(path));
+        h_->setZoom(60.0);
+        h_->settle();
+        // How many of the body's rows at `beat` differ from those a few pixels either side (the click's band).
+        const auto tallAt = [&](double beat) {
+            const QImage image = window()->grabWindow();
+            const qreal dpr = image.devicePixelRatio();
+            const auto& row = h_->row(0);
+            const double top = row.top - arrangement()->scrollY() + arr::kTitleHeight + 4;
+            const double bottom = row.top - arrangement()->scrollY() + row.mainHeight - 4;
+            int best = 0;
+            for (int dx = -2; dx <= 2; ++dx) {
+                int tall = 0;
+                for (double y = top; y < bottom; y += 1.0) {
+                    const QPoint at = h_->at(QPointF(h_->x(beat) + dx, y));
+                    const auto pixel = [&](int offset) { return image.pixel(int((at.x() + offset) * dpr), int(at.y() * dpr)); };
+                    if (pixel(0) != pixel(-6) && pixel(0) != pixel(6)) ++tall;
+                }
+                best = std::max(best, tall);
+            }
+            return best;
+        };
+        QVERIFY2(tallAt(2.2) >= 10, qPrintable(QString::number(tallAt(2.2))));
+        QVERIFY2(tallAt(3.1) <= 2, qPrintable(QString::number(tallAt(3.1))));
+        editor().updateClips({added[0]}, [](const Clip& c) {
+            Clip warped = c;
+            warped.warp = true;
+            warped.segmentBpm = 120.0;
+            warped.setWarpMarkers({{0.0, 0.0}, {1.0, 3.0}, {2.0, 4.0}});
+            return warped;
+        }, QStringLiteral("Warp"));
+        h_->settle();
+        test::screenshot(window(), QStringLiteral("arrangement_warped_waveform"));
+        QVERIFY2(tallAt(3.1) >= 10, qPrintable(QString::number(tallAt(3.1))));
+        QVERIFY2(tallAt(2.2) <= 2, qPrintable(QString::number(tallAt(2.2))));
+    }
+
+    void aFadeTurnsTheWaveformDown() {
+        // A band a quarter of the lane each way, turned down to half by a fade: half as tall.
+        std::vector<float> square(size_t(test::kSampleRate) * 2);
+        for (size_t i = 0; i < square.size() / 2; ++i) square[2 * i] = square[2 * i + 1] = (i % 2) ? 0.25f : -0.25f;
+        const QString path = test::writeWav(dir_->path(QStringLiteral("square.wav")), square, 2);
+        editor().addClips(QString(), 0.0, {{path, 1.0}});
+        QVERIFY(waitForSource(path));
+        const auto tile = arr::WaveformCache::renderTile(bridge().waveform(path), 100.0, 0, 64, false);
+        QVERIFY(tile);
+        QVERIFY(!tile->tapered(0.0, 64, {}));
+        QVERIFY(!tile->tapered(0.0, 64, [](double) { return 1.0; }));  // (nothing turned down: the tile itself)
+        const auto half = tile->tapered(0.0, 64, [](double x) { return x < 100 ? 0.5 : 1.0; });
+        QVERIFY(half);
+        const auto rows = [](const arr::WaveformOutline& o, int i) { return o.bottoms[0][size_t(i)] - o.tops[0][size_t(i)]; };
+        QVERIFY(std::abs(rows(*half, 17) - rows(*tile, 17) / 2) < 0.01);
+        QCOMPARE(rows(*half, 200), rows(*tile, 200));
+        // Silenced: the line through silence, about the lane's middle.
+        const auto silent = tile->tapered(0.0, 64, [](double) { return 0.0; });
+        QCOMPARE(rows(*silent, 17), arr::WaveformOutline::kMinThickness);
+        QCOMPARE(silent->tops[0][17] + silent->bottoms[0][17], 2 * 32.5f);
+    }
+
     void aDraggedClipIsHeardWhereItGoesBeforeItIsDropped() {
         const QString path = test::writeWav(dir_->path(QStringLiteral("dc.wav")), test::constant(2.0, 0.5f), 2);
         const auto added = editor().addClips(QString(), 0.0, {{path, 2.0}});  // beats 0-4

@@ -295,6 +295,35 @@ Clip moveWarpMarker(const Clip& clip, int index, double sec) {
     return onTheSameBeats(clip, std::move(changed));
 }
 
+Clip moveWarpMarkerBeat(const Clip& clip, int index, double beat) {
+    const auto& markers = clip.warpMarkers;
+    if (!takesWarpMarkers(clip) || index < 0 || static_cast<size_t>(index) >= markers.size()) return clip;
+    const auto i = static_cast<size_t>(index);
+    const WarpMarker& marker = markers[i];
+    // (60 * beats / seconds within the range, each side.)
+    constexpr double kMinGapBeats = 1e-3;
+    double lo = -std::numeric_limits<double>::infinity(), hi = std::numeric_limits<double>::infinity();
+    if (i > 0) {
+        const WarpMarker& prev = markers[i - 1];
+        const double seconds = marker.sec - prev.sec;
+        lo = std::max(lo, prev.beat + std::max(kMinGapBeats, seconds * kMinSegmentBpm / 60.0));
+        hi = std::min(hi, prev.beat + seconds * kMaxSegmentBpm / 60.0);
+    }
+    if (i + 1 < markers.size()) {
+        const WarpMarker& next = markers[i + 1];
+        const double seconds = next.sec - marker.sec;
+        lo = std::max(lo, next.beat - seconds * kMaxSegmentBpm / 60.0);
+        hi = std::min(hi, next.beat - std::max(kMinGapBeats, seconds * kMinSegmentBpm / 60.0));
+    }
+    if (lo > hi) return clip;
+    std::vector<WarpMarker> moved = markers;
+    moved[i].beat = std::clamp(beat, lo, hi);
+    if (moved[i].beat == marker.beat) return clip;
+    Clip changed = clip;
+    changed.setWarpMarkers(std::move(moved));
+    return onTheSameBeats(clip, std::move(changed));
+}
+
 Clip removeWarpMarker(const Clip& clip, int index) {
     if (!takesWarpMarkers(clip) || index < 0 || static_cast<size_t>(index) >= clip.warpMarkers.size()) return clip;
     std::vector<WarpMarker> markers = clip.warpMarkers;

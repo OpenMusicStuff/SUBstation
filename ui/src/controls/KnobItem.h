@@ -10,9 +10,14 @@
 // list). Double-click resets to `defaultValue` (if never set: the value the knob
 // had when it was made). `logScale` (only when `from` > 0) moves evenly in
 // log(value), for frequencies and times; `step` only takes multiples of it
-// counted from `from`; `bipolar` draws the arc from the middle. With a
-// `parser`, typing a digit (the knob has the focus after a click) opens a small
-// text field (editRequested); applyTyped() parses and sets what was typed.
+// counted from `from`; `bipolar` draws the arc from the middle. A click gives
+// it the focus (as Ableton's knobs: the one clicked is the one keys go to):
+// typing a digit then opens a small text field (editRequested), applyTyped()
+// parsing and setting what was typed, by the `parser` if it has one, else as the
+// number its text shows (typedValue(): "-6" on a knob reading "-3.0 dB" goes to
+// where it would read -6, "2k" on one reading in Hz to 2000); and the Up and Down
+// arrows move it by `keyStep` (Shift: `largeKeyStep`), each press a gesture of
+// its own (held: one).
 // A dot in its corner marks it automated ("on", red) or its automation
 // overridden ("off", grey). A modulated knob (a modulator moves its parameter)
 // shows the range it moves over (`modulationFrom`..`modulationTo`, 0..1 of the
@@ -66,6 +71,9 @@ class KnobItem : public SgCanvas {
     Q_PROPERTY(bool bipolar READ bipolar WRITE setBipolar NOTIFY lookChanged)
     Q_PROPERTY(bool logScale READ logScale WRITE setLogScale NOTIFY rangeChanged)
     Q_PROPERTY(qreal step READ step WRITE setStep NOTIFY rangeChanged)
+    // The arrows' steps (0: `step`, else a hundredth of the travel; and ten of those with Shift).
+    Q_PROPERTY(qreal keyStep READ keyStep WRITE setKeyStep NOTIFY rangeChanged)
+    Q_PROPERTY(qreal largeKeyStep READ largeKeyStep WRITE setLargeKeyStep NOTIFY rangeChanged)
     Q_PROPERTY(bool wheel READ wheel WRITE setWheel NOTIFY wheelChanged)
     Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY lookChanged)
     Q_PROPERTY(QString automation READ automation WRITE setAutomation NOTIFY lookChanged)
@@ -82,7 +90,7 @@ class KnobItem : public SgCanvas {
     Q_PROPERTY(QString text READ text NOTIFY textChanged)  // the value as the formatter has it (the tooltip)
     Q_PROPERTY(bool relative READ relative NOTIFY relativeChanged)
     Q_PROPERTY(bool dragging READ dragging NOTIFY draggingChanged)
-    Q_PROPERTY(bool typeable READ typeable NOTIFY typeableChanged)  // has a parser
+    Q_PROPERTY(bool typeable READ typeable NOTIFY typeableChanged)  // (always: by its parser, or its text's number)
 
 public:
     static constexpr double kStartAngle = 225.0;  // degrees, Qt's convention (0 = 3 o'clock, counter-clockwise)
@@ -111,6 +119,10 @@ public:
     void setLogScale(bool logScale);
     qreal step() const { return step_; }
     void setStep(qreal step);
+    qreal keyStep() const { return keyStep_; }
+    void setKeyStep(qreal step);
+    qreal largeKeyStep() const { return largeKeyStep_; }
+    void setLargeKeyStep(qreal step);
     bool wheel() const { return wheel_; }
     void setWheel(bool wheel);
     // The value arc's colour: the theme's knob() unless set.
@@ -157,6 +169,11 @@ public:
     // The text field's text: parsed, and set as a user change (a gesture of its
     // own, not relative). False if it didn't parse.
     Q_INVOKABLE bool applyTyped(const QString& text);
+    // Without a parser: the value whose text shows the number typed (its first; "k" a thousand),
+    // found along the travel (held to the range); the number itself while its text shows none.
+    std::optional<double> typedValue(const QString& text) const;
+    // The first number in `text` ("k" after it: a thousand times it), if any.
+    static std::optional<double> numberIn(const QString& text);
 
 Q_SIGNALS:
     void valueChanged();
@@ -190,6 +207,8 @@ private:
     // Whether a key typed opens the text field with it (a digit, "-", "+" or
     // "."; it doesn't go to the window's shortcuts then, such as 0 or -).
     bool typesInto(const QKeyEvent* event) const;
+    // Up (1) or Down (-1) without Ctrl, Alt or Meta (Shift may be held); else 0.
+    static int arrowSign(const QKeyEvent* event);
 
     struct Drag {
         qreal lastY;
@@ -208,6 +227,7 @@ private:
     void setFromUser(double value, const QString& gesture);
     void setRelative(bool relative);
     void updateText();
+    QString textFor(double value) const;
     void endDrag();
 
     double value_ = 0.0;
@@ -217,6 +237,9 @@ private:
     bool bipolar_ = false;
     bool logScale_ = false;
     double step_ = 0.0;
+    double keyStep_ = 0.0;
+    double largeKeyStep_ = 0.0;
+    QString keyGesture_;  // the arrows' (held: one)
     bool wheel_ = true;
     QColor color_;
     QString automation_;

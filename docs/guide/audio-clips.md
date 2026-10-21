@@ -8,7 +8,8 @@ open in the piano roll instead (see [midi.md](midi.md)).
 ## The clip view
 
 - It edits one clip or many at once: select several audio clips and open them, and
-  each gets its own waveform.
+  each gets its own waveform, laid out on the song's bars and beats where it plays (see
+  [Several clips](#several-clips)).
 - Knobs move all the open clips by the same amount (transposing up 2 semitones
   transposes each clip by 2, whatever it was at); switches and the warp mode set the
   same value on all of them. Where clips differ, the value's tooltip says so.
@@ -19,6 +20,9 @@ open in the piano roll instead (see [midi.md](midi.md)).
   (each with how many there are) switch between them: the audio clips' settings and
   waveforms, or the MIDI clips in the piano roll. The choice stays while you reopen the
   same clips.
+- Click a knob and type a value, as in Ableton (Enter sets it). **Up** and **Down** then
+  turn it a step: Transpose a semitone (**Shift**: an octave), Detune a cent (ten), Gain
+  half a dB (6 dB). Pan takes "25L", "C" or "40R".
 
 Its controls come in four sections:
 
@@ -30,12 +34,15 @@ Its controls come in four sections:
 | Groove | **Groove**, **Swing** and **Step**, **Timing**, **Random**, **Quantize**; **Apply**, **Extract** (see [Groove](#groove)) |
 
 A clip's gain changes how loud it plays, and its waveform with it (in the arrangement
-and in the clip view): louder clips draw taller, cut off at the lane's edges.
+and in the clip view): louder clips draw taller, cut off at the lane's edges. Its fades
+show in the clip view too, as curves over the part it plays (they are made in the
+arrangement: [arrangement.md](arrangement.md#clips)).
 
 ### Waveforms, the playhead and zooming
 
 Each clip's waveform shows its whole file at first, the part it plays lit (between the
-**S** and **E** flags).
+**S** and **E** flags): an unwarped clip's in seconds, with a ruler of seconds, a warped
+clip's in beats (see [Warp markers](#warp-markers)).
 
 - While the song plays inside a clip, the **playhead** moves along its waveform, at the
   moment of the file playing; the **start marker** (where playback starts) shows as a
@@ -46,7 +53,20 @@ Each clip's waveform shows its whole file at first, the part it plays lit (betwe
   scrolls sideways; **Ctrl+Alt drag** moves it; dragging in the ruler scrolls (sideways)
   or zooms (up and down), as the arrangement's ruler does. A scroll bar shows under the
   waveforms while zoomed in. **+** and **−** zoom in and out, and **Z** shows the whole
-  file again. Several clips zoom together, each across the width.
+  file again.
+
+### Several clips
+
+Opened together, clips share one axis, the song's bars and beats, each in a band of its
+own where it plays in the arrangement (the parts of its file before and after it dimmed),
+under a ruler of bars and beats.
+
+- Zoom and scroll as with one clip: **Ctrl+wheel**, **Shift+wheel**, **Ctrl+Alt drag**, the
+  ruler and the scroll bar under them. **Z** shows the stretch they play.
+- When the bands don't fit, the **wheel** scrolls them up and down (as in the arrangement),
+  with a scroll bar beside them; **Shift+wheel** still scrolls sideways.
+- **Click the ruler** to play from that beat of the song.
+- **Click a clip** to select it and its track, and show it alone.
 
 ## Warping
 
@@ -69,11 +89,17 @@ small tabs. With one warped clip open:
 - **Double-click** the waveform to add a marker there. It goes on the beat that moment
   plays on now, so nothing moves yet. The first one also adds markers at the clip's start
   and end.
-- **Drag** a marker sideways to move that moment of the audio; its beat stays. The audio
-  before it plays slower and the audio after it faster, or the other way round. A marker
-  stops where a stretch would play slower than 20 BPM or faster than 999 BPM. The clip
-  stays where it is and as long.
+- **Drag** a marker sideways to move it to another beat, as in Live: its moment of the
+  audio comes with it, and the waveform squeezes on one side and stretches on the other.
+  It snaps to the grid's lines near it; hold **Alt** to place it freely. **Shift-drag** a
+  marker to move the waveform under it instead: the marker stays on its beat and the audio
+  slides beneath it. Either way a marker stops where a stretch would play slower than
+  20 BPM or faster than 999 BPM, and the clip stays where it is and as long.
 - **Double-click** a marker to remove it.
+- A warped clip is shown **in beats**, as Live shows it: the ruler counts the song's bars
+  and beats, the grid under the waveform is even, and each stretch of the waveform is drawn
+  as fast or slow as it plays, so you see the warp as you make it. In the arrangement the
+  clip's waveform follows its markers too.
 - **Mark Transients** (under :2 and ×2) puts a marker on every transient the clip plays:
   the attacks of its hits and notes, shown as short ticks along the waveform's top. Drag
   the ones that are early or late onto the beat. A marker added by double-clicking close

@@ -48,6 +48,7 @@ Item {
         modulationBipolar: control.param ? control.param.modulationBipolar : false
         mappable: control.param ? control.param.mappable : false
         formatter: v => control.formatter(v)
+        parser: text => control.param ? control.param.parse(text) : null
         onMoved: (v, key) => {
             if (control.setter)
                 control.setter(v, key)

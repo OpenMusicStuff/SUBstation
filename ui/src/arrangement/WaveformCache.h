@@ -12,6 +12,15 @@
 // tile has a point more each side, drawn clipped to it, so the band is
 // seamless across tile borders.
 //
+// A clip whose audio isn't spread evenly over its beats (warp markers, a
+// source map, an unwarped clip under tempo changes) is drawn in pieces over
+// which it is (drawMapped(), linearPieces()), each at its own frames per pixel,
+// so its waveform follows its warping as it plays.
+//
+// A clip's fades turn its waveform down where they turn its audio down (the
+// `taper` the drawing takes): the tiles stay as they are, and only those under
+// a fade are drawn from a turned-down copy.
+//
 // The cache is the one thing the lanes' paint() changes (tiles are made as
 // they are first drawn); a mutex keeps clear() (the GUI thread, on a project
 // reset) apart from it.
@@ -22,10 +31,12 @@
 #include <QRectF>
 #include <QString>
 
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <tuple>
 #include <vector>
 
@@ -54,6 +65,10 @@ struct WaveformOutline {
 
     // Each lane's band: point i the column from x0 + i (a pixel wide), y from `top`.
     void draw(SgPainter& painter, double x0, double top, const QColor& color) const;
+    // It drawn from `x0`, `height` pixels high, each point's column turned down
+    // to `gainAt(its centre's x)` (0..1) about its lane's middle, as a fade
+    // turns the audio down; none where nothing is turned down.
+    std::optional<WaveformOutline> tapered(double x0, int height, const std::function<double(double)>& gainAt) const;
 };
 
 // The outline of `count` columns of `framesPerPixel` frames from column `first`
@@ -62,6 +77,24 @@ struct WaveformOutline {
 // all past the source's end.
 WaveformOutline waveformOutline(const app::Waveform& source, double framesPerPixel, qint64 first, int count,
                                 int height, bool splitChannels, double gain = 1.0);
+
+// A stretch of a clip over which its file's seconds go evenly with x: from
+// `x0` (the file's second `sec0` there) to `x1`, `framesPerPixel` apart.
+struct LinearPiece {
+    double x0 = 0.0;
+    double x1 = 0.0;
+    double sec0 = 0.0;
+    double framesPerPixel = 0.0;
+};
+
+// `x0` to `x1` split into pieces over which `secondsAt` (the file's second at
+// an x, rising) is a straight line to within kLinearTolerance of a pixel (a
+// kink inside a piece of at most a couple of pixels aside). Frames per pixel are
+// rounded to about a millionth, so the same stretch gives the same tiles as it
+// scrolls.
+inline constexpr double kLinearTolerance = 0.25;  // pixels
+std::vector<LinearPiece> linearPieces(const std::function<double(double)>& secondsAt, double x0, double x1,
+                                      double sampleRate);
 
 class WaveformCache {
 public:
@@ -78,9 +111,16 @@ public:
 
     // A clip's waveform over `body` (the painter clipped to it): `clipX` is the
     // clip's start (x), `offsetSec` where in the file it starts, `gain` linear.
+    // `taper`, if any, turns it down by x as a fade does (WaveformOutline::tapered).
     void draw(SgPainter& painter, const app::Waveform& source, const QRectF& body, double clipX, double offsetSec,
               double framesPerPixel, const QColor& color, bool splitChannels, const QRectF& visible,
-              double gain = 1.0);
+              double gain = 1.0, const std::function<double(double)>& taper = {});
+
+    // A clip's waveform over `body` (the painter clipped to it) where the
+    // second of its file at x is `secondsAt(x)`: in linearPieces(), each drawn as draw() draws.
+    void drawMapped(SgPainter& painter, const app::Waveform& source, const QRectF& body,
+                    const std::function<double(double)>& secondsAt, const QColor& color, bool splitChannels,
+                    const QRectF& visible, double gain = 1.0, const std::function<double(double)>& taper = {});
 
     // A tile of a source's waveform, `height` pixels high (none past the
     // source's end): point i is column index * kTile - 1 + i's centre.

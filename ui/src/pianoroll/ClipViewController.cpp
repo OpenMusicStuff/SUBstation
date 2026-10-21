@@ -2,6 +2,7 @@
 
 #include "audio/EngineBridge.h"
 #include "audio/SampleSlices.h"
+#include "controls/KnobItem.h"
 #include "editor/ProjectEditor.h"
 #include "intelligence/AudioAnalysis.h"
 #include "model/Edits.h"
@@ -414,6 +415,13 @@ void ClipViewController::refresh() {
         knob[QStringLiteral("to")] = spec.to;
         knob[QStringLiteral("defaultValue")] = spec.defaultValue;
         knob[QStringLiteral("bipolar")] = spec.bipolar;
+        // The arrows' steps: a semitone (Shift: an octave), a cent (ten), half a dB (6), pan's own.
+        const std::pair<double, double> keySteps = name == u"transpose" ? std::pair{1.0, 12.0}
+                                                   : name == u"detune"  ? std::pair{1.0, 10.0}
+                                                   : name == u"gain"    ? std::pair{0.5, 6.0}
+                                                                        : std::pair{0.0, 0.0};
+        knob[QStringLiteral("keyStep")] = keySteps.first;
+        knob[QStringLiteral("largeKeyStep")] = keySteps.second;
         const bool pitch = name == u"transpose" || name == u"detune";
         knob[QStringLiteral("tooltip")] = pitch && repitch_ ? kRepitchNote : spec.tooltip;
         double value = spec.defaultValue, low = value, high = value;
@@ -446,6 +454,16 @@ QString ClipViewController::format(const QString& knob, double value) const {
     if (knob == u"gain") return app::formatDb(value);
     if (knob == u"pan") return app::formatPan(value);
     return QString::number(value);
+}
+
+QVariant ClipViewController::parse(const QString& knob, const QString& text) const {
+    // Pan as the track headers take it ("50L", "C", "-50"); the rest by the number typed.
+    if (knob == u"pan") {
+        if (const auto pan = app::parsePan(text)) return *pan;
+        return {};
+    }
+    if (const auto number = KnobItem::numberIn(text)) return *number;
+    return {};
 }
 
 // --- Editing all open clips ------------------------------------------------------------------
@@ -555,6 +573,11 @@ void ClipViewController::addWarpMarker(double sec) {
 
 void ClipViewController::moveWarpMarker(int index, double sec, const QString& gestureKey) {
     updateLead([index, sec](const app::Clip& clip) { return app::edits::moveWarpMarker(clip, index, sec); },
+               QStringLiteral("Move Warp Marker"), gestureKey);
+}
+
+void ClipViewController::moveWarpMarkerBeat(int index, double beat, const QString& gestureKey) {
+    updateLead([index, beat](const app::Clip& clip) { return app::edits::moveWarpMarkerBeat(clip, index, beat); },
                QStringLiteral("Move Warp Marker"), gestureKey);
 }
 

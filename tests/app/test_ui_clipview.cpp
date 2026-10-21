@@ -487,13 +487,20 @@ private Q_SLOTS:
         const auto atSec = [&](double sec) {
             return test::at(waveform, QPointF(sec / 2.0 * waveform->width(), waveform->height() / 2));
         };
-        const auto near = [](double a, double b) { return std::abs(a - b) < 0.01; };
+        // Where a second of the file is drawn now (laid out in beats once warped).
+        const auto xOf = [&](double sec) { return sub::ui::ClipWaveform::xAt(this->waveform()->placed().front(), sec); };
+        const auto atDrawn = [&](double sec) { return test::at(waveform, QPointF(xOf(sec), waveform->height() / 2)); };
+        const auto near = [](double a, double b, double within = 0.01) { return std::abs(a - b) < within; };
         // Unwarped: no markers to set.
         test::doubleClick(window_, atSec(1.0));
         QVERIFY(clip(0).warpMarkers.empty());
+        QVERIFY(!this->waveform()->placed().front().clip);  // (laid out in seconds)
 
-        // Warped, a double-click marks the moment on the beat it plays now, with the clip's start and end.
+        // Warped, it is laid out in its beats (0..4 across, as its seconds were at 120 BPM). A double-click
+        // marks the moment on the beat it plays now, with the clip's start and end.
         controller()->setWarp(true);
+        QVERIFY(this->waveform()->placed().front().clip);
+        QVERIFY(near(xOf(1.0), waveform->width() / 2, 0.5));
         test::doubleClick(window_, atSec(1.0));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
         QVERIFY(near(clip(0).warpMarkers[1].sec, 1.0));
@@ -502,19 +509,36 @@ private Q_SLOTS:
         QCOMPARE(undo().undoText(), QStringLiteral("Add Warp Marker"));
         QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
 
-        // Dragged to 1.5 s, still on beat 2: the first half slower, the second faster; one undo step.
+        // Dragged (as in Live) to beat 3: its moment of the audio with it, the first stretch faster,
+        // the second slower; the clip as long; one undo step; the waveform stretched to match.
         const int steps = undo().count();
-        test::drag(window_, atSec(clip(0).warpMarkers[1].sec), atSec(1.5));
-        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.5));
-        QVERIFY(near(clip(0).warpTempos()[0], 80.0));
-        QVERIFY(std::abs(clip(0).warpTempos()[1] - 240.0) < 6.0);
+        test::drag(window_, atDrawn(1.0), test::at(waveform, QPointF(waveform->width() * 3 / 4 + 2, waveform->height() / 2)));
+        QVERIFY2(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9), qPrintable(QString::number(clip(0).warpMarkers[1].beat)));  // (snapped)
+        QVERIFY(near(clip(0).warpMarkers[1].sec, 1.0, 1e-9));
+        QVERIFY(near(clip(0).warpTempos()[0], 180.0));
+        QVERIFY(near(clip(0).warpTempos()[1], 60.0));
         QCOMPARE(undo().count(), steps + 1);
         QCOMPARE(undo().undoText(), QStringLiteral("Move Warp Marker"));
         QVERIFY(std::abs(clip(0).endBeat(project().tempoMap()) - 4.0) < 1e-6);
+        QVERIFY(near(xOf(1.0), waveform->width() * 3 / 4, 0.5));
         test::screenshot(window_, QStringLiteral("clip-view-warp-markers"));
 
+        // Alt: off the grid.
+        test::drag(window_, atDrawn(1.0), atDrawn(1.0) + QPoint(3, 0), Qt::AltModifier);
+        QVERIFY(!near(clip(0).warpMarkers[1].beat, 3.0, 1e-3));
+        undo().undo();
+        QVERIFY(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9));
+
+        // Shift: the waveform under it, half a beat later (half a second of the 60 BPM stretch): the
+        // marker's moment half a second earlier, still on beat 3.
+        test::drag(window_, atDrawn(1.0), atDrawn(1.0) + QPoint(int(waveform->width() / 8), 0), Qt::ShiftModifier);
+        QVERIFY2(near(clip(0).warpMarkers[1].sec, 0.5, 0.01), qPrintable(QString::number(clip(0).warpMarkers[1].sec)));
+        QVERIFY(near(clip(0).warpMarkers[1].beat, 3.0, 1e-9));
+        QCOMPARE(undo().undoText(), QStringLiteral("Move Warp Marker"));
+        undo().undo();
+
         // Double-clicked: gone.
-        test::doubleClick(window_, atSec(clip(0).warpMarkers[1].sec));
+        test::doubleClick(window_, atDrawn(clip(0).warpMarkers[1].sec));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{2});
         QCOMPARE(undo().undoText(), QStringLiteral("Remove Warp Marker"));
         undo().undo();
@@ -524,6 +548,45 @@ private Q_SLOTS:
         open({clips_[0], clips_[1]});
         test::doubleClick(window_, test::at(waveform, QPointF(waveform->width() / 4, 10)));
         QCOMPARE(clip(0).warpMarkers.size(), size_t{3});
+    }
+
+    void aMarkerSnapsToTheBarLinesDrawn() {
+        // A minute of audio (120 beats across: bars drawn, not beats), 4/4 then 3/4 from beat 8: bar lines at
+        // 0, 4, 8, 11, 14... A marker dragged near beat 11 goes onto 11, the line drawn there (not onto 12).
+        const QString path = test::writeWav(dir_->path(QStringLiteral("long.wav")), tone(60.0, 220.0), 2);
+        const ClipRefs refs = editor().addClips(QString(), 0.0, {{path, 60.0}}, 0);
+        clips_ = refs;
+        QTRY_VERIFY(!session().bridge()->waveform(path).isNull());
+        editor().setMeter(sub::MeterMap({{0.0, 4, 4}, {8.0, 3, 4}}));
+        editor().updateClips({refs[0]}, [](const Clip& c) {
+            Clip warped = c;
+            warped.warp = true;
+            warped.segmentBpm = 120.0;
+            warped.setWarpMarkers({{0.0, 0.0}, {30.0, 60.0}, {60.0, 120.0}});
+            return warped;
+        }, QStringLiteral("Warp"));
+        open(refs);
+        sub::ui::ClipWaveform* shown = waveform();
+        using sub::ui::ClipWaveform;
+        const ClipWaveform::Placed band = shown->placed().front();
+        QVERIFY(band.clip);
+        QVERIFY(band.area.width() / band.spanBeat < 10.0);  // (too close for beats)
+        const auto at = [&](double beat) {
+            return test::at(shown, QPointF(ClipWaveform::xAtBeat(band, beat), band.area.center().y()));
+        };
+        test::drag(window_, at(60.0), at(11.3));
+        QVERIFY2(std::abs(clip(0).warpMarkers[1].beat - 11.0) < 1e-9, qPrintable(QString::number(clip(0).warpMarkers[1].beat)));
+        QCOMPARE(clip(0).warpMarkers[1].sec, 30.0);
+    }
+
+    void aWarpedClipsRulerCountsBarsAndBeats() {
+        using sub::ui::ClipWaveform;
+        const sub::MeterMap four(4, 4);
+        QCOMPARE(ClipWaveform::formatBeat(four, 0.0), QStringLiteral("1"));
+        QCOMPARE(ClipWaveform::formatBeat(four, 5.0), QStringLiteral("2.2"));
+        QCOMPARE(ClipWaveform::formatBeat(four, 5.25), QStringLiteral("2.2.2"));
+        const sub::MeterMap sixEight(6, 8);
+        QCOMPARE(ClipWaveform::formatBeat(sixEight, 3.5), QStringLiteral("2.2"));
     }
 
     void transientsAreMarkedAndSnappedTo() {
@@ -763,12 +826,109 @@ private Q_SLOTS:
         QVERIFY(!item("kindSwitch")->isVisible());
     }
 
-    void severalClipsAreStackedInBands() {
+    void knobsAreTypedIntoAndMovedByTheArrows() {
         threeTracks();
+        open({clips_[0]});
+        QQuickItem* transpose = knob("transpose");
+        // Clicked, then typed (as in Ableton): the value typed.
+        test::click(window_, test::centerOf(transpose));
+        QVERIFY(transpose->hasActiveFocus());
+        QTest::keyClick(window_, Qt::Key_7);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTRY_COMPARE(clip(0).transpose, 7);
+        QCOMPARE(undo().undoText(), QStringLiteral("Transpose Clips"));
+        // The arrows: a semitone; with Shift, an octave.
+        transpose->forceActiveFocus();
+        QTest::keyClick(window_, Qt::Key_Up);
+        QCOMPARE(clip(0).transpose, 8);
+        QTest::keyClick(window_, Qt::Key_Up, Qt::ShiftModifier);
+        QCOMPARE(clip(0).transpose, 20);
+        QTest::keyClick(window_, Qt::Key_Down, Qt::ShiftModifier);
+        QTest::keyClick(window_, Qt::Key_Down, Qt::ShiftModifier);
+        QTest::keyClick(window_, Qt::Key_Down);
+        QCOMPARE(clip(0).transpose, -5);
+        QCOMPARE(readout("transpose"), QStringLiteral("-5 st"));
+        // Pan takes what the track headers take; the rest, the number typed.
+        QCOMPARE(controller()->parse(QStringLiteral("pan"), QStringLiteral("25L")).toDouble(), -0.5);
+        QCOMPARE(controller()->parse(QStringLiteral("gain"), QStringLiteral("-3 dB")).toDouble(), -3.0);
+        QVERIFY(controller()->parse(QStringLiteral("gain"), QStringLiteral("loud")).isNull());
+    }
+
+    void severalClipsAreStackedInBands() {
+        threeTracks();  // beats 0..4, 2..8, 4..12
         open({clips_[0], clips_[1], clips_[2]});
         QCOMPARE(controller()->name(), QStringLiteral("3 Clips"));
         QCOMPARE(controller()->info(), QStringLiteral("on 3 tracks  ·  changes apply to every selected clip"));
         test::screenshot(window_, QStringLiteral("clip-view-bands"));
+        sub::ui::ClipWaveform* shown = waveform();
+        using sub::ui::ClipWaveform;
+
+        // On one axis, the song's beats, under a ruler: each clip where it plays, the stretch they play shown.
+        QVERIFY(shown->rulerShown());
+        std::vector<ClipWaveform::Placed> bands = shown->placed();
+        QCOMPARE(bands.size(), size_t{3});
+        for (const auto& band : bands) {
+            QVERIFY(band.clip);
+            QCOMPARE(band.fromBeat, bands.front().fromBeat);
+            QCOMPARE(band.spanBeat, bands.front().spanBeat);
+        }
+        QVERIFY(bands[0].area.top() >= ClipWaveform::kRulerHeight);
+        QVERIFY(std::abs(ClipWaveform::xAt(bands[1], clip(1).offsetSec) - ClipWaveform::xAtBeat(bands[1], 2.0)) < 1e-6);
+        QVERIFY(std::abs(bands.front().fromBeat) < 1e-9);  // (the stretch they play: here their whole files)
+        QVERIFY(std::abs(bands.front().fromBeat + bands.front().spanBeat - 12.0) < 1e-9);  // (all the files span)
+
+        // Zoomed and scrolled as one clip is: Ctrl+wheel around the mouse, the wheel sideways (they fit).
+        const QPoint mouse = test::at(shown, QPointF(shown->width() / 2, ClipWaveform::kRulerHeight + 10));
+        const double span = shownSpan();
+        test::wheel(window_, mouse, 2, Qt::ControlModifier);
+        QVERIFY(shownSpan() < span);
+        double from = shown->viewFrom();
+        test::wheel(window_, mouse, -1);
+        QVERIFY(shown->viewFrom() > from);
+        QCOMPARE(shown->scrollY(), 0.0);
+        // The ruler: a drag scrolls, a click plays from the song's beat there.
+        from = shown->viewFrom();
+        const QPoint ruler = test::at(shown, QPointF(shown->width() / 2, 10));
+        test::drag(window_, ruler, ruler + QPoint(60, 0));
+        QVERIFY(shown->viewFrom() < from);
+        QSignalSpy located(shown, &ClipWaveform::locateRequested);
+        test::click(window_, ruler);
+        QCOMPARE(located.count(), 1);
+        QVERIFY(std::abs(located.front().front().toDouble() - ClipWaveform::beatAt(shown->placed().front(), shown->width() / 2)) < 1e-6);
+
+        // Too many to fit: the wheel scrolls them up and down (Shift: sideways still), a scroll bar beside them.
+        const int height = window_->height();
+        window_->resize(window_->width(), 130);
+        QTRY_VERIFY2(shown->contentHeight() > shown->height() - ClipWaveform::kRulerHeight + 1, qPrintable(QString::number(shown->height())));
+        QTRY_VERIFY(item("bandsBar")->isVisible());
+        test::wheel(window_, mouse, -1);
+        QVERIFY(shown->scrollY() > 0);
+        QCOMPARE(shown->placed()[0].area.top(), ClipWaveform::kRulerHeight - shown->scrollY());
+        from = shown->viewFrom();
+        test::wheel(window_, mouse, -1, Qt::ShiftModifier);
+        QVERIFY(shown->viewFrom() > from);
+        test::wheel(window_, mouse, -50);
+        QCOMPARE(shown->scrollY(), shown->contentHeight() - (shown->height() - ClipWaveform::kRulerHeight));  // (held)
+        test::screenshot(window_, QStringLiteral("clip-view-bands-scrolled"));
+        window_->resize(window_->width(), height);
+        QTRY_VERIFY(!item("bandsBar")->isVisible());
+        QCOMPARE(shown->scrollY(), 0.0);  // (they fit again: back to the top)
+
+        // A click on a clip: it and its track selected, and it asked for alone (a drag isn't a click).
+        QSignalSpy chosen(clipView_, SIGNAL(clipChosen(QString, QString)));
+        const auto inBand = [&](int i) {
+            const auto& area = shown->placed()[size_t(i)].area;
+            return test::at(shown, QPointF(area.center().x(), area.center().y()));
+        };
+        test::drag(window_, inBand(1), inBand(1) + QPoint(20, 0));
+        QCOMPARE(chosen.count(), 0);
+        test::click(window_, inBand(1));
+        QCOMPARE(chosen.count(), 1);
+        QCOMPARE(chosen.front()[0].toString(), tracks_[1]);
+        QCOMPARE(chosen.front()[1].toString(), clips_[1].clipId);
+        QCOMPARE(session().selection()->trackId(), tracks_[1]);
+        QVERIFY(session().selection()->clips().contains(clips_[1]));
+        QCOMPARE(session().selection()->clips().size(), 1);
         QCOMPARE(sub::ui::ClipWaveform::formatTime(0.5, 0.25), QStringLiteral("0.5"));
         QCOMPARE(sub::ui::ClipWaveform::formatTime(0.02, 0.01), QStringLiteral("0.02"));
         QCOMPARE(sub::ui::ClipWaveform::formatTime(2.0, 1.0), QStringLiteral("2"));

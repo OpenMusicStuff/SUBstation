@@ -304,8 +304,10 @@ target's own value). `paint()` then draws only the rows that show, in this order
 
 `drawClip()` draws a clip's body (the track colour at 60 % saturation and 78 % value), the faint grid over it, a MIDI
 clip's `playedNotes()` fitted to the clip's height (`drawNotes()`) or an audio clip's waveform from the
-`WaveformCache` (`drawContent()`), at the clip's own tempo (`sourceTempo`) and scaled by its gain (`dbToGain(gainDb)`:
-louder is taller, cut off at the body's edges); then its frame (`drawClipFrame()`): its title bar (`kTitleHeight`
+`WaveformCache` (`drawContent()`), the file's second at each x as the clip plays it (`clip.beatsToSource()`: through
+its warp markers or source map, else the tempo where it is, so a warped clip's waveform follows its markers), scaled by
+its gain (`dbToGain(gainDb)`: louder is taller, cut off at the body's edges) and turned down through its fades as its
+audio is (`Clip::fadeGain`, the cache's `taper`); then its frame (`drawClipFrame()`): its title bar (`kTitleHeight`
 18 px, `kFoldedHeight` - 3: the same folded or not, in line with the header's name row; a `kShortTitleHeight` 9 px
 bar with no name in rows under `kMinTitleRow` 32 px, which only rows saved lower than `app::kMinTrackHeight` 40 px
 are) and its outline (white when selected, else the track colour darker). Only an audio clip's title bar has its
@@ -706,6 +708,15 @@ waveform (an `app::Waveform`: [app/engine-bridge.md](../app/engine-bridge.md)):
    for peak data (envelopes read smoother), none for raw samples.
 4. Per channel lane when split, each column's top and bottom in pixels.
 
+A clip whose file's seconds don't go evenly with x (warp markers, a source map, an unwarped clip under tempo
+changes) is drawn by `drawMapped()` in `linearPieces()`: the visible part of its body halved until each piece is a
+straight line to `kLinearTolerance` (a quarter of a pixel; tried at its quarters, so a kink inside shows), pieces in
+line joined again, each drawn as `draw()` draws an even clip at its own frames per pixel, clipped to its own whole
+pixels. Frames per pixel are rounded to 24 bits of mantissa, so a stretch measured afresh as it scrolls finds the
+same tiles; an even clip is one piece. A fade's `taper` (the gain at an x) draws the tiles under it from a copy
+turned down about each lane's middle (`WaveformOutline::tapered()`, never thinner than the line through silence);
+the cached tiles stay as they are.
+
 `WaveformCache` keeps up to `kMaxTiles` (800) tiles in an LRU, keyed by (path, frames, sample rate, frames per pixel,
 tile index, height, split, gain), the gain rounded to 0.1 dB (`quantizedGain()`: turning a gain knob renders a few
 tiles, not one per value, and a quiet clip's waveform never goes flat). Tiles are anchored to the start of the source
@@ -752,7 +763,7 @@ from it. The clip view draws its waveforms without a cache ([piano-roll.md](pian
 
 | Test file | Covers here |
 |---|---|
-| [test_ui_arrangement.cpp](../../tests/app/test_ui_arrangement.cpp) | Dragging and Ctrl-dragging clips and undo, trimming, selecting below the tracks, the clip body setting the insert marker, Shift-click ranges, drags ending in the clip band, clips heard where a drag (or trim) takes them, the ruler's loop brace and scrub zoom, zoom, scroll and follow, Alt+wheel resizing and folding, Ctrl+Alt drags, files, devices and presets dropped, double-click opening the clip view (one of several selected clips: it alone), the lanes' menus (MIDI Notes on the selected MIDI clips), MIDI clips, reversing, the live take reaching the playhead |
+| [test_ui_arrangement.cpp](../../tests/app/test_ui_arrangement.cpp) | Dragging and Ctrl-dragging clips and undo, trimming, selecting below the tracks, the clip body setting the insert marker, Shift-click ranges, drags ending in the clip band, clips heard where a drag (or trim) takes them, the ruler's loop brace and scrub zoom, zoom, scroll and follow, Alt+wheel resizing and folding, Ctrl+Alt drags, files, devices and presets dropped, double-click opening the clip view (one of several selected clips: it alone), the lanes' menus (MIDI Notes on the selected MIDI clips), MIDI clips, reversing, the live take reaching the playhead, waveforms in straight pieces (a warped clip's following its markers) and turned down by fades |
 | [test_ui_arrangement_automation.cpp](../../tests/app/test_ui_arrangement_automation.cpp) | A, parameters showing their lanes, clicking on the line, dragging and bending breakpoints, segments and steps, deleting, time ranges (clear, duplicate, move), the lanes' menus, overriding and re-enabling, controls following automation, the master's lane, lanes below tracks, saving, automation moving with a dragged clip, lane ranges dragged down over several tracks' lanes and extended with Shift-click, drags reaching up into the clips |
 | [test_ui_arrangement_clips.cpp](../../tests/app/test_ui_arrangement_clips.cpp) | Alt on a clip's edge stretching it (the cursor as Alt is pressed, heard while dragging, Shift off the grid, a MIDI clip's notes), Ctrl+Shift on its body sliding its audio or notes (by grid steps, to the file's ends, Alt freely), F showing the fade handles and dragging fades and their curves (heard as they go), double-clicks straightening and removing them, F playing a note instead while the computer MIDI keyboard is on, MIDI clips without fades |
 | [test_ui_arrangement_selection.cpp](../../tests/app/test_ui_arrangement_selection.cpp) | A group's selection shown over the rows it covers and acting on what is in it, drags over every kind of track (folded, frozen, folded groups), Shift-clicks extending clip ranges, a frozen track's stretch dragged with its frozen audio and a move off it refused |

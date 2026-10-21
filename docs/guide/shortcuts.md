@@ -113,6 +113,8 @@ find bar's, holding F for fades) and the mouse's modifiers stay as below.
 | Group the selected devices into a rack / ungroup a rack | Ctrl+G / Ctrl+Shift+G |
 | Show a plug-in's editor | double-click its device in the device view |
 | Close the plug-in editor in front | Ctrl+W |
+| Type a knob's value (any knob, as in Ableton): click it, type the number, Enter | click, then digits |
+| Turn the knob last clicked a step (Transpose: a semitone; Detune: a cent; Gain: 0.5 dB; others: 1 % of their travel) / a large step (Transpose: an octave; others: ten steps) | Up / Down; Shift+Up / Shift+Down |
 
 ## MIDI
 

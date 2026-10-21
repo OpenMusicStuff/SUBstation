@@ -914,6 +914,7 @@ ApplicationWindow {
                     visible: arrangementArea.clipViewShown
                     onCloseRequested: arrangementArea.closeClipView()
                     onLocateRequested: beat => Session.locate(beat)
+                    onClipChosen: (trackId, clipId) => arrangementArea.openClips([{trackId: trackId, clipId: clipId}], trackId, clipId)
                     onStatusMessage: message => window.showMessage(message)
                 }
 

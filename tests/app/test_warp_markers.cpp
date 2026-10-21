@@ -145,6 +145,21 @@ private Q_SLOTS:
         QVERIFY(near(first.offsetSec, 0.75));
         QVERIFY(near(first.lengthBeats(tempo), 3.0));
 
+        // Moved (as Live drags one) to beat 2.5, its moment of the audio kept: the first stretch slower,
+        // the second faster, the clip on the same beats and as long.
+        const Clip later = edits::moveWarpMarkerBeat(added, 1, 2.5);
+        QCOMPARE(later.warpMarkers[1], (WarpMarker{1.0, 2.5}));
+        QVERIFY(near(later.warpTempos()[0], 180.0));
+        QVERIFY(near(later.warpTempos()[1], 90.0));
+        QVERIFY(near(later.lengthBeats(tempo), 3.0));
+        QVERIFY(near(later.offsetSec, 0.5));
+        QVERIFY(near(later.durationSec, 1.5));
+        // Held where its stretches stay within the range, never past its neighbours.
+        QVERIFY(near(edits::moveWarpMarkerBeat(added, 1, 100.0).warpTempos()[1], kMinSegmentBpm));
+        QVERIFY(edits::moveWarpMarkerBeat(added, 1, -5.0).warpMarkers[1].beat > added.warpMarkers[0].beat);
+        QCOMPARE(edits::moveWarpMarkerBeat(added, 5, 2.5), added);
+        QCOMPARE(edits::moveWarpMarkerBeat(unwarped, 0, 2.5), unwarped);
+
         // Removed: the clip on the same beats; down to one, none (at the tempo the two made).
         const Clip removed = edits::removeWarpMarker(moved, 1);
         QCOMPARE(removed.warpMarkers.size(), size_t{2});
