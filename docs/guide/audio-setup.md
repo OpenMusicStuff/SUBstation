@@ -19,7 +19,7 @@ Change it here.
 | *Driver Type* | WASAPI or ASIO (on Linux: PipeWire or *System*). ASIO is greyed out when SUBstation was built without the ASIO SDK (see [../building.md](../building.md)) |
 | *Audio Device* | The WASAPI (PipeWire, *System*) device (*System Default* or one by name), or the ASIO driver, with its **Hardware Setup** button |
 | *Output Channels* | ASIO and PipeWire: which pair of the device's outputs the master plays on |
-| *Sample Rate* | The rates the device offers |
+| *Sample Rate* | The rates the device offers. Files at another rate are resampled as they load (with a high-quality filter: flat to 20 kHz, nothing folding back below it). Changing it decodes the project's files again at the new rate in the background: the window goes on, and clips are silent until their file is ready, as while a project opens |
 | *Buffer Size* | The buffer sizes the device offers, in samples |
 | *Exclusive mode* | WASAPI only: lower latency; other apps are silenced |
 | *Audio Threads* | How many threads render tracks at once |
@@ -100,7 +100,8 @@ stay in memory, as before. It sounds the same either way, to the bit.
   read as they are. Any other file is decoded once, the first time it is loaded (in the background, as decoding
   always was), into the cache folder; after that, opening a project that uses it reads no audio but the start of it.
 - Changing the sample rate makes those decoded files again, at the new rate, in the background; the clips waiting
-  for one are silent meanwhile, as a clip still loading always is.
+  for one are silent meanwhile, as a clip still loading always is. The cache folder keeps the waveforms of long files
+  held in memory too, so they aren't worked out again each time a project opens.
 - Playing from somewhere that isn't in memory yet (after clicking into the middle of a long clip) waits up to
   150 ms for the disk before the playhead moves.
 - If the disk can't keep up, what it missed plays as silence, faded at its edges. The transport bar shows **Disk**

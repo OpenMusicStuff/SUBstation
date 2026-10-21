@@ -137,6 +137,7 @@ bool Sandbox::finished() { return !child_->running(); }
 void Sandbox::readLoop() {
     Message message;
     while (readMessage(child_->channel(), message)) {
+        heard_.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
         switch (message.kind) {
             case Kind::Ready: {
                 auto in = message.reader();

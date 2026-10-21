@@ -169,7 +169,15 @@ Questions wait for their answer only when the sandbox is free (not `Busy`), and 
 - a value's text (`paramText`): 250 ms; while the sandbox loads another plug-in it is asked without waiting, and shows
   when it comes (`ParamsChanged`); texts are kept;
 - its state (`getState`, to save): up to 15 s; past that, or with the sandbox gone, or while it is still loading, the
-  last state known stands in (the one it loaded with, or the last saved);
+  last state known stands in (the one it loaded with, or the last saved). It can be asked for without waiting too
+  (`requestState()`, `Engine::requestProcessorState()`): every plug-in's at once, a save's or a backup's
+  ([app/engine-bridge.md](../app/engine-bridge.md#plug-in-states)). The answer is taken from the reader thread as it
+  comes (`received()` keeps it, not the inbox: `idle()` needn't run), and `requestedState(until)` gives it, waiting
+  until then at most; the wait goes on while the sandbox is heard from (`Sandbox::lastHeard()`: it answers what was
+  asked before it, one after another on its main thread), up to 15 s after it last was, and a minute after it was
+  asked at most (a plug-in that runs a message loop as it saves could keep its sandbox talking for good); past
+  that, or with the sandbox gone, the last state known again (said so: `answered` false, as
+  `answersState()` is while it loads or once its sandbox ended);
 - a state set (`setState`): up to 10 s, to hear whether it was taken; while loading, the answer comes later (`Problem`
   if it wasn't).
 
@@ -200,7 +208,8 @@ device view, with *Reload* ([app/engine-bridge.md](../app/engine-bridge.md#plug-
 - [tests/engine/test_plugin_sandboxes.cpp](../../tests/engine/test_plugin_sandboxes.cpp): a plug-in in a sandbox
   rendering sample for sample as in the application (notes, parameters, automation, latency, sidechains); parameters,
   texts, the transport and state from there; a state set as it loads, before or while it loads (*SUB Test Effect*
-  loading slowly); adding one not waiting for it to load (*SUB Test Crasher* loading slowly), prioritising; the
+  loading slowly); states asked for all at once, answered after a load under way and taken as they come, and the last
+  one known at once when the sandbox ends meanwhile; adding one not waiting for it to load (*SUB Test Crasher* loading slowly), prioritising; the
   sandboxes each mode makes; a crash taking down its sandbox and no other, together taking down all, reloading as last
   known; a hung plug-in holding up the audio thread for one block, and an offline render for one wait; a render not
   waiting on the main thread for a sandbox loading; reloading into another mode and back; no host program; a plug-in

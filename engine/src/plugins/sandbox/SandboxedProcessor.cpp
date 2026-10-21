@@ -14,6 +14,10 @@ namespace {
 
 constexpr int kTextWaitMs = 250;                // a value's text, from a sandbox that isn't loading
 constexpr int kStateWaitMs = 15000;             // a state, to save it
+// A state asked for without waiting (requestState()): waited for while its sandbox is heard from, but
+// never longer than this after it was asked (a plug-in running a message loop as it saves could keep
+// its sandbox talking for good).
+constexpr int kStateWaitLongestMs = 60000;
 constexpr int kSetStateWaitMs = 10000;          // a state set, to hear whether it was taken
 constexpr std::chrono::seconds kResetWait{10};  // an offline reset, before a render
 constexpr size_t kMaxTexts = 4096;              // values' texts kept
@@ -100,6 +104,19 @@ void SandboxedProcessor::received(Message message) {
         resetAnswered_.notify_all();  // (an offline render waiting for it goes on)
         return;
     }
+    if (message.kind == Kind::Reply && message.request != 0) {
+        std::unique_lock lock(stateMutex_);
+        if (message.request == stateRequest_) {  // (the state asked for without waiting)
+            auto in = message.reader();
+            Reply reply;
+            reply.ok = in.u8() != 0;
+            reply.data = in.str();
+            stateAnswer_ = std::move(reply);
+            lock.unlock();
+            stateAnswered_.notify_all();
+            return;
+        }
+    }
     std::lock_guard lock(inboxMutex_);
     inbox_.push_back(std::move(message));
 }
@@ -109,6 +126,8 @@ void SandboxedProcessor::sandboxEnded() {
     link_.done->notify();  // (a rendering thread waiting on it goes on)
     { std::lock_guard lock(resetMutex_); }  // (not between a waiter's look at ended() and its wait)
     resetAnswered_.notify_all();
+    { std::lock_guard lock(stateMutex_); }
+    stateAnswered_.notify_all();
     std::lock_guard lock(inboxMutex_);
     endedSeen_ = true;
 }
@@ -309,6 +328,53 @@ std::vector<uint8_t> SandboxedProcessor::getState() {
     if (!reply->ok) throw std::runtime_error(reply->data);
     lastState_.assign(reply->data.begin(), reply->data.end());
     return lastState_;
+}
+
+bool SandboxedProcessor::requestState() {
+    if (!loaded() || ended()) return false;  // (getState(): the last state known, at once)
+    const uint32_t request = Sandbox::newRequest();
+    {
+        std::lock_guard lock(stateMutex_);
+        stateRequest_ = request;
+        stateAnswer_.reset();
+    }
+    stateAsked_ = std::chrono::steady_clock::now();
+    link_.sandbox->send({Kind::GetState, link_.instance, request});
+    return true;
+}
+
+std::optional<std::vector<uint8_t>> SandboxedProcessor::requestedState(std::chrono::steady_clock::time_point until,
+                                                                       bool* answered) {
+    using Clock = std::chrono::steady_clock;
+    if (answered) *answered = false;
+    std::optional<Reply> answer;
+    {
+        std::unique_lock lock(stateMutex_);
+        if (stateRequest_ == 0) return lastState_;  // (none asked, or its answer taken)
+        while (!stateAnswer_ && !ended()) {
+            // Waited for while the sandbox is heard from (answering what was asked before), up to the limit
+            // after, and never past the longest.
+            const auto deadline =
+                std::min(std::max(stateAsked_, link_.sandbox->lastHeard()) + std::chrono::milliseconds(kStateWaitMs),
+                         stateAsked_ + std::chrono::milliseconds(kStateWaitLongestMs));
+            const auto now = Clock::now();
+            if (now >= deadline) break;
+            if (now >= until) return std::nullopt;
+            // (Woken now and then to see whether it was heard from since.)
+            stateAnswered_.wait_until(lock, std::min({until, deadline, now + std::chrono::milliseconds(100)}));
+        }
+        answer = std::exchange(stateAnswer_, std::nullopt);
+        stateRequest_ = 0;
+    }
+    if (answer) {
+        if (!answer->ok) throw std::runtime_error(answer->data);
+        lastState_.assign(answer->data.begin(), answer->data.end());
+        if (answered) *answered = true;
+        return lastState_;
+    }
+    if (ended()) return lastState_;  // (as getState() has it)
+    if (!lastState_.empty()) return lastState_;  // (it didn't answer in time)
+    throw std::runtime_error(name_ + " didn't answer.");
 }
 
 void SandboxedProcessor::setState(const std::vector<uint8_t>& state) {

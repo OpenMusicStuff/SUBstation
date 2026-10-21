@@ -27,8 +27,11 @@
 #   sound_features_dump     Essentia's descriptors of a list of files, to train
 #                           the sound tagger on (tools/sound_tagger)
 #   snapshot_bench          the engine's edit side as a project grows: opening it,
-#                           one edit, a drag, its files arriving (the application
-#                           layer and the tests' support: SUBSTATION_BUILD_TESTS)
+#                           one edit, a drag, its files arriving, a backup (the
+#                           application layer and the tests' support: SUBSTATION_BUILD_TESTS)
+#   decode_bench            loading an audio file into memory: at its own rate, at
+#                           another (the resampler, and miniaudio's linear one it
+#                           replaced), peaks made or read from their file
 
 add_executable(parallel_render_bench parallel_render_bench.cpp Json.h)
 target_include_directories(parallel_render_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -50,6 +53,11 @@ add_executable(builtin_devices_bench builtin_devices_bench.cpp Json.h)
 target_include_directories(builtin_devices_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(builtin_devices_bench PRIVATE sub_engine)
 sub_project_warnings(builtin_devices_bench)
+
+add_executable(decode_bench decode_bench.cpp Json.h)
+target_include_directories(decode_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(decode_bench PRIVATE sub_engine)
+sub_project_warnings(decode_bench)
 
 add_executable(warp_bench warp_bench.cpp Json.h)
 target_include_directories(warp_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

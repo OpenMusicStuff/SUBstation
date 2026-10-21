@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QPointer>
 #include <QUuid>
 
 #include <algorithm>
@@ -43,6 +44,7 @@ Backups::Backups(Project* project, QString folder, QObject* parent)
       sessionId_(QUuid::createUuid().toString(QUuid::Id128).left(12)) {
     timer_.setInterval(kIntervalMs);
     connect(&timer_, &QTimer::timeout, this, &Backups::tick);
+    writer_.setMaxThreadCount(1);
 }
 
 Backups::~Backups() { finish(); }
@@ -77,6 +79,8 @@ void Backups::start() {
 
 void Backups::finish() {
     timer_.stop();
+    underWay_.reset();  // (one under way is let go of)
+    writer_.waitForDone();
     if (!started_) return;
     started_ = false;
     QFile::remove(QDir(sessionsFolder()).filePath(sessionId_ + QStringLiteral(".json")));
@@ -86,17 +90,57 @@ void Backups::finish() {
 
 void Backups::saved() {
     changed_ = false;
+    underWay_.reset();  // (one under way is of what was before)
     writeMark({});
 }
 
-void Backups::tick() {
-    if (!changed_) return;
+void Backups::tick() { backUpInBackground(); }
+
+void Backups::backUpInBackground() {
+    if (!enabled() || !changed_ || underWay_) return;
     if (unsaved_ && !unsaved_()) {  // (undone back to what was saved)
         changed_ = false;
         writeMark({});
         return;
     }
-    backupNow();
+    const quint64 backup = ++backups_;
+    underWay_ = backup;
+    if (!gather_) {
+        if (before_) before_();
+        write(backup);
+        return;
+    }
+    gather_([self = QPointer<Backups>(this), backup] {
+        if (self) self->write(backup);
+    });
+}
+
+// The plug-ins' states are in the project: it is turned into JSON here, written on the writer's thread.
+void Backups::write(quint64 backup) {
+    if (underWay_ != backup) return;  // (saved, or finished, meanwhile)
+    const QString folder = projectFolder();
+    const QString file = newFile(folder);
+    const QJsonObject data = backupData();
+    changed_ = false;
+    writing_ = file;
+    // (finish() waits for it: this outlives it.)
+    writer_.start([this, folder, file, data, backup] {
+        const bool ok = writeJsonFile(file, data);
+        if (ok) prune(folder);
+        QMetaObject::invokeMethod(this, [this, file, ok, backup] { written(file, ok, backup); }, Qt::QueuedConnection);
+    });
+}
+
+void Backups::written(const QString& file, bool ok, quint64 backup) {
+    if (writing_ == file) writing_.clear();
+    if (underWay_ != backup) return;  // (saved, or finished, meanwhile: nothing to recover from it)
+    underWay_.reset();
+    if (!ok) {
+        changed_ = true;  // (tried again at the next interval)
+        return;
+    }
+    writeMark(file);
+    Q_EMIT backedUp(file);
 }
 
 QString Backups::projectName() const {
@@ -112,19 +156,29 @@ QString Backups::projectFolder() const {
     return folder_ + u'/' + QFileInfo(path).completeBaseName() + u' ' + QString::fromLatin1(hash.left(8));
 }
 
-QString Backups::backupNow() {
-    if (!enabled()) return {};
-    if (before_) before_();
-    const QString folder = projectFolder();
+QString Backups::newFile(const QString& folder) const {
     QDir().mkpath(folder);
     const QString stamp = QDateTime::currentDateTime().toString(kStampFormat);
     QString file = QDir(folder).filePath(stamp + kProjectExtension);
-    for (int n = 2; QFileInfo::exists(file); ++n)  // (two in the same second)
+    for (int n = 2; QFileInfo::exists(file) || file == writing_; ++n)  // (two in the same second)
         file = QDir(folder).filePath(QStringLiteral("%1 (%2)%3").arg(stamp).arg(n).arg(kProjectExtension));
+    return file;
+}
+
+QJsonObject Backups::backupData() const {
     QJsonObject data = projectToJson(*project_, project_->path());
     data.insert(QStringLiteral("backup_of"), project_->path());
     data.insert(QStringLiteral("backup_name"), projectName());
-    if (!writeJsonFile(file, data)) return {};
+    return data;
+}
+
+QString Backups::backupNow() {
+    if (!enabled()) return {};
+    writer_.waitForDone();  // (one being written takes its name first)
+    if (before_) before_();
+    const QString folder = projectFolder();
+    const QString file = newFile(folder);
+    if (!writeJsonFile(file, backupData())) return {};
     changed_ = false;
     writeMark(file);
     prune(folder);
@@ -140,7 +194,7 @@ void Backups::writeMark(const QString& backup) const {
     writeJsonFile(QDir(sessionsFolder()).filePath(sessionId_ + QStringLiteral(".json")), mark);
 }
 
-void Backups::prune(const QString& folder) const {
+void Backups::prune(const QString& folder) {
     const QFileInfoList files = backupFiles(folder);
     for (qsizetype i = kKeep; i < files.size(); ++i) QFile::remove(files[i].filePath());
 }

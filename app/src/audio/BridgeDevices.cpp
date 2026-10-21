@@ -548,6 +548,8 @@ void EngineBridge::pluginFailed(const QString& deviceId, const QString& message)
 
 void EngineBridge::setPluginState(quint32 processorId, const QString& name, const QByteArray& state) {
     const BusyScope busy(d_->busy);
+    pluginStateChanged(processorId);
+    ++d_->stateSets[processorId];
     try {
         engine_.setProcessorState(processorId, stateBytes(state));
     } catch (const std::exception& error) {
@@ -585,6 +587,9 @@ void EngineBridge::forgetProcessor(const QString& deviceId, std::optional<quint3
         }
         d.pluginIds.remove(id);
     }
+    d.stateChanges.remove(id);
+    d.stateKept.remove(id);
+    d.stateSets.remove(id);
     d.enabled.remove(id);
     d.sidechains.erase(id);
     d.midiInputs.erase(id);
@@ -629,6 +634,7 @@ void EngineBridge::pushDeviceParam(const QString& trackId, const QString& device
         if (index < 0 || static_cast<double>(engine_.processorParam(*processorId, index)) == value) {
             return;  // an edit made in the plug-in's own editor: it has the value already
         }
+        pluginStateChanged(*processorId);
         engine_.setProcessorParam(*processorId, index, static_cast<float>(value));
         return;
     }
@@ -637,7 +643,9 @@ void EngineBridge::pushDeviceParam(const QString& trackId, const QString& device
 
 void EngineBridge::setParam(quint32 processorId, const QString& paramId, double value) {
     const int index = engine_.processorParamIndex(processorId, paramId.toStdString());
-    if (index >= 0) engine_.setProcessorParam(processorId, index, static_cast<float>(value));
+    if (index < 0) return;
+    pluginStateChanged(processorId);
+    engine_.setProcessorParam(processorId, index, static_cast<float>(value));
 }
 
 void EngineBridge::pushDeviceState(const QString& trackId, const QString& deviceId) {

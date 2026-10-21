@@ -116,8 +116,10 @@ only tracks and the edges between them.
   of: `releaseUnusedSources()`). `decodeSource()` is `loadSource()` without the rebuild: it only
   marks the snapshot stale, for a decoder that publishes the files arriving together at once (the
   bridge does: [engine-bridge.md](../app/engine-bridge.md)); `idle()` publishes what nobody did. A
-  new sample rate reloads every source (`reloadSourcesLocked()`). See [warp.md](warp.md) for
-  decoding. While streaming is on (`setStreaming()`), a long file is opened streamed from disk
+  new sample rate decodes nothing: the sources stay cached at the old rate (their clips left out
+  of the snapshot) until each is loaded again (the bridge has them all decoded again in its pool).
+  Decoding goes through `streamCache_->loadResident()`, which keeps a long file's peaks in a peak
+  file. See [warp.md](warp.md) for decoding. While streaming is on (`setStreaming()`), a long file is opened streamed from disk
   instead (`StreamCache::open()`), and a cached source kept another way than the settings now say
   is loaded again; built-in devices' samples come through `loadResidentSource()`, decoded into
   memory whatever their length (`residentSources_`). See [streaming.md](streaming.md).

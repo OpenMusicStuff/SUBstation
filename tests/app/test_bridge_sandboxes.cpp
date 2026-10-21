@@ -3,13 +3,16 @@
 // meanwhile (progress, the selected track's first, states as saved, automation
 // and sidechains once they have loaded); a plug-in that crashes says so and
 // loads again with Reload, as it was last saved; Reload Plug-ins moves those
-// loaded to where the hosting preference says now; the preference itself.
+// loaded to where the hosting preference says now; the preference itself; a
+// backup's answer from a sandbox not taking the place of a state set meanwhile,
+// and asked for again after a parameter edited meanwhile.
 // With the test plug-ins and the plug-in host program built with the tests.
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
 
 #include "io/Serialization.h"
+#include "model/Commands.h"
 #include "session/PluginHostingPreferences.h"
 
 #include <QElapsedTimer>
@@ -140,6 +143,61 @@ private Q_SLOTS:
         Project reread;
         loadProject(reread, again);
         QCOMPARE(reread.tracks()[0].devices.front().state, studio.project.tracks()[0].devices.front().state);
+    }
+
+    void aStateSetWhileABackupAsksIsNotUndoneByTheAnswer() {
+        // A backup asks the sandbox for the effect's state; an undo sets another before the answer is
+        // taken. The answer (from before) doesn't take the place of the state the model was set to.
+        Studio studio;
+        sandboxed(studio);
+        EngineBridge& bridge = *studio.bridge;
+        const QString track = studio.edit.addAudioTrack(QStringLiteral("Fx"));
+        const QString fx = studio.edit.addDevice(track, kPluginKind, *effect_);
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.pluginsPending() == 0, kLoadTimeoutMs);
+        const auto state = [&] { return studio.project.device(track, fx).state; };
+        studio.edit.setDeviceParam(track, fx, QStringLiteral("0"), 0.25);
+        bridge.storePluginStates();
+        const std::optional<QString> quarter = state();
+        studio.edit.setDeviceParam(track, fx, QStringLiteral("0"), 0.75);
+        bridge.storePluginStates();
+        const std::optional<QString> threeQuarters = state();
+        QVERIFY(quarter != threeQuarters);
+        studio.edit.setDeviceParam(track, fx, QStringLiteral("0"), 0.5);  // (changed: asked again)
+        bool done = false;
+        bridge.gatherPluginStates([&] { done = true; });  // (asked at 0.5)
+        studio.stack.push(new SetDeviceStateCommand(&studio.project, track, fx, threeQuarters, quarter,
+                                                    QStringLiteral("Load Preset")));
+        QTRY_VERIFY_WITH_TIMEOUT(done, kLoadTimeoutMs);
+        QCOMPARE(state(), quarter);
+        // The next backup asks again, and takes what it says now.
+        done = false;
+        bridge.gatherPluginStates([&] { done = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(done, kLoadTimeoutMs);
+        QCOMPARE(QByteArray::fromBase64(state().value_or(QString()).toLatin1()), *bridge.pluginState(track, fx));
+    }
+
+    void aParameterEditedWhileABackupAsksIsInTheBackup() {
+        // A backup asks the sandbox for the effect's state; a parameter is edited before the answer is
+        // taken. The answer is from before the edit: it is asked again, and the backup has the edit.
+        Studio studio;
+        sandboxed(studio);
+        EngineBridge& bridge = *studio.bridge;
+        const QString track = studio.edit.addAudioTrack(QStringLiteral("Fx"));
+        const QString fx = studio.edit.addDevice(track, kPluginKind, *effect_);
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.pluginsPending() == 0, kLoadTimeoutMs);
+        const auto state = [&] { return QByteArray::fromBase64(studio.project.device(track, fx).state.value_or(QString()).toLatin1()); };
+        studio.edit.setDeviceParam(track, fx, QStringLiteral("0"), 0.25);
+        bool done = false;
+        bridge.gatherPluginStates([&] { done = true; });  // (asked at 0.25)
+        studio.edit.setDeviceParam(track, fx, QStringLiteral("0"), 0.75);
+        QTRY_VERIFY_WITH_TIMEOUT(done, kLoadTimeoutMs);
+        const QByteArray now = *bridge.pluginState(track, fx);
+        QCOMPARE(state(), now);
+        // Taken while nothing changed it: the next backup doesn't ask again.
+        done = false;
+        bridge.gatherPluginStates([&] { done = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(done, kLoadTimeoutMs);
+        QCOMPARE(state(), now);
     }
 
     void aCrashedPluginSaysSoAndReloadBringsItBack() {

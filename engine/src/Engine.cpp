@@ -86,7 +86,7 @@ std::shared_ptr<AudioSource> Engine::loadSourceImpl(const std::string& path, boo
             std::lock_guard lock(mutex_);
             return streamsLocked(info.duration);
         }();
-        auto source = streams ? streamCache_->open(path, rate) : AudioSource::load(path, rate);
+        auto source = streams ? streamCache_->open(path, rate) : streamCache_->loadResident(path, rate);
         std::lock_guard lock(mutex_);
         const auto current = static_cast<uint32_t>(sampleRate_);
         if (current != rate) {
@@ -130,7 +130,7 @@ std::shared_ptr<AudioSource> Engine::loadResidentSource(const std::string& path)
         if (auto it = residentSources_.find(key); it != residentSources_.end() && it->second->sampleRate() == rate)
             return it->second;
     }
-    auto source = AudioSource::load(path, rate);
+    auto source = streamCache_->loadResident(path, rate);
     std::lock_guard lock(mutex_);
     auto& slot = residentSources_[key];
     if (slot && slot->sampleRate() == source->sampleRate()) return slot;
@@ -164,25 +164,6 @@ void Engine::releaseUnusedSources() {
     });
     // Devices hold the samples they use themselves.
     std::erase_if(residentSources_, [](const auto& entry) { return entry.second.use_count() == 1; });
-}
-
-void Engine::reloadSourcesLocked() {
-    std::unordered_map<std::string, std::shared_ptr<AudioSource>> reloaded;
-    for (const auto& [key, source] : sources_) {
-        try {
-            if (source->resident()) {
-                reloaded[key] = AudioSource::load(source->path(), static_cast<uint32_t>(sampleRate_));
-            } else if (auto streamed = streamCache_->open(source->path(), static_cast<uint32_t>(sampleRate_), false)) {
-                reloaded[key] = std::move(streamed);
-            }
-            // (A streamed file whose cache file at this rate isn't made yet is let go: whoever loads its
-            // sources, the engine bridge, has it made again in the background, and its clips wait meanwhile.)
-        } catch (const std::exception&) {
-            // The file vanished or became unreadable; its clips go silent.
-        }
-    }
-    sources_ = std::move(reloaded);
-    residentSources_.clear();  // (the devices keep theirs at the rate they loaded them)
 }
 
 // ---------------------------------------------------------------------------

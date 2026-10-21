@@ -1,7 +1,8 @@
 // The engine bridge on PipeWire (Linux), against a daemon of the test's own
 // (tests/engine/harness/PipeWireDaemon.h): a device that went away opens again
-// when it is back, and a track's input opens the device again with it. Skipped
-// where the engine was built without PipeWire, or the daemon isn't installed.
+// when it is back, a track's input opens the device again with it, and another
+// rate has the files decoded again in the background. Skipped where the engine
+// was built without PipeWire, or the daemon isn't installed.
 
 #include "BridgeTestSupport.h"
 #include "TestSupport.h"
@@ -112,6 +113,37 @@ private Q_SLOTS:
         // What was asked for, not what the graph runs now: requests, kept as they were.
         QCOMPARE(saved.sampleRate, 0);
         QCOMPARE(saved.bufferFrames, 256);
+    }
+
+    // Another rate decodes nothing as the device opens: the files are decoded again in the bridge's
+    // pool, their clips silent meanwhile, as when they load.
+    void aNewRateDecodesTheFilesInTheBackground() {
+        subtest::PipeWireDaemon daemon;
+        if (!daemon.running()) QSKIP(daemon.whyNot().c_str());
+        test::TempDir dir;
+        Studio studio;
+        EngineBridge& bridge = *studio.bridge;
+        AudioSettings at48 = pipeWire(QStringLiteral("Test Duplex"));
+        at48.sampleRate = 48000;
+        QCOMPARE(bridge.openDevice(at48), QString());
+        QCOMPARE(studio.engine.sampleRate(), 48000.0);
+        const QString path = test::writeWav(dir.path(QStringLiteral("dc.wav")), std::vector<float>(48000, 0.5f), 1);
+        studio.clipTrack(path);
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.waveform(path).isNull(), 5000);  // (the bridge's too)
+        QCOMPARE(studio.engine.cachedSource(path.toStdString())->sampleRate(), 48000u);
+
+        AudioSettings at44 = at48;
+        at44.sampleRate = 44100;
+        QSignalSpy ready(&bridge, &EngineBridge::sourceReady);
+        QCOMPARE(bridge.openDevice(at44), QString());
+        QCOMPARE(studio.engine.sampleRate(), 44100.0);
+        // Still at the old rate as the device opens: decoded again in the background.
+        QCOMPARE(studio.engine.cachedSource(path.toStdString())->sampleRate(), 48000u);
+        QVERIFY(bridge.isLoading(path));
+        QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty(), 5000);
+        QCOMPARE(studio.engine.cachedSource(path.toStdString())->sampleRate(), 44100u);
+        QCOMPARE(bridge.waveform(path).sampleRate(), 44100);
+        QCOMPARE(bridge.waveform(path).frames(), qint64{44100});
     }
 
     void thePreferencesShowDropoutsAsTheyCome() {

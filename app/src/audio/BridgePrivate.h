@@ -44,6 +44,19 @@ struct EngineBridge::SidechainState {
     friend bool operator==(const SidechainState&, const SidechainState&) = default;
 };
 
+// A loaded plug-in device: its track, itself, its processor, how many times its
+// state had changed (Private::stateChanges), and been set from the model
+// (Private::stateSets), when it was asked for, and whether it is asked again
+// (gatherPluginStates(): it changed while asked the first time).
+struct EngineBridge::LoadedPlugin {
+    QString trackId;
+    QString deviceId;
+    quint32 processorId = 0;
+    quint32 changes = 0;
+    quint32 sets = 0;
+    bool again = false;
+};
+
 // Where a track's output goes as the engine has it: an engine track (or
 // sub::Engine::kMaster, or sub::Engine::kNoOutput), or a device's sidechain
 // (`processor`, when not 0).
@@ -99,6 +112,23 @@ struct EngineBridge::Private {
     QMap<QString, bool> ownEnabled;  // device id -> whether the model had it on, as last pushed
     QHash<quint32, QString> pluginIds;  // processor of each plug-in -> the path it came from
     QMap<QString, QByteArray> pluginStates;  // device id -> its plug-in's state when it went away
+    // Processor -> how many times its state has changed (a parameter or state set, an event it
+    // reported, its editor opened), and how many it had when the state the model holds was asked
+    // for: the same, and its editor closed, it holds it as it is (gatherPluginStates() asks no more).
+    QHash<quint32, quint32> stateChanges;
+    QHash<quint32, quint32> stateKept;
+    // Processor -> how many times the model's state has been set in it (an undo, a preset): an answer
+    // asked for before is older than the model's.
+    QHash<quint32, quint32> stateSets;
+    // A backup's plug-in states being gathered (gatherPluginStates()): those asked in their
+    // sandboxes, those of this process still to read (one a turn), and what waits for them.
+    struct Gathering {
+        std::vector<LoadedPlugin> asked;
+        std::vector<LoadedPlugin> toRead;
+        std::vector<std::function<void()>> done;
+    };
+    std::optional<Gathering> gathering;
+    QTimer gatherTimer;
     QHash<quint32, QStringList> paramIds;  // processor -> parameter ids by index (cache)
     QHash<quint32, std::vector<sub::ParamInfo>> paramInfos;  // processor -> its ParamInfos (cache)
     QHash<quint32, std::vector<ParamSpec>> paramSpecs;  // processor -> its automatable parameters (cache)

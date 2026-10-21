@@ -15,6 +15,7 @@
 // threads (ring()): each plug-in in it has a slot there (takeSlot()).
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <map>
@@ -71,6 +72,12 @@ public:
     std::string ending() const;
     // Whether its main thread is loading a plug-in (it answers once that is done).
     bool busy() const { return busy_.load(std::memory_order_acquire); }
+    // When it last said anything (it started then, before it has): a wait for an
+    // answer goes on while it is heard from, answering what was asked before.
+    std::chrono::steady_clock::time_point lastHeard() const {
+        return std::chrono::steady_clock::time_point(
+            std::chrono::steady_clock::duration(heard_.load(std::memory_order_acquire)));
+    }
 
     // Ids unique among every sandbox's (a plug-in loading again elsewhere is never taken for what it was).
     static uint32_t newInstance();
@@ -121,6 +128,7 @@ private:
     std::thread reader_;
     std::atomic<bool> alive_{true};
     std::atomic<bool> busy_{false};
+    std::atomic<std::chrono::steady_clock::rep> heard_{std::chrono::steady_clock::now().time_since_epoch().count()};
     std::atomic<uint64_t> raised_{0};
 
     std::mutex sendMutex_;

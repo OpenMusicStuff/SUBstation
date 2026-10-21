@@ -159,7 +159,9 @@ void EngineBridge::pushModulation(const QString& owner) {
             pushDeviceParam(owner, *deviceId, target->param);  // its own value
         } else if (const auto processorId = engineDeviceId(owner, *deviceId); processorId && previous) {
             const int index = engine_.processorParamIndex(*processorId, target->param.toStdString());
-            if (index >= 0) engine_.setProcessorParam(*processorId, index, static_cast<float>(*previous));
+            if (index < 0) continue;
+            pluginStateChanged(*processorId);
+            engine_.setProcessorParam(*processorId, index, static_cast<float>(*previous));
         }
     }
 }

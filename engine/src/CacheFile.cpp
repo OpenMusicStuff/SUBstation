@@ -21,9 +21,11 @@ namespace {
 constexpr uint64_t kAlign = platform::StreamFile::kAlignment;
 constexpr uint64_t kHeaderBytes = 4096;  // a cache file's header: page 0 starts on a block of its own
 constexpr char kCacheMagic[8] = {'S', 'U', 'B', 'C', 'A', 'C', 'H', 'E'};
-constexpr uint32_t kCacheVersion = 1;
+// 2: files at another rate resampled by Resampler.h (1: miniaudio's linear resampler), so those
+// made before are made again (and their peaks), and play what AudioSource::load() decodes now.
+constexpr uint32_t kCacheVersion = 2;
 constexpr char kPeakMagic[8] = {'S', 'U', 'B', 'P', 'E', 'A', 'K', 'S'};
-constexpr uint32_t kPeakVersion = 1;
+constexpr uint32_t kPeakVersion = 2;
 
 constexpr float kInt16Scale = 0.000030517578125f;           // 1 / 32768: miniaudio's own
 constexpr float kInt24Scale = 0.00000011920928955078125f;  // 1 / 8388608

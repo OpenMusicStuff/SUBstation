@@ -305,6 +305,7 @@ add_library(sub_engine STATIC
     src/AudioSource.cpp
     src/CacheFile.cpp
     src/Renderer.cpp
+    src/Resampler.cpp
     src/Scheduler.cpp
     src/Recorder.cpp
     src/Metronome.cpp

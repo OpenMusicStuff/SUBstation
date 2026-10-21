@@ -384,7 +384,9 @@ stops; press it again to return to the start. **Home** goes to the start.
 - *File › Import Ableton Live Set…* opens a Live Set as a new project: see
   [ableton-import.md](ableton-import.md).
 - **Backups.** While a project has unsaved changes, SUBstation backs it up every minute,
-  so a crash loses at most a minute of work. If it closes without saving (it crashed, or
+  so a crash loses at most a minute of work. It does so in the background: plug-ins are
+  asked for their settings without the window waiting for them (only those changed since
+  the last time), and the file is written on a thread of its own. If it closes without saving (it crashed, or
   the computer did), the next start offers to recover the project from its latest backup:
   *Recover* opens it as the project it was (Save writes the project's own file), unsaved;
   *Not Now* leaves the backups where they are. *File › Backups* lists the open project's

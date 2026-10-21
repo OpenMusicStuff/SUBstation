@@ -47,6 +47,8 @@ EngineBridge::EngineBridge(sub::Engine& engine, Project* project, QObject* paren
 
     d_->pluginTimer.setSingleShot(true);
     connect(&d_->pluginTimer, &QTimer::timeout, this, [edit, this] { edit("loading plug-ins", [&] { loadNextPlugin(); }); });
+    d_->gatherTimer.setSingleShot(true);
+    connect(&d_->gatherTimer, &QTimer::timeout, this, [this] { guarded("gathering plug-in states", [&] { gatherStep(); }); });
     d_->pool.setMaxThreadCount(2);
     d_->statePool.setMaxThreadCount(1);
 
@@ -109,6 +111,7 @@ EngineBridge::~EngineBridge() {
     d_->displayTimer.stop();
     d_->idleTimer.stop();
     d_->pluginTimer.stop();
+    d_->gatherTimer.stop();
     // Their results come to this object, which is going: what is posted to it goes with it.
     d_->pool.waitForDone();
     d_->statePool.waitForDone();
@@ -119,6 +122,8 @@ EngineBridge::~EngineBridge() {
 
 void EngineBridge::shutdown() {
     stopLoadingPlugins();
+    d_->gatherTimer.stop();
+    d_->gathering.reset();  // (what waited for it waits no more: the plug-ins go)
     closeAllEditors();
     d_->statePool.waitForDone();  // (no plug-in is waited for: they all go)
     d_->arrivals.reset();
@@ -126,6 +131,9 @@ void EngineBridge::shutdown() {
     removeEngineTracks();
     d_->devices.clear();
     d_->pluginIds.clear();
+    d_->stateChanges.clear();
+    d_->stateKept.clear();
+    d_->stateSets.clear();
     for (const std::string& name : engine_.openMidiInputs()) engine_.closeMidiInput(name);
     engine_.idle(true);
 }

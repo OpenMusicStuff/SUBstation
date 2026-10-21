@@ -29,7 +29,11 @@
 //   later (a value's text then shows when it comes: ParamsChanged), so the
 //   main thread never waits for a plug-in to load. The state is waited for (a
 //   project is being saved), up to a limit; past it, or with the sandbox
-//   gone, the last state known stands in.
+//   gone, the last state known stands in. It can be asked for without waiting
+//   too (requestState(): every plug-in's at once, a backup's), its answer
+//   taken from the reader thread; that wait goes on while the sandbox is
+//   heard from (answering what was asked before), up to the limit after, and
+//   a minute after it was asked at most.
 //
 // Main thread, as for any processor, but for process() and reset().
 
@@ -40,6 +44,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -84,6 +89,10 @@ public:
 
     std::vector<uint8_t> getState() override;
     void setState(const std::vector<uint8_t>& state) override;
+    bool answersState() const override { return loaded() && !ended(); }
+    bool requestState() override;
+    std::optional<std::vector<uint8_t>> requestedState(std::chrono::steady_clock::time_point until,
+                                                       bool* answered = nullptr) override;
     std::string presetName() const override;
 
     bool idle() override;
@@ -159,6 +168,13 @@ private:
     std::mutex resetMutex_;
     std::condition_variable resetAnswered_;
     uint32_t resetAnswer_ = 0;  // (resetMutex_) the request answered last
+
+    // The state asked for without waiting (requestState()), and its answer, from the reader thread.
+    std::mutex stateMutex_;
+    std::condition_variable stateAnswered_;
+    uint32_t stateRequest_ = 0;         // (stateMutex_) 0: none asked
+    std::optional<Reply> stateAnswer_;  // (stateMutex_)
+    std::chrono::steady_clock::time_point stateAsked_;
 
     // What the reader thread received, for idle().
     std::mutex inboxMutex_;

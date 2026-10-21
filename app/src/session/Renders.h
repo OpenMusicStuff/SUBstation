@@ -62,7 +62,8 @@ protected:
     Render(RenderProgress* progress, EngineBridge* bridge, QObject* parent);
 
     // Until every device is ready to render offline (a project's plug-ins still
-    // loading, samples): a busy bar meanwhile, saying what it waits for. Then
+    // loading, samples) and every audio file is decoded (a project just opened, a
+    // new sample rate): a busy bar meanwhile, saying what it waits for. Then
     // then(true); then(false) if cancelled first.
     void waitForDevices(std::function<void(bool)> then);
     // Shows a task's progress (as part `index` of `count` of the bar) until it

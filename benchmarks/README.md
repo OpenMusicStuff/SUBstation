@@ -15,7 +15,8 @@ Nothing they do touches your settings, use counts, browser index or plug-ins.
 | [vital_bench.cpp](vital_bench.cpp) | The built-in Vital against Vital's own VST3 plug-in: the same notes and settings held through each, what each costs a core. The engine alone (its VST3 host), no Qt. |
 | [plugin_render.cpp](plugin_render.cpp) | A WAV file through one effect offline, as an export plays it: a VST3 or VST2 plug-in's file, or a built-in device (`builtin:changeling`), its parameters set by name (`--set Pitch=n0.75`: normalized; `--set Mode=Robot`: a choice's label), MIDI notes played into it (`--note 0.5:62:1`), its displays written to a CSV. For measuring a built-in against the plug-ins it stands beside (Changeling against Little AlterBoy and Manipulator). Not a measure itself. The engine alone, no Qt. |
 | [project_bench.cpp](project_bench.cpp) | A real project (a `.gilproj` of your own, with its plug-ins) played live in each plug-in hosting mode, at the pace a device asks for buffers, through the fake ASIO driver: the callback's time (what the CPU meter shows) and the CPU the engine's process and the sandboxes use (from the threads' cycle counts), thread by thread. The application layer, no UI; Windows. Leave `QT_QPA_PLATFORM` unset: plug-ins with a Qt of their own (Kontakt) read it too. |
-| [snapshot_bench.cpp](snapshot_bench.cpp) | The engine's edit side as a project grows: a synthetic project of N tracks (MIDI through the Synth and an EQ, audio, groups, sends, envelopes) opened as File › Open does, its files decoded, one edit, a drag of every clip. The time each takes and how many snapshots the engine built. The application layer, no UI. |
+| [snapshot_bench.cpp](snapshot_bench.cpp) | The engine's edit side as a project grows: a synthetic project of N tracks (MIDI through the Synth and an EQ, audio, groups, sends, envelopes) opened as File › Open does, its files decoded, one edit, a drag of every clip, a backup (the GUI thread's part and the writer's). The time each takes and how many snapshots the engine built. The application layer, no UI. |
+| [decode_bench.cpp](decode_bench.cpp) | Loading an audio file into memory, as the engine bridge's decoding threads do: at its own rate, and at another through the resampler against miniaudio's linear resampler it replaced; its peaks made, or read from their file. Milliseconds and times real time. The engine alone, no Qt. |
 | [sound_features_dump.cpp](sound_features_dump.cpp) | Essentia's descriptors of a list of files (or parts of files), optionally band-limited first: what the sound tagger is trained on ([tools/sound_tagger](../tools/sound_tagger/README.md)). Not a measure. |
 | [sound_similarity_bench.cpp](sound_similarity_bench.cpp) | Sound similarity's fingerprints (Essentia's descriptors) on a real sample library: how fast they are made and searched, how fast the index analyses a library, and how often a sound's nearest sounds are of its kind; `--split` holds half the queries out, `--tune` searches the aspects' weights. The intelligence module alone, no Qt. |
 | [LibraryGen.h](LibraryGen.h) | Makes the synthetic sample libraries. |
@@ -34,7 +35,7 @@ thousands of shapes).
 The benchmarks are built with `-DSUBSTATION_BUILD_BENCHMARKS=ON` (off by
 default), into the build's `bin` folder with everything else. Always in Release.
 `browser_backend_bench` needs the application layer (Qt Core, as the tests do);
-`parallel_render_bench`, `freeze_bench`, `builtin_devices_bench` and `warp_bench` need only the engine, and `sound_similarity_bench` only the
+`parallel_render_bench`, `freeze_bench`, `builtin_devices_bench`, `warp_bench` and `decode_bench` need only the engine, and `sound_similarity_bench` only the
 intelligence module (no Qt either; it wants a sample library of your own).
 
 Linux:
@@ -46,6 +47,8 @@ build/bin/parallel_render_bench --tracks 32 --threads 1,2,4,8 --json parallel.js
 build/bin/freeze_bench --json freeze.json
 build/bin/builtin_devices_bench --seconds 5 --json devices.json
 build/bin/warp_bench --json warp.json
+build/bin/decode_bench --json decode.json
+build/bin/snapshot_bench --json snapshot.json
 build/bin/fft_bench
 build/bin/display_fft_bench --rate 60
 build/bin/browser_backend_bench --size 200000 --json backend.json
@@ -803,6 +806,8 @@ project with an engine bridge as *File › Open* does (no window, no plug-ins).
 every file has arrived from the decoders (these small WAVs decode while the project
 opens: real libraries take longer); *one edit*: the loop switched, a single
 snapshot; *drag*: a drag's preview of every clip a beat later, and its end;
+*backup*: the project turned into JSON (`projectToJson`: *json*, what the GUI thread
+does) and written (`writeJsonFile`: *write*, what the backups' writer thread does);
 *close*: the bridge letting go of every track (`shutdown()`). Each
 with the snapshots the engine built (`Engine::snapshotBuilds()`, "-" before it
 counted them).
@@ -842,3 +847,64 @@ What a snapshot costs now is spread thin: about 40 % allocating and freeing its
 many small lists, the rest routing, delay compensation, automation and clips,
 none of them more than a few percent. A drag still makes the notes of every
 track it moves again (they changed), 15 ms a move at 256 tracks.
+
+Backups (goal 4 of the [roadmap](../ROADMAP.md)): every minute while a project
+has unsaved changes. They were written whole on the GUI thread; now only turning
+the project into JSON is (it reads the model, which lives there), and the rest
+(encoding it as text, writing the file, pruning the old ones) is on a thread of the
+backups' own (`results/snapshot-backups.json`, the same VM, 2.8 GHz):
+
+| tracks | json (GUI thread) | write (writer thread) | was, all on the GUI thread |
+|---|---|---|---|
+| 32 | 7.5 ms | 13.7 ms | 21 ms |
+| 128 | 37 ms | 59 ms | 96 ms |
+| 256 | 64 ms | 128 ms | 192 ms |
+
+A third of what a backup cost the window is left: the JSON, mostly the MIDI
+notes'. Moving that off too needs a copy of the project a worker can read while
+the window edits, as copy-on-write states (goal 2's undo by memory) would give.
+The plug-ins' states, which a backup asked for first, one after another (each up
+to 15 s for a plug-in in a sandbox), aren't measured here (no plug-ins): they are
+now asked for without waiting, those in sandboxes all at once, and only where
+something changed them since they were last taken.
+
+# Decoding
+
+```
+decode_bench [--seconds 180] [--repeats 3] [--json out.json]
+```
+
+A 16-bit stereo WAV of tones and noise, `--seconds` long, loaded into memory as the
+engine bridge's decoding threads load one (`AudioSource::load()`): at its own rate
+(48 kHz); at another, through the resampler ([Resampler.h](../engine/src/Resampler.h),
+[docs/engine/warp.md](../docs/engine/warp.md#resampling-a-file-to-the-engines-rate)),
+and through miniaudio's linear resampler at its highest filter order, which decoding
+used before; and with its peaks read from its peak file
+(`StreamCache::loadResident()`) instead of made. The best of `--repeats` runs, the
+files in the system's cache (the disk isn't measured).
+
+## Results
+
+A Linux VM with 4 vCPUs (Intel Xeon, 2.8 GHz), GCC 13, Release, AVX2: three minutes
+of stereo (`results/decode.json`).
+
+| | ms | times real time |
+|---|---|---|
+| 48 kHz, as it is | 99 | 1824 |
+| 48 kHz, peaks from their file | 84 | 2133 |
+| 44.1 to 48 kHz, linear (before) | 599 | 301 |
+| 44.1 to 48 kHz | **335** | 537 |
+| 48 to 44.1 kHz, linear (before) | 442 | 407 |
+| 48 to 44.1 kHz | **309** | 583 |
+| 96 to 48 kHz, linear (before) | 762 | 236 |
+| 96 to 48 kHz | **420** | 429 |
+| 44.1 to 48 kHz, peaks from their file | 306 | 588 |
+
+The windowed sinc (72 to 160 taps a frame, 100 dB down past the transition band)
+costs less than the linear resampler it replaced, whose filter miniaudio runs a
+sample at a time: its taps are summed eight at a time (AVX), two sets of them and
+both channels in one pass, and each frame's phase is counted on, not divided out.
+(Left to the compiler's vectors it took 531 ms for 44.1 to 48 kHz, one chain of
+eight lanes a channel; asked for two channels at once, they came out scalar: 801.) Peaks read from their
+file save making them, about 15 ms for three minutes of stereo: a sixth of a file
+at the engine's rate, nothing to speak of next to resampling one.

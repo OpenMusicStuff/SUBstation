@@ -36,18 +36,27 @@ void Render::waitForDevices(std::function<void(bool)> then) {
     if (devicesReady_) devicesTimer_.start();
 }
 
-// What it waits for: plug-ins still loading, or built-in devices' states.
+// What it waits for: plug-ins still loading, built-in devices' states, or audio files being decoded
+// (their clips aren't heard until they are: a project just opened, a new sample rate).
 void Render::showWaiting() {
     if (cancelled()) return;
-    const int waiting = bridge_->pluginsPending();
-    progress_->setLabel(waiting > 0 ? QStringLiteral("Loading plug-ins (%1 to go)…").arg(waiting)
-                                    : QStringLiteral("Loading devices…"));
+    const int plugins = bridge_->pluginsPending();
+    const int files = bridge_->sourcesLoading();
+    if (plugins > 0) {
+        progress_->setLabel(QStringLiteral("Loading plug-ins (%1 to go)…").arg(plugins));
+    } else if (files > 0 && bridge_->devicesReady()) {
+        progress_->setLabel(QStringLiteral("Loading audio files (%1 to go)…").arg(files));
+    } else {
+        progress_->setLabel(QStringLiteral("Loading devices…"));
+    }
 }
 
 void Render::pollDevices() {
     if (!devicesReady_) return;
-    showWaiting();
-    if (!cancelled() && !bridge_->devicesReady()) return;
+    if (!cancelled() && (!bridge_->devicesReady() || bridge_->sourcesLoading() > 0)) {
+        showWaiting();
+        return;
+    }
     devicesTimer_.stop();
     progress_->setBusy(false);
     const auto then = std::move(devicesReady_);

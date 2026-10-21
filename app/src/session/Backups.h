@@ -19,13 +19,22 @@
 // ended without finish()): those with a backup are recoverable(), the newest
 // first; their marks are removed. finish() removes this session's own mark.
 //
+// The timer's backups don't hold up the window: the plug-ins' states are
+// gathered first without waiting for them (setGatherBeforeBackup(): those in
+// sandboxes all at once, as they answer; those unchanged since they were last
+// taken not again), then the project is turned into JSON here, and written,
+// and the oldest pruned, on a thread of its own. One at a time; a backup under
+// way when the project is saved (or this session finishes) is let go of.
+//
 // A folder of "" turns it all off (the tests' sessions).
 
 #include <QDateTime>
+#include <QJsonObject>
 #include <QList>
 #include <QLockFile>
 #include <QObject>
 #include <QString>
+#include <QThreadPool>
 #include <QTimer>
 
 #include <functional>
@@ -63,9 +72,12 @@ public:
     bool enabled() const { return !folder_.isEmpty(); }
     const QString& folder() const { return folder_; }
 
-    // What a backup needs first (the plug-ins' states stored in the project),
-    // and whether there are changes to back up (the session isn't clean).
+    // What a backup needs first (the plug-ins' states stored in the project):
+    // done now (backupNow()), or (the timer's backups) done meanwhile, `then`
+    // called once it is (without it, setBeforeBackup()'s is done first). And
+    // whether there are changes to back up (the session isn't clean).
     void setBeforeBackup(std::function<void()> before) { before_ = std::move(before); }
+    void setGatherBeforeBackup(std::function<void(std::function<void()> then)> gather) { gather_ = std::move(gather); }
     void setUnsaved(std::function<bool()> unsaved) { unsaved_ = std::move(unsaved); }
     // The project's name for a project never saved ("Untitled").
     void setUntitledName(std::function<QString()> name) { untitledName_ = std::move(name); }
@@ -84,6 +96,10 @@ public:
 
     // Writes a backup now: its path, or "" if it couldn't (or isn't enabled).
     QString backupNow();
+    // Starts one as the timer does (if there are unsaved changes, and none is
+    // under way); backedUp() says when it is written.
+    void backUpInBackground();
+    bool backingUp() const { return underWay_.has_value(); }
 
     // The backups crashed sessions left, the newest first.
     const QList<Backup>& recoverable() const { return recoverable_; }
@@ -104,8 +120,13 @@ Q_SIGNALS:
 private:
     QString sessionsFolder() const { return folder_ + QStringLiteral("/sessions"); }
     QString projectName() const;
+    // A new backup's file in `folder` (made), named by when it is made, and what it holds.
+    QString newFile(const QString& folder) const;
+    QJsonObject backupData() const;
     void writeMark(const QString& backup) const;
-    void prune(const QString& folder) const;
+    static void prune(const QString& folder);
+    void write(quint64 backup);
+    void written(const QString& file, bool ok, quint64 backup);
 
 private Q_SLOTS:
     void tick();  // (the timer's: a backup, if there are unsaved changes)
@@ -119,7 +140,14 @@ private:
     QTimer timer_;
     bool changed_ = false;
     bool started_ = false;
+    // The backup under way (gathering, or being written; saved() and finish() let go of it), the
+    // last one's number, and the file being written.
+    std::optional<quint64> underWay_;
+    quint64 backups_ = 0;
+    QString writing_;
+    QThreadPool writer_;  // writes them, one at a time
     std::function<void()> before_;
+    std::function<void(std::function<void()>)> gather_;
     std::function<bool()> unsaved_;
     std::function<QString()> untitledName_;
     QList<Backup> recoverable_;

@@ -42,6 +42,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -366,6 +367,10 @@ public:
     // created the engine (ASIO drivers are COM objects in its apartment).
     static std::vector<std::string> driverTypes() { return AudioDevice::driverTypes(); }
     std::vector<AudioDeviceInfo> devices(const std::string& driver);
+    // A device at another sample rate decodes nothing: the sources cached stay
+    // cached at the old rate (cachedSource()), their clips left out of the
+    // snapshot until each is loaded again (loadSource(), decodeSource(): the
+    // engine bridge has every one decoded again in the background).
     void openDevice(const DeviceConfig& config);
     // Opens the last device again, with the settings its driver asked for: the
     // answer to a "reset" event.
@@ -706,6 +711,19 @@ public:
     void setProcessorEnabled(uint32_t processorId, bool enabled);
     std::vector<uint8_t> processorState(uint32_t processorId);
     void setProcessorState(uint32_t processorId, const std::vector<uint8_t>& state);
+    // Whether processorState() asks the processor now (Processor::answersState()):
+    // false where the last state known stands in.
+    bool processorAnswersState(uint32_t processorId);
+    // A processor's state without waiting for it here, where it can be: a plug-in
+    // in a sandbox answers in its own process, so every one can be asked at once
+    // (Processor::requestState()). False if it can't be asked so: processorState()
+    // it. The answer: none until it has come (by `until`, waiting until then at
+    // most), then what processorState() would have answered, once; `answered` (if
+    // given) says whether it is the processor's answer or the last state known.
+    bool requestProcessorState(uint32_t processorId);
+    std::optional<std::vector<uint8_t>> requestedProcessorState(uint32_t processorId,
+                                                                std::chrono::steady_clock::time_point until = {},
+                                                                bool* answered = nullptr);
     // Plug-in editors, in windows owned by `ownerWindow` (an HWND; 0 for none).
     bool openEditor(uint32_t processorId, uintptr_t ownerWindow, const std::string& title);
     void closeEditor(uint32_t processorId);
@@ -1055,7 +1073,6 @@ private:
     void collectGarbageLocked();
     void openDeviceLocked(const DeviceConfig& config);
     void closeDeviceLocked();
-    void reloadSourcesLocked();
     std::shared_ptr<AudioSource> loadSourceImpl(const std::string& path, bool publish);
     // Whether a file this long streams, as the settings are.
     bool streamsLocked(double seconds) const { return streaming_.enabled && seconds >= streaming_.thresholdSeconds; }
