@@ -14,6 +14,11 @@
 // file (`viewFrom` to `viewTo`, 0..1), so several clips, each across the width,
 // zoom together. Opening clips shows the whole of each again (zoomToFit()).
 //
+// A warped clip has the song's beats and bars drawn under its waveform where
+// it plays them, numbered by bar along the bottom: each stretch between warp
+// markers squeezes or spreads them, so warping shows as it is done. Its fades
+// show over its waveform as the arrangement draws them.
+//
 // A clip's warp markers stand on its waveform, a tab at the top of each. With
 // one warped clip open they are edited there: double-clicking the waveform adds
 // one (on the beat the audio plays there now: nothing moves), dragging one moves
@@ -151,6 +156,10 @@ private:
     double minSpan() const;
     // The clip of band `index` in its place; its file's length in seconds (0: not loaded).
     double drawBand(SgPainter& painter, size_t index, const Placed& placed) const;
+    // A warped clip's song beats and bars where it plays them in its file (under its waveform).
+    void drawWarpedGrid(SgPainter& painter, const app::Clip& clip, const Placed& placed) const;
+    // Its fades over its waveform.
+    void drawFades(SgPainter& painter, const app::Clip& clip, const Placed& placed) const;
     void drawLabel(SgPainter& painter, const QRectF& band, const QString& name) const;
     void drawRuler(SgPainter& painter, const Placed& placed) const;
     // The one clip open's source's length when its warp markers can be edited (0: they can't).

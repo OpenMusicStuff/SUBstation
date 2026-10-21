@@ -8,6 +8,7 @@
 #include "model/Numbers.h"
 #include "model/Project.h"
 #include "model/Timebase.h"
+#include "music/TempoMap.h"
 #include "session/Selection.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
@@ -45,6 +46,12 @@ void drawWaveform(SgPainter& p, const app::Waveform& source, const ClipWaveform:
         arrangement::waveformOutline(source, fpp, first, columns + 3, static_cast<int>(area.height()), split, gain);
     outline.draw(p, area.left() + (static_cast<double>(first) - startColumn), area.top(), color);
 }
+
+constexpr double kMinGridPixels = 10.0;   // between the warped grid's lines
+constexpr double kMinBarLabel = 28.0;     // between bar numbers
+constexpr QColor kFadeVeil{0, 0, 0, 80};  // over what a fade takes away (as in the arrangement)
+constexpr QColor kFadeLine{255, 255, 255, 190};
+constexpr double kFadeStep = 3.0;         // pixels between the points a fade's curve is drawn through
 
 }  // namespace
 
@@ -105,10 +112,11 @@ void ClipWaveform::setSession(app::Session* session) {
         connect(bridge, &app::EngineBridge::positionChanged, this, &ClipWaveform::onPosition);
         connect(bridge, &app::EngineBridge::transportChanged, this, &ClipWaveform::onPosition);
         connect(session->selection(), &app::Selection::insertChanged, this, &ClipWaveform::onInsert);
-        // (An unwarped clip's seconds follow the tempo.)
+        // (An unwarped clip's seconds follow the tempo; the warped grid, the time signature.)
         connect(session->project(), &app::Project::settingsChanged, this, [this] {
             onPosition();
             onInsert();
+            update();
         });
     }
     Q_EMIT sessionChanged();
@@ -257,9 +265,11 @@ double ClipWaveform::drawBand(SgPainter& p, size_t index, const Placed& placed) 
     else
         mids = {area.center().y()};
     for (double mid : mids) p.drawLine(QPointF(area.left(), mid), QPointF(area.right(), mid), Theme::gridBeat());
+    if (clip.isWarped()) drawWarpedGrid(p, clip, placed);
     QColor opaque = color;
     opaque.setAlpha(255);
     drawWaveform(p, source, placed, opaque, split, arrangement::quantizedGain(app::dbToGain(clip.gainDb)));
+    drawFades(p, clip, placed);
     const QColor dim(0, 0, 0, 120);
     if (x0 > area.left()) p.fillRect(QRectF(area.left(), area.top(), x0 - area.left(), area.height()), dim);
     if (x1 < area.right()) p.fillRect(QRectF(x1, area.top(), area.right() - x1, area.height()), dim);
@@ -296,6 +306,84 @@ double ClipWaveform::drawBand(SgPainter& p, size_t index, const Placed& placed) 
                    Theme::insertMarker());
     p.restore();
     return totalSec;
+}
+
+void ClipWaveform::drawWarpedGrid(SgPainter& p, const app::Clip& clip, const Placed& placed) const {
+    // The song's beats and bars where the clip plays them in its file: each
+    // stretch between warp markers squeezes or spreads them, so moving a marker
+    // bends the grid under the waveform (the waveform stays as the file is).
+    if (!session_ || placed.spanSec <= 0) return;
+    const app::Project& project = *session_->project();
+    const app::Tempo& tempo = project.tempoMap();
+    const MeterMap meter = project.meter();
+    const QRectF& area = placed.area;
+    const auto beatAt = [&](double sec) { return clip.startBeat + clip.sourceToBeats(sec - clip.offsetSec, tempo); };
+    const auto xOfBeat = [&](double beat) {
+        return xAt(placed, clip.offsetSec + clip.beatsToSource(beat - clip.startBeat, tempo));
+    };
+    const double b0 = beatAt(placed.fromSec), b1 = beatAt(placed.fromSec + placed.spanSec);
+    if (!(b1 > b0)) return;
+    const double pxPerBeat = area.width() / (b1 - b0);  // (on average: stretches differ)
+    QColor barLine = Theme::text(), beatLine = Theme::text();
+    barLine.setAlpha(60);
+    beatLine.setAlpha(24);
+    const QFont font = uiFont(7);
+    QColor label = Theme::text();
+    label.setAlpha(140);
+    double lastLabel = -1e9;
+    const auto line = [&](double beat, bool bar, int64_t index) {
+        const double x = app::roundHalfEven(xOfBeat(beat));
+        if (x < area.left() - 1 || x > area.right() + 1) return;
+        p.fillRect(QRectF(x, area.top(), 1, area.height()), bar ? barLine : beatLine);
+        if (bar && x - lastLabel >= kMinBarLabel && area.height() >= 30) {
+            p.drawText(QPointF(x + 3, area.bottom() - 3), QString::number(index + 1), label, font);
+            lastLabel = x;
+        }
+    };
+    if (pxPerBeat >= kMinGridPixels) {
+        for (double beat = std::ceil(b0); beat <= b1; beat += 1.0) {
+            const MeterMap::Bar bar = meter.barAt(beat);
+            line(beat, std::abs(bar.start - beat) < 1e-9, bar.index);
+        }
+        return;
+    }
+    // Too close for beats: bars, every so many.
+    const double barBeats = std::max(1.0, meter.at(b0).beatsPerBar());
+    int64_t every = 1;
+    while (pxPerBeat * barBeats * static_cast<double>(every) < kMinGridPixels && every < (int64_t{1} << 20)) every *= 2;
+    int64_t index = meter.barAt(std::max(0.0, b0)).index / every * every;
+    for (; meter.barStart(index) <= b1; index += every)
+        if (meter.barStart(index) >= b0) line(meter.barStart(index), true, index);
+}
+
+void ClipWaveform::drawFades(SgPainter& p, const app::Clip& clip, const Placed& placed) const {
+    // Its fades, as the arrangement draws them: a curve from silence (the
+    // bottom) to full level (the top), a veil over what it takes away.
+    if (placed.spanSec <= 0) return;
+    const QRectF& area = placed.area;
+    const double top = area.top() + 1, bottom = area.bottom() - 1;
+    p.save();
+    p.setAntialiasing(true);
+    for (const bool out : {false, true}) {
+        const double length = out ? clip.fadeOutSec : clip.fadeInSec;
+        if (length <= 0) continue;
+        const double from = out ? clip.offsetSec + clip.durationSec - length : clip.offsetSec;
+        const double xa = xAt(placed, from), xb = xAt(placed, from + length);
+        const double a = std::max(xa, area.left() - 2), b = std::min(xb, area.right() + 2);
+        if (b <= a || xb - xa < 1) continue;
+        const double curve = out ? clip.fadeOutCurve : clip.fadeInCurve;
+        const int steps = std::max(2, static_cast<int>(std::ceil((b - a) / kFadeStep)));
+        QPolygonF points;
+        for (int i = 0; i <= steps; ++i) {
+            const double x = a + (b - a) * i / steps;
+            const double along = (x - xa) / (xb - xa);
+            const double gain = app::Clip::fadeGain(out ? 1.0 - along : along, curve);
+            points << QPointF(x, bottom - gain * (bottom - top));
+        }
+        p.fillToBaseline(points.constData(), static_cast<int>(points.size()), area.top(), kFadeVeil);
+        p.drawPolyline(points, kFadeLine, 1.0);
+    }
+    p.restore();
 }
 
 // --- Editing warp markers ----------------------------------------------------------------------

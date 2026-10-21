@@ -164,6 +164,14 @@ and pressing one drags it (`moveWarpMarker` with one gesture key a drag: one und
 resize over them. The file's transients are 5 px ticks along the top then; a double-click within half a tab of one
 adds the marker on it (`snappedSecAt`).
 
+A warped clip has the song's beats and bars drawn under its waveform where it plays them (`drawWarpedGrid()`: each
+beat's second `clip.offsetSec + clip.beatsToSource(beat - clip.startBeat, tempo)`, bars by the project's meter, a
+bar's number along the bottom at least `kMinBarLabel` px apart), so a stretch between markers squeezes or spreads
+them and dragging a marker bends the grid as it goes; beats while they are at least `kMinGridPixels` (10 px) apart on
+average, else bars, every 1, 2, 4... of them. Its fades are drawn over the waveform as the arrangement draws them
+(`drawFades()`: a curve from the bottom to the top, a veil over what it takes away; they are in seconds of the file,
+so they stand on it as they are).
+
 Warping and its modes in the engine: [engine/warp.md](../engine/warp.md).
 
 ### A clip's groove

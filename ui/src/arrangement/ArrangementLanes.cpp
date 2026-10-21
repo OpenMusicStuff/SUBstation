@@ -51,6 +51,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <utility>
 
@@ -675,10 +676,27 @@ void ArrangementLanes::drawContent(SgPainter& p, const app::Clip& clip, const QR
         const QRectF wave = body.adjusted(0, 1, 0, -1);
         p.save();
         p.setClipRect(wave.intersected(visible));
+        // The file's second at each x, as the clip plays it: through its warp
+        // markers (or source map), or, unwarped, the tempo where it is.
         const app::Tempo& tempo = session()->project()->tempoMap();
-        waveforms_.draw(p, source, wave, rect.left(), clip.offsetSec,
-                        arrangement()->view().framesPerPixel(source.sampleRate(), clip.sourceTempo(tempo)),
-                        contentColor(clip), wave.height() >= 44, visible, app::dbToGain(clip.gainDb));
+        const double left = rect.left(), pxPerBeat = arrangement()->pxPerBeat();
+        const auto secondsAt = [&](double x) {
+            return clip.offsetSec + clip.beatsToSource((x - left) / pxPerBeat, tempo);
+        };
+        // Turned down through its fades, as they turn its audio down (drawFades() draws their curves over it).
+        const double fadeIn = clip.fadeInBeats(tempo) * pxPerBeat, fadeOut = clip.fadeOutBeats(tempo) * pxPerBeat;
+        std::function<double(double)> taper;
+        if (fadeIn >= 1 || fadeOut >= 1) {
+            taper = [&, right = rect.right()](double x) {
+                double gain = 1.0;
+                if (fadeIn >= 1 && x < left + fadeIn) gain = app::Clip::fadeGain((x - left) / fadeIn, clip.fadeInCurve);
+                if (fadeOut >= 1 && x > right - fadeOut)
+                    gain = std::min(gain, app::Clip::fadeGain((right - x) / fadeOut, clip.fadeOutCurve));
+                return gain;
+            };
+        }
+        waveforms_.drawMapped(p, source, wave, secondsAt, contentColor(clip), wave.height() >= 44, visible,
+                              app::dbToGain(clip.gainDb), taper);
         p.restore();
         drawChords(p, clip, body, visible);
     } else if (body.height() > 10 && rect.width() > 40) {
