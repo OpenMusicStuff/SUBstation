@@ -127,26 +127,36 @@ The right side, [ClipWaveform](../../ui/src/pianoroll/ClipWaveform.h), draws eac
 them out (below), in its track's colour and scaled by its gain (rounded to 0.1 dB), the part the clip plays
 tinted, the rest dimmed, and S and E flags at its start and end, as in Ableton's sample editor. Columns come from the
 source's peaks (or its samples, zoomed in that far), blurred lightly when from peaks, as the arrangement's tiles are,
-but drawn without a cache: what shows is one width. One clip gets a time ruler (steps from a fixed list, at least 70 px
-apart: `formatTime()`); several are stacked in bands of at least `kMinBandHeight` (40 px), labelled, with "+N more"
-when they don't fit. What it draws (each clip's colour, its source, why it couldn't be loaded) is worked out on the
-GUI thread. `placed()` says where each band is drawn: its area, its file's length, and the part of it shown (`fromSec`,
-`spanSec`: the seconds at its edges; a warped band's `warped` clip, `fromBeat` and `spanBeat`: its own beats,
-`Clip::warpBeatAt`, from its file's start to its end); `xAt(placed, sec)` and `secAt(placed, x)` convert (through
-`warpBeatAt` and `warpSecondsAt` for a warped band), and everything drawn or hit goes through them. The waveform is
+but drawn without a cache: what shows is one width. One unwarped clip gets a time ruler (steps from a fixed list, at
+least 70 px apart: `formatTime()`), a warped one a ruler of bars and beats. Several (`shared()`) share one axis, the
+song's beats: each a band of `bandHeight()` (at least `kMinBandHeight`, 40 px; filling the height when they fit),
+labelled, each clip where it plays in the arrangement, under a ruler of bars and beats; the bands scroll up and down
+under the ruler (`scrollY`, `contentHeight`; the clip view's `bandsBar` beside them while they don't fit). What it
+draws (each clip's colour, its track, its source, why it couldn't be loaded) is worked out on the GUI thread.
+`placed()` says where each band is drawn: its area, its file's length, and the part of it shown (`fromSec`, `spanSec`:
+the seconds at its edges; a band laid out in beats has its `clip`, the `tempo`, and `fromBeat` and `spanBeat` in song
+beats: `songAt()` and `secAtSong()`, through `Clip::sourceToBeats` and `beatsToSource`, place its file on them, before
+and after the part it plays too); `xAt(placed, sec)` and `secAt(placed, x)` convert, and everything drawn or hit goes
+through them. A file is drawn only between its own start and end. The waveform is
 drawn a piece at a time over which its seconds go evenly with x (`arrangement::linearPieces`, as the arrangement's
 warped clips are), so in beats each stretch between warp markers shows as fast or slow as it plays.
 
-**Zooming and scrolling.** What shows is a share of each file, `viewFrom` to `viewTo` (0..1): one clip zooms as any
-view does, and several, each across the width, zoom together. `zoomAt(x, factor)` keeps the moment under `x` in place,
-held to `minSpan()` (the first clip's file at `kMaxPixelsPerFrame`, 8 px a frame) and to the whole file;
-`scrollTo(from)` keeps the zoom; `zoomToFit()` shows the whole of each (on `opened`: other clips open whole). The
+**Zooming and scrolling.** What shows is a share, `viewFrom` to `viewTo` (0..1), of the extent: one clip's file, or
+the song beats several clips' files span (`sharedExtent()`). `zoomAt(x, factor)` keeps the moment under `x` in place,
+held to `minSpan()` (the first clip's file at `kMaxPixelsPerFrame`, 8 px a frame) and to the whole extent;
+`scrollTo(from)` keeps the zoom; `zoomToFit()` shows one clip's whole file, or the stretch several clips play with 2 %
+of room either side (on `opened`: other clips open so). The
 mouse is as in the arrangement and the piano roll: Ctrl+wheel zooms around the mouse (`kWheelZoom`, 1.2 a notch), the
-wheel (Shift, or a horizontal one) scrolls sideways (`kWheelScroll`, 80 px a notch: there is nothing to scroll up and
-down), Ctrl+Alt drags it (`ViewDrag`), and a press on the ruler (one clip) is a click or a drag decided on its first 3
-px, as the piano roll's ruler decides: sideways scrolls, up and down zooms around the press (1.012 a pixel, down in),
-and a click (on the release) plays from the moment clicked (`locateRequested(beat)`: `clip.startBeat` plus the
-clip's beats to it, held to the part the clip plays; the clip view passes it on as its own `locateRequested`). Under
+wheel (Shift, or a horizontal one) scrolls sideways (`kWheelScroll`, 80 px a notch), but several clips' bands that
+don't fit scroll up and down with a plain vertical wheel (`kWheelScrollY`, 40 px a notch, as the arrangement's),
+Ctrl+Alt drags it (`ViewDrag`), and a press on the ruler is a click or a drag decided on its first 3 px, as the piano
+roll's ruler decides: sideways scrolls, up and down zooms around the press (1.012 a pixel, down in), and a click (on
+the release) plays from the moment clicked (`locateRequested(beat)`: one clip, `clip.startBeat` plus the clip's beats
+to it, held to the part the clip plays; several, the song beat there; the clip view passes it on as its own
+`locateRequested`). With several clips, a click on a band (released within 3 px of the press) selects that clip and
+its track (`Selection::selectClips`) and emits `clipClicked(trackId, clipId)`: the clip view's `clipChosen`, on which
+the main window opens it alone; the double-click that click may begin is ignored (`justChosen_`), so it adds no warp
+marker to the clip it opened. Under
 the waveforms a `ScrollBar` (`waveformBar`) shows while zoomed in. The window's Zoom In, Zoom Out and Zoom to
 Arrangement (+, −, Z) call the clip view's `zoom(factor)` and `zoomToFit()` while it shows (Main.qml's
 `window.zoom()` and `window.zoomToFit()`): the waveforms' (about their middle), or the piano roll's
@@ -644,6 +654,6 @@ playing inside a clip shown and emits `playheadChanged`; only the `RollPlayhead`
 |---|---|
 | [test_ui_pianoroll.cpp](../../tests/app/test_ui_pianoroll.cpp) | Through the clip view: a MIDI track with the Synth and a clip opened in the piano roll; notes drawn and heard, dragged to move, resize and copy; the header's Notes menu on every note of the clips shown (or the selected ones); the notes' keys taking precedence over the window's shortcuts; the rubber band, the keys and the velocity lane; Alt+wheel and Ctrl+Alt drags; the note tools floating by notes selected by dragging (Humanize's menu: Velocity and Timing, each with its amount); the song's chords along the top (over the part the clip plays, hidden with the key, clicks going through them), notes out of the key in red, Generate › Chords and › Bass; Groove on the song's grid (Ctrl+Shift+U with Swing at first, a groove of the project's from the menu, its amounts, the project's default and the status line without one) |
 | [test_ui_pianoroll_bends.cpp](../../tests/app/test_ui_pianoroll_bends.cpp) | Bend mode: B and the bend button showing the curves (and the note tools staying away); a point added on a curve dragged where the mouse goes; points clicked away, selected and deleted; Alt-dragging a segment; double-clicking a point at the pitch clicked; the vibrato tool's drags and clicks, and the bend bar's settings; Shift and Alt setting a vibrato's speed and ramp as it is drawn (the stretch held meanwhile), Ctrl drawing it off the grid; B and the button always starting with Draw; the glide tool sliding into the next note (of a chord, the nearest), Alt curving it (the next slide starting with that curve, until it is changed), a click to the note's end, Ctrl off the grid, nothing after the last note; Shift showing the notes to move, lengthen, add and select (the note tools coming up), not with the vibrato tool, not during a curve's drag; Clear |
-| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; a warped clip laid out in beats, its ruler in bars and beats; warp markers added, dragged to beats (snapped, Alt freely), Shift-dragged under, and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them, and the Audio and MIDI switch (the choice kept when shown again, gone with other clips, the other kind shown when the clips shown are deleted); an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); the start marker and the playhead on the waveform, a click on the ruler playing from there; zooming and scrolling (Ctrl+wheel around the mouse, the wheel and Shift+wheel, Ctrl+Alt drags, the ruler's drags, the window's zoom keys, the closest zoom, other clips opening whole); going back (Esc, ×, the clips deleted, the project reset) |
+| [test_ui_clipview.cpp](../../tests/app/test_ui_clipview.cpp) | Audio clips: one clip opened, its settings and waveform; several edited in unison; warping and transposing reaching the audio; a warped clip laid out in beats, its ruler in bars and beats; warp markers added, dragged to beats (snapped, Alt freely), Shift-dragged under, and removed on the waveform, marked at transients and snapped to them; the clip gain making the waveform taller; which clips open with a MIDI clip among them, and the Audio and MIDI switch (the choice kept when shown again, gone with other clips, the other kind shown when the clips shown are deleted); an audio clip's groove (Swing warping it, its step and timing, Apply into its warp markers, None, Extract); the start marker and the playhead on the waveform, a click on the ruler playing from there; zooming and scrolling (Ctrl+wheel around the mouse, the wheel and Shift+wheel, Ctrl+Alt drags, the ruler's drags, the window's zoom keys, the closest zoom, other clips opening whole); going back (Esc, ×, the clips deleted, the project reset) ; several clips on the song's beats (zoomed, scrolled sideways and up and down, the ruler, a click selecting one and showing it alone); knobs typed into and moved by the arrows (Transpose by semitones and octaves) |
 | [test_ui_progressions.cpp](../../tests/app/test_ui_progressions.cpp) | Progression ideas through the clip view: Generate › Progressions… opening the panel beside the roll with ideas in the song's key (A minor without one), × and Esc; trying an idea writing its chords (the clip made four bars long), ↑ and ↓, a click on a row, a run of tries one undo step; the clip's own notes kept, and an edit between tries; each clip's last try replaced in it after a try in another; Bass and 7ths writing the tried idea again; locked chords and kept ideas staying for New Ideas; a chord swapped from the right-click menu; More Like This; eight bars, another mood, the project's key |
 | [test_midi_model.cpp](../../tests/app/test_midi_model.cpp) | The note maths |

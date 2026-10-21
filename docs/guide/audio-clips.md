@@ -8,7 +8,8 @@ open in the piano roll instead (see [midi.md](midi.md)).
 ## The clip view
 
 - It edits one clip or many at once: select several audio clips and open them, and
-  each gets its own waveform.
+  each gets its own waveform, laid out on the song's bars and beats where it plays (see
+  [Several clips](#several-clips)).
 - Knobs move all the open clips by the same amount (transposing up 2 semitones
   transposes each clip by 2, whatever it was at); switches and the warp mode set the
   same value on all of them. Where clips differ, the value's tooltip says so.
@@ -19,6 +20,9 @@ open in the piano roll instead (see [midi.md](midi.md)).
   (each with how many there are) switch between them: the audio clips' settings and
   waveforms, or the MIDI clips in the piano roll. The choice stays while you reopen the
   same clips.
+- Click a knob and type a value, as in Ableton (Enter sets it). **Up** and **Down** then
+  turn it a step: Transpose a semitone (**Shift**: an octave), Detune a cent (ten), Gain
+  half a dB (6 dB). Pan takes "25L", "C" or "40R".
 
 Its controls come in four sections:
 
@@ -49,7 +53,20 @@ clip's in beats (see [Warp markers](#warp-markers)).
   scrolls sideways; **Ctrl+Alt drag** moves it; dragging in the ruler scrolls (sideways)
   or zooms (up and down), as the arrangement's ruler does. A scroll bar shows under the
   waveforms while zoomed in. **+** and **−** zoom in and out, and **Z** shows the whole
-  file again. Several clips zoom together, each across the width.
+  file again.
+
+### Several clips
+
+Opened together, clips share one axis, the song's bars and beats, each in a band of its
+own where it plays in the arrangement (the parts of its file before and after it dimmed),
+under a ruler of bars and beats.
+
+- Zoom and scroll as with one clip: **Ctrl+wheel**, **Shift+wheel**, **Ctrl+Alt drag**, the
+  ruler and the scroll bar under them. **Z** shows the stretch they play.
+- When the bands don't fit, the **wheel** scrolls them up and down (as in the arrangement),
+  with a scroll bar beside them; **Shift+wheel** still scrolls sideways.
+- **Click the ruler** to play from that beat of the song.
+- **Click a clip** to select it and its track, and show it alone.
 
 ## Warping
 

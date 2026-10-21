@@ -47,6 +47,9 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 
 - Each parameter gets a knob, or a list for parameters that choose between named
   values. Frequency and time knobs turn logarithmically.
+- As in Ableton, click any knob and type a value (Enter sets it): in its own units, so
+  "-6" on a knob reading in dB, "25" on one in percent, "2k" on one in Hz. **Up** and
+  **Down** then turn it a step, **Shift** with them a large step.
 - Most devices show four parameters at a time, in a 2×2 grid; the page arrows show the
   others. The Sampler, the Compressor, the Gate, the Limiter, Multiband Dynamics, the
   Spectral Compressor, the Saturator, the Overdrive, the Amp, Erosion, the Auto Filter, the Bitcrusher, the Tape

@@ -53,6 +53,8 @@ FocusScope {
 
     signal closeRequested()
     signal locateRequested(real beat)
+    // One of several audio clips clicked (it and its track selected): show it alone.
+    signal clipChosen(string trackId, string clipId)
     signal statusMessage(string message)
 
     // The window's Zoom In and Out (by `factor`, more than 1 in) and Zoom to
@@ -590,6 +592,28 @@ FocusScope {
                 session: Session
                 controller: clipController
                 onLocateRequested: beat => view.locateRequested(beat)
+                onClipClicked: (trackId, clipId) => view.clipChosen(trackId, clipId)
+            }
+            // Several clips that don't fit: a scroll bar beside their bands.
+            ScrollBar {
+                id: bandsBar
+                objectName: "bandsBar"
+                x: waveform.x + waveform.width - width
+                y: waveform.y + waveform.rulerHeight
+                width: Theme.scrollBarWidth
+                height: waveform.height - waveform.rulerHeight
+                orientation: Qt.Vertical
+                policy: ScrollBar.AlwaysOn
+                focusPolicy: Qt.NoFocus
+                visible: waveform.contentHeight > height + 0.5
+                size: waveform.contentHeight > 0 ? height / waveform.contentHeight : 1
+                stepSize: 0.05
+                onPositionChanged: if (pressed) waveform.scrollY = position * waveform.contentHeight
+
+                Binding on position {
+                    when: !bandsBar.pressed
+                    value: waveform.contentHeight > 0 ? waveform.scrollY / waveform.contentHeight : 0
+                }
             }
             ClipPlayhead {
                 objectName: "clipPlayhead"

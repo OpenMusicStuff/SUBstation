@@ -241,7 +241,6 @@ private Q_SLOTS:
     void knobTyping() {
         auto* knob = item<KnobItem>("typedKnob");
         QVERIFY(knob->typeable());
-        QVERIFY(!item<KnobItem>("knob")->typeable());
         QSignalSpy requested(knob, &KnobItem::editRequested);
         QSignalSpy moved(knob, &KnobItem::moved);
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(knob));
@@ -257,14 +256,67 @@ private Q_SLOTS:
         // Text that doesn't parse changes nothing.
         QVERIFY(!knob->applyTyped(QStringLiteral("loud")));
         QCOMPARE(knob->value(), 50.0);
-        // A knob without a parser takes no focus from a click, and ignores digits.
+        // Any knob, as Ableton's: a click gives it the focus, and a digit opens its field.
         auto* plain = item<KnobItem>("knob");
+        QVERIFY(plain->typeable());
         QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(plain));
-        QVERIFY(!plain->hasActiveFocus());
-        plain->forceActiveFocus();
+        QVERIFY(plain->hasActiveFocus());
         QSignalSpy plainRequested(plain, &KnobItem::editRequested);
-        QTest::keyClick(window_, Qt::Key_5);
-        QCOMPARE(plainRequested.count(), 0);
+        QTest::keyClick(window_, Qt::Key_0);
+        QCOMPARE(plainRequested.count(), 1);
+        QTest::keyClick(window_, Qt::Key_Period);
+        QTest::keyClick(window_, Qt::Key_2);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTRY_COMPARE(plain->value(), 0.2);  // (its text a plain number: the number itself)
+    }
+
+    void aKnobWithoutAParserTakesTheNumberItsTextShows() {
+        // The value whose text shows the number typed, found along the travel, whatever its units.
+        auto* db = item<KnobItem>("dbKnob");
+        QVERIFY(db->applyTyped(QStringLiteral("-6")));
+        QCOMPARE(db->text(), QStringLiteral("-6.0 dB"));
+        QVERIFY(std::abs(db->value() + 6.0) < 0.05);
+        QVERIFY(db->applyTyped(QStringLiteral("100")));  // (held to the range)
+        QCOMPARE(db->value(), 6.0);
+        auto* percent = item<KnobItem>("percentKnob");
+        QVERIFY(percent->applyTyped(QStringLiteral("25 %")));
+        QVERIFY(std::abs(percent->value() - 0.25) < 0.005);
+        auto* hz = item<KnobItem>("hzKnob");
+        QVERIFY(hz->applyTyped(QStringLiteral("2k")));
+        QVERIFY(std::abs(hz->value() - 2000.0) < 5.0);
+        QVERIFY(hz->applyTyped(QStringLiteral("440")));
+        QVERIFY(std::abs(hz->value() - 440.0) < 0.5);
+        QVERIFY(!hz->applyTyped(QStringLiteral("loud")));
+        QCOMPARE(*KnobItem::numberIn(QStringLiteral("+5 st")), 5.0);
+        QCOMPARE(*KnobItem::numberIn(QStringLiteral("1.5 kHz")), 1500.0);
+        QCOMPARE(*KnobItem::numberIn(QStringLiteral(".5")), 0.5);
+        QVERIFY(!KnobItem::numberIn(QStringLiteral("C")));
+    }
+
+    void knobArrowKeys() {
+        // Up and Down move a focused knob a step (Shift: a large one), one gesture while held.
+        auto* semitones = item<KnobItem>("semitoneKnob");
+        QSignalSpy moved(semitones, &KnobItem::moved);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(semitones));
+        QVERIFY(semitones->hasActiveFocus());
+        QTest::keyClick(window_, Qt::Key_Up);
+        QCOMPARE(semitones->value(), 1.0);
+        QTest::keyClick(window_, Qt::Key_Up, Qt::ShiftModifier);
+        QCOMPARE(semitones->value(), 13.0);
+        QTest::keyClick(window_, Qt::Key_Down, Qt::ShiftModifier);
+        QTest::keyClick(window_, Qt::Key_Down);
+        QTest::keyClick(window_, Qt::Key_Down);
+        QCOMPARE(semitones->value(), -1.0);
+        QCOMPARE(moved.count(), 5);
+        QVERIFY(moved.at(0).at(1).toString() != moved.at(1).at(1).toString());  // (each press its own gesture)
+        // Without a step: a hundredth of the travel (Shift: a tenth).
+        auto* plain = item<KnobItem>("knob");
+        plain->setValue(0.5);
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(plain));
+        QTest::keyClick(window_, Qt::Key_Up);
+        QVERIFY(std::abs(plain->value() - 0.51) < 1e-9);
+        QTest::keyClick(window_, Qt::Key_Down, Qt::ShiftModifier);
+        QVERIFY(std::abs(plain->value() - 0.41) < 1e-9);
     }
 
     void knobPaintsItsAutomationDot() {
@@ -690,6 +742,14 @@ Window {
     Knob { objectName: "typedKnob"; x: 220; y: 100; width: 40; height: 40; from: 0; to: 100; value: 10
            parser: text => { const v = parseFloat(text); return isNaN(v) ? null : v } }
     Knob { objectName: "noWheelKnob"; x: 270; y: 100; width: 40; height: 40; wheel: false; value: 0.5 }
+    Knob { objectName: "dbKnob"; x: 400; y: 100; width: 40; height: 40; from: -70; to: 6; value: 0
+           formatter: v => v.toFixed(1) + " dB" }
+    Knob { objectName: "percentKnob"; x: 450; y: 100; width: 40; height: 40; from: 0; to: 1; value: 0.5
+           formatter: v => Math.round(v * 100) + "%" }
+    Knob { objectName: "hzKnob"; x: 500; y: 100; width: 40; height: 40; from: 20; to: 20000; value: 1000; logScale: true
+           formatter: v => v >= 1000 ? (v / 1000).toFixed(2) + " kHz" : Math.round(v) + " Hz" }
+    Knob { objectName: "semitoneKnob"; x: 550; y: 100; width: 40; height: 40; from: -48; to: 48; step: 1; value: 0
+           largeKeyStep: 12 }
     ValueBox { objectName: "tempo"; x: 20; y: 180; width: 70; height: 24; from: 20; to: 999; value: 120; step: 0.25; decimals: 2 }
     ValueBox { objectName: "denominator"; x: 100; y: 180; width: 40; height: 24; from: 1; to: 32; value: 4; decimals: 0
                choices: [1, 2, 4, 8, 16, 32] }

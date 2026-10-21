@@ -8,6 +8,8 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 
+#include <QRegularExpression>
+
 #include <algorithm>
 #include <cmath>
 
@@ -241,16 +243,75 @@ void KnobItem::setParseFunction(std::function<std::optional<double>(const QStrin
     Q_EMIT typeableChanged();
 }
 
-bool KnobItem::typeable() const { return bool(parse_) || parser_.isCallable(); }
+bool KnobItem::typeable() const { return true; }
+
+void KnobItem::setKeyStep(qreal step) {
+    if (step == keyStep_)
+        return;
+    keyStep_ = step;
+    Q_EMIT rangeChanged();
+}
+
+void KnobItem::setLargeKeyStep(qreal step) {
+    if (step == largeKeyStep_)
+        return;
+    largeKeyStep_ = step;
+    Q_EMIT rangeChanged();
+}
+
+QString KnobItem::textFor(double value) const {
+    if (format_)
+        return format_(value);
+    if (formatter_.isCallable())
+        return formatter_.call({QJSValue(value)}).toString();
+    return QString::number(value, 'f', 2);
+}
+
+std::optional<double> KnobItem::numberIn(const QString& text) {
+    static const QRegularExpression number(QStringLiteral("([-+]?(?:\\d+\\.?\\d*|\\.\\d+))\\s*([kK])?"));
+    const QRegularExpressionMatch match = number.match(text);
+    if (!match.hasMatch())
+        return std::nullopt;
+    bool ok = false;
+    double value = match.captured(1).toDouble(&ok);
+    if (!ok || !std::isfinite(value))
+        return std::nullopt;
+    if (!match.captured(2).isEmpty())
+        value *= 1000.0;
+    return value;
+}
+
+std::optional<double> KnobItem::typedValue(const QString& text) const {
+    const std::optional<double> typed = numberIn(text);
+    if (!typed)
+        return std::nullopt;
+    // Its text's number at each end; between them, halved until it shows the number typed.
+    const std::optional<double> low = numberIn(textFor(fromFraction(0.0)));
+    const std::optional<double> high = numberIn(textFor(fromFraction(1.0)));
+    if (!low || !high || *low == *high)
+        return *typed;  // (no number to go by: the number itself)
+    const bool rising = *high > *low;
+    if (rising ? *typed <= *low : *typed >= *low)
+        return fromFraction(0.0);
+    if (rising ? *typed >= *high : *typed <= *high)
+        return fromFraction(1.0);
+    // The text's number is rounded: the middle of the stretch that shows it, found from both sides.
+    const auto edge = [&](bool above) {
+        double a = 0.0, b = 1.0;
+        for (int i = 0; i < 60; ++i) {
+            const double m = (a + b) / 2;
+            const std::optional<double> shown = numberIn(textFor(fromFraction(m)));
+            const bool before = shown && (rising ? (above ? *shown <= *typed : *shown < *typed)
+                                                 : (above ? *shown >= *typed : *shown > *typed));
+            (before ? a : b) = m;
+        }
+        return (a + b) / 2;
+    };
+    return fromFraction((edge(false) + edge(true)) / 2);
+}
 
 void KnobItem::updateText() {
-    QString text;
-    if (format_)
-        text = format_(value_);
-    else if (formatter_.isCallable())
-        text = formatter_.call({QJSValue(value_)}).toString();
-    else
-        text = QString::number(value_, 'f', 2);
+    const QString text = textFor(value_);
     if (text != text_) {
         text_ = text;
         Q_EMIT textChanged();
@@ -298,6 +359,8 @@ bool KnobItem::applyTyped(const QString& text) {
         parsed = parse_(text);
     else if (parser_.isCallable())
         parsed = parsedNumber(parser_.call({QJSValue(text)}));
+    else
+        parsed = typedValue(text);
     if (!parsed)
         return false;
     setRelative(false);
@@ -387,8 +450,7 @@ void KnobItem::mousePressEvent(QMouseEvent* event) {
         return;
     }
     Q_EMIT touched();
-    if (typeable())
-        forceActiveFocus(Qt::MouseFocusReason);  // so typing a digit edits
+    forceActiveFocus(Qt::MouseFocusReason);  // so typing a digit edits, and the arrows move it
     const bool wasDragging = dragging();
     drag_ = Drag{event->position().y(), fraction(value_), newGestureKey()};
     cursor_.press(event->globalPosition());
@@ -472,12 +534,42 @@ void KnobItem::keyPressEvent(QKeyEvent* event) {
         event->accept();
         return;
     }
+    if (const int sign = arrowSign(event)) {
+        // Up and Down: a step (Shift: a large one), one gesture while the key is held.
+        if (!event->isAutoRepeat() || keyGesture_.isEmpty())
+            keyGesture_ = newGestureKey();
+        const bool large = event->modifiers() & Qt::ShiftModifier;
+        double moved = 0.0;
+        const double small = keyStep_ > 0 ? keyStep_ : step_;
+        if (small > 0) {
+            moved = value_ + sign * (large ? (largeKeyStep_ > 0 ? largeKeyStep_ : 10 * small) : small);
+        } else if (large && largeKeyStep_ > 0) {
+            moved = value_ + sign * largeKeyStep_;
+        } else {
+            moved = fromFraction(std::clamp(fraction(value_) + sign * (large ? 0.1 : 0.01), 0.0, 1.0));
+        }
+        setRelative(true);
+        setFromUser(moved, keyGesture_);
+        event->accept();
+        return;
+    }
     event->ignore();
+}
+
+int KnobItem::arrowSign(const QKeyEvent* event) {
+    if (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))
+        return 0;
+    if (event->key() == Qt::Key_Up)
+        return 1;
+    if (event->key() == Qt::Key_Down)
+        return -1;
+    return 0;
 }
 
 bool KnobItem::event(QEvent* event) {
     // What it types into its text field comes to it as a key press, not to the window's shortcuts.
-    if (event->type() == QEvent::ShortcutOverride && typesInto(static_cast<QKeyEvent*>(event))) {
+    if (event->type() == QEvent::ShortcutOverride &&
+        (typesInto(static_cast<QKeyEvent*>(event)) || arrowSign(static_cast<QKeyEvent*>(event)))) {
         event->accept();
         return true;
     }

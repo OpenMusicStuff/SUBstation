@@ -62,7 +62,10 @@ Item {
             defaultValue: control.spec.defaultValue
             bipolar: control.spec.bipolar
             value: control.spec.value
+            keyStep: control.spec.keyStep ?? 0
+            largeKeyStep: control.spec.largeKeyStep ?? 0
             formatter: v => control.controller.format(control.knob, v)
+            parser: text => control.controller.parse(control.knob, text)
             onMoved: (value, gestureKey) => control.controller.nudge(control.knob, value, gestureKey)
         }
 

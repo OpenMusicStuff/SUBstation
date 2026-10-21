@@ -1,18 +1,23 @@
 #pragma once
 
-// The clip view's waveforms: each open audio clip's source file across the
-// width (the whole of it at first), in its track's colour and scaled by its
-// gain, the part the clip plays tinted and the rest dimmed, with S and E flags
-// at its start and end, as in Ableton's sample editor. One clip gets a time
-// ruler (steps at least 70 px apart); several are stacked in bands of at least
-// 40 px, labelled, with "+N more" when they don't fit.
+// The clip view's waveforms: each open audio clip's source file, in its
+// track's colour and scaled by its gain, the part the clip plays tinted and the
+// rest dimmed, with S and E flags at its start and end, as in Ableton's sample
+// editor. One clip shows across the width (the whole of its file at first).
+// Several are stacked in bands of at least 40 px, labelled, on one axis: the
+// song's beats, each where it plays in the arrangement, under a ruler of bars
+// and beats; when they don't fit they scroll up and down (`scrollY`). Clicking
+// one of several selects it and its track (as a click in the arrangement
+// would) and asks for it alone (clipClicked).
 //
 // It zooms and scrolls as the arrangement and the piano roll do: Ctrl+wheel
 // zooms around the mouse, the wheel (Shift, or a horizontal one) scrolls
-// sideways, Ctrl+Alt drags it, and a drag on the ruler scrolls (sideways) or
-// zooms (up and down) as their rulers do. What it shows is a share of each
-// file (`viewFrom` to `viewTo`, 0..1), so several clips, each across the width,
-// zoom together. Opening clips shows the whole of each again (zoomToFit()).
+// sideways (with several clips that don't fit, the wheel scrolls up and down,
+// as the arrangement's), Ctrl+Alt drags it, and a drag on the ruler scrolls
+// (sideways) or zooms (up and down) as their rulers do. What it shows is a share
+// (`viewFrom` to `viewTo`, 0..1) of its extent: one clip's file, or the beats
+// several clips' files span. Opening clips shows the whole of one's file, or
+// the stretch several clips play (zoomToFit()).
 //
 // A warped clip is laid out as Live lays it out: in its own beats (Placed's
 // `warped`), its waveform drawn stretch by stretch as fast or slow as it plays
@@ -69,6 +74,10 @@ class ClipWaveform : public SgCanvas {
     // The share of each clip's file shown (0..1).
     Q_PROPERTY(double viewFrom READ viewFrom NOTIFY viewChanged)
     Q_PROPERTY(double viewTo READ viewTo NOTIFY viewChanged)
+    // Several clips: how far their bands are scrolled up, and how tall they are together.
+    Q_PROPERTY(double scrollY READ scrollY WRITE setScrollY NOTIFY viewChanged)
+    Q_PROPERTY(double contentHeight READ contentHeight NOTIFY viewChanged)
+    Q_PROPERTY(int rulerHeight READ rulerHeight CONSTANT)
 
 public:
     static constexpr int kRulerHeight = 20;
@@ -77,6 +86,7 @@ public:
     static constexpr double kMaxPixelsPerFrame = 8.0;  // as far as it zooms in (the first clip's file)
     static constexpr double kWheelZoom = 1.2;          // a notch of Ctrl+wheel
     static constexpr double kWheelScroll = 80.0;       // pixels a notch of the wheel scrolls
+    static constexpr double kWheelScrollY = 40.0;      // ... up and down (several clips)
 
     explicit ClipWaveform(QQuickItem* parent = nullptr);
 
@@ -93,6 +103,12 @@ public:
 
     double viewFrom() const { return viewFrom_; }
     double viewTo() const { return viewTo_; }
+    double scrollY() const { return scrollY_; }
+    static int rulerHeight() { return kRulerHeight; }
+    void setScrollY(double y);
+    double contentHeight() const;
+    // Several clips shown, on the song's beats.
+    bool shared() const { return bands_.size() > 1; }
     // Zoom by `factor` (more than 1: in) around `x`, the moment there staying put.
     Q_INVOKABLE void zoomAt(double x, double factor);
     // Show from `from` (a share of each file) on, the zoom staying.
@@ -102,32 +118,41 @@ public:
 
     // Where each clip shown is drawn: its waveform's area, its file's length in
     // seconds (0: not loaded), and the part of it shown (from, length), top
-    // first (several: those that fit).
+    // first (several: each, scrolled; some may be out of sight).
     struct Placed {
         QRectF area;
         double totalSec = 0.0;
         double fromSec = 0.0;  // the file's second at the left edge
         double spanSec = 0.0;  // ... to the right edge's
-        // A warped clip, laid out in its own beats (Clip::warpBeatAt): from `fromBeat` at the left edge, `spanBeat` across.
-        std::optional<app::Clip> warped;
+        // Laid out in the song's beats (a warped clip, or several clips): `clip` placing its file on them
+        // (as it plays in the arrangement, at `tempo`), from `fromBeat` at the left edge, `spanBeat` across.
+        std::optional<app::Clip> clip;
+        app::Tempo tempo;
         double fromBeat = 0.0;
         double spanBeat = 0.0;
     };
     std::vector<Placed> placed() const;
-    // The ruler shows (one clip open).
-    bool rulerShown() const { return bands_.size() == 1; }
+    // The ruler shows (some clip open).
+    bool rulerShown() const { return !bands_.empty(); }
     // The playhead in each clip's file (seconds from its start), while playing inside that clip; by band.
     const std::vector<std::optional<double>>& playheadSecs() const { return playheadSecs_; }
     // The x of `sec` into a band's file, and back.
     static double xAt(const Placed& placed, double sec) {
-        if (placed.warped) return xAtBeat(placed, placed.warped->warpBeatAt(sec));
+        if (placed.clip) return xAtBeat(placed, songAt(*placed.clip, sec, placed.tempo));
         return placed.area.left() + (sec - placed.fromSec) / placed.spanSec * placed.area.width();
     }
     static double secAt(const Placed& placed, double x) {
-        if (placed.warped) return placed.warped->warpSecondsAt(beatAt(placed, x));
+        if (placed.clip) return secAtSong(*placed.clip, beatAt(placed, x), placed.tempo);
         return placed.fromSec + (x - placed.area.left()) / placed.area.width() * placed.spanSec;
     }
-    // A warped band's: the x of its own beat `beat`, and back.
+    // The song beat at which `clip` plays `sec` of its file (before or after the part it plays too), and back.
+    static double songAt(const app::Clip& clip, double sec, const app::Tempo& tempo) {
+        return clip.startBeat + clip.sourceToBeats(sec - clip.offsetSec, tempo);
+    }
+    static double secAtSong(const app::Clip& clip, double song, const app::Tempo& tempo) {
+        return clip.offsetSec + clip.beatsToSource(song - clip.startBeat, tempo);
+    }
+    // A band laid out in beats: the x of song beat `beat`, and back.
     static double xAtBeat(const Placed& placed, double beat) {
         return placed.area.left() + (beat - placed.fromBeat) / placed.spanBeat * placed.area.width();
     }
@@ -150,6 +175,8 @@ Q_SIGNALS:
     void playheadChanged();
     // A click on the ruler: play from this arrangement beat.
     void locateRequested(double beat);
+    // One of several clips clicked (it and its track selected): show it alone.
+    void clipClicked(const QString& trackId, const QString& clipId);
 
 protected:
     void paint(SgPainter& painter) override;
@@ -168,6 +195,7 @@ private:
     struct Band {
         app::Clip clip;
         QColor color;
+        QString trackId;
         app::Waveform source;
         QString loadError;
         std::vector<double> transients;  // seconds: while its warp markers can be edited
@@ -183,10 +211,15 @@ private:
     void setView(double from, double to);
     // The shortest share of the files shown: kMaxPixelsPerFrame of the first one's frames.
     double minSpan() const;
+    // Several clips: the song beats their files span, and those they play (none while none is loaded).
+    std::optional<std::pair<double, double>> sharedExtent(bool played) const;
+    // A band's height with several clips (at least kMinBandHeight), and the band at `y` (-1: none).
+    double bandHeight() const;
+    int bandAt(double y) const;
     // The clip of band `index` in its place; its file's length in seconds (0: not loaded).
     double drawBand(SgPainter& painter, size_t index, const Placed& placed) const;
-    // A warped clip's song beats and bars where it plays them in its file (under its waveform).
-    void drawWarpedGrid(SgPainter& painter, const app::Clip& clip, const Placed& placed) const;
+    // A band laid out in beats: the song's beats and bars across it (under its waveform).
+    void drawWarpedGrid(SgPainter& painter, const Placed& placed) const;
     // Its fades over its waveform.
     void drawFades(SgPainter& painter, const app::Clip& clip, const Placed& placed) const;
     void drawLabel(SgPainter& painter, const QRectF& band, const QString& name) const;
@@ -224,6 +257,10 @@ private:
     std::optional<Drag> drag_;  // a warp marker dragged
     // While one is: the lead band's beats from its file's start to its end, as they were at the press.
     std::optional<std::pair<double, double>> heldBeats_;
+    double scrollY_ = 0.0;
+    // A press on one of several clips' bands: a click (released within 3 px) selects that clip.
+    std::optional<std::pair<QPointF, int>> clickPress_;
+    bool justChosen_ = false;  // (the double-click that a click choosing a clip began isn't the clip's)
     // Ctrl+Alt dragging the view, or a press on the ruler (a click plays from there, a drag scrolls or zooms).
     struct ViewDrag {
         QPointF press;

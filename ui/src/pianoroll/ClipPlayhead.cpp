@@ -1,5 +1,7 @@
 #include "pianoroll/ClipPlayhead.h"
 
+#include <algorithm>
+
 #include "model/Numbers.h"
 #include "sg/SgPainter.h"
 #include "theme/Theme.h"
@@ -28,7 +30,9 @@ void ClipPlayhead::paint(SgPainter& p) {
         if (!secs[i] || placed.totalSec <= 0 || placed.spanSec <= 0) continue;
         const double x = app::roundHalfEven(ClipWaveform::xAt(placed, *secs[i]));
         if (x < placed.area.left() - 1 || x > placed.area.right() + 1) continue;  // (scrolled away)
-        p.fillRect(QRectF(x, placed.area.top(), 1, placed.area.height()), Theme::playhead());
+        // (Several clips' bands scroll under the ruler: what of each is below it.)
+        const double top = std::max(placed.area.top(), waveform_->rulerShown() ? double(ClipWaveform::kRulerHeight) : 0.0);
+        if (placed.area.bottom() > top) p.fillRect(QRectF(x, top, 1, placed.area.bottom() - top), Theme::playhead());
         if (waveform_->rulerShown()) {
             const double foot = ClipWaveform::kRulerHeight;
             p.fillPolygon(QPolygonF({QPointF(x - 5, foot - 8), QPointF(x + 6, foot - 8), QPointF(x + 0.5, foot - 1)}),

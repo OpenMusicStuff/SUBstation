@@ -189,6 +189,8 @@ public:
     // A knob turned to `value`: every clip moves by the lead's change (one undo
     // step per gesture key).
     Q_INVOKABLE void nudge(const QString& knob, double value, const QString& gestureKey);
+    // What is typed into a knob, as its value (pan: "50L", "C"; else the number typed); null if it isn't one.
+    Q_INVOKABLE QVariant parse(const QString& knob, const QString& text) const;
     // A knob's value as its readout and tooltip show it.
     Q_INVOKABLE QString format(const QString& knob, double value) const;
     // Every shown clip's groove (model/Grooves.h): none (""), "swing", "project" or "library" (with
