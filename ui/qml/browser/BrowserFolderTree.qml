@@ -66,14 +66,18 @@ SelectionList {
         required property bool hasChildren
 
         readonly property bool selected: tree.selectedRows.indexOf(index) >= 0
+        // Selected while the tree has the keyboard: in the accent (else on its wash).
+        readonly property bool lit: selected && tree.activeFocus
         readonly property int indent: 20  // (QTreeView's indentation)
 
         width: ListView.view.width
-        implicitHeight: Math.max(16, label.implicitHeight) + 4
+        implicitHeight: Math.max(Theme.listRowHeight, label.implicitHeight + 4)
 
         Rectangle {
             anchors.fill: parent
-            color: entry.selected ? Theme.accent : (area.containsMouse ? Theme.panelAlt : "transparent")
+            color: entry.lit ? Theme.accent
+                 : entry.selected ? tree.selectionWash
+                 : area.containsMouse ? Theme.panelAlt : "transparent"
         }
 
         SelectionRowArea {
@@ -96,7 +100,7 @@ SelectionList {
                 name: "fold"
                 checked: !entry.expanded
                 size: 9
-                color: entry.selected ? Theme.accentText : Theme.textDim
+                color: entry.lit ? Theme.accentText : Theme.textDim
             }
             MouseArea {
                 anchors.fill: parent
@@ -109,19 +113,19 @@ SelectionList {
             anchors.left: arrow.right
             anchors.verticalCenter: parent.verticalCenter
             name: entry.isDir ? "folder" : "waveform"
-            size: 16
+            color: entry.lit ? Theme.accentText : Theme.textDim
         }
         Text {
             id: label
             anchors.left: icon.right
-            anchors.leftMargin: 4
+            anchors.leftMargin: 6
             anchors.right: parent.right
-            anchors.rightMargin: 4
+            anchors.rightMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             text: entry.name
             font: Theme.listFont
             elide: Text.ElideRight
-            color: entry.selected ? Theme.accentText : Theme.text
+            color: entry.lit ? Theme.accentText : Theme.text
         }
     }
 }

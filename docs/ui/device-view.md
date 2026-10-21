@@ -78,19 +78,25 @@ DevicePanel (WINDOW, the info view at its left in the main window)
       └─ the hint
 ```
 
-As in Ableton, the devices stand on the window's colour, 8 px apart (`DeviceChainArea::kSpacing`), with a grip in
-each gap (`DeviceGrip`: two short dark lines upright in the middle, drawn by the frame before it); the info view at
-the panel's left (main window) has one after it too.
+As in Ableton, the devices stand on the window's colour, 8 px apart (`DeviceChainArea::kSpacing`), with a meter in
+each gap of what the device before it puts out (the frame's `deviceMeter`, a compact `Meter`: two thin bars half the
+device's height, centred on it, from `bridge.deviceMeter(id)` as the meters update; a rack's is its chains summed, a
+device switched off shows what goes past it). The info view at the panel's left (main window) has a grip after it
+instead (`DeviceGrip`: two short dark lines upright in the middle of the gap).
 
 `DeviceChain` is a `Row` over a `DeviceChainList` (`deviceIds` of one chain, changing only when the chain's devices
 do, so the `Repeater` makes its frames again only then, not as devices are selected, switched or edited: the frames
 follow those themselves). After a rack that isn't folded, has chains and shows its devices (`DeviceInfo::rackDevicesShown`),
-a `RackChainView` (an accent-bracketed frame, "Drop devices here" while empty) holds a `DeviceChain` of the chain the
-rack shows, recursively, so racks in it show theirs further along. Which chain a rack shows is `DeviceSelection::shownChain(rackId)` (the one last
-clicked in its chain list, else its first). A frozen track (or one in a frozen group) shows no devices.
+a `RackChainView` (`EMPTY_AREA` in a quiet bracket, "[ ]": a 2 px upright at each side with 5 px feet pointing in, in
+`bracketColor`, the rack's title bar's colour, so it turns teal with its rack selected; its last device's meter inside
+it; while empty, at least a device's width with "Drop devices here" in the middle) holds a `DeviceChain` of the chain
+the rack shows, recursively, so racks in it show theirs further along. Which chain a rack shows is
+`DeviceSelection::shownChain(rackId)` (the one last clicked in its chain list, else its first). A frozen track (or one in a frozen group) shows no devices.
 
-The hint (`DeviceSelection::hint`) says what can be dropped (an instrument on a MIDI track without one, otherwise
-effects), that no track is selected, or that the track is frozen.
+The hint (`DeviceSelection::hint`, in `textDim`) says what can be dropped (an instrument on a MIDI track without one,
+otherwise effects), that no track is selected, or that the track is frozen. While a track is shown it stands in the
+middle of an empty place after the devices, as tall as a device and at least as wide (`EMPTY_AREA` in a 1 px line of
+`DEVICE_HEADER`, 16 px either side of the text), where what it asks for drops.
 
 What the panel is to the main window: `startChainRename(rackId, chainId)` (Ctrl+R on a rack chain: its row's name
 edited in place, after scrolling to the rack; the rack's chain list is shown first if it is hidden, and the rename
@@ -112,8 +118,8 @@ tooltip).
 ### Scrolling
 
 [DeviceChainArea](../../ui/src/devices/DeviceChainArea.h) scrolls the chain sideways without a scroll bar (`contentX`,
-`maxContentX`): Shift+wheel anywhere over the chain scrolls it (`kWheelScroll` 80 px a notch), and the wheel never
-turns a knob or a value box here; Ctrl+Alt-drag anywhere on the chain scrolls it by hand, as in the arrangement. The
+`maxContentX`): Shift+wheel anywhere over the chain scrolls it (`kWheelScroll` 80 px a notch),
+and the wheel never turns a knob or a value box here; Ctrl+Alt-drag anywhere on the chain scrolls it by hand, as in the arrangement. The
 press usually lands on a device or a knob, so the area watches its window's mouse and wheel events before they reach
 them (an event filter on the application, which sees them before the popups' overlay does: it filters the window's
 events while a popup is up, a tooltip included, and took the press first). A Ctrl+Alt press there never reaches the
@@ -178,7 +184,7 @@ The device view's clipboard is its own: the arrangement's clips, automation and 
   The arrangement reads the same format, to move devices to another track.
 - **Where it drops**: `dropTarget(x, y)` returns `{chain, index}`: a rack's chain row under the mouse (last in that
   chain), else the innermost rack chain shown there, else the track's own chain; the index counts the chain's frames
-  whose middles are left of the mouse. `dropMarker` is a 2 px line there.
+  whose middles are left of the mouse. `dropMarker` is a 2 px line there, in the accent.
 - **Auto-scroll**: within `kAutoscrollEdge` (40 px) of either side, a 16 ms timer scrolls the chain, faster nearer the
   edge.
 - **Dropping**: devices of this track → `DeviceSelection::dropMoved(ids, chain, index)` (`editor.moveDevices`);
@@ -188,7 +194,7 @@ The device view's clipboard is its own: the arrangement's clips, automation and 
 - **Onto a device**: `presetTarget(x, y, paths)` is the device under the mouse if a single preset is dragged and
   loads into it (not on a rack's chain list row, which takes it as a new device in that chain). The presets are read
   once per drag (`presetLoadsInto`, forgotten by `dragEnded()`). While there is one, `loadMarker` outlines it instead
-  of the drop line.
+  of the drop line (2 px of the accent, the frame's corners, over a faint wash of it).
 
 ## DeviceFrame
 
@@ -199,19 +205,22 @@ and editor, its sidechain, its MIDI input) reading the project again whenever th
 - **Frame**: `Theme::panelAlt()` in a 1 px line of its title bar's colour, 3 px corners. Its width is `DEVICE_WIDTH` (216 px),
   a rack's or an editor's own (`body.implicitWidth + 2`: a rack's grows with its macros and its chain list), or 26 px
   folded.
-- **Title bar** (`Theme::deviceHeader()`, teal while selected): the fold button, the on/off switch (round, as Ableton's:
-  `DeviceInfo::setEnabled`, overriding the switch's automation while it plays; following that automation, with the
-  automation dot: `enabled`, `enabledAutomation`; right-click: Show, Delete and Re-Enable Automation), the name
-  (elided; its tooltip: a plug-in's name, vendor, file and latency, a rack's name
-  and latency), a plug-in's editor button (`plugin_window` icon, lit while its editor shows), the MIDI From button
-  (a device that plays notes), the sidechain button (a device with a sidechain input), the page arrows and "n/m" (only with more than one page), or, for an editor that
-  names its pages (`pageNames`: the Sampler's *Sample* and *Controls*, as Simpler's), a tab per page instead
+- **Title bar** (`Theme::deviceHeader()`, teal while selected, lit faintly along its top; the name in `Theme.titleFont`;
+  its buttons' icons and texts dim at rest, as `device-header`'s look has them): the fold button, the on/off switch
+  (round, 14 px, as Ableton's: `DeviceInfo::setEnabled`, overriding the switch's automation while it plays;
+  following that automation, with the automation dot: `enabled`, `enabledAutomation`; right-click: Show, Delete and
+  Re-Enable Automation), the name (elided, in `textDim` while the device is switched off or bypassed while monitoring
+  (`constrained`); its tooltip: a plug-in's name, vendor, file and latency, a rack's name and latency), a plug-in's
+  editor button (`plugin_window` icon, lit while its editor shows), the MIDI From button (a device that plays notes),
+  the sidechain button (a device with a sidechain input), the page arrows and "n/m" (only with more than one page),
+  or, for an editor that names its pages (`pageNames`: the Sampler's *Sample* and *Controls*, as Simpler's), a tab per page instead
   (`pageTab_<name>`, lit while it shows), the save button.
 - **Body**: a `Loader` taking all the height there is: a rack's `RackDeviceBody` (a Drum Rack's `DrumRackBody`), a plug-in's `PluginDeviceBody`,
   the device's editor (`DeviceEditors.editorFor(kind)`), or `DeviceKnobPages`. A body may have `pages` and `page`
   (the title bar pages through them; the page is restored from the area when the body is made again). Its content
   starts 6 px below the title bar and what fills the height (a graph, a rack's chain list) ends 6 px above the
-  frame's bottom (the EQ's curve and the Sidechain's fill it all, 5 px for their side columns).
+  frame's bottom (the EQ's curve and the Sidechain's fill it all, 5 px for their side columns). While the device is
+  switched off the body dims to 0.55 (over 120 ms; it stays editable, as Live's).
 - **Folded**, the frame is a 26 px strip instead: the fold button, the switch and the name reading upwards.
 - **Mouse** ([DeviceFrameInput](../../ui/src/devices/DeviceFrameInput.h), under the frame's controls, so it gets the
   clicks on the background, the title bar and labels): a press selects (`DeviceSelection::press`), the release

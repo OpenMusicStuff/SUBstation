@@ -8,7 +8,9 @@ import SUBstation
 // SidebarModel. A click shows an entry (its scope); "Add Folder…" asks for a
 // folder instead (the controller's addPlaceRequested). An entry with sub-entries
 // has an arrow that collapses or expands it (Samples starts collapsed). A
-// right-click opens the entry's menu (contextMenuRequested).
+// right-click opens the entry's menu (contextMenuRequested). The entry shown
+// is on a wash of the accent, a stripe of it on its left; a sub-entry's title
+// lines up with its parent's (only the top level has icons).
 Rectangle {
     id: sidebar
 
@@ -19,6 +21,9 @@ Rectangle {
         browser.sidebar.count  // (made again: the rows may have moved)
         return browser.sidebar.find(browser.scope)
     }
+
+    // What the entry shown is drawn on (the lists' selectionWash).
+    readonly property color currentWash: Qt.tint(Theme.panel, Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.14))
 
     // A right-click on an entry (its scope; [] below the entries).
     signal contextMenuRequested(var scope)
@@ -56,21 +61,30 @@ Rectangle {
             readonly property bool current: selectable && sidebar.currentRow === index
 
             width: ListView.view.width
-            implicitHeight: section ? heading.implicitHeight + 6 : Math.max(18, label.implicitHeight) + 4
+            // (A heading has room above it; the first, its capitals level with the list's first name.)
+            implicitHeight: section ? heading.implicitHeight + (index === 0 ? 8 : 14)
+                                    : Math.max(Theme.listRowHeight, label.implicitHeight + 4)
 
             Rectangle {
                 anchors.fill: parent
                 visible: !entry.section
-                color: entry.current ? Theme.accent : (hover.hovered ? Theme.panelAlt : "transparent")
+                color: entry.current ? sidebar.currentWash : (hover.hovered ? Theme.panelAlt : "transparent")
+
+                Rectangle {
+                    visible: entry.current
+                    width: 2
+                    height: parent.height
+                    color: Theme.accent
+                }
             }
 
             Text {
                 id: heading
                 visible: entry.section
                 anchors.left: parent.left
-                anchors.leftMargin: 4
+                anchors.leftMargin: 6
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 2
+                anchors.bottomMargin: 4
                 text: entry.title
                 font: Theme.listHeadingFont
                 color: Theme.textDim
@@ -79,17 +93,23 @@ Rectangle {
             Row {
                 visible: !entry.section
                 anchors.left: parent.left
-                anchors.leftMargin: 4 + entry.depth * 8
+                anchors.leftMargin: 6 + entry.depth * 20  // (a level in: an icon and the space after it)
                 anchors.right: arrow.left
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 4
+                spacing: 6
 
-                Icon {
+                // The icon's place, on the top level (Add Folder…'s is empty: its title lines up).
+                Item {
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: entry.icon !== ""
-                    name: entry.icon
-                    color: entry.current ? Theme.accentText : undefined
-                    size: 16
+                    visible: entry.depth === 0
+                    width: Theme.iconSize
+                    height: Theme.iconSize
+
+                    Icon {
+                        visible: entry.icon !== ""
+                        name: entry.icon
+                        color: Theme.textDim
+                    }
                 }
                 Text {
                     id: label
@@ -98,7 +118,7 @@ Rectangle {
                     text: entry.title
                     font: Theme.listFont
                     elide: Text.ElideRight
-                    color: entry.current ? Theme.accentText : (entry.dim ? Theme.textDim : Theme.text)
+                    color: entry.dim ? Theme.textDim : Theme.text
                 }
             }
 
@@ -117,7 +137,7 @@ Rectangle {
                     name: "fold"
                     checked: !entry.expanded
                     size: 9
-                    color: entry.current ? Theme.accentText : Theme.textDim
+                    color: Theme.textDim
                 }
                 TapHandler {
                     enabled: entry.expandable

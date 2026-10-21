@@ -22,7 +22,9 @@ their own page: [plugins.md](plugins.md).
   tooltip shows there at once instead of popping up. *View › Info View* hides it; the
   tooltips then pop up again (as they always do in dialogs).
 - Add a device by dragging it from the browser onto the chain or onto a track, or by
-  double-clicking it in the browser (see [browser.md](browser.md)).
+  double-clicking it in the browser (see [browser.md](browser.md)). A track with no
+  devices shows an empty place to drop them on, saying what goes there.
+- Between devices, a small meter shows what the device before it puts out.
 
 ### Title bar
 
@@ -30,7 +32,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 
 - the **fold** triangle (see [Folding](#folding));
 - its **on/off switch** and **name** (the name's tooltip shows the device's latency, if
-  it has any). The switch can be automated (*Device On*: right-click it; see
+  it has any). A device switched off greys its name and dims its controls, which you
+  can still set. The switch can be automated (*Device On*: right-click it; see
   [automation.md](automation.md#switching-off-and-on));
 - a plug-in's **editor window** button (see [plugins.md](plugins.md));
 - the **sidechain** button, on devices with a sidechain input (see
@@ -72,7 +75,8 @@ Each device has a title bar, as in Ableton (teal while the device is selected), 
 - Drag devices onto another track in the arrangement to move them there, with their
   automation; plug-ins move as they are, without loading again.
 - Delete a device with the **Delete** key or its right-click menu.
-- **Ctrl+Alt drag** anywhere on the chain scrolls it, as in the arrangement.
+- **Ctrl+Alt drag** anywhere on the chain scrolls it, as in the arrangement; so does
+  **Shift+wheel**.
 
 ### MIDI from another track
 

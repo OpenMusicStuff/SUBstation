@@ -36,11 +36,13 @@ void loadUiFont() {
 
 }  // namespace
 
-QFont uiFont(qreal pointSize, bool bold) {
+QFont uiFont(qreal pointSize, bool bold) { return uiFont(pointSize, bold ? QFont::Bold : QFont::Normal); }
+
+QFont uiFont(qreal pointSize, QFont::Weight weight) {
     loadUiFont();
     QFont font(QString::fromLatin1(Theme::kUiFontFamily));
     font.setPointSizeF(pointSize);
-    font.setBold(bold);
+    font.setWeight(weight);
     return font;
 }
 
@@ -221,7 +223,12 @@ QFont Theme::font() const { return sub::ui::uiFont(); }
 
 QFont Theme::smallFont() const { return sub::ui::uiFont(8.0); }
 QFont Theme::listFont() const { return sub::ui::uiFont(10.0); }
-QFont Theme::listHeadingFont() const { return sub::ui::uiFont(8.5, true); }
+QFont Theme::listHeadingFont() const {
+    QFont font = sub::ui::uiFont(8.0, QFont::DemiBold);
+    font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+    return font;
+}
+QFont Theme::titleFont() const { return sub::ui::uiFont(9.0, QFont::DemiBold); }
 
 QString Theme::monoFontFamily() const { return QString::fromLatin1(kMonoFontFamily); }
 
