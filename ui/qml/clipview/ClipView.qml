@@ -5,12 +5,17 @@ import SUBstation
 
 // The clip view: what a double-clicked clip opens. MIDI clips get the piano
 // roll (several edited together), and in the header the key their notes are
-// judged by (out of it, red) and Generate (chords or a bass line from the
-// song's chords, into the lead clip; or Progressions…, progression ideas in a
-// mood to try in it, in a panel beside the roll), and their groove (Groove ▾). Audio clips get
-// their controls on the left (Warp, Pitch, Mix, Groove) and large waveforms on the
-// right; with several open, the controls edit all of them at once
-// (ClipViewController has the rules).
+// judged by (out of it, red), Notes (Transpose, Legato, Quantize and the rest
+// on the selected notes, or every note of every clip shown), Generate (chords
+// or a bass line from the song's chords, into the lead clip; or Progressions…,
+// progression ideas in a mood to try in it, in a panel beside the roll), and
+// their groove (Groove ▾). Audio clips get their controls on the left (Warp,
+// Pitch, Mix, Groove) and large waveforms on the right, with the playhead over
+// them, zoomed and scrolled as the arrangement is (a scroll bar under them while
+// zoomed in); with several open, the controls edit all of them at once
+// (ClipViewController has the rules). Given clips of both kinds, it shows one
+// kind's and the header's Audio and MIDI buttons switch to the other's.
+// zoom(factor) and zoomToFit() are the window's Zoom In, Out and Z while it shows.
 //
 // Give it the clips to show:
 //
@@ -40,6 +45,7 @@ FocusScope {
 
     readonly property alias controller: clipController
     readonly property alias pianoRollView: rollView
+    readonly property alias waveform: waveform
     readonly property alias progressionPanel: progressionPanel
     readonly property alias progressionIdeas: progressionIdeas
     // Showing a MIDI clip in the piano roll (else audio clips, or nothing).
@@ -48,6 +54,22 @@ FocusScope {
     signal closeRequested()
     signal locateRequested(real beat)
     signal statusMessage(string message)
+
+    // The window's Zoom In and Out (by `factor`, more than 1 in) and Zoom to
+    // Arrangement (Z: the whole clip again), on what shows: the waveforms (about
+    // their middle) or the piano roll (about the grid's).
+    function zoom(factor) {
+        if (clipController.midi)
+            rollView.roll.zoomAt(rollView.grid.width / 2, factor)
+        else
+            waveform.zoomAt(waveform.width / 2, factor)
+    }
+    function zoomToFit() {
+        if (clipController.midi)
+            rollView.roll.zoomToFit()
+        else
+            waveform.zoomToFit()
+    }
 
     // The notes (MIDI) or the view (audio) take the keyboard.
     function focusContent() {
@@ -99,6 +121,37 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 10
 
+            // Audio and MIDI clips among those opened: which kind shows (the other kind's stay open, a click away).
+            Row {
+                id: kindSwitch
+                objectName: "kindSwitch"
+                anchors.verticalCenter: parent.verticalCenter
+                visible: clipController.mixed && clipController.count > 0
+                spacing: 1
+
+                ToggleButton {
+                    objectName: "showAudio"
+                    width: implicitWidth + 14
+                    height: 20
+                    role: "monitor"
+                    checkable: false
+                    checked: !clipController.midi
+                    text: qsTr("Audio %1").arg(clipController.audioCount)
+                    tooltip: qsTr("The audio clips among those selected: their settings and waveforms")
+                    onClicked: clipController.showKind(false)
+                }
+                ToggleButton {
+                    objectName: "showMidi"
+                    width: implicitWidth + 14
+                    height: 20
+                    role: "monitor"
+                    checkable: false
+                    checked: clipController.midi
+                    text: qsTr("MIDI %1").arg(clipController.midiCount)
+                    tooltip: qsTr("The MIDI clips among those selected, in the piano roll, edited together")
+                    onClicked: clipController.showKind(true)
+                }
+            }
             Label {
                 objectName: "clipName"
                 anchors.verticalCenter: parent.verticalCenter
@@ -140,6 +193,79 @@ FocusScope {
                 ToolTip.text: keyLabel.inferred
                     ? qsTr("The key the song's MIDI is most likely in (the project has none):\nnotes out of it show red. C shows or hides the chords and the key")
                     : qsTr("The project's key: notes out of it show red.\nC shows or hides the chords and the key")
+            }
+            RoleButton {
+                id: notesButton
+                objectName: "notesMenuButton"
+                anchors.verticalCenter: parent.verticalCenter
+                role: "small"
+                text: qsTr("Notes ▾")
+                tooltip: qsTr("Transpose, Legato, Quantize and the rest on the selected notes,\nor on every note of every clip shown when none are selected")
+                onClicked: notesMenu.popup(notesButton, 0, notesButton.height)
+
+                Menu {
+                    id: notesMenu
+                    objectName: "notesMenu"
+                    // (The notes take the keyboard back.)
+                    onClosed: rollView.focusNotes()
+
+                    MenuItem {
+                        objectName: "notesTarget"
+                        enabled: false
+                        text: rollView.roll.selectedCount === 1 ? qsTr("The selected note")
+                            : rollView.roll.selectedCount > 1 ? qsTr("The %1 selected notes").arg(rollView.roll.selectedCount)
+                            : rollView.roll.clipCount > 1 ? qsTr("Every note of the %1 clips").arg(rollView.roll.clipCount)
+                                                           : qsTr("Every note")
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        objectName: "transposeUp"
+                        text: qsTr("Transpose Up")
+                        onTriggered: rollView.roll.transpose(1)
+                    }
+                    MenuItem {
+                        objectName: "transposeDown"
+                        text: qsTr("Transpose Down")
+                        onTriggered: rollView.roll.transpose(-1)
+                    }
+                    MenuItem {
+                        objectName: "octaveUp"
+                        text: qsTr("Octave Up")
+                        onTriggered: rollView.roll.transpose(12)
+                    }
+                    MenuItem {
+                        objectName: "octaveDown"
+                        text: qsTr("Octave Down")
+                        onTriggered: rollView.roll.transpose(-12)
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        objectName: "notesLegato"
+                        text: qsTr("Legato")
+                        onTriggered: rollView.roll.legato()
+                    }
+                    MenuItem {
+                        objectName: "notesQuantize"
+                        text: qsTr("Quantize (%1)").arg(rollView.roll.quantizeGrid)
+                        onTriggered: rollView.roll.quantize()
+                    }
+                    MenuItem {
+                        objectName: "notesDouble"
+                        text: qsTr("Timing ×2")
+                        onTriggered: rollView.roll.scaleTime(2.0)
+                    }
+                    MenuItem {
+                        objectName: "notesHalve"
+                        text: qsTr("Timing ÷2")
+                        onTriggered: rollView.roll.scaleTime(0.5)
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        objectName: "selectAllNotes"
+                        text: qsTr("Select All Notes")
+                        onTriggered: rollView.roll.selectAll()
+                    }
+                }
             }
             RoleButton {
                 id: grooveButton
@@ -454,13 +580,44 @@ FocusScope {
             }
 
             ClipWaveform {
+                id: waveform
                 objectName: "clipWaveform"
                 x: controls.width
                 width: parent.width - controls.width
-                height: parent.height
+                // (Zoomed in: a scroll bar under it.)
+                height: parent.height - (waveformBar.visible ? waveformBar.height : 0)
                 clip: true
                 session: Session
                 controller: clipController
+                onLocateRequested: beat => view.locateRequested(beat)
+            }
+            ClipPlayhead {
+                objectName: "clipPlayhead"
+                x: waveform.x
+                width: waveform.width
+                height: waveform.height
+                clip: true
+                waveform: waveform
+            }
+            ScrollBar {
+                id: waveformBar
+                objectName: "waveformBar"
+                x: waveform.x
+                y: parent.height - height
+                width: waveform.width
+                height: Theme.scrollBarWidth
+                orientation: Qt.Horizontal
+                policy: ScrollBar.AlwaysOn
+                focusPolicy: Qt.NoFocus
+                visible: waveform.viewTo - waveform.viewFrom < 1
+                size: waveform.viewTo - waveform.viewFrom
+                stepSize: 0.05 * size
+                onPositionChanged: if (pressed) waveform.scrollTo(position)
+
+                Binding on position {
+                    when: !waveformBar.pressed
+                    value: waveform.viewFrom
+                }
             }
         }
 

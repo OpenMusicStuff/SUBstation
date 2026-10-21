@@ -91,16 +91,22 @@ folding, the master, the title bar and the transport bar, and projects.
   piano roll, 0 deactivates the selected notes instead (see
   [midi.md](midi.md#keys)). Consolidating MIDI clips keeps a deactivated clip's notes,
   deactivated.
-- **Double-click** a clip to open it in the clip view (the piano roll for a MIDI clip;
-  double-clicking one of several selected MIDI clips opens them all, edited together);
-  see [audio-clips.md](audio-clips.md) and [midi.md](midi.md). **Shift+Tab** shows or
-  hides the clip view, and **Esc** goes back to the arrangement.
+- **Double-click** a clip to open it in the clip view (the piano roll for a MIDI clip): it
+  is selected alone and opens by itself. **Shift+Tab** opens every selected clip (the
+  MIDI ones edited together in the piano roll); with clips of both kinds selected, the
+  clip view shows the first one's kind, and its **Audio** and **MIDI** buttons switch to
+  the other's. See [audio-clips.md](audio-clips.md) and [midi.md](midi.md). Shift+Tab
+  also hides the clip view again, and **Esc** goes back to the arrangement.
 - Overlaps follow Ableton's rule: the clip you place wins.
 
 A clip's right-click menu has *Cut*, *Copy*, *Paste*, *Split Here*, *Duplicate*,
 *Consolidate*, *Reverse*, *Deactivate* (or *Activate*) and *Delete*; right-clicking anywhere in a time selection
 offers the same (but *Split Here*), for what is selected. A clip's menu also has *Apply Groove* (the selected clips'
-grooves written into them) and *Extract Groove* (a groove made of the clip's feel): see [grooves.md](grooves.md). An audio clip's also has *Find
+grooves written into them) and *Extract Groove* (a groove made of the clip's feel): see [grooves.md](grooves.md). With
+MIDI clips selected it has **MIDI Notes**, for every note of every selected MIDI clip at once, without opening them:
+*Transpose Up* and *Down* (a semitone), *Octave Up* and *Down*, *Legato* (in each clip, each note lasts until the
+next starts) and *Quantize* (onto the song's 1/4 to 1/32 grid, or triplets), each one undo step (see
+[midi.md](midi.md#many-clips-at-once)). An audio clip's also has *Find
 Similar Sounds* (see [browser.md](browser.md#find-similar-sounds)), *Hot-Swap Sample*
 (try samples from the browser in place of its file, everywhere it plays) and *Show in
 File Manager* (see [file-manager.md](file-manager.md)). Right-clicking an empty part

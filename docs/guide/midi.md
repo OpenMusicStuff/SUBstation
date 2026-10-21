@@ -29,12 +29,15 @@ Double-click a MIDI clip to open it in the piano roll, laid out like Ableton's M
 editor: keys on the left, a ruler on top, notes in the middle and a velocity lane
 below.
 
-Select several MIDI clips (on one track or several) and double-click one of them (or
-press Shift+Tab) to edit them all at once: every clip's notes show, each in its
-track's colour, at their places in the song (the ruler shows the song's bars, with a
-bar in each clip's colour under the part it plays). Notes you edit stay in their own
-clips; a note you add goes into the clip playing where you draw it (the one you
-double-clicked, if it plays there). Generate writes into the clip you double-clicked.
+Select several MIDI clips (on one track or several, for example by dragging over them)
+and press **Shift+Tab** to edit them all at once (double-clicking one opens just that
+one): every clip's notes show, each in its track's colour, at their places in the song
+(the ruler shows the song's bars, with a bar in each clip's colour under the part it
+plays). Notes you edit stay in their own clips; a note you add goes into the clip
+playing where you draw it (the first clip, top track first, if it plays there).
+Generate writes into that first clip.
+With audio clips among those selected, the **Audio** and **MIDI** buttons at the top
+left switch between them (see [audio-clips.md](audio-clips.md#the-clip-view)).
 
 - **Keys**: click a key to hear it and select its notes (Shift adds them to the
   selection); drag along the keys to hear them and select every note on the keys you
@@ -81,6 +84,25 @@ double-clicked, if it plays there). Generate writes into the clip you double-cli
 
 Drag a stem in the velocity lane to change velocities; several selected notes change
 together, by the same amount.
+
+### Many clips at once
+
+To change every note of many clips, for example to move a whole song's parts up a
+semitone or make a dozen clips legato:
+
+- In the piano roll, with several clips open, **Notes ▾** at the top has *Transpose Up*
+  and *Down* (a semitone), *Octave Up* and *Down*, *Legato*, *Quantize* (at the note
+  tools' grid), *Timing ×2* and *÷2*, and *Select All Notes*. Each acts on the selected
+  notes, or, with none selected, on every note of every clip open (the menu's first line
+  says which), as one undo step. **Ctrl+A** then **Up** / **Down** (Shift: an octave)
+  does the same with the keys.
+- In the arrangement, without opening them: select the clips (drag over them on as many
+  tracks as you like), right-click in the selection and use **MIDI Notes**: *Transpose Up* and
+  *Down*, *Octave Up* and *Down*, *Legato* and *Quantize* (onto the song's grid, 1/4 to
+  1/32 or triplets), on every note of every selected MIDI clip, one undo step each.
+
+Transposing moves all the notes together, as far as the highest (or lowest) note can go;
+legato works in each clip on its own.
 
 ### Note tools
 

@@ -17,7 +17,7 @@
 // Names: play, stop, record, metronome, loop, follow, re_enable_automation,
 // lock_envelopes, headphones, folder, waveform, plugin, preset, plugin_window,
 // sidechain, snowflake, constrain_latency, keyboard, save, link, infinity, expand, sliders, chain_list,
-// rack_devices, fold, search, app_icon.
+// rack_devices, fold, search, close, app_icon.
 
 #include <QColor>
 #include <QImage>

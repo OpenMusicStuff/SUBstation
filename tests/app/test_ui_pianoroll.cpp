@@ -6,8 +6,9 @@
 // selected by dragging; the song's chords along the top, notes out of its key
 // in red, and Generate writing chords and a bass line; keys dragged over, a
 // rubber band's notes heard, Ctrl+D by the stretch dragged over, copy and paste
-// at the clicked beat, several clips edited together, and Groove (Swing, the
-// project's grooves, Ctrl+Shift+U). Runs on a display (xvfb here). With
+// at the clicked beat, several clips edited together (and the header's Notes
+// menu on all of their notes), and Groove (Swing, the project's grooves,
+// Ctrl+Shift+U). Runs on a display (xvfb here). With
 // $SUBSTATION_UI_SCREENSHOTS set, it saves screenshots there.
 
 #include <QQuickItem>
@@ -593,6 +594,82 @@ private Q_SLOTS:
         QCOMPARE(project().clip(trackId_, clipId_).notes, std::vector<Note>{note(60, 0, 1)});
         QCOMPARE(project().clip(other, between->clipId).notes, std::vector<Note>{note(64, 0, 1)});
         test::screenshot(window_, QStringLiteral("piano-roll-several-clips"));
+    }
+
+    void theNotesMenuActsOnEveryClipShown() {
+        openMidiClip();  // A: beats 4-8
+        sub::app::ProjectEditor& editor = *session().editor();
+        const QString other = editor.addMidiTrack(-1, {}, QStringLiteral("synth"));
+        const auto bass = editor.addMidiClip(other, 4.0, 4.0);  // B, under it
+        QVERIFY(bass);
+        editor.setClipNotes({trackId_, clipId_}, chord({60, 64}, 0, 1) + std::vector<Note>{note(67, 2, 1)},
+                            QStringLiteral("Notes"));
+        editor.setClipNotes(*bass, {note(36, 0, 0.5), note(43, 1, 0.5)}, QStringLiteral("Notes"));
+        const auto entry = [](const sub::app::ClipRef& ref) {
+            return QVariantMap{{QStringLiteral("trackId"), ref.trackId}, {QStringLiteral("clipId"), ref.clipId}};
+        };
+        clipView_->setProperty("clipIds", QVariantList{entry({trackId_, clipId_}), entry(*bass)});
+        QTRY_COMPARE(roll()->clipCount(), 2);
+        const auto pitches = [&](const QString& track, const QString& clip) {
+            QList<int> list;
+            for (const Note& n : project().clip(track, clip).notes) list << n.pitch;
+            return list;
+        };
+        const auto choose = [&](const char* name) {
+            auto* button = clipView_->findChild<QQuickItem*>(QStringLiteral("notesMenuButton"));
+            QVERIFY(button && button->isVisible());
+            test::click(window_, test::centerOf(button));
+            QObject* menu = clipView_->findChild<QObject*>(QStringLiteral("notesMenu"));
+            QTRY_VERIFY(menu->property("opened").toBool());
+            auto* item = clipView_->findChild<QQuickItem*>(QString::fromLatin1(name));
+            QVERIFY(item);
+            test::click(window_, test::centerOf(item));
+            QTRY_VERIFY(!menu->property("visible").toBool());
+        };
+        // Nothing selected: every note of both clips, one undo step.
+        QCOMPARE(clipView_->findChild<QObject*>(QStringLiteral("notesTarget"))->property("text").toString(),
+                 QStringLiteral("Every note of the 2 clips"));
+        test::click(window_, test::centerOf(clipView_->findChild<QQuickItem*>(QStringLiteral("notesMenuButton"))));
+        QTRY_VERIFY(clipView_->findChild<QObject*>(QStringLiteral("notesMenu"))->property("opened").toBool());
+        test::screenshot(window_, QStringLiteral("piano-roll-notes-menu"));
+        QTest::keyClick(window_, Qt::Key_Escape);
+        QTRY_VERIFY(!clipView_->findChild<QObject*>(QStringLiteral("notesMenu"))->property("visible").toBool());
+        const int depth = undo().count();
+        choose("transposeUp");
+        QCOMPARE(pitches(trackId_, clipId_), (QList<int>{61, 65, 68}));
+        QCOMPARE(pitches(other, bass->clipId), (QList<int>{37, 44}));
+        QCOMPARE(undo().count(), depth + 1);
+        QVERIFY(grid()->hasActiveFocus());  // (the notes have the keyboard back)
+        choose("octaveDown");
+        QCOMPARE(pitches(trackId_, clipId_), (QList<int>{49, 53, 56}));
+        QCOMPARE(pitches(other, bass->clipId), (QList<int>{25, 32}));
+        // Legato: each clip on its own, up to its own notes and its end.
+        choose("notesLegato");
+        QCOMPARE(project().clip(trackId_, clipId_).notes,
+                 chord({49, 53}, 0, 2) + std::vector<Note>{note(56, 2, 2)});
+        QCOMPARE(project().clip(other, bass->clipId).notes, (std::vector<Note>{note(25, 0, 1), note(32, 1, 3)}));
+        QCOMPARE(undo().undoText(), QStringLiteral("Legato"));
+        // With notes selected, just those, and they stay selected.
+        roll()->selectNotes({{1, note(25, 0, 1)}});
+        QCOMPARE(clipView_->findChild<QObject*>(QStringLiteral("notesTarget"))->property("text").toString(),
+                 QStringLiteral("The selected note"));
+        choose("octaveUp");
+        QCOMPARE(pitches(other, bass->clipId), (QList<int>{37, 32}));
+        QCOMPARE(pitches(trackId_, clipId_), (QList<int>{49, 53, 56}));
+        QCOMPARE(roll()->selectedCount(), 1);
+        QCOMPARE(roll()->selectedNotes().front().note.pitch, 37);
+        // Select All: every note of both, with the note tools.
+        choose("selectAllNotes");
+        QCOMPARE(roll()->selectedCount(), 5);
+        QVERIFY(roll()->toolsWanted());
+        // As high as notes go: nothing moves.
+        editor.setClipNotes(*bass, {note(127, 0, 1)}, QStringLiteral("Notes"));
+        roll()->selectNotes({});
+        QSignalSpy messages(roll(), &PianoRoll::statusMessage);
+        const int before = undo().count();
+        roll()->transpose(1);
+        QCOMPARE(undo().count(), before);
+        QCOMPARE(messages.count(), 1);
     }
 
     void altWheelResizesTheKeysAndCtrlAltDragScrolls() {

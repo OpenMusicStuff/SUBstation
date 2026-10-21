@@ -71,7 +71,7 @@ Item {
             elide: Text.ElideRight
             text: rackMacro.name
             color: rackMacro.mapped ? Theme.text : Theme.textDim
-            font: Theme.uiFont(7)
+            font: Theme.uiFont(8)
 
             TapHandler {
                 acceptedButtons: Qt.LeftButton
@@ -106,7 +106,7 @@ Item {
         height: name.height + 4
         padding: 0
         horizontalAlignment: TextInput.AlignHCenter
-        font: Theme.uiFont(7)
+        font: Theme.uiFont(8)
         onEditingFinished: cell.finishRename()
         onActiveFocusChanged: if (!activeFocus) cell.finishRename()
         Keys.onEscapePressed: cell.finishRename()

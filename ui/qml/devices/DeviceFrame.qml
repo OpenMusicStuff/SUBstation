@@ -5,17 +5,19 @@ import SUBstation
 
 // A device in the device view, as Ableton draws one: its frame (PANEL_ALT in
 // a line of its title bar's colour, 3 px corners), its title bar (DEVICE_HEADER,
-// the selection's teal while selected: the fold triangle, the square on/off
+// the selection's teal while selected: the fold triangle, the round on/off
 // switch, the name with its tooltip, a plug-in's editor button,
 // the sidechain button of a device with a sidechain input, the page arrows
 // while there is more than one page, or the pages' names as tabs for an editor
 // that names them, the save button) and its body: a page of
 // knobs (a built-in device without an editor of its own), its editor
 // (DeviceEditors), a plug-in's parameters (or why it shows none), or a rack's
-// macros and (while shown) its chain list. Folded, it is a narrow strip: the
+// macros and (while shown) its chain list. Switched off, its body dims and its
+// name greys, as Ableton's (both still work). Folded, it is a narrow strip: the
 // triangle, the switch and the name reading upwards. Clicks on its background,
 // title bar and labels select it, drag it, open its menu (DeviceFrameInput);
-// the menus and dialogs are the panel's. A grip stands in the gap after it.
+// the menus and dialogs are the panel's. A meter of what it puts out stands in
+// the gap after it.
 Item {
     id: frame
 
@@ -58,6 +60,8 @@ Item {
     readonly property alias foldedBar: foldedBar
     readonly property alias header: header
     readonly property color headerColor: selected ? Theme.deviceHeaderSelected : Theme.deviceHeader
+    // Its name's colour: greyed while it is switched off, or bypassed while monitoring (constrained).
+    readonly property color titleColor: !deviceInfo.enabled || deviceInfo.constrained ? Theme.textDim : Theme.text
 
     width: deviceInfo.folded ? 26 : unfoldedWidth
 
@@ -109,7 +113,7 @@ Item {
     }
     FontMetrics {
         id: titleMetrics
-        font: Theme.uiFont(9, true)
+        font: Theme.titleFont
     }
     // The on/off switch's right-click menu: its automation.
     DynamicMenu {
@@ -131,7 +135,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.panelAlt
-        radius: 3
+        radius: Theme.radius
         border.width: 1
         border.color: frame.headerColor
     }
@@ -156,13 +160,15 @@ Item {
         }
     }
 
-    // The on/off switch: a square one.
+    // The on/off switch: a round one, as Ableton's, 14 px (an even size: centred on whole pixels in the
+    // 20 px title bar).
     component Activator: ToggleButton {
         id: activator
         role: "activator"
         checkable: false
         tooltip: qsTr("Device On/Off")
         background: Rectangle {
+            radius: width / 2
             color: activator.look.background
             border.width: 1
             border.color: Theme.border
@@ -194,7 +200,7 @@ Item {
         // DEVICE_HEADER (teal while selected), its top corners rounded.
         Rectangle {
             anchors.fill: parent
-            radius: 2
+            radius: Theme.radius - 1
             color: frame.headerColor
         }
         Rectangle {
@@ -202,6 +208,13 @@ Item {
             width: parent.width
             height: parent.height - y
             color: frame.headerColor
+        }
+        // Lit faintly along its top, as the transport bar's buttons are.
+        Rectangle {
+            x: Theme.radius - 1
+            width: parent.width - 2 * x
+            height: 1
+            color: Qt.rgba(1, 1, 1, 0.05)
         }
 
         RowLayout {
@@ -227,8 +240,8 @@ Item {
                 objectName: "enableButton"
                 checked: deviceInfo.enabled
                 automation: deviceInfo.enabledAutomation
-                Layout.preferredWidth: 13
-                Layout.preferredHeight: 13
+                Layout.preferredWidth: 14
+                Layout.preferredHeight: 14
                 onClicked: deviceInfo.setEnabled(!deviceInfo.enabled)
 
                 MouseArea {
@@ -246,8 +259,8 @@ Item {
                 text: deviceInfo.name
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
-                color: deviceInfo.constrained ? Theme.textDim : Theme.text  // bypassed while monitoring
-                font: Theme.uiFont(9, true)
+                color: frame.titleColor
+                font: Theme.titleFont
 
                 HoverHandler {
                     id: titleHover
@@ -385,7 +398,7 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: 2
+            radius: Theme.radius - 1
             color: frame.headerColor
         }
 
@@ -404,8 +417,8 @@ Item {
             objectName: "foldedEnableButton"
             x: (parent.width - width) / 2
             y: 4 + 16 + 4
-            width: 13
-            height: 13
+            width: 14
+            height: 14
             checked: deviceInfo.enabled
             automation: deviceInfo.enabledAutomation
             onClicked: deviceInfo.setEnabled(!deviceInfo.enabled)
@@ -421,7 +434,7 @@ Item {
             id: verticalTitle
             objectName: "verticalTitle"
             x: 2
-            y: 4 + 16 + 4 + 13 + 4
+            y: 4 + 16 + 4 + 14 + 4
             width: parent.width - 4
             height: Math.max(16, parent.height - y - 4)
             clip: true
@@ -442,13 +455,14 @@ Item {
                 elide: Text.ElideRight
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
-                color: Theme.text
-                font: Theme.uiFont(9, true)
+                color: frame.titleColor
+                font: Theme.titleFont
             }
         }
     }
 
-    // The body (what folding hides): it takes all the height there is.
+    // The body (what folding hides): it takes all the height there is; dimmed while the device is switched
+    // off (still editable, as Ableton's).
     Item {
         id: bodyArea
         objectName: "body"
@@ -457,6 +471,13 @@ Item {
         y: 1 + frame.headerHeight
         width: frame.width - 2
         height: frame.height - y - 1
+        opacity: deviceInfo.enabled ? 1 : 0.55
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 120
+            }
+        }
 
         Loader {
             id: bodyLoader

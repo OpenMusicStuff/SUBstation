@@ -93,8 +93,7 @@ What SUBstation doesn't do yet, by area.
   drifts from it is lined up by dragging its warp markers (Mark Transients places them)
   onto the beat yourself. There is no quantizing of warp markers to the grid, and no
   setting for how weak a transient is still marked.
-- Warp markers are edited one clip at a time, and there is no zooming into the clip
-  view's waveform to place them closer than the whole file at its width allows.
+- Warp markers are edited one clip at a time.
 - Streaming long files from disk is off by default (Preferences › Audio: *Disk Streaming*), and reads with one
   thread a read in flight rather than the systems' asynchronous queues (IoRing, `io_uring`).
 

@@ -22,14 +22,14 @@ Rectangle {
             Hints.view = null
     }
 
-    radius: 3
+    radius: Theme.radius
     color: Theme.panelAlt
     border.width: 1
     border.color: Theme.deviceHeader
 
     FontMetrics {
         id: titleMetrics
-        font: Theme.uiFont(9, true)
+        font: Theme.titleFont
     }
     TextMetrics {
         id: lineMetrics
@@ -44,7 +44,7 @@ Rectangle {
         y: 1
         width: view.width - 2
         height: Math.max(16, titleMetrics.height) + 4
-        radius: 2
+        radius: Theme.radius - 1
         color: Theme.deviceHeader
 
         Rectangle {  // (square below)
@@ -52,6 +52,12 @@ Rectangle {
             width: parent.width
             height: parent.height - y
             color: parent.color
+        }
+        Rectangle {  // (lit faintly along its top, as a device's title bar is)
+            x: Theme.radius - 1
+            width: parent.width - 2 * x
+            height: 1
+            color: Qt.rgba(1, 1, 1, 0.05)
         }
 
         Text {
@@ -80,7 +86,7 @@ Rectangle {
                                : view.longLine ? view.hint : view.newline < 0 ? "" : view.hint.slice(view.newline + 1)
         wrapMode: Text.Wrap
         elide: Text.ElideRight
-        color: view.hint === "" ? Theme.textDisabled : Theme.text
+        color: view.hint === "" ? Theme.textDim : Theme.text
         font: Theme.font
         lineHeight: 1.1
     }

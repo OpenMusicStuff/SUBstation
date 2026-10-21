@@ -207,43 +207,61 @@ Rectangle {
         Drag.onDragFinished: dropAction => panel.dragFinished(dropAction)
     }
 
+    // (The band over the lists is the arrangement ruler's height: the lists
+    // start level with its first lane, 9 + 26 + 5 + 4 = 44 px down.)
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: 6
+        anchors.topMargin: 9
         spacing: 4
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.fillHeight: false  // (its field's and box's fill it, not the column)
+            Layout.preferredHeight: Theme.controlHeight
             Layout.leftMargin: 6
             Layout.rightMargin: 6
+            Layout.bottomMargin: 5
             spacing: 6
 
             TextField {
                 id: search
                 objectName: "searchField"
                 Layout.fillWidth: true
+                Layout.fillHeight: true
                 placeholderText: qsTr("Search  (Ctrl+F)")
+                leftPadding: 24  // (after the magnifier)
                 rightPadding: clear.visible ? clear.width + 6 : 7
                 Component.onCompleted: text = panel.browser.searchText
                 onTextEdited: panel.browser.searchText = text
                 onAccepted: panel.browser.selectFirstResult()
                 Keys.onDownPressed: panel.browser.selectFirstResult()
 
+                Icon {
+                    x: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "search"
+                    size: 12
+                    color: Theme.textDim
+                }
                 // The clear button (QLineEdit's).
-                Text {
+                Item {
                     id: clear
                     anchors.right: parent.right
-                    anchors.rightMargin: 5
+                    anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
+                    width: 18
+                    height: 18
                     visible: search.text !== ""
-                    text: "✕"
-                    font.pixelSize: 10
-                    color: clearArea.containsMouse ? Theme.text : Theme.textDim
 
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "close"
+                        size: 12
+                        color: clearArea.containsMouse ? Theme.text : Theme.textDim
+                    }
                     MouseArea {
                         id: clearArea
                         anchors.fill: parent
-                        anchors.margins: -3
                         hoverEnabled: true
                         cursorShape: Qt.ArrowCursor
                         onClicked: {
@@ -256,6 +274,7 @@ Rectangle {
             ChoiceBox {
                 id: sort
                 objectName: "sort"
+                Layout.fillHeight: true
                 choices: panel.browser.sorts
                 chosenIndex: {
                     const sorts = panel.browser.sorts
@@ -278,15 +297,15 @@ Rectangle {
             Layout.leftMargin: 6
             Layout.rightMargin: 6
             visible: panel.hotSwap.active
-            implicitHeight: hotSwapRow.implicitHeight + 4
-            radius: 3
+            implicitHeight: Math.max(24, hotSwapRow.implicitHeight + 6)
+            radius: Theme.radius
             color: Theme.accent
 
             RowLayout {
                 id: hotSwapRow
                 anchors.fill: parent
                 anchors.leftMargin: 6
-                anchors.rightMargin: 2
+                anchors.rightMargin: 3
                 spacing: 5
 
                 Icon {
@@ -312,6 +331,7 @@ Rectangle {
                 RoleButton {
                     objectName: "hotSwapSimilar"
                     role: "small"
+                    implicitHeight: 18
                     visible: panel.browser.canFindSimilar
                     text: qsTr("Similar")
                     tooltip: qsTr("Similar\nLists the sounds most like the one swapped in now.")
@@ -320,7 +340,11 @@ Rectangle {
                 RoleButton {
                     objectName: "stopHotSwap"
                     role: "small"
-                    text: "✕"
+                    implicitWidth: 18
+                    implicitHeight: 18
+                    iconName: "close"
+                    iconSize: 12
+                    iconColor: look.text
                     tooltip: qsTr("Cancel the hot swap, putting back the sample it began with (Esc)\nDouble-click a sample or press Enter to keep it.")
                     onClicked: panel.hotSwap.cancel()
                 }
@@ -335,8 +359,8 @@ Rectangle {
             Layout.leftMargin: 6
             Layout.rightMargin: 6
             visible: panel.browser.similarTo !== ""
-            implicitHeight: similarRow.implicitHeight + 4
-            radius: 3
+            implicitHeight: Math.max(24, similarRow.implicitHeight + 6)
+            radius: Theme.radius
             color: Theme.surface
             border.color: Theme.accent
 
@@ -344,7 +368,7 @@ Rectangle {
                 id: similarRow
                 anchors.fill: parent
                 anchors.leftMargin: 6
-                anchors.rightMargin: 2
+                anchors.rightMargin: 3
                 spacing: 5
 
                 Icon {
@@ -368,7 +392,11 @@ Rectangle {
                 RoleButton {
                     objectName: "clearSimilar"
                     role: "flat"
-                    text: "✕"
+                    implicitWidth: 18
+                    implicitHeight: 18
+                    iconName: "close"
+                    iconSize: 12
+                    iconColor: look.text
                     tooltip: qsTr("Back to the list")
                     onClicked: panel.browser.clearSimilar()
                 }
@@ -380,9 +408,15 @@ Rectangle {
             Layout.fillHeight: true
             orientation: Qt.Horizontal
 
+            // A quiet gutter between the sidebar and the list (the window's splitters are lines of BORDER).
+            handle: Rectangle {
+                implicitWidth: 4
+                color: SplitHandle.pressed || SplitHandle.hovered ? Theme.border : Theme.window
+            }
+
             BrowserSidebar {
                 id: sidebar
-                SplitView.preferredWidth: 110
+                SplitView.preferredWidth: 120
                 SplitView.minimumWidth: 40
                 onContextMenuRequested: scope => {
                     sidebarMenu.scope = scope
@@ -420,13 +454,14 @@ Rectangle {
             Layout.leftMargin: 6
             Layout.rightMargin: 6
             Layout.topMargin: 2
-            Layout.bottomMargin: 4
+            Layout.bottomMargin: 6
             spacing: 6
 
             ToggleButton {
                 objectName: "preview"
                 role: "tool"
                 iconName: "headphones"
+                iconColor: checked ? Theme.accentText : undefined
                 tooltip: qsTr("Preview files when selected")
                 checkable: false
                 checked: panel.browser.previewEnabled
@@ -437,7 +472,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: panel.browser.statusText
                 color: Theme.textDim
-                elide: Text.ElideRight
+                elide: Text.ElideMiddle  // (a place's path keeps its last folder)
             }
         }
     }

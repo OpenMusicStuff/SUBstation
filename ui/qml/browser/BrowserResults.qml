@@ -98,16 +98,20 @@ SelectionList {
         required property string tags
 
         readonly property bool selected: results.selectedRows.indexOf(index) >= 0
+        // Selected while the list has the keyboard: in the accent (else on its wash).
+        readonly property bool lit: selected && results.activeFocus
         // What the scroll bar covers of its right end, while it shows: the text keeps clear of it.
         readonly property real gutter: results.ScrollBar.vertical && results.ScrollBar.vertical.visible
                                        ? results.ScrollBar.vertical.width : 0
         // What the row is drawn on (the tags fade into it).
-        readonly property color background: selected ? Theme.accent : (area.containsMouse ? Theme.panelAlt : Theme.panel)
+        readonly property color background: lit ? Theme.accent
+                                            : selected ? results.selectionWash
+                                            : area.containsMouse ? Theme.panelAlt : Theme.panel
         // (A row going away has index -1: it isn't the one renamed.)
         readonly property bool renaming: results.renamingRow >= 0 && results.renamingRow === index
 
         width: ListView.view.width
-        implicitHeight: Math.max(16, label.implicitHeight) + 4
+        implicitHeight: Math.max(Theme.listRowHeight, label.implicitHeight + 4)
 
         Rectangle {
             anchors.fill: parent
@@ -117,23 +121,23 @@ SelectionList {
         Icon {
             id: icon
             anchors.left: parent.left
-            anchors.leftMargin: 4
+            anchors.leftMargin: 6
             anchors.verticalCenter: parent.verticalCenter
             name: row.icon
-            size: 16
+            color: row.lit ? Theme.accentText : Theme.textDim
         }
         Text {
             id: label
             anchors.left: icon.right
-            anchors.leftMargin: 4
+            anchors.leftMargin: 6
             anchors.right: parent.right
-            anchors.rightMargin: 4 + row.gutter
+            anchors.rightMargin: 6 + row.gutter
             anchors.verticalCenter: parent.verticalCenter
             visible: !row.renaming
             text: row.display
             font: Theme.listFont
             elide: Text.ElideRight
-            color: row.selected ? Theme.accentText : Theme.text
+            color: row.lit ? Theme.accentText : Theme.text
         }
         // The tags, right-aligned in what the name leaves of the row: cut off on
         // the left where the name ends, and faded in from there.
@@ -154,8 +158,8 @@ SelectionList {
                 y: label.y + label.baselineOffset - baselineOffset  // (on the name's baseline: centred, it sat higher)
                 text: row.tags
                 font: Theme.smallFont  // (smaller and fainter than the name: it says more about it, not what it is)
-                color: row.selected ? Theme.accentText : Theme.textDim
-                opacity: row.selected ? 0.7 : 0.75
+                color: row.lit ? Theme.accentText : Theme.textDim
+                opacity: row.lit ? 0.7 : 1.0
             }
             // (Only while the name cuts into them: tags that fit whole show whole.)
             Rectangle {
@@ -179,7 +183,7 @@ SelectionList {
 
         Loader {
             anchors.left: icon.right
-            anchors.leftMargin: 2
+            anchors.leftMargin: -1  // (its text where the name was: a text field's padding is 7)
             anchors.right: parent.right
             anchors.rightMargin: 2
             anchors.verticalCenter: parent.verticalCenter

@@ -51,12 +51,12 @@ Popup {
             objectName: "title"
             text: popup.macro ? qsTr("%1 moves").arg(popup.macro.name) : ""
             color: Theme.text
-            font: Theme.uiFont(9, true)
+            font: Theme.titleFont
         }
         Text {
             visible: !popup.macro || popup.macro.mappingKeys.length === 0
             text: qsTr("Nothing mapped: right-click a parameter of a device in the rack to map it.")
-            color: Theme.textDisabled
+            color: Theme.textDim
             font: Theme.font
         }
 
