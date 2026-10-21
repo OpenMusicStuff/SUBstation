@@ -32,7 +32,8 @@
 //   gone, the last state known stands in. It can be asked for without waiting
 //   too (requestState(): every plug-in's at once, a backup's), its answer
 //   taken from the reader thread; that wait goes on while the sandbox is
-//   heard from (answering what was asked before), up to the limit after.
+//   heard from (answering what was asked before), up to the limit after, and
+//   a minute after it was asked at most.
 //
 // Main thread, as for any processor, but for process() and reset().
 

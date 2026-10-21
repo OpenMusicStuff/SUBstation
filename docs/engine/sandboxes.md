@@ -174,8 +174,9 @@ Questions wait for their answer only when the sandbox is free (not `Busy`), and 
   ([app/engine-bridge.md](../app/engine-bridge.md#plug-in-states)). The answer is taken from the reader thread as it
   comes (`received()` keeps it, not the inbox: `idle()` needn't run), and `requestedState(until)` gives it, waiting
   until then at most; the wait goes on while the sandbox is heard from (`Sandbox::lastHeard()`: it answers what was
-  asked before it, one after another on its main thread), up to 15 s after it last was; past that, or with the
-  sandbox gone, the last state known again;
+  asked before it, one after another on its main thread), up to 15 s after it last was, and a minute after it was
+  asked at most (a plug-in that runs a message loop as it saves could keep its sandbox talking for good); past
+  that, or with the sandbox gone, the last state known again;
 - a state set (`setState`): up to 10 s, to hear whether it was taken; while loading, the answer comes later (`Problem`
   if it wasn't).
 

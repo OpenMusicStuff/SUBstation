@@ -332,7 +332,7 @@ up to 15 s's wait for one in a sandbox ([engine/sandboxes.md](../engine/sandboxe
 - **`storePluginStates()`** (saving, copying): those in sandboxes are asked first, all at once
   (`Engine::requestProcessorState()`), and answer in their own processes while those in this process are read
   (`Engine::processorState()`); then their answers are waited for (`requestedProcessorState()`). A save waits for the
-  slowest sandbox, not for every plug-in in turn.
+  slowest sandbox (a minute at most), not for every plug-in in turn.
 - **`gatherPluginStates(done)`** (the backups', [session.md](session.md)): nothing waits. From the event loop's next
   turn, those in sandboxes are asked at once and their answers taken as they come (every `kIdlePollMs`), and those in
   this process are read one a turn of the event loop (not while a plug-in's call runs a message loop: `busy`); `done`

@@ -14,6 +14,10 @@ namespace {
 
 constexpr int kTextWaitMs = 250;                // a value's text, from a sandbox that isn't loading
 constexpr int kStateWaitMs = 15000;             // a state, to save it
+// A state asked for without waiting (requestState()): waited for while its sandbox is heard from, but
+// never longer than this after it was asked (a plug-in running a message loop as it saves could keep
+// its sandbox talking for good).
+constexpr int kStateWaitLongestMs = 60000;
 constexpr int kSetStateWaitMs = 10000;          // a state set, to hear whether it was taken
 constexpr std::chrono::seconds kResetWait{10};  // an offline reset, before a render
 constexpr size_t kMaxTexts = 4096;              // values' texts kept
@@ -346,8 +350,11 @@ std::optional<std::vector<uint8_t>> SandboxedProcessor::requestedState(std::chro
         std::unique_lock lock(stateMutex_);
         if (stateRequest_ == 0) return lastState_;  // (none asked, or its answer taken)
         while (!stateAnswer_ && !ended()) {
-            // Waited for while the sandbox is heard from (answering what was asked before), up to the limit after.
-            const auto deadline = std::max(stateAsked_, link_.sandbox->lastHeard()) + std::chrono::milliseconds(kStateWaitMs);
+            // Waited for while the sandbox is heard from (answering what was asked before), up to the limit
+            // after, and never past the longest.
+            const auto deadline =
+                std::min(std::max(stateAsked_, link_.sandbox->lastHeard()) + std::chrono::milliseconds(kStateWaitMs),
+                         stateAsked_ + std::chrono::milliseconds(kStateWaitLongestMs));
             const auto now = Clock::now();
             if (now >= deadline) break;
             if (now >= until) return std::nullopt;
