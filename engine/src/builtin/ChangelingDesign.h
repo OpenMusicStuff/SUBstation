@@ -32,6 +32,9 @@
 // - Smear, Manipulator's: grains taken from up to kSmearSeconds before their marks and their marks moved at random by
 //   up to kSmearJitter of a period, so the voice blurs and roughens.
 // - Unvoiced input (breath, sibilants, noise) plays as it was, unshifted, as in both.
+// - Elastic grains (its own, not either's): where two voiced grains overlap, the later one's left edge and the
+//   earlier one's right edge are bent a few samples (EdgeWarp: nothing within a quarter of the grain about its
+//   centre, the closure, and more towards its edges) so that the two agree where they overlap, and cancel less.
 //
 // Latency, by Quality: Live, the tracker's as GigaTune's Low Latency (21.3 ms at any rate); Studio, about
 // Little AlterBoy's (48 ms): the same tracker deciding each frame kStudioLag frames after it (pYIN's Viterbi path
@@ -46,6 +49,7 @@
 // at twice the rate; within 7 to 16 % (RMS) of LAB's output at every setting and level. At 0 it isn't there at all
 // (LAB colours even then, and is 2.4 dB quieter: Changeling at 0 is the input exactly); from 0 to 1 it fades in.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -94,6 +98,7 @@ struct Controls {
     double detune = 0.0;     // cents
     double width = 0.0;      // 0..1
     double smear = 0.0;      // 0..1
+    bool elastic = true;     // grains' edges bent to agree with their neighbours' (EdgeWarp); off: plain PSOLA
     Quality quality = Quality::Studio;  // a change starts the shifter again, at its own latency
 };
 
@@ -137,6 +142,10 @@ public:
     int64_t voicedFrames() const noexcept;
     int64_t lateSamples() const noexcept;
     int64_t droppedGrains() const noexcept;
+    // For tests: the overlaps of two grains whose edges were bent (EdgeWarp), and how many of those bent both
+    // grains (the earlier one's right edge not yet played) rather than only the later one's left.
+    int64_t elasticJunctions() const noexcept;
+    int64_t sharedJunctions() const noexcept;
 
 private:
     struct Impl;
@@ -186,6 +195,30 @@ private:
     std::array<double, kSections> iState1_{}, iState2_{}, qState1_{}, qState2_{};
     std::array<double, kSections> iIn1_{}, iIn2_{}, qIn1_{}, qIn2_{};
     double qDelay_ = 0.0;
+};
+
+// One side of a grain bent in time ("elastic PSOLA"): the grain reads its input at x(t + d(u)), u output samples out
+// from its centre on that side (positive, either side), d in input samples. d is 0 up to kDead of the side's half
+// width (the closure, at the centre, stays where it is), then a cubic Hermite through d = values[k] at kKnots[k]
+// of it (tangents by central differences, 0 at the dead zone's end), the last value past the edge. The shifter
+// bounds values[k] by kLimits[k] of a period (1 : 2 : 4 out to the edge, a tenth of a period there), so the warp is
+// slight and smooth: its slope changes the pitch a grain reads by 1 + d'. (A few samples, whatever the period, do
+// nothing measurable: neighbouring grains overlap a closure's tail with the next one's head, tens of samples out.)
+// Exposed for tests.
+struct EdgeWarp {
+    static constexpr double kDead = 0.25;
+    static constexpr std::array<double, 3> kKnots = {0.4, 0.7, 1.0};
+    static constexpr std::array<double, 3> kLimits = {0.025, 0.05, 0.1};
+
+    std::array<double, 4> knots{};   // u of the dead zone's end and of each knot (output samples)
+    std::array<double, 4> values{};  // d there (values[0]: 0)
+    std::array<double, 4> slopes{};  // dd/du there
+    bool on = false;
+
+    // A side `half` output samples wide, bent by `d` (the three knots' values).
+    void set(double half, const std::array<double, 3>& d) noexcept;
+    double at(double u) const noexcept;
+    double most() const noexcept { return on ? std::max({0.0, values[1], values[2], values[3]}) : 0.0; }
 };
 
 // The voice's glottal closures, where the shifter centres its grains: SEDREAMS (Drugman & Dutoit, "Glottal closure

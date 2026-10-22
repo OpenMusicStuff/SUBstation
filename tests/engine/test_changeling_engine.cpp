@@ -4,7 +4,7 @@
 // time; Formant and Link moving the envelope; Harmonics taking the lowest harmonics away and keeping the rest; the
 // twin; Detune and Width; Smear; silence and noise; the extremes (finite, bounded, never late at High Quality); the
 // quality switched while playing; Mix; the drive (LAB's curve, its 0 the input exactly); the quadrature pair; the
-// glottal closures (SEDREAMS); the editor's displays.
+// glottal closures (SEDREAMS); elastic grains; the editor's displays.
 
 #include <algorithm>
 #include <cmath>
@@ -767,6 +767,66 @@ TEST_CASE("changeling: glottal closures") {
         sure += sureness;
     }
     CHECK(sure / asked < 0.05);
+}
+
+TEST_CASE("changeling: elastic grains") {
+    // a side's warp: nothing in the dead zone (the closure stays put), through its knots, smooth, held past the edge
+    cl::EdgeWarp w;
+    w.set(200.0, {1.0, 2.0, 4.0});
+    CHECK(w.on);
+    for (double u = -10.0; u <= 50.0; u += 0.5) CHECK_EQ(w.at(u), 0.0);
+    CHECK(std::abs(w.at(80.0) - 1.0) < 1e-12);
+    CHECK(std::abs(w.at(140.0) - 2.0) < 1e-12);
+    CHECK(std::abs(w.at(200.0) - 4.0) < 1e-12);
+    CHECK_EQ(w.at(260.0), 4.0);
+    double steepest = 0.0, previous = 0.0;
+    for (double u = 0.0; u <= 260.0; u += 0.25) {
+        const double d = w.at(u);
+        steepest = std::max(steepest, std::abs(d - previous) / 0.25);
+        previous = d;
+    }
+    CHECK(steepest < 0.05);  // (no step anywhere: d' stays small, the pitch read barely moves)
+    CHECK(w.most() == 4.0);
+    cl::EdgeWarp none;
+    none.set(200.0, {0.0, 0.0, 0.0});
+    CHECK(!none.on);
+
+    // shifting a jittery vowel, overlapping grains are bent (both sides where the earlier one's right edge is still
+    // to play), and they cancel less: the level lost to the shift comes back by more than a third here
+    std::vector<double> freq(96000);
+    for (size_t n = 0; n < freq.size(); ++n) freq[n] = 110.0 * (1.0 + 0.02 * std::sin(2.0 * kPi * 5.5 * n / kRate));
+    std::vector<double> truth;
+    const auto x = vowel(freq, truth, 0.02);
+    double lost[2];
+    int64_t late[2];
+    for (const bool elastic : {false, true}) {
+        INFO(elastic ? "elastic" : "plain");
+        cl::Controls c;
+        c.pitch = 4.0;
+        c.elastic = elastic;
+        cl::Shifter s;
+        s.prepare(kRate);
+        s.setControls(c);
+        std::vector<float> y(x.begin(), x.end());
+        y.resize(y.size() + static_cast<size_t>(s.latency()), 0.f);
+        for (size_t at = 0; at < y.size(); at += 256) {
+            float* p[1] = {y.data() + at};
+            s.process(p, 1, static_cast<int>(std::min<size_t>(256, y.size() - at)));
+        }
+        if (elastic) {
+            CHECK(s.elasticJunctions() > 200);
+            CHECK(s.sharedJunctions() > s.elasticJunctions() / 2);
+        } else {
+            CHECK_EQ(s.elasticJunctions(), 0);
+        }
+        late[elastic ? 1 : 0] = s.lateSamples();
+        y.erase(y.begin(), y.begin() + s.latency());
+        CHECK(allFinite(y));
+        lost[elastic ? 1 : 0] = levelDb(x, 24000, 90000) - levelDb(y, 24000, 90000);
+    }
+    CHECK(lost[0] > 0.5);
+    CHECK(lost[1] < lost[0] - 0.4);
+    CHECK_EQ(late[1], late[0]);  // (bending only reads input that is in)
 }
 
 TEST_CASE("changeling: the editor's displays") {

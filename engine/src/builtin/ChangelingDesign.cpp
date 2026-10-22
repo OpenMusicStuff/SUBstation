@@ -48,6 +48,15 @@ constexpr double kCommitAheadSeconds = 0.0005;
 // its step is raised at the most.
 constexpr double kLowestRatio = 0.4;
 constexpr double kMostRaise = 2.0;
+// Elastic grains (Shifter::Impl::bend()): the points of an overlap compared (at the most), the shortest overlap bent,
+// the first search's steps each way, what the warp's size, slope and curvature cost against the mismatch (each as a
+// share of what its limits allow: the same cost for each at the limits; measured, below), and how much better than
+// unbent a warp must be.
+constexpr int kBendPoints = 48;
+constexpr int kBendSteps = 4;
+constexpr int64_t kBendLeast = 8;
+constexpr double kBendSize = 0.01, kBendSlope = 0.01, kBendCurve = 0.01;
+constexpr double kBendBetter = 1e-4;
 
 double midiHz(double pitch) { return 440.0 * std::exp2((pitch - 69.0) / 12.0); }
 
@@ -111,6 +120,29 @@ void Quadrature::process(double x, double& i, double& q) noexcept {
     q = qDelay_;
     qDelay_ = b;
     // (denormals: the engine renders with them flushed to zero)
+}
+
+// --- EdgeWarp ---------------------------------------------------------------------------------------
+
+void EdgeWarp::set(double half, const std::array<double, 3>& d) noexcept {
+    knots = {kDead * half, kKnots[0] * half, kKnots[1] * half, kKnots[2] * half};
+    values = {0.0, d[0], d[1], d[2]};
+    slopes[0] = 0.0;
+    slopes[1] = (values[2] - values[0]) / (knots[2] - knots[0]);
+    slopes[2] = (values[3] - values[1]) / (knots[3] - knots[1]);
+    slopes[3] = (values[3] - values[2]) / (knots[3] - knots[2]);
+    on = half > 0.0 && (d[0] != 0.0 || d[1] != 0.0 || d[2] != 0.0);
+}
+
+double EdgeWarp::at(double u) const noexcept {
+    if (!on || !(u > knots[0])) return 0.0;
+    if (u >= knots[3]) return values[3];
+    const int k = u < knots[1] ? 0 : u < knots[2] ? 1 : 2;
+    const auto i = static_cast<size_t>(k);
+    const double width = knots[i + 1] - knots[i], t = (u - knots[i]) / width;
+    const double t2 = t * t, t3 = t2 * t;
+    return (2.0 * t3 - 3.0 * t2 + 1.0) * values[i] + (t3 - 2.0 * t2 + t) * slopes[i] * width +
+           (3.0 * t2 - 2.0 * t3) * values[i + 1] + (t3 - t2) * slopes[i + 1] * width;
 }
 
 // --- Closures ---------------------------------------------------------------------------------------
@@ -404,6 +436,7 @@ struct Shifter::Impl {
         double rotRe = 1.0, rotIm = 0.0, stepRe = 1.0, stepIm = 0.0, shiftMix = 0.0;
         int64_t k = 0, j = 0, first = 0, last = -1, shift = 0;
         bool done = true, open = false, voiced = false;
+        EdgeWarp leftWarp, rightWarp;  // its edges bent (elastic: set as its neighbours start)
         std::array<double, 2 * kSincHalf> taps{};
     };
     // A voice: its synthesis marks and grains, and what it plays.
@@ -445,6 +478,11 @@ struct Shifter::Impl {
     int commitAhead = 0;
     Controls controls;
     const double* sinc = nullptr;
+    // The reading between samples at kPhases + 1 fractions of one, 2 kSincHalf taps each (the fast path's): a bent
+    // grain read at speed 1 takes its taps between the two nearest (within 1e-4 of the sinc's own: -90 dB).
+    static constexpr int kPhases = 256;
+    static constexpr int kTaps = 2 * kSincHalf;
+    std::vector<double> phases;
 
     std::vector<Control> control;
     size_t controlMask = 0;
@@ -472,11 +510,16 @@ struct Shifter::Impl {
     std::array<Quadrature, 2> quadrature;
     size_t inputMask = 0;
     int64_t time = 0;
-    int64_t late = 0, voicedCount = 0, dropped = 0;
+    int64_t late = 0, voicedCount = 0, dropped = 0, elasticCount = 0, sharedCount = 0;
 
     void prepare(double sampleRate) {
         rate = sampleRate;
         sinc = gigatune::sincTable();
+        phases.assign(static_cast<size_t>((kPhases + 1) * kTaps), 0.0);
+        for (int p = 0; p <= kPhases; ++p)
+            for (int t = 0; t < kTaps; ++t)
+                phases[static_cast<size_t>(p * kTaps + t)] =
+                    sincAt(sinc, static_cast<double>(p) / kPhases - (t - (kSincHalf - 1)));
         trackers[0].prepare(sampleRate, 0);
         trackers[1].prepare(sampleRate, kStudioLag);
         // a short note pYIN's path leaves unvoiced would come out unshifted: rescued where clearly periodic
@@ -569,7 +612,7 @@ struct Shifter::Impl {
             v.running = !v.twin && v.output < channels;
         }
         time = 0;
-        late = voicedCount = dropped = 0;
+        late = voicedCount = dropped = elasticCount = sharedCount = 0;
     }
 
     double& analysisAt(int64_t k) noexcept { return analysis[static_cast<size_t>(k) & markMask]; }
@@ -781,6 +824,7 @@ struct Shifter::Impl {
         g.k = k;
         g.j = j;
         g.voiced = voicedGrain;
+        g.leftWarp = g.rightWarp = {};
         g.s = synthesisAt(v, k) + offset;
         g.a = analysisAt(j) + offset;
         g.shiftMix = 0.0;
@@ -838,18 +882,28 @@ struct Shifter::Impl {
         v.synthesisSettled = std::max(v.synthesisSettled, v.synthesisCommitted);
         if (g.alpha > 1.0 && lookahead(g) > latency) {
             const double taps = std::ceil(kSincHalf * g.alpha) + 1.0;
-            g.right = std::max(0.0, (latency - taps - (g.a - g.s)) / (g.alpha - 1.0) - 1.0);
+            g.right = std::max(0.0, (latency - taps - (g.a - g.s) - g.rightWarp.most()) / (g.alpha - 1.0) - 1.0);
             g.last = static_cast<int64_t>(std::ceil(g.s + g.right)) - 1;
         }
+        // (a right edge bent later still reads only input that is in: its warp is held to what is left; it starts
+        // past the dead zone, which the output hasn't reached yet)
+        if (g.rightWarp.on && lookahead(g) > latency) holdWarp(g.rightWarp, g.rightWarp.most() - (lookahead(g) - latency));
         g.open = false;
         return true;
     }
 
     static double lookahead(const Grain& g) noexcept {
         const double taps = g.alpha > 1.0 ? std::ceil(kSincHalf * g.alpha) + 1.0 : kSincHalf + 1.0;
-        const double atFirst = g.a - g.s + (static_cast<double>(g.first) - g.s) * (g.alpha - 1.0);
-        const double atLast = g.a - g.s + (static_cast<double>(g.last) - g.s) * (g.alpha - 1.0);
+        const double atFirst = g.a - g.s + (static_cast<double>(g.first) - g.s) * (g.alpha - 1.0) + g.leftWarp.most();
+        const double atLast = g.a - g.s + (static_cast<double>(g.last) - g.s) * (g.alpha - 1.0) + g.rightWarp.most();
         return std::max(atFirst, atLast) + taps;
+    }
+
+    // A warp's knots held to read no later than `most` samples past where it would unbent.
+    static void holdWarp(EdgeWarp& w, double most) noexcept {
+        const double cap = std::max(0.0, most);
+        const double half = w.knots[3] / EdgeWarp::kKnots[2];
+        w.set(half, {std::min(w.values[1], cap), std::min(w.values[2], cap), std::min(w.values[3], cap)});
     }
 
     // Synthesis mark k's grain as it would play now: the analysis mark nearest it (Smear: one further back, at
@@ -888,6 +942,178 @@ struct Shifter::Impl {
         g.first = static_cast<int64_t>(std::floor(g.s - g.left)) + 1;
     }
 
+    // Elastic PSOLA: a grain starting (g, at output sample `now`) and the one before it (p) bent to agree where they
+    // overlap. g's left edge is bent, and while p's right edge hasn't been played past its dead zone, p's right edge
+    // too, the other way (each half of it); else g's alone. The knots' values c minimise
+    //     J(c) = E(c) + c' M c
+    // (Measured on a synthetic vowel with vibrato and jitter, -7 to +9 semitones, 110 to 220 Hz: E is about 1 unbent,
+    // the overlapping grains' contents uncorrelated, a closure's tail against the next one's head. Bent, the level
+    // lost to cancelling goes from 1.1 dB to 0.95 on average (1.0 to 0.4 at best), Robot's harmonics 0.1 dB clearer on
+    // average and 0.3 dB less clear at worst. A cost a fifth of this bends twice as far: twice the level back, but a
+    // jittered voice's warps then differ enough from period to period to roughen it, 1.3 dB less clear at worst.)
+    // E: the two grains' mismatch over what is left of the overlap, each point weighted by both windows (where the
+    // two are alike loud, and what differs cancels), against their energy there; M: the warps' size, slope and
+    // curvature (d, d' and d'' squared, over each bent side), each as a share of what its limits allow. Searched
+    // whole samples at a time with the knots in proportion to their limits, a parabola through the best, then knot by
+    // knot in halving steps (a sample's half, quarter and eighth); left unbent where that doesn't do better. The reads
+    // here are linear (where a grain is, not how it sounds).
+    void bend(Voice& v, Grain& p, Grain& g, int64_t now) noexcept {
+        // both reading the same input (a ratio of 1): they agree already, and the input stays bit for bit
+        if (g.alpha == 1.0 && p.alpha == 1.0 && std::abs((g.a - g.s) - (p.a - p.s)) < 1e-9) return;
+        const int64_t lo = std::max({g.first, p.first, now});
+        const int64_t hi = std::min(p.last, g.last);
+        if (hi - lo < kBendLeast) return;
+        const bool shared = static_cast<double>(now) - p.s <= EdgeWarp::kDead * p.right;
+        const double shareG = shared ? 0.5 : 1.0, shareP = shared ? 0.5 : 0.0;
+        const double period = g.left * g.alpha;  // (input samples from the closure before to this one)
+        std::array<double, 3> limit{};
+        for (size_t k = 0; k < 3; ++k) limit[k] = EdgeWarp::kLimits[k] * period;
+        if (!(limit[2] > 0.25)) return;
+
+        // Each knot's own warp (its value 1, the others 0), for the points' bases and M.
+        std::array<EdgeWarp, 3> unitG, unitP;
+        for (size_t k = 0; k < 3; ++k) {
+            std::array<double, 3> e{};
+            e[k] = 1.0;
+            unitG[k].set(g.left, e);
+            unitP[k].set(p.right, e);
+        }
+        std::array<std::array<double, 3>, 3> M{};
+        const auto addCost = [&](const std::array<EdgeWarp, 3>& unit, double half, double share) {
+            if (!(share > 0.0) || !(half > 0.0)) return;
+            constexpr int kSteps = 24;
+            const double from = EdgeWarp::kDead * half, du = (half - from) / kSteps;
+            const double size = kBendSize / (limit[2] * limit[2]) / kSteps;
+            const double slope = kBendSlope * (half * half) / (limit[2] * limit[2]) / kSteps;
+            const double curve = kBendCurve * (half * half * half * half) / (limit[2] * limit[2]) / kSteps;
+            for (int i = 0; i <= kSteps; ++i) {
+                const double u = from + du * i;
+                std::array<double, 3> b{}, d1{}, d2{};
+                for (size_t k = 0; k < 3; ++k) {
+                    const double before = unit[k].at(u - du), here = unit[k].at(u), after = unit[k].at(u + du);
+                    b[k] = here;
+                    d1[k] = (after - before) / (2.0 * du);
+                    d2[k] = (after - 2.0 * here + before) / (du * du);
+                }
+                for (size_t k = 0; k < 3; ++k)
+                    for (size_t l = 0; l < 3; ++l)
+                        M[k][l] += share * share * (size * b[k] * b[l] + slope * d1[k] * d1[l] + curve * d2[k] * d2[l]);
+            }
+        };
+        addCost(unitG, g.left, shareG);
+        addCost(unitP, p.right, shareP);
+
+        // The overlap's points: where each grain reads unbent, how each knot moves it, and how much the point counts.
+        struct Point {
+            double q, readP, readG;
+            std::array<double, 3> moveP, moveG;
+        };
+        std::array<Point, kBendPoints> points;
+        const int count = static_cast<int>(std::min<int64_t>(kBendPoints, hi - lo + 1));
+        int used = 0;
+        for (int i = 0; i < count; ++i) {
+            const int64_t n = lo + (count > 1 ? (hi - lo) * i / (count - 1) : 0);
+            const double uP = static_cast<double>(n) - p.s, uG = static_cast<double>(n) - g.s;
+            const double q = window(uP, p.left, p.right) * window(uG, g.left, g.right);
+            if (!(q > 0.0)) continue;
+            Point& pt = points[static_cast<size_t>(used++)];
+            pt.q = q;
+            pt.readP = p.a + p.alpha * uP + (uP < 0.0 ? p.leftWarp.at(-uP) : p.rightWarp.at(uP));
+            pt.readG = g.a + g.alpha * uG;
+            for (size_t k = 0; k < 3; ++k) {
+                pt.moveP[k] = uP > 0.0 ? -shareP * unitP[k].at(uP) : 0.0;
+                pt.moveG[k] = uG < 0.0 ? shareG * unitG[k].at(-uG) : 0.0;
+            }
+        }
+        if (used < 4) return;
+        const float* x = input[static_cast<size_t>(v.input)].data();
+        const auto read = [&](double position) {
+            const double whole = std::floor(position);
+            const double f = position - whole;
+            const auto i = static_cast<size_t>(static_cast<int64_t>(whole));
+            return x[i & inputMask] + f * (x[(i + 1) & inputMask] - x[i & inputMask]);
+        };
+        const auto cost = [&](const std::array<double, 3>& c) {
+            double mismatch = 0.0, energy = 0.0;
+            for (int i = 0; i < used; ++i) {
+                const Point& pt = points[static_cast<size_t>(i)];
+                const double xp = read(pt.readP + pt.moveP[0] * c[0] + pt.moveP[1] * c[1] + pt.moveP[2] * c[2]);
+                const double xg = read(pt.readG + pt.moveG[0] * c[0] + pt.moveG[1] * c[1] + pt.moveG[2] * c[2]);
+                mismatch += pt.q * (xp - xg) * (xp - xg);
+                energy += pt.q * (xp * xp + xg * xg);
+            }
+            double warp = 0.0;
+            for (size_t k = 0; k < 3; ++k)
+                for (size_t l = 0; l < 3; ++l) warp += c[k] * M[k][l] * c[l];
+            return (energy > 0.0 ? mismatch / energy : 0.0) + warp;
+        };
+        const auto clamped = [&](std::array<double, 3> c) {
+            for (size_t k = 0; k < 3; ++k) c[k] = std::clamp(c[k], -limit[k], limit[k]);
+            return c;
+        };
+
+        // The knots in proportion to their limits, the edge's moved in kBendSteps steps either way (a sample each at
+        // the least); a parabola through the best.
+        const std::array<double, 3> along = {limit[0] / limit[2], limit[1] / limit[2], 1.0};
+        const auto alongBy = [&](double t) { return clamped({along[0] * t, along[1] * t, along[2] * t}); };
+        const double unbent = cost({0.0, 0.0, 0.0});
+        const double unit = std::max(1.0, limit[2] / kBendSteps);
+        const int steps = std::min(kBendSteps, static_cast<int>(std::floor(limit[2] / unit)));
+        int bestStep = 0;
+        double best = unbent;
+        std::array<double, 2 * kBendSteps + 1> tried{};
+        for (int t = -steps; t <= steps; ++t) {
+            const double j = t == 0 ? unbent : cost(alongBy(t * unit));
+            tried[static_cast<size_t>(t + kBendSteps)] = j;
+            if (j < best) best = j, bestStep = t;
+        }
+        std::array<double, 3> c = alongBy(bestStep * unit);
+        if (std::abs(bestStep) < steps) {
+            const double before = tried[static_cast<size_t>(bestStep + kBendSteps - 1)];
+            const double after = tried[static_cast<size_t>(bestStep + kBendSteps + 1)];
+            const double curve = before - 2.0 * best + after;
+            if (curve > 0.0) {
+                const std::array<double, 3> between = alongBy(unit * (bestStep + std::clamp(0.5 * (before - after) / curve, -0.5, 0.5)));
+                const double j = cost(between);
+                if (j < best) best = j, c = between;
+            }
+        }
+        // Then each knot on its own, in halving steps from half the first search's.
+        for (const double step : {0.5 * unit, 0.25 * unit, 0.125 * unit, 0.0625 * unit}) {
+            for (int pass = 0; pass < 2; ++pass) {
+                bool moved = false;
+                for (size_t k = 0; k < 3; ++k) {
+                    for (const double sign : {1.0, -1.0}) {
+                        std::array<double, 3> trial = c;
+                        trial[k] += sign * step;
+                        trial = clamped(trial);
+                        if (trial == c) continue;
+                        const double j = cost(trial);
+                        if (j < best) {
+                            best = j;
+                            c = trial;
+                            moved = true;
+                            break;
+                        }
+                    }
+                }
+                if (!moved) break;
+            }
+        }
+        if (!(best < unbent - kBendBetter)) return;
+
+        // (each side held to read only input that is in by then)
+        const double roomG = latency - lookahead(g), roomP = latency - lookahead(p);
+        g.leftWarp.set(g.left, {shareG * c[0], shareG * c[1], shareG * c[2]});
+        holdWarp(g.leftWarp, roomG);
+        if (shared) {
+            p.rightWarp.set(p.right, {-shareP * c[0], -shareP * c[1], -shareP * c[2]});
+            holdWarp(p.rightWarp, roomP);
+            ++sharedCount;
+        }
+        ++elasticCount;
+    }
+
     // Starts a voice's grains whose windows begin by output sample n (GigaTune's: High Quality as soon as it might,
     // Live and Studio as late as they can, their marks placed with the frames decided by then).
     void startGrains(Voice& v, int64_t n) noexcept {
@@ -922,6 +1148,10 @@ struct Shifter::Impl {
                 continue;
             }
             v.lastFirst = g.first;
+            if (controls.elastic && g.voiced && v.grainCount > 0) {
+                Grain& previous = v.grains[static_cast<size_t>((v.grainHead + v.grainCount - 1) & kGrainMask)];
+                if (!previous.done && previous.voiced) bend(v, previous, g, n);
+            }
             if (g.alpha == 1.0) {
                 const double offset = g.a - g.s;
                 const double whole = std::floor(offset);
@@ -962,7 +1192,8 @@ struct Shifter::Impl {
             const double w = window(u, g.left, g.right);
             double value = 0.0, vi = 0.0, vq = 0.0;
             const bool shifted = g.shiftMix > 0.0;
-            if (g.alpha == 1.0) {
+            const double bent = u < 0.0 ? g.leftWarp.at(-u) : g.rightWarp.at(u);
+            if (g.alpha == 1.0 && bent == 0.0) {
                 const int64_t base = n + g.shift;
                 if (g.fraction == 0.0) {
                     const size_t at = static_cast<size_t>(base) & inputMask;
@@ -982,11 +1213,31 @@ struct Shifter::Impl {
                         }
                     }
                 }
+            } else if (g.alpha == 1.0) {
+                // bent: the taps between the two nearest of the bank's fractions
+                const double position = g.a + u + bent;
+                const double whole = std::floor(position);
+                const double at = (position - whole) * kPhases;
+                const auto phase = std::min(static_cast<int>(at), kPhases - 1);
+                const double mix = at - phase;
+                const double* t0 = phases.data() + static_cast<size_t>(phase * kTaps);
+                const double* t1 = t0 + kTaps;
+                const auto base = static_cast<int64_t>(whole) - (kSincHalf - 1);
+                for (int t = 0; t < kTaps; ++t) {
+                    const double tap = t0[t] + mix * (t1[t] - t0[t]);
+                    const size_t i = static_cast<size_t>(base + t) & inputMask;
+                    value += tap * x[i];
+                    if (shifted) {
+                        vi += tap * xi[i];
+                        vq += tap * xq[i];
+                    }
+                }
             } else {
-                // read faster or slower: the taps follow the read, low-passed to 1 / alpha of the band read faster
+                // read faster or slower (and bent alike): the taps follow the read, low-passed to 1 / alpha of the band
+                // read faster
                 const double scale = g.alpha > 1.0 ? 1.0 / g.alpha : 1.0;
                 const int half = g.alpha > 1.0 ? static_cast<int>(std::ceil(kSincHalf * g.alpha)) : kSincHalf;
-                const double position = g.a + u * g.alpha;
+                const double position = g.a + u * g.alpha + bent;
                 const double whole = std::floor(position);
                 const double fraction = position - whole;
                 const auto base = static_cast<int64_t>(whole);
@@ -1132,6 +1383,8 @@ Heard Shifter::heard(int ago) const noexcept { return impl_->heard(ago); }
 int64_t Shifter::voicedFrames() const noexcept { return impl_->voicedCount; }
 int64_t Shifter::lateSamples() const noexcept { return impl_->late; }
 int64_t Shifter::droppedGrains() const noexcept { return impl_->dropped; }
+int64_t Shifter::elasticJunctions() const noexcept { return impl_->elasticCount; }
+int64_t Shifter::sharedJunctions() const noexcept { return impl_->sharedCount; }
 
 // --- Drive ------------------------------------------------------------------------------------------
 
