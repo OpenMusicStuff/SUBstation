@@ -2,7 +2,8 @@
 // Changeling's maths: a pitch and formant shifter for a single voice (builtin/devices/Changeling.cpp), here so the
 // engine tests can drive its parts on their own. It hears the pitch with GigaTune's tracker (pYIN, or SwiftF0 at
 // High Quality: builtin/GigaTuneDesign.h) and moves it with TD-PSOLA as GigaTune's corrector does: analysis marks a
-// period apart in the input, grains centred on the voice's pulses, synthesis marks an output period apart, each
+// period apart in the input, grains centred on the voice's glottal closures (SEDREAMS: Closures, below), synthesis
+// marks an output period apart, each
 // playing the grain of the analysis mark nearest it, the windows' sum divided out where grains crowd and the grains
 // raised where they thin, a ratio of 1 the input exactly. What it adds, from measuring Little AlterBoy and Polyverse
 // Manipulator (their behaviour is set out where each part is):
@@ -31,6 +32,9 @@
 // - Smear, Manipulator's: grains taken from up to kSmearSeconds before their marks and their marks moved at random by
 //   up to kSmearJitter of a period, so the voice blurs and roughens.
 // - Unvoiced input (breath, sibilants, noise) plays as it was, unshifted, as in both.
+// - Elastic grains (its own, not either's): where two voiced grains overlap, the later one's left edge and the
+//   earlier one's right edge are bent a few samples (EdgeWarp: nothing within a quarter of the grain about its
+//   centre, the closure, and more towards its edges) so that the two agree where they overlap, and cancel less.
 //
 // Latency, by Quality: Live, the tracker's as GigaTune's Low Latency (21.3 ms at any rate); Studio, about
 // Little AlterBoy's (48 ms): the same tracker deciding each frame kStudioLag frames after it (pYIN's Viterbi path
@@ -45,6 +49,7 @@
 // at twice the rate; within 7 to 16 % (RMS) of LAB's output at every setting and level. At 0 it isn't there at all
 // (LAB colours even then, and is 2.4 dB quieter: Changeling at 0 is the input exactly); from 0 to 1 it fades in.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -93,6 +98,7 @@ struct Controls {
     double detune = 0.0;     // cents
     double width = 0.0;      // 0..1
     double smear = 0.0;      // 0..1
+    bool elastic = true;     // grains' edges bent to agree with their neighbours' (EdgeWarp); off: plain PSOLA
     Quality quality = Quality::Studio;  // a change starts the shifter again, at its own latency
 };
 
@@ -136,6 +142,10 @@ public:
     int64_t voicedFrames() const noexcept;
     int64_t lateSamples() const noexcept;
     int64_t droppedGrains() const noexcept;
+    // For tests: the overlaps of two grains whose edges were bent (EdgeWarp), and how many of those bent both
+    // grains (the earlier one's right edge not yet played) rather than only the later one's left.
+    int64_t elasticJunctions() const noexcept;
+    int64_t sharedJunctions() const noexcept;
 
 private:
     struct Impl;
@@ -185,6 +195,84 @@ private:
     std::array<double, kSections> iState1_{}, iState2_{}, qState1_{}, qState2_{};
     std::array<double, kSections> iIn1_{}, iIn2_{}, qIn1_{}, qIn2_{};
     double qDelay_ = 0.0;
+};
+
+// One side of a grain bent in time ("elastic PSOLA"): the grain reads its input at x(t + d(u)), u output samples out
+// from its centre on that side (positive, either side), d in input samples. d is 0 up to kDead of the side's half
+// width (the closure, at the centre, stays where it is), then a cubic Hermite through d = values[k] at kKnots[k]
+// of it (tangents by central differences, 0 at the dead zone's end), the last value past the edge. The shifter
+// bounds values[k] by kLimits[k] of a period (1 : 2 : 4 out to the edge, a tenth of a period there), so the warp is
+// slight and smooth: its slope changes the pitch a grain reads by 1 + d'. (A few samples, whatever the period, do
+// nothing measurable: neighbouring grains overlap a closure's tail with the next one's head, tens of samples out.)
+// Exposed for tests.
+struct EdgeWarp {
+    static constexpr double kDead = 0.25;
+    static constexpr std::array<double, 3> kKnots = {0.4, 0.7, 1.0};
+    static constexpr std::array<double, 3> kLimits = {0.025, 0.05, 0.1};
+
+    std::array<double, 4> knots{};   // u of the dead zone's end and of each knot (output samples)
+    std::array<double, 4> values{};  // d there (values[0]: 0)
+    std::array<double, 4> slopes{};  // dd/du there
+    bool on = false;
+
+    // A side `half` output samples wide, bent by `d` (the three knots' values).
+    void set(double half, const std::array<double, 3>& d) noexcept;
+    double at(double u) const noexcept;
+    double most() const noexcept { return on ? std::max({0.0, values[1], values[2], values[3]}) : 0.0; }
+};
+
+// The voice's glottal closures, where the shifter centres its grains: SEDREAMS (Drugman & Dutoit, "Glottal closure
+// and opening instant detection from speech signals", Interspeech 2009), as the input comes. The mean-based signal
+// (the input under a Blackman window 1.75 periods long) has a minimum each period, a little before the closure; the
+// closure is the strongest peak of the linear-prediction residual in an interval after it, 0.7 of the minimum-to-
+// maximum distance long and placed by where the residual's strongest peaks have been lying in those cycles (the paper
+// takes their median over the whole signal; here the first few's mean, then followed: learn()). The residual: order rate / 1000 + 2, 25 ms Hann windows every 5 ms (each hop
+// filtered by the window ending with it), its sign the one its skewness gives (closures are its peaks, RESKEW).
+// Exposed for tests.
+class Closures {
+public:
+    // Not real-time: `keep` samples kept, for periods up to `longest` samples.
+    void prepare(double sampleRate, int keep, double longest);
+    void reset() noexcept;
+    void push(double x) noexcept;
+    int64_t written() const noexcept { return written_; }
+    int64_t ready() const noexcept { return ready_; }  // the samples whose residual is known (a hop at a time)
+
+    // The closure in the period about `p` (period samples long): its offset from p, how sure that is (0..1: how far
+    // its residual peak stands out of the cycle's), and where the cycle's strongest residual peak lies from its
+    // mean-based minimum (in minimum-to-maximum distances: what learn() takes; NaN where no peak stands out). False
+    // where the input doesn't reach far enough past p yet: it is then looked for as many whole periods earlier as it
+    // takes.
+    bool find(double p, double period, double& offset, double& sureness, double& relative) const noexcept;
+    // A closure's `relative` from find(): the interval's place follows them (NaN: nothing learnt).
+    void learn(double relative) noexcept;
+    double ratio() const noexcept { return ratio_; }
+    double residualAt(int64_t n) const noexcept { return residual_[static_cast<size_t>(n) & mask_]; }
+
+private:
+    static constexpr int kMaxOrder = 50;
+    // A closure looked for: where and with what (the place, the period, the ratio, the sign), and what was found.
+    struct Found {
+        double p = 0.0, period = 0.0, ratio = 0.0, sign = 0.0, closure = 0.0, sureness = 0.0, relative = 0.0;
+        int learnt = 0;
+    };
+    void analyse() noexcept;
+    void look(Found& f, int64_t half) const noexcept;
+    double inputAt(int64_t n) const noexcept { return input_[static_cast<size_t>(n) & mask_]; }
+
+    int order_ = 0, window_ = 0, hop_ = 0;
+    std::vector<double> input_, residual_, hann_, windowed_, history_;
+    size_t mask_ = 0;
+    std::array<double, kMaxOrder + 1> lpc_{};
+    int64_t written_ = 0, ready_ = 0;
+    double moment3_ = 0.0, momentRate_ = 0.0;  // the residual's third moment, followed (its skewness's sign)
+    double ratio_ = 0.0;
+    int learnt_ = 0;
+    // find()'s working space (the mean-based signal and its running sums)
+    mutable std::vector<double> sums0_, mean_;
+    mutable std::vector<double> sums1Re_, sums1Im_, sums2Re_, sums2Im_;
+    mutable std::array<Found, 8> found_{};  // the latest looked for
+    mutable size_t nextFound_ = 0;
 };
 
 }  // namespace sub::changeling

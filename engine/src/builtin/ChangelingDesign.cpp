@@ -1,9 +1,10 @@
 #include "builtin/ChangelingDesign.h"
 
-// Changeling's shifter and drive (see ChangelingDesign.h). The grains are GigaTune's corrector's (its marks, pulses,
-// windows and the reading between samples, GigaTuneDesign.cpp), in voices: each voice has synthesis marks and
-// grains of its own and plays one channel (the left and right's main voices, and their twins), all of them reading
-// the analysis marks the tracker's frames place.
+// Changeling's shifter and drive (see ChangelingDesign.h). The grains are GigaTune's corrector's (its marks, windows
+// and the reading between samples, GigaTuneDesign.cpp), centred on the voice's glottal closures as SEDREAMS finds
+// them (Closures) rather than GigaTune's pulses, in voices: each voice has synthesis marks and grains of its own and
+// plays one channel (the left and right's main voices, and their twins), all of them reading the analysis marks the
+// tracker's frames place.
 
 #include <algorithm>
 #include <cmath>
@@ -35,9 +36,9 @@ constexpr double kRangeMargin = 1.03;
 double lowestF0() { return gigatune::kFmin / kRangeMargin; }
 double highestF0() { return gigatune::kFmax * kRangeMargin; }
 
-// Grains on pulses, as GigaTune's: how sure the pulse must be at a voiced start to move the first mark onto it, how
-// much of the way a grain's centre moves to its pulse at each mark (times the sureness), and how far it may be from
-// its mark (of the period, or the unvoiced step if shorter).
+// Grains on the closures, as GigaTune's on its pulses: how sure the closure must be at a voiced start to move the
+// first mark onto it, how much of the way a grain's centre moves to its closure at each mark (times the sureness), and
+// how far it may be from its mark (of the period, or the unvoiced step if shorter).
 constexpr double kOnsetSureness = 0.1;
 constexpr double kOffsetFollow = 0.1;
 constexpr double kOffsetShare = 0.4;
@@ -47,6 +48,15 @@ constexpr double kCommitAheadSeconds = 0.0005;
 // its step is raised at the most.
 constexpr double kLowestRatio = 0.4;
 constexpr double kMostRaise = 2.0;
+// Elastic grains (Shifter::Impl::bend()): the points of an overlap compared (at the most), the shortest overlap bent,
+// the first search's steps each way, what the warp's size, slope and curvature cost against the mismatch (each as a
+// share of what its limits allow: the same cost for each at the limits; measured, below), and how much better than
+// unbent a warp must be.
+constexpr int kBendPoints = 48;
+constexpr int kBendSteps = 4;
+constexpr int64_t kBendLeast = 8;
+constexpr double kBendSize = 0.01, kBendSlope = 0.01, kBendCurve = 0.01;
+constexpr double kBendBetter = 1e-4;
 
 double midiHz(double pitch) { return 440.0 * std::exp2((pitch - 69.0) / 12.0); }
 
@@ -112,6 +122,294 @@ void Quadrature::process(double x, double& i, double& q) noexcept {
     // (denormals: the engine renders with them flushed to zero)
 }
 
+// --- EdgeWarp ---------------------------------------------------------------------------------------
+
+void EdgeWarp::set(double half, const std::array<double, 3>& d) noexcept {
+    knots = {kDead * half, kKnots[0] * half, kKnots[1] * half, kKnots[2] * half};
+    values = {0.0, d[0], d[1], d[2]};
+    slopes[0] = 0.0;
+    slopes[1] = (values[2] - values[0]) / (knots[2] - knots[0]);
+    slopes[2] = (values[3] - values[1]) / (knots[3] - knots[1]);
+    slopes[3] = (values[3] - values[2]) / (knots[3] - knots[2]);
+    on = half > 0.0 && (d[0] != 0.0 || d[1] != 0.0 || d[2] != 0.0);
+}
+
+double EdgeWarp::at(double u) const noexcept {
+    if (!on || !(u > knots[0])) return 0.0;
+    if (u >= knots[3]) return values[3];
+    const int k = u < knots[1] ? 0 : u < knots[2] ? 1 : 2;
+    const auto i = static_cast<size_t>(k);
+    const double width = knots[i + 1] - knots[i], t = (u - knots[i]) / width;
+    const double t2 = t * t, t3 = t2 * t;
+    return (2.0 * t3 - 3.0 * t2 + 1.0) * values[i] + (t3 - 2.0 * t2 + t) * slopes[i] * width +
+           (3.0 * t2 - 2.0 * t3) * values[i + 1] + (t3 - t2) * slopes[i + 1] * width;
+}
+
+// --- Closures ---------------------------------------------------------------------------------------
+
+namespace {
+// SEDREAMS' settings: the mean-based signal's window (periods), the interval the closure is looked for in (of the
+// minimum-to-maximum distance, either side of the ratio), the ratio before any is learnt and how each closure moves
+// it; the residual's analysis, and how long its skewness is followed for.
+constexpr double kMeanWindow = 1.75;
+constexpr double kInterval = 0.35;
+constexpr double kFirstRatio = 0.2;
+constexpr int kFirstClosures = 8;  // closures learnt from before the interval is used (the cycle's strongest until then)
+constexpr double kRatioFollow = 0.1, kRatioStep = 0.03;
+constexpr double kRatioLowest = -0.25, kRatioHighest = 1.25;
+constexpr double kResidualWindowSeconds = 0.025, kResidualHopSeconds = 0.005;
+constexpr double kSkewSeconds = 0.5;
+// How sure a closure is: its residual peak over the cycle's RMS, from kSureFrom (none) to kSureFrom + kSureSpan.
+// A closure looked for again within this many samples of a place, with a period as near, is the one found there.
+constexpr double kSureFrom = 2.5, kSureSpan = 3.0;
+constexpr double kSamePlace = 0.5;
+}  // namespace
+
+void Closures::prepare(double sampleRate, int keep, double longest) {
+    order_ = std::clamp(static_cast<int>(std::lround(sampleRate / 1000.0)) + 2, 8, kMaxOrder);
+    window_ = static_cast<int>(std::lround(kResidualWindowSeconds * sampleRate));
+    hop_ = std::max(1, static_cast<int>(std::lround(kResidualHopSeconds * sampleRate)));
+    hann_.resize(static_cast<size_t>(window_));
+    for (int n = 0; n < window_; ++n)
+        hann_[static_cast<size_t>(n)] = 0.5 - 0.5 * std::cos(2.0 * kPi * (n + 0.5) / window_);
+    windowed_.assign(static_cast<size_t>(window_) + 4, 0.0);
+    const size_t size = powerOfTwoAtLeast(static_cast<size_t>(std::max(keep, window_ + hop_ + order_)) + 16);
+    input_.assign(size, 0.0);
+    history_.assign(static_cast<size_t>(hop_ + order_), 0.0);
+    residual_.assign(size, 0.0);
+    mask_ = size - 1;
+    // find() reads the mean-based signal over two periods and a window's half either side of them
+    const auto span = static_cast<size_t>(std::ceil((2.0 + kMeanWindow) * longest)) + 16;
+    for (auto* v : {&sums0_, &sums1Re_, &sums1Im_, &sums2Re_, &sums2Im_}) v->assign(span + 1, 0.0);
+    mean_.assign(span, 0.0);
+    momentRate_ = 1.0 - std::exp(-1.0 / (kSkewSeconds * sampleRate));
+    reset();
+}
+
+void Closures::reset() noexcept {
+    std::fill(input_.begin(), input_.end(), 0.0);
+    std::fill(residual_.begin(), residual_.end(), 0.0);
+    lpc_ = {};
+    written_ = ready_ = 0;
+    moment3_ = 0.0;
+    ratio_ = kFirstRatio;
+    learnt_ = 0;
+    found_ = {};
+    for (Found& f : found_) f.p = -std::numeric_limits<double>::infinity();
+}
+
+void Closures::push(double x) noexcept {
+    input_[static_cast<size_t>(written_) & mask_] = x;
+    ++written_;
+    if (written_ % hop_ == 0) analyse();
+}
+
+// The predictor from the window ending at the newest sample (the autocorrelation method, Levinson-Durbin), and the
+// last hop filtered by it.
+void Closures::analyse() noexcept {
+    const int64_t end = written_;
+    for (int n = 0; n < window_; ++n)
+        windowed_[static_cast<size_t>(n)] = hann_[static_cast<size_t>(n)] * inputAt(end - window_ + n);
+    std::array<double, kMaxOrder + 1> r{};
+    // (four sums at a time, so the compiler may vectorise them; the window is zero-padded to a multiple of four)
+    const double* w = windowed_.data();
+    for (int k = 0; k <= order_; ++k) {
+        double sums[4] = {0.0, 0.0, 0.0, 0.0};
+        for (int n = k; n < window_; n += 4)
+            for (int j = 0; j < 4; ++j) sums[j] += w[n + j] * w[n + j - k];
+        r[static_cast<size_t>(k)] = (sums[0] + sums[1]) + (sums[2] + sums[3]);
+    }
+    lpc_ = {};
+    lpc_[0] = 1.0;
+    if (r[0] > 1e-20) {
+        double error = r[0] * (1.0 + 1e-9);  // (a little white noise: the predictor stays stable)
+        std::array<double, kMaxOrder + 1> before{};
+        for (int i = 1; i <= order_; ++i) {
+            double acc = r[static_cast<size_t>(i)];
+            for (int j = 1; j < i; ++j) acc += lpc_[static_cast<size_t>(j)] * r[static_cast<size_t>(i - j)];
+            const double k = -acc / error;
+            before = lpc_;
+            for (int j = 1; j < i; ++j) lpc_[static_cast<size_t>(j)] = before[static_cast<size_t>(j)] + k * before[static_cast<size_t>(i - j)];
+            lpc_[static_cast<size_t>(i)] = k;
+            error *= 1.0 - k * k;
+            if (!(error > 0.0)) break;
+        }
+    }
+    // The hop and the order before it, in order (the window's last samples, before windowing).
+    double* h = history_.data();
+    for (int i = 0; i < hop_ + order_; ++i) h[i] = inputAt(end - hop_ - order_ + i);
+    for (int64_t n = end - hop_; n < end; ++n) {
+        const double* x = h + (n - (end - hop_)) + order_;
+        double sums[4] = {0.0, 0.0, 0.0, 0.0};
+        int k = 0;
+        for (; k + 3 <= order_; k += 4)
+            for (int j = 0; j < 4; ++j) sums[j] += lpc_[static_cast<size_t>(k + j)] * x[-(k + j)];
+        for (; k <= order_; ++k) sums[0] += lpc_[static_cast<size_t>(k)] * x[-k];
+        const double e = (sums[0] + sums[1]) + (sums[2] + sums[3]);
+        residual_[static_cast<size_t>(n) & mask_] = e;
+        moment3_ += momentRate_ * (e * e * e - moment3_);
+    }
+    ready_ = end;
+}
+
+void Closures::learn(double relative) noexcept {
+    // (the first ones' mean; then each move held to kRatioStep: a stray peak barely moves it, and a voice whose
+    // closures lie elsewhere moves it there within a few tens of periods)
+    if (!std::isfinite(relative)) return;
+    if (learnt_ < kFirstClosures) {
+        ratio_ = std::clamp((ratio_ * learnt_ + relative) / (learnt_ + 1), kRatioLowest, kRatioHighest);
+        ++learnt_;
+        return;
+    }
+    ratio_ = std::clamp(ratio_ + std::clamp(kRatioFollow * (relative - ratio_), -kRatioStep, kRatioStep), kRatioLowest,
+                        kRatioHighest);
+}
+
+bool Closures::find(double p, double period, double& offset, double& sureness, double& relative) const noexcept {
+    offset = 0.0;
+    sureness = 0.0;
+    relative = std::numeric_limits<double>::quiet_NaN();
+    const double T = period;
+    const auto half = static_cast<int64_t>(std::max(2L, std::lround(0.5 * kMeanWindow * T)));
+    // The mean-based signal over [p - 1.25 T, p + 0.5 T]: the minima before the closures about p, the input a window's
+    // half past them; the residual to p + 0.5 T.
+    const double newest = static_cast<double>(written_ - 1), newestResidual = static_cast<double>(ready_ - 1);
+    const double past = std::max(std::floor(p + 0.5 * T) + static_cast<double>(half) - newest,
+                                 std::floor(p + 0.5 * T) - newestResidual);
+    bool whole = true;
+    if (past > 0.0) {
+        p -= T * std::ceil(past / T);
+        whole = false;
+    }
+    // Looked for about the same place with the same period already (a mark placed again as frames come, or one
+    // looked for whole periods back): the same closure, its input being the same.
+    const double sign = moment3_ < 0.0 ? -1.0 : 1.0;
+    for (const Found& f : found_) {
+        if (std::abs(f.p - p) <= kSamePlace && std::abs(f.period - T) <= kSamePlace && f.ratio == ratio_ &&
+            f.learnt == learnt_ && f.sign == sign) {
+            if (std::isfinite(f.closure)) offset = f.closure - p;
+            sureness = f.sureness;
+            relative = f.relative;
+            return whole;
+        }
+    }
+    Found& f = found_[nextFound_];
+    nextFound_ = (nextFound_ + 1) % found_.size();
+    f = {p, T, ratio_, sign, std::numeric_limits<double>::quiet_NaN(), 0.0, relative, learnt_};
+    look(f, half);
+    if (std::isfinite(f.closure)) offset = f.closure - p;
+    sureness = f.sureness;
+    relative = f.relative;
+    return whole;
+}
+
+void Closures::look(Found& f, int64_t half) const noexcept {
+    const double p = f.p, T = f.period, sign = f.sign;
+    const auto a = static_cast<int64_t>(std::ceil(p - 1.25 * T));
+    const auto b = static_cast<int64_t>(std::floor(p + 0.5 * T));
+    const int64_t from = a - half, to = b + half;
+    const auto count = static_cast<size_t>(b - a + 1);
+    if (static_cast<size_t>(to - from + 1) >= sums0_.size() || count < 4 || from < written_ - static_cast<int64_t>(mask_))
+        return;
+
+    // Running sums of x, x e^(i pi j / half) and x e^(2 i pi j / half) (j from `from`): each point's Blackman-windowed
+    // sum is then three differences, turned back by the point's own phase.
+    double z1Re = 1.0, z1Im = 0.0, s1, c1;
+    fastmath::sincos(kPi / static_cast<double>(half), s1, c1);
+    sums0_[0] = sums1Re_[0] = sums1Im_[0] = sums2Re_[0] = sums2Im_[0] = 0.0;
+    for (int64_t j = 0; j <= to - from; ++j) {
+        const auto i = static_cast<size_t>(j);
+        const double x = inputAt(from + j);
+        const double z2Re = z1Re * z1Re - z1Im * z1Im, z2Im = 2.0 * z1Re * z1Im;
+        sums0_[i + 1] = sums0_[i] + x;
+        sums1Re_[i + 1] = sums1Re_[i] + x * z1Re;
+        sums1Im_[i + 1] = sums1Im_[i] + x * z1Im;
+        sums2Re_[i + 1] = sums2Re_[i] + x * z2Re;
+        sums2Im_[i + 1] = sums2Im_[i] + x * z2Im;
+        const double re = z1Re * c1 - z1Im * s1;
+        z1Im = z1Im * c1 + z1Re * s1;
+        z1Re = re;
+    }
+    // (the first point is `half` on from `from`: its phase is pi)
+    double zRe = -1.0, zIm = 0.0;
+    double sumT = 0.0, sumTT = 0.0, sumY = 0.0, sumTY = 0.0;
+    const double centre = 0.5 * static_cast<double>(count - 1);
+    for (size_t n = 0; n < count; ++n) {
+        const size_t lo = n, hi = n + 2 * static_cast<size_t>(half) + 1;
+        const double d0 = sums0_[hi] - sums0_[lo];
+        const double d1Re = sums1Re_[hi] - sums1Re_[lo], d1Im = sums1Im_[hi] - sums1Im_[lo];
+        const double d2Re = sums2Re_[hi] - sums2Re_[lo], d2Im = sums2Im_[hi] - sums2Im_[lo];
+        const double z2Re = zRe * zRe - zIm * zIm, z2Im = 2.0 * zRe * zIm;
+        const double y = 0.42 * d0 + 0.5 * (d1Re * zRe + d1Im * zIm) + 0.08 * (d2Re * z2Re + d2Im * z2Im);
+        mean_[n] = y;
+        const double t = static_cast<double>(n) - centre;
+        sumT += t;
+        sumTT += t * t;
+        sumY += y;
+        sumTY += t * y;
+        const double re = zRe * c1 - zIm * s1;
+        zIm = zIm * c1 + zRe * s1;
+        zRe = re;
+    }
+    // Its drift taken off (SEDREAMS high-passes it at 50 Hz): a straight line through it.
+    // Both it and the residual turned the way the residual's skewness says (SEDREAMS takes the voice the right way up).
+    const double slope = sumTT > 0.0 ? sumTY / sumTT : 0.0, level = sumY / static_cast<double>(count);
+    for (size_t n = 0; n < count; ++n) mean_[n] = sign * (mean_[n] - level - slope * (static_cast<double>(n) - centre));
+
+    const auto peakIn = [&](double lo, double hi, int64_t& at) {
+        const auto first = static_cast<int64_t>(std::ceil(lo));
+        const auto last = std::min(static_cast<int64_t>(std::floor(hi)), ready_ - 1);
+        double best = -std::numeric_limits<double>::infinity();
+        at = -1;
+        for (int64_t n = first; n <= last; ++n) {
+            const double e = sign * residualAt(n);
+            if (e > best) best = e, at = n;
+        }
+        return best;
+    };
+
+    double nearest = std::numeric_limits<double>::infinity();
+    int64_t closure = -1;
+    double minimum = 0.0, distance = 0.0;
+    for (size_t n = 1; n + 1 < count; ++n) {
+        if (!(mean_[n] < mean_[n - 1] && mean_[n] <= mean_[n + 1])) continue;
+        size_t m = n + 1;
+        while (m + 1 < count && !(mean_[m] > mean_[m - 1] && mean_[m] >= mean_[m + 1])) ++m;
+        const double interval = std::clamp(m + 1 < count ? static_cast<double>(m - n) : 0.5 * T, 0.25 * T, 0.75 * T);
+        const double low = static_cast<double>(a) + static_cast<double>(n);
+        int64_t at;
+        if (learnt_ < kFirstClosures) peakIn(low - 0.5 * interval, low + 1.5 * interval, at);
+        else peakIn(low + (ratio_ - kInterval) * interval, low + (ratio_ + kInterval) * interval, at);
+        if (at < 0) continue;
+        const double d = std::abs(static_cast<double>(at) - p);
+        if (d < nearest) nearest = d, closure = at, minimum = low, distance = interval;
+    }
+    if (closure < 0) return;
+
+    // Between samples: a parabola through the peak and its neighbours.
+    const double y0 = sign * residualAt(closure - 1), y1 = sign * residualAt(closure);
+    const double y2 = closure + 1 < ready_ ? sign * residualAt(closure + 1) : y0;
+    const double curve = y0 - 2.0 * y1 + y2;
+    const double between = curve < 0.0 ? std::clamp(0.5 * (y0 - y2) / curve, -0.5, 0.5) : 0.0;
+    f.closure = static_cast<double>(closure) + between;
+    // How it stands out of its cycle (a period about its minimum), and where the cycle's strongest peak lies.
+    const double lo = minimum - 0.5 * distance, hi = minimum + 1.5 * distance;
+    double energy = 0.0;
+    int64_t points = 0;
+    for (auto n = static_cast<int64_t>(std::ceil(lo)); n <= std::min(static_cast<int64_t>(std::floor(hi)), ready_ - 1); ++n) {
+        energy += residualAt(n) * residualAt(n);
+        ++points;
+    }
+    if (!(points > 0 && energy > 0.0)) return;
+    const double rms = std::sqrt(energy / static_cast<double>(points));
+    if (y1 > 0.0) f.sureness = std::clamp((y1 / rms - kSureFrom) / kSureSpan, 0.0, 1.0);
+    // (learnt from only where it stands out as a closure would: found in the interval or not)
+    int64_t strongest;
+    const double peak = peakIn(lo, hi, strongest);
+    if (strongest >= 0 && peak / rms >= kSureFrom + 0.5 * kSureSpan)
+        f.relative = (static_cast<double>(strongest) - minimum) / distance;
+}
+
 // --- Shifter ----------------------------------------------------------------------------------------
 
 struct Shifter::Impl {
@@ -138,6 +436,7 @@ struct Shifter::Impl {
         double rotRe = 1.0, rotIm = 0.0, stepRe = 1.0, stepIm = 0.0, shiftMix = 0.0;
         int64_t k = 0, j = 0, first = 0, last = -1, shift = 0;
         bool done = true, open = false, voiced = false;
+        EdgeWarp leftWarp, rightWarp;  // its edges bent (elastic: set as its neighbours start)
         std::array<double, 2 * kSincHalf> taps{};
     };
     // A voice: its synthesis marks and grains, and what it plays.
@@ -169,6 +468,7 @@ struct Shifter::Impl {
     };
 
     std::array<gigatune::PitchTracker, 2> trackers;  // lag 0 (Live, High Quality), kStudioLag (Studio)
+    Closures closures;  // where the grains are centred
     gigatune::PitchTracker* tracker = &trackers[0];
     double rate = 48000.0;
     int hop = 0, latency = 0;
@@ -178,6 +478,11 @@ struct Shifter::Impl {
     int commitAhead = 0;
     Controls controls;
     const double* sinc = nullptr;
+    // The reading between samples at kPhases + 1 fractions of one, 2 kSincHalf taps each (the fast path's): a bent
+    // grain read at speed 1 takes its taps between the two nearest (within 1e-4 of the sinc's own: -90 dB).
+    static constexpr int kPhases = 256;
+    static constexpr int kTaps = 2 * kSincHalf;
+    std::vector<double> phases;
 
     std::vector<Control> control;
     size_t controlMask = 0;
@@ -192,7 +497,7 @@ struct Shifter::Impl {
     int midiCount = 0, midiHead = 0;
     int midiBefore = -1;  // the note held before the oldest one kept
 
-    // The analysis marks, shared by the voices: positions, whether each grain is voiced, and its pulse's offset.
+    // The analysis marks, shared by the voices: positions, whether each grain is voiced, and its closure's offset.
     std::vector<double> analysis, offsets;
     std::vector<uint8_t> analysisVoiced;
     size_t markMask = 0;
@@ -205,11 +510,16 @@ struct Shifter::Impl {
     std::array<Quadrature, 2> quadrature;
     size_t inputMask = 0;
     int64_t time = 0;
-    int64_t late = 0, voicedCount = 0, dropped = 0;
+    int64_t late = 0, voicedCount = 0, dropped = 0, elasticCount = 0, sharedCount = 0;
 
     void prepare(double sampleRate) {
         rate = sampleRate;
         sinc = gigatune::sincTable();
+        phases.assign(static_cast<size_t>((kPhases + 1) * kTaps), 0.0);
+        for (int p = 0; p <= kPhases; ++p)
+            for (int t = 0; t < kTaps; ++t)
+                phases[static_cast<size_t>(p * kTaps + t)] =
+                    sincAt(sinc, static_cast<double>(p) / kPhases - (t - (kSincHalf - 1)));
         trackers[0].prepare(sampleRate, 0);
         trackers[1].prepare(sampleRate, kStudioLag);
         // a short note pYIN's path leaves unvoiced would come out unshifted: rescued where clearly periodic
@@ -238,6 +548,7 @@ struct Shifter::Impl {
         for (auto* rings : {&input, &inputI, &inputQ})
             for (auto& c : *rings) c.assign(powerOfTwoAtLeast(span), 0.f);
         inputMask = input[0].size() - 1;
+        closures.prepare(rate, static_cast<int>(span), longest);
         const double shortestStep = std::min(unvoicedPeriod, rate / midiHz(kHighestOut));
         smearMarks = smearSamples / std::min(unvoicedPeriod, rate / highestF0()) + 2.0;
         const auto marks = static_cast<size_t>(std::ceil(static_cast<double>(span) / std::max(1.0, shortestStep))) +
@@ -270,6 +581,7 @@ struct Shifter::Impl {
 
     void reset() noexcept {
         for (auto& t : trackers) t.reset();
+        closures.reset();
         for (auto* rings : {&input, &inputI, &inputQ})
             for (auto& c : *rings) std::fill(c.begin(), c.end(), 0.f);
         for (auto& q : quadrature) q.reset();
@@ -300,7 +612,7 @@ struct Shifter::Impl {
             v.running = !v.twin && v.output < channels;
         }
         time = 0;
-        late = voicedCount = dropped = 0;
+        late = voicedCount = dropped = elasticCount = sharedCount = 0;
     }
 
     double& analysisAt(int64_t k) noexcept { return analysis[static_cast<size_t>(k) & markMask]; }
@@ -316,41 +628,6 @@ struct Shifter::Impl {
         for (const Voice& v : voices)
             if (v.running) oldest = std::min(oldest, v.nearestCommitted);
         return oldest - static_cast<int64_t>(smearMarks) - 4;
-    }
-
-    // Where the pulse of the period about `p` lies from it (period T), and how sure that is (0..1): GigaTune's (the
-    // centroid of the low-passed signal's energy at the fundamental, over two periods). False where the input doesn't
-    // reach p + T yet (the window is then as many whole periods earlier as it takes).
-    bool pulseAt(double p, double period, double& offset, double& confidence) const noexcept {
-        const auto newest = static_cast<double>(tracker->written() - 1);
-        bool whole = true;
-        if (std::floor(p + period) > newest) {
-            p -= period * std::ceil((std::floor(p + period) - newest) / period);
-            whole = false;
-        }
-        const auto first = static_cast<int64_t>(std::ceil(p - period));
-        const auto last = static_cast<int64_t>(std::floor(p + period));
-        double s0, c0, s1, c1, sh, ch, s2, c2;
-        fastmath::sincos(2.0 * kPi * (static_cast<double>(first) - p) / period, s0, c0);
-        fastmath::sincos(kPi * (static_cast<double>(first) - p) / period, sh, ch);
-        fastmath::sincos(2.0 * kPi / period, s1, c1);
-        fastmath::sincos(kPi / period, s2, c2);
-        double re = 0.0, im = 0.0, total = 0.0;
-        for (int64_t n = first; n <= last; ++n) {
-            const double x = tracker->lowAt(n), e = (0.5 + 0.5 * ch) * x * x;
-            re += e * c0;
-            im -= e * s0;
-            total += e;
-            const double c = c0 * c1 - s0 * s1, sn = s0 * c1 + c0 * s1;
-            c0 = c;
-            s0 = sn;
-            const double hc = ch * c2 - sh * s2, hs = sh * c2 + ch * s2;
-            ch = hc;
-            sh = hs;
-        }
-        confidence = total > 0.0 ? std::hypot(re, im) / total : 0.0;
-        offset = confidence > 0.0 ? -period * std::atan2(im, re) / (2.0 * kPi) : 0.0;
-        return whole;
     }
 
     // The frames either side of a position: the analysis period, the main voices' output pitch, the formants' move
@@ -463,7 +740,8 @@ struct Shifter::Impl {
     }
 
     // The next analysis mark: GigaTune's (a period on; the first voiced one after unvoiced ones moved onto its
-    // pulse, the grains' centres following the pulse slowly after it). False when the ring is full.
+    // closure, the grains' centres following the closures slowly after it; each settled mark's closure teaching
+    // Closures where they lie). False when the ring is full.
     bool addAnalysis() noexcept {
         const int64_t m = analysisCount;
         if (m - oldestNeeded() + 16 >= static_cast<int64_t>(analysis.size())) return false;
@@ -473,9 +751,12 @@ struct Shifter::Impl {
         const double t2 = mid.analysisPeriod;
         bool exact = here.exact && mid.exact;
         double next = a + t2, offset = 0.0;
+        bool learn = false;
+        double relative = 0.0;
         if (mid.voiced) {
-            double pulse, sure;
-            exact = pulseAt(next, t2, pulse, sure) && exact;
+            double pulse, sure;  // (the closure's offset)
+            exact = closures.find(next, t2, pulse, sure, relative) && exact;
+            learn = true;
             if (!here.voiced || m == 2 || !voicedAt(m - 1)) {
                 if (sure >= kOnsetSureness) {
                     if (next + pulse > a + longest) pulse -= t2;
@@ -493,7 +774,10 @@ struct Shifter::Impl {
         analysisVoiced[static_cast<size_t>(m) & markMask] = mid.voiced ? 1 : 0;
         analysisAt(m) = next;
         analysisCount = m + 1;
-        if (exact && analysisSettled == m) analysisSettled = m + 1;
+        if (exact && analysisSettled == m) {
+            analysisSettled = m + 1;
+            if (learn) closures.learn(relative);  // (once a mark, as it settles)
+        }
         return true;
     }
 
@@ -540,6 +824,7 @@ struct Shifter::Impl {
         g.k = k;
         g.j = j;
         g.voiced = voicedGrain;
+        g.leftWarp = g.rightWarp = {};
         g.s = synthesisAt(v, k) + offset;
         g.a = analysisAt(j) + offset;
         g.shiftMix = 0.0;
@@ -597,18 +882,28 @@ struct Shifter::Impl {
         v.synthesisSettled = std::max(v.synthesisSettled, v.synthesisCommitted);
         if (g.alpha > 1.0 && lookahead(g) > latency) {
             const double taps = std::ceil(kSincHalf * g.alpha) + 1.0;
-            g.right = std::max(0.0, (latency - taps - (g.a - g.s)) / (g.alpha - 1.0) - 1.0);
+            g.right = std::max(0.0, (latency - taps - (g.a - g.s) - g.rightWarp.most()) / (g.alpha - 1.0) - 1.0);
             g.last = static_cast<int64_t>(std::ceil(g.s + g.right)) - 1;
         }
+        // (a right edge bent later still reads only input that is in: its warp is held to what is left; it starts
+        // past the dead zone, which the output hasn't reached yet)
+        if (g.rightWarp.on && lookahead(g) > latency) holdWarp(g.rightWarp, g.rightWarp.most() - (lookahead(g) - latency));
         g.open = false;
         return true;
     }
 
     static double lookahead(const Grain& g) noexcept {
         const double taps = g.alpha > 1.0 ? std::ceil(kSincHalf * g.alpha) + 1.0 : kSincHalf + 1.0;
-        const double atFirst = g.a - g.s + (static_cast<double>(g.first) - g.s) * (g.alpha - 1.0);
-        const double atLast = g.a - g.s + (static_cast<double>(g.last) - g.s) * (g.alpha - 1.0);
+        const double atFirst = g.a - g.s + (static_cast<double>(g.first) - g.s) * (g.alpha - 1.0) + g.leftWarp.most();
+        const double atLast = g.a - g.s + (static_cast<double>(g.last) - g.s) * (g.alpha - 1.0) + g.rightWarp.most();
         return std::max(atFirst, atLast) + taps;
+    }
+
+    // A warp's knots held to read no later than `most` samples past where it would unbent.
+    static void holdWarp(EdgeWarp& w, double most) noexcept {
+        const double cap = std::max(0.0, most);
+        const double half = w.knots[3] / EdgeWarp::kKnots[2];
+        w.set(half, {std::min(w.values[1], cap), std::min(w.values[2], cap), std::min(w.values[3], cap)});
     }
 
     // Synthesis mark k's grain as it would play now: the analysis mark nearest it (Smear: one further back, at
@@ -647,6 +942,178 @@ struct Shifter::Impl {
         g.first = static_cast<int64_t>(std::floor(g.s - g.left)) + 1;
     }
 
+    // Elastic PSOLA: a grain starting (g, at output sample `now`) and the one before it (p) bent to agree where they
+    // overlap. g's left edge is bent, and while p's right edge hasn't been played past its dead zone, p's right edge
+    // too, the other way (each half of it); else g's alone. The knots' values c minimise
+    //     J(c) = E(c) + c' M c
+    // (Measured on a synthetic vowel with vibrato and jitter, -7 to +9 semitones, 110 to 220 Hz: E is about 1 unbent,
+    // the overlapping grains' contents uncorrelated, a closure's tail against the next one's head. Bent, the level
+    // lost to cancelling goes from 1.1 dB to 0.95 on average (1.0 to 0.4 at best), Robot's harmonics 0.1 dB clearer on
+    // average and 0.3 dB less clear at worst. A cost a fifth of this bends twice as far: twice the level back, but a
+    // jittered voice's warps then differ enough from period to period to roughen it, 1.3 dB less clear at worst.)
+    // E: the two grains' mismatch over what is left of the overlap, each point weighted by both windows (where the
+    // two are alike loud, and what differs cancels), against their energy there; M: the warps' size, slope and
+    // curvature (d, d' and d'' squared, over each bent side), each as a share of what its limits allow. Searched
+    // whole samples at a time with the knots in proportion to their limits, a parabola through the best, then knot by
+    // knot in halving steps (a sample's half, quarter and eighth); left unbent where that doesn't do better. The reads
+    // here are linear (where a grain is, not how it sounds).
+    void bend(Voice& v, Grain& p, Grain& g, int64_t now) noexcept {
+        // both reading the same input (a ratio of 1): they agree already, and the input stays bit for bit
+        if (g.alpha == 1.0 && p.alpha == 1.0 && std::abs((g.a - g.s) - (p.a - p.s)) < 1e-9) return;
+        const int64_t lo = std::max({g.first, p.first, now});
+        const int64_t hi = std::min(p.last, g.last);
+        if (hi - lo < kBendLeast) return;
+        const bool shared = static_cast<double>(now) - p.s <= EdgeWarp::kDead * p.right;
+        const double shareG = shared ? 0.5 : 1.0, shareP = shared ? 0.5 : 0.0;
+        const double period = g.left * g.alpha;  // (input samples from the closure before to this one)
+        std::array<double, 3> limit{};
+        for (size_t k = 0; k < 3; ++k) limit[k] = EdgeWarp::kLimits[k] * period;
+        if (!(limit[2] > 0.25)) return;
+
+        // Each knot's own warp (its value 1, the others 0), for the points' bases and M.
+        std::array<EdgeWarp, 3> unitG, unitP;
+        for (size_t k = 0; k < 3; ++k) {
+            std::array<double, 3> e{};
+            e[k] = 1.0;
+            unitG[k].set(g.left, e);
+            unitP[k].set(p.right, e);
+        }
+        std::array<std::array<double, 3>, 3> M{};
+        const auto addCost = [&](const std::array<EdgeWarp, 3>& unit, double half, double share) {
+            if (!(share > 0.0) || !(half > 0.0)) return;
+            constexpr int kSteps = 24;
+            const double from = EdgeWarp::kDead * half, du = (half - from) / kSteps;
+            const double size = kBendSize / (limit[2] * limit[2]) / kSteps;
+            const double slope = kBendSlope * (half * half) / (limit[2] * limit[2]) / kSteps;
+            const double curve = kBendCurve * (half * half * half * half) / (limit[2] * limit[2]) / kSteps;
+            for (int i = 0; i <= kSteps; ++i) {
+                const double u = from + du * i;
+                std::array<double, 3> b{}, d1{}, d2{};
+                for (size_t k = 0; k < 3; ++k) {
+                    const double before = unit[k].at(u - du), here = unit[k].at(u), after = unit[k].at(u + du);
+                    b[k] = here;
+                    d1[k] = (after - before) / (2.0 * du);
+                    d2[k] = (after - 2.0 * here + before) / (du * du);
+                }
+                for (size_t k = 0; k < 3; ++k)
+                    for (size_t l = 0; l < 3; ++l)
+                        M[k][l] += share * share * (size * b[k] * b[l] + slope * d1[k] * d1[l] + curve * d2[k] * d2[l]);
+            }
+        };
+        addCost(unitG, g.left, shareG);
+        addCost(unitP, p.right, shareP);
+
+        // The overlap's points: where each grain reads unbent, how each knot moves it, and how much the point counts.
+        struct Point {
+            double q, readP, readG;
+            std::array<double, 3> moveP, moveG;
+        };
+        std::array<Point, kBendPoints> points;
+        const int count = static_cast<int>(std::min<int64_t>(kBendPoints, hi - lo + 1));
+        int used = 0;
+        for (int i = 0; i < count; ++i) {
+            const int64_t n = lo + (count > 1 ? (hi - lo) * i / (count - 1) : 0);
+            const double uP = static_cast<double>(n) - p.s, uG = static_cast<double>(n) - g.s;
+            const double q = window(uP, p.left, p.right) * window(uG, g.left, g.right);
+            if (!(q > 0.0)) continue;
+            Point& pt = points[static_cast<size_t>(used++)];
+            pt.q = q;
+            pt.readP = p.a + p.alpha * uP + (uP < 0.0 ? p.leftWarp.at(-uP) : p.rightWarp.at(uP));
+            pt.readG = g.a + g.alpha * uG;
+            for (size_t k = 0; k < 3; ++k) {
+                pt.moveP[k] = uP > 0.0 ? -shareP * unitP[k].at(uP) : 0.0;
+                pt.moveG[k] = uG < 0.0 ? shareG * unitG[k].at(-uG) : 0.0;
+            }
+        }
+        if (used < 4) return;
+        const float* x = input[static_cast<size_t>(v.input)].data();
+        const auto read = [&](double position) {
+            const double whole = std::floor(position);
+            const double f = position - whole;
+            const auto i = static_cast<size_t>(static_cast<int64_t>(whole));
+            return x[i & inputMask] + f * (x[(i + 1) & inputMask] - x[i & inputMask]);
+        };
+        const auto cost = [&](const std::array<double, 3>& c) {
+            double mismatch = 0.0, energy = 0.0;
+            for (int i = 0; i < used; ++i) {
+                const Point& pt = points[static_cast<size_t>(i)];
+                const double xp = read(pt.readP + pt.moveP[0] * c[0] + pt.moveP[1] * c[1] + pt.moveP[2] * c[2]);
+                const double xg = read(pt.readG + pt.moveG[0] * c[0] + pt.moveG[1] * c[1] + pt.moveG[2] * c[2]);
+                mismatch += pt.q * (xp - xg) * (xp - xg);
+                energy += pt.q * (xp * xp + xg * xg);
+            }
+            double warp = 0.0;
+            for (size_t k = 0; k < 3; ++k)
+                for (size_t l = 0; l < 3; ++l) warp += c[k] * M[k][l] * c[l];
+            return (energy > 0.0 ? mismatch / energy : 0.0) + warp;
+        };
+        const auto clamped = [&](std::array<double, 3> c) {
+            for (size_t k = 0; k < 3; ++k) c[k] = std::clamp(c[k], -limit[k], limit[k]);
+            return c;
+        };
+
+        // The knots in proportion to their limits, the edge's moved in kBendSteps steps either way (a sample each at
+        // the least); a parabola through the best.
+        const std::array<double, 3> along = {limit[0] / limit[2], limit[1] / limit[2], 1.0};
+        const auto alongBy = [&](double t) { return clamped({along[0] * t, along[1] * t, along[2] * t}); };
+        const double unbent = cost({0.0, 0.0, 0.0});
+        const double unit = std::max(1.0, limit[2] / kBendSteps);
+        const int steps = std::min(kBendSteps, static_cast<int>(std::floor(limit[2] / unit)));
+        int bestStep = 0;
+        double best = unbent;
+        std::array<double, 2 * kBendSteps + 1> tried{};
+        for (int t = -steps; t <= steps; ++t) {
+            const double j = t == 0 ? unbent : cost(alongBy(t * unit));
+            tried[static_cast<size_t>(t + kBendSteps)] = j;
+            if (j < best) best = j, bestStep = t;
+        }
+        std::array<double, 3> c = alongBy(bestStep * unit);
+        if (std::abs(bestStep) < steps) {
+            const double before = tried[static_cast<size_t>(bestStep + kBendSteps - 1)];
+            const double after = tried[static_cast<size_t>(bestStep + kBendSteps + 1)];
+            const double curve = before - 2.0 * best + after;
+            if (curve > 0.0) {
+                const std::array<double, 3> between = alongBy(unit * (bestStep + std::clamp(0.5 * (before - after) / curve, -0.5, 0.5)));
+                const double j = cost(between);
+                if (j < best) best = j, c = between;
+            }
+        }
+        // Then each knot on its own, in halving steps from half the first search's.
+        for (const double step : {0.5 * unit, 0.25 * unit, 0.125 * unit, 0.0625 * unit}) {
+            for (int pass = 0; pass < 2; ++pass) {
+                bool moved = false;
+                for (size_t k = 0; k < 3; ++k) {
+                    for (const double sign : {1.0, -1.0}) {
+                        std::array<double, 3> trial = c;
+                        trial[k] += sign * step;
+                        trial = clamped(trial);
+                        if (trial == c) continue;
+                        const double j = cost(trial);
+                        if (j < best) {
+                            best = j;
+                            c = trial;
+                            moved = true;
+                            break;
+                        }
+                    }
+                }
+                if (!moved) break;
+            }
+        }
+        if (!(best < unbent - kBendBetter)) return;
+
+        // (each side held to read only input that is in by then)
+        const double roomG = latency - lookahead(g), roomP = latency - lookahead(p);
+        g.leftWarp.set(g.left, {shareG * c[0], shareG * c[1], shareG * c[2]});
+        holdWarp(g.leftWarp, roomG);
+        if (shared) {
+            p.rightWarp.set(p.right, {-shareP * c[0], -shareP * c[1], -shareP * c[2]});
+            holdWarp(p.rightWarp, roomP);
+            ++sharedCount;
+        }
+        ++elasticCount;
+    }
+
     // Starts a voice's grains whose windows begin by output sample n (GigaTune's: High Quality as soon as it might,
     // Live and Studio as late as they can, their marks placed with the frames decided by then).
     void startGrains(Voice& v, int64_t n) noexcept {
@@ -681,6 +1148,10 @@ struct Shifter::Impl {
                 continue;
             }
             v.lastFirst = g.first;
+            if (controls.elastic && g.voiced && v.grainCount > 0) {
+                Grain& previous = v.grains[static_cast<size_t>((v.grainHead + v.grainCount - 1) & kGrainMask)];
+                if (!previous.done && previous.voiced) bend(v, previous, g, n);
+            }
             if (g.alpha == 1.0) {
                 const double offset = g.a - g.s;
                 const double whole = std::floor(offset);
@@ -721,7 +1192,8 @@ struct Shifter::Impl {
             const double w = window(u, g.left, g.right);
             double value = 0.0, vi = 0.0, vq = 0.0;
             const bool shifted = g.shiftMix > 0.0;
-            if (g.alpha == 1.0) {
+            const double bent = u < 0.0 ? g.leftWarp.at(-u) : g.rightWarp.at(u);
+            if (g.alpha == 1.0 && bent == 0.0) {
                 const int64_t base = n + g.shift;
                 if (g.fraction == 0.0) {
                     const size_t at = static_cast<size_t>(base) & inputMask;
@@ -741,11 +1213,31 @@ struct Shifter::Impl {
                         }
                     }
                 }
+            } else if (g.alpha == 1.0) {
+                // bent: the taps between the two nearest of the bank's fractions
+                const double position = g.a + u + bent;
+                const double whole = std::floor(position);
+                const double at = (position - whole) * kPhases;
+                const auto phase = std::min(static_cast<int>(at), kPhases - 1);
+                const double mix = at - phase;
+                const double* t0 = phases.data() + static_cast<size_t>(phase * kTaps);
+                const double* t1 = t0 + kTaps;
+                const auto base = static_cast<int64_t>(whole) - (kSincHalf - 1);
+                for (int t = 0; t < kTaps; ++t) {
+                    const double tap = t0[t] + mix * (t1[t] - t0[t]);
+                    const size_t i = static_cast<size_t>(base + t) & inputMask;
+                    value += tap * x[i];
+                    if (shifted) {
+                        vi += tap * xi[i];
+                        vq += tap * xq[i];
+                    }
+                }
             } else {
-                // read faster or slower: the taps follow the read, low-passed to 1 / alpha of the band read faster
+                // read faster or slower (and bent alike): the taps follow the read, low-passed to 1 / alpha of the band
+                // read faster
                 const double scale = g.alpha > 1.0 ? 1.0 / g.alpha : 1.0;
                 const int half = g.alpha > 1.0 ? static_cast<int>(std::ceil(kSincHalf * g.alpha)) : kSincHalf;
-                const double position = g.a + u * g.alpha;
+                const double position = g.a + u * g.alpha + bent;
                 const double whole = std::floor(position);
                 const double fraction = position - whole;
                 const auto base = static_cast<int64_t>(whole);
@@ -854,6 +1346,7 @@ struct Shifter::Impl {
                 inputQ[static_cast<size_t>(c)][in] = static_cast<float>(qq);
                 mono += x;
             }
+            closures.push(mono / channels);
             if (tracker->push(mono / channels)) onFrame(tracker->decided());
             const int64_t n = time - latency;
             double out[2] = {0.0, 0.0};
@@ -890,6 +1383,8 @@ Heard Shifter::heard(int ago) const noexcept { return impl_->heard(ago); }
 int64_t Shifter::voicedFrames() const noexcept { return impl_->voicedCount; }
 int64_t Shifter::lateSamples() const noexcept { return impl_->late; }
 int64_t Shifter::droppedGrains() const noexcept { return impl_->dropped; }
+int64_t Shifter::elasticJunctions() const noexcept { return impl_->elasticCount; }
+int64_t Shifter::sharedJunctions() const noexcept { return impl_->sharedCount; }
 
 // --- Drive ------------------------------------------------------------------------------------------
 
