@@ -2,7 +2,8 @@
 // Changeling's maths: a pitch and formant shifter for a single voice (builtin/devices/Changeling.cpp), here so the
 // engine tests can drive its parts on their own. It hears the pitch with GigaTune's tracker (pYIN, or SwiftF0 at
 // High Quality: builtin/GigaTuneDesign.h) and moves it with TD-PSOLA as GigaTune's corrector does: analysis marks a
-// period apart in the input, grains centred on the voice's pulses, synthesis marks an output period apart, each
+// period apart in the input, grains centred on the voice's glottal closures (SEDREAMS: Closures, below), synthesis
+// marks an output period apart, each
 // playing the grain of the analysis mark nearest it, the windows' sum divided out where grains crowd and the grains
 // raised where they thin, a ratio of 1 the input exactly. What it adds, from measuring Little AlterBoy and Polyverse
 // Manipulator (their behaviour is set out where each part is):
@@ -185,6 +186,60 @@ private:
     std::array<double, kSections> iState1_{}, iState2_{}, qState1_{}, qState2_{};
     std::array<double, kSections> iIn1_{}, iIn2_{}, qIn1_{}, qIn2_{};
     double qDelay_ = 0.0;
+};
+
+// The voice's glottal closures, where the shifter centres its grains: SEDREAMS (Drugman & Dutoit, "Glottal closure
+// and opening instant detection from speech signals", Interspeech 2009), as the input comes. The mean-based signal
+// (the input under a Blackman window 1.75 periods long) has a minimum each period, a little before the closure; the
+// closure is the strongest peak of the linear-prediction residual in an interval after it, 0.7 of the minimum-to-
+// maximum distance long and placed by where the residual's strongest peaks have been lying in those cycles (the paper
+// takes their median over the whole signal; here the first few's mean, then followed: learn()). The residual: order rate / 1000 + 2, 25 ms Hann windows every 5 ms (each hop
+// filtered by the window ending with it), its sign the one its skewness gives (closures are its peaks, RESKEW).
+// Exposed for tests.
+class Closures {
+public:
+    // Not real-time: `keep` samples kept, for periods up to `longest` samples.
+    void prepare(double sampleRate, int keep, double longest);
+    void reset() noexcept;
+    void push(double x) noexcept;
+    int64_t written() const noexcept { return written_; }
+    int64_t ready() const noexcept { return ready_; }  // the samples whose residual is known (a hop at a time)
+
+    // The closure in the period about `p` (period samples long): its offset from p, how sure that is (0..1: how far
+    // its residual peak stands out of the cycle's), and where the cycle's strongest residual peak lies from its
+    // mean-based minimum (in minimum-to-maximum distances: what learn() takes; NaN where no peak stands out). False
+    // where the input doesn't reach far enough past p yet: it is then looked for as many whole periods earlier as it
+    // takes.
+    bool find(double p, double period, double& offset, double& sureness, double& relative) const noexcept;
+    // A closure's `relative` from find(): the interval's place follows them (NaN: nothing learnt).
+    void learn(double relative) noexcept;
+    double ratio() const noexcept { return ratio_; }
+    double residualAt(int64_t n) const noexcept { return residual_[static_cast<size_t>(n) & mask_]; }
+
+private:
+    static constexpr int kMaxOrder = 50;
+    // A closure looked for: where and with what (the place, the period, the ratio, the sign), and what was found.
+    struct Found {
+        double p = 0.0, period = 0.0, ratio = 0.0, sign = 0.0, closure = 0.0, sureness = 0.0, relative = 0.0;
+        int learnt = 0;
+    };
+    void analyse() noexcept;
+    void look(Found& f, int64_t half) const noexcept;
+    double inputAt(int64_t n) const noexcept { return input_[static_cast<size_t>(n) & mask_]; }
+
+    int order_ = 0, window_ = 0, hop_ = 0;
+    std::vector<double> input_, residual_, hann_, windowed_, history_;
+    size_t mask_ = 0;
+    std::array<double, kMaxOrder + 1> lpc_{};
+    int64_t written_ = 0, ready_ = 0;
+    double moment3_ = 0.0, momentRate_ = 0.0;  // the residual's third moment, followed (its skewness's sign)
+    double ratio_ = 0.0;
+    int learnt_ = 0;
+    // find()'s working space (the mean-based signal and its running sums)
+    mutable std::vector<double> sums0_, mean_;
+    mutable std::vector<double> sums1Re_, sums1Im_, sums2Re_, sums2Im_;
+    mutable std::array<Found, 8> found_{};  // the latest looked for
+    mutable size_t nextFound_ = 0;
 };
 
 }  // namespace sub::changeling

@@ -4,7 +4,7 @@
 // time; Formant and Link moving the envelope; Harmonics taking the lowest harmonics away and keeping the rest; the
 // twin; Detune and Width; Smear; silence and noise; the extremes (finite, bounded, never late at High Quality); the
 // quality switched while playing; Mix; the drive (LAB's curve, its 0 the input exactly); the quadrature pair; the
-// editor's displays.
+// glottal closures (SEDREAMS); the editor's displays.
 
 #include <algorithm>
 #include <cmath>
@@ -471,13 +471,14 @@ TEST_CASE("changeling: detune and width") {
 
 TEST_CASE("changeling: smear") {
     // Smear blurs the voice (another signal than without it) but keeps its level and its pitch about where it was
-    const auto x = harmonic(steady(200.0, 1.5), kRate);
+    // (over seconds: Smear's grains wander)
+    const auto x = harmonic(steady(200.0, 4.0), kRate);
     cl::Controls c;
     c.smear = 1.0;
     const auto y = shift(x, kRate, c).left;
     CHECK(allFinite(y));
     CHECK(std::abs(levelDb(y, 24000, 60000) - levelDb(x, 24000, 60000)) < 1.5);
-    CHECK(std::abs(dominantFreq(std::vector<float>(y.begin() + 24000, y.begin() + 72000)) - 200.0) < 5.0);
+    CHECK(std::abs(dominantFreq(std::vector<float>(y.begin() + 24000, y.begin() + 168000)) - 200.0) < 5.0);
     const auto plain = shift(x, kRate, cl::Controls{}).left;
     double difference = 0.0;
     for (size_t i = 24000; i < 60000; ++i) difference += std::pow(y[i] - plain[i], 2);
@@ -655,6 +656,117 @@ TEST_CASE("changeling: quadrature") {
         CHECK(std::abs(phase + 90.0) < 0.3);
         CHECK(std::abs(db(std::abs(tq) / std::abs(ti))) < 0.01);
     }
+}
+
+// A vowel /a/ whose glottal closures are known: Rosenberg pulses (the flow's derivative, opening over 40 % of each
+// period and closing over 20 %, its fall ending at the closure) at f0 following `freq` (each period off by up to
+// `jitter` of itself, at random), through three formants. The closures' times (samples) into `closures`.
+std::vector<double> vowel(const std::vector<double>& freq, std::vector<double>& closures, double jitter = 0.0,
+                          double rate = kRate) {
+    std::mt19937 random(11);
+    std::uniform_real_distribution<double> uniform(-1.0, 1.0);
+    std::vector<double> flow(freq.size(), 0.0);
+    double start = 0.0;
+    while (start < static_cast<double>(freq.size())) {
+        const double T = rate / freq[static_cast<size_t>(start)] * (1.0 + jitter * uniform(random));
+        const double open = 0.4 * T, close = 0.2 * T;
+        for (auto n = static_cast<int64_t>(std::ceil(start)); n < static_cast<int64_t>(start + T) &&
+                                                              n < static_cast<int64_t>(flow.size()); ++n) {
+            const double t = static_cast<double>(n) - start;
+            flow[static_cast<size_t>(n)] = t < open ? 0.5 - 0.5 * std::cos(kPi * t / open)
+                                           : t < open + close ? std::cos(0.5 * kPi * (t - open) / close) : 0.0;
+        }
+        closures.push_back(start + open + close);
+        start += T;
+    }
+    std::vector<double> x(freq.size(), 0.0);
+    for (size_t n = 1; n < x.size(); ++n) x[n] = 0.05 * (flow[n] - flow[n - 1]) * (rate / 48000.0);
+    for (const auto& [f, bandwidth] : {std::pair{700.0, 80.0}, {1220.0, 90.0}, {2600.0, 120.0}}) {
+        const double r = std::exp(-kPi * bandwidth / rate), a1 = -2.0 * r * std::cos(2.0 * kPi * f / rate), a2 = r * r;
+        double y1 = 0.0, y2 = 0.0;
+        for (double& v : x) {
+            const double y = (1.0 + a1 + a2) * v - a1 * y1 - a2 * y2;
+            y2 = y1;
+            y1 = y;
+            v = y;
+        }
+    }
+    return x;
+}
+
+TEST_CASE("changeling: glottal closures") {
+    // SEDREAMS finds a vowel's closures wherever it is asked about the period, gliding an octave with 2 % jitter,
+    // either way up: all of them a steady 0.1 ms after the flow's corner (the residual's peak), within a sample of
+    // each other, and sure of them
+    std::vector<double> freq(72000);
+    for (size_t n = 0; n < freq.size(); ++n) freq[n] = 100.0 * std::exp2(static_cast<double>(n) / freq.size());
+    std::vector<double> truth;
+    const auto x = vowel(freq, truth, 0.02);
+    for (const double sign : {1.0, -1.0}) {
+        INFO(sign > 0.0 ? "up" : "down");
+        cl::Closures c;
+        c.prepare(kRate, static_cast<int>(x.size()) + 4096, kRate / 60.0);
+        for (const double v : x) c.push(sign * v);
+        std::mt19937 random(5);
+        std::uniform_real_distribution<double> uniform(-0.3, 0.3);
+        int asked = 0;
+        double sure = 0.0, latest = -1e9, earliest = 1e9;
+        for (const double t : truth) {
+            if (t < 0.2 * kRate || t > static_cast<double>(x.size()) - 0.05 * kRate) continue;
+            const double T = kRate / freq[static_cast<size_t>(t)];
+            const double p = t + uniform(random) * T;
+            double offset, sureness, relative;
+            CHECK(c.find(p, T, offset, sureness, relative));
+            earliest = std::min(earliest, p + offset - t);
+            latest = std::max(latest, p + offset - t);
+            sure += sureness;
+            c.learn(relative);
+            ++asked;
+        }
+        CHECK(asked > 150);
+        CHECK(earliest > 3.0);
+        CHECK(latest < 8.0);
+        CHECK(latest - earliest < 1.0);
+        CHECK(sure / asked > 0.9);
+    }
+    // a pulse train's pulses (at the mean-based signal's maxima, not after its minima: the place is learnt), found
+    // as the input comes, each period asked about as soon as it may be
+    {
+        const double T = kRate / 110.0;
+        const auto y = pulses(110.0, 1.0);
+        cl::Closures c;
+        c.prepare(kRate, 8192, kRate / 60.0);
+        double p = 0.25 * T, worst = 0.0;
+        int asked = 0;
+        for (size_t n = 0; n < y.size(); ++n) {
+            c.push(y[n]);
+            double offset, sureness, relative;
+            if (!c.find(p, T, offset, sureness, relative)) continue;
+            c.learn(relative);
+            if (p > 0.1 * kRate) {
+                const double found = p + offset;
+                worst = std::max(worst, std::abs(found - T * std::round(found / T)));
+                CHECK(sureness > 0.9);
+                ++asked;
+            }
+            p += T;
+        }
+        CHECK(asked > 90);
+        CHECK(worst < 1.0);
+    }
+    // unsure in noise
+    const Samples n = noise(96000, 7, 0.2f);
+    cl::Closures c;
+    c.prepare(kRate, 100000, kRate / 60.0);
+    for (const float v : n) c.push(v);
+    double sure = 0.0;
+    int asked = 0;
+    for (double p = 24000.0; p < 90000.0; p += 300.0, ++asked) {
+        double offset, sureness, relative;
+        c.find(p, 300.0, offset, sureness, relative);
+        sure += sureness;
+    }
+    CHECK(sure / asked < 0.05);
 }
 
 TEST_CASE("changeling: the editor's displays") {
