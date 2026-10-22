@@ -1504,9 +1504,10 @@ The editors:
   stack shown (`stack`, `showStack()`) are view state (`DeviceViews`: `supersawPage`, `supersawStack`).
   - **The grid**: Stacks, the stack shown's Saws, Detune, Curve, Blend, Width and Level over its Transpose and Fine,
     and Phase, Random Phase and Drift (every stack's); Filter, its type, Cutoff, Resonance, Key Track and Env over its
-    envelope; Voice, the amplitude envelope, Velocity and Volume over Mode, Glide, Bend Range, Sub and Sub Octave.
+    envelope, Focus and Focus Freq (captioned Focus Hz); Voice, the amplitude envelope, Velocity and Volume over Mode, Glide, Bend Range, Sub and Sub Octave.
     Knobs that do nothing with the settings as they are (a stack's while it is off; Detune, Curve and Width with one
-    saw, Blend with fewer than three; the filter's while it is off; the Sub's octave without the Sub) are dimmed to
+    saw, Blend with fewer than three; the filter's while it is off, but Focus and its frequency; the Sub's octave without the Sub;
+    Focus Freq without Focus) are dimmed to
     40 % over 120 ms, still settable.
   - **The graph** ([SupersawGraph](../../ui/src/devices/SupersawGraph.h)): a lane per stack, the one shown lit in its
     colour (the first the accent, then blue and violet), its number at its left. Each saw where the engine's layout

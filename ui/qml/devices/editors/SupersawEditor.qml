@@ -13,12 +13,13 @@ import SUBstation
 //   Transpose and Fine; and the saws' Phase, Random Phase and Drift (every
 //   stack's).
 // - Filter: its type, Cutoff, Resonance, Key Track and Env (how far its
-//   envelope moves the cutoff); its envelope's Attack, Decay, Sustain, Release.
+//   envelope moves the cutoff); its envelope's Attack, Decay, Sustain, Release;
+//   Focus and its frequency (below it, each stack a single saw in the middle).
 // - Voice: the amplitude envelope, Velocity and Volume; Mode, Glide, Bend
 //   (Range), the Sub and its octave.
 // Knobs that do nothing with the settings as they are (a stack's while it is
 // off, Blend under three saws, the filter's while it is off, the Sub's octave
-// without the Sub) are dimmed but still settable. Every control is bound to its
+// without the Sub, Focus's frequency without Focus) are dimmed but still settable. Every control is bound to its
 // parameter: undoably, touched when pressed, its menu on right-click. The page
 // and the stack shown are view state (DeviceViews), kept while the frame is
 // made again.
@@ -66,7 +67,7 @@ Item {
             [["filter_type", qsTr("Filter"), 2], ["cutoff", qsTr("Cutoff")], ["resonance", qsTr("Resonance")],
              ["key_track", qsTr("Key Track")], ["filter_env", qsTr("Env")]],
             [["filter_attack", qsTr("Attack")], ["filter_decay", qsTr("Decay")], ["filter_sustain", qsTr("Sustain")],
-             ["filter_release", qsTr("Release")]]]
+             ["filter_release", qsTr("Release")], ["focus", qsTr("Focus")], ["focus_freq", qsTr("Focus Hz")]]]
         default: return [
             [["attack", qsTr("Attack")], ["decay", qsTr("Decay")], ["sustain", qsTr("Sustain")],
              ["release", qsTr("Release")], ["velocity", qsTr("Velocity")], ["volume", qsTr("Volume")]],
@@ -81,7 +82,7 @@ Item {
         id: settings
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["s1_on", "s2_on", "s3_on", "s1_saws", "s2_saws", "s3_saws", "filter_type", "sub"]
+        ids: ["s1_on", "s2_on", "s3_on", "s1_saws", "s2_saws", "s3_saws", "filter_type", "sub", "focus"]
     }
     function settingOf(id) {
         const p = settings.get(id)
@@ -100,6 +101,10 @@ Item {
                 return saws >= 2
             return true
         }
+        if (id === "focus")
+            return true
+        if (id === "focus_freq")
+            return settingOf("focus") >= 0.5
         if (editor.page === 1 && id !== "filter_type")
             return Math.round(settingOf("filter_type")) !== 0
         if (id === "sub_octave")

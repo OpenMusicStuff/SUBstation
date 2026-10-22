@@ -3,9 +3,9 @@
 // (Saws, Detune, Curve, Blend, Width, Transpose, Fine, Level; SupersawDesign.h
 // places them), their start phases and drift, a sub sine, a filter with an
 // envelope of its own, an amplitude envelope, Poly, Mono or Legato with glide;
-// 16 notes. Each voice follows its note's bend (MIDI 2.0's per-note pitch
-// bend); MIDI pitch bend, the sustain pedal and all notes / sound off reach
-// every note.
+// Focus (below a frequency, each stack a single saw in the middle); 16 notes.
+// Each voice follows its note's bend (MIDI 2.0's per-note pitch bend); MIDI
+// pitch bend, the sustain pedal and all notes / sound off reach every note.
 //
 // How it stays clean:
 // - A saw's phase is a 32-bit integer stepped by a 32-bit increment: exact,
@@ -26,6 +26,13 @@
 //   same however the blocks are cut. Gains and the cutoff ramp sample by
 //   sample between updates; pitches step, in phase.
 // Its latency (the step's reach and the decimator's delay) is reported.
+//
+// Focus: detuned saws have detuned fundamentals, which beat and hollow out the
+// low end. With Focus on, each voice also makes a core: a single saw per stack
+// at the stack's own pitch (no detune, no drift, in the middle), and the sub.
+// After the voices, a Linkwitz-Riley crossover at Focus Freq keeps what is
+// above it of the stacks and what is below it of the core; the two add up flat.
+// Switching it fades between the two over kFocusSeconds.
 
 #include <algorithm>
 #include <array>
@@ -66,6 +73,8 @@ constexpr double kKillSeconds = 0.004;        // a stolen voice fades out this l
 constexpr double kDriftCents = 4.0;           // Drift 100 %: each saw wanders this far (its standard deviation)
 constexpr double kDriftSeconds = 0.8;         // and this slowly (each of its two one-poles' time constant)
 constexpr double kSleepSeconds = 0.25;        // silent this long, it skips the work until a note comes
+constexpr double kFocusSeconds = 0.02;        // Focus switched: the stacks and the focused sound crossfade this long
+constexpr double kMinFocus = 40.0, kMaxFocus = 1000.0;  // Hz: Focus Freq's range
 constexpr double kMinCutoff = 16.0;           // Hz
 constexpr double kMaxFraction = 0.45;         // of the oscillators' rate: the highest cutoff and saw
 constexpr double kEnvOctaves = 10.0;          // Filter Env ±100 %: the cutoff moves this far at the envelope's peak
@@ -101,6 +110,8 @@ enum Param {
     Glide,
     BendRange,
     Volume,
+    Focus,
+    FocusFreq,
     NumParams
 };
 constexpr int stackParam(int stack, StackParam p) { return stack * kStackParams + p; }
@@ -157,12 +168,16 @@ const std::vector<ParamInfo>& infos() {
             {"glide", "Glide", "ms", 0.f, 2000.f, 0.f},
             {"bend_range", "Bend Range", "st", 0.f, 24.f, 2.f},
             {"volume", "Volume", "dB", -60.f, 6.f, 0.f},
+            {"focus", "Focus", "", 0.f, 1.f, 0.f},
+            {"focus_freq", "Focus Freq", "Hz", static_cast<float>(kMinFocus), static_cast<float>(kMaxFocus), 200.f,
+             true},
         };
         list.insert(list.end(), rest.begin(), rest.end());
         list[SubOctave].valueLabels = {"0", "-1", "-2"};  // octaves under the note
         list[FilterType].valueLabels = {"Off", "Low 12", "Low 24", "High 12", "High 24", "Band"};
         list[Mode].valueLabels = {"Poly", "Mono", "Legato"};
         list[BendRange].steps = 24;
+        list[Focus].valueLabels = BuiltinProcessor::offOnLabels();
         return list;
     }();
     return kInfos;
@@ -176,6 +191,26 @@ inline double phaseSine(uint32_t phase) noexcept {
     const double x = dsp::kPi * t, x2 = x * x;
     return x * (1.0 + x2 * (-1.0 / 6 + x2 * (1.0 / 120 + x2 * (-1.0 / 5040 +
                                                                  x2 * (1.0 / 362880 + x2 * (-1.0 / 39916800))))));
+}
+
+// A sample of one channel through a voice's filter: c1 its first section's coefficients, c2 the 24 dB types'
+// second's, s the channel's sections.
+inline float filtered(FilterKind filter, const dsp::SvfCoefficients& c1, const dsp::SvfCoefficients& c2,
+                      std::array<dsp::Svf, 2>& s, float x) noexcept {
+    const dsp::Svf::Outputs a = s[0].tick(c1, x);
+    switch (filter) {
+        case FilterKind::Low12: return a.low;
+        case FilterKind::High12: return x - c1.k * a.band - a.low;
+        case FilterKind::Band: return c1.k * a.band;  // unity at its centre
+        case FilterKind::Low24: return s[1].tick(c2, a.low).low;
+        case FilterKind::High24: {
+            const float h = x - c1.k * a.band - a.low;
+            const dsp::Svf::Outputs b = s[1].tick(c2, h);
+            return h - c2.k * b.band - b.low;
+        }
+        case FilterKind::Off: break;
+    }
+    return x;
 }
 
 // A gain gliding by one-pole steps, a control period at a time, and ramping
@@ -230,6 +265,7 @@ private:
         std::array<float, kMaxSaws> drift{};  // two one-poles on noise: the second, of unit variance at rest,
         std::array<float, kMaxSaws> driftIn{};  // and the first
         int count = 0;  // saws with a phase: those playing and those fading out
+        uint32_t corePhase = 0, coreIncrement = 0;  // Focus's saw: at the stack's pitch
     };
 
     struct Voice {
@@ -254,10 +290,12 @@ private:
         // The filter: g (the cutoff's) ramping through the period; each channel's two sections.
         float g = 0.f, gStep = 0.f, gNext = 0.f;
         std::array<std::array<dsp::Svf, 2>, 2> svf{};
+        std::array<dsp::Svf, 2> coreSvf{};  // the core's (Focus)
         // What the oscillators made, from the period's start (final up to where they are, less kStepHalf; a jump
         // at the sample after them reaches a sample further), and the amplitude envelope (velocity and a steal's
         // fade in it) for each of those samples.
         std::array<std::array<float, kControl + kStepTaps + 1>, 2> acc{};
+        std::array<float, kControl + kStepTaps + 1> core{};  // Focus's core (mono), as the accumulator
         std::array<float, kControl + kStepHalf> env{};
     };
 
@@ -267,6 +305,8 @@ private:
         std::array<GainGlide, kMaxSaws> left, right;
         std::array<float, kMaxSaws> leftTarget{}, rightTarget{};
         std::array<double, kMaxSaws> cents{}, centsTarget{}, ratio{};
+        GainGlide core;  // its saw in Focus's core: the stack's level and switch
+        float coreTarget = 0.f;
         int playing = 0;     // saws that play (the shape's count; 0 while the stack is off)
         int count = 0;       // saws with state: those playing, and those still fading out
         bool ramping = false;  // some gain moves this period
@@ -312,6 +352,7 @@ private:
     void renderOscillators(Voice& voice, int q0, int n);
     void renderVoice(Voice& voice, int from, int n);
     void endPeriod();
+    void focus(int from, int n);
 
     std::array<Voice, kVoices> voices_{};
     std::array<Stack, kStacks> stacks_{};
@@ -331,6 +372,7 @@ private:
     const supersaw::StepTable* steps_ = nullptr;
     std::array<dsp::HalfbandDecimator, 2> decimators_;
     std::array<std::vector<float>, 2> mix_;
+    std::vector<float> mixCore_;  // the voices' cores (Focus)
     std::vector<float> spare_;  // the right channel's output when there is only one
     int controlPos_ = 0;        // where the device is in its control period
     bool periodStarted_ = false;  // its update made (at the period's start) and the oscillators run through it
@@ -346,6 +388,8 @@ private:
         FilterKind filter;
         double cutoffLog2, keyTrack, envOctaves, resonance;
         double drift;         // cents per unit of a saw's drift
+        bool focus;
+        double focusLog2;     // Focus Freq, log2 Hz
         double glideSamples;  // oscillator samples
         double bendRange;
         int subOctave;
@@ -360,6 +404,13 @@ private:
     float k1_ = 1.f, k2_ = 1.f;                  // the filter's sections' damping (k2: the 24 dB's second)
     GainGlide sub_;
     SmoothedValue volume_;
+    // Focus: how far it is in (0..1, crossfading), whether the cores are made this period, its frequency (gliding).
+    GainGlide focus_;
+    bool focusing_ = false;
+    double focusCoeff_ = 0.0, focusLog2_ = 0.0;
+    dsp::CrossoverCoefficients focusSplit_;
+    std::array<dsp::Crossover, 3> crossovers_;  // left and right (their highs), the core (its low)
+    void focusFrequency();
 };
 
 void SupersawProcessor::prepare(double sampleRate, int maxBlockSize) {
@@ -372,6 +423,7 @@ void SupersawProcessor::prepare(double sampleRate, int maxBlockSize) {
         mix_[c].assign(static_cast<size_t>(maxBlock * factor_), 0.f);
         decimators_[c].design(std::min(kPassbandHz / sampleRate, 0.4535), kDecimatorDb, maxBlock);
     }
+    mixCore_.assign(static_cast<size_t>(maxBlock * factor_), 0.f);
     spare_.assign(static_cast<size_t>(maxBlock), 0.f);
     latency_ = factor_ == 2 ? (kStepHalf + decimators_[0].delay()) / 2 : kStepHalf;
 
@@ -380,6 +432,7 @@ void SupersawProcessor::prepare(double sampleRate, int maxBlockSize) {
     detuneCoeff_ = onePoleCoefficient(kDetuneSeconds, oscRate_, period);
     cutoffCoeff_ = onePoleCoefficient(kCutoffSeconds, oscRate_, period);
     bendCoeff_ = onePoleCoefficient(dsp::kBendGlideSeconds, oscRate_, period);
+    focusCoeff_ = onePoleCoefficient(kFocusSeconds, oscRate_, period);
     velocityCoeff_ = static_cast<float>(1.0 - onePoleCoefficient(kVelocitySeconds, oscRate_));
     killStep_ = static_cast<float>(1.0 / (kKillSeconds * oscRate_));
     // Drift: two one-poles moving `a` of the way a period, on uniform noise scaled so the second has unit
@@ -424,7 +477,13 @@ void SupersawProcessor::settle() {
             stack.ratio[i] = fastmath::exp2(stack.cents[i] / 1200.0);
         }
         stack.ramping = false;
+        stack.core.snap(stack.coreTarget);
     }
+    focus_.snap(set_.focus ? 1.f : 0.f);
+    focusing_ = set_.focus;
+    focusLog2_ = set_.focusLog2;
+    focusFrequency();
+    for (dsp::Crossover& crossover : crossovers_) crossover.reset();
     cutoffLog2_ = set_.cutoffLog2;
     resonance_ = set_.resonance;
     filterKind_ = set_.filter;
@@ -475,6 +534,8 @@ void SupersawProcessor::readSettings() {
     s.bendRange = std::clamp(static_cast<double>(param(BendRange)), 0.0, 24.0);
     s.subOctave = std::clamp(choiceIndex(SubOctave), 0, 2);
     s.sub = std::clamp(param(Sub) / 100.f, 0.f, 1.f) * kSubLevel;
+    s.focus = isOn(Focus);
+    s.focusLog2 = std::log2(std::clamp(static_cast<double>(param(FocusFreq)), kMinFocus, kMaxFocus));
 
     // The stacks: each saw's place and gains (the stack's level and switch in them).
     for (int st = 0; st < kStacks; ++st) {
@@ -510,7 +571,12 @@ void SupersawProcessor::readSettings() {
             stack.rightTarget[i] = static_cast<float>(j < n ? right * saws[i].gain * level : 0.0);
         }
         stack.playing = on ? n : 0;
+        stack.coreTarget = static_cast<float>(level);  // a saw of the stack's power, in the middle
     }
+}
+
+void SupersawProcessor::focusFrequency() {
+    focusSplit_ = dsp::CrossoverCoefficients::at(std::exp2(focusLog2_), oscRate_);
 }
 
 // --- Notes ---------------------------------------------------------------------------------------
@@ -592,9 +658,13 @@ void SupersawProcessor::startVoice(Voice& voice, uint8_t key, int32_t noteId, fl
     voice.env.fill(0.f);
     for (int s = 0; s < kStacks; ++s) {
         const int count = stacks_[static_cast<size_t>(s)].count;
-        voice.stacks[static_cast<size_t>(s)].count = count;
+        StackVoice& sv = voice.stacks[static_cast<size_t>(s)];
+        sv.count = count;
         startSaws(voice, s, 0, count);
+        sv.corePhase = count > 0 ? sv.phase[static_cast<size_t>(count / 2)] : 0;  // with its middle saw
     }
+    for (dsp::Svf& section : voice.coreSvf) section.reset();
+    voice.core.fill(0.f);
     // Its increments and cutoff for the rest of this period (the filter holding still through it), and its
     // oscillators through it; at a period's start, its update does that.
     tuneVoice(voice);
@@ -788,6 +858,7 @@ void SupersawProcessor::updateStacks() {
             }
         }
         stack.ramping = ramping;
+        stack.core.update(stack.coreTarget, static_cast<float>(gainCoeff_));
         if (last < stack.count) {  // those faded out to silence stop
             stack.count = last;
             for (Voice& voice : voices_) {
@@ -845,6 +916,7 @@ void SupersawProcessor::tuneVoice(Voice& voice) {
         StackVoice& sv = voice.stacks[static_cast<size_t>(s)];
         if (sv.count == 0) continue;
         const double base = 440.0 * fastmath::exp2((pitch + stack.pitch - 69.0) / 12.0) * perHz;
+        sv.coreIncrement = static_cast<uint32_t>(std::min(base, kMaxIncrement) + 0.5);
         for (size_t i = 0; i < static_cast<size_t>(sv.count); ++i) {
             const double x = sv.drift[i] * drift;  // the drift's ratio, e^x to second order (within 1e-7)
             const double ratio = stack.ratio[i] * (1.0 + x * (1.0 + 0.5 * x));
@@ -886,6 +958,25 @@ void SupersawProcessor::controlUpdate() {
     k1_ = quad ? static_cast<float>(kQuadK1) : resonantK;
     k2_ = resonantK;
     sub_.update(set_.sub, static_cast<float>(gainCoeff_));
+    // Focus: its crossfade and frequency; the crossovers start from rest when it comes in again.
+    focus_.update(set_.focus ? 1.f : 0.f, static_cast<float>(focusCoeff_));
+    const bool wasFocusing = focusing_;
+    focusing_ = set_.focus || !focus_.silent();
+    if (focusing_) {
+        if (focusLog2_ != set_.focusLog2) {
+            focusLog2_ = set_.focusLog2 + (focusLog2_ - set_.focusLog2) * cutoffCoeff_;
+            if (std::abs(focusLog2_ - set_.focusLog2) < 1e-6) focusLog2_ = set_.focusLog2;
+            focusFrequency();
+        }
+        if (!wasFocusing) {
+            for (dsp::Crossover& crossover : crossovers_) crossover.reset();
+            for (Voice& voice : voices_)
+                for (dsp::Svf& section : voice.coreSvf) section.reset();
+        }
+    } else if (focusLog2_ != set_.focusLog2) {
+        focusLog2_ = set_.focusLog2;
+        focusFrequency();
+    }
     if (wheel_ != wheelTarget_) {
         wheel_ = wheelTarget_ + (wheel_ - wheelTarget_) * bendCoeff_;
         if (std::abs(wheel_ - wheelTarget_) < 1e-7) wheel_ = wheelTarget_;
@@ -959,16 +1050,45 @@ void SupersawProcessor::renderOscillators(Voice& voice, int q0, int n) {
                 }
             }
         }
+
+        // Focus's saw for the stack, into the core: the same, in mono.
+        if (!focusing_ || sv.count == 0 || stack.core.silent()) {
+            sv.corePhase += static_cast<uint32_t>(n) * sv.coreIncrement;
+            continue;
+        }
+        const uint32_t phase = sv.corePhase, increment = sv.coreIncrement;
+        const uint32_t rise = phase + 0x80000000u;
+        const GainGlide& gc = stack.core;
+        const float ca = gc.value * kScale, cs = gc.step * kScale;
+        float* core = voice.core.data() + q0 + kStepHalf;
+        for (int k = 0; k < n; ++k) {
+            const auto v = static_cast<float>(static_cast<int32_t>(rise + static_cast<uint32_t>(k) * increment));
+            core[k] += (ca + static_cast<float>(q0 + k) * cs) * v;
+        }
+        const uint64_t end = static_cast<uint64_t>(phase) + static_cast<uint64_t>(n) * increment;
+        sv.corePhase = static_cast<uint32_t>(end);
+        for (uint64_t wrap = 1; wrap <= end >> 32; ++wrap) {
+            const uint64_t m = ((wrap << 32) - phase + increment - 1) / increment;
+            const uint64_t after = static_cast<uint64_t>(phase) + m * increment - (wrap << 32);
+            const int at = q0 + static_cast<int>(m);
+            float correction[kStepTaps];
+            steps_->correction(static_cast<float>(static_cast<double>(after) / increment), correction);
+            const float drop = -2.f * (gc.value + static_cast<float>(at) * gc.step);
+            float* c = voice.core.data() + at;
+            for (int k = 0; k < kStepTaps; ++k) c[k] += drop * correction[k];
+        }
     }
 
-    // The sub: a sine (no jumps), in the middle.
+    // The sub: a sine (no jumps), in the middle; in the core too (the crossover's two sides add up to it).
     if (!sub_.silent()) {
         uint32_t phase = voice.subPhase;
+        float* core = voice.core.data() + q0 + kStepHalf;
         for (int k = 0; k < n; ++k, phase += voice.subIncrement) {
             const float gain = sub_.value + static_cast<float>(q0 + k) * sub_.step;
             const float v = static_cast<float>(phaseSine(phase)) * gain;
             left[k] += v;
             right[k] += v;
+            if (focusing_) core[k] += v;
         }
         voice.subPhase = phase;
     } else {
@@ -1000,55 +1120,42 @@ void SupersawProcessor::renderVoice(Voice& voice, int from, int n) {
         env[k] = voice.level * voice.velocity * voice.kill * kVoiceGain;
     }
 
-    // What is final (kStepHalf behind the oscillators), through the filter and the envelope, into the mix.
+    // What is final (kStepHalf behind the oscillators), through the filter and the envelope, into the mix (and
+    // the core, through a filter of its own, into the cores' mix).
     float* mixL = mix_[0].data() + from;
     float* mixR = mix_[1].data() + from;
+    float* mixC = mixCore_.data() + from;
     const float* gain = voice.env.data() + q0;
     const float* inL = accL + q0;
     const float* inR = accR + q0;
+    const float* inC = voice.core.data() + q0;
+    const bool core = focusing_;
     const FilterKind filter = filterKind_;
     if (filter == FilterKind::Off) {
         for (int k = 0; k < n; ++k) {
             mixL[k] += inL[k] * gain[k];
             mixR[k] += inR[k] * gain[k];
         }
+        if (core)
+            for (int k = 0; k < n; ++k) mixC[k] += inC[k] * gain[k];
         return;
     }
     const float k1 = k1_, k2 = k2_;
+    const bool quad = filter == FilterKind::Low24 || filter == FilterKind::High24;
     auto& svfL = voice.svf[0];
     auto& svfR = voice.svf[1];
     for (int k = 0; k < n; ++k) {
         const float g = voice.g + static_cast<float>(q0 + k) * voice.gStep;
         const dsp::SvfCoefficients c1(g, k1);
-        const float xl = inL[k], xr = inR[k];
-        const dsp::Svf::Outputs al = svfL[0].tick(c1, xl), ar = svfR[0].tick(c1, xr);
-        float yl = 0.f, yr = 0.f;
-        switch (filter) {
-            case FilterKind::Low12: yl = al.low, yr = ar.low; break;
-            case FilterKind::High12: yl = xl - k1 * al.band - al.low, yr = xr - k1 * ar.band - ar.low; break;
-            case FilterKind::Band: yl = k1 * al.band, yr = k1 * ar.band; break;  // unity at its centre
-            case FilterKind::Low24: {
-                const dsp::SvfCoefficients c2(g, k2);
-                yl = svfL[1].tick(c2, al.low).low;
-                yr = svfR[1].tick(c2, ar.low).low;
-                break;
-            }
-            case FilterKind::High24: {
-                const dsp::SvfCoefficients c2(g, k2);
-                const float hl = xl - k1 * al.band - al.low, hr = xr - k1 * ar.band - ar.low;
-                const dsp::Svf::Outputs bl = svfL[1].tick(c2, hl), br = svfR[1].tick(c2, hr);
-                yl = hl - k2 * bl.band - bl.low;
-                yr = hr - k2 * br.band - br.low;
-                break;
-            }
-            case FilterKind::Off: break;
-        }
-        mixL[k] += yl * gain[k];
-        mixR[k] += yr * gain[k];
+        const dsp::SvfCoefficients c2 = quad ? dsp::SvfCoefficients(g, k2) : c1;
+        mixL[k] += filtered(filter, c1, c2, svfL, inL[k]) * gain[k];
+        mixR[k] += filtered(filter, c1, c2, svfR, inR[k]) * gain[k];
+        if (core) mixC[k] += filtered(filter, c1, c2, voice.coreSvf, inC[k]) * gain[k];
     }
 }
 
 void SupersawProcessor::endPeriod() {
+    for (dsp::Crossover& crossover : crossovers_) crossover.flush();
     for (Voice& voice : voices_) {
         if (!voice.active) continue;
         // The next period starts with what reaches past this one.
@@ -1058,10 +1165,35 @@ void SupersawProcessor::endPeriod() {
         }
         std::copy(voice.env.begin() + kControl, voice.env.end(), voice.env.begin());
         std::fill(voice.env.end() - kControl, voice.env.end(), 0.f);
+        if (focusing_) {
+            std::copy(voice.core.begin() + kControl, voice.core.end(), voice.core.begin());
+            std::fill(voice.core.end() - kControl, voice.core.end(), 0.f);
+            for (dsp::Svf& section : voice.coreSvf) section.flush();
+        } else {
+            voice.core.fill(0.f);  // (made again when Focus comes in)
+        }
         for (auto& channel : voice.svf)
             for (dsp::Svf& section : channel) section.flush();
         const bool fading = voice.amp == Stage::Release || (voice.amp == Stage::Decay && set_.sustain < dsp::kSilent);
         if ((fading && voice.level < dsp::kSilent) || (voice.killed && voice.kill <= 0.f)) voice.active = false;
+    }
+}
+
+// Focus over the mix's samples from .. from + n (the period's from controlPos_): the stacks above the crossover,
+// the cores below it, crossfaded with the stacks as they are by how far Focus is in.
+void SupersawProcessor::focus(int from, int n) {
+    float* left = mix_[0].data() + from;
+    float* right = mix_[1].data() + from;
+    const float* core = mixCore_.data() + from;
+    const dsp::CrossoverCoefficients& c = focusSplit_;
+    for (int k = 0; k < n; ++k) {
+        const float in = focus_.value + static_cast<float>(controlPos_ + k) * focus_.step;
+        float low = 0.f, highL = 0.f, highR = 0.f, unused = 0.f;
+        crossovers_[2].process(c, core[k], low, unused);
+        crossovers_[0].process(c, left[k], unused, highL);
+        crossovers_[1].process(c, right[k], unused, highR);
+        left[k] += in * (highL + low - left[k]);
+        right[k] += in * (highR + low - right[k]);
     }
 }
 
@@ -1072,6 +1204,7 @@ void SupersawProcessor::run(int from, int to) {
         for (Voice& voice : voices_) {
             if (voice.active) renderVoice(voice, from, n);
         }
+        if (focusing_) focus(from, n);
         from += n;
         controlPos_ += n;
         if (controlPos_ == kControl) {
@@ -1100,6 +1233,7 @@ void SupersawProcessor::render(const ProcessContext& ctx, float* const* channels
     const int oscFrames = frames * factor_;
     std::fill_n(mix_[0].data(), oscFrames, 0.f);
     std::fill_n(mix_[1].data(), oscFrames, 0.f);
+    std::fill_n(mixCore_.data(), oscFrames, 0.f);
     int position = 0;
     for (size_t e = 0; e < ctx.inEvents.count; ++e) {
         const ProcessEvent& event = ctx.inEvents.events[e];

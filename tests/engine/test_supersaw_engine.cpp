@@ -5,7 +5,8 @@
 // (each saw at its pitch and level, Width, Blend, unit power whatever the
 // count); Transpose, Fine, the sub; the envelopes, the filter and its envelope
 // and key tracking; Phase and Random Phase, Drift; glide in Mono and Legato,
-// bends, the wheel, the pedal, stealing; silence and sleeping; the same output
+// bends, the wheel, the pedal, stealing; Focus (the low end a single saw in the
+// middle, the rest as it was, the sub kept); silence and sleeping; the same output
 // however blocks are cut, at any rate; its cost. Played on its own (as the
 // renderer plays it, in blocks with notes in them) and through the engine.
 
@@ -232,7 +233,7 @@ TEST_CASE("supersaw: an instrument, listed with its parameters") {
     for (const char* p : {"phase", "random", "drift", "sub", "sub_octave", "filter_type", "cutoff", "resonance",
                           "key_track", "filter_env", "filter_attack", "filter_decay", "filter_sustain",
                           "filter_release", "attack", "decay", "sustain", "release", "velocity", "mode", "glide",
-                          "bend_range", "volume"})
+                          "bend_range", "volume", "focus", "focus_freq"})
         ids.emplace_back(p);
     CHECK(paramIds(info.params) == ids);
     const auto param = [&](const std::string& id) {
@@ -255,6 +256,12 @@ TEST_CASE("supersaw: an instrument, listed with its parameters") {
           (std::vector<std::string>{"Off", "Low 12", "Low 24", "High 12", "High 24", "Band"}));
     CHECK(param("mode").valueLabels == (std::vector<std::string>{"Poly", "Mono", "Legato"}));
     CHECK(param("sub_octave").valueLabels == (std::vector<std::string>{"0", "-1", "-2"}));
+    CHECK_EQ(param("focus").defaultValue, 0.f);  // off: a stack as it always was
+    CHECK(param("focus").valueLabels == (std::vector<std::string>{"Off", "On"}));
+    CHECK(param("focus_freq").isLog());
+    CHECK_EQ(param("focus_freq").minValue, 40.f);
+    CHECK_EQ(param("focus_freq").maxValue, 1000.f);
+    CHECK_EQ(param("focus_freq").defaultValue, 200.f);
 
     // Its latency: the step's 9 oscillator samples and the decimator's delay (at twice the rate below 80 kHz).
     for (const auto& [rate, latency] : std::vector<std::pair<double, int>>{
@@ -460,6 +467,108 @@ TEST_CASE("supersaw: Width spreads the saws; at 0 both sides are the same") {
     CHECK(full < 0.7);
     CHECK(std::abs(db(left / right)) < 0.5);                        // as loud on both sides,
     CHECK(std::abs(db(left / rms(slice(l0, seconds(0.2))))) < 0.5);  // and as loud as mono (equal power)
+}
+
+TEST_CASE("supersaw: Focus keeps the low end in the middle and steady, the rest as it was") {
+    // A wide, detuned stack on C2 (65.4 Hz): its fundamentals beat, and differ left and right. With Focus at
+    // 300 Hz the fundamental is one saw's, steady and the same on both sides; above, the stack plays as it did.
+    const Values stack = {{"s1_detune", 60.f}, {"s1_width", 100.f}, {"focus_freq", 300.f}};
+    const double f0 = keyHz(36);
+    const auto render = [&](bool focus) {
+        Values values = stack;
+        values.emplace_back("focus", focus ? 1.f : 0.f);
+        Player p(values);
+        return p.play(seconds(3.2), {noteOn(0, 36)});
+    };
+    const auto [offL, offR] = render(false);
+    const auto [onL, onR] = render(true);
+    const auto side = [](const Samples& l, const Samples& r) {
+        Samples s(l.size());
+        for (size_t i = 0; i < l.size(); ++i) s[i] = 0.5f * (l[i] - r[i]);
+        return s;
+    };
+    // The fundamental, a quarter of a second at a time: how far it swings, how much of it is to the sides.
+    const auto swingDb = [&](const Samples& x) {
+        double low = 1e9, high = 0.0;
+        for (int w = 0; w < 12; ++w) {
+            const double a = amplitudeAt(x, f0, seconds(0.2 + 0.25 * w), seconds(0.25));
+            low = std::min(low, a);
+            high = std::max(high, a);
+        }
+        return db(high / low);
+    };
+    const auto most = [&](const Samples& x) {
+        double high = 0.0;
+        for (int w = 0; w < 12; ++w) high = std::max(high, amplitudeAt(x, f0, seconds(0.2 + 0.25 * w), seconds(0.25)));
+        return high;
+    };
+    const Samples offSide = side(offL, offR), onSide = side(onL, onR);
+    INFO("off: swings " + std::to_string(swingDb(offL)) + " dB, to the sides " + std::to_string(most(offSide)) +
+         "; on: " + std::to_string(swingDb(onL)) + " dB, " + std::to_string(most(onSide)));
+    CHECK(swingDb(offL) > 3.0);
+    CHECK(swingDb(onL) < 0.2);
+    CHECK(most(offSide) > 0.1 * kVoiceGain * kSawFundamental);
+    CHECK(most(onSide) < 0.01 * kVoiceGain * kSawFundamental);  // 40 dB down
+    // One saw's fundamental (the stack's power, in the middle).
+    CHECK_APPROX_REL(amplitudeAt(onL, f0, seconds(0.2), seconds(3.0)), kVoiceGain * kSawFundamental, 0.01);
+    // Well above the crossover the stack's harmonics are as they were, on both sides.
+    for (const int harmonic : {20, 40, 80}) {
+        INFO("harmonic " + std::to_string(harmonic));
+        const double f = harmonic * f0;
+        CHECK_APPROX_REL(amplitudeAt(onL, f, seconds(0.2), seconds(3.0)), amplitudeAt(offL, f, seconds(0.2), seconds(3.0)), 0.02);
+        CHECK_APPROX_REL(amplitudeAt(onR, f, seconds(0.2), seconds(3.0)), amplitudeAt(offR, f, seconds(0.2), seconds(3.0)), 0.02);
+    }
+}
+
+TEST_CASE("supersaw: Focus on a single saw in the middle changes nothing but phase; the sub stays") {
+    // One saw, mono: the core is that saw, and the crossover's two sides add up flat (an all-pass), so it is as
+    // loud as without Focus, at every harmonic.
+    const auto render = [](const Values& values) {
+        Player p(values);
+        return p.play(seconds(2.2), {noteOn(0, 45)});
+    };
+    const auto [off, offR] = render({{"s1_saws", 1.f}, {"s1_width", 0.f}});
+    const auto [on, onR] = render({{"s1_saws", 1.f}, {"s1_width", 0.f}, {"focus", 1.f}, {"focus_freq", 400.f}});
+    CHECK_ARRAY_EQUAL(on, onR);
+    CHECK(std::abs(db(rms(slice(on, seconds(0.2))) / rms(slice(off, seconds(0.2))))) < 0.05);
+    for (const int harmonic : {1, 2, 3, 4, 6, 10}) {
+        INFO("harmonic " + std::to_string(harmonic));
+        const double f = harmonic * keyHz(45);
+        CHECK_APPROX_REL(amplitudeAt(on, f, seconds(0.2), seconds(2.0)), amplitudeAt(off, f, seconds(0.2), seconds(2.0)), 0.01);
+    }
+    // The sub (under any stack's fundamental) goes through the core, as loud as without Focus.
+    const auto [subOff, a] = render({{"s1_detune", 60.f}, {"sub", 100.f}});
+    const auto [subOn, b] = render({{"s1_detune", 60.f}, {"sub", 100.f}, {"focus", 1.f}});
+    CHECK_APPROX_REL(amplitudeAt(subOn, keyHz(33), seconds(0.2), seconds(2.0)),
+                     amplitudeAt(subOff, keyHz(33), seconds(0.2), seconds(2.0)), 0.01);
+}
+
+TEST_CASE("supersaw: Focus switched and moved under a note, the same however blocks are cut") {
+    // Switched on (crossfading in), its frequency moved, switched off (crossfading out) under a chord with the
+    // filter on: smooth (no sample jumps further than the saws do), and the same to the bit in any blocks.
+    const Values values = {{"s1_saws", 9.f}, {"s1_detune", 50.f}, {"s2_on", 1.f}, {"drift", 30.f},
+                           {"filter_type", 2.f}, {"cutoff", 4000.f}, {"sub", 40.f}};
+    const std::vector<Timed> notes = {noteOn(100, 40), noteOn(3000, 47), noteOff(30000, 40)};
+    const std::vector<Change> changes = {{6000, "focus", 1.f}, {14000, "focus_freq", 90.f}, {22000, "focus", 0.f}};
+    const auto render = [&](const std::function<int()>& blocks) {
+        Player p(values);
+        return p.play(seconds(0.7), notes, blocks, changes);
+    };
+    const auto reference = render([] { return 1024; });
+    CHECK(allFinite(reference.first));
+    CHECK(rms(slice(reference.first, 8000, 22000)) > 0.05);
+    const double before = largestStep(reference.first, 4000, 5000);
+    CHECK(largestStep(reference.first, 5000, 9000) < 1.5 * before);
+    CHECK(largestStep(reference.first, 21000, 25000) < 1.5 * before);
+    uint32_t seed = 7;
+    for (const auto& blocks : std::vector<std::function<int()>>{[] { return 64; }, [] { return 37; }, [&seed] {
+             seed = seed * 1664525u + 1013904223u;
+             return 1 + static_cast<int>(seed >> 22);
+         }}) {
+        const auto out = render(blocks);
+        CHECK_ARRAY_EQUAL(out.first, reference.first);
+        CHECK_ARRAY_EQUAL(out.second, reference.second);
+    }
 }
 
 TEST_CASE("supersaw: Transpose, Fine, and the stacks together") {

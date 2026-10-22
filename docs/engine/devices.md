@@ -20,7 +20,7 @@ How the user works with devices (the device view, racks, presets, folding, cut/c
 | [builtin/DspBlocks.h](../../engine/src/builtin/DspBlocks.h) | Building blocks the effects share, beside Dsp.h's, all inline: one-pole and DC filters (`dsp::OnePole`, `onePoleCutoff`, `DcBlocker`), a delay line (`DelayLine`, read linearly or with Hermite interpolation), an envelope follower (`EnvelopeFollower`), white noise (`Noise`), `fastTanh`, an LFO with Ableton's shapes and synced rates (`Lfo`, `LfoShape`, `syncedDivisionLabels`, `syncedCycleBeats`), RBJ biquads (`BiquadCoefficients`, `Biquad`), a Linkwitz-Riley crossover and its all-pass (`Crossover`, `CrossoverAllpass`), a sliding maximum for lookahead (`SlidingMax`), linear-phase oversampling by 2, 4 or 8 (`Oversampler`), a half-band decimator designed to a passband and an attenuation (`HalfbandDecimator`: what is made at twice the rate taken down) |
 | [builtin/BuiltinRegistry.h](../../engine/src/builtin/BuiltinRegistry.h) / [.cpp](../../engine/src/builtin/BuiltinRegistry.cpp) | `BuiltinRegistry`, `BuiltinInfo`, `BuiltinCategory`, `SUB_REGISTER_BUILTIN` |
 | [builtin/devices/Synth.cpp](../../engine/src/builtin/devices/Synth.cpp) | the Synth instrument |
-| [builtin/devices/Supersaw.cpp](../../engine/src/builtin/devices/Supersaw.cpp) | the Supersaw instrument: up to three stacks of 1 to 64 band-limited saws a note, a sub sine, a filter with its envelope, the amplitude envelope, Poly, Mono or Legato with glide; its oscillators at twice the rate, a period at a time on a grid of its own time, a half-band decimator; its latency |
+| [builtin/devices/Supersaw.cpp](../../engine/src/builtin/devices/Supersaw.cpp) | the Supersaw instrument: up to three stacks of 1 to 64 band-limited saws a note, a sub sine, a filter with its envelope, the amplitude envelope, Poly, Mono or Legato with glide, Focus (a core of a saw per stack, and the sub, below a crossover); its oscillators at twice the rate, a period at a time on a grid of its own time, a half-band decimator; its latency |
 | [builtin/SupersawDesign.h](../../engine/src/builtin/SupersawDesign.h) | The Supersaw's design: a stack's layout (`supersaw::layout`: each saw's cents, pan and gain; `detuneCents`, `curveExponent`, `middleWeight`, `sideWeight`, `panGains`) and the band-limited step (`StepTable`, `stepTable()`), shared with the application layer's `SupersawLayout.h` for the editor |
 | [builtin/devices/Vital.cpp](../../engine/src/builtin/devices/Vital.cpp) | the Vital instrument: Vital's engine as a device (engines handed to the rendering thread, notes on their own channels, MIDI) |
 | [builtin/VitalPatch.h](../../engine/src/builtin/VitalPatch.h) / [.cpp](../../engine/src/builtin/VitalPatch.cpp) | Vital's patches, with no Vital headers in the interface (the application layer uses it): its parameters (`params()`, `paramIndex()`, `paramText()`), the state values' names, `.vital` presets read and written (`readPreset()`, `writePreset()`), the modulations (`readModulations()`, `writeModulations()`, `modulationSources()`, `modulationDestinations()`, `sourceName()`, `sourceBipolar()`), wavetables from audio files and `.vitaltable` files and of basic shapes, LFO shapes (`wavetableFromAudioFile()`, `wavetableFromVitalTable()`, `wavetableOfShape()`, `lfoOfShape()`, `withWavetable()`, `withLfo()`, `wavetableNames()`, `lfoNames()`), and what the editor draws (`wavetableFrames()`, `lfoShape()`) |
@@ -307,7 +307,7 @@ resonant low-pass filter. Mono, on both channels. Velocity sets the level.
 
 An instrument for stacks of detuned saws, made as clean as saws can be: up to three stacks a note, each of 1 to 64 saws,
 band-limited to the fraction of a sample, at twice the rate below 80 kHz; a sub sine; a filter with an envelope of its
-own; Poly, Mono or Legato with glide. 16 notes. What the user sees is in
+own; Poly, Mono or Legato with glide; Focus, which keeps the low end a single saw in the middle. 16 notes. What the user sees is in
 [guide/devices.md](../guide/devices.md#supersaw).
 
 | id | Name | Unit | Range | Default |
@@ -340,6 +340,8 @@ own; Poly, Mono or Legato with glide. 16 notes. What the user sees is in
 | `glide` | Glide | ms | 0..2000 | 0 |
 | `bend_range` | Bend Range | st | 0..24 (steps) | 2 |
 | `volume` | Volume | dB | -60..6 | 0 |
+| `focus` | Focus | | Off, On | Off |
+| `focus_freq` | Focus Freq | Hz | 40..1000, log | 200 |
 
 **A stack** ([SupersawDesign.h](../../engine/src/builtin/SupersawDesign.h), `supersaw::layout`): N saws around the
 stack's pitch (the note, Transpose and Fine). Their places, from the flattest to the sharpest, are N points spread evenly
@@ -396,6 +398,22 @@ phase.
   from the last note's pitch. A changed Mode fades out what plays. A `NoteBend` bends its note's voice as the Synth's does
   (±48 semitones, gliding 1 ms); MIDI pitch bend reaches every voice over Bend Range; CC64 (sustain) holds released notes;
   CC120 fades everything out, CC123 releases it.
+- Focus: detuned saws have detuned fundamentals, which beat against each other and differ left and right, so a wide
+  stack's low end swells, thins and drifts. With Focus on, each voice also makes a *core* (`Voice::core`, mono, an
+  accumulator like the stacks'): a saw per stack at the stack's own pitch (Transpose, Fine, the note, its glide and
+  bends; no detune, no drift), starting in phase with its middle saw, at the stack's level and switch (a gain gliding
+  as the saws' do: the power of the whole stack, which is unit power), and the sub. The core goes through the voice's
+  filter (sections of its own, the same coefficients) and envelope into a mix of the cores. After the voices, per
+  part of a period, a Linkwitz-Riley crossover (`dsp::Crossover`, 24 dB an octave) at Focus Freq keeps the stacks'
+  highs on each side and the cores' lows in the middle: its two sides add up flat (an all-pass), so a single saw in
+  the middle comes out as loud as without Focus, at every harmonic, and the sub, in both, is kept whole. At C2 with
+  Detune 60 % and Focus at 300 Hz, the fundamental, which swings 13 dB a quarter second at a time without it, holds
+  within 0.05 dB, and what of it is to the sides is more than 40 dB down; the 20th harmonic up is as it was. Focus
+  Freq glides as the cutoff does (5 ms, in octaves), the crossover's coefficients made again at each update.
+  Switching Focus crossfades the stacks as they are with the focused sound over 20 ms (`kFocusSeconds`); the cores are
+  made, and the crossovers run, only while it is on or fading (starting from rest when it comes in again), so with
+  Focus off the device does what it did before, at the same cost. On, it costs about 4 % more at the most (16 notes of
+  three stacks of 64). No latency: the crossover is recursive.
 - Latency: the step's 9 oscillator samples and the decimator's delay, (9 + delay) / 2 samples (47 at 44.1 kHz, 28 at
   48 kHz); 9 at the rate itself. The engine compensates it like any device's. `tailSamples()` is the release and the
   latency.
@@ -3449,7 +3467,9 @@ The engine's tests are in [tests/engine](../../tests/engine) (one executable, `e
   fundamental's phase); no alias of a saw within 130 dB of its fundamental at any pitch, at 44.1, 48 and 96 kHz; the
   band-limited step (its ends, its symmetry); a stack's layout (places, Curve, pans, Blend, unit power, the pan law) and
   each saw playing where it says, as loud; a stack as loud whatever its count; Width (0: both sides the same, to the bit;
-  wider, less alike, as loud); Transpose, Fine and three stacks; the sub; the envelopes, the filter's types, resonance,
+  wider, less alike, as loud); Focus (a wide, detuned stack's fundamental steady and in the middle, its harmonics above
+  as they were; a single saw as loud at every harmonic, the sub kept; switched and moved under a note without a jump,
+  the same to the bit however blocks are cut); Transpose, Fine and three stacks; the sub; the envelopes, the filter's types, resonance,
   key tracking and envelope; Phase and Random Phase; Drift; glide in Mono, Legato and Poly, going back to a key still
   held; a new Mode taking the next note, asleep or not (even one in the same period); a note's bend and the wheel; the pedal; stealing; Saws changed mid-note, faded in; silence as zeros and
   sleeping; the same output to the bit whatever the blocks (chords, bends, the wheel, automation, Mono); through the

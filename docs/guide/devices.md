@@ -161,6 +161,13 @@ hold thousands of them. 16 notes.
 - **Filter**: Off, Low 12, Low 24, High 12, High 24 (12 and 24 dB an octave) or Band,
   with Cutoff, Resonance, Key Track (the cutoff follows the note) and Env (how far its
   own envelope, Attack, Decay, Sustain and Release, moves the cutoff, up or down).
+- **Focus** (on the Filter page): keeps the low end solid. A wide, detuned stack's
+  fundamentals beat against each other and differ left and right, so its bass swells,
+  thins and wanders. With Focus on, below **Focus Hz** (40 Hz to 1 kHz, 200 Hz at
+  first) each stack plays as a single saw in the middle, and the sub with it; above, the
+  stacks are as wide and detuned as you made them. The two meet at a 24 dB-an-octave
+  crossover, so nothing is lost or doubled where they meet. Its frequency is between
+  the bass and the stack's body: 120 to 300 Hz for most sounds.
 - **Attack, Decay, Sustain, Release**, **Velocity** (how much a note's velocity sets
   its level) and **Volume**.
 - **Mode**: Poly, Mono (one note at a time, its envelopes struck again by each note) or
@@ -180,7 +187,8 @@ is loud; while sound plays the saws glow and shimmer as fast as each one beats. 
 each lane is its stack's switch. Press a lane to show that stack's knobs; drag in it
 across for its Detune and up and down for its Width (Shift for finer steps), and
 double-click to reset them. Knobs that do nothing as things are (a stack's while it is
-off, Blend with fewer than three saws, the filter's while it is off) are dimmed, but you
+off, Blend with fewer than three saws, the filter's while it is off, Focus Hz while
+Focus is off) are dimmed, but you
 can still set them.
 
 It is a little late, by 0.5 ms at 48 kHz (1 ms at 44.1 kHz), the time its filters take

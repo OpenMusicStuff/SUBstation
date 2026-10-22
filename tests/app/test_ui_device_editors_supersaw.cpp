@@ -155,6 +155,11 @@ private Q_SLOTS:
         set("filter_type", 0.0);
         QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_cutoff"))->opacity() < 0.5);
         QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_filter_type"))->opacity(), 1.0);
+        // Focus, on the Filter page, whatever the filter; its frequency while it is on.
+        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_focus"))->opacity(), 1.0);
+        QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_focus_freq"))->opacity() < 0.5);
+        set("focus", 1.0);
+        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_focus_freq"))->opacity(), 1.0);
         set("filter_type", 2.0);
         QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_cutoff"))->opacity(), 1.0);
     }
