@@ -57,6 +57,8 @@ constexpr int kBendSteps = 4;
 constexpr int64_t kBendLeast = 8;
 constexpr double kBendSize = 0.01, kBendSlope = 0.01, kBendCurve = 0.01;
 constexpr double kBendBetter = 1e-4;
+constexpr double kCorrelateReach = 0.5;
+constexpr double kCorrelateUnsure = 0.5;  // Correlate::Unsure: a closure's sureness under which its grain is moved
 
 double midiHz(double pitch) { return 440.0 * std::exp2((pitch - 69.0) / 12.0); }
 
@@ -498,7 +500,7 @@ struct Shifter::Impl {
     int midiBefore = -1;  // the note held before the oldest one kept
 
     // The analysis marks, shared by the voices: positions, whether each grain is voiced, and its closure's offset.
-    std::vector<double> analysis, offsets;
+    std::vector<double> analysis, offsets, sureness;
     std::vector<uint8_t> analysisVoiced;
     size_t markMask = 0;
     int64_t analysisCount = 0, analysisSettled = 0, analysisCommitted = 0;
@@ -510,7 +512,8 @@ struct Shifter::Impl {
     std::array<Quadrature, 2> quadrature;
     size_t inputMask = 0;
     int64_t time = 0;
-    int64_t late = 0, voicedCount = 0, dropped = 0, elasticCount = 0, sharedCount = 0;
+    int64_t late = 0, voicedCount = 0, dropped = 0, elasticCount = 0, sharedCount = 0, correlatedCount = 0;
+    double correlatedShift = 0.0;
 
     void prepare(double sampleRate) {
         rate = sampleRate;
@@ -555,6 +558,7 @@ struct Shifter::Impl {
                            static_cast<size_t>(smearMarks) + 64;
         analysis.assign(powerOfTwoAtLeast(marks), 0.0);
         offsets.assign(analysis.size(), 0.0);
+        sureness.assign(analysis.size(), 0.0);
         analysisVoiced.assign(analysis.size(), 0);
         markMask = analysis.size() - 1;
         for (Voice& v : voices) {
@@ -597,6 +601,7 @@ struct Shifter::Impl {
         analysis[0] = -unvoicedPeriod;
         analysis[1] = 0.0;
         offsets[0] = offsets[1] = 0.0;
+        sureness[0] = sureness[1] = 0.0;
         analysisVoiced[0] = analysisVoiced[1] = 0;
         analysisCount = analysisSettled = analysisCommitted = 2;
         for (Voice& v : voices) {
@@ -612,7 +617,8 @@ struct Shifter::Impl {
             v.running = !v.twin && v.output < channels;
         }
         time = 0;
-        late = voicedCount = dropped = elasticCount = sharedCount = 0;
+        late = voicedCount = dropped = elasticCount = sharedCount = correlatedCount = 0;
+        correlatedShift = 0.0;
     }
 
     double& analysisAt(int64_t k) noexcept { return analysis[static_cast<size_t>(k) & markMask]; }
@@ -752,11 +758,12 @@ struct Shifter::Impl {
         bool exact = here.exact && mid.exact;
         double next = a + t2, offset = 0.0;
         bool learn = false;
-        double relative = 0.0;
+        double relative = 0.0, closureSure = 0.0;
         if (mid.voiced) {
             double pulse, sure;  // (the closure's offset)
             exact = closures.find(next, t2, pulse, sure, relative) && exact;
             learn = true;
+            closureSure = sure;
             if (!here.voiced || m == 2 || !voicedAt(m - 1)) {
                 if (sure >= kOnsetSureness) {
                     if (next + pulse > a + longest) pulse -= t2;
@@ -771,6 +778,7 @@ struct Shifter::Impl {
             }
         }
         offsetAt(m) = offset;
+        sureness[static_cast<size_t>(m) & markMask] = closureSure;
         analysisVoiced[static_cast<size_t>(m) & markMask] = mid.voiced ? 1 : 0;
         analysisAt(m) = next;
         analysisCount = m + 1;
@@ -1047,6 +1055,53 @@ struct Shifter::Impl {
                 for (size_t l = 0; l < 3; ++l) warp += c[k] * M[k][l] * c[l];
             return (energy > 0.0 ? mismatch / energy : 0.0) + warp;
         };
+        // WSOLA's correlation shift (Controls::correlate, an experiment): the whole of g read up to half a period later
+        // or earlier, where the overlap agrees best (no cost for the move: it moves the closure too). Searched in 64ths
+        // of a period, then whole samples about the best, a parabola through it.
+        const bool unsure = sureness[static_cast<size_t>(g.j) & markMask] < kCorrelateUnsure;
+        if (controls.correlate == Correlate::Always || (controls.correlate == Correlate::Unsure && unsure)) {
+            const auto moved = [&](double sigma) {
+                double mismatch = 0.0, energy = 0.0;
+                for (int i = 0; i < used; ++i) {
+                    const Point& pt = points[static_cast<size_t>(i)];
+                    const double xp = read(pt.readP), xg = read(pt.readG + sigma);
+                    mismatch += pt.q * (xp - xg) * (xp - xg);
+                    energy += pt.q * (xp * xp + xg * xg);
+                }
+                return energy > 0.0 ? mismatch / energy : 0.0;
+            };
+            const double reach = kCorrelateReach * period, room = std::min(reach, latency - lookahead(g));
+            const double coarse = std::max(1.0, std::floor(period / 64.0));
+            const double still = moved(0.0);
+            double bestShift = 0.0, bestCost = still;
+            for (double sigma = -std::floor(reach / coarse) * coarse; sigma <= room; sigma += coarse) {
+                const double j = moved(sigma);
+                if (j < bestCost) bestCost = j, bestShift = sigma;
+            }
+            const double centre = bestShift;
+            for (double sigma = centre - coarse + 1.0; sigma < centre + coarse; sigma += 1.0) {
+                if (sigma > room || sigma < -reach) continue;
+                const double j = moved(sigma);
+                if (j < bestCost) bestCost = j, bestShift = sigma;
+            }
+            if (bestShift - 1.0 >= -reach && bestShift + 1.0 <= room) {
+                const double before = moved(bestShift - 1.0), after = moved(bestShift + 1.0);
+                const double curve = before - 2.0 * bestCost + after;
+                if (curve > 0.0) {
+                    const double between = bestShift + std::clamp(0.5 * (before - after) / curve, -0.5, 0.5);
+                    const double j = moved(between);
+                    if (j < bestCost) bestCost = j, bestShift = between;
+                }
+            }
+            if (bestShift != 0.0 && bestCost < still - kBendBetter) {
+                g.a += bestShift;
+                for (int i = 0; i < used; ++i) points[static_cast<size_t>(i)].readG += bestShift;
+                ++correlatedCount;
+                correlatedShift += std::abs(bestShift);
+            }
+        }
+        if (!controls.elastic) return;
+
         const auto clamped = [&](std::array<double, 3> c) {
             for (size_t k = 0; k < 3; ++k) c[k] = std::clamp(c[k], -limit[k], limit[k]);
             return c;
@@ -1148,7 +1203,7 @@ struct Shifter::Impl {
                 continue;
             }
             v.lastFirst = g.first;
-            if (controls.elastic && g.voiced && v.grainCount > 0) {
+            if ((controls.elastic || controls.correlate != Correlate::Off) && g.voiced && v.grainCount > 0) {
                 Grain& previous = v.grains[static_cast<size_t>((v.grainHead + v.grainCount - 1) & kGrainMask)];
                 if (!previous.done && previous.voiced) bend(v, previous, g, n);
             }
@@ -1385,6 +1440,8 @@ int64_t Shifter::lateSamples() const noexcept { return impl_->late; }
 int64_t Shifter::droppedGrains() const noexcept { return impl_->dropped; }
 int64_t Shifter::elasticJunctions() const noexcept { return impl_->elasticCount; }
 int64_t Shifter::sharedJunctions() const noexcept { return impl_->sharedCount; }
+int64_t Shifter::correlatedGrains() const noexcept { return impl_->correlatedCount; }
+double Shifter::correlatedSamples() const noexcept { return impl_->correlatedShift; }
 
 // --- Drive ------------------------------------------------------------------------------------------
 

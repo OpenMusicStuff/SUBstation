@@ -63,6 +63,9 @@ namespace sub::changeling {
 
 enum class Mode { Transpose = 0, Quantize, Robot };
 enum class Quality { Live = 0, Studio, HighQuality };
+// WSOLA's correlation shift before the elastic edges (an experiment): none, every voiced grain, or only grains
+// whose closure SEDREAMS is unsure of.
+enum class Correlate { Off = 0, Always, Unsure };
 
 const std::vector<std::string>& modeLabels();     // "Transpose", "Quantize", "Robot"
 const std::vector<std::string>& qualityLabels();  // "Live", "Studio", "High Quality"
@@ -99,6 +102,7 @@ struct Controls {
     double width = 0.0;      // 0..1
     double smear = 0.0;      // 0..1
     bool elastic = true;     // grains' edges bent to agree with their neighbours' (EdgeWarp); off: plain PSOLA
+    Correlate correlate = Correlate::Off;  // each voiced grain moved whole to agree with the one before (WSOLA)
     Quality quality = Quality::Studio;  // a change starts the shifter again, at its own latency
 };
 
@@ -146,6 +150,9 @@ public:
     // grains (the earlier one's right edge not yet played) rather than only the later one's left.
     int64_t elasticJunctions() const noexcept;
     int64_t sharedJunctions() const noexcept;
+    // For tests: the grains moved by the correlation shift, and how far in all (samples).
+    int64_t correlatedGrains() const noexcept;
+    double correlatedSamples() const noexcept;
 
 private:
     struct Impl;
