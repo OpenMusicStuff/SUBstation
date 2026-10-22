@@ -161,7 +161,15 @@ hold thousands of them. 16 notes.
 - **Filter**: Off, Low 12, Low 24, High 12, High 24 (12 and 24 dB an octave) or Band,
   with Cutoff, Resonance, Key Track (the cutoff follows the note) and Env (how far its
   own envelope, Attack, Decay, Sustain and Release, moves the cutoff, up or down).
-- **Focus** (on the Filter page): keeps the low end solid. A wide, detuned stack's
+- **Tilt** (on the Spread page, one for each stack): how a stack's spread changes
+  across its harmonics. Detune spreads every harmonic alike (in pitch, so the higher
+  ones beat faster). Tilt splits the stack at **Tilt At**, a harmonic of the note (the
+  4th at first, 1 to 16): turned up, the harmonics below it tighten, to no detune at
+  all at 100 %, while those above stay as wide as Detune makes them: a solid, steady
+  body with a shimmering top. Turned down, the top tightens instead: a wide, beating
+  body under a clean top. Since Tilt At follows the note, a sound keeps its character up
+  and down the keyboard. A tilted stack costs about twice as much.
+- **Focus** (on the Spread page): keeps the low end solid. A wide, detuned stack's
   fundamentals beat against each other and differ left and right, so its bass swells,
   thins and wanders. With Focus on, below **Focus Hz** (40 Hz to 1 kHz, 200 Hz at
   first) each stack plays as a single saw in the middle, and the sub with it; above, the
@@ -180,15 +188,15 @@ hold thousands of them. 16 notes.
   pedal holds notes. A 17th note takes the place of the quietest releasing one (else
   the oldest), which fades out in 4 ms rather than stopping with a click.
 
-**Its editor** has three pages, named in its title bar: **Stacks**, **Filter** and
-**Voice**. On every page the stacks are drawn, a lane each: every saw where it plays,
+**Its editor** has four pages, named in its title bar: **Stacks**, **Filter**,
+**Voice** and **Spread**. On every page the stacks are drawn, a lane each: every saw where it plays,
 across by its detune and up and down by where it sits from left to right, as large as it
 is loud; while sound plays the saws glow and shimmer as fast as each one beats. Beside
 each lane is its stack's switch. Press a lane to show that stack's knobs; drag in it
 across for its Detune and up and down for its Width (Shift for finer steps), and
 double-click to reset them. Knobs that do nothing as things are (a stack's while it is
-off, Blend with fewer than three saws, the filter's while it is off, Focus Hz while
-Focus is off) are dimmed, but you
+off, Blend with fewer than three saws, the filter's while it is off, Tilt with one saw,
+Tilt At while no stack is tilted, Focus Hz while Focus is off) are dimmed, but you
 can still set them.
 
 It is a little late, by 0.5 ms at 48 kHz (1 ms at 44.1 kHz), the time its filters take

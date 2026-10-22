@@ -3,6 +3,7 @@
 // (Saws, Detune, Curve, Blend, Width, Transpose, Fine, Level; SupersawDesign.h
 // places them), their start phases and drift, a sub sine, a filter with an
 // envelope of its own, an amplitude envelope, Poly, Mono or Legato with glide;
+// Tilt (a stack's detune below a harmonic of the note against above it);
 // Focus (below a frequency, each stack a single saw in the middle); 16 notes.
 // Each voice follows its note's bend (MIDI 2.0's per-note pitch bend); MIDI
 // pitch bend, the sustain pedal and all notes / sound off reach every note.
@@ -33,6 +34,15 @@
 // After the voices, a Linkwitz-Riley crossover at Focus Freq keeps what is
 // above it of the stacks and what is below it of the core; the two add up flat.
 // Switching it fades between the two over kFocusSeconds.
+//
+// Tilt: a saw has all its harmonics, and a stack's detune in cents spreads its
+// harmonics in proportion to their number. Tilt sets how a stack's spread
+// changes across them: while any stack is tilted every saw plays twice, at the
+// low harmonics' detune (into the accumulator) and at the high ones'
+// (accHigh), and each voice joins the two with a Linkwitz-Riley crossover at
+// Tilt At (a harmonic of its note): above 0 the harmonics below it tighten
+// (to none at 100 %), below 0 those above it do. Detune is the wider of the
+// two. Tilt coming in or going fades over kFocusSeconds.
 
 #include <algorithm>
 #include <array>
@@ -75,6 +85,7 @@ constexpr double kDriftSeconds = 0.8;         // and this slowly (each of its tw
 constexpr double kSleepSeconds = 0.25;        // silent this long, it skips the work until a note comes
 constexpr double kFocusSeconds = 0.02;        // Focus switched: the stacks and the focused sound crossfade this long
 constexpr double kMinFocus = 40.0, kMaxFocus = 1000.0;  // Hz: Focus Freq's range
+constexpr double kMaxTiltAt = 16.0;           // Tilt At: the harmonic where the stacks' two detunes meet, 1..this
 constexpr double kMinCutoff = 16.0;           // Hz
 constexpr double kMaxFraction = 0.45;         // of the oscillators' rate: the highest cutoff and saw
 constexpr double kEnvOctaves = 10.0;          // Filter Env ±100 %: the cutoff moves this far at the envelope's peak
@@ -112,6 +123,8 @@ enum Param {
     Volume,
     Focus,
     FocusFreq,
+    Tilt1,  // a stack's Tilt: Tilt1 + its index
+    TiltAt = Tilt1 + kStacks,
     NumParams
 };
 constexpr int stackParam(int stack, StackParam p) { return stack * kStackParams + p; }
@@ -173,6 +186,12 @@ const std::vector<ParamInfo>& infos() {
              true},
         };
         list.insert(list.end(), rest.begin(), rest.end());
+        for (int s = 0; s < kStacks; ++s) {
+            const std::string n = std::to_string(s + 1);
+            list.push_back({"s" + n + "_tilt", "Stack " + n + " Tilt", "%", -100.f, 100.f, 0.f});
+        }
+        list.push_back({"tilt_at", "Tilt At", "#", 1.f, static_cast<float>(kMaxTiltAt), 4.f});  // a harmonic
+        list[TiltAt].steps = static_cast<int>(kMaxTiltAt) - 1;
         list[SubOctave].valueLabels = {"0", "-1", "-2"};  // octaves under the note
         list[FilterType].valueLabels = {"Off", "Low 12", "Low 24", "High 12", "High 24", "Band"};
         list[Mode].valueLabels = {"Poly", "Mono", "Legato"};
@@ -191,26 +210,6 @@ inline double phaseSine(uint32_t phase) noexcept {
     const double x = dsp::kPi * t, x2 = x * x;
     return x * (1.0 + x2 * (-1.0 / 6 + x2 * (1.0 / 120 + x2 * (-1.0 / 5040 +
                                                                  x2 * (1.0 / 362880 + x2 * (-1.0 / 39916800))))));
-}
-
-// A sample of one channel through a voice's filter: c1 its first section's coefficients, c2 the 24 dB types'
-// second's, s the channel's sections.
-inline float filtered(FilterKind filter, const dsp::SvfCoefficients& c1, const dsp::SvfCoefficients& c2,
-                      std::array<dsp::Svf, 2>& s, float x) noexcept {
-    const dsp::Svf::Outputs a = s[0].tick(c1, x);
-    switch (filter) {
-        case FilterKind::Low12: return a.low;
-        case FilterKind::High12: return x - c1.k * a.band - a.low;
-        case FilterKind::Band: return c1.k * a.band;  // unity at its centre
-        case FilterKind::Low24: return s[1].tick(c2, a.low).low;
-        case FilterKind::High24: {
-            const float h = x - c1.k * a.band - a.low;
-            const dsp::Svf::Outputs b = s[1].tick(c2, h);
-            return h - c2.k * b.band - b.low;
-        }
-        case FilterKind::Off: break;
-    }
-    return x;
 }
 
 // A gain gliding by one-pole steps, a control period at a time, and ramping
@@ -235,6 +234,75 @@ struct GainGlide {
     bool settled() const noexcept { return step == 0.f; }
     bool silent() const noexcept { return value == 0.f && next == 0.f; }
 };
+
+// A saw over the period's samples q0 .. q0 + n, from `phase` (left where it ends) by `increment`: its plain rise
+// into the accumulator kStepHalf on, at its gains (`ramping`: moving through the period), and each jump's correction
+// around it. Its sums come out the same however the period's samples are cut into blocks.
+inline void addSaw(uint32_t& phaseAt, uint32_t increment, const GainGlide& gl, const GainGlide& gr, bool ramping,
+                   int q0, int n, float* accL, float* accR, const supersaw::StepTable& steps) noexcept {
+    constexpr float kScale = 1.f / 2147483648.f;  // a phase read as a signed number, to -1..1
+    float* left = accL + q0 + kStepHalf;
+    float* right = accR + q0 + kStepHalf;
+    const uint32_t phase = phaseAt;
+    const uint32_t rise = phase + 0x80000000u;  // read as signed: -1 just after the jump
+    if (ramping) {
+        // The gain at the period's sample q0 + k, worked out from the period's start (so the same however the
+        // period is cut).
+        const float la = gl.value * kScale, ra = gr.value * kScale, ls = gl.step * kScale, rs = gr.step * kScale;
+        for (int k = 0; k < n; ++k) {
+            const auto v = static_cast<float>(static_cast<int32_t>(rise + static_cast<uint32_t>(k) * increment));
+            const auto t = static_cast<float>(q0 + k);
+            left[k] += (la + t * ls) * v;
+            right[k] += (ra + t * rs) * v;
+        }
+    } else {
+        const float la = gl.value * kScale, ra = gr.value * kScale;
+        for (int k = 0; k < n; ++k) {
+            const auto v = static_cast<float>(static_cast<int32_t>(rise + static_cast<uint32_t>(k) * increment));
+            left[k] += la * v;
+            right[k] += ra * v;
+        }
+    }
+    const uint64_t end = static_cast<uint64_t>(phase) + static_cast<uint64_t>(n) * increment;
+    phaseAt = static_cast<uint32_t>(end);
+    // Each jump (a drop of 2): sample m is the first after it (m = n: the next part's first), `fraction` of a
+    // sample after it.
+    for (uint64_t wrap = 1; wrap <= end >> 32; ++wrap) {
+        const uint64_t m = ((wrap << 32) - phase + increment - 1) / increment;
+        const uint64_t after = static_cast<uint64_t>(phase) + m * increment - (wrap << 32);
+        const int at = q0 + static_cast<int>(m);
+        float correction[kStepTaps];
+        steps.correction(static_cast<float>(static_cast<double>(after) / increment), correction);
+        const auto atF = static_cast<float>(at);
+        const float dropL = -2.f * (gl.value + atF * gl.step), dropR = -2.f * (gr.value + atF * gr.step);
+        float* l = accL + at;
+        float* r = accR + at;
+        for (int k = 0; k < kStepTaps; ++k) {
+            l[k] += dropL * correction[k];
+            r[k] += dropR * correction[k];
+        }
+    }
+}
+
+// A sample of one channel through a voice's filter: c1 its first section's coefficients, c2 the 24 dB types'
+// second's, s the channel's sections.
+inline float filtered(FilterKind filter, const dsp::SvfCoefficients& c1, const dsp::SvfCoefficients& c2,
+                      std::array<dsp::Svf, 2>& s, float x) noexcept {
+    const dsp::Svf::Outputs a = s[0].tick(c1, x);
+    switch (filter) {
+        case FilterKind::Low12: return a.low;
+        case FilterKind::High12: return x - c1.k * a.band - a.low;
+        case FilterKind::Band: return c1.k * a.band;  // unity at its centre
+        case FilterKind::Low24: return s[1].tick(c2, a.low).low;
+        case FilterKind::High24: {
+            const float h = x - c1.k * a.band - a.low;
+            const dsp::Svf::Outputs b = s[1].tick(c2, h);
+            return h - c2.k * b.band - b.low;
+        }
+        case FilterKind::Off: break;
+    }
+    return x;
+}
 
 class SupersawProcessor final : public BuiltinProcessor {
 public:
@@ -266,6 +334,7 @@ private:
         std::array<float, kMaxSaws> driftIn{};  // and the first
         int count = 0;  // saws with a phase: those playing and those fading out
         uint32_t corePhase = 0, coreIncrement = 0;  // Focus's saw: at the stack's pitch
+        std::array<uint32_t, kMaxSaws> phaseHigh{}, incrementHigh{};  // Tilt: each saw at the high harmonics' detune
     };
 
     struct Voice {
@@ -296,6 +365,9 @@ private:
         // fade in it) for each of those samples.
         std::array<std::array<float, kControl + kStepTaps + 1>, 2> acc{};
         std::array<float, kControl + kStepTaps + 1> core{};  // Focus's core (mono), as the accumulator
+        std::array<std::array<float, kControl + kStepTaps + 1>, 2> accHigh{};  // Tilt: the saws at the highs' detune
+        dsp::CrossoverCoefficients tiltSplit;                               // Tilt At, at the note's pitch
+        std::array<dsp::Crossover, 4> tiltCrossovers{};  // the accumulator's lows and accHigh's highs, each side
         std::array<float, kControl + kStepHalf> env{};
     };
 
@@ -307,6 +379,11 @@ private:
         std::array<double, kMaxSaws> cents{}, centsTarget{}, ratio{};
         GainGlide core;  // its saw in Focus's core: the stack's level and switch
         float coreTarget = 0.f;
+        // Tilt: the detune below Tilt At (the accumulator's) and above it (accHigh's), as fractions of the
+        // stack's, gliding as its places do; each saw's ratio above.
+        double lowScale = 1.0, highScale = 1.0, lowTarget = 1.0, highTarget = 1.0;
+        std::array<double, kMaxSaws> ratioHigh{};
+        bool tilted = false;  // on, and Tilt not 0
         int playing = 0;     // saws that play (the shape's count; 0 while the stack is off)
         int count = 0;       // saws with state: those playing, and those still fading out
         bool ramping = false;  // some gain moves this period
@@ -390,6 +467,7 @@ private:
         double drift;         // cents per unit of a saw's drift
         bool focus;
         double focusLog2;     // Focus Freq, log2 Hz
+        double tiltAtLog2;    // Tilt At, log2 of the harmonic
         double glideSamples;  // oscillator samples
         double bendRange;
         int subOctave;
@@ -411,6 +489,11 @@ private:
     dsp::CrossoverCoefficients focusSplit_;
     std::array<dsp::Crossover, 3> crossovers_;  // left and right (their highs), the core (its low)
     void focusFrequency();
+    // Tilt: how far it is in (0..1, crossfading), whether the high saws are made this period, Tilt At (gliding).
+    GainGlide tilt_;
+    bool tilting_ = false;
+    double tiltAtLog2_ = 2.0;
+    void startTilting();
 };
 
 void SupersawProcessor::prepare(double sampleRate, int maxBlockSize) {
@@ -478,7 +561,17 @@ void SupersawProcessor::settle() {
         }
         stack.ramping = false;
         stack.core.snap(stack.coreTarget);
+        stack.lowScale = stack.lowTarget;
+        stack.highScale = stack.highTarget;
+        for (size_t i = 0; i < static_cast<size_t>(kMaxSaws); ++i) {
+            if (stack.lowScale != 1.0) stack.ratio[i] = fastmath::exp2(stack.cents[i] * stack.lowScale / 1200.0);
+            stack.ratioHigh[i] = fastmath::exp2(stack.cents[i] * stack.highScale / 1200.0);
+        }
     }
+    const bool tilted = std::any_of(stacks_.begin(), stacks_.end(), [](const Stack& st) { return st.tilted; });
+    tilt_.snap(tilted ? 1.f : 0.f);
+    tilting_ = tilted;
+    tiltAtLog2_ = set_.tiltAtLog2;
     focus_.snap(set_.focus ? 1.f : 0.f);
     focusing_ = set_.focus;
     focusLog2_ = set_.focusLog2;
@@ -536,6 +629,15 @@ void SupersawProcessor::readSettings() {
     s.sub = std::clamp(param(Sub) / 100.f, 0.f, 1.f) * kSubLevel;
     s.focus = isOn(Focus);
     s.focusLog2 = std::log2(std::clamp(static_cast<double>(param(FocusFreq)), kMinFocus, kMaxFocus));
+    s.tiltAtLog2 = std::log2(std::clamp(static_cast<double>(choiceIndex(TiltAt)), 1.0, kMaxTiltAt));
+    for (int st = 0; st < kStacks; ++st) {
+        // Above 0 the low harmonics' detune narrows (to none at 100 %), below 0 the high ones'.
+        Stack& stack = stacks_[static_cast<size_t>(st)];
+        const double tilt = std::clamp(param(Tilt1 + st) / 100.0, -1.0, 1.0);
+        stack.lowTarget = tilt > 0.0 ? 1.0 - tilt : 1.0;
+        stack.highTarget = tilt < 0.0 ? 1.0 + tilt : 1.0;
+        stack.tilted = tilt != 0.0 && isOn(stackParam(st, On));
+    }
 
     // The stacks: each saw's place and gains (the stack's level and switch in them).
     for (int st = 0; st < kStacks; ++st) {
@@ -572,6 +674,20 @@ void SupersawProcessor::readSettings() {
         }
         stack.playing = on ? n : 0;
         stack.coreTarget = static_cast<float>(level);  // a saw of the stack's power, in the middle
+    }
+}
+
+// Tilt coming in: the high saws' ratios as things are; every voice's high saws from where its saws are, its
+// crossovers from rest.
+void SupersawProcessor::startTilting() {
+    for (Stack& stack : stacks_)
+        for (size_t i = 0; i < static_cast<size_t>(kMaxSaws); ++i)
+            stack.ratioHigh[i] = fastmath::exp2(stack.cents[i] * stack.highScale / 1200.0);
+    for (Voice& voice : voices_) {
+        if (!voice.active) continue;
+        for (StackVoice& sv : voice.stacks) sv.phaseHigh = sv.phase;
+        for (auto& channel : voice.accHigh) channel.fill(0.f);
+        for (dsp::Crossover& crossover : voice.tiltCrossovers) crossover.reset();
     }
 }
 
@@ -633,6 +749,8 @@ void SupersawProcessor::startSaws(Voice& voice, int stack, int from, int to) {
         sv.phase[i] = static_cast<uint32_t>(static_cast<uint64_t>((cycles - std::floor(cycles)) * 4294967296.0));
         sv.drift[i] = sv.driftIn[i] = kRootThree * noise_.next();
         sv.increment[i] = 0;
+        sv.phaseHigh[i] = sv.phase[i];
+        sv.incrementHigh[i] = 0;
     }
 }
 
@@ -665,6 +783,8 @@ void SupersawProcessor::startVoice(Voice& voice, uint8_t key, int32_t noteId, fl
     }
     for (dsp::Svf& section : voice.coreSvf) section.reset();
     voice.core.fill(0.f);
+    for (auto& channel : voice.accHigh) channel.fill(0.f);
+    for (dsp::Crossover& crossover : voice.tiltCrossovers) crossover.reset();
     // Its increments and cutoff for the rest of this period (the filter holding still through it), and its
     // oscillators through it; at a period's start, its update does that.
     tuneVoice(voice);
@@ -842,6 +962,15 @@ void SupersawProcessor::updateStacks() {
             }
             stack.count = stack.playing;
         }
+        // Tilt's detunes glide as the places do; while they move, every saw's ratios are made again.
+        const auto glideScale = [&](double& scale, double target) {
+            if (scale == target) return false;
+            scale = target + (scale - target) * detuneCoeff_;
+            if (std::abs(scale - target) < 1e-6) scale = target;
+            return true;
+        };
+        const bool lowMoved = glideScale(stack.lowScale, stack.lowTarget);
+        const bool highMoved = glideScale(stack.highScale, stack.highTarget);
         bool ramping = false;
         int last = 0;  // past the last saw still to render
         for (int j = 0; j < stack.count; ++j) {
@@ -850,12 +979,18 @@ void SupersawProcessor::updateStacks() {
             stack.right[i].update(stack.rightTarget[i], static_cast<float>(gainCoeff_));
             ramping = ramping || !stack.left[i].settled() || !stack.right[i].settled();
             if (j < stack.playing || !stack.left[i].silent() || !stack.right[i].silent()) last = j + 1;
+            bool moved = false;
             if (j < stack.playing && stack.cents[i] != stack.centsTarget[i]) {
                 double to = stack.centsTarget[i] + (stack.cents[i] - stack.centsTarget[i]) * detuneCoeff_;
                 if (std::abs(to - stack.centsTarget[i]) < 1e-4) to = stack.centsTarget[i];
                 stack.cents[i] = to;
-                stack.ratio[i] = fastmath::exp2(to / 1200.0);
+                moved = true;
             }
+            if (moved || lowMoved)
+                stack.ratio[i] = fastmath::exp2(stack.lowScale == 1.0 ? stack.cents[i] / 1200.0
+                                                                       : stack.cents[i] * stack.lowScale / 1200.0);
+            if (tilting_ && (moved || highMoved))
+                stack.ratioHigh[i] = fastmath::exp2(stack.cents[i] * stack.highScale / 1200.0);
         }
         stack.ramping = ramping;
         stack.core.update(stack.coreTarget, static_cast<float>(gainCoeff_));
@@ -921,7 +1056,16 @@ void SupersawProcessor::tuneVoice(Voice& voice) {
             const double x = sv.drift[i] * drift;  // the drift's ratio, e^x to second order (within 1e-7)
             const double ratio = stack.ratio[i] * (1.0 + x * (1.0 + 0.5 * x));
             sv.increment[i] = static_cast<uint32_t>(std::min(base * ratio, kMaxIncrement) + 0.5);  // the nearest
+            if (tilting_) {
+                const double high = stack.ratioHigh[i] * (1.0 + x * (1.0 + 0.5 * x));
+                sv.incrementHigh[i] = static_cast<uint32_t>(std::min(base * high, kMaxIncrement) + 0.5);
+            }
         }
+    }
+    if (tilting_) {
+        // Tilt At: a harmonic of the note (its glide and bends, not a stack's Transpose).
+        const double at = 440.0 * fastmath::exp2((pitch - 69.0) / 12.0 + tiltAtLog2_);
+        voice.tiltSplit = dsp::CrossoverCoefficients::at(std::min(at, kMaxFraction * oscRate_), oscRate_);
     }
     const double subHz = 440.0 * fastmath::exp2((pitch - 12.0 * set_.subOctave - 69.0) / 12.0);
     voice.subIncrement = static_cast<uint32_t>(std::min(subHz * perHz, kMaxIncrement) + 0.5);
@@ -977,6 +1121,16 @@ void SupersawProcessor::controlUpdate() {
         focusLog2_ = set_.focusLog2;
         focusFrequency();
     }
+    // Tilt: its crossfade and Tilt At (gliding as the cutoff does); the high saws start where the others are.
+    const bool tilted = std::any_of(stacks_.begin(), stacks_.end(), [](const Stack& st) { return st.tilted; });
+    tilt_.update(tilted ? 1.f : 0.f, static_cast<float>(focusCoeff_));
+    const bool wasTilting = tilting_;
+    tilting_ = tilted || !tilt_.silent();
+    if (tiltAtLog2_ != set_.tiltAtLog2) {
+        tiltAtLog2_ = tilting_ ? set_.tiltAtLog2 + (tiltAtLog2_ - set_.tiltAtLog2) * cutoffCoeff_ : set_.tiltAtLog2;
+        if (std::abs(tiltAtLog2_ - set_.tiltAtLog2) < 1e-6) tiltAtLog2_ = set_.tiltAtLog2;
+    }
+    if (tilting_ && !wasTilting) startTilting();
     if (wheel_ != wheelTarget_) {
         wheel_ = wheelTarget_ + (wheel_ - wheelTarget_) * bendCoeff_;
         if (std::abs(wheel_ - wheelTarget_) < 1e-7) wheel_ = wheelTarget_;
@@ -1008,47 +1162,12 @@ void SupersawProcessor::renderOscillators(Voice& voice, int q0, int n) {
         const Stack& stack = stacks_[static_cast<size_t>(s)];
         StackVoice& sv = voice.stacks[static_cast<size_t>(s)];
         for (size_t i = 0; i < static_cast<size_t>(sv.count); ++i) {
-            const uint32_t phase = sv.phase[i], increment = sv.increment[i];
-            const uint32_t rise = phase + 0x80000000u;  // read as signed: -1 just after the jump
-            const GainGlide& gl = stack.left[i];
-            const GainGlide& gr = stack.right[i];
-            if (stack.ramping) {
-                // The gain at the period's sample q0 + k, worked out from the period's start (so the same however
-                // the period is cut).
-                const float la = gl.value * kScale, ra = gr.value * kScale, ls = gl.step * kScale, rs = gr.step * kScale;
-                for (int k = 0; k < n; ++k) {
-                    const auto v = static_cast<float>(static_cast<int32_t>(rise + static_cast<uint32_t>(k) * increment));
-                    const auto t = static_cast<float>(q0 + k);
-                    left[k] += (la + t * ls) * v;
-                    right[k] += (ra + t * rs) * v;
-                }
-            } else {
-                const float la = gl.value * kScale, ra = gr.value * kScale;
-                for (int k = 0; k < n; ++k) {
-                    const auto v = static_cast<float>(static_cast<int32_t>(rise + static_cast<uint32_t>(k) * increment));
-                    left[k] += la * v;
-                    right[k] += ra * v;
-                }
-            }
-            const uint64_t end = static_cast<uint64_t>(phase) + static_cast<uint64_t>(n) * increment;
-            sv.phase[i] = static_cast<uint32_t>(end);
-            // Each jump (a drop of 2): sample m is the first after it (m = n: the next part's first), `fraction`
-            // of a sample after it.
-            for (uint64_t wrap = 1; wrap <= end >> 32; ++wrap) {
-                const uint64_t m = ((wrap << 32) - phase + increment - 1) / increment;
-                const uint64_t after = static_cast<uint64_t>(phase) + m * increment - (wrap << 32);
-                const int at = q0 + static_cast<int>(m);
-                float correction[kStepTaps];
-                steps_->correction(static_cast<float>(static_cast<double>(after) / increment), correction);
-                const auto atF = static_cast<float>(at);
-                const float dropL = -2.f * (gl.value + atF * gl.step), dropR = -2.f * (gr.value + atF * gr.step);
-                float* l = accL + at;
-                float* r = accR + at;
-                for (int k = 0; k < kStepTaps; ++k) {
-                    l[k] += dropL * correction[k];
-                    r[k] += dropR * correction[k];
-                }
-            }
+            addSaw(sv.phase[i], sv.increment[i], stack.left[i], stack.right[i], stack.ramping, q0, n, accL, accR,
+                   *steps_);
+            // Tilted: again at the high harmonics' detune.
+            if (tilting_)
+                addSaw(sv.phaseHigh[i], sv.incrementHigh[i], stack.left[i], stack.right[i], stack.ramping, q0, n,
+                       voice.accHigh[0].data(), voice.accHigh[1].data(), *steps_);
         }
 
         // Focus's saw for the stack, into the core: the same, in mono.
@@ -1130,6 +1249,26 @@ void SupersawProcessor::renderVoice(Voice& voice, int from, int n) {
     const float* inR = accR + q0;
     const float* inC = voice.core.data() + q0;
     const bool core = focusing_;
+    if (tilting_) {
+        // Tilt: the saws' lows (at the lows' detune) and their highs (at the highs'), crossfaded with the saws as
+        // they are by how far it is in; in place, as these samples are final and read only here.
+        float* aL = voice.acc[0].data() + q0;
+        float* aR = voice.acc[1].data() + q0;
+        const float* bL = voice.accHigh[0].data() + q0;
+        const float* bR = voice.accHigh[1].data() + q0;
+        auto& x = voice.tiltCrossovers;
+        const dsp::CrossoverCoefficients& c = voice.tiltSplit;
+        for (int k = 0; k < n; ++k) {
+            const float in = tilt_.value + static_cast<float>(q0 + k) * tilt_.step;
+            float lowL = 0.f, lowR = 0.f, highL = 0.f, highR = 0.f, unused = 0.f;
+            x[0].process(c, aL[k], lowL, unused);
+            x[1].process(c, aR[k], lowR, unused);
+            x[2].process(c, bL[k], unused, highL);
+            x[3].process(c, bR[k], unused, highR);
+            aL[k] += in * (lowL + highL - aL[k]);
+            aR[k] += in * (lowR + highR - aR[k]);
+        }
+    }
     const FilterKind filter = filterKind_;
     if (filter == FilterKind::Off) {
         for (int k = 0; k < n; ++k) {
@@ -1171,6 +1310,13 @@ void SupersawProcessor::endPeriod() {
             for (dsp::Svf& section : voice.coreSvf) section.flush();
         } else {
             voice.core.fill(0.f);  // (made again when Focus comes in)
+        }
+        if (tilting_) {
+            for (auto& channel : voice.accHigh) {
+                std::copy(channel.begin() + kControl, channel.end(), channel.begin());
+                std::fill(channel.end() - kControl, channel.end(), 0.f);
+            }
+            for (dsp::Crossover& crossover : voice.tiltCrossovers) crossover.flush();
         }
         for (auto& channel : voice.svf)
             for (dsp::Svf& section : channel) section.flush();

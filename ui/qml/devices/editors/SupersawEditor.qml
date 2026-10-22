@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import SUBstation
 
-// The Supersaw's editor: three pages, named in the device's title bar (Stacks,
-// Filter, Voice). On every page the stacks are drawn (SupersawGraph: each
+// The Supersaw's editor: four pages, named in the device's title bar (Stacks,
+// Filter, Voice, Spread). On every page the stacks are drawn (SupersawGraph: each
 // saw where it plays, across its detune and up and down the stereo field, as
 // large as it is loud, glowing and shimmering at its beat while sound comes
 // out), each with its switch beside it: press a stack's lane to show its knobs,
@@ -13,13 +13,16 @@ import SUBstation
 //   Transpose and Fine; and the saws' Phase, Random Phase and Drift (every
 //   stack's).
 // - Filter: its type, Cutoff, Resonance, Key Track and Env (how far its
-//   envelope moves the cutoff); its envelope's Attack, Decay, Sustain, Release;
-//   Focus and its frequency (below it, each stack a single saw in the middle).
+//   envelope moves the cutoff); its envelope's Attack, Decay, Sustain, Release.
 // - Voice: the amplitude envelope, Velocity and Volume; Mode, Glide, Bend
 //   (Range), the Sub and its octave.
+// - Spread: each stack's Tilt (its spread below a harmonic of the note against
+//   above it) and Tilt At (that harmonic); Focus and its frequency (below it,
+//   each stack a single saw in the middle).
 // Knobs that do nothing with the settings as they are (a stack's while it is
-// off, Blend under three saws, the filter's while it is off, the Sub's octave
-// without the Sub, Focus's frequency without Focus) are dimmed but still settable. Every control is bound to its
+// off, Blend under three saws, Detune, Curve, Width and Tilt with one, the
+// filter's while it is off, the Sub's octave without the Sub, Tilt At with no
+// stack tilted, Focus's frequency without Focus) are dimmed but still settable. Every control is bound to its
 // parameter: undoably, touched when pressed, its menu on right-click. The page
 // and the stack shown are view state (DeviceViews), kept while the frame is
 // made again.
@@ -29,7 +32,7 @@ Item {
     required property string trackId
     required property string deviceId
 
-    readonly property var pageNames: [qsTr("Stacks"), qsTr("Filter"), qsTr("Voice")]
+    readonly property var pageNames: [qsTr("Stacks"), qsTr("Filter"), qsTr("Voice"), qsTr("Spread")]
     readonly property int pages: pageNames.length
     property int page: DeviceViews.value(deviceId, "supersawPage", 0)
     onPageChanged: DeviceViews.setValue(deviceId, "supersawPage", page)
@@ -67,12 +70,16 @@ Item {
             [["filter_type", qsTr("Filter"), 2], ["cutoff", qsTr("Cutoff")], ["resonance", qsTr("Resonance")],
              ["key_track", qsTr("Key Track")], ["filter_env", qsTr("Env")]],
             [["filter_attack", qsTr("Attack")], ["filter_decay", qsTr("Decay")], ["filter_sustain", qsTr("Sustain")],
-             ["filter_release", qsTr("Release")], ["focus", qsTr("Focus")], ["focus_freq", qsTr("Focus Hz")]]]
-        default: return [
+             ["filter_release", qsTr("Release")]]]
+        case 2: return [
             [["attack", qsTr("Attack")], ["decay", qsTr("Decay")], ["sustain", qsTr("Sustain")],
              ["release", qsTr("Release")], ["velocity", qsTr("Velocity")], ["volume", qsTr("Volume")]],
             [["mode", qsTr("Mode"), 2], ["glide", qsTr("Glide")], ["bend_range", qsTr("Bend")], ["sub", qsTr("Sub")],
              ["sub_octave", qsTr("Sub Oct")]]]
+        default: return [
+            [["s1_tilt", qsTr("Tilt 1")], ["s2_tilt", qsTr("Tilt 2")], ["s3_tilt", qsTr("Tilt 3")],
+             ["tilt_at", qsTr("Tilt At")]],
+            [["focus", qsTr("Focus")], ["focus_freq", qsTr("Focus Hz")]]]
         }
     }
     readonly property var rows: rowsOf(page, stack)
@@ -82,7 +89,8 @@ Item {
         id: settings
         trackId: editor.trackId
         deviceId: editor.deviceId
-        ids: ["s1_on", "s2_on", "s3_on", "s1_saws", "s2_saws", "s3_saws", "filter_type", "sub", "focus"]
+        ids: ["s1_on", "s2_on", "s3_on", "s1_saws", "s2_saws", "s3_saws", "s1_tilt", "s2_tilt", "s3_tilt",
+              "filter_type", "sub", "focus"]
     }
     function settingOf(id) {
         const p = settings.get(id)
@@ -97,12 +105,20 @@ Item {
             const saws = Math.round(settingOf(prefix + "saws"))
             if (id === prefix + "blend")
                 return saws >= 3
-            if (id === prefix + "detune" || id === prefix + "curve" || id === prefix + "width")
+            if (id === prefix + "detune" || id === prefix + "curve" || id === prefix + "width"
+                    || id === prefix + "tilt")
                 return saws >= 2
             return true
         }
         if (id === "focus")
             return true
+        if (id === "tilt_at") {
+            for (let n = 1; n <= 3; ++n) {
+                if (settingOf("s" + n + "_on") >= 0.5 && settingOf("s" + n + "_tilt") !== 0)
+                    return true
+            }
+            return false
+        }
         if (id === "focus_freq")
             return settingOf("focus") >= 0.5
         if (editor.page === 1 && id !== "filter_type")

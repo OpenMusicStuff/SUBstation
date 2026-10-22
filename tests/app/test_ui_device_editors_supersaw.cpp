@@ -1,6 +1,6 @@
 // The Supersaw's editor (ui/qml/devices/editors/SupersawEditor.qml and
 // SupersawGraph): loaded as the device view loads it, over a real engine;
-// fitting the view, its three pages and three stacks showing every parameter
+// fitting the view, its four pages and three stacks showing every parameter
 // of the device (each somewhere, whole, inside the body), its knobs editing
 // the model undoably, those that do nothing dimmed; the graph drawing each
 // stack's saws where the engine's maths puts them, the stacks' switches, a
@@ -91,13 +91,14 @@ private Q_SLOTS:
     void everyParameterOnSomePage() {
         QQuickItem* view = showSupersaw();
         QVERIFY(view);
-        QCOMPARE(view->property("pages").toInt(), 3);
+        QCOMPARE(view->property("pages").toInt(), 4);
         QCOMPARE(view->property("pageNames").toStringList(),
-                 (QStringList{QStringLiteral("Stacks"), QStringLiteral("Filter"), QStringLiteral("Voice")}));
+                 (QStringList{QStringLiteral("Stacks"), QStringLiteral("Filter"), QStringLiteral("Voice"),
+                              QStringLiteral("Spread")}));
         QVERIFY(view->implicitHeight() <= bodyHeight());
         QSet<QString> all, seen;
         for (const auto& [id, value] : project()->device(track_, device_).params.asKeyValueRange()) all.insert(id);
-        for (int page = 0; page < 3; ++page) {
+        for (int page = 0; page < 4; ++page) {
             for (int stack = 0; stack < (page == 0 ? 3 : 1); ++stack) {
                 setPage(view, page, stack);
                 const QStringList ids = shown(view);
@@ -155,13 +156,19 @@ private Q_SLOTS:
         set("filter_type", 0.0);
         QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_cutoff"))->opacity() < 0.5);
         QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_filter_type"))->opacity(), 1.0);
-        // Focus, on the Filter page, whatever the filter; its frequency while it is on.
+        set("filter_type", 2.0);
+        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_cutoff"))->opacity(), 1.0);
+        // Spread: Tilt At while no stack is tilted, a tilt on a stack that is off, Focus's frequency without it.
+        setPage(view, 3);
+        QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_tilt_at"))->opacity() < 0.5);
+        QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_s3_tilt"))->opacity() < 0.5);
+        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_s1_tilt"))->opacity(), 1.0);
+        set("s1_tilt", 50.0);
+        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_tilt_at"))->opacity(), 1.0);
         QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_focus"))->opacity(), 1.0);
         QTRY_VERIFY(find<QQuickItem>(view, QStringLiteral("param_focus_freq"))->opacity() < 0.5);
         set("focus", 1.0);
         QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_focus_freq"))->opacity(), 1.0);
-        set("filter_type", 2.0);
-        QTRY_COMPARE(find<QQuickItem>(view, QStringLiteral("param_cutoff"))->opacity(), 1.0);
     }
 
     void graphDrawsTheEnginesLayout() {

@@ -6,7 +6,8 @@
 // count); Transpose, Fine, the sub; the envelopes, the filter and its envelope
 // and key tracking; Phase and Random Phase, Drift; glide in Mono and Legato,
 // bends, the wheel, the pedal, stealing; Focus (the low end a single saw in the
-// middle, the rest as it was, the sub kept); silence and sleeping; the same output
+// middle, the rest as it was, the sub kept); Tilt (the spread below a harmonic
+// of the note against above it); silence and sleeping; the same output
 // however blocks are cut, at any rate; its cost. Played on its own (as the
 // renderer plays it, in blocks with notes in them) and through the engine.
 
@@ -233,7 +234,7 @@ TEST_CASE("supersaw: an instrument, listed with its parameters") {
     for (const char* p : {"phase", "random", "drift", "sub", "sub_octave", "filter_type", "cutoff", "resonance",
                           "key_track", "filter_env", "filter_attack", "filter_decay", "filter_sustain",
                           "filter_release", "attack", "decay", "sustain", "release", "velocity", "mode", "glide",
-                          "bend_range", "volume", "focus", "focus_freq"})
+                          "bend_range", "volume", "focus", "focus_freq", "s1_tilt", "s2_tilt", "s3_tilt", "tilt_at"})
         ids.emplace_back(p);
     CHECK(paramIds(info.params) == ids);
     const auto param = [&](const std::string& id) {
@@ -262,6 +263,10 @@ TEST_CASE("supersaw: an instrument, listed with its parameters") {
     CHECK_EQ(param("focus_freq").minValue, 40.f);
     CHECK_EQ(param("focus_freq").maxValue, 1000.f);
     CHECK_EQ(param("focus_freq").defaultValue, 200.f);
+    CHECK_EQ(param("s1_tilt").defaultValue, 0.f);  // none: the same spread at every harmonic
+    CHECK_EQ(param("s1_tilt").minValue, -100.f);
+    CHECK_EQ(param("tilt_at").defaultValue, 4.f);
+    CHECK_EQ(param("tilt_at").stepCount(), 15);  // harmonics 1..16
 
     // Its latency: the step's 9 oscillator samples and the decimator's delay (at twice the rate below 80 kHz).
     for (const auto& [rate, latency] : std::vector<std::pair<double, int>>{
@@ -557,10 +562,103 @@ TEST_CASE("supersaw: Focus switched and moved under a note, the same however blo
     const auto reference = render([] { return 1024; });
     CHECK(allFinite(reference.first));
     CHECK(rms(slice(reference.first, 8000, 22000)) > 0.05);
-    const double before = largestStep(reference.first, 4000, 5000);
-    CHECK(largestStep(reference.first, 5000, 9000) < 1.5 * before);
-    CHECK(largestStep(reference.first, 21000, 25000) < 1.5 * before);
+    // A switch steps no further than the sound does steadily either side of it (Focus changes the waveform, so
+    // how far its saws' jumps reach).
+    const auto step = [&](int64_t from, int64_t to) { return largestStep(reference.first, from, to); };
+    const double off = step(4000, 5000), on = step(10000, 14000), offAgain = step(26000, 29000);
+    INFO("steps: off " + std::to_string(off) + ", on " + std::to_string(on) + ", off again " + std::to_string(offAgain) +
+         "; switching on " + std::to_string(step(5000, 9000)) + ", off " + std::to_string(step(21000, 25000)));
+    CHECK(step(5000, 9000) < 1.5 * std::max(off, on));
+    CHECK(step(21000, 25000) < 1.5 * std::max(on, offAgain));
     uint32_t seed = 7;
+    for (const auto& blocks : std::vector<std::function<int()>>{[] { return 64; }, [] { return 37; }, [&seed] {
+             seed = seed * 1664525u + 1013904223u;
+             return 1 + static_cast<int>(seed >> 22);
+         }}) {
+        const auto out = render(blocks);
+        CHECK_ARRAY_EQUAL(out.first, reference.first);
+        CHECK_ARRAY_EQUAL(out.second, reference.second);
+    }
+}
+
+TEST_CASE("supersaw: Tilt spreads the harmonics below Tilt At one way and those above another") {
+    // Seven saws a semitone wide, mono, on A2 (110 Hz), Tilt At the 4th harmonic. Around each harmonic k the saws
+    // are peaks at k f 2^(cents / 1200), each a saw's k-th harmonic at its gain. Tilt +100 %: under Tilt At none
+    // is detuned (one peak, all the saws together), over it each is where Detune puts it; -100 %, the other way;
+    // +50 %: under it, each half as far out.
+    std::vector<sub::supersaw::Saw> saws(7);
+    sub::supersaw::layout({7, 100.0, 35.0, 50.0, 0.0}, saws.data());
+    const sub::supersaw::Saw& outer = saws[6];
+    const double f = keyHz(45);
+    const auto render = [&](float tilt) {
+        Player p({{"s1_detune", 100.f}, {"s1_width", 0.f}, {"s1_blend", 50.f}, {"s1_tilt", tilt}, {"tilt_at", 4.f}});
+        return p.left(seconds(4.2), {noteOn(0, 45)});
+    };
+    // The outer saw's peak around harmonic k, `scale` of its detune out, against what it would be.
+    const auto outerAt = [&](const Samples& out, int k, double scale) {
+        const double at = k * f * std::exp2(scale * outer.cents / 1200.0);
+        return amplitudeAt(out, at, seconds(0.2), seconds(4.0)) / (kVoiceGain * outer.gain * kSawFundamental / k);
+    };
+    const Samples up = render(100.f), down = render(-100.f), half = render(50.f), none = render(0.f);
+    for (const int k : {1, 16, 24}) {
+        INFO("harmonic " + std::to_string(k));
+        CHECK_APPROX_REL(outerAt(none, k, 1.0), 1.0, 0.02);  // no Tilt: every harmonic spread alike
+        if (k == 1) {
+            CHECK(outerAt(up, k, 1.0) < 0.01);              // the lows: not spread
+            CHECK_APPROX_REL(outerAt(down, k, 1.0), 1.0, 0.02);
+            CHECK_APPROX_REL(outerAt(half, k, 0.5), 1.0, 0.02);  // half as far
+            CHECK(outerAt(half, k, 1.0) < 0.01);
+        } else {
+            CHECK_APPROX_REL(outerAt(up, k, 1.0), 1.0, 0.02);   // the highs: spread as Detune says
+            CHECK(outerAt(down, k, 1.0) < 0.01);
+            CHECK_APPROX_REL(outerAt(half, k, 1.0), 1.0, 0.02);
+        }
+    }
+    // The fundamental of +100 %: the seven saws in one, as loud as they are together (their phases random, so
+    // only the band's level: within a few dB of the stack's power).
+    CHECK(std::abs(db(amplitudeAt(up, f, seconds(0.2), seconds(4.0)) / (kVoiceGain * kSawFundamental))) < 10.0);
+    // A stack that is off doesn't count: Tilt on it changes nothing.
+    Player plain({{"s1_saws", 5.f}}), offTilted({{"s1_saws", 5.f}, {"s2_tilt", 80.f}});
+    CHECK_ARRAY_EQUAL(plain.left(seconds(0.5), {noteOn(0, 57)}), offTilted.left(seconds(0.5), {noteOn(0, 57)}));
+}
+
+TEST_CASE("supersaw: Tilt follows the note, and is the same however blocks are cut") {
+    // Tilt At is a harmonic of the note, wherever it plays: +100 %, at the 4th, the fundamental unspread and the
+    // 16th spread, on a low note and on a high one. (The crossover is 24 dB an octave: harmonics within an octave
+    // or so of Tilt At hear some of both detunes; two octaves away, -48 dB of the other.)
+    std::vector<sub::supersaw::Saw> saws(5);
+    sub::supersaw::layout({5, 80.0, 35.0, 75.0, 0.0}, saws.data());
+    for (const int key : {33, 57, 81}) {
+        INFO("key " + std::to_string(key));
+        Player p({{"s1_saws", 5.f}, {"s1_detune", 80.f}, {"s1_width", 0.f}, {"s1_tilt", 100.f}, {"tilt_at", 4.f}});
+        const Samples out = p.left(seconds(4.2), {noteOn(0, key)});
+        const double f = keyHz(key), outer = std::exp2(saws[4].cents / 1200.0);
+        CHECK(amplitudeAt(out, f * outer, seconds(0.2), seconds(4.0)) < 0.01 * kVoiceGain * saws[4].gain * kSawFundamental);
+        CHECK_APPROX_REL(amplitudeAt(out, 16 * f * outer, seconds(0.2), seconds(4.0)),
+                         kVoiceGain * saws[4].gain * kSawFundamental / 16, 0.02);
+    }
+    // Tilted, Tilt At moved, the tilt moved and taken away under a chord with glide, bends and the filter: smooth,
+    // and the same to the bit in any blocks.
+    const Values values = {{"s1_saws", 9.f}, {"s1_detune", 50.f}, {"s2_on", 1.f}, {"drift", 30.f}, {"mode", 0.f},
+                           {"glide", 40.f},  {"filter_type", 2.f}, {"cutoff", 5000.f}, {"focus", 1.f}};
+    const std::vector<Timed> notes = {noteOn(100, 40, 100, 1), noteOn(3000, 47, 100, 2), bend(9000, 47, 2, 1.5f),
+                                      noteOff(30000, 40, 1)};
+    const std::vector<Change> changes = {{6000, "s1_tilt", 70.f}, {12000, "tilt_at", 9.f},
+                                         {16000, "s1_tilt", -60.f}, {22000, "s1_tilt", 0.f}};
+    const auto render = [&](const std::function<int()>& blocks) {
+        Player p(values);
+        return p.play(seconds(0.7), notes, blocks, changes);
+    };
+    const auto reference = render([] { return 1024; });
+    CHECK(allFinite(reference.first));
+    const auto step = [&](int64_t from, int64_t to) { return largestStep(reference.first, from, to); };
+    const double flat = step(4000, 5000), tilted = step(9000, 11500), down = step(18000, 21500), after = step(26000, 29000);
+    INFO("steps: " + std::to_string(flat) + ", tilted " + std::to_string(tilted) + ", down " + std::to_string(down) +
+         ", after " + std::to_string(after) + "; tilting " + std::to_string(step(5000, 9000)) + ", untilting " +
+         std::to_string(step(21500, 26000)));
+    CHECK(step(5000, 9000) < 1.5 * std::max(flat, tilted));
+    CHECK(step(21500, 26000) < 1.5 * std::max(down, after));
+    uint32_t seed = 11;
     for (const auto& blocks : std::vector<std::function<int()>>{[] { return 64; }, [] { return 37; }, [&seed] {
              seed = seed * 1664525u + 1013904223u;
              return 1 + static_cast<int>(seed >> 22);
