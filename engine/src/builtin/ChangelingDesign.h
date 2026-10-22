@@ -102,7 +102,9 @@ struct Controls {
     double width = 0.0;      // 0..1
     double smear = 0.0;      // 0..1
     bool elastic = true;     // grains' edges bent to agree with their neighbours' (EdgeWarp); off: plain PSOLA
-    Correlate correlate = Correlate::Off;  // each voiced grain moved whole to agree with the one before (WSOLA)
+    Correlate correlate = Correlate::Off;
+    int warpKnots = 3;
+    bool gaussNewton = false;  // the knots solved together (Levenberg-Marquardt) rather than one at a time       // the elastic edges' knots a side (EdgeWarp::layout(): 3 as it is; up to kMaxKnots)  // each voiced grain moved whole to agree with the one before (WSOLA)
     Quality quality = Quality::Studio;  // a change starts the shifter again, at its own latency
 };
 
@@ -153,6 +155,9 @@ public:
     // For tests: the grains moved by the correlation shift, and how far in all (samples).
     int64_t correlatedGrains() const noexcept;
     double correlatedSamples() const noexcept;
+    // For tests: how much a voice's grains' left edges' warps change from one bent grain to the next (the RMS of the
+    // difference over the bent side, in periods), on average.
+    double warpChange() const noexcept;
 
 private:
     struct Impl;
@@ -216,16 +221,30 @@ struct EdgeWarp {
     static constexpr double kDead = 0.25;
     static constexpr std::array<double, 3> kKnots = {0.4, 0.7, 1.0};
     static constexpr std::array<double, 3> kLimits = {0.025, 0.05, 0.1};
+    // The warping resolution (Controls::warpKnots, an experiment): up to this many knots a side.
+    static constexpr int kMaxKnots = 17;
+    // n knots' places (of the side's width) and limits (of a period): 3, kKnots and kLimits; any other number, evenly
+    // from the dead zone to the edge, each limit on the line through kLimits' (0 at the dead zone).
+    static void layout(int n, double* places, double* limits) noexcept;
 
-    std::array<double, 4> knots{};   // u of the dead zone's end and of each knot (output samples)
-    std::array<double, 4> values{};  // d there (values[0]: 0)
-    std::array<double, 4> slopes{};  // dd/du there
+    std::array<double, kMaxKnots + 1> knots{};   // u of the dead zone's end and of each knot (output samples)
+    std::array<double, kMaxKnots + 1> values{};  // d there (values[0]: 0)
+    std::array<double, kMaxKnots + 1> slopes{};  // dd/du there
+    std::array<double, kMaxKnots + 1> places{};  // the knots' places (of the width)
+    double width = 0.0;
+    int count = 0;
     bool on = false;
 
-    // A side `half` output samples wide, bent by `d` (the three knots' values).
+    // A side `half` output samples wide, bent by `d` (the three knots' values, at kKnots).
     void set(double half, const std::array<double, 3>& d) noexcept;
+    // The same with n knots at `at` (of the width), bent by d[0..n).
+    void set(double half, int n, const double* at, const double* d) noexcept;
     double at(double u) const noexcept;
-    double most() const noexcept { return on ? std::max({0.0, values[1], values[2], values[3]}) : 0.0; }
+    double most() const noexcept {
+        double m = 0.0;
+        for (int k = 1; on && k <= count; ++k) m = std::max(m, values[static_cast<size_t>(k)]);
+        return m;
+    }
 };
 
 // The voice's glottal closures, where the shifter centres its grains: SEDREAMS (Drugman & Dutoit, "Glottal closure

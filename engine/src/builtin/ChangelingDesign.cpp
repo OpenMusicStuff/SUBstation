@@ -126,25 +126,59 @@ void Quadrature::process(double x, double& i, double& q) noexcept {
 
 // --- EdgeWarp ---------------------------------------------------------------------------------------
 
+void EdgeWarp::layout(int n, double* at, double* limits) noexcept {
+    if (n == 3) {
+        for (size_t k = 0; k < 3; ++k) at[k] = kKnots[k], limits[k] = kLimits[k];
+        return;
+    }
+    for (int k = 0; k < n; ++k) {
+        const double x = kDead + (1.0 - kDead) * (k + 1) / n;
+        at[k] = x;
+        // (the line through (kDead, 0) and kLimits' points)
+        limits[k] = x <= kKnots[0] ? kLimits[0] * (x - kDead) / (kKnots[0] - kDead)
+                    : x <= kKnots[1] ? kLimits[0] + (kLimits[1] - kLimits[0]) * (x - kKnots[0]) / (kKnots[1] - kKnots[0])
+                                     : kLimits[1] + (kLimits[2] - kLimits[1]) * (x - kKnots[1]) / (kKnots[2] - kKnots[1]);
+    }
+}
+
 void EdgeWarp::set(double half, const std::array<double, 3>& d) noexcept {
-    knots = {kDead * half, kKnots[0] * half, kKnots[1] * half, kKnots[2] * half};
-    values = {0.0, d[0], d[1], d[2]};
+    set(half, 3, kKnots.data(), d.data());
+}
+
+void EdgeWarp::set(double half, int n, const double* at, const double* d) noexcept {
+    count = std::clamp(n, 1, kMaxKnots);
+    width = half;
+    knots[0] = kDead * half;
+    values[0] = 0.0;
+    places[0] = kDead;
+    on = false;
+    for (int k = 1; k <= count; ++k) {
+        const auto i = static_cast<size_t>(k);
+        places[i] = at[k - 1];
+        knots[i] = at[k - 1] * half;
+        values[i] = d[k - 1];
+        on = on || d[k - 1] != 0.0;
+    }
+    on = on && half > 0.0;
     slopes[0] = 0.0;
-    slopes[1] = (values[2] - values[0]) / (knots[2] - knots[0]);
-    slopes[2] = (values[3] - values[1]) / (knots[3] - knots[1]);
-    slopes[3] = (values[3] - values[2]) / (knots[3] - knots[2]);
-    on = half > 0.0 && (d[0] != 0.0 || d[1] != 0.0 || d[2] != 0.0);
+    for (int k = 1; k < count; ++k) {
+        const auto i = static_cast<size_t>(k);
+        slopes[i] = (values[i + 1] - values[i - 1]) / (knots[i + 1] - knots[i - 1]);
+    }
+    const auto last = static_cast<size_t>(count);
+    slopes[last] = (values[last] - values[last - 1]) / (knots[last] - knots[last - 1]);
 }
 
 double EdgeWarp::at(double u) const noexcept {
     if (!on || !(u > knots[0])) return 0.0;
-    if (u >= knots[3]) return values[3];
-    const int k = u < knots[1] ? 0 : u < knots[2] ? 1 : 2;
-    const auto i = static_cast<size_t>(k);
-    const double width = knots[i + 1] - knots[i], t = (u - knots[i]) / width;
+    const auto last = static_cast<size_t>(count);
+    if (u >= knots[last]) return values[last];
+    size_t i = 0;
+    while (i + 1 < last && u >= knots[i + 1]) ++i;
+    const double span = knots[i + 1] - knots[i], t = (u - knots[i]) / span;
     const double t2 = t * t, t3 = t2 * t;
-    return (2.0 * t3 - 3.0 * t2 + 1.0) * values[i] + (t3 - 2.0 * t2 + t) * slopes[i] * width +
-           (3.0 * t2 - 2.0 * t3) * values[i + 1] + (t3 - t2) * slopes[i + 1] * width;
+    return (2.0 * t3 - 3.0 * t2 + 1.0) * values[i] + (t3 - 2.0 * t2 + t) * slopes[i] * span +
+           (3.0 * t2 - 2.0 * t3) * values[i + 1] + (t3 - t2) * slopes[i + 1] * span;
 }
 
 // --- Closures ---------------------------------------------------------------------------------------
@@ -463,6 +497,8 @@ struct Shifter::Impl {
         // marks, so it starts in step) until its last grain ends after Twin goes to 0. Only running voices commit
         // marks: with Twin at 0 the main voices place them as GigaTune's corrector does (a ratio of 1 is the input).
         bool running = false;
+        std::array<double, 16> profile{};  // (tests: its last bent grain's left warp, for warpChange())
+        bool hasProfile = false;
     };
     struct Midi {
         int64_t time = 0;
@@ -513,7 +549,8 @@ struct Shifter::Impl {
     size_t inputMask = 0;
     int64_t time = 0;
     int64_t late = 0, voicedCount = 0, dropped = 0, elasticCount = 0, sharedCount = 0, correlatedCount = 0;
-    double correlatedShift = 0.0;
+    double correlatedShift = 0.0, changeSum = 0.0;
+    int64_t changeCount = 0;
 
     void prepare(double sampleRate) {
         rate = sampleRate;
@@ -615,10 +652,12 @@ struct Shifter::Impl {
             v.planned = false;
             v.grainHead = v.grainCount = 0;
             v.running = !v.twin && v.output < channels;
+            v.hasProfile = false;
         }
         time = 0;
         late = voicedCount = dropped = elasticCount = sharedCount = correlatedCount = 0;
-        correlatedShift = 0.0;
+        correlatedShift = changeSum = 0.0;
+        changeCount = 0;
     }
 
     double& analysisAt(int64_t k) noexcept { return analysis[static_cast<size_t>(k) & markMask]; }
@@ -909,9 +948,12 @@ struct Shifter::Impl {
 
     // A warp's knots held to read no later than `most` samples past where it would unbent.
     static void holdWarp(EdgeWarp& w, double most) noexcept {
+        if (!w.on) return;
         const double cap = std::max(0.0, most);
-        const double half = w.knots[3] / EdgeWarp::kKnots[2];
-        w.set(half, {std::min(w.values[1], cap), std::min(w.values[2], cap), std::min(w.values[3], cap)});
+        std::array<double, EdgeWarp::kMaxKnots> d{};
+        for (int k = 0; k < w.count; ++k) d[static_cast<size_t>(k)] = std::min(w.values[static_cast<size_t>(k + 1)], cap);
+        const auto at = w.places;
+        w.set(w.width, w.count, at.data() + 1, d.data());
     }
 
     // Synthesis mark k's grain as it would play now: the analysis mark nearest it (Smear: one further back, at
@@ -974,37 +1016,41 @@ struct Shifter::Impl {
         const bool shared = static_cast<double>(now) - p.s <= EdgeWarp::kDead * p.right;
         const double shareG = shared ? 0.5 : 1.0, shareP = shared ? 0.5 : 0.0;
         const double period = g.left * g.alpha;  // (input samples from the closure before to this one)
-        std::array<double, 3> limit{};
-        for (size_t k = 0; k < 3; ++k) limit[k] = EdgeWarp::kLimits[k] * period;
-        if (!(limit[2] > 0.25)) return;
+        using Knots = std::array<double, EdgeWarp::kMaxKnots>;
+        const int K = std::clamp(controls.warpKnots, 1, EdgeWarp::kMaxKnots);
+        const auto L = static_cast<size_t>(K - 1);  // the edge's knot
+        Knots place{}, limit{};
+        EdgeWarp::layout(K, place.data(), limit.data());
+        for (size_t k = 0; k <= L; ++k) limit[k] *= period;
+        if (!(limit[L] > 0.25)) return;
 
         // Each knot's own warp (its value 1, the others 0), for the points' bases and M.
-        std::array<EdgeWarp, 3> unitG, unitP;
-        for (size_t k = 0; k < 3; ++k) {
-            std::array<double, 3> e{};
+        std::array<EdgeWarp, EdgeWarp::kMaxKnots> unitG, unitP;
+        for (size_t k = 0; k <= L; ++k) {
+            Knots e{};
             e[k] = 1.0;
-            unitG[k].set(g.left, e);
-            unitP[k].set(p.right, e);
+            unitG[k].set(g.left, K, place.data(), e.data());
+            unitP[k].set(p.right, K, place.data(), e.data());
         }
-        std::array<std::array<double, 3>, 3> M{};
-        const auto addCost = [&](const std::array<EdgeWarp, 3>& unit, double half, double share) {
+        std::array<Knots, EdgeWarp::kMaxKnots> M{};
+        const auto addCost = [&](const std::array<EdgeWarp, EdgeWarp::kMaxKnots>& unit, double half, double share) {
             if (!(share > 0.0) || !(half > 0.0)) return;
-            constexpr int kSteps = 24;
+            const int kSteps = std::max(24, 4 * K);
             const double from = EdgeWarp::kDead * half, du = (half - from) / kSteps;
-            const double size = kBendSize / (limit[2] * limit[2]) / kSteps;
-            const double slope = kBendSlope * (half * half) / (limit[2] * limit[2]) / kSteps;
-            const double curve = kBendCurve * (half * half * half * half) / (limit[2] * limit[2]) / kSteps;
+            const double size = kBendSize / (limit[L] * limit[L]) / kSteps;
+            const double slope = kBendSlope * (half * half) / (limit[L] * limit[L]) / kSteps;
+            const double curve = kBendCurve * (half * half * half * half) / (limit[L] * limit[L]) / kSteps;
             for (int i = 0; i <= kSteps; ++i) {
                 const double u = from + du * i;
-                std::array<double, 3> b{}, d1{}, d2{};
-                for (size_t k = 0; k < 3; ++k) {
+                Knots b{}, d1{}, d2{};
+                for (size_t k = 0; k <= L; ++k) {
                     const double before = unit[k].at(u - du), here = unit[k].at(u), after = unit[k].at(u + du);
                     b[k] = here;
                     d1[k] = (after - before) / (2.0 * du);
                     d2[k] = (after - 2.0 * here + before) / (du * du);
                 }
-                for (size_t k = 0; k < 3; ++k)
-                    for (size_t l = 0; l < 3; ++l)
+                for (size_t k = 0; k <= L; ++k)
+                    for (size_t l = 0; l <= L; ++l)
                         M[k][l] += share * share * (size * b[k] * b[l] + slope * d1[k] * d1[l] + curve * d2[k] * d2[l]);
             }
         };
@@ -1014,7 +1060,7 @@ struct Shifter::Impl {
         // The overlap's points: where each grain reads unbent, how each knot moves it, and how much the point counts.
         struct Point {
             double q, readP, readG;
-            std::array<double, 3> moveP, moveG;
+            Knots moveP, moveG;
         };
         std::array<Point, kBendPoints> points;
         const int count = static_cast<int>(std::min<int64_t>(kBendPoints, hi - lo + 1));
@@ -1028,7 +1074,7 @@ struct Shifter::Impl {
             pt.q = q;
             pt.readP = p.a + p.alpha * uP + (uP < 0.0 ? p.leftWarp.at(-uP) : p.rightWarp.at(uP));
             pt.readG = g.a + g.alpha * uG;
-            for (size_t k = 0; k < 3; ++k) {
+            for (size_t k = 0; k <= L; ++k) {
                 pt.moveP[k] = uP > 0.0 ? -shareP * unitP[k].at(uP) : 0.0;
                 pt.moveG[k] = uG < 0.0 ? shareG * unitG[k].at(-uG) : 0.0;
             }
@@ -1041,18 +1087,19 @@ struct Shifter::Impl {
             const auto i = static_cast<size_t>(static_cast<int64_t>(whole));
             return x[i & inputMask] + f * (x[(i + 1) & inputMask] - x[i & inputMask]);
         };
-        const auto cost = [&](const std::array<double, 3>& c) {
+        const auto cost = [&](const Knots& c) {
             double mismatch = 0.0, energy = 0.0;
             for (int i = 0; i < used; ++i) {
                 const Point& pt = points[static_cast<size_t>(i)];
-                const double xp = read(pt.readP + pt.moveP[0] * c[0] + pt.moveP[1] * c[1] + pt.moveP[2] * c[2]);
-                const double xg = read(pt.readG + pt.moveG[0] * c[0] + pt.moveG[1] * c[1] + pt.moveG[2] * c[2]);
+                double mp = 0.0, mg = 0.0;
+                for (size_t k = 0; k <= L; ++k) mp += pt.moveP[k] * c[k], mg += pt.moveG[k] * c[k];
+                const double xp = read(pt.readP + mp), xg = read(pt.readG + mg);
                 mismatch += pt.q * (xp - xg) * (xp - xg);
                 energy += pt.q * (xp * xp + xg * xg);
             }
             double warp = 0.0;
-            for (size_t k = 0; k < 3; ++k)
-                for (size_t l = 0; l < 3; ++l) warp += c[k] * M[k][l] * c[l];
+            for (size_t k = 0; k <= L; ++k)
+                for (size_t l = 0; l <= L; ++l) warp += c[k] * M[k][l] * c[l];
             return (energy > 0.0 ? mismatch / energy : 0.0) + warp;
         };
         // WSOLA's correlation shift (Controls::correlate, an experiment): the whole of g read up to half a period later
@@ -1102,18 +1149,21 @@ struct Shifter::Impl {
         }
         if (!controls.elastic) return;
 
-        const auto clamped = [&](std::array<double, 3> c) {
-            for (size_t k = 0; k < 3; ++k) c[k] = std::clamp(c[k], -limit[k], limit[k]);
+        const auto clamped = [&](Knots c) {
+            for (size_t k = 0; k <= L; ++k) c[k] = std::clamp(c[k], -limit[k], limit[k]);
             return c;
         };
 
         // The knots in proportion to their limits, the edge's moved in kBendSteps steps either way (a sample each at
         // the least); a parabola through the best.
-        const std::array<double, 3> along = {limit[0] / limit[2], limit[1] / limit[2], 1.0};
-        const auto alongBy = [&](double t) { return clamped({along[0] * t, along[1] * t, along[2] * t}); };
-        const double unbent = cost({0.0, 0.0, 0.0});
-        const double unit = std::max(1.0, limit[2] / kBendSteps);
-        const int steps = std::min(kBendSteps, static_cast<int>(std::floor(limit[2] / unit)));
+        const auto alongBy = [&](double t) {
+            Knots c{};
+            for (size_t k = 0; k <= L; ++k) c[k] = limit[k] / limit[L] * t;
+            return clamped(c);
+        };
+        const double unbent = cost(Knots{});
+        const double unit = std::max(1.0, limit[L] / kBendSteps);
+        const int steps = std::min(kBendSteps, static_cast<int>(std::floor(limit[L] / unit)));
         int bestStep = 0;
         double best = unbent;
         std::array<double, 2 * kBendSteps + 1> tried{};
@@ -1122,24 +1172,112 @@ struct Shifter::Impl {
             tried[static_cast<size_t>(t + kBendSteps)] = j;
             if (j < best) best = j, bestStep = t;
         }
-        std::array<double, 3> c = alongBy(bestStep * unit);
+        Knots c = alongBy(bestStep * unit);
         if (std::abs(bestStep) < steps) {
             const double before = tried[static_cast<size_t>(bestStep + kBendSteps - 1)];
             const double after = tried[static_cast<size_t>(bestStep + kBendSteps + 1)];
             const double curve = before - 2.0 * best + after;
             if (curve > 0.0) {
-                const std::array<double, 3> between = alongBy(unit * (bestStep + std::clamp(0.5 * (before - after) / curve, -0.5, 0.5)));
+                const Knots between = alongBy(unit * (bestStep + std::clamp(0.5 * (before - after) / curve, -0.5, 0.5)));
                 const double j = cost(between);
                 if (j < best) best = j, c = between;
+            }
+        }
+        // Then (Controls::gaussNewton) all the knots together: Gauss-Newton on E's residuals (each point's two reads'
+        // difference, its weight's root, over the energy's root; the reads' slopes linear), M as it is, damped
+        // (Levenberg-Marquardt), each step clamped to the limits and kept only where J falls.
+        if (controls.gaussNewton) {
+            double damping = 1e-3;
+            for (int iteration = 0; iteration < 8; ++iteration) {
+                double energy = 0.0;
+                for (int i = 0; i < used; ++i) {
+                    const Point& pt = points[static_cast<size_t>(i)];
+                    double mp = 0.0, mg = 0.0;
+                    for (size_t k = 0; k <= L; ++k) mp += pt.moveP[k] * c[k], mg += pt.moveG[k] * c[k];
+                    const double xp = read(pt.readP + mp), xg = read(pt.readG + mg);
+                    energy += pt.q * (xp * xp + xg * xg);
+                }
+                if (!(energy > 0.0)) break;
+                std::array<Knots, EdgeWarp::kMaxKnots> A{};
+                Knots gradient{};
+                for (int i = 0; i < used; ++i) {
+                    const Point& pt = points[static_cast<size_t>(i)];
+                    double mp = 0.0, mg = 0.0;
+                    for (size_t k = 0; k <= L; ++k) mp += pt.moveP[k] * c[k], mg += pt.moveG[k] * c[k];
+                    const double at = pt.readP + mp, ag = pt.readG + mg;
+                    const auto slopeAt = [&](double position) {
+                        const auto i0 = static_cast<size_t>(static_cast<int64_t>(std::floor(position)));
+                        return static_cast<double>(x[(i0 + 1) & inputMask]) - x[i0 & inputMask];
+                    };
+                    const double w = std::sqrt(pt.q / energy);
+                    const double r = w * (read(at) - read(ag));
+                    const double sp = slopeAt(at), sg = slopeAt(ag);
+                    Knots jac{};
+                    for (size_t k = 0; k <= L; ++k) jac[k] = w * (sp * pt.moveP[k] - sg * pt.moveG[k]);
+                    for (size_t k = 0; k <= L; ++k) {
+                        gradient[k] += jac[k] * r;
+                        for (size_t l = 0; l <= L; ++l) A[k][l] += jac[k] * jac[l];
+                    }
+                }
+                for (size_t k = 0; k <= L; ++k) {
+                    for (size_t l = 0; l <= L; ++l) {
+                        A[k][l] += M[k][l];
+                        gradient[k] += M[k][l] * c[l];
+                    }
+                }
+                double scale = 0.0;
+                for (size_t k = 0; k <= L; ++k) scale = std::max(scale, A[k][k]);
+                bool improved = false;
+                for (int attempt = 0; attempt < 4 && !improved; ++attempt) {
+                    // (A + damping max(diag) I) step = -gradient, by Gaussian elimination with partial pivoting
+                    std::array<Knots, EdgeWarp::kMaxKnots> B = A;
+                    Knots step{};
+                    for (size_t k = 0; k <= L; ++k) B[k][k] += damping * scale, step[k] = -gradient[k];
+                    bool singular = false;
+                    for (size_t col = 0; col <= L && !singular; ++col) {
+                        size_t pivot = col;
+                        for (size_t row = col + 1; row <= L; ++row)
+                            if (std::abs(B[row][col]) > std::abs(B[pivot][col])) pivot = row;
+                        if (!(std::abs(B[pivot][col]) > 1e-300)) {
+                            singular = true;
+                            break;
+                        }
+                        std::swap(B[col], B[pivot]);
+                        std::swap(step[col], step[pivot]);
+                        for (size_t row = col + 1; row <= L; ++row) {
+                            const double f = B[row][col] / B[col][col];
+                            for (size_t k = col; k <= L; ++k) B[row][k] -= f * B[col][k];
+                            step[row] -= f * step[col];
+                        }
+                    }
+                    if (singular) break;
+                    for (size_t row = L + 1; row-- > 0;) {
+                        for (size_t k = row + 1; k <= L; ++k) step[row] -= B[row][k] * step[k];
+                        step[row] /= B[row][row];
+                    }
+                    Knots trial = c;
+                    for (size_t k = 0; k <= L; ++k) trial[k] += step[k];
+                    trial = clamped(trial);
+                    const double j = cost(trial);
+                    if (j < best) {
+                        best = j;
+                        c = trial;
+                        damping = std::max(1e-6, damping / 3.0);
+                        improved = true;
+                    } else {
+                        damping *= 8.0;
+                    }
+                }
+                if (!improved) break;
             }
         }
         // Then each knot on its own, in halving steps from half the first search's.
         for (const double step : {0.5 * unit, 0.25 * unit, 0.125 * unit, 0.0625 * unit}) {
             for (int pass = 0; pass < 2; ++pass) {
                 bool moved = false;
-                for (size_t k = 0; k < 3; ++k) {
+                for (size_t k = 0; k <= L; ++k) {
                     for (const double sign : {1.0, -1.0}) {
-                        std::array<double, 3> trial = c;
+                        Knots trial = c;
                         trial[k] += sign * step;
                         trial = clamped(trial);
                         if (trial == c) continue;
@@ -1159,14 +1297,28 @@ struct Shifter::Impl {
 
         // (each side held to read only input that is in by then)
         const double roomG = latency - lookahead(g), roomP = latency - lookahead(p);
-        g.leftWarp.set(g.left, {shareG * c[0], shareG * c[1], shareG * c[2]});
+        Knots dg{}, dp{};
+        for (size_t k = 0; k <= L; ++k) dg[k] = shareG * c[k], dp[k] = -shareP * c[k];
+        g.leftWarp.set(g.left, K, place.data(), dg.data());
         holdWarp(g.leftWarp, roomG);
         if (shared) {
-            p.rightWarp.set(p.right, {-shareP * c[0], -shareP * c[1], -shareP * c[2]});
+            p.rightWarp.set(p.right, K, place.data(), dp.data());
             holdWarp(p.rightWarp, roomP);
             ++sharedCount;
         }
         ++elasticCount;
+        // (for tests: the left warp's change from the voice's last, over 16 places of the bent side, in periods)
+        std::array<double, 16> profile{};
+        for (size_t i = 0; i < profile.size(); ++i)
+            profile[i] = g.leftWarp.at(g.left * (EdgeWarp::kDead + (1.0 - EdgeWarp::kDead) * (i + 1) / 16.0)) / period;
+        if (v.hasProfile) {
+            double change = 0.0;
+            for (size_t i = 0; i < profile.size(); ++i) change += (profile[i] - v.profile[i]) * (profile[i] - v.profile[i]);
+            changeSum += std::sqrt(change / 16.0);
+            ++changeCount;
+        }
+        v.profile = profile;
+        v.hasProfile = true;
     }
 
     // Starts a voice's grains whose windows begin by output sample n (GigaTune's: High Quality as soon as it might,
@@ -1442,6 +1594,9 @@ int64_t Shifter::elasticJunctions() const noexcept { return impl_->elasticCount;
 int64_t Shifter::sharedJunctions() const noexcept { return impl_->sharedCount; }
 int64_t Shifter::correlatedGrains() const noexcept { return impl_->correlatedCount; }
 double Shifter::correlatedSamples() const noexcept { return impl_->correlatedShift; }
+double Shifter::warpChange() const noexcept {
+    return impl_->changeCount > 0 ? impl_->changeSum / static_cast<double>(impl_->changeCount) : 0.0;
+}
 
 // --- Drive ------------------------------------------------------------------------------------------
 
